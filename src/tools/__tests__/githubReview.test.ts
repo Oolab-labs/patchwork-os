@@ -64,7 +64,8 @@ describe("githubGetPRDiff", () => {
       headRefName: "feature/x",
       additions: 10,
       deletions: 2,
-      changedFiles: [{ path: "src/foo.ts", additions: 10, deletions: 2 }],
+      changedFiles: 1, // integer count
+      files: [{ path: "src/foo.ts", additions: 10, deletions: 2 }], // per-file array
       author: { login: "dev" },
       createdAt: "2025-01-01T00:00:00Z",
       isDraft: false,
@@ -80,11 +81,13 @@ describe("githubGetPRDiff", () => {
     const data = parse(result);
     expect(data.title).toBe("Add feature");
     expect(data.diff).toContain("added line");
+    expect(data.changedFiles).toBe(1); // integer, not array
+    expect(Array.isArray(data.files)).toBe(true); // per-file list
     expect(data.truncated).toBeUndefined();
   });
 
   it("sets truncated:true when diff exceeds 256 KB", async () => {
-    const fakeMeta = { number: 1, title: "Big PR", state: "OPEN" };
+    const fakeMeta = { number: 1, title: "Big PR", state: "OPEN", changedFiles: 0, files: [] };
     const bigDiff = "x".repeat(300 * 1024);
     mockExecSafe
       .mockResolvedValueOnce({ stdout: JSON.stringify(fakeMeta), stderr: "", exitCode: 0, timedOut: false, durationMs: 10 })
@@ -146,12 +149,49 @@ describe("githubPostPRReview", () => {
     expect(data.commentsPosted).toBe(1);
     expect(data.event).toBe("COMMENT");
 
-    // Verify the API call was made with the right endpoint
+    // Verify the API endpoint
     const apiCall = mockExecSafe.mock.calls[1]!;
     expect(apiCall[1]).toContain("repos/owner/repo/pulls/1/reviews");
+
+    // Verify the stdin JSON payload structure
+    const apiOpts = apiCall[2] as { stdin?: string };
+    const payload = JSON.parse(apiOpts.stdin!);
+    expect(payload.event).toBe("COMMENT");
+    expect(payload.body).toBe("Looks good overall");
+    expect(payload.comments[0].path).toBe("src/foo.ts");
+    expect(payload.comments[0].line).toBe(10);
+    expect(payload.comments[0].side).toBe("RIGHT"); // default side
+    expect(payload.comments[0].body).toBe("Potential null deref");
+  });
+
+  it("sends side:LEFT for deleted-line comments", async () => {
+    mockExecSafe
+      .mockResolvedValueOnce({ stdout: "owner/repo\n", stderr: "", exitCode: 0, timedOut: false, durationMs: 5 })
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ id: 1, html_url: "" }), stderr: "", exitCode: 0, timedOut: false, durationMs: 10 });
+
+    await tool.handler({
+      prNumber: 1,
+      body: "review",
+      comments: [{ path: "src/foo.ts", line: 5, side: "LEFT", body: "This deleted line has a bug" }],
+    });
+
+    const apiOpts = mockExecSafe.mock.calls[1]![2] as { stdin?: string };
+    const payload = JSON.parse(apiOpts.stdin!);
+    expect(payload.comments[0].side).toBe("LEFT");
+  });
+
+  it("returns isError on HTTP 401 from gh api", async () => {
+    mockExecSafe
+      .mockResolvedValueOnce({ stdout: "owner/repo\n", stderr: "", exitCode: 0, timedOut: false, durationMs: 5 })
+      .mockResolvedValueOnce({ stdout: "", stderr: "gh: HTTP 401 (https://api.github.com/repos/owner/repo/pulls/1/reviews)", exitCode: 1, timedOut: false, durationMs: 10 });
+
+    const result = await tool.handler({ prNumber: 1, body: "review" });
+    expect(result.isError).toBe(true);
+    expect(parse(result)).toMatch(/gh auth login/i);
   });
 
   it("requires prNumber and body", async () => {
     await expect(tool.handler({ body: "review" })).rejects.toThrow(/prNumber/);
+    await expect(tool.handler({ prNumber: 1 })).rejects.toThrow(/body/);
   });
 });
