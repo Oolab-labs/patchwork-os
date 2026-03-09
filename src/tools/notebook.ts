@@ -50,7 +50,6 @@ export function createRunNotebookCellTool(workspace: string, extensionClient: Ex
         "Execute a single cell in a Jupyter notebook and return its output. " +
         "The notebook will be made visible in the editor. " +
         "Cell index is 0-based. Requires the VS Code extension with Jupyter support.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

@@ -2,12 +2,15 @@ import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
 import { ErrorCodes } from "./errors.js";
 import type { Logger } from "./logger.js";
+import { BRIDGE_PROTOCOL_VERSION } from "./version.js";
 import { safeSend } from "./wsUtils.js";
 
 const TOOL_TIMEOUT_MS = 60_000; // 60s — prevents tools from blocking indefinitely
 const MAX_CONCURRENT_TOOLS = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
 const RATE_LIMIT_MAX = 200; // max requests per window
+// Supported MCP protocol versions, newest first.
+// Extend this array when new protocol versions are ratified; keep oldest supported version last.
 const SUPPORTED_VERSIONS = ["2025-11-25"];
 const LOG_LEVELS = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"] as const;
 type LogLevel = (typeof LOG_LEVELS)[number];
@@ -59,7 +62,7 @@ export class McpTransport {
     string,
     { schema: ToolSchema; handler: ToolHandler; timeoutMs?: number }
   >();
-  private serverInfo = { name: "claude-ide-bridge", version: "1.1.0" };
+  private readonly serverInfo = { name: "claude-ide-bridge", version: BRIDGE_PROTOCOL_VERSION };
   private activeWs: WebSocket | null = null;
   private activeListener: ((data: Buffer) => void) | null = null;
   private inFlightControllers = new Map<string | number, AbortController>();
@@ -105,8 +108,16 @@ export class McpTransport {
       if (ws !== this.activeWs) return;
       try {
         const raw: unknown = JSON.parse(data.toString("utf-8"));
-        if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        if (typeof raw !== "object" || raw === null) {
           this.logger.debug("Ignoring non-object JSON-RPC message");
+          return;
+        }
+        if (Array.isArray(raw)) {
+          await safeSend(ws, JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: { code: ErrorCodes.INVALID_REQUEST, message: "Batch requests are not supported" },
+          }), this.logger);
           return;
         }
         const msg = raw as JsonRpcRequest;
@@ -133,9 +144,11 @@ export class McpTransport {
         // Rate limiting — sliding window
         const now = Date.now();
         const cutoff = now - RATE_LIMIT_WINDOW_MS;
-        if (this.messageTimestamps.length > 0 && this.messageTimestamps[0]! < cutoff) {
-          this.messageTimestamps = this.messageTimestamps.filter((t) => t >= cutoff);
+        let start = 0;
+        while (start < this.messageTimestamps.length && this.messageTimestamps[start]! < cutoff) {
+          start++;
         }
+        if (start > 0) this.messageTimestamps.splice(0, start);
         this.messageTimestamps.push(now);
         if (this.messageTimestamps.length > RATE_LIMIT_MAX) {
           this.logger.warn(`Rate limit exceeded: ${this.messageTimestamps.length} requests in ${RATE_LIMIT_WINDOW_MS}ms`);
@@ -176,6 +189,10 @@ export class McpTransport {
           }
 
           case "tools/list":
+            if (!this.initialized) {
+              response = { jsonrpc: "2.0", id: msg.id, error: { code: ErrorCodes.INVALID_REQUEST, message: "Not initialized — send initialize first" } };
+              break;
+            }
             response = {
               jsonrpc: "2.0",
               id: msg.id,
@@ -196,6 +213,10 @@ export class McpTransport {
           }
 
           case "tools/call": {
+            if (!this.initialized) {
+              response = { jsonrpc: "2.0", id: msg.id, error: { code: ErrorCodes.INVALID_REQUEST, message: "Not initialized — send initialize first" } };
+              break;
+            }
             // Concurrent tool-call limit
             if (this.activeToolCalls >= MAX_CONCURRENT_TOOLS) {
               response = {

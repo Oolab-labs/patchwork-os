@@ -335,8 +335,9 @@ export async function handleExecuteInTerminal(
   let truncated = false;
 
   // Read output concurrently with waiting for execution end
+  const reader = execution.read();
   const readPromise = (async () => {
-    for await (const chunk of execution.read()) {
+    for await (const chunk of reader) {
       if (!truncated) {
         outputBytes += chunk.length;
         if (outputBytes > MAX_EXECUTE_OUTPUT_BYTES) {
@@ -366,8 +367,9 @@ export async function handleExecuteInTerminal(
     },
   );
 
-  // Drain any remaining buffered output (brief grace period)
+  // Drain any remaining buffered output (brief grace period), then terminate the iterator
   await Promise.race([readPromise, new Promise<void>((r) => setTimeout(r, 500))]);
+  reader.return?.();
 
   const output = stripAnsi(outputChunks.join(""));
 

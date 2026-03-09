@@ -27,8 +27,12 @@ export interface ServerEvents {
 function timingSafeTokenCompare(a: string, b: string): boolean {
   const bA = Buffer.from(a);
   const bB = Buffer.from(b);
-  if (bA.length !== bB.length) return false;
-  return crypto.timingSafeEqual(bA, bB);
+  const len = Math.max(bA.length, bB.length);
+  const padA = Buffer.alloc(len);
+  const padB = Buffer.alloc(len);
+  bA.copy(padA);
+  bB.copy(padB);
+  return crypto.timingSafeEqual(padA, padB) && bA.length === bB.length;
 }
 
 function setupPongHandler(ws: AliveWebSocket): void {
@@ -36,19 +40,18 @@ function setupPongHandler(ws: AliveWebSocket): void {
     ws.isAlive = true;
     ws.missedPongs = 0;
     const sentAt = parseInt(data.toString(), 10);
-    if (!isNaN(sentAt)) {
-      ws.lastPongTime = Date.now();
-    }
+    ws.lastPongTime = isNaN(sentAt) ? Date.now() : sentAt;
   });
 }
 
-const MIN_CONNECTION_INTERVAL_MS = 1000;
+const MIN_CONNECTION_INTERVAL_MS = 250;
 
 export class Server extends EventEmitter {
   private httpServer: http.Server;
   private wss: WsServer;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
-  private lastConnectionTime = 0;
+  private lastClaudeConnectionTime = 0;
+  private lastExtensionConnectionTime = 0;
   private startTime = Date.now();
 
   /** Set by bridge to provide health data */
@@ -91,15 +94,6 @@ export class Server extends EventEmitter {
       // Prevent unhandled error events on the raw socket during upgrade
       socket.on("error", () => socket.destroy());
 
-      // Rate limit connections to prevent connection-storm DoS
-      const now = Date.now();
-      if (now - this.lastConnectionTime < MIN_CONNECTION_INTERVAL_MS) {
-        socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
-        socket.destroy();
-        return;
-      }
-      this.lastConnectionTime = now;
-
       // Validate Host header to defend against DNS rebinding
       const host = request.headers.host?.replace(/:\d+$/, "");
       if (!host || !ALLOWED_HOSTS.has(host)) {
@@ -111,12 +105,21 @@ export class Server extends EventEmitter {
         return;
       }
 
+      const now = Date.now();
+
       // Check for extension connection (distinct header)
       const extensionToken = request.headers["x-claude-ide-extension"];
       if (
         typeof extensionToken === "string" &&
         timingSafeTokenCompare(extensionToken, this.authToken)
       ) {
+        // Rate limit per client type to prevent connection-storm DoS
+        if (now - this.lastExtensionConnectionTime < MIN_CONNECTION_INTERVAL_MS) {
+          socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+        this.lastExtensionConnectionTime = now;
         this.wss.handleUpgrade(request, socket, head, (ws) => {
           const alive = ws as AliveWebSocket;
           alive.isAlive = true;
@@ -140,6 +143,14 @@ export class Server extends EventEmitter {
         socket.destroy();
         return;
       }
+
+      // Rate limit per client type to prevent connection-storm DoS
+      if (now - this.lastClaudeConnectionTime < MIN_CONNECTION_INTERVAL_MS) {
+        socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      this.lastClaudeConnectionTime = now;
 
       this.wss.handleUpgrade(request, socket, head, (ws) => {
         this.wss.emit("connection", ws, request);

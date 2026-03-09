@@ -13,7 +13,6 @@ export function createReplaceBlockTool(workspace: string, extensionClient?: Exte
         "Fails with a clear error if oldContent is not found or appears more than once. " +
         "Use getBufferContent first to get the current text if the file may have unsaved changes. " +
         "Saves the file by default (save: true).",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         type: "object" as const,
         required: ["filePath", "oldContent", "newContent"],

@@ -270,6 +270,22 @@ export class BridgeConnection {
     }, jitteredDelay);
   }
 
+  forceReconnect(): void {
+    if (this.disposed) return;
+    this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      try { this.ws.removeAllListeners(); } catch { /* best-effort */ }
+      try { this.ws.close(); } catch { /* already closing */ }
+      this.ws = null;
+    }
+    this.state = ConnectionState.IDLE;
+    this.tryConnect();
+  }
+
   tryConnect(): void {
     if (this.disposed || this.state === ConnectionState.CONNECTING || this.state === ConnectionState.CONNECTED) return;
     this.state = ConnectionState.CONNECTING;
@@ -380,7 +396,6 @@ export class BridgeConnection {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
       }
-      this.reconnectDelay = RECONNECT_BASE_DELAY;
       this.tryConnect();
     }, 5000);
   }

@@ -99,7 +99,6 @@ export function createSetDebugBreakpointsTool(workspace: string, extensionClient
         "Supports conditional breakpoints, logpoints, and hit-count conditions. " +
         "Pass an empty breakpoints array to clear all breakpoints in the file. " +
         "Requires the VS Code extension.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
@@ -163,7 +162,6 @@ export function createStartDebuggingTool(extensionClient: ExtensionClient) {
         "Start a debug session using a launch configuration from .vscode/launch.json. " +
         "Pass configName to select a specific configuration by name, or omit to use the first one. " +
         "Requires the VS Code extension.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
@@ -202,7 +200,6 @@ export function createStopDebuggingTool(extensionClient: ExtensionClient) {
       description:
         "Stop the active debug session. Has no effect if no session is running. " +
         "Requires the VS Code extension.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

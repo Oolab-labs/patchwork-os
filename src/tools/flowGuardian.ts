@@ -254,7 +254,6 @@ export function createExpandScopeTool(workspace: string) {
       name: "expandScope",
       description:
         "Add entries to the ## Scope section of the active plan (.claude-plan.md). Creates the section if it doesn't exist.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         type: "object" as const,
         required: ["entries"],

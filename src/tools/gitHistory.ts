@@ -52,7 +52,7 @@ export function createGetCommitDetailsTool(workspace: string) {
         return success({ error: "Invalid commit hash" });
       }
 
-      const includePatch = (args.includePatch as boolean) ?? true;
+      const includePatch = optionalBool(args, "includePatch") ?? true;
       const rawPath = optionalString(args, "filePath");
       const filterPath = rawPath ? resolveFilePath(rawPath, workspace) : undefined;
 

@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { type ExtensionClient } from "../extensionClient.js";
 import { execSafe, requireString, resolveFilePath, languageIdFromPath, success, error } from "./utils.js";
 

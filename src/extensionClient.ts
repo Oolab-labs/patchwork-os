@@ -99,6 +99,7 @@ export class ExtensionClient {
   // Exponential backoff — prevents cascading 10s timeouts when extension is unresponsive
   private extensionSuspendedUntil = 0;
   private extensionFailures = 0;
+  private extensionHalfOpen = false;
 
   // State pushed by extension via notifications
   public latestDiagnostics = new Map<string, Diagnostic[]>();
@@ -167,6 +168,7 @@ export class ExtensionClient {
     // Reset backoff — fresh connection deserves a clean slate
     this.extensionSuspendedUntil = 0;
     this.extensionFailures = 0;
+    this.extensionHalfOpen = false;
 
     this.logger.info("Extension client connected");
 
@@ -357,8 +359,14 @@ export class ExtensionClient {
 
   private async request(method: string, params?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<unknown> {
     // Exponential backoff — fast-fail if extension is repeatedly timing out
-    if (Date.now() < this.extensionSuspendedUntil) {
+    const now = Date.now();
+    if (now < this.extensionSuspendedUntil) {
       throw new ExtensionTimeoutError(method);
+    }
+    // Half-open: backoff expired but failures recorded — allow one probe through
+    if (this.extensionFailures > 0 && !this.extensionHalfOpen) {
+      this.extensionHalfOpen = true;
+      this.logger.debug(`Extension circuit breaker half-open — probing with ${method}`);
     }
 
     if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -436,15 +444,17 @@ export class ExtensionClient {
 
     try {
       const result = await inner;
-      // Success — reset backoff
+      // Success — reset backoff and half-open state
       if (this.extensionFailures > 0) {
         this.logger.warn("Extension backoff reset — connection recovered");
       }
       this.extensionFailures = 0;
       this.extensionSuspendedUntil = 0;
+      this.extensionHalfOpen = false;
       return result;
     } catch (err) {
       if (err instanceof ExtensionTimeoutError) {
+        this.extensionHalfOpen = false;
         const failures = ++this.extensionFailures;
         // Full jitter (AWS-recommended): random in [1, cap] — prevents rhythmic
         // retry storms when bridge and extension restart simultaneously.
@@ -468,7 +478,7 @@ export class ExtensionClient {
   }
 
   private rejectAllPending(reason: string): void {
-    for (const [id, pending] of this.pendingRequests) {
+    for (const [_id, pending] of this.pendingRequests) {
       clearTimeout(pending.timer);
       pending.reject(new Error(reason));
     }

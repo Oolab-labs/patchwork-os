@@ -1,5 +1,5 @@
 import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { error, extensionRequired, optionalInt, requireInt, requireString, resolveFilePath, success } from "./utils.js";
+import { error, extensionRequired, requireInt, requireString, resolveFilePath, success } from "./utils.js";
 
 export function createGetInlayHintsTool(workspace: string, extensionClient: ExtensionClient) {
   return {

@@ -3,37 +3,12 @@ import { WebSocket } from "ws";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 import { McpTransport } from "../transport.js";
+import { send, waitFor } from "./wsHelpers.js";
 
 const logger = new Logger(false);
 let server: Server | null = null;
 let transport: McpTransport | null = null;
 let wsClient: WebSocket | null = null;
-
-function sendJsonRpc(ws: WebSocket, msg: Record<string, unknown>): void {
-  ws.send(JSON.stringify(msg));
-}
-
-function waitForMessage(
-  ws: WebSocket,
-  predicate: (msg: Record<string, unknown>) => boolean,
-  timeoutMs = 5000,
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("Timed out waiting for message")),
-      timeoutMs,
-    );
-    const handler = (data: Buffer | string) => {
-      const parsed = JSON.parse(data.toString("utf-8"));
-      if (predicate(parsed)) {
-        clearTimeout(timer);
-        ws.off("message", handler);
-        resolve(parsed);
-      }
-    };
-    ws.on("message", handler);
-  });
-}
 
 afterEach(() => {
   if (wsClient && wsClient.readyState === WebSocket.OPEN) {
@@ -103,21 +78,23 @@ describe("MCP cancellation", () => {
     });
 
     // Initialize the MCP session
-    sendJsonRpc(wsClient, {
+    send(wsClient, {
       jsonrpc: "2.0",
       id: 1,
       method: "initialize",
       params: {},
     });
 
-    await waitForMessage(
+    await waitFor(
       wsClient,
       (msg) => msg.id === 1 && msg.result !== undefined,
     );
+    send(wsClient, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
 
     // Send a tools/call request for the slow tool
     const requestId = 42;
-    sendJsonRpc(wsClient, {
+    send(wsClient, {
       jsonrpc: "2.0",
       id: requestId,
       method: "tools/call",
@@ -128,7 +105,7 @@ describe("MCP cancellation", () => {
     await new Promise((r) => setTimeout(r, 100));
 
     // Send cancellation notification (no id = notification)
-    sendJsonRpc(wsClient, {
+    send(wsClient, {
       jsonrpc: "2.0",
       method: "notifications/cancelled",
       params: { requestId },
@@ -139,12 +116,12 @@ describe("MCP cancellation", () => {
     expect(signalAborted).toBe(true);
 
     // The tool call should still produce a response
-    const response = await waitForMessage(
+    const response = await waitFor(
       wsClient,
       (msg) => msg.id === requestId,
     );
     expect(response.id).toBe(requestId);
-  }, 10000);
+  });
 
   it("does not abort unrelated tool calls", async () => {
     const token = "cancel-test-token-2";
@@ -181,30 +158,32 @@ describe("MCP cancellation", () => {
     });
 
     // Initialize
-    sendJsonRpc(wsClient, {
+    send(wsClient, {
       jsonrpc: "2.0",
       id: 1,
       method: "initialize",
       params: {},
     });
-    await waitForMessage(
+    await waitFor(
       wsClient,
       (msg) => msg.id === 1 && msg.result !== undefined,
     );
+    send(wsClient, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
 
     // Call tool
-    sendJsonRpc(wsClient, {
+    send(wsClient, {
       jsonrpc: "2.0",
       id: 10,
       method: "tools/call",
       params: { name: "quick_tool", arguments: {} },
     });
 
-    const response = await waitForMessage(wsClient, (msg) => msg.id === 10);
+    const response = await waitFor(wsClient, (msg) => msg.id === 10);
     expect(response.result).toBeDefined();
 
     // Now send cancellation for a different request id
-    sendJsonRpc(wsClient, {
+    send(wsClient, {
       jsonrpc: "2.0",
       method: "notifications/cancelled",
       params: { requestId: 999 },
@@ -217,5 +196,5 @@ describe("MCP cancellation", () => {
     // toolSignal may or may not still be defined after cleanup,
     // but the key thing is the response was successful
     expect(response.result).toBeDefined();
-  }, 10000);
+  });
 });

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ProbeResults } from "../../probe.js";
 import { execSafe } from "../utils.js";
-import type { TestResult, TestRunner, TestStatus } from "./types.js";
+import type { TestResult, TestRunner } from "./types.js";
 
 const TEST_TIMEOUT = 120_000;
 const MAX_BUFFER = 2 * 1024 * 1024;

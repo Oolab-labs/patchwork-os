@@ -21,34 +21,7 @@ import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 import { McpTransport } from "../transport.js";
 import { registerAllTools } from "../tools/index.js";
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function send(ws: WebSocket, msg: Record<string, unknown>): void {
-  ws.send(JSON.stringify(msg));
-}
-
-function waitFor(
-  ws: WebSocket,
-  predicate: (msg: Record<string, unknown>) => boolean,
-  timeoutMs = 5000,
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("Timed out waiting for message")),
-      timeoutMs,
-    );
-    const handler = (data: Buffer | string) => {
-      const parsed = JSON.parse(data.toString("utf-8"));
-      if (predicate(parsed)) {
-        clearTimeout(timer);
-        ws.off("message", handler);
-        resolve(parsed);
-      }
-    };
-    ws.on("message", handler);
-  });
-}
+import { send, waitFor } from "./wsHelpers.js";
 
 function makeMinimalConfig(workspace: string): Config {
   return {
@@ -168,6 +141,8 @@ describe("Integration: initialize + tools/list", () => {
 
     send(ws, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
     const initResp = await waitFor(ws, (m) => m.id === 1);
+    send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
 
     const initResult = initResp.result as Record<string, unknown>;
     expect(typeof initResult.protocolVersion).toBe("string");
@@ -183,7 +158,7 @@ describe("Integration: initialize + tools/list", () => {
     // Spot-check a known pure tool
     const gitStatus = listResult.tools.find((t) => t.name === "getGitStatus");
     expect(gitStatus).toBeDefined();
-  }, 10000);
+  });
 });
 
 describe("Integration: extension connect notification", () => {
@@ -250,7 +225,7 @@ describe("Integration: extension connect notification", () => {
 
     const notif = await notifPromise;
     expect(notif.method).toBe("notifications/tools/list_changed");
-  }, 15000);
+  });
 });
 
 describe("Integration: pure tool call without extension", () => {
@@ -260,6 +235,8 @@ describe("Integration: pure tool call without extension", () => {
 
     send(ws, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
     await waitFor(ws, (m) => m.id === 1);
+    send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
 
     send(ws, {
       jsonrpc: "2.0",
@@ -278,7 +255,7 @@ describe("Integration: pure tool call without extension", () => {
     const parsed = JSON.parse(result.content[0]!.text);
     expect(parsed.success).toBe(true);
     expect(Array.isArray(parsed.folders)).toBe(true);
-  }, 10000);
+  });
 });
 
 describe("Integration: extension proxy graceful error", () => {
@@ -288,6 +265,8 @@ describe("Integration: extension proxy graceful error", () => {
 
     send(ws, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
     await waitFor(ws, (m) => m.id === 1);
+    send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
 
     send(ws, {
       jsonrpc: "2.0",
@@ -306,5 +285,5 @@ describe("Integration: extension proxy graceful error", () => {
     expect(result.isError).toBe(true);
     const text = result.content[0]?.text ?? "";
     expect(text.toLowerCase()).toContain("extension");
-  }, 10000);
+  });
 });

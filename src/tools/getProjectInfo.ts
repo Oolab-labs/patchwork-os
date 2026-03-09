@@ -13,14 +13,6 @@ interface PackageJson {
   workspaces?: string[] | { packages?: string[] };
 }
 
-interface CargoToml {
-  package?: { name?: string; version?: string; edition?: string };
-}
-
-interface GoMod {
-  module?: string;
-  goVersion?: string;
-}
 
 function readJsonSafe<T>(filePath: string): T | null {
   try {

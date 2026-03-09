@@ -1,4 +1,4 @@
-import { execSafe, requireString, optionalString, optionalInt, success, error } from "../utils.js";
+import { execSafe, requireString, optionalString, optionalInt, optionalBool, success, error } from "../utils.js";
 import { GH_NOT_FOUND, GH_NOT_AUTHED, isNotFound, isNotAuthed } from "./shared.js";
 
 export function createGithubCreatePRTool(workspace: string) {
@@ -43,7 +43,7 @@ export function createGithubCreatePRTool(workspace: string) {
       const title = requireString(args, "title", 256);
       const body = optionalString(args, "body", 65_536);
       const base = optionalString(args, "base", 256);
-      const draft = (args.draft as boolean) ?? false;
+      const draft = optionalBool(args, "draft") ?? false;
       const assignee = optionalString(args, "assignee", 256);
 
       const prArgs = ["pr", "create", "--title", title];

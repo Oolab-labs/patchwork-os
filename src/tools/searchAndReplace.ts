@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { requireString, optionalString, resolveFilePath, execSafe, success, error } from "./utils.js";
+import { requireString, optionalString, optionalBool, resolveFilePath, execSafe, success, error } from "./utils.js";
 
 const MAX_FILES = 100;
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB per file
@@ -57,10 +57,10 @@ export function createSearchAndReplaceTool(workspace: string) {
       const pattern = requireString(args, "pattern");
       const replacement = requireString(args, "replacement", 65536);
       const glob = optionalString(args, "glob");
-      const isRegex = (args.isRegex as boolean) ?? false;
-      const caseSensitive = (args.caseSensitive as boolean) ?? true;
-      const dryRun = (args.dryRun as boolean) ?? false;
-      const includeIgnored = (args.includeIgnored as boolean) ?? false;
+      const isRegex = optionalBool(args, "isRegex") ?? false;
+      const caseSensitive = optionalBool(args, "caseSensitive") ?? true;
+      const dryRun = optionalBool(args, "dryRun") ?? false;
+      const includeIgnored = optionalBool(args, "includeIgnored") ?? false;
 
       if (pattern.length === 0) {
         return error("pattern must not be empty");
@@ -131,11 +131,13 @@ export function createSearchAndReplaceTool(workspace: string) {
       let totalReplacements = 0;
 
       for (const filePath of matchedFiles) {
-        // Safety: only operate within workspace
-        const resolved = path.resolve(filePath);
-        if (!resolved.startsWith(path.resolve(workspace))) {
-          continue;
+        // Safety: only operate within workspace (resolveFilePath handles symlinks and sep correctly)
+        try {
+          resolveFilePath(filePath, workspace); // throws if outside workspace
+        } catch {
+          continue; // skip files outside workspace
         }
+        const resolved = path.resolve(filePath);
 
         let content: string;
         try {

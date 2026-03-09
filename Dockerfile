@@ -7,6 +7,7 @@ COPY src/ ./src/
 RUN npm run build && npm prune --omit=dev
 
 FROM node:20-alpine AS runtime
+RUN apk add --no-cache tini
 RUN addgroup -S bridge && adduser -S bridge -G bridge
 WORKDIR /app
 COPY --from=builder /app/dist ./dist
@@ -20,5 +21,5 @@ ENV BRIDGE_BIND_ADDRESS=0.0.0.0
 EXPOSE 18765
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${PORT:-18765}/health" || exit 1
-ENTRYPOINT ["node", "dist/index.js"]
+ENTRYPOINT ["tini", "--", "node", "dist/index.js"]
 CMD ["--workspace", "/workspace", "--bind", "0.0.0.0"]

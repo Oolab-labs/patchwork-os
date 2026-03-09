@@ -17,6 +17,7 @@ export function waitForDrain(ws: WebSocket, logger: Logger, label = "Backpressur
       resolve();
       return;
     }
+    raw.setMaxListeners(Math.max(raw.getMaxListeners(), 20));
     let settled = false;
     const settle = () => {
       if (settled) return;

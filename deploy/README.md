@@ -17,6 +17,18 @@ docker run -d \
 The bridge binds to `0.0.0.0` inside the container; the host binding above
 restricts access to loopback only. Mount your project as `/workspace`.
 
+> **Note on workspace mount mode:** The `:ro` (read-only) flag above restricts
+> write tools such as `createFile`, `editText`, and `replaceBlock` — they will
+> fail with a permission error. Use a read-only mount when you only need
+> browse/search access. For full tool access use a writable mount:
+>
+> ```bash
+> # Read-write (full tool access):
+> -v "$PWD:/workspace"
+> # Read-only (browse/search only — write tools will fail):
+> -v "$PWD:/workspace:ro"
+> ```
+
 ## systemd (per-user template)
 
 Copy the unit file and enable it for a specific user:

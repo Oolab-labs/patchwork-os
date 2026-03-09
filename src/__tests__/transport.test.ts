@@ -5,37 +5,12 @@ import { ErrorCodes } from "../errors.js";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 import { McpTransport } from "../transport.js";
+import { send, waitFor } from "./wsHelpers.js";
 
 const logger = new Logger(false);
 let server: Server | null = null;
 let transport: McpTransport | null = null;
 let wsClient: WebSocket | null = null;
-
-function send(ws: WebSocket, msg: Record<string, unknown>): void {
-  ws.send(JSON.stringify(msg));
-}
-
-function waitFor(
-  ws: WebSocket,
-  predicate: (msg: Record<string, unknown>) => boolean,
-  timeoutMs = 5000,
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("Timed out waiting for message")),
-      timeoutMs,
-    );
-    const handler = (data: Buffer | string) => {
-      const parsed = JSON.parse(data.toString("utf-8"));
-      if (predicate(parsed)) {
-        clearTimeout(timer);
-        ws.off("message", handler);
-        resolve(parsed);
-      }
-    };
-    ws.on("message", handler);
-  });
-}
 
 async function setup(
   token: string,
@@ -58,6 +33,13 @@ async function setup(
     ws.on("open", resolve);
     ws.on("error", reject);
   });
+
+  // Perform the MCP initialization handshake so the transport is in the initialized state
+  send(ws, { jsonrpc: "2.0", id: 0, method: "initialize", params: {} });
+  await waitFor(ws, (m) => m.id === 0);
+  send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+  // Give the transport a tick to process the notification
+  await new Promise((r) => setTimeout(r, 10));
 
   wsClient = ws;
   return { port, ws };
@@ -352,7 +334,7 @@ describe("McpTransport", () => {
 
     await abortPromise;
     expect(aborted).toBe(true);
-  }, 10000);
+  });
 
   it("invalid JSON does not crash the transport and sends a parse error", async () => {
     const { ws } = await setup("invalid-json-test");
@@ -387,7 +369,7 @@ describe("McpTransport", () => {
     const err = rateLimited.error as { code: number; message: string };
     expect(err.code).toBe(ErrorCodes.INTERNAL_ERROR);
     expect(err.message).toMatch(/rate limit/i);
-  }, 15000);
+  });
 
   it("concurrent tool call limit returns busy error when MAX_CONCURRENT_TOOLS is reached", async () => {
     // MAX_CONCURRENT_TOOLS = 10; register a slow tool and saturate it
@@ -439,7 +421,7 @@ describe("McpTransport", () => {
     resolveAll!();
     // Wait for the 10 blocked responses
     await Promise.all(Array.from({ length: 10 }, (_, i) => waitFor(ws, (m) => m.id === i + 1, 5000)));
-  }, 15000);
+  });
 
   it("per-tool timeoutMs overrides global TOOL_TIMEOUT_MS for a hanging tool", async () => {
     const { ws } = await setup("per-tool-timeout", (t) => {
@@ -476,7 +458,7 @@ describe("McpTransport", () => {
 
     // Must resolve well before the global 60s timeout (within ~3s here)
     expect(elapsed).toBeLessThan(3000);
-  }, 10000);
+  });
 
   it("activity log records success and error tool calls", async () => {
     const log = new ActivityLog();

@@ -172,15 +172,7 @@ export function registerEvents(
   // Manual reconnect command
   context.subscriptions.push(
     vscode.commands.registerCommand("claudeIdeBridge.reconnect", () => {
-      if (bridge.ws) {
-        bridge.ws.close();
-        bridge.ws = null;
-      }
-      if (bridge.reconnectTimer) {
-        clearTimeout(bridge.reconnectTimer);
-        bridge.reconnectTimer = null;
-      }
-      bridge.tryConnect();
+      bridge.forceReconnect();
       vscode.window.showInformationMessage(
         "Claude IDE Bridge: Attempting to reconnect...",
       );
@@ -197,9 +189,10 @@ export function registerEvents(
   // Copy Connection Info command
   context.subscriptions.push(
     vscode.commands.registerCommand("claudeIdeBridge.copyConnectionInfo", () => {
+      const version = (context.extension?.packageJSON?.version as string) ?? "unknown";
       const info = [
         `State: ${bridge.ws?.readyState === WebSocket.OPEN ? "Connected" : "Disconnected"}`,
-        `Extension version: 0.1.0`,
+        `Extension version: ${version}`,
         `VS Code: ${vscode.version}`,
       ].join("\n");
       vscode.env.clipboard.writeText(info);

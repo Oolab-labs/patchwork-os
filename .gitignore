@@ -1,3 +1,9 @@
 node_modules/
 dist/
 *.tsbuildinfo
+vscode-extension/out/
+vscode-extension/*.vsix
+*.vsix
+vscode-extension/node_modules/
+.env
+*.env

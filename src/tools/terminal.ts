@@ -112,7 +112,6 @@ export function createCreateTerminalTool(workspace: string, extensionClient: Ext
       name: "createTerminal",
       description:
         "Create a new VS Code integrated terminal. Optionally set a name, working directory, environment variables, and shell. Requires the VS Code extension.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -273,7 +272,6 @@ export function createRunInTerminalTool(
         "this is synchronous. Unlike runCommand, execution is visible in the VS Code terminal panel. " +
         "Requires VS Code 1.93+ with Shell Integration enabled (bash, zsh, fish, or PowerShell). " +
         "Use listTerminals to pick a terminal; if none specified, uses the active terminal.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         type: "object" as const,
         required: ["command"],
@@ -405,7 +403,6 @@ export function createSendTerminalCommandTool(extensionClient: ExtensionClient, 
         "Identify the terminal by name or index (from listTerminals). " +
         "Note: sendText is fire-and-forget — use getTerminalOutput afterward to check results. " +
         "Requires the VS Code extension.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         type: "object" as const,
         required: ["text"],

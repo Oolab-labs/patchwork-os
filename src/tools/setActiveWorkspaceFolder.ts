@@ -1,5 +1,5 @@
 import type { Config } from "../config.js";
-import { error, requireString, success } from "./utils.js";
+import { requireString, success } from "./utils.js";
 import path from "node:path";
 
 export function createSetActiveWorkspaceFolderTool(config: Config) {
@@ -10,7 +10,7 @@ export function createSetActiveWorkspaceFolderTool(config: Config) {
         "Set the active workspace folder for subsequent file operations. " +
         "Useful in multi-root workspaces to scope Claude's work to a specific folder. " +
         "Pass a path matching one of the workspace folders from getWorkspaceFolders.",
-      annotations: { readOnlyHint: false, idempotentHint: true },
+      annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

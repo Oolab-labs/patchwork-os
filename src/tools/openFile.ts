@@ -22,7 +22,6 @@ export function createOpenFileTool(
       name: "openFile",
       description:
         "Open a file in the editor and optionally select a range of text",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object",

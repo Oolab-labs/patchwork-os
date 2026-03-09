@@ -1,5 +1,5 @@
 import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { requireString, resolveFilePath, success, error } from "./utils.js";
+import { requireString, resolveFilePath, success } from "./utils.js";
 
 export function createSaveDocumentTool(workspace: string, extensionClient?: ExtensionClient) {
   return {

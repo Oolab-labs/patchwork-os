@@ -42,7 +42,6 @@ export function createRunTaskTool(extensionClient: ExtensionClient) {
         "Run a VS Code task by name and wait for it to complete. " +
         "Returns the exit code and duration. Use listTasks to discover available tasks. " +
         "Requires the VS Code extension.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

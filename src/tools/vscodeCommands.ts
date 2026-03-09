@@ -12,7 +12,6 @@ export function createExecuteVSCodeCommandTool(extensionClient: ExtensionClient,
         "'testing.runAll'. Use listVSCodeCommands to discover available commands. " +
         "If --vscode-allow-command flags are set, only those commands are permitted. " +
         "Requires the VS Code extension.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

@@ -43,7 +43,7 @@ export function createWriteClipboardTool(extensionClient: ExtensionClient) {
         "Useful for placing formatted output, transformed snippets, or summaries " +
         "directly on the clipboard for the user to paste. Max 1 MB. " +
         "Requires the VS Code extension.",
-      annotations: { readOnlyHint: false, idempotentHint: true },
+      annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

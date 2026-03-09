@@ -1,4 +1,4 @@
-import { execSafe, optionalString, optionalInt, success, error } from "../utils.js";
+import { execSafe, optionalString, optionalInt, optionalBool, success, error } from "../utils.js";
 import { GH_NOT_FOUND, GH_NOT_AUTHED, isNotFound, isNotAuthed } from "./shared.js";
 
 const MAX_RUN_LOG_BYTES = 100 * 1024; // 100 KB — gh run logs can be enormous
@@ -102,7 +102,7 @@ export function createGithubGetRunLogsTool(workspace: string) {
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const runId = typeof args.runId === "number" ? Math.floor(args.runId) : undefined;
       if (!runId || runId < 1) return error("runId must be a positive integer");
-      const failedOnly = (args.failedOnly as boolean) ?? true;
+      const failedOnly = optionalBool(args, "failedOnly") ?? true;
 
       const viewArgs = ["run", "view", String(runId), "--log" + (failedOnly ? "-failed" : "")];
 

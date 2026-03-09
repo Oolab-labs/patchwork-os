@@ -20,6 +20,12 @@ SyslogIdentifier=claude-ide-bridge
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=%h/.claude %h
+PrivateTmp=true
+ProtectHome=read-only
+CapabilityBoundingSet=
+LockPersonality=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=default.target

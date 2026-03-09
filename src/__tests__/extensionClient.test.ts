@@ -29,6 +29,10 @@ afterEach(async () => {
   });
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("ExtensionClient", () => {
   it("isConnected returns false initially", () => {
     expect(client.isConnected()).toBe(false);
@@ -208,7 +212,7 @@ describe("ExtensionClient", () => {
       ws2.close();
       await new Promise((r) => setTimeout(r, 50));
     }
-  }, 10_000);
+  });
 
   it("clears diagnosticsListeners on extension disconnect to prevent listener leak", async () => {
     const serverConn = new Promise<WebSocket>((resolve) => {

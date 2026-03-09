@@ -1,5 +1,5 @@
 import type { ExtensionClient } from "../extensionClient.js";
-import { optionalString, optionalInt, resolveFilePath, success, error, extensionRequired } from "./utils.js";
+import { optionalString, optionalInt, resolveFilePath, success, extensionRequired } from "./utils.js";
 import type { ToolHandler } from "../transport.js";
 
 export function createWatchDiagnosticsTool(

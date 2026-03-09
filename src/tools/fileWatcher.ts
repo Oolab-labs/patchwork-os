@@ -65,7 +65,6 @@ export function createUnwatchFilesTool(extensionClient: ExtensionClient) {
       name: "unwatchFiles",
       description:
         "Stop watching files for a previously registered watcher by ID.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         type: "object" as const,
         properties: {

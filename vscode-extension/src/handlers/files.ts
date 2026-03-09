@@ -66,7 +66,7 @@ export async function handleOpenFile(
 ): Promise<unknown> {
   const file = requireString(params.file, "file");
   assertWithinWorkspace(file);
-  const line = (params.line as number) ?? 1;
+  const line = typeof params.line === "number" && Number.isInteger(params.line) ? params.line : 1;
   const uri = vscode.Uri.file(file);
   const doc = await vscode.workspace.openTextDocument(uri);
   const position = new vscode.Position(Math.max(0, line - 1), 0);

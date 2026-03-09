@@ -11,7 +11,7 @@ export function createSetEditorDecorationsTool(workspace: string, extensionClien
         "Each call replaces existing decorations for that ID+file. " +
         "Styles: info (green), warning (yellow), error (red), focus (border), strikethrough, dim. " +
         "Requires the VS Code extension.",
-      annotations: { readOnlyHint: false, idempotentHint: true },
+      annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
@@ -85,7 +85,7 @@ export function createClearEditorDecorationsTool(extensionClient: ExtensionClien
         "Clear editor decorations. Pass an id to clear a specific decoration set, " +
         "or omit to clear all Claude-managed decorations. " +
         "Requires the VS Code extension.",
-      annotations: { readOnlyHint: false, idempotentHint: true },
+      annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

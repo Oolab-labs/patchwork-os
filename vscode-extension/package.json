@@ -11,6 +11,7 @@
   "engines": {
     "vscode": "^1.93.0"
   },
+  "enabledApiProposals": ["terminalDataWriteEvent"],
   "categories": ["Other"],
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",

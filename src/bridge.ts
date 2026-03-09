@@ -12,6 +12,7 @@ import { cleanupTempDirs } from "./tools/openDiff.js";
 import { McpTransport } from "./transport.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
+let globalHandlersRegistered = false;
 
 export class Bridge {
   private logger: Logger;
@@ -172,19 +173,13 @@ export class Bridge {
     // 5. Find port and start server
     const port = await this.server.findAndListen(this.config.port, this.config.bindAddress);
 
-    // 5. Write lock file
+    // 6. Write lock file
     const lockPath = this.lockFile.write(
       port,
       this.authToken,
       [this.config.workspace],
       this.config.ideName,
     );
-
-    // Catch unhandled rejections and exceptions to prevent silent crashes
-    // Use process.once so repeated start() calls don't accumulate handlers.
-    process.once("unhandledRejection", (reason) => {
-      this.logger.error(`Unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
-    });
 
     // Register shutdown handlers
     let shuttingDown = false;
@@ -202,10 +197,19 @@ export class Bridge {
     process.once("SIGINT", () => shutdown("SIGINT", 130));
     process.once("SIGTERM", () => shutdown("SIGTERM", 143));
     process.once("SIGHUP", () => shutdown("SIGHUP", 143));
-    process.once("uncaughtException", (err) => {
-      this.logger.error(`Uncaught exception: ${err.stack ?? err.message}`);
-      shutdown("uncaughtException", 1);
-    });
+
+    // Catch unhandled rejections and exceptions to prevent silent crashes
+    // Guard against accumulating handlers across multiple start() calls.
+    if (!globalHandlersRegistered) {
+      globalHandlersRegistered = true;
+      process.once("unhandledRejection", (reason) => {
+        this.logger.error(`Unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+      });
+      process.once("uncaughtException", (err) => {
+        this.logger.error(`Uncaught exception: ${err.stack ?? err.message}`);
+        shutdown("uncaughtException", 1);
+      });
+    }
 
     // Startup banner to stderr (not stdout) to avoid capture by parent processes
     this.logger.info("claude-ide-bridge running");

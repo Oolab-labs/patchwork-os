@@ -59,7 +59,7 @@ export function createSendHttpRequestTool() {
         "Send an HTTP/HTTPS request and return the response status, headers, and body. " +
         "Useful for testing APIs, webhooks, and external services. " +
         "Response body is truncated at maxResponseBytes (default 50 KB) to protect context.",
-      annotations: { readOnlyHint: false, openWorldHint: true },
+      annotations: { openWorldHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object",

@@ -1,4 +1,4 @@
-import { execSafe, requireString, optionalString, optionalInt, optionalBool, success, error } from "./utils.js";
+import { execSafe, requireString, optionalString, optionalInt, success, error } from "./utils.js";
 
 const GH_NOT_FOUND =
   "GitHub CLI (gh) not found. Install it from https://cli.github.com/ and run 'gh auth login'.";

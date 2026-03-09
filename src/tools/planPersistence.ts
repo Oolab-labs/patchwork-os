@@ -118,7 +118,6 @@ export function createPlanTools(
       name: "createPlan",
       description:
         "Create a new plan file (.claude-plan.md) in the workspace root. Plans are markdown files with sections and task checklists that persist across sessions.",
-      annotations: { readOnlyHint: false },
       inputSchema: {
         type: "object" as const,
         required: ["title"],
@@ -214,7 +213,7 @@ export function createPlanTools(
       name: "updatePlan",
       description:
         "Update an existing plan file. Can mark tasks complete/incomplete, add tasks to sections, or add new sections.",
-      annotations: { readOnlyHint: false, idempotentHint: true },
+      annotations: { idempotentHint: true },
       inputSchema: {
         type: "object" as const,
         properties: {
