@@ -247,6 +247,7 @@ export async function execSafe(
     timeout?: number;
     maxBuffer?: number;
     signal?: AbortSignal;
+    stdin?: string;
   } = {},
 ): Promise<ExecSafeResult> {
   const timeout = opts.timeout ?? 30_000;
@@ -258,6 +259,7 @@ export async function execSafe(
       timeout,
       maxBuffer,
       signal: opts.signal,
+      ...(opts.stdin !== undefined ? { input: opts.stdin } : {}),
     });
     return {
       stdout,

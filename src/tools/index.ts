@@ -71,6 +71,8 @@ import {
   createGithubCommentIssueTool,
   createGithubListRunsTool,
   createGithubGetRunLogsTool,
+  createGithubGetPRDiffTool,
+  createGithubPostPRReviewTool,
 } from "./github/index.js";
 import { createReadClipboardTool, createWriteClipboardTool } from "./clipboard.js";
 import { createGetWorkspaceSettingsTool, createSetWorkspaceSettingTool } from "./workspaceSettings.js";
@@ -275,6 +277,8 @@ export function registerAllTools(
           createGithubCommentIssueTool(workspace),
           createGithubListRunsTool(workspace),
           createGithubGetRunLogsTool(workspace),
+          createGithubGetPRDiffTool(workspace),
+          createGithubPostPRReviewTool(workspace),
         ]
       : []),
   ];
