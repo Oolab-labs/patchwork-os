@@ -1,0 +1,49 @@
+{
+  "name": "claude-ide-bridge-extension",
+  "displayName": "Claude IDE Bridge",
+  "description": "Companion extension for claude-ide-bridge — provides real-time editor state to Claude Code",
+  "version": "0.1.0",
+  "publisher": "claude-ide-bridge",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/claude-ide-bridge"
+  },
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeIdeBridge.reconnect",
+        "title": "Claude IDE Bridge: Reconnect"
+      },
+      {
+        "command": "claudeIdeBridge.showLogs",
+        "title": "Claude IDE Bridge: Show Logs"
+      },
+      {
+        "command": "claudeIdeBridge.copyConnectionInfo",
+        "title": "Claude IDE Bridge: Copy Connection Info"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.93.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.20.0",
+    "vitest": "^3.0.0"
+  }
+}

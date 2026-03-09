@@ -1,0 +1,8 @@
+node_modules
+dist
+*.vsix
+vscode-extension/node_modules
+vscode-extension/dist
+.git
+coverage
+*.log

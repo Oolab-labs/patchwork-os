@@ -1,0 +1,111 @@
+import * as vscode from "vscode";
+
+function requireFile(params: Record<string, unknown>): string {
+  const file = params.file;
+  if (typeof file !== "string" || file.length === 0) {
+    throw new Error("file parameter is required and must be a non-empty string");
+  }
+  return file;
+}
+
+async function openAndShowDocument(file: string): Promise<vscode.TextEditor> {
+  const uri = vscode.Uri.file(file);
+  const doc = await vscode.workspace.openTextDocument(uri);
+  return vscode.window.showTextDocument(doc, { preview: false });
+}
+
+export async function handleFormatDocument(
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const file = requireFile(params);
+  const editor = await openAndShowDocument(file);
+
+  const edits = await vscode.commands.executeCommand<vscode.TextEdit[]>(
+    "vscode.executeFormatDocumentProvider",
+    editor.document.uri,
+    { tabSize: editor.options.tabSize, insertSpaces: editor.options.insertSpaces },
+  );
+
+  if (edits && edits.length > 0) {
+    const wsEdit = new vscode.WorkspaceEdit();
+    for (const edit of edits) {
+      wsEdit.replace(editor.document.uri, edit.range, edit.newText);
+    }
+    await vscode.workspace.applyEdit(wsEdit);
+  }
+
+  await editor.document.save();
+  return { success: true, editsApplied: edits?.length ?? 0 };
+}
+
+export async function handleFixAllLintErrors(
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const file = requireFile(params);
+  const editor = await openAndShowDocument(file);
+
+  // Try source.fixAll code action
+  const range = new vscode.Range(0, 0, editor.document.lineCount, 0);
+  const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+    "vscode.executeCodeActionProvider",
+    editor.document.uri,
+    range,
+    vscode.CodeActionKind.SourceFixAll.value,
+  );
+
+  let appliedCount = 0;
+  if (actions && actions.length > 0) {
+    for (const action of actions) {
+      if (action.edit) {
+        const applied = await vscode.workspace.applyEdit(action.edit);
+        if (applied) appliedCount++;
+      }
+      if (action.command) {
+        await vscode.commands.executeCommand(
+          action.command.command,
+          ...(action.command.arguments ?? []),
+        );
+        appliedCount++;
+      }
+    }
+  }
+
+  await editor.document.save();
+  return { success: true, actionsApplied: appliedCount };
+}
+
+export async function handleOrganizeImports(
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const file = requireFile(params);
+  const editor = await openAndShowDocument(file);
+
+  // Use the organize imports code action
+  const range = new vscode.Range(0, 0, editor.document.lineCount, 0);
+  const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+    "vscode.executeCodeActionProvider",
+    editor.document.uri,
+    range,
+    vscode.CodeActionKind.SourceOrganizeImports.value,
+  );
+
+  let appliedCount = 0;
+  if (actions && actions.length > 0) {
+    for (const action of actions) {
+      if (action.edit) {
+        const applied = await vscode.workspace.applyEdit(action.edit);
+        if (applied) appliedCount++;
+      }
+      if (action.command) {
+        await vscode.commands.executeCommand(
+          action.command.command,
+          ...(action.command.arguments ?? []),
+        );
+        appliedCount++;
+      }
+    }
+  }
+
+  await editor.document.save();
+  return { success: true, actionsApplied: appliedCount };
+}

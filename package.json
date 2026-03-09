@@ -1,0 +1,36 @@
+{
+  "name": "claude-ide-bridge",
+  "version": "1.1.0",
+  "description": "Standalone MCP bridge for Claude Code IDE integration with any editor",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "claude-ide-bridge": "dist/index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "remote": "bash scripts/start-remote.sh",
+    "start-all": "bash scripts/start-all.sh"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/ws": "^8.5.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.0.0",
+    "vitest": "^3.0.0"
+  }
+}

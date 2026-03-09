@@ -1,0 +1,25 @@
+[Unit]
+Description=Claude IDE Bridge MCP Server (for user %i)
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h
+ExecStart=/usr/local/bin/node /opt/claude-ide-bridge/dist/index.js --workspace %h --jsonl
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+KillMode=mixed
+KillSignal=SIGTERM
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-ide-bridge
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=%h/.claude %h
+
+[Install]
+WantedBy=default.target

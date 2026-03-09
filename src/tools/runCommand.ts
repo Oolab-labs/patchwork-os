@@ -1,0 +1,161 @@
+import type { Config } from "../config.js";
+import { INTERPRETER_COMMANDS } from "../config.js";
+import {
+  execSafe,
+  optionalInt,
+  optionalString,
+  requireString,
+  resolveFilePath,
+  success,
+  truncateOutput,
+} from "./utils.js";
+
+const MAX_ARGS = 100;
+const MAX_ARG_LENGTH = 4096;
+
+/** Flags that allow interpreter commands to execute arbitrary code */
+const DANGEROUS_INTERPRETER_FLAGS = new Set([
+  "-e", "--eval",
+  "-c",
+  "--print", "-p",
+  "--input-type",
+  "--import",                // Node.js ESM loader
+  "--loader",                // Custom ESM loader
+  "--experimental-loader",   // Custom ESM loader (legacy)
+  "-m",                      // Python module execution
+]);
+
+/** Flags that redirect where commands read config/manifests from */
+const DANGEROUS_PATH_FLAGS = new Set([
+  "--prefix",
+  "--manifest-path",
+  "--config",
+  "--rcfile",
+  "--require", "-r",
+  "--userconfig",            // npm config redirection
+  "--globalconfig",          // npm config redirection
+  "-f", "--makefile",        // make Makefile path
+]);
+
+function validateCommand(command: string, allowlist: string[]): void {
+  if (
+    command.includes("/") ||
+    command.includes("\\") ||
+    command.includes("..") ||
+    command.includes(" ")
+  ) {
+    throw new Error(
+      `Invalid command "${command}": must be a simple basename without /, \\, .., or spaces`,
+    );
+  }
+  if (!allowlist.includes(command)) {
+    throw new Error(
+      `Command "${command}" is not in the allowlist. Use --allow-command ${command} to add it. Run getToolCapabilities to see allowed commands.`,
+    );
+  }
+}
+
+function validateArgs(args: unknown, command: string): string[] {
+  if (args === undefined || args === null) return [];
+  if (!Array.isArray(args)) {
+    throw new Error("args must be an array of strings");
+  }
+  if (args.length > MAX_ARGS) {
+    throw new Error(`args exceeds maximum length of ${MAX_ARGS}`);
+  }
+  const isInterpreter = INTERPRETER_COMMANDS.has(command);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (typeof arg !== "string") {
+      throw new Error(`args[${i}] must be a string`);
+    }
+    if (arg.length > MAX_ARG_LENGTH) {
+      throw new Error(`args[${i}] exceeds maximum length of ${MAX_ARG_LENGTH}`);
+    }
+    // Block code-execution flags for interpreter commands
+    if (isInterpreter && DANGEROUS_INTERPRETER_FLAGS.has(arg)) {
+      throw new Error(
+        `Flag "${arg}" is blocked for interpreter command "${command}" — it allows arbitrary code execution`,
+      );
+    }
+    // Block config/path-override flags for all commands
+    if (DANGEROUS_PATH_FLAGS.has(arg)) {
+      throw new Error(
+        `Flag "${arg}" is blocked — it can redirect command execution outside the workspace`,
+      );
+    }
+  }
+  return args as string[];
+}
+
+export function createRunCommandTool(workspace: string, config: Config) {
+  return {
+    schema: {
+      name: "runCommand",
+      description:
+        "Execute an allowlisted command in the workspace. Returns stdout, stderr, exit code, and timing information. Commands run without a shell for security.",
+      annotations: { destructiveHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          command: {
+            type: "string",
+            description:
+              "Command basename to run (must be in the allowlist, no paths)",
+          },
+          args: {
+            type: "array",
+            items: { type: "string" },
+            description: "Command arguments",
+          },
+          cwd: {
+            type: "string",
+            description:
+              "Working directory relative to workspace (default: workspace root)",
+          },
+          timeout: {
+            type: "integer",
+            description: `Timeout in milliseconds (default: ${config.commandTimeout}, max: 120000)`,
+          },
+        },
+        required: ["command"],
+        additionalProperties: false as const,
+      },
+    },
+    timeoutMs: 300_000,
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      // Normalize to lowercase before all validation — prevents case-sensitivity bypass
+      // on case-insensitive filesystems (macOS HFS+, Windows) where "NODE" resolves to "node"
+      const command = requireString(args, "command", 256).toLowerCase();
+      validateCommand(command, config.commandAllowlist);
+
+      const cmdArgs = validateArgs(args.args, command);
+      const cwdRaw = optionalString(args, "cwd");
+      const timeout =
+        optionalInt(args, "timeout", 1000, 120_000) ?? config.commandTimeout;
+
+      const cwd = cwdRaw ? resolveFilePath(cwdRaw, workspace) : workspace;
+
+      const maxBytes = config.maxResultSize * 1024;
+
+      const result = await execSafe(command, cmdArgs, {
+        cwd,
+        timeout,
+        maxBuffer: maxBytes,
+        signal,
+      });
+
+      const stdoutResult = truncateOutput(result.stdout, maxBytes);
+      const stderrResult = truncateOutput(result.stderr, maxBytes);
+
+      return success({
+        exitCode: result.exitCode,
+        stdout: stdoutResult.text,
+        stderr: stderrResult.text,
+        truncated: stdoutResult.truncated || stderrResult.truncated,
+        durationMs: result.durationMs,
+        timedOut: result.timedOut,
+      });
+    },
+  };
+}

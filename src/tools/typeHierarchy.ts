@@ -1,0 +1,64 @@
+import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import { error, extensionRequired, optionalInt, optionalString, requireInt, requireString, resolveFilePath, success } from "./utils.js";
+
+export function createGetTypeHierarchyTool(workspace: string, extensionClient: ExtensionClient) {
+  return {
+    schema: {
+      name: "getTypeHierarchy",
+      description:
+        "Get the type hierarchy for a symbol — its supertypes (parent classes/interfaces) " +
+        "and subtypes (implementations/subclasses). Requires the VS Code extension and " +
+        "a language server that supports type hierarchy (TypeScript, Java, C++, etc.).",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        type: "object" as const,
+        required: ["file", "line", "column"],
+        properties: {
+          file: {
+            type: "string" as const,
+            description: "Absolute path to the file",
+          },
+          line: {
+            type: "integer" as const,
+            description: "Line number (1-based)",
+          },
+          column: {
+            type: "integer" as const,
+            description: "Column number (1-based)",
+          },
+          direction: {
+            type: "string" as const,
+            enum: ["supertypes", "subtypes", "both"],
+            description: "Which direction to traverse (default: both)",
+          },
+          maxResults: {
+            type: "integer" as const,
+            description: "Max results per direction (default: 20)",
+          },
+        },
+        additionalProperties: false as const,
+      },
+    },
+    async handler(args: Record<string, unknown>) {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("getTypeHierarchy");
+      }
+      const file = resolveFilePath(requireString(args, "file"), workspace);
+      const line = requireInt(args, "line", 1, 1_000_000);
+      const column = requireInt(args, "column", 1, 100_000);
+      const direction = optionalString(args, "direction") ?? "both";
+      const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 20;
+      try {
+        const result = await extensionClient.getTypeHierarchy(file, line, column, direction, maxResults);
+        if (result === null) return error("Failed to get type hierarchy");
+        return success(result);
+      } catch (err) {
+        if (err instanceof ExtensionTimeoutError) {
+          return error("Extension timed out getting type hierarchy");
+        }
+        throw err;
+      }
+    },
+  };
+}
