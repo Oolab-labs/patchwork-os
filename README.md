@@ -213,7 +213,3 @@ cd vscode-extension
 npm run build        # esbuild bundle
 npm run package      # Create .vsix
 ```
-
-## See Also
-
-- [Bringing Code Review to Claude Code](https://claude.com/blog/code-review) — Anthropic's automated PR review feature that dispatches agents to identify bugs in pull requests
