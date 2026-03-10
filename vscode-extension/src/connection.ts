@@ -28,12 +28,12 @@ export class BridgeConnection {
   aiCommentsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   disposed = false;
   private state = ConnectionState.IDLE;
+  private connecting = false;
   reconnectDelay = RECONNECT_BASE_DELAY;
   lockWatcher: fs.FSWatcher | null = null;
   private lockPollTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private pongReceived = true;
-  private pongHandler: (() => void) | null = null;
+  private lastBridgePong = Date.now();
   private lastTickTime = Date.now();
   private reconnectAttempts = 0;
   statusBar: vscode.StatusBarItem | null = null;
@@ -222,10 +222,10 @@ export class BridgeConnection {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    this.pongReceived = true;
+    this.lastBridgePong = Date.now();
     this.lastTickTime = Date.now();
-    this.pongHandler = () => { this.pongReceived = true; };
-    this.ws?.on("pong", this.pongHandler);
+    const pongHandler = () => { this.lastBridgePong = Date.now(); };
+    this.ws?.on("pong", pongHandler);
     this.heartbeatTimer = setInterval(() => {
       const now = Date.now();
       if (now - this.lastTickTime > 40_000) {
@@ -238,18 +238,15 @@ export class BridgeConnection {
         }
       }
       this.lastTickTime = now;
-
-      if (!this.pongReceived) {
-        this.log("Bridge unresponsive, forcing reconnect");
+      // Bridge pings every 15s; terminates after 2 missed pongs (30s).
+      // Extension waits 35s so bridge always cleans up first on true failure.
+      if (now - this.lastBridgePong > 35_000) {
+        this.log("Bridge unresponsive (no pong in 35s), forcing reconnect");
         this.ws?.terminate();
         this.handleDisconnect();
         return;
       }
-      this.pongReceived = false;
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.ping();
-      }
-    }, 20_000);
+    }, 30_000);
   }
 
   private stopHeartbeat(): void {
@@ -257,10 +254,7 @@ export class BridgeConnection {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
-    if (this.pongHandler && this.ws) {
-      this.ws.removeListener("pong", this.pongHandler);
-      this.pongHandler = null;
-    }
+    this.ws?.removeAllListeners("pong");
   }
 
   scheduleReconnect(): void {
@@ -298,14 +292,18 @@ export class BridgeConnection {
       try { this.ws.close(); } catch { /* already closing */ }
       this.ws = null;
     }
+    this.connecting = false;
     this.state = ConnectionState.IDLE;
     this.tryConnect();
   }
 
   tryConnect(): void {
     if (this.disposed || this.state === ConnectionState.CONNECTING || this.state === ConnectionState.CONNECTED) return;
+    if (this.connecting) return;
+    this.connecting = true;
     this.state = ConnectionState.CONNECTING;
     readLockFilesAsync().then((lockData) => {
+      this.connecting = false;
       if (this.disposed) { this.state = ConnectionState.IDLE; return; }
       if (lockData) {
         this.connect(lockData);
@@ -314,6 +312,7 @@ export class BridgeConnection {
         this.scheduleReconnect();
       }
     }).catch((err: unknown) => {
+      this.connecting = false;
       this.log(`Lock file read failed: ${err instanceof Error ? err.message : String(err)}`);
       this.state = ConnectionState.DISCONNECTING;
       this.scheduleReconnect();

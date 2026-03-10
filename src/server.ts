@@ -45,7 +45,7 @@ function setupPongHandler(ws: AliveWebSocket): void {
   });
 }
 
-const MIN_CONNECTION_INTERVAL_MS = 250;
+const MIN_CONNECTION_INTERVAL_MS = 1_000;
 
 export class Server extends EventEmitter {
   private httpServer: http.Server;
@@ -156,6 +156,7 @@ export class Server extends EventEmitter {
           enableTcpKeepalive(ws);
           setupPongHandler(alive);
           this.emit("extension", ws);
+          ws.once("close", () => { this.lastExtensionConnectionTime = 0; });
         });
         return;
       }
