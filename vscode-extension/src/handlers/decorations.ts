@@ -3,6 +3,7 @@ import type { RequestHandler } from "../types";
 
 interface DecorationEntry {
   type: vscode.TextEditorDecorationType;
+  style: string;
   fileRanges: Map<string, vscode.DecorationOptions[]>;
 }
 
@@ -71,14 +72,22 @@ export function createDecorationHandlers(): {
     const specs = Array.isArray(params.decorations) ? params.decorations : [];
 
     // Get or create the decoration type for this ID
+    const requestedStyle = typeof (specs[0] as Record<string, unknown> | undefined)?.style === "string"
+      ? (specs[0] as Record<string, unknown>).style as string
+      : "info";
     let entry = activeDecorations.get(id);
+    if (entry && entry.style !== requestedStyle) {
+      // Style changed — dispose old type and recreate
+      for (const editor of vscode.window.visibleTextEditors) {
+        editor.setDecorations(entry.type, []);
+      }
+      entry.type.dispose();
+      entry = undefined;
+    }
     if (!entry) {
-      const style = typeof (specs[0] as Record<string, unknown> | undefined)?.style === "string"
-        ? (specs[0] as Record<string, unknown>).style as string
-        : "info";
-      const renderOptions = STYLE_MAP[style] ?? STYLE_MAP.info;
+      const renderOptions = STYLE_MAP[requestedStyle] ?? STYLE_MAP.info;
       const type = vscode.window.createTextEditorDecorationType(renderOptions);
-      entry = { type, fileRanges: new Map() };
+      entry = { type, style: requestedStyle, fileRanges: new Map() };
       activeDecorations.set(id, entry);
     }
 

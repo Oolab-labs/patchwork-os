@@ -266,12 +266,14 @@ while true; do
     # Restart bridge in pane 1
     tmux send-keys -t "${SESSION}:0.1" "$BRIDGE_CMD" Enter
 
-    # Wait for new lock file
-    LOCK_FILE=$(wait_for_new_lock "$EXISTING_LOCKS" "$BRIDGE_READY_TIMEOUT")
-    if [[ -z "$LOCK_FILE" ]]; then
+    # Wait for new lock file (don't update LOCK_FILE on failure to avoid
+    # empty-string bug where [[ ! -f "" ]] is always true → infinite restart loop)
+    NEW_LOCK=$(wait_for_new_lock "$EXISTING_LOCKS" "$BRIDGE_READY_TIMEOUT")
+    if [[ -z "$NEW_LOCK" ]]; then
       notify "Bridge failed to restart!" "high"
       continue
     fi
+    LOCK_FILE="$NEW_LOCK"
 
     echo "Health monitor now watching: $(basename "$LOCK_FILE")"
 

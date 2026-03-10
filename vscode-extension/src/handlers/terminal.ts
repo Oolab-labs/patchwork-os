@@ -225,8 +225,11 @@ export async function handleWaitForTerminalOutput(
 
   return new Promise<unknown>((resolve) => {
     let intervalId: ReturnType<typeof setInterval>;
+    let resolved = false;
 
     const finish = (result: unknown) => {
+      if (resolved) return;
+      resolved = true;
       clearInterval(intervalId);
       signal?.removeEventListener("abort", onAbort);
       resolve(result);
@@ -236,7 +239,7 @@ export async function handleWaitForTerminalOutput(
     signal?.addEventListener("abort", onAbort);
 
     const check = () => {
-      if (signal?.aborted) return; // Guard for the initial synchronous check()
+      if (resolved || signal?.aborted) return;
 
       const elapsed = Date.now() - start;
       const newCount = buf.totalWritten - lastChecked;
@@ -260,7 +263,10 @@ export async function handleWaitForTerminalOutput(
 
     // First check immediately for lookback lines already in buffer
     check();
-    intervalId = setInterval(check, WAIT_POLL_INTERVAL_MS);
+    // Only start polling if the first check didn't already resolve
+    if (!resolved) {
+      intervalId = setInterval(check, WAIT_POLL_INTERVAL_MS);
+    }
   });
 }
 

@@ -72,7 +72,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
           // Filter by target directory
           if (directory) {
             entries = entries.filter(
-              (e) => e.startsWith(`${directory}/`) || e.startsWith(directory),
+              (e) => e === directory || e.startsWith(`${directory}/`),
             );
           }
           if (!includeHidden) {

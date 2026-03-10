@@ -144,6 +144,14 @@ export class BridgeConnection {
   connect(lockData: LockFileData): void {
     if (this.disposed) return;
 
+    // Clean up any in-flight WebSocket from a concurrent tryConnect() to
+    // prevent orphaned sockets (e.g. double-clicking "Reconnect").
+    if (this.ws) {
+      try { this.ws.removeAllListeners(); } catch { /* best-effort */ }
+      try { this.ws.terminate(); } catch { /* best-effort */ }
+      this.ws = null;
+    }
+
     const url = `ws://127.0.0.1:${lockData.port}`;
     this.ws = new WebSocket(url, {
       headers: { "x-claude-ide-extension": lockData.authToken },
@@ -184,9 +192,10 @@ export class BridgeConnection {
 
     this.ws.on("unexpected-response", (_req, res) => {
       this.logError(`Upgrade rejected: HTTP ${res.statusCode}`);
-      this.ws?.terminate();
-      this.state = ConnectionState.DISCONNECTING;
-      this.scheduleReconnect();
+      // Use handleDisconnect() for full cleanup (heartbeat, pending handlers,
+      // listener removal, status bar). Must call BEFORE setting DISCONNECTING
+      // state so the re-entrancy guard doesn't skip cleanup.
+      this.handleDisconnect();
     });
   }
 
