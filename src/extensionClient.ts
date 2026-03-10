@@ -390,6 +390,7 @@ export class ExtensionClient {
     const inner = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);
+        signal?.removeEventListener("abort", onAbort);
         this.logger.warn(`Extension request ${method} timed out after ${timeout}ms`);
         reject(new ExtensionTimeoutError(method));
       }, timeout);

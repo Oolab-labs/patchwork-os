@@ -36,6 +36,7 @@ export class Bridge {
     this.activityLog = new ActivityLog();
     this.transport.setActivityLog(this.activityLog);
     this.extensionClient = new ExtensionClient(this.logger);
+    this.transport.setExtensionConnectedFn(() => this.extensionClient.isConnected());
 
     // Handle new Claude Code connections
     this.server.on("connection", (ws: WebSocket) => {

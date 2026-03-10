@@ -1,6 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import { requireString, optionalString, optionalBool, resolveFilePath, execSafe, success, error } from "./utils.js";
+import {
+  error,
+  execSafe,
+  optionalBool,
+  optionalString,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 const MAX_FILES = 100;
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB per file
@@ -26,15 +34,18 @@ export function createSearchAndReplaceTool(workspace: string) {
           },
           replacement: {
             type: "string",
-            description: "Replacement text. For regex mode, supports $1, $2, etc. capture group references.",
+            description:
+              "Replacement text. For regex mode, supports $1, $2, etc. capture group references.",
           },
           glob: {
             type: "string",
-            description: "File glob pattern to limit scope (e.g. '**/*.ts', 'src/**/*.py'). Omit to search all text files.",
+            description:
+              "File glob pattern to limit scope (e.g. '**/*.ts', 'src/**/*.py'). Omit to search all text files.",
           },
           isRegex: {
             type: "boolean",
-            description: "Treat pattern as a JavaScript regex. Default: false (literal string match).",
+            description:
+              "Treat pattern as a JavaScript regex. Default: false (literal string match).",
           },
           caseSensitive: {
             type: "boolean",
@@ -42,11 +53,13 @@ export function createSearchAndReplaceTool(workspace: string) {
           },
           dryRun: {
             type: "boolean",
-            description: "If true, returns what would change without writing any files. Useful for previewing impact. Default: false.",
+            description:
+              "If true, returns what would change without writing any files. Useful for previewing impact. Default: false.",
           },
           includeIgnored: {
             type: "boolean",
-            description: "Search inside .gitignored files (e.g. node_modules, build output). Default: false.",
+            description:
+              "Search inside .gitignored files (e.g. node_modules, build output). Default: false.",
           },
         },
         required: ["pattern", "replacement"],
@@ -65,13 +78,21 @@ export function createSearchAndReplaceTool(workspace: string) {
       if (pattern.length === 0) {
         return error("pattern must not be empty");
       }
+      if (replacement.length === 0) {
+        return error(
+          "replacement must not be empty (use a non-empty string to replace, or handle deletion explicitly)",
+        );
+      }
 
-      // Validate regex if requested
+      // Compile regex once (used for both counting matches and replacement)
+      let regex: RegExp | null = null;
       if (isRegex) {
         try {
-          new RegExp(pattern, caseSensitive ? "g" : "gi");
+          regex = new RegExp(pattern, caseSensitive ? "gm" : "gim");
         } catch (e) {
-          return error(`Invalid regex pattern: ${e instanceof Error ? e.message : String(e)}`);
+          return error(
+            `Invalid regex pattern: ${e instanceof Error ? e.message : String(e)}`,
+          );
         }
       }
 
@@ -112,30 +133,29 @@ export function createSearchAndReplaceTool(workspace: string) {
 
       if (matchedFiles.length > MAX_FILES) {
         return error(
-          `Pattern matches ${matchedFiles.length} files — exceeds safety limit of ${MAX_FILES}. ` +
-          `Narrow the scope with the 'glob' parameter (e.g. 'src/**/*.ts') before proceeding.`,
+          `Pattern matches ${matchedFiles.length} files — exceeds safety limit of ${MAX_FILES}. Narrow the scope with the 'glob' parameter (e.g. 'src/**/*.ts') before proceeding.`,
         );
       }
 
       // Step 2: For each file, read, replace, and optionally write
-      const regex = isRegex
-        ? new RegExp(pattern, caseSensitive ? "gm" : "gim")
-        : null;
+      // Process files in parallel batches (bounded concurrency to avoid fd exhaustion)
+      const CONCURRENCY = 10;
 
-      const results: Array<{
+      type FileResult = {
         file: string;
-        replacements: number;
+        replacements: number | "skipped (file too large)";
         written: boolean;
-      }> = [];
+        writeError?: string;
+      };
 
-      let totalReplacements = 0;
-
-      for (const filePath of matchedFiles) {
-        // Safety: only operate within workspace (resolveFilePath handles symlinks and sep correctly)
+      const processFile = async (
+        filePath: string,
+      ): Promise<FileResult | null> => {
+        // Safety: only operate within workspace
         try {
           resolveFilePath(filePath, workspace); // throws if outside workspace
         } catch {
-          continue; // skip files outside workspace
+          return null;
         }
         const resolved = path.resolve(filePath);
 
@@ -143,57 +163,86 @@ export function createSearchAndReplaceTool(workspace: string) {
         try {
           const stat = await fs.promises.stat(resolved);
           if (stat.size > MAX_FILE_SIZE) {
-            results.push({ file: filePath, replacements: -1, written: false });
-            continue;
+            return {
+              file: filePath,
+              replacements: "skipped (file too large)",
+              written: false,
+            };
           }
           content = await fs.promises.readFile(resolved, "utf-8");
         } catch {
-          continue;
+          return null;
         }
 
         let newContent: string;
         let count = 0;
 
         if (regex) {
-          // Reset lastIndex for global regex
           regex.lastIndex = 0;
           const matches = content.match(regex);
           count = matches ? matches.length : 0;
           newContent = content.replace(regex, replacement);
           regex.lastIndex = 0;
         } else {
-          // Literal string replacement — count and replace
-          const escapedForSplit = pattern;
-          const parts = content.split(escapedForSplit);
+          const parts = content.split(pattern);
           count = parts.length - 1;
           newContent = parts.join(replacement);
         }
 
-        if (count === 0) continue;
-
-        totalReplacements += count;
+        if (count === 0) return null;
 
         if (!dryRun) {
           try {
             await fs.promises.writeFile(resolved, newContent, "utf-8");
-            results.push({ file: filePath, replacements: count, written: true });
-          } catch {
-            results.push({ file: filePath, replacements: count, written: false });
+            return { file: filePath, replacements: count, written: true };
+          } catch (err) {
+            return {
+              file: filePath,
+              replacements: count,
+              written: false,
+              writeError: err instanceof Error ? err.message : String(err),
+            };
           }
-        } else {
-          results.push({ file: filePath, replacements: count, written: false });
+        }
+        return { file: filePath, replacements: count, written: false };
+      };
+
+      const results: FileResult[] = [];
+      for (let i = 0; i < matchedFiles.length; i += CONCURRENCY) {
+        const batch = matchedFiles.slice(i, i + CONCURRENCY);
+        const batchResults = await Promise.all(batch.map(processFile));
+        for (const r of batchResults) {
+          if (r !== null) results.push(r);
         }
       }
 
+      const totalReplacements = results.reduce(
+        (sum, r) =>
+          sum + (typeof r.replacements === "number" ? r.replacements : 0),
+        0,
+      );
+      const writtenCount = results.filter((r) => r.written).length;
+      const failedCount = results.filter(
+        (r) =>
+          !dryRun &&
+          !r.written &&
+          typeof r.replacements === "number" &&
+          r.replacements > 0,
+      ).length;
+
       return success({
         matched: matchedFiles.length,
-        modified: results.filter((r) => r.written).length,
+        modified: writtenCount,
         totalReplacements,
         dryRun,
+        ...(failedCount > 0 && {
+          warning: `${writtenCount} file(s) written, ${failedCount} file(s) failed to write — check per-file results`,
+        }),
         files: results.map((r) => ({
           file: r.file,
-          replacements: r.replacements === -1 ? "skipped (file too large)" : r.replacements,
+          replacements: r.replacements,
           ...(dryRun ? {} : { written: r.written }),
+          ...(r.writeError && { writeError: r.writeError }),
         })),
       });
     },

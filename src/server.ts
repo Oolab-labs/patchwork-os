@@ -13,7 +13,8 @@ interface AliveWebSocket extends WebSocket {
 }
 
 function enableTcpKeepalive(ws: WebSocket): void {
-  const rawSocket = (ws as unknown as { _socket?: import("net").Socket })._socket;
+  const rawSocket = (ws as unknown as { _socket?: import("net").Socket })
+    ._socket;
   if (rawSocket?.setKeepAlive) {
     rawSocket.setKeepAlive(true, 60_000); // 60s TCP keepalive as defense-in-depth
   }
@@ -39,8 +40,8 @@ function setupPongHandler(ws: AliveWebSocket): void {
   ws.on("pong", (data: Buffer) => {
     ws.isAlive = true;
     ws.missedPongs = 0;
-    const sentAt = parseInt(data.toString(), 10);
-    ws.lastPongTime = isNaN(sentAt) ? Date.now() : sentAt;
+    const sentAt = Number.parseInt(data.toString(), 10);
+    ws.lastPongTime = Number.isNaN(sentAt) ? Date.now() : sentAt;
   });
 }
 
@@ -66,20 +67,40 @@ export class Server extends EventEmitter {
     super();
     this.httpServer = http.createServer((req, res) => {
       if (req.url === "/metrics" && req.method === "GET") {
-        const body = this.metricsFn?.() ?? "";
-        res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" });
-        res.end(body);
+        try {
+          const body = this.metricsFn?.() ?? "";
+          res.writeHead(200, {
+            "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+          });
+          res.end(body);
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
         return;
       }
       if (req.url === "/health" && req.method === "GET") {
-        const data = {
-          status: "ok",
-          uptimeMs: Date.now() - this.startTime,
-          connections: this.wss.clients.size,
-          ...(this.healthDataFn?.() ?? {}),
-        };
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(data));
+        try {
+          const data = {
+            status: "ok",
+            uptimeMs: Date.now() - this.startTime,
+            connections: this.wss.clients.size,
+            ...(this.healthDataFn?.() ?? {}),
+          };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
         return;
       }
       res.writeHead(404, { "Content-Type": "text/plain" });
@@ -87,7 +108,11 @@ export class Server extends EventEmitter {
     });
 
     // Do NOT pass server — we handle upgrade manually for pre-handshake auth
-    this.wss = new WsServer({ noServer: true, maxPayload: 4 * 1024 * 1024, perMessageDeflate: false });
+    this.wss = new WsServer({
+      noServer: true,
+      maxPayload: 4 * 1024 * 1024,
+      perMessageDeflate: false,
+    });
 
     // Authenticate on upgrade BEFORE completing the WebSocket handshake
     this.httpServer.on("upgrade", (request, socket, head) => {
@@ -114,7 +139,10 @@ export class Server extends EventEmitter {
         timingSafeTokenCompare(extensionToken, this.authToken)
       ) {
         // Rate limit per client type to prevent connection-storm DoS
-        if (now - this.lastExtensionConnectionTime < MIN_CONNECTION_INTERVAL_MS) {
+        if (
+          now - this.lastExtensionConnectionTime <
+          MIN_CONNECTION_INTERVAL_MS
+        ) {
           socket.write("HTTP/1.1 429 Too Many Requests\r\n\r\n");
           socket.destroy();
           return;
@@ -188,7 +216,9 @@ export class Server extends EventEmitter {
               if (!client.isAlive) {
                 client.missedPongs = (client.missedPongs ?? 0) + 1;
                 if (client.missedPongs >= 2) {
-                  this.logger.warn("Terminating unresponsive client (2 missed pongs)");
+                  this.logger.warn(
+                    "Terminating unresponsive client (2 missed pongs)",
+                  );
                   client.terminate();
                   continue;
                 }
@@ -205,7 +235,10 @@ export class Server extends EventEmitter {
     });
   }
 
-  async findAndListen(preferredPort: number | null, bindAddress = "127.0.0.1"): Promise<number> {
+  async findAndListen(
+    preferredPort: number | null,
+    bindAddress = "127.0.0.1",
+  ): Promise<number> {
     if (preferredPort) {
       return this.listen(preferredPort, bindAddress);
     }
@@ -231,8 +264,16 @@ export class Server extends EventEmitter {
         resolve();
       });
     });
+    // Drain idle keep-alive HTTP connections (Node 20+ native)
+    this.httpServer.closeIdleConnections();
     await new Promise<void>((resolve) => {
+      // Hard failsafe: force-close any remaining HTTP connections after 10s
+      const hardTimer = setTimeout(() => {
+        this.httpServer.closeAllConnections();
+        resolve();
+      }, 10_000);
       this.httpServer.close((err) => {
+        clearTimeout(hardTimer);
         if (err) this.logger.error(`HTTP server close error: ${err.message}`);
         resolve();
       });

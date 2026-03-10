@@ -3,7 +3,7 @@ import type { ActivityLog } from "./activityLog.js";
 import { ErrorCodes } from "./errors.js";
 import type { Logger } from "./logger.js";
 import { BRIDGE_PROTOCOL_VERSION } from "./version.js";
-import { safeSend } from "./wsUtils.js";
+import { BACKPRESSURE_THRESHOLD, safeSend } from "./wsUtils.js";
 
 const TOOL_TIMEOUT_MS = 60_000; // 60s — prevents tools from blocking indefinitely
 const MAX_CONCURRENT_TOOLS = 10;
@@ -12,7 +12,16 @@ const RATE_LIMIT_MAX = 200; // max requests per window
 // Supported MCP protocol versions, newest first.
 // Extend this array when new protocol versions are ratified; keep oldest supported version last.
 const SUPPORTED_VERSIONS = ["2025-11-25"];
-const LOG_LEVELS = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"] as const;
+const LOG_LEVELS = [
+  "debug",
+  "info",
+  "notice",
+  "warning",
+  "error",
+  "critical",
+  "alert",
+  "emergency",
+] as const;
 type LogLevel = (typeof LOG_LEVELS)[number];
 
 interface JsonRpcRequest {
@@ -47,9 +56,11 @@ interface ToolSchema {
   description: string;
   inputSchema: Record<string, unknown>;
   annotations?: ToolAnnotations;
+  /** If true, this tool requires the VS Code extension and is hidden when it is disconnected */
+  extensionRequired?: boolean;
 }
 
-export type ProgressFn = (progress: number, total?: number) => void;
+export type ProgressFn = (progress: number, total?: number, message?: string) => void;
 
 export type ToolHandler = (
   args: Record<string, unknown>,
@@ -62,24 +73,43 @@ export class McpTransport {
     string,
     { schema: ToolSchema; handler: ToolHandler; timeoutMs?: number }
   >();
-  private readonly serverInfo = { name: "claude-ide-bridge", version: BRIDGE_PROTOCOL_VERSION };
+  private readonly serverInfo = {
+    name: "claude-ide-bridge",
+    version: BRIDGE_PROTOCOL_VERSION,
+  };
   private activeWs: WebSocket | null = null;
   private activeListener: ((data: Buffer) => void) | null = null;
   private inFlightControllers = new Map<string | number, AbortController>();
   private initialized = false;
   private activeToolCalls = 0;
-  private messageTimestamps: number[] = [];
+  // Ring buffer for O(1) sliding-window rate limiting — avoids array scan + splice
+  private rateLimitBuf = new Float64Array(RATE_LIMIT_MAX); // initialised to 0 (epoch 1970, always outside window)
+  private rateLimitHead = 0; // index of oldest entry / next write position
   private clientLogLevel: LogLevel = "warning";
 
   private activityLog: ActivityLog | null = null;
+  private isExtensionConnectedFn: (() => boolean) | null = null;
 
   constructor(private logger: Logger) {}
+
+  setExtensionConnectedFn(fn: () => boolean): void {
+    this.isExtensionConnectedFn = fn;
+  }
 
   setActivityLog(log: ActivityLog): void {
     this.activityLog = log;
   }
 
-  registerTool(schema: ToolSchema, handler: ToolHandler, timeoutMs?: number): void {
+  registerTool(
+    schema: ToolSchema,
+    handler: ToolHandler,
+    timeoutMs?: number,
+  ): void {
+    if (!/^[a-zA-Z0-9_]+$/.test(schema.name)) {
+      throw new Error(
+        `Invalid tool name "${schema.name}": must contain only letters, digits, and underscores`,
+      );
+    }
     this.tools.set(schema.name, { schema, handler, timeoutMs });
   }
 
@@ -97,7 +127,8 @@ export class McpTransport {
     this.activeWs = null;
     this.initialized = false;
     this.activeToolCalls = 0;
-    this.messageTimestamps = [];
+    this.rateLimitBuf.fill(0);
+    this.rateLimitHead = 0;
     this.clientLogLevel = "warning";
   }
 
@@ -113,11 +144,18 @@ export class McpTransport {
           return;
         }
         if (Array.isArray(raw)) {
-          await safeSend(ws, JSON.stringify({
-            jsonrpc: "2.0",
-            id: null,
-            error: { code: ErrorCodes.INVALID_REQUEST, message: "Batch requests are not supported" },
-          }), this.logger);
+          await safeSend(
+            ws,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: null,
+              error: {
+                code: ErrorCodes.INVALID_REQUEST,
+                message: "Batch requests are not supported",
+              },
+            }),
+            this.logger,
+          );
           return;
         }
         const msg = raw as JsonRpcRequest;
@@ -141,36 +179,51 @@ export class McpTransport {
           return;
         }
 
-        // Rate limiting — sliding window
+        // Rate limiting — O(1) ring buffer sliding window.
+        // rateLimitBuf holds the last RATE_LIMIT_MAX timestamps in insertion order.
+        // rateLimitHead points to the oldest entry (next write position).
+        // If the oldest timestamp is still within the window, all 200 slots are
+        // occupied by recent requests → limit exceeded.
         const now = Date.now();
-        const cutoff = now - RATE_LIMIT_WINDOW_MS;
-        let start = 0;
-        while (start < this.messageTimestamps.length && this.messageTimestamps[start]! < cutoff) {
-          start++;
-        }
-        if (start > 0) this.messageTimestamps.splice(0, start);
-        this.messageTimestamps.push(now);
-        if (this.messageTimestamps.length > RATE_LIMIT_MAX) {
-          this.logger.warn(`Rate limit exceeded: ${this.messageTimestamps.length} requests in ${RATE_LIMIT_WINDOW_MS}ms`);
-          await safeSend(ws, JSON.stringify({
-            jsonrpc: "2.0",
-            id: msg.id,
-            error: { code: ErrorCodes.INTERNAL_ERROR, message: "Rate limit exceeded — too many requests" },
-          }), this.logger);
+        const oldest = this.rateLimitBuf[this.rateLimitHead]!;
+        if (oldest > now - RATE_LIMIT_WINDOW_MS) {
+          this.logger.warn(
+            `Rate limit exceeded: ${RATE_LIMIT_MAX} requests in ${RATE_LIMIT_WINDOW_MS}ms`,
+          );
+          await safeSend(
+            ws,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: msg.id,
+              error: {
+                code: ErrorCodes.INTERNAL_ERROR,
+                message: "Rate limit exceeded — too many requests",
+              },
+            }),
+            this.logger,
+          );
           return;
         }
+        // Record this timestamp and advance the head pointer
+        this.rateLimitBuf[this.rateLimitHead] = now;
+        this.rateLimitHead = (this.rateLimitHead + 1) % RATE_LIMIT_MAX;
 
         let response: JsonRpcResponse;
 
         switch (msg.method) {
           case "initialize": {
-            const clientParams = msg.params as { protocolVersion?: string } | undefined;
+            const clientParams = msg.params as
+              | { protocolVersion?: string }
+              | undefined;
             const clientVersion = clientParams?.protocolVersion;
-            const negotiatedVersion = clientVersion && SUPPORTED_VERSIONS.includes(clientVersion)
-              ? clientVersion
-              : SUPPORTED_VERSIONS[0]!;
+            const negotiatedVersion =
+              clientVersion && SUPPORTED_VERSIONS.includes(clientVersion)
+                ? clientVersion
+                : SUPPORTED_VERSIONS[0]!;
             if (clientVersion && !SUPPORTED_VERSIONS.includes(clientVersion)) {
-              this.logger.warn(`Client requested unsupported protocol version ${clientVersion}, responding with ${negotiatedVersion}`);
+              this.logger.warn(
+                `Client requested unsupported protocol version ${clientVersion}, responding with ${negotiatedVersion}`,
+              );
             }
             this.initialized = false; // Reset — waiting for notifications/initialized
             response = {
@@ -190,14 +243,24 @@ export class McpTransport {
 
           case "tools/list":
             if (!this.initialized) {
-              response = { jsonrpc: "2.0", id: msg.id, error: { code: ErrorCodes.INVALID_REQUEST, message: "Not initialized — send initialize first" } };
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_REQUEST,
+                  message: "Not initialized — send initialize first",
+                },
+              };
               break;
             }
+            const extConnected = this.isExtensionConnectedFn?.() ?? true;
             response = {
               jsonrpc: "2.0",
               id: msg.id,
               result: {
-                tools: Array.from(this.tools.values()).map((t) => t.schema),
+                tools: Array.from(this.tools.values())
+                  .filter((t) => !t.schema.extensionRequired || extConnected)
+                  .map((t) => t.schema),
               },
             };
             break;
@@ -214,7 +277,14 @@ export class McpTransport {
 
           case "tools/call": {
             if (!this.initialized) {
-              response = { jsonrpc: "2.0", id: msg.id, error: { code: ErrorCodes.INVALID_REQUEST, message: "Not initialized — send initialize first" } };
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_REQUEST,
+                  message: "Not initialized — send initialize first",
+                },
+              };
               break;
             }
             // Concurrent tool-call limit
@@ -223,14 +293,23 @@ export class McpTransport {
                 jsonrpc: "2.0",
                 id: msg.id,
                 result: {
-                  content: [{ type: "text", text: `Too many concurrent tool calls (max ${MAX_CONCURRENT_TOOLS}). Retry after current calls complete.` }],
+                  content: [
+                    {
+                      type: "text",
+                      text: `Too many concurrent tool calls (max ${MAX_CONCURRENT_TOOLS}). Retry after current calls complete.`,
+                    },
+                  ],
                   isError: true,
                 },
               };
               break;
             }
 
-            const params = msg.params as { name: string; arguments?: unknown; _meta?: { progressToken?: string | number } };
+            const params = msg.params as {
+              name: string;
+              arguments?: unknown;
+              _meta?: { progressToken?: string | number };
+            };
             const tool = this.tools.get(params.name);
             if (!tool) {
               response = {
@@ -244,6 +323,8 @@ export class McpTransport {
               };
             } else {
               const startTime = Date.now();
+              const callId = Math.random().toString(36).slice(2, 10);
+              const callLog = this.logger.child({ tool: params.name, callId });
               let timedOut = false;
               let handlerPromise: Promise<unknown> | null = null;
               try {
@@ -263,15 +344,17 @@ export class McpTransport {
                   };
                   break;
                 }
-                this.logger.debug(`Calling tool: ${params.name}`);
-                this.logger.event("tool_call", { tool: params.name });
+                callLog.debug(`Calling tool: ${params.name}`);
+                this.logger.event("tool_call", { tool: params.name, callId });
                 const controller = new AbortController();
                 this.inFlightControllers.set(msg.id, controller);
                 // Build progress callback if client provided a progressToken
                 const progressToken = params._meta?.progressToken;
-                const progressFn: ProgressFn | undefined = progressToken !== undefined
-                  ? (progress: number, total?: number) => this.sendProgress(ws, progressToken, progress, total)
-                  : undefined;
+                const progressFn: ProgressFn | undefined =
+                  progressToken !== undefined
+                    ? (progress: number, total?: number, message?: string) =>
+                        this.sendProgress(ws, progressToken, progress, total, message)
+                    : undefined;
                 this.activeToolCalls++;
                 let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
                 try {
@@ -298,11 +381,9 @@ export class McpTransport {
                     handlerPromise,
                     timeoutPromise,
                   ]);
-                  this.activityLog?.record(
-                    params.name,
-                    Date.now() - startTime,
-                    "success",
-                  );
+                  const durationMs = Date.now() - startTime;
+                  this.activityLog?.record(params.name, durationMs, "success");
+                  callLog.debug(`Tool completed in ${durationMs}ms`);
                   response = { jsonrpc: "2.0", id: msg.id, result };
                 } finally {
                   if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
@@ -316,7 +397,7 @@ export class McpTransport {
                 // potentially recover from tool failures.
                 const message =
                   err instanceof Error ? err.message : String(err);
-                this.logger.error(`Tool ${params.name} failed: ${message}`);
+                callLog.error(`Tool ${params.name} failed: ${message}`);
                 this.activityLog?.record(
                   params.name,
                   Date.now() - startTime,
@@ -375,14 +456,29 @@ export class McpTransport {
   }
 
   /** Send progress notification for a long-running tool */
-  private sendProgress(ws: WebSocket, progressToken: string | number, progress: number, total?: number): void {
+  private sendProgress(
+    ws: WebSocket,
+    progressToken: string | number,
+    progress: number,
+    total?: number,
+    message?: string,
+  ): void {
     const msg: JsonRpcNotification = {
       jsonrpc: "2.0",
       method: "notifications/progress",
-      params: { progressToken, progress, ...(total !== undefined && { total }) },
+      params: {
+        progressToken,
+        progress,
+        ...(total !== undefined && { total }),
+        ...(message !== undefined && { message }),
+      },
     };
-    if (ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify(msg)); } catch { /* best-effort */ }
+    if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < BACKPRESSURE_THRESHOLD) {
+      try {
+        ws.send(JSON.stringify(msg));
+      } catch {
+        /* best-effort */
+      }
     }
   }
 
@@ -398,7 +494,11 @@ export class McpTransport {
       method: "notifications/message",
       params: { level, logger: loggerName, data },
     };
-    try { this.activeWs.send(JSON.stringify(msg)); } catch { /* best-effort */ }
+    try {
+      this.activeWs.send(JSON.stringify(msg));
+    } catch {
+      /* best-effort */
+    }
   }
 
   /** Send a server-initiated notification */

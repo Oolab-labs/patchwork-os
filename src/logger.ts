@@ -1,8 +1,17 @@
 export class Logger {
+  private extraFields: Record<string, unknown> = {};
+
   constructor(
     private verbose = false,
     private jsonl = false,
   ) {}
+
+  /** Return a child logger that includes the given fields in every JSONL line. */
+  child(fields: Record<string, unknown>): Logger {
+    const c = new Logger(this.verbose, this.jsonl);
+    c.extraFields = { ...this.extraFields, ...fields };
+    return c;
+  }
 
   private ts(): string {
     return new Date().toISOString();
@@ -55,6 +64,8 @@ export class Logger {
   }
 
   private emitJsonl(level: string, msg: string): void {
-    console.error(JSON.stringify({ ts: this.ts(), level, msg }));
+    console.error(
+      JSON.stringify({ ts: this.ts(), level, msg, ...this.extraFields }),
+    );
   }
 }

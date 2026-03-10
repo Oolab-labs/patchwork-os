@@ -460,6 +460,148 @@ describe("McpTransport", () => {
     expect(elapsed).toBeLessThan(3000);
   });
 
+  it("progress token: notifications/progress delivered with progress, total, and message", async () => {
+    const { ws } = await setup("progress-token-test", (t) => {
+      t.registerTool(
+        {
+          name: "progressive",
+          description: "Reports progress",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async (_args, _signal, progress) => {
+          progress?.(25, 100, "step one");
+          progress?.(75, 100, "step two");
+          return { content: [{ type: "text", text: "done" }] };
+        },
+      );
+    });
+
+    const received: Record<string, unknown>[] = [];
+    ws.on("message", (data: Buffer | string) => {
+      received.push(JSON.parse(data.toString("utf-8")));
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "progressive",
+        arguments: {},
+        _meta: { progressToken: "tok1" },
+      },
+    });
+
+    await waitFor(ws, (m) => m.id === 1);
+
+    const progressMsgs = received.filter(
+      (m) => m.method === "notifications/progress",
+    );
+    expect(progressMsgs).toHaveLength(2);
+
+    const p1 = progressMsgs[0]!.params as Record<string, unknown>;
+    expect(p1.progressToken).toBe("tok1");
+    expect(p1.progress).toBe(25);
+    expect(p1.total).toBe(100);
+    expect(p1.message).toBe("step one");
+
+    const p2 = progressMsgs[1]!.params as Record<string, unknown>;
+    expect(p2.progress).toBe(75);
+    expect(p2.message).toBe("step two");
+  });
+
+  it("progress token: no notifications/progress sent when _meta.progressToken absent", async () => {
+    const { ws } = await setup("progress-no-token-test", (t) => {
+      t.registerTool(
+        {
+          name: "progressive",
+          description: "Reports progress",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async (_args, _signal, progress) => {
+          progress?.(50, 100);
+          return { content: [{ type: "text", text: "done" }] };
+        },
+      );
+    });
+
+    const received: Record<string, unknown>[] = [];
+    ws.on("message", (data: Buffer | string) => {
+      received.push(JSON.parse(data.toString("utf-8")));
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "progressive", arguments: {} },
+    });
+
+    await waitFor(ws, (m) => m.id === 1);
+
+    const progressMsgs = received.filter(
+      (m) => m.method === "notifications/progress",
+    );
+    expect(progressMsgs).toHaveLength(0);
+  });
+
+  it("extensionRequired tools hidden when extension disconnected, visible when connected", async () => {
+    const { ws } = await setup("ext-required-test", (t) => {
+      t.registerTool(
+        {
+          name: "alwaysAvailable",
+          description: "No extension needed",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async () => ({ content: [{ type: "text", text: "ok" }] }),
+      );
+      t.registerTool(
+        {
+          name: "extensionOnly",
+          description: "Requires extension",
+          inputSchema: { type: "object", properties: {} },
+          extensionRequired: true,
+        },
+        async () => ({ content: [{ type: "text", text: "ok" }] }),
+      );
+      t.setExtensionConnectedFn(() => false);
+    });
+
+    send(ws, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const resp1 = await waitFor(ws, (m) => m.id === 1);
+    const tools1 = (resp1.result as { tools: Array<{ name: string }> }).tools;
+    expect(tools1.map((t) => t.name)).toEqual(["alwaysAvailable"]);
+
+    // Simulate extension connecting
+    transport!.setExtensionConnectedFn(() => true);
+    send(ws, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    const resp2 = await waitFor(ws, (m) => m.id === 2);
+    const tools2 = (resp2.result as { tools: Array<{ name: string }> }).tools;
+    expect(tools2.map((t) => t.name)).toContain("extensionOnly");
+  });
+
+  it("registerTool throws on invalid tool name", () => {
+    const t = new McpTransport(logger);
+    expect(() =>
+      t.registerTool(
+        { name: "invalid-name", description: "x", inputSchema: {} },
+        async () => ({ content: [] }),
+      ),
+    ).toThrow(/invalid tool name/i);
+    expect(() =>
+      t.registerTool(
+        { name: "also invalid", description: "x", inputSchema: {} },
+        async () => ({ content: [] }),
+      ),
+    ).toThrow(/invalid tool name/i);
+    expect(() =>
+      t.registerTool(
+        { name: "validName_123", description: "x", inputSchema: {} },
+        async () => ({ content: [] }),
+      ),
+    ).not.toThrow();
+  });
+
   it("activity log records success and error tool calls", async () => {
     const log = new ActivityLog();
 

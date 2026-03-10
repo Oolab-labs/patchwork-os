@@ -1,11 +1,14 @@
 import fs from "node:fs";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
 import {
-  requireString,
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
   optionalBool,
+  requireString,
   resolveFilePath,
   success,
-  error,
 } from "./utils.js";
 
 export interface TextEdit {
@@ -21,7 +24,10 @@ export interface TextEdit {
  * Apply text edits natively by reading the file, modifying in-memory, and writing back.
  * Edits are sorted in reverse document order so that earlier edits don't shift later indices.
  */
-export function applyEditsToContent(content: string, edits: TextEdit[]): string {
+export function applyEditsToContent(
+  content: string,
+  edits: TextEdit[],
+): string {
   const lines = content.split("\n");
 
   // Sort edits in reverse order: last position first so indices stay stable
@@ -58,7 +64,10 @@ export function applyEditsToContent(content: string, edits: TextEdit[]): string 
         lines.splice(lineIdx, 1, ...newLines);
       }
     } else if (edit.type === "delete" || edit.type === "replace") {
-      const endLineIdx = Math.min((edit.endLine ?? edit.line) - 1, lines.length - 1);
+      const endLineIdx = Math.min(
+        (edit.endLine ?? edit.line) - 1,
+        lines.length - 1,
+      );
       const endColIdx = (edit.endColumn ?? edit.column) - 1;
       const beforeText = (lines[lineIdx] ?? "").slice(0, colIdx);
       const afterText = (lines[endLineIdx] ?? "").slice(endColIdx);
@@ -130,7 +139,8 @@ export function createEditTextTool(
                 },
                 endColumn: {
                   type: "integer" as const,
-                  description: "End column number (1-based, for delete/replace)",
+                  description:
+                    "End column number (1-based, for delete/replace)",
                 },
                 text: {
                   type: "string" as const,
@@ -147,7 +157,7 @@ export function createEditTextTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
       const edits = args.edits;
       const save = optionalBool(args, "save") ?? false;
@@ -167,7 +177,9 @@ export function createEditTextTool(
         }
         const type = edit.type;
         if (type !== "insert" && type !== "delete" && type !== "replace") {
-          return error(`edits[${i}].type must be "insert", "delete", or "replace"`);
+          return error(
+            `edits[${i}].type must be "insert", "delete", or "replace"`,
+          );
         }
         if (typeof edit.line !== "number") {
           return error(`edits[${i}].line is required and must be a number`);
@@ -181,19 +193,39 @@ export function createEditTextTool(
         if (type === "insert" && typeof edit.text !== "string") {
           return error(`edits[${i}].text is required for insert operations`);
         }
-        if ((type === "delete" || type === "replace") && typeof edit.endLine !== "number") {
-          return error(`edits[${i}].endLine is required for ${type} operations`);
+        if (
+          (type === "delete" || type === "replace") &&
+          typeof edit.endLine !== "number"
+        ) {
+          return error(
+            `edits[${i}].endLine is required for ${type} operations`,
+          );
         }
-        if ((type === "delete" || type === "replace") && typeof edit.endColumn !== "number") {
-          return error(`edits[${i}].endColumn is required for ${type} operations`);
+        if (
+          (type === "delete" || type === "replace") &&
+          typeof edit.endColumn !== "number"
+        ) {
+          return error(
+            `edits[${i}].endColumn is required for ${type} operations`,
+          );
         }
-        if ((type === "delete" || type === "replace") && ((edit.endLine as number) < 1 || (edit.endColumn as number) < 1)) {
-          return error(`edits[${i}].endLine and endColumn must be >= 1 (1-based)`);
+        if (
+          (type === "delete" || type === "replace") &&
+          ((edit.endLine as number) < 1 || (edit.endColumn as number) < 1)
+        ) {
+          return error(
+            `edits[${i}].endLine and endColumn must be >= 1 (1-based)`,
+          );
         }
-        if ((type === "delete" || type === "replace") &&
+        if (
+          (type === "delete" || type === "replace") &&
           ((edit.endLine as number) < (edit.line as number) ||
-           ((edit.endLine as number) === (edit.line as number) && (edit.endColumn as number) < (edit.column as number)))) {
-          return error(`edits[${i}].endLine:endColumn must be >= line:column (range cannot be reversed)`);
+            ((edit.endLine as number) === (edit.line as number) &&
+              (edit.endColumn as number) < (edit.column as number)))
+        ) {
+          return error(
+            `edits[${i}].endLine:endColumn must be >= line:column (range cannot be reversed)`,
+          );
         }
         if (type === "replace" && typeof edit.text !== "string") {
           return error(`edits[${i}].text is required for replace operations`);
@@ -220,6 +252,8 @@ export function createEditTextTool(
         }
       }
 
+      if (signal?.aborted) throw new Error("Request aborted");
+
       // Native fs fallback — read, apply edits in-memory, write back
       // Uses mtime-based optimistic concurrency to detect concurrent modifications
       try {
@@ -228,7 +262,10 @@ export function createEditTextTool(
         try {
           const stat = await fs.promises.stat(filePath);
           originalMtimeMs = stat.mtimeMs;
-          content = await fs.promises.readFile(filePath, "utf-8");
+          content = await fs.promises.readFile(filePath, {
+            encoding: "utf-8",
+            signal,
+          });
         } catch {
           return error(`File not found: ${filePath}`);
         }
@@ -247,16 +284,23 @@ export function createEditTextTool(
           return error("File was deleted concurrently — cannot apply edits");
         }
 
-        await fs.promises.writeFile(filePath, newContent, "utf-8");
+        await fs.promises.writeFile(filePath, newContent, {
+          encoding: "utf-8",
+          signal,
+        });
 
         return success({
           success: true,
           editsApplied: typedEdits.length,
-          source: extensionClient.isConnected() ? "native-fs (extension timed out)" : "native-fs",
+          source: extensionClient.isConnected()
+            ? "native-fs (extension timed out)"
+            : "native-fs",
           warning: "Edits applied directly to disk — no undo buffer available",
         });
       } catch (err) {
-        return error(`Failed to apply edits: ${err instanceof Error ? err.message : String(err)}`);
+        return error(
+          `Failed to apply edits: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
   };

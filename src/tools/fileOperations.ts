@@ -1,13 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
 import {
-  requireString,
-  optionalString,
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
   optionalBool,
+  optionalString,
+  requireString,
   resolveFilePath,
   success,
-  error,
 } from "./utils.js";
 
 export function createCreateFileTool(
@@ -25,7 +28,8 @@ export function createCreateFileTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path for the new file or directory",
+            description:
+              "Absolute or workspace-relative path for the new file or directory",
           },
           content: {
             type: "string" as const,
@@ -33,7 +37,8 @@ export function createCreateFileTool(
           },
           isDirectory: {
             type: "boolean" as const,
-            description: "Create a directory instead of a file (default: false)",
+            description:
+              "Create a directory instead of a file (default: false)",
           },
           overwrite: {
             type: "boolean" as const,
@@ -41,13 +46,14 @@ export function createCreateFileTool(
           },
           openAfterCreate: {
             type: "boolean" as const,
-            description: "Open the file in editor after creation (default: true)",
+            description:
+              "Open the file in editor after creation (default: true)",
           },
         },
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
       const content = optionalString(args, "content", 1_048_576) ?? "";
       const isDirectory = optionalBool(args, "isDirectory") ?? false;
@@ -59,7 +65,13 @@ export function createCreateFileTool(
       // Try extension first (can also open the file in editor)
       if (extensionClient.isConnected()) {
         try {
-          const result = await extensionClient.createFile(filePath, content, isDirectory, overwrite, openAfterCreate);
+          const result = await extensionClient.createFile(
+            filePath,
+            content,
+            isDirectory,
+            overwrite,
+            openAfterCreate,
+          );
           if (result !== null) {
             return success(result);
           }
@@ -68,6 +80,9 @@ export function createCreateFileTool(
           // Timeout — fall through to native fs fallback
         }
       }
+
+      // Bail out before touching the filesystem if the call was already cancelled
+      if (signal?.aborted) throw new Error("Request aborted");
 
       // Native fs fallback
       try {
@@ -79,25 +94,41 @@ export function createCreateFileTool(
           if (!overwrite) {
             // Atomic exclusive-create: fails with EEXIST if file already exists (no TOCTOU race)
             try {
-              await fs.promises.writeFile(filePath, content, { encoding: "utf-8", flag: "wx" });
+              await fs.promises.writeFile(filePath, content, {
+                encoding: "utf-8",
+                flag: "wx",
+                signal,
+              });
             } catch (err: unknown) {
-              if (err instanceof Error && (err as NodeJS.ErrnoException).code === "EEXIST") {
-                return error(`File already exists: ${filePath} (set overwrite: true to replace)`);
+              if (
+                err instanceof Error &&
+                (err as NodeJS.ErrnoException).code === "EEXIST"
+              ) {
+                return error(
+                  `File already exists: ${filePath} (set overwrite: true to replace)`,
+                );
               }
               throw err;
             }
           } else {
-            await fs.promises.writeFile(filePath, content, "utf-8");
+            await fs.promises.writeFile(filePath, content, {
+              encoding: "utf-8",
+              signal,
+            });
           }
         }
         return success({
           created: true,
           filePath,
           isDirectory,
-          source: extensionClient.isConnected() ? "native-fs (extension timed out)" : "native-fs",
+          source: extensionClient.isConnected()
+            ? "native-fs (extension timed out)"
+            : "native-fs",
         });
       } catch (err) {
-        return error(`Failed to create ${isDirectory ? "directory" : "file"}: ${err instanceof Error ? err.message : String(err)}`);
+        return error(
+          `Failed to create ${isDirectory ? "directory" : "file"}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
   };
@@ -122,17 +153,19 @@ export function createDeleteFileTool(
           },
           recursive: {
             type: "boolean" as const,
-            description: "Delete directory contents recursively (default: false)",
+            description:
+              "Delete directory contents recursively (default: false)",
           },
           useTrash: {
             type: "boolean" as const,
-            description: "Move to trash instead of permanent delete (default: true)",
+            description:
+              "Move to trash instead of permanent delete (default: true)",
           },
         },
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
       const recursive = optionalBool(args, "recursive") ?? false;
       const useTrash = optionalBool(args, "useTrash") ?? true;
@@ -142,7 +175,11 @@ export function createDeleteFileTool(
       // Try extension first (supports trash)
       if (extensionClient.isConnected()) {
         try {
-          const result = await extensionClient.deleteFile(filePath, recursive, useTrash);
+          const result = await extensionClient.deleteFile(
+            filePath,
+            recursive,
+            useTrash,
+          );
           if (result !== null) {
             return success(result);
           }
@@ -151,6 +188,8 @@ export function createDeleteFileTool(
           // Timeout — fall through to native fs fallback
         }
       }
+
+      if (signal?.aborted) throw new Error("Request aborted");
 
       // Native fs fallback (no trash support — permanent delete only)
       try {
@@ -162,18 +201,22 @@ export function createDeleteFileTool(
           // Cannot move to trash without the extension — warn the user
           return error(
             "VS Code extension not connected — native fallback cannot move to trash. " +
-            "Set useTrash: false for permanent deletion, or reconnect the extension.",
+              "Set useTrash: false for permanent deletion, or reconnect the extension.",
           );
         }
         await fs.promises.rm(filePath, { recursive, force: false });
         return success({
           deleted: true,
           filePath,
-          source: extensionClient.isConnected() ? "native-fs (extension timed out)" : "native-fs",
+          source: extensionClient.isConnected()
+            ? "native-fs (extension timed out)"
+            : "native-fs",
           warning: "Permanently deleted (not moved to trash)",
         });
       } catch (err) {
-        return error(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`);
+        return error(
+          `Failed to delete: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
   };
@@ -208,7 +251,7 @@ export function createRenameFileTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawOld = requireString(args, "oldPath");
       const rawNew = requireString(args, "newPath");
       const overwrite = optionalBool(args, "overwrite") ?? false;
@@ -219,7 +262,11 @@ export function createRenameFileTool(
       // Try extension first
       if (extensionClient.isConnected()) {
         try {
-          const result = await extensionClient.renameFile(oldPath, newPath, overwrite);
+          const result = await extensionClient.renameFile(
+            oldPath,
+            newPath,
+            overwrite,
+          );
           if (result !== null) {
             return success(result);
           }
@@ -229,29 +276,53 @@ export function createRenameFileTool(
         }
       }
 
+      if (signal?.aborted) throw new Error("Request aborted");
+
       // Native fs fallback
-      // Note: the overwrite check is best-effort (TOCTOU) since Node.js has no
-      // atomic "rename only if destination does not exist" API.
       try {
-        if (!overwrite) {
-          try {
-            await fs.promises.access(newPath);
-            return error(`Target already exists: ${newPath} (set overwrite: true to replace)`);
-          } catch {
-            // Target doesn't exist — good (best-effort check)
-          }
-        }
-        // Ensure target parent directory exists
+        // Ensure target parent directory exists before any move attempt
         await fs.promises.mkdir(path.dirname(newPath), { recursive: true });
-        await fs.promises.rename(oldPath, newPath);
+        if (!overwrite) {
+          // Use link(2) + unlink(2) for an atomic "move only if dest does not exist"
+          // when both paths are on the same filesystem. link(2) fails with EEXIST
+          // atomically, eliminating the TOCTOU window of a separate access() check.
+          try {
+            await fs.promises.link(oldPath, newPath);
+            await fs.promises.unlink(oldPath);
+          } catch (linkErr) {
+            const code = (linkErr as NodeJS.ErrnoException).code;
+            if (code === "EEXIST") {
+              return error(
+                `Target already exists: ${newPath} (set overwrite: true to replace)`,
+              );
+            }
+            // Cross-device link not permitted — fall back to best-effort check + rename
+            if (code !== "EXDEV") throw linkErr;
+            try {
+              await fs.promises.access(newPath);
+              return error(
+                `Target already exists: ${newPath} (set overwrite: true to replace)`,
+              );
+            } catch {
+              // Target doesn't exist — proceed (best-effort on cross-device moves)
+            }
+            await fs.promises.rename(oldPath, newPath);
+          }
+        } else {
+          await fs.promises.rename(oldPath, newPath);
+        }
         return success({
           renamed: true,
           oldPath,
           newPath,
-          source: extensionClient.isConnected() ? "native-fs (extension timed out)" : "native-fs",
+          source: extensionClient.isConnected()
+            ? "native-fs (extension timed out)"
+            : "native-fs",
         });
       } catch (err) {
-        return error(`Failed to rename: ${err instanceof Error ? err.message : String(err)}`);
+        return error(
+          `Failed to rename: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
   };

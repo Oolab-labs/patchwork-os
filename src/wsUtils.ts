@@ -3,7 +3,7 @@ import { WebSocket } from "ws";
 import type { Logger } from "./logger.js";
 
 export const BACKPRESSURE_THRESHOLD = 1_048_576; // 1MB — pause sending until drained
-export const DRAIN_TIMEOUT_MS = 15_000; // Don't wait forever for drain
+export const DRAIN_TIMEOUT_MS = 5_000; // Don't wait forever for drain
 
 /** Wait for the WebSocket send buffer to drain below threshold */
 export function waitForDrain(ws: WebSocket, logger: Logger, label = "Backpressure"): Promise<void> {

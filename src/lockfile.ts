@@ -112,7 +112,21 @@ export class LockFileManager {
             content.pid > 0
           ) {
             try {
-              process.kill(content.pid, 0); // check if alive
+              process.kill(content.pid, 0); // check if alive — throws if dead
+              // PID appears alive — guard against PID reuse: if the lock has a
+              // startedAt timestamp and it is >24h old, the original process
+              // almost certainly died and its PID was recycled by an unrelated
+              // process. Only apply when startedAt is present (old lock format
+              // without the field is left alone).
+              if (typeof content.startedAt === "number") {
+                const lockAgeMs = Date.now() - content.startedAt;
+                if (lockAgeMs > 24 * 60 * 60 * 1000) {
+                  this.logger.warn(
+                    `Removing stale lock file: ${file} (PID ${content.pid} alive but lock is ${Math.round(lockAgeMs / 3_600_000)}h old — likely PID reuse)`,
+                  );
+                  fs.unlinkSync(filePath);
+                }
+              }
             } catch {
               this.logger.warn(
                 `Removing stale lock file: ${file} (PID ${content.pid} not running)`,
