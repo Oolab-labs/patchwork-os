@@ -16,7 +16,7 @@ function installRgShim(): string {
   const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "rg-shim-bin-"));
   // Find the Claude binary that acts as rg
   const claudeBinary =
-    "/Users/wesh/.windsurf/extensions/anthropic.claude-code-2.1.71-darwin-arm64/resources/native-binary/claude";
+    "/Users/wesh/.windsurf/extensions/anthropic.claude-code-2.1.72-darwin-arm64/resources/native-binary/claude";
   const rgScript = path.join(binDir, "rg");
   // The shim sets ARGV0=rg so the Claude binary behaves as ripgrep
   fs.writeFileSync(rgScript, `#!/bin/sh\nexec -a rg "${claudeBinary}" "$@"\n`);
