@@ -5,6 +5,7 @@ export function createSetEditorDecorationsTool(workspace: string, extensionClien
   return {
     schema: {
       name: "setEditorDecorations",
+      extensionRequired: true,
       description:
         "Place visual decorations (highlights, annotations, inline text) on lines in a file. " +
         "Decorations are grouped by a logical ID — you can have multiple independent decoration sets. " +
@@ -81,6 +82,7 @@ export function createClearEditorDecorationsTool(extensionClient: ExtensionClien
   return {
     schema: {
       name: "clearEditorDecorations",
+      extensionRequired: true,
       description:
         "Clear editor decorations. Pass an id to clear a specific decoration set, " +
         "or omit to clear all Claude-managed decorations. " +

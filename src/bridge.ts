@@ -250,6 +250,8 @@ export class Bridge {
       clearTimeout(this.listChangedTimer);
       this.listChangedTimer = null;
     }
+    // Abort in-flight tool calls before closing the server
+    this.transport.detach();
     this.extensionClient.disconnect();
     await this.server.close();
     this.lockFile.delete();

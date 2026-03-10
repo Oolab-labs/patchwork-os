@@ -5,6 +5,7 @@ export function createGetDebugStateTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "getDebugState",
+      extensionRequired: true,
       description:
         "Get the current state of the VS Code debugger: active session info, paused location, " +
         "call stack, local variables, and registered breakpoints. " +
@@ -41,6 +42,7 @@ export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "evaluateInDebugger",
+      extensionRequired: true,
       description:
         "Evaluate an expression in the active debug session (REPL/watch). " +
         "The session must be paused at a breakpoint for variables to be in scope. " +
@@ -94,6 +96,7 @@ export function createSetDebugBreakpointsTool(workspace: string, extensionClient
   return {
     schema: {
       name: "setDebugBreakpoints",
+      extensionRequired: true,
       description:
         "Set breakpoints in a file, replacing any existing breakpoints for that file. " +
         "Supports conditional breakpoints, logpoints, and hit-count conditions. " +
@@ -158,6 +161,7 @@ export function createStartDebuggingTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "startDebugging",
+      extensionRequired: true,
       description:
         "Start a debug session using a launch configuration from .vscode/launch.json. " +
         "Pass configName to select a specific configuration by name, or omit to use the first one. " +
@@ -197,6 +201,7 @@ export function createStopDebuggingTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "stopDebugging",
+      extensionRequired: true,
       description:
         "Stop the active debug session. Has no effect if no session is running. " +
         "Requires the VS Code extension.",

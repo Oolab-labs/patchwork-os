@@ -314,6 +314,7 @@ export function createGetHoverTool(
   return {
     schema: {
       name: "getHover",
+      extensionRequired: true,
       description:
         "Get hover information (type info, documentation) for a symbol at a given position. Requires the VS Code extension to be connected.",
       annotations: { readOnlyHint: true },
@@ -378,6 +379,7 @@ export function createGetCodeActionsTool(
   return {
     schema: {
       name: "getCodeActions",
+      extensionRequired: true,
       description:
         "Get available code actions (quick fixes, refactorings) for a range in a file. Requires the VS Code extension to be connected.",
       annotations: { readOnlyHint: true },
@@ -450,6 +452,7 @@ export function createApplyCodeActionTool(
   return {
     schema: {
       name: "applyCodeAction",
+      extensionRequired: true,
       description:
         "Apply a code action (quick fix, refactoring) by title. First use getCodeActions to see available actions, then use this tool to apply one. Requires the VS Code extension.",
       annotations: { destructiveHint: true },
@@ -536,6 +539,7 @@ export function createRenameSymbolTool(
   return {
     schema: {
       name: "renameSymbol",
+      extensionRequired: true,
       description:
         "Rename a symbol at a given position across all files using the LSP rename provider. Returns list of affected files and edit counts. Requires the VS Code extension.",
       annotations: { destructiveHint: true },
@@ -605,6 +609,7 @@ export function createGetCallHierarchyTool(
   return {
     schema: {
       name: "getCallHierarchy",
+      extensionRequired: true,
       description:
         "Get the call hierarchy for a function or method — who calls it (incoming) and what it calls (outgoing). " +
         "Use direction=\"incoming\" to find all callers of a function, \"outgoing\" to see everything it calls, or \"both\" (default). " +

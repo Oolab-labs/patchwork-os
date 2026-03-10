@@ -6,6 +6,7 @@ export function createExecuteVSCodeCommandTool(extensionClient: ExtensionClient,
   return {
     schema: {
       name: "executeVSCodeCommand",
+      extensionRequired: true,
       description:
         "Execute any registered VS Code command by ID. " +
         "Examples: 'editor.action.formatDocument', 'workbench.action.showAllSymbols', " +
@@ -75,6 +76,7 @@ export function createListVSCodeCommandsTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "listVSCodeCommands",
+      extensionRequired: true,
       description:
         "List all registered VS Code commands. Optionally filter by substring. " +
         "Returns up to 2000 commands. Use this to discover command IDs for executeVSCodeCommand. " +

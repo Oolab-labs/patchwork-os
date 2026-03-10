@@ -6,6 +6,7 @@ export function createCloseTabTool(workspace?: string, extensionClient?: Extensi
   return {
     schema: {
       name: "closeTab",
+      extensionRequired: true,
       description:
         "Close a specific editor tab by file path. Uses VS Code when the extension is connected (prompts to save if dirty). Without the extension, this operation is not available.",
       annotations: { destructiveHint: true },

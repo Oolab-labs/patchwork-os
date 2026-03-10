@@ -22,6 +22,7 @@ export function createListTerminalsTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "listTerminals",
+      extensionRequired: true,
       description:
         "List all active VS Code integrated terminals. Returns terminal names, indices, and whether output capture is available. Requires the VS Code extension.",
       annotations: { readOnlyHint: true },
@@ -55,6 +56,7 @@ export function createGetTerminalOutputTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "getTerminalOutput",
+      extensionRequired: true,
       description:
         "Get recent output from a VS Code integrated terminal. Identify the terminal by name or index (from listTerminals). Returns the last N lines of output. Requires the VS Code extension with terminal output capture enabled.",
       annotations: { readOnlyHint: true },
@@ -110,6 +112,7 @@ export function createCreateTerminalTool(workspace: string, extensionClient: Ext
   return {
     schema: {
       name: "createTerminal",
+      extensionRequired: true,
       description:
         "Create a new VS Code integrated terminal. Optionally set a name, working directory, environment variables, and shell. Requires the VS Code extension.",
       inputSchema: {
@@ -186,6 +189,7 @@ export function createWaitForTerminalOutputTool(extensionClient: ExtensionClient
   return {
     schema: {
       name: "waitForTerminalOutput",
+      extensionRequired: true,
       description:
         "Block until a regex pattern appears in a VS Code terminal's output, then return the matching line. " +
         "Use this after sendTerminalCommand to detect when a background process is ready " +
@@ -236,7 +240,7 @@ export function createWaitForTerminalOutputTool(extensionClient: ExtensionClient
       }
       // Reject patterns with nested quantifiers — these can cause catastrophic backtracking (ReDoS)
       // when tested repeatedly against terminal output lines over a long polling window.
-      if (/\([^)]*[+*]\)[+*?]/.test(pattern) || /\([^)]*\{[^}]+\}\)[+*{?]/.test(pattern)) {
+      if (/\([^)]*[+*]\)[+*?]/.test(pattern) || /\([^)]*\{[^}]+\}\)[+*{?]/.test(pattern) || /[+*][+*]|\{[^}]+\}[+*]/.test(pattern)) {
         return error(
           "Pattern contains nested quantifiers (e.g. (a+)+) which can cause catastrophic backtracking. " +
           "Simplify the regex — use a literal string match or a non-nested quantifier.",
@@ -266,6 +270,7 @@ export function createRunInTerminalTool(
   return {
     schema: {
       name: "runInTerminal",
+      extensionRequired: true,
       description:
         "Execute a command in a VS Code integrated terminal and wait for it to complete. " +
         "Returns the exit code and full output — unlike sendTerminalCommand (fire-and-forget), " +
@@ -351,6 +356,7 @@ export function createDisposeTerminalTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "disposeTerminal",
+      extensionRequired: true,
       description:
         "Close and dispose a VS Code integrated terminal. Identify the terminal by name or index (from listTerminals). Requires the VS Code extension.",
       annotations: { destructiveHint: true },
@@ -398,6 +404,7 @@ export function createSendTerminalCommandTool(extensionClient: ExtensionClient, 
   return {
     schema: {
       name: "sendTerminalCommand",
+      extensionRequired: true,
       description:
         "Send text or a command to a VS Code integrated terminal. " +
         "Identify the terminal by name or index (from listTerminals). " +

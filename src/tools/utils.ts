@@ -226,8 +226,11 @@ export function truncateOutput(
 ): { text: string; truncated: boolean } {
   const buf = Buffer.from(str, "utf-8");
   if (buf.length <= maxBytes) return { text: str, truncated: false };
-  // Slice at byte boundary, then decode (may trim partial char)
-  const sliced = buf.subarray(0, maxBytes).toString("utf-8");
+  // Walk back from the cut point to avoid splitting a multi-byte character.
+  // UTF-8 continuation bytes have the form 10xxxxxx (0x80–0xBF); skip them.
+  let end = maxBytes;
+  while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--;
+  const sliced = buf.subarray(0, end).toString("utf-8");
   return { text: sliced, truncated: true };
 }
 

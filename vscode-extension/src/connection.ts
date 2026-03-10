@@ -42,6 +42,7 @@ export class BridgeConnection {
   private handlers: Record<string, RequestHandler> = {};
   private onDispose: (() => void) | null = null;
   private pendingNotifications: Array<{ method: string; params: Record<string, unknown> }> = [];
+  private pendingHandlers: Map<number | string, { timeout: ReturnType<typeof setTimeout>; controller: AbortController }> = new Map();
   private static readonly MAX_PENDING_NOTIFICATIONS = 20;
   /** Notifications worth buffering during transient disconnects */
   private static readonly BUFFERABLE_METHODS = new Set([
@@ -101,8 +102,8 @@ export class BridgeConnection {
     if (this.ws?.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify(data));
-      } catch {
-        // Socket closed between readyState check and send
+      } catch (err) {
+        this.logError(`Send failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
@@ -193,6 +194,12 @@ export class BridgeConnection {
     if (this.state === ConnectionState.DISCONNECTING) return;
     this.state = ConnectionState.DISCONNECTING;
     this.updateStatusBar("disconnected");
+    // Cancel all pending handler timeouts and abort controllers
+    for (const [, pending] of this.pendingHandlers) {
+      clearTimeout(pending.timeout);
+      pending.controller.abort();
+    }
+    this.pendingHandlers.clear();
     const oldWs = this.ws;
     // Stop heartbeat before nulling ws so pong listener is removed from the socket
     this.stopHeartbeat();
@@ -297,7 +304,8 @@ export class BridgeConnection {
         this.state = ConnectionState.DISCONNECTING;
         this.scheduleReconnect();
       }
-    }).catch(() => {
+    }).catch((err: unknown) => {
+      this.log(`Lock file read failed: ${err instanceof Error ? err.message : String(err)}`);
       this.state = ConnectionState.DISCONNECTING;
       this.scheduleReconnect();
     });
@@ -323,20 +331,24 @@ export class BridgeConnection {
         const handler = this.handlers[msg.method as string];
         if (handler) {
           const controller = new AbortController();
-          let timeoutId: ReturnType<typeof setTimeout>;
+          const timeoutId = setTimeout(() => {
+            controller.abort();
+          }, HANDLER_TIMEOUT);
+          this.pendingHandlers.set(msg.id, { timeout: timeoutId, controller });
+          const cleanup = () => {
+            clearTimeout(timeoutId);
+            this.pendingHandlers.delete(msg.id);
+          };
           const timeoutPromise = new Promise<never>((_, reject) => {
-            timeoutId = setTimeout(() => {
-              controller.abort();
-              reject(new Error("Handler timed out"));
-            }, HANDLER_TIMEOUT);
+            controller.signal.addEventListener("abort", () => reject(new Error("Handler timed out")), { once: true });
           });
           Promise.race([handler(msg.params ?? {}, controller.signal), timeoutPromise])
             .then((result) => {
-              clearTimeout(timeoutId);
+              cleanup();
               this.sendResponse(msg.id, result);
             })
             .catch((err: unknown) => {
-              clearTimeout(timeoutId);
+              cleanup();
               const message = err instanceof Error ? err.message : String(err);
               this.sendResponse(msg.id, undefined, {
                 code: -32000,

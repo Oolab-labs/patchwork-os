@@ -82,6 +82,7 @@ export class McpTransport {
   private inFlightControllers = new Map<string | number, AbortController>();
   private initialized = false;
   private activeToolCalls = 0;
+  private generation = 0; // incremented on each attach; stale handlers check this
   // Ring buffer for O(1) sliding-window rate limiting — avoids array scan + splice
   private rateLimitBuf = new Float64Array(RATE_LIMIT_MAX); // initialised to 0 (epoch 1970, always outside window)
   private rateLimitHead = 0; // index of oldest entry / next write position
@@ -134,9 +135,10 @@ export class McpTransport {
 
   attach(ws: WebSocket): void {
     this.activeWs = ws;
+    const gen = ++this.generation;
     const listener = async (data: Buffer) => {
       // Ignore messages from superseded connections
-      if (ws !== this.activeWs) return;
+      if (gen !== this.generation) return;
       try {
         const raw: unknown = JSON.parse(data.toString("utf-8"));
         if (typeof raw !== "object" || raw === null) {
@@ -388,7 +390,11 @@ export class McpTransport {
                 } finally {
                   if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
                   this.inFlightControllers.delete(msg.id);
-                  this.activeToolCalls--;
+                  // Only decrement if we're still on the same generation;
+                  // detach() already reset activeToolCalls for new connections.
+                  if (gen === this.generation) {
+                    this.activeToolCalls = Math.max(0, this.activeToolCalls - 1);
+                  }
                 }
               } catch (err: unknown) {
                 // MCP spec: tool execution errors are returned as successful
@@ -446,7 +452,10 @@ export class McpTransport {
         }
 
         this.logger.debug(`--> response for ${msg.method}`);
-        await safeSend(ws, JSON.stringify(response), this.logger);
+        const sent = await safeSend(ws, JSON.stringify(response), this.logger);
+        if (!sent) {
+          this.logger.warn(`Response for ${msg.method} (id=${msg.id}) dropped — socket closed`);
+        }
       } catch (err) {
         this.logger.error(`Failed to handle message: ${err}`);
       }

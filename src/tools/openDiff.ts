@@ -85,22 +85,29 @@ export function createOpenDiffTool(
 
       // Write new contents to a temp file
       const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claude-diff-"));
-      await fs.promises.chmod(tmpDir, 0o700);
-      trackedTempDirs.add(tmpDir);
-      // Evict oldest temp dirs if over the cap
-      if (trackedTempDirs.size > MAX_TRACKED_DIRS) {
-        const oldest = trackedTempDirs.values().next().value;
-        if (oldest) {
-          try {
-            fs.rmSync(oldest, { recursive: true, force: true });
-          } catch {
-            /* best-effort */
+      let tmpFile = "";
+      try {
+        await fs.promises.chmod(tmpDir, 0o700);
+        trackedTempDirs.add(tmpDir);
+        // Evict oldest temp dirs if over the cap
+        if (trackedTempDirs.size > MAX_TRACKED_DIRS) {
+          const oldest = trackedTempDirs.values().next().value;
+          if (oldest) {
+            try {
+              fs.rmSync(oldest, { recursive: true, force: true });
+            } catch {
+              /* best-effort */
+            }
+            trackedTempDirs.delete(oldest);
           }
-          trackedTempDirs.delete(oldest);
         }
+        tmpFile = path.join(tmpDir, baseName);
+        await fs.promises.writeFile(tmpFile, newContents);
+      } catch (err) {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        trackedTempDirs.delete(tmpDir);
+        throw err;
       }
-      const tmpFile = path.join(tmpDir, baseName);
-      await fs.promises.writeFile(tmpFile, newContents);
 
       if (!editorCommand) {
         return success({

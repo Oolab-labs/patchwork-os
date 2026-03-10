@@ -653,4 +653,25 @@ describe("McpTransport", () => {
     expect(entries[1]?.status).toBe("error");
     expect(entries[1]?.errorMessage).toBe("oops");
   });
+
+  it("extensionRequired tools appear in tools/list when isExtensionConnectedFn is not set (defaults to connected)", async () => {
+    // Intentionally do NOT call setExtensionConnectedFn — transport defaults to ?? true
+    const { ws } = await setup("ext-required-default", (t) => {
+      t.registerTool(
+        {
+          name: "extensionOnlyTool",
+          description: "Requires extension",
+          inputSchema: { type: "object", properties: {} },
+          extensionRequired: true,
+        },
+        async () => ({ content: [{ type: "text", text: "ok" }] }),
+      );
+    });
+
+    send(ws, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const resp = await waitFor(ws, (m) => m.id === 1);
+    const names = (resp.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name);
+    // Default is ?? true (fail-open), so extension tools are visible even without a connected fn
+    expect(names).toContain("extensionOnlyTool");
+  });
 });

@@ -108,7 +108,7 @@ while true; do
   if [ \$elapsed -ge 60 ]; then failures=0; delay=5
   else
     failures=\$((failures+1))
-    delay=\$((5 * (2 ** (failures>6?6:failures-1))))
+    exp=\$((failures>6?6:failures-1)); p=1; for _ in \$(seq 1 \$exp); do p=\$((p*2)); done; delay=\$((5*p))
     [ \$delay -gt \$max_delay ] && delay=\$max_delay
   fi
   if [ \$failures -ge 50 ]; then
@@ -216,7 +216,11 @@ cleanup() {
   done
   # Force-kill any remaining panes
   for pane in 1 2 3; do
-    tmux send-keys -t "${SESSION}:0.${pane}" "" 2>/dev/null || true
+    tmux send-keys -t "${SESSION}:0.${pane}" C-c 2>/dev/null || true
+  done
+  sleep 1
+  for pane in 3 2 1; do
+    tmux kill-pane -t "${SESSION}:0.${pane}" 2>/dev/null || true
   done
 }
 trap cleanup EXIT
@@ -225,18 +229,35 @@ while true; do
   sleep 10
   if [[ ! -f "$LOCK_FILE" ]]; then
     notify "Bridge died! Restarting all processes..." "high"
+    # Kill any stale caffeinate processes before restart to prevent accumulation
+    pkill -f "caffeinate -i" 2>/dev/null || true
     # Send Ctrl+C to all process panes (including bridge in case it's still alive)
     tmux send-keys -t "${SESSION}:0.1" C-c
     tmux send-keys -t "${SESSION}:0.2" C-c
     tmux send-keys -t "${SESSION}:0.3" C-c
-    # Wait for processes to actually stop
+    # Wait for bridge (pane 1) and claude (pane 2) to actually stop
     for _ in $(seq 1 10); do
+      pane1_cmd=$(tmux display-message -t "${SESSION}:0.1" -p '#{pane_current_command}' 2>/dev/null || echo "")
       pane2_cmd=$(tmux display-message -t "${SESSION}:0.2" -p '#{pane_current_command}' 2>/dev/null || echo "")
-      [[ "$pane2_cmd" == "bash" || "$pane2_cmd" == "zsh" || -z "$pane2_cmd" ]] && break
+      pane1_idle=false; pane2_idle=false
+      [[ "$pane1_cmd" == "bash" || "$pane1_cmd" == "zsh" || -z "$pane1_cmd" ]] && pane1_idle=true
+      [[ "$pane2_cmd" == "bash" || "$pane2_cmd" == "zsh" || -z "$pane2_cmd" ]] && pane2_idle=true
+      $pane1_idle && $pane2_idle && break
       sleep 1
     done
 
-    # Give bridge time to exit after Ctrl+C
+    # Verify old bridge process is truly dead using the lock file PID before it disappears
+    if [[ -f "$LOCK_FILE" ]]; then
+      old_pid=$(python3 -c "import json,sys; d=json.load(open('$LOCK_FILE')); print(d.get('pid',''))" 2>/dev/null || echo "")
+      if [[ -n "$old_pid" ]]; then
+        for _ in $(seq 1 10); do
+          kill -0 "$old_pid" 2>/dev/null || break
+          sleep 1
+        done
+      fi
+    fi
+
+    # Give bridge time to clean up lock file after exiting
     sleep 2
 
     # Snapshot locks again before restarting bridge

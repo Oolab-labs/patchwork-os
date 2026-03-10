@@ -256,7 +256,7 @@ export class ExtensionClient {
         // Update timestamp and forward to Claude Code
         this.lastDiagnosticsUpdate = Date.now();
         this.safeCallback(this.onDiagnosticsChanged, file, diagnostics);
-        for (const fn of this.diagnosticsListeners) this.safeCallback(fn, file, diagnostics);
+        for (const fn of [...this.diagnosticsListeners]) this.safeCallback(fn, file, diagnostics);
         break;
       }
       case "extension/selectionChanged": {
@@ -388,18 +388,25 @@ export class ExtensionClient {
     const id = this.nextId++;
     if (this.nextId >= Number.MAX_SAFE_INTEGER) this.nextId = 0;
     const inner = new Promise<unknown>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);
         signal?.removeEventListener("abort", onAbort);
         this.logger.warn(`Extension request ${method} timed out after ${timeout}ms`);
-        reject(new ExtensionTimeoutError(method));
+        settle(() => reject(new ExtensionTimeoutError(method)));
       }, timeout);
 
       // Re-check abort after the async drain wait — signal may have fired during that gap.
       // If already aborted, addEventListener would never fire so we must check here.
       if (signal?.aborted) {
         clearTimeout(timer);
-        reject(new Error("Request aborted"));
+        settle(() => reject(new Error("Request aborted")));
         return;
       }
 
@@ -407,7 +414,7 @@ export class ExtensionClient {
       const onAbort = () => {
         this.pendingRequests.delete(id);
         clearTimeout(timer);
-        reject(new Error("Request aborted"));
+        settle(() => reject(new Error("Request aborted")));
       };
       if (signal) {
         signal.addEventListener("abort", onAbort, { once: true });
@@ -416,11 +423,11 @@ export class ExtensionClient {
       this.pendingRequests.set(id, {
         resolve: (value: unknown) => {
           signal?.removeEventListener("abort", onAbort);
-          resolve(value);
+          settle(() => resolve(value));
         },
         reject: (reason: Error) => {
           signal?.removeEventListener("abort", onAbort);
-          reject(reason);
+          settle(() => reject(reason));
         },
         timer,
       });
@@ -433,13 +440,13 @@ export class ExtensionClient {
           this.pendingRequests.delete(id);
           clearTimeout(timer);
           signal?.removeEventListener("abort", onAbort);
-          reject(new Error(`Failed to send extension request: ${err}`));
+          settle(() => reject(new Error(`Failed to send extension request: ${err}`)));
         }
       } else {
         this.pendingRequests.delete(id);
         clearTimeout(timer);
         signal?.removeEventListener("abort", onAbort);
-        reject(new Error("Extension disconnected before send"));
+        settle(() => reject(new Error("Extension disconnected before send")));
       }
     });
 

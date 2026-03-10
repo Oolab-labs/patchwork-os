@@ -206,6 +206,10 @@ export class Server extends EventEmitter {
         .listen(port, bindAddress, () => {
           const addr = this.httpServer.address();
           if (!addr || typeof addr === "string") {
+            if (this.pingInterval) {
+              clearInterval(this.pingInterval);
+              this.pingInterval = null;
+            }
             reject(new Error("Unexpected server address"));
             return;
           }

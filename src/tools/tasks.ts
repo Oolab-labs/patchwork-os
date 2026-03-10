@@ -5,6 +5,7 @@ export function createListTasksTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "listTasks",
+      extensionRequired: true,
       description:
         "List all VS Code tasks defined in .vscode/tasks.json and contributed by extensions. " +
         "Returns task names, types, and groups. Use runTask to execute one. " +
@@ -38,6 +39,7 @@ export function createRunTaskTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "runTask",
+      extensionRequired: true,
       description:
         "Run a VS Code task by name and wait for it to complete. " +
         "Returns the exit code and duration. Use listTasks to discover available tasks. " +

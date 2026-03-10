@@ -46,8 +46,14 @@ export async function readLockFilesAsync(): Promise<LockFileData | null> {
           continue;
         }
 
+        // Guard against PID reuse: skip locks older than 24h
+        if (typeof content.startedAt === "number") {
+          const ageMs = Date.now() - content.startedAt;
+          if (ageMs > 24 * 60 * 60 * 1000) continue;
+        }
+
         if (currentWorkspace && content.workspace) {
-          if (content.workspace !== currentWorkspace) continue;
+          if (path.resolve(content.workspace) !== path.resolve(currentWorkspace)) continue;
         }
 
         return {

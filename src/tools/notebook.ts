@@ -5,6 +5,7 @@ export function createGetNotebookCellsTool(workspace: string, extensionClient: E
   return {
     schema: {
       name: "getNotebookCells",
+      extensionRequired: true,
       description:
         "Get all cells from a Jupyter notebook (.ipynb) file. " +
         "Returns cell kind (code/markdown), language, source text, and whether output exists. " +
@@ -46,6 +47,7 @@ export function createRunNotebookCellTool(workspace: string, extensionClient: Ex
   return {
     schema: {
       name: "runNotebookCell",
+      extensionRequired: true,
       description:
         "Execute a single cell in a Jupyter notebook and return its output. " +
         "The notebook will be made visible in the editor. " +
@@ -97,6 +99,7 @@ export function createGetNotebookOutputTool(workspace: string, extensionClient: 
   return {
     schema: {
       name: "getNotebookOutput",
+      extensionRequired: true,
       description:
         "Get the output of a specific notebook cell without re-running it. " +
         "Returns text output, truncated at 100 KB. Cell index is 0-based. " +

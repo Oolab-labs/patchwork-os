@@ -121,4 +121,40 @@ describe("LockFileManager", () => {
 
     expect(fs.existsSync(liveLockPath)).toBe(true);
   });
+
+  it("cleanStale removes a live-PID lock whose startedAt is older than 24h (PID reuse guard)", () => {
+    const ideDir = path.join(tmpDir, "ide");
+    fs.mkdirSync(ideDir, { recursive: true, mode: 0o700 });
+
+    // Case 1: alive PID + startedAt 25h ago → removed (too old, PID may be reused)
+    const stalePath = path.join(ideDir, "22221.lock");
+    fs.writeFileSync(
+      stalePath,
+      JSON.stringify({ pid: process.pid, startedAt: Date.now() - 25 * 60 * 60 * 1000 }),
+      { mode: 0o600 },
+    );
+
+    // Case 2: alive PID + startedAt 23h ago → kept (recent enough)
+    const freshPath = path.join(ideDir, "22222.lock");
+    fs.writeFileSync(
+      freshPath,
+      JSON.stringify({ pid: process.pid, startedAt: Date.now() - 23 * 60 * 60 * 1000 }),
+      { mode: 0o600 },
+    );
+
+    // Case 3: alive PID + no startedAt → kept (old lock format, backward compat)
+    const legacyPath = path.join(ideDir, "22223.lock");
+    fs.writeFileSync(
+      legacyPath,
+      JSON.stringify({ pid: process.pid }),
+      { mode: 0o600 },
+    );
+
+    const mgr = new LockFileManager(logger);
+    mgr.cleanStale();
+
+    expect(fs.existsSync(stalePath)).toBe(false);  // removed: 25h old
+    expect(fs.existsSync(freshPath)).toBe(true);   // kept: 23h old
+    expect(fs.existsSync(legacyPath)).toBe(true);  // kept: no startedAt
+  });
 });

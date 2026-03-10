@@ -5,6 +5,7 @@ export function createReadClipboardTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "readClipboard",
+      extensionRequired: true,
       description:
         "Read the current contents of the system clipboard. " +
         "Returns up to 100 KB of text. Useful for reading error messages, stack traces, " +
@@ -38,6 +39,7 @@ export function createWriteClipboardTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "writeClipboard",
+      extensionRequired: true,
       description:
         "Write text to the system clipboard. " +
         "Useful for placing formatted output, transformed snippets, or summaries " +

@@ -287,3 +287,165 @@ describe("Integration: extension proxy graceful error", () => {
     expect(text.toLowerCase()).toContain("extension");
   });
 });
+
+// ── Stress tests: extensionRequired filtering ─────────────────────────────────
+
+const EXTENSION_REQUIRED_TOOLS = [
+  "listTerminals", "getTerminalOutput", "createTerminal", "waitForTerminalOutput",
+  "runInTerminal", "disposeTerminal", "sendTerminalCommand",
+  "getDebugState", "evaluateInDebugger", "setDebugBreakpoints", "startDebugging", "stopDebugging",
+  "getNotebookCells", "runNotebookCell", "getNotebookOutput",
+  "readClipboard", "writeClipboard",
+  "listTasks", "runTask",
+  "setEditorDecorations", "clearEditorDecorations",
+  "closeTab", "organizeImports", "getInlayHints", "watchDiagnostics",
+  "executeVSCodeCommand", "listVSCodeCommands",
+  "getHover", "getCodeActions", "applyCodeAction", "renameSymbol", "getCallHierarchy",
+];
+
+describe("Integration: extensionRequired full-registry filter", () => {
+  it("tools/list hides all 32 extensionRequired tools when extension is disconnected", async () => {
+    const bridge = await setupBridge(true);
+    // Must wire the fn — setupBridge does not do this; without it the default is ?? true (all visible)
+    bridge.transport.setExtensionConnectedFn(() => bridge.extensionClient.isConnected());
+    const ws = await bridge.connectClaude();
+
+    send(ws, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await waitFor(ws, (m) => m.id === 1);
+    send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    send(ws, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    const resp = await waitFor(ws, (m) => m.id === 2);
+    const tools = (resp.result as { tools: Array<{ name: string }> }).tools;
+    const names = new Set(tools.map((t) => t.name));
+
+    for (const toolName of EXTENSION_REQUIRED_TOOLS) {
+      expect(names.has(toolName), `${toolName} should be hidden when extension disconnected`).toBe(false);
+    }
+    // Pure tools must still be present
+    expect(names.has("getGitStatus")).toBe(true);
+    expect(names.has("getGitDiff")).toBe(true);
+    expect(names.has("getGitLog")).toBe(true);
+    // Registry must not be vacuously empty
+    expect(tools.length).toBeGreaterThanOrEqual(15);
+  });
+});
+
+describe("Integration: extensionRequired tools/call isError", () => {
+  it("calling extensionRequired tools without extension returns isError:true for tools across different modules", async () => {
+    const bridge = await setupBridge(true);
+    bridge.transport.setExtensionConnectedFn(() => bridge.extensionClient.isConnected());
+    const ws = await bridge.connectClaude();
+
+    send(ws, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await waitFor(ws, (m) => m.id === 1);
+    send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // One tool from each of: terminal.ts, debug.ts, lsp.ts (getHover needs valid args)
+    const toolsToTest = [
+      { name: "listTerminals", arguments: {} },
+      { name: "getDebugState", arguments: {} },
+      { name: "getHover", arguments: { filePath: bridge.workspace + "/file.ts", line: 1, column: 1 } },
+    ];
+
+    for (let i = 0; i < toolsToTest.length; i++) {
+      const { name, arguments: args } = toolsToTest[i]!;
+      send(ws, {
+        jsonrpc: "2.0",
+        id: 10 + i,
+        method: "tools/call",
+        params: { name, arguments: args },
+      });
+      const resp = await waitFor(ws, (m) => m.id === 10 + i, 8000);
+
+      expect(resp.error, `${name} must not return JSON-RPC error`).toBeUndefined();
+      const result = resp.result as { content: Array<{ text: string }>; isError: boolean };
+      expect(result.isError, `${name} must have isError: true`).toBe(true);
+      expect((result.content[0]?.text ?? "").toLowerCase()).toContain("extension");
+    }
+  });
+});
+
+describe("Integration: tools/list_changed on extension disconnect", () => {
+  it("Claude receives notifications/tools/list_changed when extension disconnects", async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-integ-disc-"));
+    fs.mkdirSync(path.join(workspace, ".git"), { recursive: true });
+    const authToken = randomUUID();
+    const logger = new Logger(false);
+    const server = new Server(authToken, logger);
+    servers.push(server);
+    const transport = new McpTransport(logger);
+    const extensionClient = new ExtensionClient(logger);
+
+    let claudeWs: WebSocket | null = null;
+
+    server.on("connection", (ws: WebSocket) => {
+      claudeWs = ws;
+      transport.attach(ws);
+    });
+
+    // On extension connect: immediate notification (mirrors bridge.ts)
+    server.on("extension", (ws: WebSocket) => {
+      extensionClient.handleExtensionConnection(ws);
+      if (claudeWs && (claudeWs as WebSocket).readyState === WebSocket.OPEN) {
+        McpTransport.sendNotification(claudeWs, "notifications/tools/list_changed", undefined, logger);
+      }
+    });
+
+    // On extension disconnect: debounced notification (mirrors bridge.ts:80-113)
+    let listChangedTimer: ReturnType<typeof setTimeout> | null = null;
+    extensionClient.onExtensionDisconnected = () => {
+      if (listChangedTimer) return;
+      listChangedTimer = setTimeout(() => {
+        listChangedTimer = null;
+        if (claudeWs && (claudeWs as WebSocket).readyState === WebSocket.OPEN) {
+          McpTransport.sendNotification(claudeWs, "notifications/tools/list_changed", undefined, logger);
+        }
+      }, 2000);
+    };
+
+    transport.setExtensionConnectedFn(() => extensionClient.isConnected());
+
+    const port = await server.findAndListen(null);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": authToken },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.on("open", resolve);
+      ws.on("error", reject);
+    });
+    openedClients.push(ws);
+
+    send(ws, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await waitFor(ws, (m) => m.id === 1);
+    send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+
+    // Connect extension (wait past rate limit)
+    await new Promise((r) => setTimeout(r, 1100));
+    const extWs = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-ide-extension": authToken },
+    });
+    await new Promise<void>((resolve, reject) => {
+      extWs.on("open", resolve);
+      extWs.on("error", reject);
+    });
+    openedClients.push(extWs);
+
+    // Consume the connect notification before testing disconnect
+    await waitFor(ws, (m) => m.method === "notifications/tools/list_changed", 5000);
+
+    // Now disconnect and wait for the debounced disconnect notification (~2s)
+    const disconnectNotifPromise = waitFor(
+      ws,
+      (m) => m.method === "notifications/tools/list_changed",
+      5000,
+    );
+    extWs.close();
+
+    const notif = await disconnectNotifPromise;
+    expect(notif.method).toBe("notifications/tools/list_changed");
+  });
+});

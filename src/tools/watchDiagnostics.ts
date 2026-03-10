@@ -9,6 +9,7 @@ export function createWatchDiagnosticsTool(
   return {
     schema: {
       name: "watchDiagnostics",
+      extensionRequired: true,
       description:
         "Wait for diagnostic changes and return updated diagnostics. " +
         "Long-polls until diagnostics change or timeout. " +

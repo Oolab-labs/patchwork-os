@@ -9,6 +9,7 @@ export function createOrganizeImportsTool(
   return {
     schema: {
       name: "organizeImports",
+      extensionRequired: true,
       description:
         "Organize and sort imports in a file using VS Code's built-in organize imports action. Requires the VS Code extension to be connected — returns an error if disconnected (no CLI fallback available).",
       annotations: { destructiveHint: true, idempotentHint: true },
