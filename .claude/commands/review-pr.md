@@ -98,7 +98,7 @@ Call `githubPostPRReview` with:
 [One sentence: whether this PR is ready to merge, needs changes, or has concerns to address]
 
 ---
-*Reviewed by Claude via [claude-ide-bridge](https://github.com/anthropics/claude-ide-bridge)*
+*Reviewed by Claude via [claude-ide-bridge](https://github.com/Oolab-labs/claude-ide-bridge)*
 ```
 
 - **comments:** An array of inline comments, one per finding. Each comment must:

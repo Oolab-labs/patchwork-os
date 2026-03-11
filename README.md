@@ -1,5 +1,9 @@
 # Claude IDE Bridge
 
+[![npm version](https://img.shields.io/npm/v/claude-ide-bridge)](https://www.npmjs.com/package/claude-ide-bridge)
+[![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **115+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
 
 ## How It Works
@@ -245,6 +249,14 @@ npm run build        # esbuild bundle
 npm run package      # Create .vsix
 npm test             # Run 242 extension tests
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and how to add new tools.
+
+## Support
+
+If Claude IDE Bridge saves you time, consider [sponsoring the project](https://github.com/sponsors/Oolab-labs).
 
 ## License
 

@@ -3,10 +3,10 @@
   "displayName": "Claude IDE Bridge",
   "description": "Companion extension for claude-ide-bridge — provides real-time editor state to Claude Code",
   "version": "0.1.0",
-  "publisher": "claude-ide-bridge",
+  "publisher": "oolab-labs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/claude-ide-bridge"
+    "url": "https://github.com/Oolab-labs/claude-ide-bridge"
   },
   "engines": {
     "vscode": "^1.93.0"
