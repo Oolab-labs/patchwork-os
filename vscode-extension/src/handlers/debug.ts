@@ -1,6 +1,19 @@
 import * as vscode from "vscode";
 import type { RequestHandler } from "../types";
 
+const CUSTOM_REQUEST_TIMEOUT_MS = 8000;
+
+/** Race a promise against a timeout. Rejects with an error on timeout. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`customRequest timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 interface DebugHandlerDeps {
   getBridge: () => { sendNotification(method: string, params: unknown): void } | null;
 }
@@ -27,7 +40,7 @@ function sendDebugNotification(deps: DebugHandlerDeps): void {
   });
 }
 
-const handleGetDebugState: RequestHandler = async () => {
+export const handleGetDebugState: RequestHandler = async () => {
   const session = vscode.debug.activeDebugSession;
   const breakpoints = vscode.debug.breakpoints
     .filter((bp): bp is vscode.SourceBreakpoint => bp instanceof vscode.SourceBreakpoint)
@@ -46,16 +59,26 @@ const handleGetDebugState: RequestHandler = async () => {
   let scopes: unknown[] = [];
   let pausedAt: unknown = undefined;
 
-  try {
-    const threads = await session.customRequest("threads");
-    const threadId: number = Array.isArray(threads?.threads) && threads.threads.length > 0
-      ? (threads.threads[0] as Record<string, unknown>).id as number
-      : 1;
+  // Helper to call customRequest with a timeout so a hung adapter doesn't block forever.
+  const timedRequest = (command: string, args?: unknown) =>
+    withTimeout(session.customRequest(command, args), CUSTOM_REQUEST_TIMEOUT_MS);
 
-    const stackResponse = await session.customRequest("stackTrace", { threadId, levels: 20 });
-    const frames: Array<Record<string, unknown>> = Array.isArray(stackResponse?.stackFrames)
-      ? stackResponse.stackFrames
-      : [];
+  try {
+    const threads = await timedRequest("threads");
+    const threadId: number =
+      Array.isArray((threads as any)?.threads) && (threads as any).threads.length > 0
+        ? ((threads as any).threads[0] as Record<string, unknown>).id as number
+        : 1;
+
+    let frames: Array<Record<string, unknown>> = [];
+    try {
+      const stackResponse = await timedRequest("stackTrace", { threadId, levels: 20 });
+      frames = Array.isArray((stackResponse as any)?.stackFrames)
+        ? (stackResponse as any).stackFrames
+        : [];
+    } catch {
+      // Stack trace unavailable — session may not be paused
+    }
 
     callStack = frames.map((f) => ({
       id: f.id,
@@ -73,27 +96,35 @@ const handleGetDebugState: RequestHandler = async () => {
         column: topFrame.column,
       };
 
-      const scopesResponse = await session.customRequest("scopes", { frameId: topFrame.id });
-      const rawScopes: Array<Record<string, unknown>> = Array.isArray(scopesResponse?.scopes)
-        ? scopesResponse.scopes
-        : [];
-
-      for (const scope of rawScopes.slice(0, 3)) {
-        const varsResponse = await session.customRequest("variables", {
-          variablesReference: scope.variablesReference,
-          count: 50,
-        });
-        const vars: Array<Record<string, unknown>> = Array.isArray(varsResponse?.variables)
-          ? varsResponse.variables
+      try {
+        const scopesResponse = await timedRequest("scopes", { frameId: topFrame.id });
+        const rawScopes: Array<Record<string, unknown>> = Array.isArray((scopesResponse as any)?.scopes)
+          ? (scopesResponse as any).scopes
           : [];
-        scopes.push({
-          name: scope.name,
-          variables: vars.slice(0, 50).map((v) => ({
-            name: v.name,
-            value: v.value,
-            type: v.type ?? "",
-          })),
-        });
+
+        for (const scope of rawScopes.slice(0, 3)) {
+          try {
+            const varsResponse = await timedRequest("variables", {
+              variablesReference: scope.variablesReference,
+              count: 50,
+            });
+            const vars: Array<Record<string, unknown>> = Array.isArray((varsResponse as any)?.variables)
+              ? (varsResponse as any).variables
+              : [];
+            scopes.push({
+              name: scope.name,
+              variables: vars.slice(0, 50).map((v) => ({
+                name: v.name,
+                value: v.value,
+                type: v.type ?? "",
+              })),
+            });
+          } catch {
+            // Variables unavailable for this scope
+          }
+        }
+      } catch {
+        // Scopes unavailable — continue with empty scopes
       }
     }
   } catch {

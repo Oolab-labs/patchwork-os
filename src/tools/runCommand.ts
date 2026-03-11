@@ -48,7 +48,7 @@ function validateCommand(command: string, allowlist: string[]): void {
       `Invalid command "${command}": must be a simple basename without /, \\, .., or spaces`,
     );
   }
-  if (!allowlist.includes(command)) {
+  if (!allowlist.some((entry) => entry.toLowerCase() === command)) {
     throw new Error(
       `Command "${command}" is not in the allowlist. Use --allow-command ${command} to add it. Run getToolCapabilities to see allowed commands.`,
     );

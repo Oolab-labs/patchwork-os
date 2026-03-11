@@ -62,6 +62,28 @@ describe("search tools", () => {
   });
 
   describe("searchWorkspace", () => {
+    it("rejects ReDoS pattern (a+)+b with isRegex:true", async () => {
+      const tool = createSearchWorkspaceTool(tmpDir, { ...allFalseProbes });
+      const result = await tool.handler({ query: "(a+)+b", isRegex: true });
+      const data = parse(result);
+      expect(result.isError).toBe(true);
+      expect(data.error ?? result.content[0]?.text).toMatch(/dangerous|catastrophic|nested quantifier|ReDoS/i);
+    });
+
+    it("rejects ReDoS pattern (x+x+)+y with isRegex:true", async () => {
+      const tool = createSearchWorkspaceTool(tmpDir, { ...allFalseProbes });
+      const result = await tool.handler({ query: "(x+x+)+y", isRegex: true });
+      const data = parse(result);
+      expect(result.isError).toBe(true);
+      expect(data.error ?? result.content[0]?.text).toMatch(/dangerous|catastrophic|nested quantifier|ReDoS/i);
+    });
+
+    it("allows safe regex patterns", async () => {
+      const tool = createSearchWorkspaceTool(tmpDir, { ...allFalseProbes });
+      const result = await tool.handler({ query: "hello\\s+world", isRegex: true });
+      expect(result.isError).toBeUndefined();
+    });
+
     it("rejects empty query", async () => {
       const tool = createSearchWorkspaceTool(tmpDir, { ...allFalseProbes });
       await expect(tool.handler({ query: "   " })).rejects.toThrow(

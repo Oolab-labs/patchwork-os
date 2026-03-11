@@ -343,15 +343,22 @@ export async function handleExecuteInTerminal(
   // Read output concurrently with waiting for execution end
   const reader = execution.read();
   const readPromise = (async () => {
-    for await (const chunk of reader) {
-      if (!truncated) {
-        outputBytes += chunk.length;
-        if (outputBytes > MAX_EXECUTE_OUTPUT_BYTES) {
-          truncated = true;
-        } else {
-          outputChunks.push(chunk);
+    try {
+      for await (const chunk of reader) {
+        if (!truncated) {
+          outputBytes += chunk.length;
+          if (outputBytes > MAX_EXECUTE_OUTPUT_BYTES) {
+            truncated = true;
+          } else {
+            outputChunks.push(chunk);
+          }
         }
       }
+    } catch {
+      // Swallow errors from the async iterator (e.g. terminal disposed after the
+      // 500ms grace timer wins Promise.race and reader.return() is called). Output
+      // collected before disposal is preserved in outputChunks. A rejection here
+      // would become an unhandled rejection and crash the extension host.
     }
   })();
 

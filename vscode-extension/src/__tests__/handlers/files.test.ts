@@ -19,9 +19,9 @@ beforeEach(() => {
 // ── Workspace boundary (tested through handlers) ──────────────
 
 describe("workspace boundary checks", () => {
-  it("allows any path when no workspace folders", async () => {
+  it("rejects all paths when no workspace folders", async () => {
     vscode.workspace.workspaceFolders = undefined;
-    await expect(handleOpenFile({ file: "/anywhere/file.ts" })).resolves.not.toThrow();
+    await expect(handleOpenFile({ file: "/anywhere/file.ts" })).rejects.toThrow("No workspace is open");
   });
 
   it("allows paths inside workspace", async () => {

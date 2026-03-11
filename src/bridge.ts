@@ -12,6 +12,7 @@ import { cleanupTempDirs } from "./tools/openDiff.js";
 import { McpTransport } from "./transport.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
+const CLAUDE_RECONNECT_GRACE_MS = 30_000;
 let globalHandlersRegistered = false;
 
 export class Bridge {
@@ -26,6 +27,7 @@ export class Bridge {
   private currentWs: WebSocket | null = null;
   private stopped = false;
   private listChangedTimer: ReturnType<typeof setTimeout> | null = null;
+  private claudeDisconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private config: Config) {
     this.logger = new Logger(config.verbose, config.jsonl);
@@ -40,6 +42,17 @@ export class Bridge {
 
     // Handle new Claude Code connections
     this.server.on("connection", (ws: WebSocket) => {
+      // If reconnecting within grace period, cancel the deferred cleanup
+      if (this.claudeDisconnectTimer) {
+        clearTimeout(this.claudeDisconnectTimer);
+        this.claudeDisconnectTimer = null;
+        this.logger.info("Claude Code reconnected within grace period");
+        // Clear stale file tracking — we can't distinguish "same client
+        // reconnecting" from "different client connecting during grace period",
+        // so always reset. The reconnecting client doesn't rely on this state.
+        this.openedFiles.clear();
+      }
+
       // Clean up previous connection if any
       if (this.currentWs) {
         this.logger.info("Replacing existing connection");
@@ -48,9 +61,12 @@ export class Bridge {
         if (this.currentWs.readyState === WebSocket.OPEN) {
           this.currentWs.terminate();
         }
+        // Don't clear openedFiles — preserve state for reconnecting session
+      } else if (!this.claudeDisconnectTimer) {
+        // First connection ever (no prior session) — reset file tracking
+        this.openedFiles.clear();
       }
-      // Reset open-file tracking for the new session
-      this.openedFiles.clear();
+
       this.currentWs = ws;
       this.transport.attach(ws);
       this.logger.event("claude_connected");
@@ -60,18 +76,17 @@ export class Bridge {
         this.logger.info("Claude Code disconnected");
         this.logger.event("claude_disconnected");
         if (this.currentWs === ws) {
-          this.transport.detach();
           this.currentWs = null;
-          this.extensionClient.notifyClaudeConnectionState(false);
+          // Start grace period — defer transport detach and state cleanup
+          this.startClaudeDisconnectGrace();
         }
       });
 
       ws.on("error", (err) => {
         this.logger.error(`WebSocket error: ${err.message}`);
         if (this.currentWs === ws) {
-          this.transport.detach();
           this.currentWs = null;
-          this.extensionClient.notifyClaudeConnectionState(false);
+          this.startClaudeDisconnectGrace();
         }
       });
     });
@@ -242,6 +257,18 @@ export class Bridge {
     }
   }
 
+  private startClaudeDisconnectGrace(): void {
+    if (this.claudeDisconnectTimer) return; // Already in grace period
+    this.logger.info(`Claude Code grace period started (${CLAUDE_RECONNECT_GRACE_MS / 1000}s)`);
+    this.claudeDisconnectTimer = setTimeout(() => {
+      this.claudeDisconnectTimer = null;
+      this.logger.info("Grace period expired — cleaning up session state");
+      this.transport.detach();
+      this.openedFiles.clear();
+      this.extensionClient.notifyClaudeConnectionState(false);
+    }, CLAUDE_RECONNECT_GRACE_MS);
+  }
+
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
@@ -249,6 +276,10 @@ export class Bridge {
     if (this.listChangedTimer) {
       clearTimeout(this.listChangedTimer);
       this.listChangedTimer = null;
+    }
+    if (this.claudeDisconnectTimer) {
+      clearTimeout(this.claudeDisconnectTimer);
+      this.claudeDisconnectTimer = null;
     }
     // Abort in-flight tool calls before closing the server
     this.transport.detach();

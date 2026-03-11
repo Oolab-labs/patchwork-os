@@ -135,6 +135,7 @@ export class McpTransport {
 
   attach(ws: WebSocket): void {
     this.activeWs = ws;
+    this.initialized = false; // Force re-initialization on every new connection
     const gen = ++this.generation;
     const listener = async (data: Buffer) => {
       // Ignore messages from superseded connections

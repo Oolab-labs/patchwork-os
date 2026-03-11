@@ -158,12 +158,8 @@ export class ExtensionClient {
     this.ws = ws;
     this.connected = true;
 
-    // Clear stale cached state from previous session
-    this.latestDiagnostics.clear();
-    this.latestSelection = null;
-    this.latestActiveFile = null;
-    this.latestAIComments.clear();
-    this.latestDebugState = null;
+    // Don't clear cached diagnostics/selection/file state — extension pushes
+    // fresh data on connect, so stale values are harmless for a few seconds.
 
     // Reset backoff — fresh connection deserves a clean slate
     this.extensionSuspendedUntil = 0;

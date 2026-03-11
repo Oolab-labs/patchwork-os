@@ -113,6 +113,27 @@ describe("unwatchFiles", () => {
   });
 });
 
+describe("notify error handling", () => {
+  it("swallows errors thrown by sendNotification without propagating", async () => {
+    const throwingBridge = {
+      sendNotification: vi.fn(() => { throw new Error("serialization failure"); }),
+    };
+    const deps = {
+      getBridge: vi.fn(() => throwingBridge),
+    };
+    const { handlers } = createFileWatcherHandlers(deps);
+
+    vscode.workspace.workspaceFolders = [{ uri: { fsPath: "/workspace" } }] as any;
+    await handlers["extension/watchFiles"]({ id: "w1", pattern: "**/*.ts" });
+
+    const watcher = vi.mocked(vscode.workspace.createFileSystemWatcher).mock.results[0].value;
+    const uri = Uri.file("/workspace/file.ts");
+
+    // This should NOT throw even though sendNotification throws
+    expect(() => watcher._fire("change", uri)).not.toThrow();
+  });
+});
+
 describe("disposeAll", () => {
   it("disposes all watchers", async () => {
     const { handlers, disposeAll } = setup();

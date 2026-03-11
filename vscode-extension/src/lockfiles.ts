@@ -46,11 +46,14 @@ export async function readLockFilesAsync(): Promise<LockFileData | null> {
           continue;
         }
 
-        // Guard against PID reuse: skip locks older than 24h
-        if (typeof content.startedAt === "number") {
-          const ageMs = Date.now() - content.startedAt;
-          if (ageMs > 24 * 60 * 60 * 1000) continue;
-        }
+        // Guard against PID reuse: startedAt is required; if absent treat the
+        // lock as invalid (epoch 0 will always exceed the age threshold).
+        const startedAt: number =
+          typeof content.startedAt === "number" ? content.startedAt : 0;
+        const ageMs = Date.now() - startedAt;
+        // Reduce window from 24 h to 2 h — bridges don't run for days without
+        // reconnecting, and a shorter window greatly limits PID-reuse exposure.
+        if (ageMs > 2 * 60 * 60 * 1000) continue;
 
         if (currentWorkspace && content.workspace) {
           if (path.resolve(content.workspace) !== path.resolve(currentWorkspace)) continue;

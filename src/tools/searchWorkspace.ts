@@ -1,6 +1,7 @@
 import type { ProbeResults } from "../probe.js";
 import type { ProgressFn } from "../transport.js";
 import {
+  error,
   execSafe,
   makeRelative,
   optionalBool,
@@ -65,6 +66,20 @@ export function createSearchWorkspaceTool(
       const caseSensitive = optionalBool(args, "caseSensitive") ?? true;
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 100;
       const contextLines = optionalInt(args, "contextLines", 0, 5) ?? 0;
+
+      // Reject patterns with nested quantifiers — these cause catastrophic backtracking (ReDoS)
+      if (isRegex) {
+        if (
+          /\([^)]*[+*]\)[+*?]/.test(query) ||
+          /\([^)]*\{[^}]+\}\)[+*{?]/.test(query) ||
+          /[+*][+*]|\{[^}]+\}[+*]/.test(query)
+        ) {
+          return error(
+            "Pattern contains nested quantifiers (e.g. (a+)+) which can cause catastrophic backtracking (ReDoS). " +
+            "Simplify the regex — use a literal string match or a non-nested quantifier.",
+          );
+        }
+      }
 
       if (probes.rg) {
         // Use ripgrep

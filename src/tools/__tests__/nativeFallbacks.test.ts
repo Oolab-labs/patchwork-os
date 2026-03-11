@@ -116,6 +116,17 @@ describe("applyEditsToContent", () => {
     ]);
     expect(result).toBe("");
   });
+
+  it("rejects overlapping edits (replace lines 3-7 and replace lines 5-9)", () => {
+    const lines = Array.from({ length: 10 }, (_, i) => `line${i + 1}`).join("\n");
+    // These two edits overlap: first covers lines 3-7, second covers lines 5-9
+    expect(() =>
+      applyEditsToContent(lines, [
+        { type: "replace", line: 3, column: 1, endLine: 7, endColumn: 6, text: "REPLACED_A" },
+        { type: "replace", line: 5, column: 1, endLine: 9, endColumn: 6, text: "REPLACED_B" },
+      ]),
+    ).toThrow(/overlapping edits/i);
+  });
 });
 
 // ── File operation tool fallbacks (real fs, disconnected extension) ────────

@@ -222,6 +222,18 @@ export function createSendHttpRequestTool() {
           respHeaders[k] = v;
         });
 
+        // Check Content-Length before reading to avoid loading a known-huge body into memory
+        const contentLengthHeader = resp.headers.get("content-length");
+        if (contentLengthHeader !== null) {
+          const declaredLength = Number(contentLengthHeader);
+          if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+            return error(
+              `Response Content-Length (${declaredLength} bytes) exceeds maxResponseBytes (${maxBytes} bytes). ` +
+              `Increase maxResponseBytes or use a different approach to fetch this resource.`,
+            );
+          }
+        }
+
         // Read body with size cap — use truncateOutput for correct UTF-8 boundary handling
         const arrayBuf = await resp.arrayBuffer();
         const fullBytes = arrayBuf.byteLength;

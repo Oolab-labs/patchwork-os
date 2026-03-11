@@ -98,11 +98,15 @@ export function createNotebookHandlers(): {
       const timer = setTimeout(finish, timeoutMs);
     });
 
-    const output = serializeCellOutput(notebook.cellAt(cellIndex));
+    const postCell = notebook.cellAt(cellIndex);
+    if (!postCell) {
+      throw new Error(`Cell at index ${cellIndex} is no longer available (notebook was modified during execution)`);
+    }
+    const output = serializeCellOutput(postCell);
     return {
       cellIndex,
       durationMs: Date.now() - startTime,
-      executionCount: notebook.cellAt(cellIndex).executionSummary?.executionOrder ?? null,
+      executionCount: postCell.executionSummary?.executionOrder ?? null,
       output,
     };
   };

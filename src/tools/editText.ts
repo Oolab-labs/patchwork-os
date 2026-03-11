@@ -30,11 +30,32 @@ export function applyEditsToContent(
 ): string {
   const lines = content.split("\n");
 
-  // Sort edits in reverse order: last position first so indices stay stable
-  const sorted = [...edits].sort((a, b) => {
-    if (a.line !== b.line) return b.line - a.line;
-    return b.column - a.column;
+  // Sort edits in forward order first to detect overlaps
+  const sortedForward = [...edits].sort((a, b) => {
+    if (a.line !== b.line) return a.line - b.line;
+    return a.column - b.column;
   });
+
+  // Check for overlapping ranges
+  for (let i = 0; i < sortedForward.length - 1; i++) {
+    const cur = sortedForward[i];
+    const next = sortedForward[i + 1];
+    if (!cur || !next) continue;
+    const curEndLine = cur.endLine ?? cur.line;
+    const curEndCol = cur.endColumn ?? cur.column;
+    // Two edits overlap when the end of edit[i] is strictly past the start of edit[i+1]
+    const overlaps =
+      curEndLine > next.line ||
+      (curEndLine === next.line && curEndCol > next.column);
+    if (overlaps) {
+      throw new Error(
+        `overlapping edits detected: edit ending at line ${curEndLine} overlaps edit starting at line ${next.line}`,
+      );
+    }
+  }
+
+  // Sort edits in reverse order: last position first so indices stay stable
+  const sorted = sortedForward.slice().reverse();
 
   for (const edit of sorted) {
     const lineIdx = edit.line - 1; // 1-based → 0-based

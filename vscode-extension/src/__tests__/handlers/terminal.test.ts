@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import * as vscode from "vscode";
 import { __reset, _mockTerminal } from "../__mocks__/vscode";
 import {
@@ -9,6 +9,7 @@ import {
   handleGetTerminalOutput,
   handleCreateTerminal,
   handleSendTerminalCommand,
+  handleExecuteInTerminal,
   setOutputCaptureEnabled,
   getOrCreateBuffer,
   deleteTerminalBuffer,
@@ -359,4 +360,86 @@ describe("getOrCreateBuffer", () => {
     expect(b1).not.toBe(b2);
     deleteTerminalBuffer(t as any);
   });
+});
+
+// ── handleExecuteInTerminal — BUG 2 ───────────────────────────
+// When the 500ms grace timer wins Promise.race() and reader.return() is called,
+// the for-await loop inside readPromise may throw if the async iterator rejects
+// on forced termination. That rejection must NOT become an unhandled rejection
+// (which crashes the extension host).
+//
+// The fix wraps the for-await in try-catch inside the readPromise IIFE so that
+// readPromise never rejects — errors are swallowed and output collected so far
+// is preserved.
+
+describe("handleExecuteInTerminal — reader rejection after grace period", () => {
+  it("resolves cleanly when reader throws after grace timer wins (BUG 2 fix)", async () => {
+    // Build a reader whose next() blocks until forced closed, then throws.
+    // This simulates VS Code's stream when the terminal is disposed mid-read.
+    let forceClose!: () => void;
+    const closeSignal = new Promise<void>((r) => { forceClose = r; });
+
+    let chunkDelivered = false;
+    const mockReader: AsyncIterableIterator<string> & { return?: () => Promise<any> } = {
+      [Symbol.asyncIterator]() { return this; },
+      async next(): Promise<IteratorResult<string>> {
+        if (!chunkDelivered) {
+          chunkDelivered = true;
+          return { value: "some output\n", done: false };
+        }
+        // Block until return() triggers the close signal, then throw
+        await closeSignal;
+        throw new Error("Terminal disposed: iterator closed after return()");
+      },
+      async return(): Promise<IteratorResult<string>> {
+        forceClose(); // unblocks the pending next(), which will throw
+        return { value: undefined, done: true };
+      },
+    };
+
+    // Mock a terminal with shell integration
+    let capturedEndHandler!: (ev: any) => void;
+    vi.mocked(vscode.window.onDidEndTerminalShellExecution).mockImplementation((handler: any) => {
+      capturedEndHandler = handler;
+      return { dispose: vi.fn() };
+    });
+
+    const mockExecution = {};
+    const mockShellIntegration = {
+      executeCommand: vi.fn(() => ({ ...mockExecution, read: () => mockReader })),
+    };
+    const terminal = {
+      name: "test",
+      show: vi.fn(),
+      shellIntegration: mockShellIntegration,
+    };
+    vscode.window.terminals = [terminal] as any;
+    vscode.window.activeTerminal = terminal as any;
+
+    // Start the handler — it waits for shell execution end
+    const handlerPromise = handleExecuteInTerminal({ command: "echo hi", timeoutMs: 30_000 });
+
+    // Let setup microtasks run so onDidEndTerminalShellExecution is registered
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Fire the shell execution end event — this resolves the main wait, then the
+    // 500ms grace timer starts. The grace timer will win the race because the
+    // reader's next() is still blocked.
+    const execution = mockShellIntegration.executeCommand.mock.results[0]!.value;
+    capturedEndHandler({ execution, exitCode: 0 });
+
+    // Wait for the handler to complete. The 500ms grace timer runs in real time
+    // — we need to wait it out. (The handler uses real setTimeout internally.)
+    const result = await handlerPromise as any;
+
+    // BUG 2: without the fix, reader.return() causes next() to throw, readPromise
+    // rejects, and because nobody awaits it after the race(), it becomes an
+    // unhandled rejection that crashes the extension host.
+    //
+    // With the fix (try-catch in for-await), the handler returns successfully.
+    expect(result.success).toBe(true);
+    // Output collected before return() was called is preserved
+    expect(result.output).toContain("some output");
+  }, 10_000);
 });

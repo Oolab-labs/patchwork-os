@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createCreateTerminalTool, createSendTerminalCommandTool } from "../terminal.js";
+import { createCreateTerminalTool, createSendTerminalCommandTool, createRunInTerminalTool } from "../terminal.js";
 
 function mockExtensionClient(connected = true) {
   return {
@@ -126,5 +126,70 @@ describe("sendTerminalCommand - allowlist", () => {
     const result = await tool.handler({ text: "npm install", name: "test" }) as any;
     expect(result.isError).toBe(true);
     expect(parseResult(result)).toContain("not connected");
+  });
+});
+
+describe("sendTerminalCommand - metacharacter blocking", () => {
+  it("blocks tilde home-dir expansion", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["cat"]);
+    const result = await tool.handler({ text: "cat ~/.ssh/id_rsa", name: "test" }) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("metacharacter");
+  });
+
+  it("blocks carriage return", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["echo"]);
+    const result = await tool.handler({ text: "echo hi\r", name: "test" }) as any;
+    expect(result.isError).toBe(true);
+  });
+
+  it("blocks semicolon (existing)", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["echo"]);
+    const result = await tool.handler({ text: "echo hi; rm -rf /", name: "test" }) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("metacharacter");
+  });
+
+  it("blocks backtick subshell (existing)", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["echo"]);
+    const result = await tool.handler({ text: "echo `id`", name: "test" }) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("metacharacter");
+  });
+
+  it("blocks dollar-paren subshell (existing)", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["echo"]);
+    const result = await tool.handler({ text: "echo $(id)", name: "test" }) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("metacharacter");
+  });
+});
+
+describe("runInTerminal - metacharacter blocking", () => {
+  function mockRunInTerminalClient(connected = true) {
+    return {
+      isConnected: () => connected,
+      executeInTerminal: vi.fn().mockResolvedValue("output"),
+    } as any;
+  }
+
+  it("blocks tilde home-dir expansion", async () => {
+    const tool = createRunInTerminalTool(mockRunInTerminalClient(), ["cat"]);
+    const result = await tool.handler({ command: "cat ~/.ssh/id_rsa" }) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("metacharacter");
+  });
+
+  it("blocks carriage return", async () => {
+    const tool = createRunInTerminalTool(mockRunInTerminalClient(), ["echo"]);
+    const result = await tool.handler({ command: "echo hi\r" }) as any;
+    expect(result.isError).toBe(true);
+  });
+
+  it("blocks semicolon (existing)", async () => {
+    const tool = createRunInTerminalTool(mockRunInTerminalClient(), ["echo"]);
+    const result = await tool.handler({ command: "echo hi; rm -rf /" }) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("metacharacter");
   });
 });

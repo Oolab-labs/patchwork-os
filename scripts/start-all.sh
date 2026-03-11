@@ -19,6 +19,7 @@ BRIDGE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORKSPACE="."
 NTFY_TOPIC=""
 BRIDGE_READY_TIMEOUT=30
+LAST_CLAUDE_RESTART=0
 
 # --- Parse args ---
 while [[ $# -gt 0 ]]; do
@@ -283,5 +284,22 @@ while true; do
     # Restart remote-control
     tmux send-keys -t "${SESSION}:0.3" "$REMOTE_CMD" Enter
     notify "All processes restarted"
+  else
+    # Bridge is alive — check if Claude CLI (pane 2) has exited
+    pane2_cmd=$(tmux display-message -t "${SESSION}:0.2" -p '#{pane_current_command}' 2>/dev/null || echo "")
+    if [[ "$pane2_cmd" == "bash" || "$pane2_cmd" == "zsh" || -z "$pane2_cmd" ]]; then
+      # Verify bridge is actually healthy before restarting just the CLI
+      BRIDGE_PORT=$(basename "$LOCK_FILE" .lock)
+      if curl -sf --max-time 5 "http://127.0.0.1:${BRIDGE_PORT}/health" >/dev/null 2>&1; then
+        # Cooldown: don't restart more than once per 30s
+        now=$(date +%s)
+        if [[ $(( now - LAST_CLAUDE_RESTART )) -ge 30 ]]; then
+          LAST_CLAUDE_RESTART=$now
+          echo "[$(date +%H:%M:%S)] Claude CLI died. Restarting with --resume..."
+          notify "Claude CLI died. Restarting with --resume..."
+          tmux send-keys -t "${SESSION}:0.2" "$CLAUDE_CMD --resume $SESSION_UUID" Enter
+        fi
+      fi
+    fi
   fi
 done

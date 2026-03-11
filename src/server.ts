@@ -10,6 +10,7 @@ interface AliveWebSocket extends WebSocket {
   isAlive: boolean;
   missedPongs: number;
   lastPongTime: number;
+  lastPingTime: number;
 }
 
 function enableTcpKeepalive(ws: WebSocket): void {
@@ -214,26 +215,39 @@ export class Server extends EventEmitter {
             reject(new Error("Unexpected server address"));
             return;
           }
-          // Ping clients every 15s; terminate after 2 missed pongs (30s tolerance)
+          // Ping clients every 30s; terminate after 3 missed pongs (90s tolerance)
           this.pingInterval = setInterval(() => {
+            const now = Date.now();
             for (const raw of this.wss.clients) {
               const client = raw as AliveWebSocket;
+              // Sleep/wake detection: if timer fired much later than expected,
+              // the system likely slept. Reset and probe instead of killing.
+              if (client.lastPingTime && now - client.lastPingTime > 45_000) {
+                client.missedPongs = 0;
+                client.isAlive = false;
+                client.lastPingTime = now;
+                if (client.readyState === WebSocket.OPEN) {
+                  client.ping(Buffer.from(now.toString()));
+                }
+                continue;
+              }
               if (!client.isAlive) {
                 client.missedPongs = (client.missedPongs ?? 0) + 1;
-                if (client.missedPongs >= 2) {
+                if (client.missedPongs >= 3) {
                   this.logger.warn(
-                    "Terminating unresponsive client (2 missed pongs)",
+                    "Terminating unresponsive client (3 missed pongs)",
                   );
                   client.terminate();
                   continue;
                 }
               }
               client.isAlive = false;
+              client.lastPingTime = now;
               if (client.readyState === WebSocket.OPEN) {
-                client.ping(Buffer.from(Date.now().toString()));
+                client.ping(Buffer.from(now.toString()));
               }
             }
-          }, 15000);
+          }, 30_000);
           resolve(addr.port);
         })
         .on("error", reject);

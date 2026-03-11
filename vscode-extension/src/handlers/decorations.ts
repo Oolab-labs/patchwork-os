@@ -5,6 +5,7 @@ interface DecorationEntry {
   type: vscode.TextEditorDecorationType;
   style: string;
   fileRanges: Map<string, vscode.DecorationOptions[]>;
+  isDisposed: boolean;
 }
 
 const STYLE_MAP: Record<string, vscode.DecorationRenderOptions> = {
@@ -45,6 +46,7 @@ export function createDecorationHandlers(): {
   const disposables: vscode.Disposable[] = [];
 
   function applyToEditor(editor: vscode.TextEditor, entry: DecorationEntry): void {
+    if (entry.isDisposed) return;
     const fileRangesForEditor = entry.fileRanges.get(editor.document.uri.fsPath);
     if (fileRangesForEditor) {
       editor.setDecorations(entry.type, fileRangesForEditor);
@@ -77,17 +79,22 @@ export function createDecorationHandlers(): {
       : "info";
     let entry = activeDecorations.get(id);
     if (entry && entry.style !== requestedStyle) {
-      // Style changed — dispose old type and recreate
+      // Style changed — clear editors, remove from map, mark disposed, then dispose.
+      // The order matters: remove from activeDecorations and set isDisposed=true BEFORE
+      // calling type.dispose(), so if VS Code fires onDidChangeVisibleTextEditors
+      // synchronously during dispose, the listener will not find or apply this stale entry.
       for (const editor of vscode.window.visibleTextEditors) {
         editor.setDecorations(entry.type, []);
       }
+      activeDecorations.delete(id);
+      entry.isDisposed = true;
       entry.type.dispose();
       entry = undefined;
     }
     if (!entry) {
       const renderOptions = STYLE_MAP[requestedStyle] ?? STYLE_MAP.info;
       const type = vscode.window.createTextEditorDecorationType(renderOptions);
-      entry = { type, style: requestedStyle, fileRanges: new Map() };
+      entry = { type, style: requestedStyle, fileRanges: new Map(), isDisposed: false };
       activeDecorations.set(id, entry);
     }
 
@@ -131,12 +138,13 @@ export function createDecorationHandlers(): {
     if (id) {
       const entry = activeDecorations.get(id);
       if (entry) {
-        // Clear from all visible editors
+        // Clear from all visible editors, then remove from map and mark disposed before dispose()
         for (const editor of vscode.window.visibleTextEditors) {
           editor.setDecorations(entry.type, []);
         }
-        entry.type.dispose();
         activeDecorations.delete(id);
+        entry.isDisposed = true;
+        entry.type.dispose();
         return { cleared: 1 };
       }
       return { cleared: 0 };
@@ -144,13 +152,15 @@ export function createDecorationHandlers(): {
 
     // Clear all
     const count = activeDecorations.size;
-    for (const entry of activeDecorations.values()) {
+    const entriesToDispose = [...activeDecorations.values()];
+    activeDecorations.clear();
+    for (const entry of entriesToDispose) {
       for (const editor of vscode.window.visibleTextEditors) {
         editor.setDecorations(entry.type, []);
       }
+      entry.isDisposed = true;
       entry.type.dispose();
     }
-    activeDecorations.clear();
     return { cleared: count };
   };
 
@@ -160,10 +170,12 @@ export function createDecorationHandlers(): {
       "extension/clearDecorations": handleClearDecorations,
     },
     disposeAll() {
-      for (const entry of activeDecorations.values()) {
+      const entriesToDispose = [...activeDecorations.values()];
+      activeDecorations.clear();
+      for (const entry of entriesToDispose) {
+        entry.isDisposed = true;
         entry.type.dispose();
       }
-      activeDecorations.clear();
       for (const d of disposables) d.dispose();
       disposables.length = 0;
     },

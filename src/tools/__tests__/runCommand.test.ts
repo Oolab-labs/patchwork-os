@@ -123,6 +123,53 @@ describe("runCommand", () => {
     ).rejects.toThrow("escapes workspace");
   });
 
+  describe("case-insensitive allowlist comparison", () => {
+    it("accepts lowercase command when allowlist has mixed-case entry", async () => {
+      const mixedCaseConfig: Config = {
+        ...config,
+        commandAllowlist: ["Git", "npm", "Echo"],
+      };
+      const tool = createRunCommandTool(tmpDir, mixedCaseConfig);
+      // "echo" (lowercase) should match "Echo" in allowlist
+      const result = await tool.handler({
+        command: "echo",
+        args: ["case-test"],
+      });
+      const data = parse(result);
+      expect(data.exitCode).toBe(0);
+      expect(data.stdout).toContain("case-test");
+    });
+
+    it("accepts uppercase command when allowlist has lowercase entry", async () => {
+      const tool = createRunCommandTool(tmpDir, config);
+      // "ECHO" (uppercase) should match "echo" in allowlist
+      // The command gets lowercased to "echo" which should match
+      const result = await tool.handler({
+        command: "ECHO",
+        args: ["upper-test"],
+      });
+      const data = parse(result);
+      expect(data.exitCode).toBe(0);
+      expect(data.stdout).toContain("upper-test");
+    });
+
+    it("accepts uppercase command when allowlist has mixed-case entry", async () => {
+      const mixedCaseConfig: Config = {
+        ...config,
+        commandAllowlist: ["Git", "Npm", "Echo"],
+      };
+      const tool = createRunCommandTool(tmpDir, mixedCaseConfig);
+      // "ECHO" (uppercase) should match "Echo" in allowlist
+      const result = await tool.handler({
+        command: "ECHO",
+        args: ["mixed-test"],
+      });
+      const data = parse(result);
+      expect(data.exitCode).toBe(0);
+      expect(data.stdout).toContain("mixed-test");
+    });
+  });
+
   it("runs command in a subdirectory cwd", async () => {
     const subDir = path.join(tmpDir, "subdir");
     fs.mkdirSync(subDir);

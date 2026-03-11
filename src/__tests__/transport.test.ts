@@ -654,6 +654,65 @@ describe("McpTransport", () => {
     expect(entries[1]?.errorMessage).toBe("oops");
   });
 
+  it("attach() resets initialized flag — reconnect without initialize is rejected", async () => {
+    // Simulate: Claude connects, initializes, disconnects during grace period,
+    // then reconnects. Because detach() hasn't fired yet (grace period), attach()
+    // is called directly on the new WebSocket. The new client must still perform
+    // the initialize handshake; tools/list without it must fail.
+    const token = "reinit-test";
+    server = new Server(token, logger);
+    transport = new McpTransport(logger);
+
+    server.on("connection", (ws: WebSocket) => {
+      transport?.attach(ws);
+    });
+
+    const port = await server.findAndListen(null);
+
+    // --- First connection: full handshake ---
+    const ws1 = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": token },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws1.on("open", resolve);
+      ws1.on("error", reject);
+    });
+
+    send(ws1, { jsonrpc: "2.0", id: 0, method: "initialize", params: {} });
+    await waitFor(ws1, (m) => m.id === 0);
+    send(ws1, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Verify tools/list works on the initialized connection
+    send(ws1, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const resp1 = await waitFor(ws1, (m) => m.id === 1);
+    expect(resp1.error).toBeUndefined();
+
+    // --- Simulate disconnect + reconnect within grace period ---
+    // Close ws1 but do NOT call detach() (grace period hasn't expired)
+    ws1.close();
+    // Wait >1s for server connection rate limit (MIN_CONNECTION_INTERVAL_MS)
+    await new Promise((r) => setTimeout(r, 1100));
+
+    // New connection — attach() is called by the server "connection" handler,
+    // but the new client does NOT send initialize.
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": token },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws2.on("open", resolve);
+      ws2.on("error", reject);
+    });
+    wsClient = ws2;
+
+    // tools/list without initialize should be rejected
+    send(ws2, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    const resp2 = await waitFor(ws2, (m) => m.id === 2);
+    expect(resp2.result).toBeUndefined();
+    expect((resp2.error as { code: number }).code).toBe(ErrorCodes.INVALID_REQUEST);
+    expect((resp2.error as { message: string }).message).toMatch(/not initialized/i);
+  });
+
   it("extensionRequired tools appear in tools/list when isExtensionConnectedFn is not set (defaults to connected)", async () => {
     // Intentionally do NOT call setExtensionConnectedFn — transport defaults to ?? true
     const { ws } = await setup("ext-required-default", (t) => {

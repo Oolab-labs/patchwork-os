@@ -320,9 +320,9 @@ export function createRunInTerminalTool(
       if (/[\n\r]/.test(command)) {
         return error("Command must not contain newlines. Send one command at a time.");
       }
-      if (/[;&|`$()<>{}!\\]/.test(command)) {
+      if (/[;&|`$()<>{}!\\~]/.test(command)) {
         return error(
-          "Command must not contain shell metacharacters (;&|`$()<>{}!\\). " +
+          "Command must not contain shell metacharacters (;&|`$()<>{}!\\~). " +
             "These could chain additional commands beyond the allowlist.",
         );
       }
@@ -453,9 +453,9 @@ export function createSendTerminalCommandTool(extensionClient: ExtensionClient, 
       }
 
       // Block shell metacharacters — terminal runs in a shell, so these bypass the allowlist
-      if (/[;&|`$()<>{}!\\]/.test(text)) {
+      if (/[;&|`$()<>{}!\\~]/.test(text)) {
         return error(
-          "Terminal command must not contain shell metacharacters (;&|`$()<>{}!\\). " +
+          "Terminal command must not contain shell metacharacters (;&|`$()<>{}!\\~). " +
           "Use runCommand for safer execution without a shell.",
         );
       }

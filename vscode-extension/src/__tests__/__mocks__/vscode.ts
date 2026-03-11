@@ -115,6 +115,28 @@ export const CodeActionKind = {
   SourceOrganizeImports: { value: "source.organizeImports" },
 };
 
+export const NotebookCellKind = {
+  Markup: 1,
+  Code: 2,
+} as const;
+
+export const NotebookCellExecutionState = {
+  Idle: 1,
+  Pending: 2,
+  Executing: 3,
+} as const;
+
+export const OverviewRulerLane = {
+  Left: 1,
+  Center: 2,
+  Right: 4,
+  Full: 7,
+} as const;
+
+export class ThemeColor {
+  constructor(public readonly id: string) {}
+}
+
 // ── Uri ───────────────────────────────────────────────────────
 
 export const Uri = {
@@ -153,6 +175,7 @@ export const workspace = {
   workspaceFolders: undefined as any[] | undefined,
   textDocuments: [] as any[],
   openTextDocument: vi.fn(async () => _mockTextDocument()),
+  openNotebookDocument: vi.fn(async () => ({ getCells: () => [], cellAt: vi.fn(() => null), cellCount: 0 })),
   applyEdit: vi.fn(async () => true),
   fs: {
     createDirectory: vi.fn(async () => {}),
@@ -186,15 +209,52 @@ export const window = {
   })),
   showInformationMessage: vi.fn(async () => undefined),
   showWarningMessage: vi.fn(async () => undefined),
+  showNotebookDocument: vi.fn(async () => undefined),
   onDidChangeTextEditorSelection: vi.fn(() => ({ dispose: vi.fn() })),
   onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
   onDidOpenTerminal: vi.fn(() => ({ dispose: vi.fn() })),
   onDidCloseTerminal: vi.fn(() => ({ dispose: vi.fn() })),
+  onDidEndTerminalShellExecution: vi.fn((_handler: (event: any) => void) => ({ dispose: vi.fn() })),
+  onDidChangeVisibleTextEditors: vi.fn(() => ({ dispose: vi.fn() })),
+  visibleTextEditors: [] as any[],
+  createTextEditorDecorationType: vi.fn(() => ({ dispose: vi.fn() })),
+};
+
+export const notebooks = {
+  onDidChangeNotebookCellExecutionState: vi.fn(() => ({ dispose: vi.fn() })),
 };
 
 export const languages = {
   getDiagnostics: vi.fn(() => []),
   onDidChangeDiagnostics: vi.fn(() => ({ dispose: vi.fn() })),
+};
+
+/** Create a mock DebugSession */
+export function _mockDebugSession(overrides: Partial<{
+  id: string;
+  name: string;
+  type: string;
+  customRequest: (command: string, args?: unknown) => Promise<unknown>;
+}> = {}) {
+  return {
+    id: overrides.id ?? "session-1",
+    name: overrides.name ?? "Mock Session",
+    type: overrides.type ?? "node",
+    customRequest: overrides.customRequest ?? vi.fn(async () => ({})),
+  };
+}
+
+export const debug = {
+  activeDebugSession: undefined as ReturnType<typeof _mockDebugSession> | undefined,
+  breakpoints: [] as any[],
+  onDidStartDebugSession: vi.fn(() => ({ dispose: vi.fn() })),
+  onDidTerminateDebugSession: vi.fn(() => ({ dispose: vi.fn() })),
+  onDidChangeActiveDebugSession: vi.fn(() => ({ dispose: vi.fn() })),
+  onDidChangeBreakpoints: vi.fn(() => ({ dispose: vi.fn() })),
+  startDebugging: vi.fn(async () => true),
+  stopDebugging: vi.fn(async () => {}),
+  addBreakpoints: vi.fn(),
+  removeBreakpoints: vi.fn(),
 };
 
 export const commands = {
@@ -272,7 +332,7 @@ export function _mockTerminal(overrides: Partial<{
 
 /** Reset all mocks to defaults. Call in beforeEach(). */
 export function __reset() {
-  workspace.workspaceFolders = undefined;
+  workspace.workspaceFolders = [{ uri: { fsPath: "/workspace" } }, { uri: { fsPath: "/test-root" } }] as any;
   workspace.textDocuments = [];
   workspace.openTextDocument.mockReset().mockImplementation(async () => _mockTextDocument());
   workspace.applyEdit.mockReset().mockResolvedValue(true);
@@ -289,9 +349,34 @@ export function __reset() {
   window.createTerminal.mockReset().mockImplementation(() => _mockTerminal());
   window.showInformationMessage.mockReset();
   window.showWarningMessage.mockReset();
+  window.onDidEndTerminalShellExecution.mockReset().mockReturnValue({ dispose: vi.fn() });
+
+  workspace.openNotebookDocument.mockReset().mockImplementation(async () => ({
+    getCells: () => [],
+    cellAt: vi.fn(() => null),
+    cellCount: 0,
+  }));
+
+  window.showNotebookDocument.mockReset().mockResolvedValue(undefined);
+  window.onDidChangeVisibleTextEditors.mockReset().mockReturnValue({ dispose: vi.fn() });
+  window.visibleTextEditors = [];
+  window.createTextEditorDecorationType.mockReset().mockReturnValue({ dispose: vi.fn() });
+
+  notebooks.onDidChangeNotebookCellExecutionState.mockReset().mockReturnValue({ dispose: vi.fn() });
 
   languages.getDiagnostics.mockReset().mockReturnValue([]);
   commands.executeCommand.mockReset().mockResolvedValue(undefined);
   commands.registerCommand.mockReset().mockReturnValue({ dispose: vi.fn() });
   env.clipboard.writeText.mockReset();
+
+  debug.activeDebugSession = undefined;
+  debug.breakpoints = [];
+  debug.onDidStartDebugSession.mockReset().mockReturnValue({ dispose: vi.fn() });
+  debug.onDidTerminateDebugSession.mockReset().mockReturnValue({ dispose: vi.fn() });
+  debug.onDidChangeActiveDebugSession.mockReset().mockReturnValue({ dispose: vi.fn() });
+  debug.onDidChangeBreakpoints.mockReset().mockReturnValue({ dispose: vi.fn() });
+  debug.startDebugging.mockReset().mockResolvedValue(true);
+  debug.stopDebugging.mockReset().mockResolvedValue(undefined);
+  debug.addBreakpoints.mockReset();
+  debug.removeBreakpoints.mockReset();
 }

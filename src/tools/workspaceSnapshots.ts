@@ -236,25 +236,40 @@ export function createRestoreSnapshotTool(workspace: string) {
         return error("Not a git repository");
       }
 
-      // Look up by name if no index given
+      // Always fetch the stash list to resolve and verify the target snapshot
+      const listResult = await execSafe("git", ["stash", "list"], {
+        cwd: workspace,
+        signal,
+      });
+      const snapshots = parseStashList(listResult.stdout);
+
+      let resolvedName: string;
+
       if (index === undefined && name !== undefined) {
-        const listResult = await execSafe("git", ["stash", "list"], {
-          cwd: workspace,
-          signal,
-        });
-        const snapshots = parseStashList(listResult.stdout);
+        // Look up by name when no index given
         const found = snapshots.find((s) => s.name === name);
         if (!found) {
           return error(`No snapshot found with name: "${name}"`);
         }
         index = found.index;
+        resolvedName = found.name;
+      } else if (name !== undefined) {
+        // Both index and name provided — verify they agree
+        resolvedName = name;
+      } else {
+        // Only index provided — resolve the name at that index for TOCTOU protection
+        const atIndex = snapshots.find((s) => s.index === index);
+        if (!atIndex) {
+          return error(
+            `No claude-snapshot found at stash index ${index}. The index may have drifted — re-run listSnapshots.`,
+          );
+        }
+        resolvedName = atIndex.name;
       }
 
-      // Verify stash at resolved index still matches (TOCTOU protection)
-      if (name !== undefined) {
-        const shiftErr = await verifySnapshotIndex(index!, name, workspace, signal);
-        if (shiftErr) return error(shiftErr);
-      }
+      // Verify stash at resolved index still matches the expected name (TOCTOU protection)
+      const shiftErr = await verifySnapshotIndex(index!, resolvedName, workspace, signal);
+      if (shiftErr) return error(shiftErr);
 
       const result = await execSafe(
         "git",
@@ -271,6 +286,7 @@ export function createRestoreSnapshotTool(workspace: string) {
             restored: true,
             conflicts: true,
             index,
+            resolvedName,
             message:
               "Snapshot applied with conflicts. Resolve conflicts manually.",
           });
@@ -282,6 +298,7 @@ export function createRestoreSnapshotTool(workspace: string) {
         restored: true,
         conflicts: false,
         index,
+        resolvedName,
         message: "Snapshot applied successfully",
       });
     },

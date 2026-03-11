@@ -46,11 +46,15 @@ export function createFileWatcherHandlers(deps: FileWatcherDeps) {
     }
 
     const notify = (type: string, uri: vscode.Uri) => {
-      deps.getBridge()?.sendNotification("extension/fileChanged", {
-        id,
-        type,
-        file: uri.fsPath,
-      });
+      try {
+        deps.getBridge()?.sendNotification("extension/fileChanged", {
+          id,
+          type,
+          file: uri.fsPath,
+        });
+      } catch {
+        // Swallow notification errors to avoid destabilizing the watcher callback
+      }
     };
 
     watcher.onDidCreate((uri) => notify("created", uri));

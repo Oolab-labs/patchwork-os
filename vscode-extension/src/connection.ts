@@ -33,6 +33,7 @@ export class BridgeConnection {
   lockWatcher: fs.FSWatcher | null = null;
   private lockPollTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private pongHandler: (() => void) | null = null;
   private lastBridgePong = Date.now();
   private lastTickTime = Date.now();
   private reconnectAttempts = 0;
@@ -152,6 +153,13 @@ export class BridgeConnection {
       this.ws = null;
     }
 
+    // Re-assert CONNECTING state before creating the WebSocket. This makes connect()
+    // self-guarding: if state drifted to DISCONNECTING while tryConnect() was awaiting
+    // readLockFilesAsync (e.g. due to a concurrent ws error), a second tryConnect()
+    // that fires after connecting=false is cleared but before the "open" event will
+    // be blocked by the state=CONNECTING guard in tryConnect().
+    this.state = ConnectionState.CONNECTING;
+
     const url = `ws://127.0.0.1:${lockData.port}`;
     this.ws = new WebSocket(url, {
       headers: { "x-claude-ide-extension": lockData.authToken },
@@ -224,11 +232,11 @@ export class BridgeConnection {
     this.stopHeartbeat();
     this.lastBridgePong = Date.now();
     this.lastTickTime = Date.now();
-    const pongHandler = () => { this.lastBridgePong = Date.now(); };
-    this.ws?.on("pong", pongHandler);
+    this.pongHandler = () => { this.lastBridgePong = Date.now(); };
+    this.ws?.on("pong", this.pongHandler);
     this.heartbeatTimer = setInterval(() => {
       const now = Date.now();
-      if (now - this.lastTickTime > 40_000) {
+      if (now - this.lastTickTime > 60_000) {
         this.log("Probable sleep/wake detected, checking connection");
         this.lastTickTime = now;
         if (this.ws?.readyState !== WebSocket.OPEN) {
@@ -236,17 +244,19 @@ export class BridgeConnection {
           this.handleDisconnect();
           return;
         }
+        // After sleep/wake, reset pong baseline to give bridge time to recover
+        this.lastBridgePong = now;
       }
       this.lastTickTime = now;
-      // Bridge pings every 15s; terminates after 2 missed pongs (30s).
-      // Extension waits 35s so bridge always cleans up first on true failure.
-      if (now - this.lastBridgePong > 35_000) {
-        this.log("Bridge unresponsive (no pong in 35s), forcing reconnect");
+      // Bridge pings every 30s; terminates after 3 missed pongs (90s).
+      // Extension waits 120s so bridge always cleans up first on true failure.
+      if (now - this.lastBridgePong > 120_000) {
+        this.log("Bridge unresponsive (no pong in 120s), forcing reconnect");
         this.ws?.terminate();
         this.handleDisconnect();
         return;
       }
-    }, 30_000);
+    }, 45_000);
   }
 
   private stopHeartbeat(): void {
@@ -254,7 +264,10 @@ export class BridgeConnection {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
-    this.ws?.removeAllListeners("pong");
+    if (this.pongHandler) {
+      this.ws?.removeListener("pong", this.pongHandler);
+      this.pongHandler = null;
+    }
   }
 
   scheduleReconnect(): void {

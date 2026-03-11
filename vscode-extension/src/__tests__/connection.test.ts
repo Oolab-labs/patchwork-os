@@ -210,6 +210,42 @@ describe("handleMessage", () => {
   });
 });
 
+// ── startHeartbeat / stopHeartbeat ─────────────────────────────
+
+describe("startHeartbeat", () => {
+  it("does not accumulate pong listeners on repeated calls", () => {
+    const bridge = createBridge();
+    bridge.ws = new WebSocket("ws://fake") as any;
+    (bridge.ws as any).readyState = WebSocket.OPEN;
+
+    // Call startHeartbeat multiple times without stopHeartbeat
+    (bridge as any).startHeartbeat();
+    (bridge as any).startHeartbeat();
+    (bridge as any).startHeartbeat();
+
+    // Should have exactly 1 pong listener, not 3
+    const pongListenerCount = bridge.ws!.listenerCount("pong");
+    expect(pongListenerCount).toBe(1);
+  });
+
+  it("stopHeartbeat removes only the heartbeat pong handler, not other pong listeners", () => {
+    const bridge = createBridge();
+    bridge.ws = new WebSocket("ws://fake") as any;
+    (bridge.ws as any).readyState = WebSocket.OPEN;
+
+    // Add a non-heartbeat pong listener
+    const otherPongHandler = () => {};
+    bridge.ws!.on("pong", otherPongHandler);
+
+    (bridge as any).startHeartbeat();
+    expect(bridge.ws!.listenerCount("pong")).toBe(2); // other + heartbeat
+
+    (bridge as any).stopHeartbeat();
+    // The other pong listener should still be there
+    expect(bridge.ws!.listenerCount("pong")).toBe(1);
+  });
+});
+
 // ── scheduleReconnect ─────────────────────────────────────────
 
 describe("scheduleReconnect", () => {
@@ -296,6 +332,55 @@ describe("tryConnect", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(bridge.scheduleReconnect).toHaveBeenCalled();
+  });
+
+  // BUG 1: state race — concurrent tryConnect() can slip through when state
+  // transitions from CONNECTING to DISCONNECTING (due to a connection error)
+  // while the first tryConnect() is still awaiting readLockFilesAsync.
+  //
+  // Sequence that triggers the bug:
+  // 1. tryConnect() #1: state=CONNECTING, connecting=true, awaits lock file read
+  // 2. A ws "error" fires → handleDisconnect() → state=DISCONNECTING → scheduleReconnect()
+  // 3. Lock file read resolves → connecting=false → connect() called
+  // 4. reconnect timer fires → tryConnect() #2: state is DISCONNECTING (not CONNECTING),
+  //    connecting is false → passes all guards → SECOND connect() called
+  //
+  // The fix: connect() sets state=CONNECTING before creating the WebSocket,
+  // which blocks tryConnect() #2 from getting through after step 3.
+  it("connect() sets state to CONNECTING before creating WebSocket to prevent concurrent connects", async () => {
+    let resolveLock!: (v: { port: number; authToken: string } | null) => void;
+    vi.mocked(readLockFilesAsync)
+      .mockReturnValueOnce(new Promise((resolve) => { resolveLock = resolve; }))
+      .mockResolvedValue({ port: 5678, authToken: "token2" });
+
+    const bridge = createBridge();
+    const connectSpy = vi.spyOn(bridge, "connect");
+
+    // Step 1: start first tryConnect — sets state=CONNECTING, awaits lock file
+    bridge.tryConnect();
+
+    // Step 2: simulate a connection error mid-flight — sets state=DISCONNECTING
+    // (We bypass handleDisconnect to avoid the reconnect timer complication)
+    (bridge as any).state = 3; // ConnectionState.DISCONNECTING
+
+    // Step 3: lock file resolves — tryConnect() .then() runs:
+    //   connecting=false, then calls connect()
+    resolveLock({ port: 1234, authToken: "token" });
+    await Promise.resolve(); // flush .then() microtask
+
+    // After connect() is called (step 3), verify state is CONNECTING again.
+    // This is the fix: connect() re-asserts state=CONNECTING before creating the ws.
+    // Without the fix, state stays DISCONNECTING between connecting=false and ws creation.
+    //
+    // Step 4: a concurrent tryConnect() fires (from a reconnect timer or lock file watcher).
+    // State should be CONNECTING (fixed) → second call is blocked.
+    // Without fix: state is still DISCONNECTING at this point → second call passes guards.
+    bridge.tryConnect();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // connect() must have been called exactly once.
+    // With the bug: it's called twice (second tryConnect passes all guards).
+    expect(connectSpy).toHaveBeenCalledTimes(1);
   });
 });
 
