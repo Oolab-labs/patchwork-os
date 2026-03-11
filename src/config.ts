@@ -51,9 +51,17 @@ export const INTERPRETER_COMMANDS = new Set([
   "php",
 ]);
 
+const EDITOR_IDE_NAMES: Record<string, string> = {
+  windsurf: "Windsurf",
+  cursor: "Cursor",
+  antigravity: "Antigravity",
+  ag: "Antigravity",
+  code: "VS Code",
+};
+
 export function findEditor(): string | null {
   const whichCmd = process.platform === "win32" ? "where" : "which";
-  for (const cmd of ["windsurf", "code", "cursor"]) {
+  for (const cmd of ["windsurf", "cursor", "antigravity", "ag", "code"]) {
     try {
       execFileSync(whichCmd, [cmd], { stdio: "ignore", timeout: 3000 });
       return cmd;
@@ -62,6 +70,10 @@ export function findEditor(): string | null {
     }
   }
   return null;
+}
+
+export function ideNameFromEditor(editorCommand: string): string {
+  return EDITOR_IDE_NAMES[editorCommand] ?? editorCommand;
 }
 
 function requireArg(args: string[], i: number, flag: string): string {
@@ -164,7 +176,7 @@ Usage: claude-ide-bridge [options]
 Options:
   --workspace <path>        Workspace folder (default: cwd)
   --ide-name <name>         IDE name shown to Claude (default: "External")
-  --editor <cmd>            Editor CLI command (default: auto-detect windsurf/code/cursor)
+  --editor <cmd>            Editor CLI command (default: auto-detect windsurf/cursor/antigravity/code)
   --port <number>           Force specific port (default: random)
   --bind <addr>             Bind address (default: 127.0.0.1, env: BRIDGE_BIND_ADDRESS)
   --linter <name>           Enable specific linter (repeatable; default: auto-detect)
@@ -196,6 +208,11 @@ Environment Variables:
   // Auto-detect editor
   editorCommand =
     editorCommand || process.env.CLAUDE_IDE_BRIDGE_EDITOR || findEditor();
+
+  // Auto-derive ideName from editor if not explicitly provided
+  if (ideName === "External" && editorCommand) {
+    ideName = ideNameFromEditor(editorCommand);
+  }
 
   // Env var overrides
   if (process.env.CLAUDE_IDE_BRIDGE_LINTERS) {

@@ -28,6 +28,7 @@ export function createGetToolCapabilitiesTool(
           rg: probes.rg,
           fd: probes.fd,
           git: probes.git,
+          codex: probes.codex,
         },
         linters: {
           tsc: probes.tsc,

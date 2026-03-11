@@ -18,6 +18,7 @@ SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 BRIDGE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORKSPACE="."
 NTFY_TOPIC=""
+IDE_NAME=""
 BRIDGE_READY_TIMEOUT=30
 LAST_CLAUDE_RESTART=0
 
@@ -26,6 +27,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --workspace) WORKSPACE="$2"; shift 2 ;;
     --notify)    NTFY_TOPIC="$2"; shift 2 ;;
+    --ide)       IDE_NAME="$2"; shift 2 ;;
     *)           echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -53,7 +55,7 @@ if [[ -z "${TMUX:-}" ]]; then
   fi
   # Create session detached, re-run this script inside it, then attach
   tmux new-session -d -s "$SESSION" -x 200 -y 50
-  tmux send-keys -t "$SESSION" "\"$SCRIPT_PATH\" --workspace \"$WORKSPACE\"$([ -n "$NTFY_TOPIC" ] && echo " --notify \"$NTFY_TOPIC\"")" Enter
+  tmux send-keys -t "$SESSION" "\"$SCRIPT_PATH\" --workspace \"$WORKSPACE\"$([ -n "$NTFY_TOPIC" ] && echo " --notify \"$NTFY_TOPIC\"")$([ -n "$IDE_NAME" ] && echo " --ide \"$IDE_NAME\"")" Enter
   exec tmux attach -t "$SESSION"
 fi
 
@@ -92,7 +94,11 @@ notify() {
 }
 
 # --- Reusable command strings ---
-BRIDGE_CMD="cd \"$BRIDGE_DIR\" && npx tsx src/index.ts --workspace \"$WORKSPACE\""
+BRIDGE_IDE_FLAGS=""
+if [[ -n "$IDE_NAME" ]]; then
+  BRIDGE_IDE_FLAGS="--ide-name \"$IDE_NAME\" --editor \"$(echo "$IDE_NAME" | tr '[:upper:]' '[:lower:]')\""
+fi
+BRIDGE_CMD="cd \"$BRIDGE_DIR\" && npx tsx src/index.ts --workspace \"$WORKSPACE\"${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}"
 CLAUDE_CMD="cd \"$WORKSPACE\" && unset CLAUDECODE && CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude"
 
 # Export for subshell access

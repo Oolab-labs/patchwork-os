@@ -37,6 +37,7 @@ const ALL_KEYS: Array<keyof ProbeResults> = [
   "vitest",
   "jest",
   "pytest",
+  "codex",
 ];
 
 beforeEach(() => {

@@ -24,11 +24,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/claude-ide-bridge"
+    "url": "https://github.com/Oolab-labs/claude-ide-bridge"
   },
-  "homepage": "https://github.com/anthropics/claude-ide-bridge#readme",
+  "homepage": "https://github.com/Oolab-labs/claude-ide-bridge#readme",
   "bugs": {
-    "url": "https://github.com/anthropics/claude-ide-bridge/issues"
+    "url": "https://github.com/Oolab-labs/claude-ide-bridge/issues"
   },
   "files": [
     "dist",

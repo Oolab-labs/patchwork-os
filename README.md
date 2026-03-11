@@ -1,212 +1,235 @@
-# claude-ide-bridge
+# Claude IDE Bridge
 
-A standalone MCP bridge that gives Claude Code full IDE integration — file operations, diagnostics, LSP features, terminal output, and more. Works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
+A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **115+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
 
-## Architecture
+## How It Works
 
 ```
-Claude Code CLI  <--WebSocket/MCP-->  Bridge Server  <--WebSocket-->  VS Code Extension (optional)
+Your Phone / Laptop                    Your Computer
+┌──────────────┐                      ┌─────────────────────────────┐
+│  Claude Code  │───── SSH/local ─────│  Bridge Server              │
+│  (CLI)        │                     │    ↕ WebSocket              │
+└──────────────┘                      │  IDE Extension (VS Code)    │
+                                      │    ↕ Real-time state        │
+                                      │  Your Code & Editor         │
+                                      └─────────────────────────────┘
 ```
 
-- **Bridge Server**: Node.js process that exposes MCP tools over WebSocket. Handles file operations, linting, search, git, and command execution natively.
-- **VS Code Extension**: Companion extension that pushes real-time diagnostics, selections, AI comments, terminal output, and LSP features to the bridge.
+Claude Code connects to the bridge, which connects to your IDE extension. Claude can then open files, run tests, set breakpoints, check diagnostics, commit to Git, create PRs — everything a developer at the keyboard can do.
+
+**Use it from your phone**: SSH into your dev machine, run Claude Code, and control your full IDE from the couch. Watch files change in real-time on your monitor.
 
 ## Quick Start
 
 ```bash
+npm install -g claude-ide-bridge
+
+# Start the bridge
+claude-ide-bridge --workspace /path/to/your-project
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/Oolab-labs/claude-ide-bridge.git
 cd claude-ide-bridge
-npm install
-npm run build
+npm install && npm run build
 npm start -- --workspace /path/to/your-project
 ```
 
-Then in another terminal:
-
-```bash
-CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude
-# Type /ide and select the bridge
-```
-
-See [SETUP.md](SETUP.md) for detailed setup, remote control, and troubleshooting.
-
-## Remote Control
-
-Control your Claude Code session from claude.ai or the Claude mobile app. The bridge includes an auto-restart wrapper that handles connection drops automatically:
-
-```bash
-npm run remote                    # just remote-control with auto-restart
-npm run start-all -- --workspace . # full orchestrator (bridge + claude + remote)
-```
-
-See [SETUP.md — Connection Stability](SETUP.md#remote-control-connection-stability) for details.
-
-## VS Code Extension
-
-The companion extension provides enhanced capabilities when connected:
+Install the VS Code extension for full capabilities:
 
 ```bash
 cd vscode-extension
-npm install
-npm run build
-# Install via: code --install-extension claude-ide-bridge-extension-0.1.0.vsix
+npm install && npm run build && npm run package
+# Install the .vsix in your editor
 ```
 
-### Extension Features
+Then start Claude Code and connect:
 
-- **Status bar**: Shows connection state (connected/disconnected/reconnecting)
-- **Output channel**: "Claude IDE Bridge" channel for structured logs
-- **Commands** (via Command Palette):
-  - `Claude IDE Bridge: Reconnect` — force reconnect to bridge
-  - `Claude IDE Bridge: Show Logs` — open the output channel
-  - `Claude IDE Bridge: Copy Connection Info` — copy state/version to clipboard
-- **Auto-reconnect**: Exponential backoff with jitter, sleep/wake detection, escalating notifications after 3 failures
-- **Real-time push**: Diagnostics, selections, active file, AI comments, file saves
+```bash
+claude
+# The bridge MCP server will be available
+```
 
-## Available MCP Tools
+## Full Orchestrator
 
-### File Operations
-| Tool | Description |
-|------|-------------|
-| `openFile` | Open files in editor with line navigation |
-| `openDiff` | Open side-by-side diff view |
-| `saveDocument` | Save open document (real save with extension, stub without) |
-| `close_tab` | Close editor tab (requires extension) |
-| `closeAllDiffTabs` | Close all diff tabs |
-| `checkDocumentDirty` | Check for unsaved changes (accurate with extension) |
-| `getOpenEditors` | List open editor tabs |
+The `start-all` script launches everything in a tmux session (bridge + Claude Code + remote control):
 
-### Search & Navigation
-| Tool | Description |
-|------|-------------|
-| `searchWorkspace` | Content search (uses `rg` if available, falls back to grep) |
-| `findFiles` | File search (uses `fd` if available, falls back to find) |
-| `getFileTree` | Directory tree view |
-| `getCurrentSelection` | Get editor selection (requires extension) |
-| `getLatestSelection` | Get cached selection state |
+```bash
+npm run start-all -- --workspace /path/to/your-project
+```
 
-### Diagnostics & LSP (requires extension)
-| Tool | Description |
-|------|-------------|
-| `getDiagnostics` | Get errors/warnings (extension or `tsc --noEmit` fallback) |
-| `goToDefinition` | Jump to symbol definition |
-| `findReferences` | Find all references to symbol |
-| `getHover` | Get hover/type information |
-| `getCodeActions` | List available code actions |
-| `applyCodeAction` | Apply a code action |
-| `renameSymbol` | Rename symbol across workspace |
-| `searchSymbols` | Search workspace symbols |
+## Claude Code Plugin
 
-### Git
-| Tool | Description |
-|------|-------------|
-| `getGitStatus` | Working tree status |
-| `getGitDiff` | Diff output (staged/unstaged/commit ranges) |
-| `getGitLog` | Commit history |
+The bridge ships as a **Claude Code plugin** with 6 skills, 3 subagents, and 3 hooks:
 
-### PR Code Review
-| Tool | Description |
-|------|-------------|
-| `githubGetPRDiff` | Fetch PR metadata and unified diff |
-| `githubPostPRReview` | Post review with overview + inline comments |
+```bash
+# Load the plugin
+claude --plugin-dir ./claude-ide-bridge-plugin
+```
 
-Use `/review-pr <number>` for a structured review workflow: fetches the PR, analyzes for bugs/security/performance issues, ranks by severity, verifies findings, and posts a review to GitHub.
+### Skills
 
-### Linting & Formatting
-| Tool | Description |
-|------|-------------|
-| `runLinter` | Run project linters (tsc, eslint, pyright, ruff, cargo, go, biome) |
-| `formatFile` | Format files (prettier, black, gofmt, rustfmt) |
-| `formatDocument` | Format via VS Code's formatter (extension) or CLI fallback |
-| `fixAllLintErrors` | Auto-fix all lint errors via extension or CLI (eslint --fix, biome, ruff) |
-| `organizeImports` | Organize imports via VS Code (requires extension) |
+| Skill | Description |
+|-------|-------------|
+| `/ide-debug` | Full debug cycle: run tests, set breakpoints, evaluate expressions, fix, verify |
+| `/ide-review` | Deep PR review using LSP code intelligence + GitHub tools |
+| `/ide-quality` | Multi-language lint sweep + auto-fix + format + optional commit |
+| `/ide-refactor` | Safe refactoring with snapshot checkpoints and auto-rollback |
+| `/ide-explore` | Codebase exploration using LSP (runs in isolated Explore agent) |
+| `/ide-monitor` | Continuous monitoring for diagnostics, tests, or terminal output |
 
-### Terminal (requires extension)
-| Tool | Description |
-|------|-------------|
-| `listTerminals` | List VS Code integrated terminals |
-| `getTerminalOutput` | Get recent terminal output (ring buffer, up to 5000 lines) |
+### Subagents
 
-### Workspace & Utilities
-| Tool | Description |
-|------|-------------|
-| `getWorkspaceFolders` | Workspace path info |
-| `getToolCapabilities` | Available features, CLI tools, and linters |
-| `runCommand` | Execute allowlisted commands |
-| `watchFiles` / `unwatchFiles` | File system watchers (requires extension) |
-| `getAIComments` | Scan for `// AI:` comments (requires extension) |
-| `diffDebugger` | Analyze and validate diffs |
-| `activityLog` | Track session activity |
-| `workspaceSnapshots` | Capture/restore workspace state |
-| `flowGuardian` | Workflow state management |
-| `planPersistence` | Save/load implementation plans |
+| Agent | Description |
+|-------|-------------|
+| `ide-code-reviewer` | Evidence-based code review using LSP tools, with persistent memory |
+| `ide-debugger` | Autonomous debug cycles with breakpoints and expression evaluation |
+| `ide-test-runner` | Runs tests, categorizes failures, applies fixes |
 
-## Multi-Workspace Usage
+### Hooks
 
-One bridge instance per workspace is the intended model — start the bridge with `--workspace /path/to/project` and leave it running for that project. For monorepos or multi-root workspaces, pass the repository root as `--workspace` so that all paths resolve correctly and the workspace snapshot/plan tools share a consistent root. Open multiple terminals with separate bridge instances if you need to work across completely independent projects simultaneously.
+| Event | What it does |
+|-------|-------------|
+| `PostToolUse` on Edit/Write | Reminds Claude to check diagnostics after file edits |
+| `SessionStart` | Reports bridge status, connection, and tool count |
+| `SubagentStart` | Verifies bridge is alive before IDE subagents run |
+
+## 115+ MCP Tools
+
+### File Operations (7)
+`openFile` · `openDiff` · `saveDocument` · `close_tab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors`
+
+### LSP / Code Intelligence (12)
+`goToDefinition` · `findReferences` · `getHover` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchSymbols` · `getDocumentSymbols` · `getCallHierarchy` · `getTypeHierarchy` · `getImplementations` · `getInlayHints`
+
+### Debugging (5)
+`setDebugBreakpoints` · `startDebugging` · `evaluateInDebugger` · `getDebugState` · `stopDebugging`
+
+### Terminal (7)
+`createTerminal` · `runInTerminal` · `waitForTerminalOutput` · `getTerminalOutput` · `listTerminals` · `sendTerminalInput` · `closeTerminal`
+
+### Git (15)
+`gitStatus` · `gitDiff` · `gitLog` · `gitAdd` · `gitCommit` · `gitPush` · `gitPull` · `gitBranch` · `gitCheckout` · `gitStash` · `gitBlame` · `gitMerge` · `gitRebase` · `gitTag` · `gitRemote`
+
+### GitHub (11)
+`githubCreatePR` · `githubViewPR` · `githubGetPRDiff` · `githubPostPRReview` · `githubListPRs` · `githubMergePR` · `githubCreateIssue` · `githubListIssues` · `githubViewIssue` · `githubListReleases` · `githubCreateRelease`
+
+### Diagnostics & Testing (3)
+`getDiagnostics` · `runTests` · `diffDebug`
+
+### Code Quality (3)
+`fixAllLintErrors` · `formatDocument` · `organizeImports`
+
+### Snapshots & Plans (10)
+`createSnapshot` · `restoreSnapshot` · `diffSnapshot` · `listSnapshots` · `deleteSnapshot` · `createPlan` · `updatePlan` · `getPlan` · `listPlans` · `deletePlan`
+
+### Editor State (7)
+`getCurrentSelection` · `getLatestSelection` · `getOpenEditors` · `getActiveEditor` · `getVisibleRange` · `revealRange` · `showMessage`
+
+### And More
+Text editing · Workspace management · HTTP requests · File watchers · Notebooks · Decorations · VS Code commands
+
+| Category | Count | Extension Required |
+|----------|------:|:-:|
+| File Operations | 7 | No |
+| Git | 15 | No |
+| GitHub | 11 | No (requires `gh`) |
+| LSP / Code Intelligence | 12 | Yes (with fallbacks) |
+| Editor State | 7 | Yes |
+| Text Editing | 5 | Yes |
+| Terminal | 7 | Yes |
+| Diagnostics & Testing | 3 | Mixed |
+| Code Quality | 3 | Yes |
+| Debug | 5 | Yes |
+| Decorations | 2 | Yes |
+| Workspace Management | 4 | No |
+| Snapshots & Plans | 10 | No |
+| HTTP | 2 | No |
+| VS Code Integration | 8 | Yes |
+| Notebooks | 3 | Yes |
+| **Total** | **~115** | |
+
+## Headless / CI Usage
+
+Use with `claude -p` for automation:
+
+```bash
+# Fix all lint errors
+claude -p "Use getDiagnostics to find all errors, then fix them" \
+  --mcp-config ./mcp-bridge.json
+
+# Run tests and fix failures
+claude -p "Run tests with runTests, fix any failures, and commit" \
+  --mcp-config ./mcp-bridge.json
+
+# Generate architecture overview
+claude -p "Map the project using getFileTree, getDocumentSymbols, and getCallHierarchy" \
+  --mcp-config ./mcp-bridge.json --output-format json
+```
+
+## Supported Editors
+
+| Editor | Status |
+|--------|--------|
+| VS Code | Supported |
+| Windsurf | Supported |
+| Cursor | Supported |
+| Google Antigravity | Supported |
+
+Install the extension in any supported editor:
+
+```bash
+bash scripts/install-extension.sh --ide <name>
+```
 
 ## CLI Options
 
 ```
 --workspace <path>        Workspace folder (default: cwd)
---ide-name <name>         IDE name shown to Claude (default: "External")
---editor <cmd>            Editor CLI command (default: auto-detect windsurf/code/cursor)
+--ide-name <name>         IDE name shown to Claude (default: auto-detect)
+--editor <cmd>            Editor CLI command (default: auto-detect)
 --port <number>           Force specific port (default: random)
 --linter <name>           Enable specific linter (repeatable; default: auto-detect)
 --allow-command <cmd>     Add command to execution allowlist (repeatable)
 --timeout <ms>            Command timeout in ms (default: 30000, max: 120000)
 --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
 --verbose                 Enable debug logging
---jsonl                   Emit structured JSONL events to stderr
 --help                    Show this help
 ```
 
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `CLAUDE_IDE_BRIDGE_EDITOR` | Editor command override |
-| `CLAUDE_IDE_BRIDGE_LINTERS` | Comma-separated linter list |
-| `CLAUDE_IDE_BRIDGE_TIMEOUT` | Command timeout in ms |
-| `CLAUDE_IDE_BRIDGE_MAX_RESULT_SIZE` | Max output size in KB |
-| `CLAUDE_CONFIG_DIR` | Override `~/.claude` directory |
-
-## Connection Hardening
-
-The bridge and extension include production-grade connection handling:
-
-- **WebSocket heartbeat** (20s ping/pong) with automatic reconnect on timeout
-- **Sleep/wake detection** via heartbeat tick gap monitoring
-- **Try-catch guards** around all `ws.send()` calls for check-then-send race conditions
-- **Concurrent connect prevention** via `connecting` flag
-- **Pong listener lifecycle management** to prevent listener stacking
-- **Handler timeout** (30s) to prevent VS Code API hangs
-- **Exponential backoff** with full jitter and 500ms minimum floor
-- **`unexpected-response`** handling for rejected WebSocket upgrades
-- **Graceful HTTP server shutdown** with error callback
-- **Send buffer monitoring** (warns at >1MB buffered)
-
-## Project Structure
+## Architecture
 
 ```
 claude-ide-bridge/
   src/
-    index.ts          Entry point
-    bridge.ts         Main bridge orchestrator
+    bridge.ts         Main orchestrator
     server.ts         HTTP/WebSocket server
     transport.ts      MCP transport layer
-    config.ts         CLI arg parsing & config
-    probe.ts          Tool availability detection
     extensionClient.ts Extension WebSocket client
-    logger.ts         Logging infrastructure
-    tools/            MCP tool implementations
-      index.ts        Tool registry
-      utils.ts        Shared utilities
-      ...             Individual tool files
+    config.ts         CLI args & config
+    tools/            115+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
-    package.json      Extension manifest
-    esbuild.mjs       Build config
+    src/connection.ts WebSocket connection management
+    src/handlers/     Request handlers (terminal, lsp, debug, ...)
+  claude-ide-bridge-plugin/
+    skills/           6 slash commands
+    agents/           3 specialized subagents
+    hooks/            3 lifecycle automations
+    .mcp.json         MCP server config
 ```
+
+## Connection Hardening
+
+Production-grade reliability:
+- WebSocket heartbeat (20s) with automatic reconnect
+- Sleep/wake detection via heartbeat gap monitoring
+- Circuit breaker with exponential backoff for timeout cascades
+- Generation counter preventing stale handler responses
+- Extension-required tool filtering when extension disconnects
+- 601 tests across bridge and extension
 
 ## Building
 
@@ -214,10 +237,15 @@ claude-ide-bridge/
 # Bridge
 npm run build        # TypeScript compilation
 npm run dev          # Development with tsx
-npm test             # Run vitest tests
+npm test             # Run 359 bridge tests
 
 # Extension
 cd vscode-extension
 npm run build        # esbuild bundle
 npm run package      # Create .vsix
+npm test             # Run 242 extension tests
 ```
+
+## License
+
+MIT

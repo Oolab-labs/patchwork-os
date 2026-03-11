@@ -22,6 +22,7 @@ export interface ProbeResults {
   vitest: boolean;
   jest: boolean;
   pytest: boolean;
+  codex: boolean;
 }
 
 const PROBE_TIMEOUT = 3000;
@@ -57,6 +58,7 @@ const COMMANDS: Array<[keyof ProbeResults, string]> = [
   ["vitest", "vitest"],
   ["jest", "jest"],
   ["pytest", "pytest"],
+  ["codex", "codex"],
 ];
 
 export async function probeAll(): Promise<ProbeResults> {

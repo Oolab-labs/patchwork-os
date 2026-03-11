@@ -3,8 +3,9 @@
   "version": "1.1.0",
   "description": "Full IDE integration for Claude Code — 115+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, and more",
   "author": {
-    "name": "Claude IDE Bridge Contributors"
+    "name": "Oolab Labs"
   },
+  "repository": "https://github.com/Oolab-labs/claude-ide-bridge",
   "license": "MIT",
   "keywords": ["ide", "vscode", "lsp", "debugging", "terminal", "git", "github"]
 }
