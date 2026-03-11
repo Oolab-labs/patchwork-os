@@ -58,28 +58,26 @@ Development direction and exploration guidance. Living document — update as pr
 - `memory: project` enabled for cross-session learning
 - Subagents produce verbose output (LSP queries, terminal logs) that stays out of main context
 
-### Plugin Packaging
-- Package bridge as a Claude Code Plugin: MCP config + skills + subagents + hooks in one installable unit
-- Enables `claude plugins install claude-ide-bridge`
-- Marketplace distribution for team-wide adoption
-- Priority: high (once plugin format stabilizes)
+### Plugin Packaging (Shipped)
+- Full plugin in `claude-ide-bridge-plugin/`: manifest, skills, agents, hooks, MCP config, README
+- Load with `claude --plugin-dir ./claude-ide-bridge-plugin`
+- Includes 6 skills, 3 agents, 3 hooks, MCP server config
+- Ready for marketplace distribution when bridge is published to npm
 
-### Hook Integration
-- `PostToolUse` on Edit/Write → auto-run `getDiagnostics` + `setEditorDecorations`
-- `SessionStart` → auto-run `getProjectInfo` and cache
-- `SubagentStart`/`SubagentStop` → set up/tear down bridge resources
-- Ship example hook configs alongside the bridge
+### Hook Integration (Shipped)
+- `PostToolUse` on Edit/Write → reminds Claude to check diagnostics after edits
+- `SessionStart` → reports bridge status, connection, tool count
+- `SubagentStart` on ide-* agents → verifies bridge health before subagent runs
+- All hooks in `claude-ide-bridge-plugin/hooks/hooks.json` with scripts in `scripts/`
 
-### Scheduled IDE Monitoring
-- Bridge tools + `/loop` enable continuous monitoring:
-  - `/loop 5m check getDiagnostics and alert on new errors`
-  - `/loop 10m run tests and report failures`
-- `watchDiagnostics` and `waitForTerminalOutput` already support long-polling
+### Scheduled IDE Monitoring (Shipped)
+- `/ide-monitor` skill with 3 modes: diagnostics, tests, terminal
+- Use with `/loop` for recurring checks: `/loop 5m /claude-ide-bridge:ide-monitor diagnostics`
 - Session-scoped (requires active Claude Code session)
 
-### Headless/Agent SDK Integration
+### Headless/Agent SDK Integration (Documented)
 - Bridge MCP enables `claude -p` (headless mode) to have IDE capabilities
-- CI/CD pipelines can use getDiagnostics, fixAllLintErrors, formatDocument
+- CI/CD examples documented in plugin README
 - Already works via `--mcp-config` pointing to bridge
 
 ### Agent Team Support

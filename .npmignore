@@ -1,0 +1,33 @@
+# Source (dist/ is published instead)
+src/
+tsconfig.json
+biome.json
+vitest.config.ts
+
+# VS Code extension (separate package)
+vscode-extension/
+
+# Plugin (separate distribution)
+claude-ide-bridge-plugin/
+
+# Dev/build files
+.claude/
+documents/
+scripts/
+deploy/
+Dockerfile
+SETUP.md
+CLAUDE.md
+
+# Tests
+**/__tests__/
+**/__mocks__/
+*.test.ts
+*.spec.ts
+coverage/
+
+# IDE/OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

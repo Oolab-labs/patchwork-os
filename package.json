@@ -1,12 +1,42 @@
 {
   "name": "claude-ide-bridge",
   "version": "1.1.0",
-  "description": "Standalone MCP bridge for Claude Code IDE integration with any editor",
+  "description": "Standalone MCP bridge for Claude Code IDE integration with any editor — 115+ tools for LSP, debugging, terminals, Git, GitHub, and more",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "claude-ide-bridge": "dist/index.js"
   },
+  "license": "MIT",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "ide",
+    "vscode",
+    "lsp",
+    "debugging",
+    "terminal",
+    "git",
+    "github",
+    "ai",
+    "coding-assistant"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthropics/claude-ide-bridge"
+  },
+  "homepage": "https://github.com/anthropics/claude-ide-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/anthropics/claude-ide-bridge/issues"
+  },
+  "files": [
+    "dist",
+    "!dist/__tests__",
+    "!dist/**/__tests__",
+    "LICENSE",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20.0.0"
   },
@@ -20,6 +50,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
     "remote": "bash scripts/start-remote.sh",
     "start-all": "bash scripts/start-all.sh"
   },
