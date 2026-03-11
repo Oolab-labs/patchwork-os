@@ -59,7 +59,9 @@ describe("planPersistence tools", () => {
     const data = parse(result);
 
     expect(data.count).toBeGreaterThanOrEqual(1);
-    const found = data.plans.find((p: { fileName: string }) => p.fileName === ".claude-plan.md");
+    const found = data.plans.find(
+      (p: { fileName: string }) => p.fileName === ".claude-plan.md",
+    );
     expect(found).toBeDefined();
     expect(found.title).toBe("Listed Plan");
   });
@@ -72,7 +74,9 @@ describe("planPersistence tools", () => {
     });
 
     const updatePlan = getTool("updatePlan");
-    const updateResult = await updatePlan.handler({ markComplete: ["First task"] });
+    const updateResult = await updatePlan.handler({
+      markComplete: ["First task"],
+    });
     const updateData = parse(updateResult);
     expect(updateData.updated).toBe(true);
 
@@ -80,29 +84,42 @@ describe("planPersistence tools", () => {
     const getResult = await getPlan.handler({});
     const getData = parse(getResult);
 
-    const firstTask = getData.sections[0].tasks.find((t: { text: string }) => t.text === "First task");
+    const firstTask = getData.sections[0].tasks.find(
+      (t: { text: string }) => t.text === "First task",
+    );
     expect(firstTask.completed).toBe(true);
 
-    const secondTask = getData.sections[0].tasks.find((t: { text: string }) => t.text === "Second task");
+    const secondTask = getData.sections[0].tasks.find(
+      (t: { text: string }) => t.text === "Second task",
+    );
     expect(secondTask.completed).toBe(false);
   });
 
   it("deletePlan removes the file and it no longer appears in listPlans", async () => {
     const createPlan = getTool("createPlan");
     // Use a custom filename because deletePlan requires it to end in .claude-plan.md
-    await createPlan.handler({ title: "To Delete", fileName: "project.claude-plan.md" });
+    await createPlan.handler({
+      title: "To Delete",
+      fileName: "project.claude-plan.md",
+    });
 
     const deletePlan = getTool("deletePlan");
-    const deleteResult = await deletePlan.handler({ fileName: "project.claude-plan.md" });
+    const deleteResult = await deletePlan.handler({
+      fileName: "project.claude-plan.md",
+    });
     const deleteData = parse(deleteResult);
     expect(deleteData.deleted).toBe(true);
 
-    expect(fs.existsSync(path.join(tmpDir, "project.claude-plan.md"))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, "project.claude-plan.md"))).toBe(
+      false,
+    );
 
     const listPlans = getTool("listPlans");
     const listResult = await listPlans.handler();
     const listData = parse(listResult);
-    const found = listData.plans.find((p: { fileName: string }) => p.fileName === "project.claude-plan.md");
+    const found = listData.plans.find(
+      (p: { fileName: string }) => p.fileName === "project.claude-plan.md",
+    );
     expect(found).toBeUndefined();
   });
 });

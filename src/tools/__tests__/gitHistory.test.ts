@@ -16,11 +16,17 @@ describe("gitHistory tools", () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "git-history-test-"));
     execSync("git init", { cwd: tmpDir, stdio: "ignore" });
-    execSync("git config user.email test@test.com", { cwd: tmpDir, stdio: "ignore" });
+    execSync("git config user.email test@test.com", {
+      cwd: tmpDir,
+      stdio: "ignore",
+    });
     execSync("git config user.name Test", { cwd: tmpDir, stdio: "ignore" });
     fs.writeFileSync(path.join(tmpDir, "file.txt"), "hello\n");
     execSync("git add file.txt", { cwd: tmpDir, stdio: "ignore" });
-    execSync('git commit -m "initial commit"', { cwd: tmpDir, stdio: "ignore" });
+    execSync('git commit -m "initial commit"', {
+      cwd: tmpDir,
+      stdio: "ignore",
+    });
   });
 
   afterEach(() => {
@@ -29,7 +35,9 @@ describe("gitHistory tools", () => {
 
   describe("getCommitDetails", () => {
     it("returns commit info for a known commit hash", async () => {
-      const hash = execSync("git rev-parse HEAD", { cwd: tmpDir }).toString().trim();
+      const hash = execSync("git rev-parse HEAD", { cwd: tmpDir })
+        .toString()
+        .trim();
       const tool = createGetCommitDetailsTool(tmpDir);
       const result = await tool.handler({ commitHash: hash });
       const data = parse(result);
@@ -51,12 +59,19 @@ describe("gitHistory tools", () => {
 
   describe("getDiffBetweenRefs", () => {
     it("returns a diff between two commits", async () => {
-      const firstHash = execSync("git rev-parse HEAD", { cwd: tmpDir }).toString().trim();
+      const firstHash = execSync("git rev-parse HEAD", { cwd: tmpDir })
+        .toString()
+        .trim();
 
       fs.writeFileSync(path.join(tmpDir, "file.txt"), "hello\nworld\n");
       execSync("git add file.txt", { cwd: tmpDir, stdio: "ignore" });
-      execSync('git commit -m "second commit"', { cwd: tmpDir, stdio: "ignore" });
-      const secondHash = execSync("git rev-parse HEAD", { cwd: tmpDir }).toString().trim();
+      execSync('git commit -m "second commit"', {
+        cwd: tmpDir,
+        stdio: "ignore",
+      });
+      const secondHash = execSync("git rev-parse HEAD", { cwd: tmpDir })
+        .toString()
+        .trim();
 
       const tool = createGetDiffBetweenRefsTool(tmpDir);
       const result = await tool.handler({ ref1: firstHash, ref2: secondHash });
@@ -68,7 +83,10 @@ describe("gitHistory tools", () => {
 
     it("returns an error object for invalid refs", async () => {
       const tool = createGetDiffBetweenRefsTool(tmpDir);
-      const result = await tool.handler({ ref1: "nonexistentref", ref2: "alsobad" });
+      const result = await tool.handler({
+        ref1: "nonexistentref",
+        ref2: "alsobad",
+      });
       const data = parse(result);
 
       expect(data.error).toBeDefined();

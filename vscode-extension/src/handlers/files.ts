@@ -1,13 +1,15 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as vscode from "vscode";
-import * as fs from "fs";
-import * as path from "path";
 import { requireString } from "./validation";
 
 export function assertWithinWorkspace(filePath: string): void {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     // Fail closed: no workspace open means no basis for containment — reject all file ops
-    throw new Error("No workspace is open — file operations require an open workspace folder");
+    throw new Error(
+      "No workspace is open — file operations require an open workspace folder",
+    );
   }
   const resolved = path.resolve(filePath);
   // Resolve symlinks if path exists — prevents symlink escape attacks
@@ -66,7 +68,10 @@ export async function handleOpenFile(
 ): Promise<unknown> {
   const file = requireString(params.file, "file");
   assertWithinWorkspace(file);
-  const line = typeof params.line === "number" && Number.isInteger(params.line) ? params.line : 1;
+  const line =
+    typeof params.line === "number" && Number.isInteger(params.line)
+      ? params.line
+      : 1;
   const uri = vscode.Uri.file(file);
   const doc = await vscode.workspace.openTextDocument(uri);
   const position = new vscode.Position(Math.max(0, line - 1), 0);
@@ -148,7 +153,10 @@ export async function handleGetFileContent(
       source: "vscode-disk",
     };
   } catch (err) {
-    return { success: false, error: `Cannot open file: ${err instanceof Error ? err.message : String(err)}` };
+    return {
+      success: false,
+      error: `Cannot open file: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 }
 

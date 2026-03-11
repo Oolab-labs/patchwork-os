@@ -33,9 +33,22 @@ const DEFAULT_ALLOWLIST = [
 /** Commands that can execute arbitrary code via flags like -e, -c, --eval.
  *  These are blocked from the default allowlist but can be added via --allow-command. */
 export const INTERPRETER_COMMANDS = new Set([
-  "node", "python", "python3", "make",
-  "bash", "sh", "zsh", "dash", "fish", "ksh", "csh", "tcsh",
-  "ruby", "perl", "lua", "php",
+  "node",
+  "python",
+  "python3",
+  "make",
+  "bash",
+  "sh",
+  "zsh",
+  "dash",
+  "fish",
+  "ksh",
+  "csh",
+  "tcsh",
+  "ruby",
+  "perl",
+  "lua",
+  "php",
 ]);
 
 export function findEditor(): string | null {
@@ -111,7 +124,9 @@ export function parseConfig(argv: string[]): Config {
         commandAllowlist.push(requireArg(args, ++i, "--allow-command"));
         break;
       case "--vscode-allow-command":
-        vscodeCommandAllowlist.push(requireArg(args, ++i, "--vscode-allow-command"));
+        vscodeCommandAllowlist.push(
+          requireArg(args, ++i, "--vscode-allow-command"),
+        );
         break;
       case "--timeout": {
         const tStr = requireArg(args, ++i, "--timeout");

@@ -1,11 +1,11 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import {
-  requireString,
+  error,
   optionalString,
+  requireString,
   resolveFilePath,
   success,
-  error,
 } from "./utils.js";
 
 interface ScopeEntry {
@@ -20,7 +20,7 @@ function parseScopeSection(lines: string[]): ScopeEntry[] {
   for (const line of lines) {
     const match = line.match(/^- (.+)/);
     if (!match) continue;
-    let pattern = match[1]!.trim();
+    let pattern = match[1]?.trim();
     if (!pattern) continue;
     const isNegation = pattern.startsWith("!");
     if (isNegation) pattern = pattern.slice(1);
@@ -112,7 +112,12 @@ export function createCheckScopeTool(workspace: string) {
 
       // Try to read the plan file
       const planPath = path.join(workspace, ".claude-plan.md");
-      if (!(await fsp.access(planPath).then(() => true, () => false))) {
+      if (
+        !(await fsp.access(planPath).then(
+          () => true,
+          () => false,
+        ))
+      ) {
         return success({
           planFound: false,
           inScope: true,
@@ -188,7 +193,7 @@ export function createCheckScopeTool(workspace: string) {
 
         // Check if it's in a mentioned directory but not explicitly scoped
         for (const p of implicitPaths) {
-          if (relativePath === p || relativePath.startsWith(p + "/")) {
+          if (relativePath === p || relativePath.startsWith(`${p}/`)) {
             return success({
               planFound: true,
               inScope: true,
@@ -211,7 +216,7 @@ export function createCheckScopeTool(workspace: string) {
 
       // No explicit scope — use implicit mentions
       for (const p of implicitPaths) {
-        if (relativePath === p || relativePath.startsWith(p + "/")) {
+        if (relativePath === p || relativePath.startsWith(`${p}/`)) {
           return success({
             planFound: true,
             inScope: true,
@@ -226,7 +231,7 @@ export function createCheckScopeTool(workspace: string) {
       const relativeDir = path.dirname(relativePath);
       for (const p of implicitPaths) {
         const pDir = path.dirname(p);
-        if (relativeDir === pDir || relativeDir.startsWith(pDir + "/")) {
+        if (relativeDir === pDir || relativeDir.startsWith(`${pDir}/`)) {
           return success({
             planFound: true,
             inScope: true,
@@ -288,11 +293,15 @@ export function createExpandScopeTool(workspace: string) {
         return error("No valid entries provided");
       }
 
-      const fileName =
-        optionalString(args, "fileName") ?? ".claude-plan.md";
+      const fileName = optionalString(args, "fileName") ?? ".claude-plan.md";
       const planPath = resolveFilePath(fileName, workspace);
 
-      if (!(await fsp.access(planPath).then(() => true, () => false))) {
+      if (
+        !(await fsp.access(planPath).then(
+          () => true,
+          () => false,
+        ))
+      ) {
         return error(
           `Plan file "${fileName}" not found. Use createPlan to create one.`,
         );
@@ -305,10 +314,10 @@ export function createExpandScopeTool(workspace: string) {
       let scopeStart = -1;
       let scopeEnd = lines.length;
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i]!.match(/^## Scope/i)) {
+        if (lines[i]?.match(/^## Scope/i)) {
           scopeStart = i;
           for (let j = i + 1; j < lines.length; j++) {
-            if (lines[j]!.match(/^## /)) {
+            if (lines[j]?.match(/^## /)) {
               scopeEnd = j;
               break;
             }

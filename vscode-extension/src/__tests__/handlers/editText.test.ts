@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { __reset, _mockTextDocument } from "../__mocks__/vscode";
 import { handleEditText } from "../../handlers/editText";
+import { __reset, _mockTextDocument } from "../__mocks__/vscode";
 
 beforeEach(() => {
   __reset();
@@ -29,7 +29,16 @@ describe("handleEditText", () => {
   it("applies a replace edit", async () => {
     const result = (await handleEditText({
       filePath: "/workspace/test.ts",
-      edits: [{ type: "replace", line: 1, column: 1, endLine: 1, endColumn: 5, text: "new" }],
+      edits: [
+        {
+          type: "replace",
+          line: 1,
+          column: 1,
+          endLine: 1,
+          endColumn: 5,
+          text: "new",
+        },
+      ],
     })) as any;
     expect(result.success).toBe(true);
   });
@@ -47,22 +56,36 @@ describe("handleEditText", () => {
   });
 
   it("throws when edits is not an array", async () => {
-    await expect(handleEditText({ filePath: "/workspace/test.ts", edits: "bad" })).rejects.toThrow("must be an array");
+    await expect(
+      handleEditText({ filePath: "/workspace/test.ts", edits: "bad" }),
+    ).rejects.toThrow("must be an array");
   });
 
   it("throws when edits exceed 1000", async () => {
-    const edits = Array.from({ length: 1001 }, () => ({ type: "insert", line: 1, column: 1, text: "x" }));
-    await expect(handleEditText({ filePath: "/workspace/test.ts", edits })).rejects.toThrow("Maximum 1000");
+    const edits = Array.from({ length: 1001 }, () => ({
+      type: "insert",
+      line: 1,
+      column: 1,
+      text: "x",
+    }));
+    await expect(
+      handleEditText({ filePath: "/workspace/test.ts", edits }),
+    ).rejects.toThrow("Maximum 1000");
   });
 
   it("throws on unknown edit type", async () => {
     await expect(
-      handleEditText({ filePath: "/workspace/test.ts", edits: [{ type: "unknown", line: 1, column: 1 }] }),
+      handleEditText({
+        filePath: "/workspace/test.ts",
+        edits: [{ type: "unknown", line: 1, column: 1 }],
+      }),
     ).rejects.toThrow("Unknown edit type");
   });
 
   it("throws when edit is not an object", async () => {
-    await expect(handleEditText({ filePath: "/workspace/test.ts", edits: ["bad"] })).rejects.toThrow("must be an object");
+    await expect(
+      handleEditText({ filePath: "/workspace/test.ts", edits: ["bad"] }),
+    ).rejects.toThrow("must be an object");
   });
 
   it("returns error when applyEdit fails", async () => {
@@ -97,6 +120,8 @@ describe("handleEditText", () => {
   });
 
   it("throws on missing filePath", async () => {
-    await expect(handleEditText({ edits: [] } as any)).rejects.toThrow("must be a non-empty string");
+    await expect(handleEditText({ edits: [] } as any)).rejects.toThrow(
+      "must be a non-empty string",
+    );
   });
 });

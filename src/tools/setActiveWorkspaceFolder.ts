@@ -1,6 +1,6 @@
+import path from "node:path";
 import type { Config } from "../config.js";
 import { requireString, success } from "./utils.js";
-import path from "node:path";
 
 export function createSetActiveWorkspaceFolderTool(config: Config) {
   return {

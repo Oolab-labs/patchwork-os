@@ -1,5 +1,17 @@
-import { execSafe, optionalString, optionalInt, optionalBool, success, error } from "../utils.js";
-import { GH_NOT_FOUND, GH_NOT_AUTHED, isNotFound, isNotAuthed } from "./shared.js";
+import {
+  error,
+  execSafe,
+  optionalBool,
+  optionalInt,
+  optionalString,
+  success,
+} from "../utils.js";
+import {
+  GH_NOT_AUTHED,
+  GH_NOT_FOUND,
+  isNotAuthed,
+  isNotFound,
+} from "./shared.js";
 
 const MAX_RUN_LOG_BYTES = 100 * 1024; // 100 KB — gh run logs can be enormous
 
@@ -17,11 +29,13 @@ export function createGithubListRunsTool(workspace: string) {
         properties: {
           branch: {
             type: "string",
-            description: "Filter by branch name. Omit to see runs across all branches.",
+            description:
+              "Filter by branch name. Omit to see runs across all branches.",
           },
           workflow: {
             type: "string",
-            description: "Filter by workflow file name (e.g. 'ci.yml') or workflow name",
+            description:
+              "Filter by workflow file name (e.g. 'ci.yml') or workflow name",
           },
           status: {
             type: "string",
@@ -31,7 +45,8 @@ export function createGithubListRunsTool(workspace: string) {
           },
           limit: {
             type: "integer",
-            description: "Maximum number of runs to return (default: 10, max: 50)",
+            description:
+              "Maximum number of runs to return (default: 10, max: 50)",
           },
         },
         additionalProperties: false as const,
@@ -44,15 +59,22 @@ export function createGithubListRunsTool(workspace: string) {
       const limit = optionalInt(args, "limit", 1, 50) ?? 10;
 
       const listArgs = [
-        "run", "list",
-        "--limit", String(limit),
-        "--json", "databaseId,name,status,conclusion,headBranch,headSha,url,createdAt,updatedAt,workflowName,event",
+        "run",
+        "list",
+        "--limit",
+        String(limit),
+        "--json",
+        "databaseId,name,status,conclusion,headBranch,headSha,url,createdAt,updatedAt,workflowName,event",
       ];
       if (branch) listArgs.push("--branch", branch);
       if (workflow) listArgs.push("--workflow", workflow);
       if (status) listArgs.push("--status", status);
 
-      const result = await execSafe("gh", listArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", listArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -93,33 +115,49 @@ export function createGithubGetRunLogsTool(workspace: string) {
           },
           failedOnly: {
             type: "boolean",
-            description: "Return only logs from failed steps (default: true). Set false for full logs.",
+            description:
+              "Return only logs from failed steps (default: true). Set false for full logs.",
           },
         },
         additionalProperties: false as const,
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      const runId = typeof args.runId === "number" ? Math.floor(args.runId) : undefined;
+      const runId =
+        typeof args.runId === "number" ? Math.floor(args.runId) : undefined;
       if (!runId || runId < 1) return error("runId must be a positive integer");
       const failedOnly = optionalBool(args, "failedOnly") ?? true;
 
-      const viewArgs = ["run", "view", String(runId), "--log" + (failedOnly ? "-failed" : "")];
+      const viewArgs = [
+        "run",
+        "view",
+        String(runId),
+        `--log${failedOnly ? "-failed" : ""}`,
+      ];
 
-      const result = await execSafe("gh", viewArgs, { cwd: workspace, signal, timeout: 60_000 });
+      const result = await execSafe("gh", viewArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 60_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
         if (isNotFound(msg)) return error(GH_NOT_FOUND);
         if (isNotAuthed(msg)) return error(GH_NOT_AUTHED);
         if (msg.includes("no failed") || msg.includes("no logs")) {
-          return success({ logs: "", note: "No failed step logs found — the run may have succeeded or logs may have expired." });
+          return success({
+            logs: "",
+            note: "No failed step logs found — the run may have succeeded or logs may have expired.",
+          });
         }
         if (msg.includes("Could not find") || msg.includes("not found")) {
           return error(`Run #${runId} not found.`);
         }
         if (msg.includes("in progress") || msg.includes("still running")) {
-          return error(`Run #${runId} is still in progress. Wait for it to complete before fetching logs.`);
+          return error(
+            `Run #${runId} is still in progress. Wait for it to complete before fetching logs.`,
+          );
         }
         return error(`gh run view failed: ${msg}`);
       }
@@ -127,7 +165,7 @@ export function createGithubGetRunLogsTool(workspace: string) {
       let logs = result.stdout;
       let truncated = false;
       if (Buffer.byteLength(logs, "utf8") > MAX_RUN_LOG_BYTES) {
-        logs = "...[truncated — showing last portion]\n" + logs.slice(-MAX_RUN_LOG_BYTES);
+        logs = `...[truncated — showing last portion]\n${logs.slice(-MAX_RUN_LOG_BYTES)}`;
         truncated = true;
       }
 

@@ -64,7 +64,10 @@ describe("McpTransport", () => {
 
     const result = resp.result as Record<string, unknown>;
     expect(result.protocolVersion).toBe("2025-11-25");
-    expect(result.capabilities).toEqual({ tools: { listChanged: true }, logging: {} });
+    expect(result.capabilities).toEqual({
+      tools: { listChanged: true },
+      logging: {},
+    });
 
     const info = result.serverInfo as Record<string, unknown>;
     expect(info.name).toBe("claude-ide-bridge");
@@ -374,7 +377,9 @@ describe("McpTransport", () => {
   it("concurrent tool call limit returns busy error when MAX_CONCURRENT_TOOLS is reached", async () => {
     // MAX_CONCURRENT_TOOLS = 10; register a slow tool and saturate it
     let resolveAll: () => void;
-    const gate = new Promise<void>((r) => { resolveAll = r; });
+    const gate = new Promise<void>((r) => {
+      resolveAll = r;
+    });
 
     const { ws } = await setup("concurrency-test", (t) => {
       t.registerTool(
@@ -413,14 +418,21 @@ describe("McpTransport", () => {
 
     const busyResp = await waitFor(ws, (m) => m.id === 11, 5000);
     expect(busyResp.error).toBeUndefined();
-    const result = busyResp.result as { content: Array<{ text: string }>; isError: boolean };
+    const result = busyResp.result as {
+      content: Array<{ text: string }>;
+      isError: boolean;
+    };
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/concurrent/i);
 
     // Unblock all waiting tools
-    resolveAll!();
+    resolveAll?.();
     // Wait for the 10 blocked responses
-    await Promise.all(Array.from({ length: 10 }, (_, i) => waitFor(ws, (m) => m.id === i + 1, 5000)));
+    await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        waitFor(ws, (m) => m.id === i + 1, 5000),
+      ),
+    );
   });
 
   it("per-tool timeoutMs overrides global TOOL_TIMEOUT_MS for a hanging tool", async () => {
@@ -433,7 +445,11 @@ describe("McpTransport", () => {
         },
         async (_args, signal) =>
           new Promise<never>((_, reject) => {
-            signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+            signal?.addEventListener(
+              "abort",
+              () => reject(new Error("aborted")),
+              { once: true },
+            );
           }),
         500, // per-tool timeout: 500ms (well below the global 60s)
       );
@@ -452,7 +468,10 @@ describe("McpTransport", () => {
 
     // Must be an MCP-style error result (isError: true), not a JSON-RPC error
     expect(resp.error).toBeUndefined();
-    const result = resp.result as { content: Array<{ text: string }>; isError: boolean };
+    const result = resp.result as {
+      content: Array<{ text: string }>;
+      isError: boolean;
+    };
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/timed out/i);
 
@@ -499,13 +518,13 @@ describe("McpTransport", () => {
     );
     expect(progressMsgs).toHaveLength(2);
 
-    const p1 = progressMsgs[0]!.params as Record<string, unknown>;
+    const p1 = progressMsgs[0]?.params as Record<string, unknown>;
     expect(p1.progressToken).toBe("tok1");
     expect(p1.progress).toBe(25);
     expect(p1.total).toBe(100);
     expect(p1.message).toBe("step one");
 
-    const p2 = progressMsgs[1]!.params as Record<string, unknown>;
+    const p2 = progressMsgs[1]?.params as Record<string, unknown>;
     expect(p2.progress).toBe(75);
     expect(p2.message).toBe("step two");
   });
@@ -573,7 +592,7 @@ describe("McpTransport", () => {
     expect(tools1.map((t) => t.name)).toEqual(["alwaysAvailable"]);
 
     // Simulate extension connecting
-    transport!.setExtensionConnectedFn(() => true);
+    transport?.setExtensionConnectedFn(() => true);
     send(ws, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const resp2 = await waitFor(ws, (m) => m.id === 2);
     const tools2 = (resp2.result as { tools: Array<{ name: string }> }).tools;
@@ -709,8 +728,12 @@ describe("McpTransport", () => {
     send(ws2, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const resp2 = await waitFor(ws2, (m) => m.id === 2);
     expect(resp2.result).toBeUndefined();
-    expect((resp2.error as { code: number }).code).toBe(ErrorCodes.INVALID_REQUEST);
-    expect((resp2.error as { message: string }).message).toMatch(/not initialized/i);
+    expect((resp2.error as { code: number }).code).toBe(
+      ErrorCodes.INVALID_REQUEST,
+    );
+    expect((resp2.error as { message: string }).message).toMatch(
+      /not initialized/i,
+    );
   });
 
   it("extensionRequired tools appear in tools/list when isExtensionConnectedFn is not set (defaults to connected)", async () => {
@@ -729,7 +752,9 @@ describe("McpTransport", () => {
 
     send(ws, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
     const resp = await waitFor(ws, (m) => m.id === 1);
-    const names = (resp.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name);
+    const names = (resp.result as { tools: Array<{ name: string }> }).tools.map(
+      (t) => t.name,
+    );
     // Default is ?? true (fail-open), so extension tools are visible even without a connected fn
     expect(names).toContain("extensionOnlyTool");
   });

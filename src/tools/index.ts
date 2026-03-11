@@ -4,19 +4,88 @@ import type { ExtensionClient } from "../extensionClient.js";
 import type { ProbeResults } from "../probe.js";
 import type { McpTransport, ToolHandler } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
+import { createBridgeStatusTool } from "./bridgeStatus.js";
+import { createGetAICommentsTool } from "./aiComments.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
+import {
+  createReadClipboardTool,
+  createWriteClipboardTool,
+} from "./clipboard.js";
 import { createCloseAllDiffTabsTool, createCloseTabTool } from "./closeTabs.js";
+import {
+  createEvaluateInDebuggerTool,
+  createGetDebugStateTool,
+  createSetDebugBreakpointsTool,
+  createStartDebuggingTool,
+  createStopDebuggingTool,
+} from "./debug.js";
+import {
+  createClearEditorDecorationsTool,
+  createSetEditorDecorationsTool,
+} from "./decorations.js";
+import { createDiffDebugTool } from "./diffDebugger.js";
+import { createEditTextTool } from "./editText.js";
+import {
+  createCreateFileTool,
+  createDeleteFileTool,
+  createRenameFileTool,
+} from "./fileOperations.js";
+import { createUnwatchFilesTool, createWatchFilesTool } from "./fileWatcher.js";
 import { createFindFilesTool } from "./findFiles.js";
+import { createFixAllLintErrorsTool } from "./fixAllLintErrors.js";
+import { createCheckScopeTool, createExpandScopeTool } from "./flowGuardian.js";
+import { createFormatDocumentTool } from "./formatDocument.js";
+import { createGetBufferContentTool } from "./getBufferContent.js";
 import {
   createGetCurrentSelectionTool,
   createGetLatestSelectionTool,
 } from "./getCurrentSelection.js";
 import { createGetDiagnosticsTool } from "./getDiagnostics.js";
+import { createGetDocumentSymbolsTool } from "./getDocumentSymbols.js";
 import { createGetFileTreeTool } from "./getFileTree.js";
 import { createGetGitDiffTool } from "./getGitDiff.js";
 import { createGetGitLogTool } from "./getGitLog.js";
 import { createGetGitStatusTool } from "./getGitStatus.js";
-import { createGitAddTool, createGitCommitTool, createGitCheckoutTool, createGitBlameTool, createGitFetchTool, createGitListBranchesTool, createGitPullTool, createGitPushTool, createGitStashTool, createGitStashPopTool, createGitStashListTool } from "./gitWrite.js";
+import { createGetOpenEditorsTool } from "./getOpenEditors.js";
+import { createGetProjectInfoTool } from "./getProjectInfo.js";
+import { createGetToolCapabilitiesTool } from "./getToolCapabilities.js";
+import { createGetWorkspaceFoldersTool } from "./getWorkspaceFolders.js";
+import {
+  createGetCommitDetailsTool,
+  createGetDiffBetweenRefsTool,
+} from "./gitHistory.js";
+import {
+  createGitAddTool,
+  createGitBlameTool,
+  createGitCheckoutTool,
+  createGitCommitTool,
+  createGitFetchTool,
+  createGitListBranchesTool,
+  createGitPullTool,
+  createGitPushTool,
+  createGitStashListTool,
+  createGitStashPopTool,
+  createGitStashTool,
+} from "./gitWrite.js";
+import {
+  createGithubCommentIssueTool,
+  createGithubCreateIssueTool,
+  createGithubCreatePRTool,
+  createGithubGetIssueTool,
+  createGithubGetPRDiffTool,
+  createGithubGetRunLogsTool,
+  createGithubListIssuesTool,
+  createGithubListPRsTool,
+  createGithubListRunsTool,
+  createGithubPostPRReviewTool,
+  createGithubViewPRTool,
+} from "./github/index.js";
+import { createGetHoverAtCursorTool } from "./hoverAtCursor.js";
+import {
+  createParseHttpFileTool,
+  createSendHttpRequestTool,
+} from "./httpClient.js";
+import { createGetInlayHintsTool } from "./inlayHints.js";
 import {
   createApplyCodeActionTool,
   createFindReferencesTool,
@@ -27,32 +96,42 @@ import {
   createRenameSymbolTool,
   createSearchWorkspaceSymbolsTool,
 } from "./lsp.js";
-import { createGetOpenEditorsTool } from "./getOpenEditors.js";
-import { createGetToolCapabilitiesTool } from "./getToolCapabilities.js";
-import { createGetWorkspaceFoldersTool } from "./getWorkspaceFolders.js";
-import { createGetProjectInfoTool } from "./getProjectInfo.js";
+import {
+  createGetNotebookCellsTool,
+  createGetNotebookOutputTool,
+  createRunNotebookCellTool,
+} from "./notebook.js";
 import { createOpenDiffTool } from "./openDiff.js";
 import { createOpenFileTool } from "./openFile.js";
-import { createRunCommandTool } from "./runCommand.js";
-import { createSaveDocumentTool } from "./saveDocument.js";
-import { createGetAICommentsTool } from "./aiComments.js";
-import { createDiffDebugTool } from "./diffDebugger.js";
-import { createRunTestsTool } from "./runTests.js";
-import { createWatchFilesTool, createUnwatchFilesTool } from "./fileWatcher.js";
-import { createListTerminalsTool, createGetTerminalOutputTool, createCreateTerminalTool, createDisposeTerminalTool, createSendTerminalCommandTool, createRunInTerminalTool, createWaitForTerminalOutputTool } from "./terminal.js";
-import { createCreateFileTool, createDeleteFileTool, createRenameFileTool } from "./fileOperations.js";
-import { createGetBufferContentTool } from "./getBufferContent.js";
-import { createReplaceBlockTool } from "./replaceBlock.js";
-import { createEditTextTool } from "./editText.js";
-import { createGetDocumentSymbolsTool } from "./getDocumentSymbols.js";
-import { createFormatDocumentTool } from "./formatDocument.js";
-import { createFixAllLintErrorsTool } from "./fixAllLintErrors.js";
 import { createOrganizeImportsTool } from "./organizeImports.js";
-import { createWatchDiagnosticsTool } from "./watchDiagnostics.js";
-import { createCheckScopeTool, createExpandScopeTool } from "./flowGuardian.js";
 import { createPlanTools } from "./planPersistence.js";
-import { createSearchWorkspaceTool } from "./searchWorkspace.js";
+import { createReplaceBlockTool } from "./replaceBlock.js";
+import { createRunCommandTool } from "./runCommand.js";
+import { createRunTestsTool } from "./runTests.js";
+import { createSaveDocumentTool } from "./saveDocument.js";
 import { createSearchAndReplaceTool } from "./searchAndReplace.js";
+import { createSearchWorkspaceTool } from "./searchWorkspace.js";
+import { createSetActiveWorkspaceFolderTool } from "./setActiveWorkspaceFolder.js";
+import { createListTasksTool, createRunTaskTool } from "./tasks.js";
+import {
+  createCreateTerminalTool,
+  createDisposeTerminalTool,
+  createGetTerminalOutputTool,
+  createListTerminalsTool,
+  createRunInTerminalTool,
+  createSendTerminalCommandTool,
+  createWaitForTerminalOutputTool,
+} from "./terminal.js";
+import { createGetTypeHierarchyTool } from "./typeHierarchy.js";
+import {
+  createExecuteVSCodeCommandTool,
+  createListVSCodeCommandsTool,
+} from "./vscodeCommands.js";
+import { createWatchDiagnosticsTool } from "./watchDiagnostics.js";
+import {
+  createGetWorkspaceSettingsTool,
+  createSetWorkspaceSettingTool,
+} from "./workspaceSettings.js";
 import {
   createCreateSnapshotTool,
   createDeleteSnapshotTool,
@@ -61,32 +140,6 @@ import {
   createRestoreSnapshotTool,
   createShowSnapshotTool,
 } from "./workspaceSnapshots.js";
-import {
-  createGithubCreatePRTool,
-  createGithubListPRsTool,
-  createGithubViewPRTool,
-  createGithubListIssuesTool,
-  createGithubGetIssueTool,
-  createGithubCreateIssueTool,
-  createGithubCommentIssueTool,
-  createGithubListRunsTool,
-  createGithubGetRunLogsTool,
-  createGithubGetPRDiffTool,
-  createGithubPostPRReviewTool,
-} from "./github/index.js";
-import { createReadClipboardTool, createWriteClipboardTool } from "./clipboard.js";
-import { createGetWorkspaceSettingsTool, createSetWorkspaceSettingTool } from "./workspaceSettings.js";
-import { createExecuteVSCodeCommandTool, createListVSCodeCommandsTool } from "./vscodeCommands.js";
-import { createGetInlayHintsTool } from "./inlayHints.js";
-import { createGetHoverAtCursorTool } from "./hoverAtCursor.js";
-import { createGetTypeHierarchyTool } from "./typeHierarchy.js";
-import { createGetDebugStateTool, createEvaluateInDebuggerTool, createSetDebugBreakpointsTool, createStartDebuggingTool, createStopDebuggingTool } from "./debug.js";
-import { createSetEditorDecorationsTool, createClearEditorDecorationsTool } from "./decorations.js";
-import { createListTasksTool, createRunTaskTool } from "./tasks.js";
-import { createSetActiveWorkspaceFolderTool } from "./setActiveWorkspaceFolder.js";
-import { createGetNotebookCellsTool, createRunNotebookCellTool, createGetNotebookOutputTool } from "./notebook.js";
-import { createGetCommitDetailsTool, createGetDiffBetweenRefsTool } from "./gitHistory.js";
-import { createSendHttpRequestTool, createParseHttpFileTool } from "./httpClient.js";
 
 export function registerAllTools(
   transport: McpTransport,
@@ -128,10 +181,14 @@ export function registerAllTools(
           diagnostics = parsed.diagnostics ?? [];
         }
       } catch (e) {
-        warnings.push(`Failed to parse lint diagnostics: ${e instanceof Error ? e.message : String(e)}`);
+        warnings.push(
+          `Failed to parse lint diagnostics: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     } else {
-      warnings.push(`Lint diagnostics failed: ${diagSettled.reason instanceof Error ? diagSettled.reason.message : String(diagSettled.reason)}`);
+      warnings.push(
+        `Lint diagnostics failed: ${diagSettled.reason instanceof Error ? diagSettled.reason.message : String(diagSettled.reason)}`,
+      );
     }
 
     // Convert test failures to diagnostic shape and merge
@@ -153,19 +210,36 @@ export function registerAllTools(
           }
         }
       } catch (e) {
-        warnings.push(`Failed to parse test results: ${e instanceof Error ? e.message : String(e)}`);
+        warnings.push(
+          `Failed to parse test results: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     } else {
-      warnings.push(`Test runner failed: ${testSettled.reason instanceof Error ? testSettled.reason.message : String(testSettled.reason)}`);
+      warnings.push(
+        `Test runner failed: ${testSettled.reason instanceof Error ? testSettled.reason.message : String(testSettled.reason)}`,
+      );
     }
 
     return {
-      content: [{ type: "text", text: JSON.stringify({ diagnostics, ...(warnings.length > 0 && { warnings }) }) }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            diagnostics,
+            ...(warnings.length > 0 && { warnings }),
+          }),
+        },
+      ],
     };
   };
 
   const tools = [
-    createOpenFileTool(workspace, config.editorCommand, openedFiles, extensionClient),
+    createOpenFileTool(
+      workspace,
+      config.editorCommand,
+      openedFiles,
+      extensionClient,
+    ),
     createOpenDiffTool(workspace, config.editorCommand),
     createGetOpenEditorsTool(openedFiles, extensionClient),
     createGetWorkspaceFoldersTool(workspaceFolders, extensionClient),
@@ -222,6 +296,7 @@ export function registerAllTools(
     testsTool,
     createDiffDebugTool(workspace, combinedDiagnosticsFn),
     ...(activityLog ? [createGetActivityLogTool(activityLog)] : []),
+    createBridgeStatusTool(extensionClient),
     createWatchFilesTool(extensionClient),
     createUnwatchFilesTool(extensionClient),
     createListTerminalsTool(extensionClient),
@@ -284,6 +359,10 @@ export function registerAllTools(
   ];
 
   for (const tool of tools) {
-    transport.registerTool(tool.schema, tool.handler, (tool as { timeoutMs?: number }).timeoutMs);
+    transport.registerTool(
+      tool.schema,
+      tool.handler,
+      (tool as { timeoutMs?: number }).timeoutMs,
+    );
   }
 }

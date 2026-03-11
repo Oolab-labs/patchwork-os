@@ -1,11 +1,14 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSendHttpRequestTool } from "../httpClient.js";
 
 // Mock global fetch
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-function parse(result: { content: Array<{ type: string; text: string }>; isError?: boolean }) {
+function parse(result: {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+}) {
   return JSON.parse(result.content.at(0)?.text ?? "{}");
 }
 
@@ -30,7 +33,11 @@ function makeMockResponse(opts: {
     url: "https://example.com",
     type: "basic",
     arrayBuffer: vi.fn().mockResolvedValue(bodyBytes.buffer),
-    text: vi.fn().mockResolvedValue(typeof body === "string" ? body : new TextDecoder().decode(body)),
+    text: vi
+      .fn()
+      .mockResolvedValue(
+        typeof body === "string" ? body : new TextDecoder().decode(body),
+      ),
     json: vi.fn(),
     blob: vi.fn(),
     formData: vi.fn(),
@@ -107,7 +114,10 @@ describe("sendHttpRequest — Content-Length guard", () => {
     const bodyStr = "Hello, world!";
     const mockResp = makeMockResponse({
       status: 200,
-      headers: { "content-length": String(bodyStr.length), "content-type": "text/plain" },
+      headers: {
+        "content-length": String(bodyStr.length),
+        "content-type": "text/plain",
+      },
       body: bodyStr,
     });
 

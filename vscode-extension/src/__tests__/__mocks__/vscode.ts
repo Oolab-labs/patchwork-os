@@ -17,7 +17,12 @@ export class Position {
 export class Range {
   public readonly start: Position;
   public readonly end: Position;
-  constructor(startLine: number, startChar: number, endLine: number, endChar: number);
+  constructor(
+    startLine: number,
+    startChar: number,
+    endLine: number,
+    endChar: number,
+  );
   constructor(start: Position, end: Position);
   constructor(
     startOrLine: Position | number,
@@ -51,7 +56,11 @@ export class WorkspaceEdit {
     this._operations.push({ type: "createFile", uri, args: [options] });
   }
   renameFile(oldUri: any, newUri: any, options?: any) {
-    this._operations.push({ type: "renameFile", uri: oldUri, args: [newUri, options] });
+    this._operations.push({
+      type: "renameFile",
+      uri: oldUri,
+      args: [newUri, options],
+    });
   }
   entries(): Array<[any, any[]]> {
     return (this as any).__entries ?? [];
@@ -89,25 +98,44 @@ export const StatusBarAlignment = {
 } as const;
 
 // SymbolKind needs numeric keys mapping to string names (used as SymbolKind[kind])
-export const SymbolKind: Record<number, string> & Record<string, number | string> = {
-  0: "File",     File: 0,
-  1: "Module",   Module: 1,
-  2: "Namespace", Namespace: 2,
-  3: "Package",  Package: 3,
-  4: "Class",    Class: 4,
-  5: "Method",   Method: 5,
-  6: "Property", Property: 6,
-  7: "Field",    Field: 7,
-  8: "Constructor", Constructor: 8,
-  9: "Enum",     Enum: 9,
-  10: "Interface", Interface: 10,
-  11: "Function", Function: 11,
-  12: "Variable", Variable: 12,
-  13: "Constant", Constant: 13,
-  14: "String",  String: 14,
-  15: "Number",  Number: 15,
-  16: "Boolean", Boolean: 16,
-  17: "Array",   Array: 17,
+export const SymbolKind: Record<number, string> &
+  Record<string, number | string> = {
+  0: "File",
+  File: 0,
+  1: "Module",
+  Module: 1,
+  2: "Namespace",
+  Namespace: 2,
+  3: "Package",
+  Package: 3,
+  4: "Class",
+  Class: 4,
+  5: "Method",
+  Method: 5,
+  6: "Property",
+  Property: 6,
+  7: "Field",
+  Field: 7,
+  8: "Constructor",
+  Constructor: 8,
+  9: "Enum",
+  Enum: 9,
+  10: "Interface",
+  Interface: 10,
+  11: "Function",
+  Function: 11,
+  12: "Variable",
+  Variable: 12,
+  13: "Constant",
+  Constant: 13,
+  14: "String",
+  String: 14,
+  15: "Number",
+  Number: 15,
+  16: "Boolean",
+  Boolean: 16,
+  17: "Array",
+  Array: 17,
 };
 
 export const CodeActionKind = {
@@ -160,11 +188,21 @@ function createMockWatcher() {
     delete: [],
   };
   return {
-    onDidCreate: (fn: Function) => { listeners.create.push(fn); return { dispose: vi.fn() }; },
-    onDidChange: (fn: Function) => { listeners.change.push(fn); return { dispose: vi.fn() }; },
-    onDidDelete: (fn: Function) => { listeners.delete.push(fn); return { dispose: vi.fn() }; },
+    onDidCreate: (fn: Function) => {
+      listeners.create.push(fn);
+      return { dispose: vi.fn() };
+    },
+    onDidChange: (fn: Function) => {
+      listeners.change.push(fn);
+      return { dispose: vi.fn() };
+    },
+    onDidDelete: (fn: Function) => {
+      listeners.delete.push(fn);
+      return { dispose: vi.fn() };
+    },
     dispose: vi.fn(),
-    _fire: (event: string, uri: any) => listeners[event]?.forEach((fn) => fn(uri)),
+    _fire: (event: string, uri: any) =>
+      listeners[event]?.forEach((fn) => fn(uri)),
     _listeners: listeners,
   };
 }
@@ -175,7 +213,11 @@ export const workspace = {
   workspaceFolders: undefined as any[] | undefined,
   textDocuments: [] as any[],
   openTextDocument: vi.fn(async () => _mockTextDocument()),
-  openNotebookDocument: vi.fn(async () => ({ getCells: () => [], cellAt: vi.fn(() => null), cellCount: 0 })),
+  openNotebookDocument: vi.fn(async () => ({
+    getCells: () => [],
+    cellAt: vi.fn(() => null),
+    cellCount: 0,
+  })),
   applyEdit: vi.fn(async () => true),
   fs: {
     createDirectory: vi.fn(async () => {}),
@@ -214,7 +256,9 @@ export const window = {
   onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
   onDidOpenTerminal: vi.fn(() => ({ dispose: vi.fn() })),
   onDidCloseTerminal: vi.fn(() => ({ dispose: vi.fn() })),
-  onDidEndTerminalShellExecution: vi.fn((_handler: (event: any) => void) => ({ dispose: vi.fn() })),
+  onDidEndTerminalShellExecution: vi.fn((_handler: (event: any) => void) => ({
+    dispose: vi.fn(),
+  })),
   onDidChangeVisibleTextEditors: vi.fn(() => ({ dispose: vi.fn() })),
   visibleTextEditors: [] as any[],
   createTextEditorDecorationType: vi.fn(() => ({ dispose: vi.fn() })),
@@ -230,12 +274,14 @@ export const languages = {
 };
 
 /** Create a mock DebugSession */
-export function _mockDebugSession(overrides: Partial<{
-  id: string;
-  name: string;
-  type: string;
-  customRequest: (command: string, args?: unknown) => Promise<unknown>;
-}> = {}) {
+export function _mockDebugSession(
+  overrides: Partial<{
+    id: string;
+    name: string;
+    type: string;
+    customRequest: (command: string, args?: unknown) => Promise<unknown>;
+  }> = {},
+) {
   return {
     id: overrides.id ?? "session-1",
     name: overrides.name ?? "Mock Session",
@@ -245,7 +291,9 @@ export function _mockDebugSession(overrides: Partial<{
 }
 
 export const debug = {
-  activeDebugSession: undefined as ReturnType<typeof _mockDebugSession> | undefined,
+  activeDebugSession: undefined as
+    | ReturnType<typeof _mockDebugSession>
+    | undefined,
   breakpoints: [] as any[],
   onDidStartDebugSession: vi.fn(() => ({ dispose: vi.fn() })),
   onDidTerminateDebugSession: vi.fn(() => ({ dispose: vi.fn() })),
@@ -274,16 +322,18 @@ export const version = "1.85.0";
 // ── Test helpers ──────────────────────────────────────────────
 
 /** Create a mock TextDocument */
-export function _mockTextDocument(overrides: Partial<{
-  uri: any;
-  fsPath: string;
-  isDirty: boolean;
-  isUntitled: boolean;
-  lineCount: number;
-  getText: (range?: any) => string;
-  lineAt: (line: number) => { text: string };
-  save: () => Promise<boolean>;
-}> = {}) {
+export function _mockTextDocument(
+  overrides: Partial<{
+    uri: any;
+    fsPath: string;
+    isDirty: boolean;
+    isUntitled: boolean;
+    lineCount: number;
+    getText: (range?: any) => string;
+    lineAt: (line: number) => { text: string };
+    save: () => Promise<boolean>;
+  }> = {},
+) {
   const fsPath = overrides.fsPath ?? "/mock/file.ts";
   const uri = overrides.uri ?? Uri.file(fsPath);
   return {
@@ -298,11 +348,13 @@ export function _mockTextDocument(overrides: Partial<{
 }
 
 /** Create a mock TextEditor */
-export function _mockTextEditor(overrides: Partial<{
-  document: any;
-  selection: any;
-  options: any;
-}> = {}) {
+export function _mockTextEditor(
+  overrides: Partial<{
+    document: any;
+    selection: any;
+    options: any;
+  }> = {},
+) {
   const doc = overrides.document ?? _mockTextDocument();
   return {
     document: doc,
@@ -318,11 +370,13 @@ export function _mockTextEditor(overrides: Partial<{
 }
 
 /** Create a mock Terminal */
-export function _mockTerminal(overrides: Partial<{
-  name: string;
-  show: () => void;
-  sendText: (text: string, addNewline?: boolean) => void;
-}> = {}) {
+export function _mockTerminal(
+  overrides: Partial<{
+    name: string;
+    show: () => void;
+    sendText: (text: string, addNewline?: boolean) => void;
+  }> = {},
+) {
   return {
     name: overrides.name ?? "Terminal",
     show: overrides.show ?? vi.fn(),
@@ -332,24 +386,35 @@ export function _mockTerminal(overrides: Partial<{
 
 /** Reset all mocks to defaults. Call in beforeEach(). */
 export function __reset() {
-  workspace.workspaceFolders = [{ uri: { fsPath: "/workspace" } }, { uri: { fsPath: "/test-root" } }] as any;
+  workspace.workspaceFolders = [
+    { uri: { fsPath: "/workspace" } },
+    { uri: { fsPath: "/test-root" } },
+  ] as any;
   workspace.textDocuments = [];
-  workspace.openTextDocument.mockReset().mockImplementation(async () => _mockTextDocument());
+  workspace.openTextDocument
+    .mockReset()
+    .mockImplementation(async () => _mockTextDocument());
   workspace.applyEdit.mockReset().mockResolvedValue(true);
   workspace.fs.createDirectory.mockReset().mockResolvedValue(undefined);
   workspace.fs.delete.mockReset().mockResolvedValue(undefined);
-  workspace.createFileSystemWatcher.mockReset().mockImplementation(() => createMockWatcher());
+  workspace.createFileSystemWatcher
+    .mockReset()
+    .mockImplementation(() => createMockWatcher());
 
   window.tabGroups.all = [];
   window.tabGroups.close.mockReset().mockResolvedValue(true);
   window.terminals = [];
   window.activeTerminal = undefined;
   window.activeTextEditor = undefined;
-  window.showTextDocument.mockReset().mockImplementation(async () => _mockTextEditor());
+  window.showTextDocument
+    .mockReset()
+    .mockImplementation(async () => _mockTextEditor());
   window.createTerminal.mockReset().mockImplementation(() => _mockTerminal());
   window.showInformationMessage.mockReset();
   window.showWarningMessage.mockReset();
-  window.onDidEndTerminalShellExecution.mockReset().mockReturnValue({ dispose: vi.fn() });
+  window.onDidEndTerminalShellExecution
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
 
   workspace.openNotebookDocument.mockReset().mockImplementation(async () => ({
     getCells: () => [],
@@ -358,11 +423,17 @@ export function __reset() {
   }));
 
   window.showNotebookDocument.mockReset().mockResolvedValue(undefined);
-  window.onDidChangeVisibleTextEditors.mockReset().mockReturnValue({ dispose: vi.fn() });
+  window.onDidChangeVisibleTextEditors
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
   window.visibleTextEditors = [];
-  window.createTextEditorDecorationType.mockReset().mockReturnValue({ dispose: vi.fn() });
+  window.createTextEditorDecorationType
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
 
-  notebooks.onDidChangeNotebookCellExecutionState.mockReset().mockReturnValue({ dispose: vi.fn() });
+  notebooks.onDidChangeNotebookCellExecutionState
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
 
   languages.getDiagnostics.mockReset().mockReturnValue([]);
   commands.executeCommand.mockReset().mockResolvedValue(undefined);
@@ -371,10 +442,18 @@ export function __reset() {
 
   debug.activeDebugSession = undefined;
   debug.breakpoints = [];
-  debug.onDidStartDebugSession.mockReset().mockReturnValue({ dispose: vi.fn() });
-  debug.onDidTerminateDebugSession.mockReset().mockReturnValue({ dispose: vi.fn() });
-  debug.onDidChangeActiveDebugSession.mockReset().mockReturnValue({ dispose: vi.fn() });
-  debug.onDidChangeBreakpoints.mockReset().mockReturnValue({ dispose: vi.fn() });
+  debug.onDidStartDebugSession
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
+  debug.onDidTerminateDebugSession
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
+  debug.onDidChangeActiveDebugSession
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
+  debug.onDidChangeBreakpoints
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
   debug.startDebugging.mockReset().mockResolvedValue(true);
   debug.stopDebugging.mockReset().mockResolvedValue(undefined);
   debug.addBreakpoints.mockReset();

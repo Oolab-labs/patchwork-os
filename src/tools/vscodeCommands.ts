@@ -1,8 +1,14 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
 import type { Config } from "../config.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import { error, extensionRequired, success } from "./utils.js";
 
-export function createExecuteVSCodeCommandTool(extensionClient: ExtensionClient, config: Config) {
+export function createExecuteVSCodeCommandTool(
+  extensionClient: ExtensionClient,
+  config: Config,
+) {
   return {
     schema: {
       name: "executeVSCodeCommand",
@@ -45,22 +51,26 @@ export function createExecuteVSCodeCommandTool(extensionClient: ExtensionClient,
       if (config.vscodeCommandAllowlist.length === 0) {
         return error(
           "executeVSCodeCommand requires an explicit allowlist. " +
-          `Use --vscode-allow-command <command-id> to permit specific commands. ` +
-          `Run listVSCodeCommands to discover available command IDs.`,
+            "Use --vscode-allow-command <command-id> to permit specific commands. " +
+            "Run listVSCodeCommands to discover available command IDs.",
         );
       }
       if (!config.vscodeCommandAllowlist.includes(command)) {
         return error(
           `Command "${command}" is not in the vscodeCommandAllowlist. ` +
-          `Allowed: ${config.vscodeCommandAllowlist.join(", ")}. ` +
-          `Use --vscode-allow-command ${command} to add it.`,
+            `Allowed: ${config.vscodeCommandAllowlist.join(", ")}. ` +
+            `Use --vscode-allow-command ${command} to add it.`,
         );
       }
 
       const cmdArgs = Array.isArray(args.args) ? args.args : [];
       try {
-        const result = await extensionClient.executeVSCodeCommand(command, cmdArgs);
-        if (result === null) return error(`Command "${command}" returned null or failed`);
+        const result = await extensionClient.executeVSCodeCommand(
+          command,
+          cmdArgs,
+        );
+        if (result === null)
+          return error(`Command "${command}" returned null or failed`);
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {

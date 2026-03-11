@@ -1,7 +1,13 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import { requireString, resolveFilePath, success } from "./utils.js";
 
-export function createSaveDocumentTool(workspace: string, extensionClient?: ExtensionClient) {
+export function createSaveDocumentTool(
+  workspace: string,
+  extensionClient?: ExtensionClient,
+) {
   return {
     schema: {
       name: "saveDocument",
@@ -28,14 +34,20 @@ export function createSaveDocumentTool(workspace: string, extensionClient?: Exte
         try {
           const saved = await extensionClient.saveFile(filePath);
           if (saved) {
-            return success({ success: true, filePath, saved: true, source: "vscode-buffer" });
+            return success({
+              success: true,
+              filePath,
+              saved: true,
+              source: "vscode-buffer",
+            });
           }
           // false — file not open in editor (already on disk from editText or never opened)
           return success({
             success: true,
             filePath,
             saved: false,
-            message: "File is not open in VS Code editor — content is already persisted to disk",
+            message:
+              "File is not open in VS Code editor — content is already persisted to disk",
           });
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;

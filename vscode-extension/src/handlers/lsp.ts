@@ -1,12 +1,14 @@
 import * as vscode from "vscode";
 import type { RequestHandler } from "../types";
-import { requireString, requireNumber } from "./validation";
+import { requireNumber, requireString } from "./validation";
 
 interface LspHandlerDeps {
   log: (message: string) => void;
 }
 
-export function createLspHandlers(deps: LspHandlerDeps): Record<string, RequestHandler> {
+export function createLspHandlers(
+  deps: LspHandlerDeps,
+): Record<string, RequestHandler> {
   async function handleGoToDefinition(
     params: Record<string, unknown>,
   ): Promise<unknown> {
@@ -164,7 +166,10 @@ export function createLspHandlers(deps: LspHandlerDeps): Record<string, RequestH
     );
 
     if (!actions || actions.length === 0) {
-      return { applied: false, error: "No code actions available at this range" };
+      return {
+        applied: false,
+        error: "No code actions available at this range",
+      };
     }
 
     const action = actions.find((a) => a.title === actionTitle);
@@ -191,7 +196,11 @@ export function createLspHandlers(deps: LspHandlerDeps): Record<string, RequestH
       );
     }
 
-    return { applied: true, title: actionTitle, command: action.command?.command ?? null };
+    return {
+      applied: true,
+      title: actionTitle,
+      command: action.command?.command ?? null,
+    };
   }
 
   async function handleRenameSymbol(
@@ -238,7 +247,10 @@ export function createLspHandlers(deps: LspHandlerDeps): Record<string, RequestH
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const query = requireString(params.query, "query");
-    const maxResults = Math.min((typeof params.maxResults === "number" ? params.maxResults : 50), 200);
+    const maxResults = Math.min(
+      typeof params.maxResults === "number" ? params.maxResults : 50,
+      200,
+    );
 
     const symbols = await vscode.commands.executeCommand<
       vscode.SymbolInformation[]
@@ -268,10 +280,9 @@ export function createLspHandlers(deps: LspHandlerDeps): Record<string, RequestH
     const uri = vscode.Uri.file(file);
     await vscode.workspace.openTextDocument(uri);
 
-    const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
-      "vscode.executeDocumentSymbolProvider",
-      uri,
-    );
+    const symbols = await vscode.commands.executeCommand<
+      vscode.DocumentSymbol[]
+    >("vscode.executeDocumentSymbolProvider", uri);
 
     if (!symbols || symbols.length === 0) return { symbols: [], count: 0 };
 
@@ -288,7 +299,10 @@ export function createLspHandlers(deps: LspHandlerDeps): Record<string, RequestH
       parent: string | null;
     };
 
-    function flattenSymbols(syms: vscode.DocumentSymbol[], parent: string | null): FlatSymbol[] {
+    function flattenSymbols(
+      syms: vscode.DocumentSymbol[],
+      parent: string | null,
+    ): FlatSymbol[] {
       const result: FlatSymbol[] = [];
       for (const sym of syms) {
         result.push({
@@ -320,18 +334,20 @@ export function createLspHandlers(deps: LspHandlerDeps): Record<string, RequestH
     const file = requireString(params.file, "file");
     const line = requireNumber(params.line, "line") - 1;
     const column = requireNumber(params.column, "column") - 1;
-    const direction = typeof params.direction === "string" ? params.direction : "both";
-    const maxResults = typeof params.maxResults === "number" ? Math.min(params.maxResults, 200) : 50;
+    const direction =
+      typeof params.direction === "string" ? params.direction : "both";
+    const maxResults =
+      typeof params.maxResults === "number"
+        ? Math.min(params.maxResults, 200)
+        : 50;
 
     const uri = vscode.Uri.file(file);
     await vscode.workspace.openTextDocument(uri);
     const position = new vscode.Position(line, column);
 
-    const items = await vscode.commands.executeCommand<vscode.CallHierarchyItem[]>(
-      "vscode.prepareCallHierarchy",
-      uri,
-      position,
-    );
+    const items = await vscode.commands.executeCommand<
+      vscode.CallHierarchyItem[]
+    >("vscode.prepareCallHierarchy", uri, position);
 
     if (!items || items.length === 0) return null;
 
@@ -349,10 +365,9 @@ export function createLspHandlers(deps: LspHandlerDeps): Record<string, RequestH
     let outgoing: unknown[] | null = null;
 
     if (direction === "incoming" || direction === "both") {
-      const calls = await vscode.commands.executeCommand<vscode.CallHierarchyIncomingCall[]>(
-        "vscode.provideIncomingCalls",
-        item,
-      );
+      const calls = await vscode.commands.executeCommand<
+        vscode.CallHierarchyIncomingCall[]
+      >("vscode.provideIncomingCalls", item);
       incoming = calls
         ? calls.slice(0, maxResults).map((c) => ({
             name: c.from.name,
@@ -370,10 +385,9 @@ export function createLspHandlers(deps: LspHandlerDeps): Record<string, RequestH
     }
 
     if (direction === "outgoing" || direction === "both") {
-      const calls = await vscode.commands.executeCommand<vscode.CallHierarchyOutgoingCall[]>(
-        "vscode.provideOutgoingCalls",
-        item,
-      );
+      const calls = await vscode.commands.executeCommand<
+        vscode.CallHierarchyOutgoingCall[]
+      >("vscode.provideOutgoingCalls", item);
       outgoing = calls
         ? calls.slice(0, maxResults).map((c) => ({
             name: c.to.name,

@@ -1,22 +1,22 @@
-import * as fs from "fs";
+import * as fs from "node:fs";
 import * as vscode from "vscode";
 import WebSocket from "ws";
 
 import {
-  RECONNECT_BASE_DELAY,
-  RECONNECT_MAX_DELAY,
+  EXTENSION_PROTOCOL_VERSION,
   HANDLER_TIMEOUT,
   LOCK_DIR,
-  EXTENSION_PROTOCOL_VERSION,
+  RECONNECT_BASE_DELAY,
+  RECONNECT_MAX_DELAY,
 } from "./constants";
-import type { LockFileData, RequestHandler } from "./types";
 import { readLockFilesAsync } from "./lockfiles";
+import type { LockFileData, RequestHandler } from "./types";
 
-const enum ConnectionState {
-  IDLE,
-  CONNECTING,
-  CONNECTED,
-  DISCONNECTING,
+enum ConnectionState {
+  IDLE = 0,
+  CONNECTING = 1,
+  CONNECTED = 2,
+  DISCONNECTING = 3,
 }
 
 export class BridgeConnection {
@@ -37,13 +37,24 @@ export class BridgeConnection {
   private lastBridgePong = Date.now();
   private lastTickTime = Date.now();
   private reconnectAttempts = 0;
+  /** Monotonically increasing generation — prevents stale listeners from acting */
+  private generation = 0;
   statusBar: vscode.StatusBarItem | null = null;
   output: vscode.OutputChannel | null = null;
+  logLevel: string = "info";
+  /** Override the lock file directory (empty string = use default LOCK_DIR) */
+  lockDirOverride: string = "";
 
   private handlers: Record<string, RequestHandler> = {};
   private onDispose: (() => void) | null = null;
-  private pendingNotifications: Array<{ method: string; params: Record<string, unknown> }> = [];
-  private pendingHandlers: Map<number | string, { timeout: ReturnType<typeof setTimeout>; controller: AbortController }> = new Map();
+  private pendingNotifications: Array<{
+    method: string;
+    params: Record<string, unknown>;
+  }> = [];
+  private pendingHandlers: Map<
+    number | string,
+    { timeout: ReturnType<typeof setTimeout>; controller: AbortController }
+  > = new Map();
   private static readonly MAX_PENDING_NOTIFICATIONS = 20;
   /** Notifications worth buffering during transient disconnects */
   private static readonly BUFFERABLE_METHODS = new Set([
@@ -60,10 +71,22 @@ export class BridgeConnection {
     this.onDispose = fn;
   }
 
+  /** Resolved lock directory — prefers override, falls back to default */
+  get lockDir(): string {
+    return this.lockDirOverride || LOCK_DIR;
+  }
+
   log(message: string): void {
     const line = `[Claude IDE Bridge] ${message}`;
     console.log(line);
     this.output?.appendLine(`${new Date().toISOString()} ${message}`);
+  }
+
+  logDebug(message: string): void {
+    if (this.logLevel !== "debug") return;
+    const line = `[Claude IDE Bridge] ${message}`;
+    console.log(line);
+    this.output?.appendLine(`${new Date().toISOString()} DEBUG: ${message}`);
   }
 
   logError(message: string): void {
@@ -74,16 +97,20 @@ export class BridgeConnection {
 
   claudeConnected = false;
 
-  private updateStatusBar(state: "connected" | "disconnected" | "reconnecting"): void {
+  private updateStatusBar(
+    state: "connected" | "disconnected" | "reconnecting",
+  ): void {
     if (!this.statusBar) return;
     switch (state) {
       case "connected":
         if (this.claudeConnected) {
           this.statusBar.text = "$(check) Claude Bridge";
-          this.statusBar.tooltip = "Claude IDE Bridge: Connected — Claude Code active";
+          this.statusBar.tooltip =
+            "Claude IDE Bridge: Connected — Claude Code active";
         } else {
           this.statusBar.text = "$(plug) Claude Bridge";
-          this.statusBar.tooltip = "Claude IDE Bridge: Connected — waiting for Claude Code";
+          this.statusBar.tooltip =
+            "Claude IDE Bridge: Connected — waiting for Claude Code";
         }
         break;
       case "disconnected":
@@ -104,7 +131,9 @@ export class BridgeConnection {
       try {
         this.ws.send(JSON.stringify(data));
       } catch (err) {
-        this.logError(`Send failed: ${err instanceof Error ? err.message : String(err)}`);
+        this.logError(
+          `Send failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
   }
@@ -113,7 +142,10 @@ export class BridgeConnection {
     if (this.ws?.readyState !== WebSocket.OPEN) {
       // Buffer important notifications during transient disconnects
       if (BridgeConnection.BUFFERABLE_METHODS.has(method)) {
-        if (this.pendingNotifications.length >= BridgeConnection.MAX_PENDING_NOTIFICATIONS) {
+        if (
+          this.pendingNotifications.length >=
+          BridgeConnection.MAX_PENDING_NOTIFICATIONS
+        ) {
           this.pendingNotifications.shift(); // Drop oldest
         }
         this.pendingNotifications.push({ method, params });
@@ -148,8 +180,16 @@ export class BridgeConnection {
     // Clean up any in-flight WebSocket from a concurrent tryConnect() to
     // prevent orphaned sockets (e.g. double-clicking "Reconnect").
     if (this.ws) {
-      try { this.ws.removeAllListeners(); } catch { /* best-effort */ }
-      try { this.ws.terminate(); } catch { /* best-effort */ }
+      try {
+        this.ws.removeAllListeners();
+      } catch {
+        /* best-effort */
+      }
+      try {
+        this.ws.terminate();
+      } catch {
+        /* best-effort */
+      }
       this.ws = null;
     }
 
@@ -160,6 +200,10 @@ export class BridgeConnection {
     // be blocked by the state=CONNECTING guard in tryConnect().
     this.state = ConnectionState.CONNECTING;
 
+    // Increment generation so any stale listener callbacks from a previous
+    // connect() call self-discard instead of acting on the new socket.
+    const gen = ++this.generation;
+
     const url = `ws://127.0.0.1:${lockData.port}`;
     this.ws = new WebSocket(url, {
       headers: { "x-claude-ide-extension": lockData.authToken },
@@ -167,6 +211,7 @@ export class BridgeConnection {
     });
 
     this.ws.on("open", () => {
+      if (gen !== this.generation) return;
       this.state = ConnectionState.CONNECTED;
       this.reconnectAttempts = 0;
       this.log("Connected to bridge");
@@ -185,20 +230,24 @@ export class BridgeConnection {
     });
 
     this.ws.on("message", (data) => {
+      if (gen !== this.generation) return;
       this.handleMessage(data.toString("utf-8"));
     });
 
     this.ws.on("close", () => {
+      if (gen !== this.generation) return;
       this.log("Disconnected from bridge");
       this.handleDisconnect();
     });
 
     this.ws.on("error", (err) => {
+      if (gen !== this.generation) return;
       this.logError(`Connection error: ${err.message}`);
       this.handleDisconnect();
     });
 
     this.ws.on("unexpected-response", (_req, res) => {
+      if (gen !== this.generation) return;
       this.logError(`Upgrade rejected: HTTP ${res.statusCode}`);
       // Use handleDisconnect() for full cleanup (heartbeat, pending handlers,
       // listener removal, status bar). Must call BEFORE setting DISCONNECTING
@@ -217,12 +266,34 @@ export class BridgeConnection {
       pending.controller.abort();
     }
     this.pendingHandlers.clear();
+    // Clear debounce timers to release closures referencing VS Code API objects
+    if (this.selectionDebounceTimer) {
+      clearTimeout(this.selectionDebounceTimer);
+      this.selectionDebounceTimer = null;
+    }
+    if (this.diagnosticsDebounceTimer) {
+      clearTimeout(this.diagnosticsDebounceTimer);
+      this.diagnosticsDebounceTimer = null;
+    }
+    if (this.aiCommentsDebounceTimer) {
+      clearTimeout(this.aiCommentsDebounceTimer);
+      this.aiCommentsDebounceTimer = null;
+    }
+    this.pendingDiagnosticUris.clear();
     const oldWs = this.ws;
     // Stop heartbeat before nulling ws so pong listener is removed from the socket
     this.stopHeartbeat();
     if (oldWs) {
-      try { oldWs.removeAllListeners(); } catch { /* best-effort */ }
-      try { oldWs.close(); } catch { /* already closing */ }
+      try {
+        oldWs.removeAllListeners();
+      } catch {
+        /* best-effort */
+      }
+      try {
+        oldWs.close();
+      } catch {
+        /* already closing */
+      }
       this.ws = null;
     }
     this.scheduleReconnect();
@@ -232,7 +303,9 @@ export class BridgeConnection {
     this.stopHeartbeat();
     this.lastBridgePong = Date.now();
     this.lastTickTime = Date.now();
-    this.pongHandler = () => { this.lastBridgePong = Date.now(); };
+    this.pongHandler = () => {
+      this.lastBridgePong = Date.now();
+    };
     this.ws?.on("pong", this.pongHandler);
     this.heartbeatTimer = setInterval(() => {
       const now = Date.now();
@@ -285,7 +358,10 @@ export class BridgeConnection {
         });
     }
     const baseDelay = this.reconnectDelay;
-    this.reconnectDelay = Math.min(this.reconnectDelay * 2, RECONNECT_MAX_DELAY);
+    this.reconnectDelay = Math.min(
+      this.reconnectDelay * 2,
+      RECONNECT_MAX_DELAY,
+    );
     const jitteredDelay = Math.round(500 + Math.random() * baseDelay);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -301,8 +377,16 @@ export class BridgeConnection {
       this.reconnectTimer = null;
     }
     if (this.ws) {
-      try { this.ws.removeAllListeners(); } catch { /* best-effort */ }
-      try { this.ws.close(); } catch { /* already closing */ }
+      try {
+        this.ws.removeAllListeners();
+      } catch {
+        /* best-effort */
+      }
+      try {
+        this.ws.close();
+      } catch {
+        /* already closing */
+      }
       this.ws = null;
     }
     this.connecting = false;
@@ -311,25 +395,37 @@ export class BridgeConnection {
   }
 
   tryConnect(): void {
-    if (this.disposed || this.state === ConnectionState.CONNECTING || this.state === ConnectionState.CONNECTED) return;
+    if (
+      this.disposed ||
+      this.state === ConnectionState.CONNECTING ||
+      this.state === ConnectionState.CONNECTED
+    )
+      return;
     if (this.connecting) return;
     this.connecting = true;
     this.state = ConnectionState.CONNECTING;
-    readLockFilesAsync().then((lockData) => {
-      this.connecting = false;
-      if (this.disposed) { this.state = ConnectionState.IDLE; return; }
-      if (lockData) {
-        this.connect(lockData);
-      } else {
+    readLockFilesAsync(this.lockDirOverride || undefined)
+      .then((lockData) => {
+        this.connecting = false;
+        if (this.disposed) {
+          this.state = ConnectionState.IDLE;
+          return;
+        }
+        if (lockData) {
+          this.connect(lockData);
+        } else {
+          this.state = ConnectionState.DISCONNECTING;
+          this.scheduleReconnect();
+        }
+      })
+      .catch((err: unknown) => {
+        this.connecting = false;
+        this.log(
+          `Lock file read failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
         this.state = ConnectionState.DISCONNECTING;
         this.scheduleReconnect();
-      }
-    }).catch((err: unknown) => {
-      this.connecting = false;
-      this.log(`Lock file read failed: ${err instanceof Error ? err.message : String(err)}`);
-      this.state = ConnectionState.DISCONNECTING;
-      this.scheduleReconnect();
-    });
+      });
   }
 
   handleMessage(data: string): void {
@@ -343,7 +439,9 @@ export class BridgeConnection {
           if (this.ws?.readyState === WebSocket.OPEN) {
             this.updateStatusBar("connected");
           }
-          this.log(`Claude Code ${this.claudeConnected ? "connected" : "disconnected"}`);
+          this.log(
+            `Claude Code ${this.claudeConnected ? "connected" : "disconnected"}`,
+          );
         }
         return;
       }
@@ -361,15 +459,27 @@ export class BridgeConnection {
             this.pendingHandlers.delete(msg.id);
           };
           const timeoutPromise = new Promise<never>((_, reject) => {
-            controller.signal.addEventListener("abort", () => reject(new Error("Handler timed out")), { once: true });
+            controller.signal.addEventListener(
+              "abort",
+              () => reject(new Error("Handler timed out")),
+              { once: true },
+            );
           });
-          Promise.race([handler(msg.params ?? {}, controller.signal), timeoutPromise])
+          const handlerGen = this.generation;
+          Promise.race([
+            handler(msg.params ?? {}, controller.signal),
+            timeoutPromise,
+          ])
             .then((result) => {
               cleanup();
+              // Guard against sending responses after disconnect/reconnect —
+              // if generation changed, the socket is gone or belongs to a new connection
+              if (handlerGen !== this.generation) return;
               this.sendResponse(msg.id, result);
             })
             .catch((err: unknown) => {
               cleanup();
+              if (handlerGen !== this.generation) return;
               const message = err instanceof Error ? err.message : String(err);
               this.sendResponse(msg.id, undefined, {
                 code: -32000,
@@ -384,16 +494,19 @@ export class BridgeConnection {
         }
       }
     } catch (err) {
-      this.logError(`Failed to handle message: ${err instanceof Error ? err.message : String(err)}`);
+      this.logError(
+        `Failed to handle message: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
   startWatchingLockDir(): void {
+    const dir = this.lockDir;
     try {
-      if (!fs.existsSync(LOCK_DIR)) {
-        fs.mkdirSync(LOCK_DIR, { recursive: true, mode: 0o700 });
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       }
-      this.lockWatcher = fs.watch(LOCK_DIR, (_event, filename) => {
+      this.lockWatcher = fs.watch(dir, (_event, filename) => {
         if (!filename?.endsWith(".lock")) return;
         if (this.disposed) return;
         if (this.ws?.readyState === WebSocket.OPEN) return;
@@ -404,7 +517,10 @@ export class BridgeConnection {
         // Only reset backoff if we were deeply backed off (lock file appearance
         // suggests a fresh bridge). Cap at base delay rather than resetting to
         // zero to avoid reconnect storms during bridge crash loops.
-        this.reconnectDelay = Math.min(this.reconnectDelay, RECONNECT_BASE_DELAY * 2);
+        this.reconnectDelay = Math.min(
+          this.reconnectDelay,
+          RECONNECT_BASE_DELAY * 2,
+        );
         setTimeout(() => this.tryConnect(), 200);
       });
       this.lockWatcher.on("error", () => {

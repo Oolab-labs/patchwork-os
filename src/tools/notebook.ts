@@ -1,7 +1,21 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { error, extensionRequired, optionalInt, requireInt, requireString, resolveFilePath, success } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  extensionRequired,
+  optionalInt,
+  requireInt,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
-export function createGetNotebookCellsTool(workspace: string, extensionClient: ExtensionClient) {
+export function createGetNotebookCellsTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "getNotebookCells",
@@ -31,7 +45,10 @@ export function createGetNotebookCellsTool(workspace: string, extensionClient: E
       const file = resolveFilePath(requireString(args, "file"), workspace);
       try {
         const result = await extensionClient.getNotebookCells(file);
-        if (result === null) return error("Failed to open notebook — ensure Jupyter extension is installed");
+        if (result === null)
+          return error(
+            "Failed to open notebook — ensure Jupyter extension is installed",
+          );
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
@@ -43,7 +60,10 @@ export function createGetNotebookCellsTool(workspace: string, extensionClient: E
   };
 }
 
-export function createRunNotebookCellTool(workspace: string, extensionClient: ExtensionClient) {
+export function createRunNotebookCellTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "runNotebookCell",
@@ -80,9 +100,16 @@ export function createRunNotebookCellTool(workspace: string, extensionClient: Ex
       }
       const file = resolveFilePath(requireString(args, "file"), workspace);
       const cellIndex = requireInt(args, "cellIndex", 0, 10_000);
-      const timeoutMs = Math.min(optionalInt(args, "timeoutMs", 1000, 300_000) ?? 30_000, 300_000);
+      const timeoutMs = Math.min(
+        optionalInt(args, "timeoutMs", 1000, 300_000) ?? 30_000,
+        300_000,
+      );
       try {
-        const result = await extensionClient.runNotebookCell(file, cellIndex, timeoutMs);
+        const result = await extensionClient.runNotebookCell(
+          file,
+          cellIndex,
+          timeoutMs,
+        );
         if (result === null) return error("Failed to run notebook cell");
         return success(result);
       } catch (err) {
@@ -95,7 +122,10 @@ export function createRunNotebookCellTool(workspace: string, extensionClient: Ex
   };
 }
 
-export function createGetNotebookOutputTool(workspace: string, extensionClient: ExtensionClient) {
+export function createGetNotebookOutputTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "getNotebookOutput",

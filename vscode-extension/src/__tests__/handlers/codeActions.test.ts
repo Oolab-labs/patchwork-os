@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { __reset, _mockTextDocument, _mockTextEditor } from "../__mocks__/vscode";
 import {
-  handleFormatDocument,
   handleFixAllLintErrors,
+  handleFormatDocument,
   handleOrganizeImports,
 } from "../../handlers/codeActions";
+import {
+  __reset,
+  _mockTextDocument,
+  _mockTextEditor,
+} from "../__mocks__/vscode";
 
 function setupEditorMock() {
   const save = vi.fn(async () => true);
@@ -27,10 +31,18 @@ beforeEach(() => {
 describe("handleFormatDocument", () => {
   it("applies formatting edits and saves", async () => {
     const { save } = setupEditorMock();
-    const textEdit = { range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } }, newText: "const" };
+    const textEdit = {
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 5 },
+      },
+      newText: "const",
+    };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([textEdit]);
 
-    const result = (await handleFormatDocument({ file: "/workspace/file.ts" })) as any;
+    const result = (await handleFormatDocument({
+      file: "/workspace/file.ts",
+    })) as any;
     expect(result.success).toBe(true);
     expect(result.editsApplied).toBe(1);
     expect(vscode.workspace.applyEdit).toHaveBeenCalled();
@@ -41,7 +53,9 @@ describe("handleFormatDocument", () => {
     const { save } = setupEditorMock();
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
 
-    const result = (await handleFormatDocument({ file: "/workspace/file.ts" })) as any;
+    const result = (await handleFormatDocument({
+      file: "/workspace/file.ts",
+    })) as any;
     expect(result.success).toBe(true);
     expect(result.editsApplied).toBe(0);
     expect(save).toHaveBeenCalled();
@@ -59,7 +73,9 @@ describe("handleFixAllLintErrors", () => {
     const action = { edit: wsEdit, command: undefined };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([action]);
 
-    const result = (await handleFixAllLintErrors({ file: "/workspace/file.ts" })) as any;
+    const result = (await handleFixAllLintErrors({
+      file: "/workspace/file.ts",
+    })) as any;
     expect(result.success).toBe(true);
     expect(result.actionsApplied).toBe(1);
     expect(save).toHaveBeenCalled();
@@ -67,12 +83,17 @@ describe("handleFixAllLintErrors", () => {
 
   it("executes code action commands", async () => {
     setupEditorMock();
-    const action = { edit: undefined, command: { command: "eslint.fix", arguments: [] } };
+    const action = {
+      edit: undefined,
+      command: { command: "eslint.fix", arguments: [] },
+    };
     vi.mocked(vscode.commands.executeCommand)
-      .mockResolvedValueOnce([action])   // code action provider
+      .mockResolvedValueOnce([action]) // code action provider
       .mockResolvedValueOnce(undefined); // execute command
 
-    const result = (await handleFixAllLintErrors({ file: "/workspace/file.ts" })) as any;
+    const result = (await handleFixAllLintErrors({
+      file: "/workspace/file.ts",
+    })) as any;
     expect(result.actionsApplied).toBe(1);
   });
 
@@ -80,7 +101,9 @@ describe("handleFixAllLintErrors", () => {
     setupEditorMock();
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
 
-    const result = (await handleFixAllLintErrors({ file: "/workspace/file.ts" })) as any;
+    const result = (await handleFixAllLintErrors({
+      file: "/workspace/file.ts",
+    })) as any;
     expect(result.success).toBe(true);
     expect(result.actionsApplied).toBe(0);
   });
@@ -93,7 +116,9 @@ describe("handleOrganizeImports", () => {
     const action = { edit: wsEdit, command: undefined };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([action]);
 
-    const result = (await handleOrganizeImports({ file: "/workspace/file.ts" })) as any;
+    const result = (await handleOrganizeImports({
+      file: "/workspace/file.ts",
+    })) as any;
     expect(result.success).toBe(true);
     expect(result.actionsApplied).toBe(1);
     expect(save).toHaveBeenCalled();

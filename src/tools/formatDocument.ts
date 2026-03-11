@@ -1,9 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import type { ProbeResults } from "../probe.js";
 import type { ProgressFn } from "../transport.js";
-import { execSafe, requireString, resolveFilePath, success, error } from "./utils.js";
+import {
+  error,
+  execSafe,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 interface FormatterOption {
   cmd: string;
@@ -30,8 +39,10 @@ const RS_FORMATTERS: FormatterOption[] = [
 ];
 
 const EXT_FORMATTERS: Record<string, FormatterOption[]> = {
-  ".ts": JS_FORMATTERS, ".tsx": JS_FORMATTERS,
-  ".js": JS_FORMATTERS, ".jsx": JS_FORMATTERS,
+  ".ts": JS_FORMATTERS,
+  ".tsx": JS_FORMATTERS,
+  ".js": JS_FORMATTERS,
+  ".jsx": JS_FORMATTERS,
   ".py": PY_FORMATTERS,
   ".go": GO_FORMATTERS,
   ".rs": RS_FORMATTERS,
@@ -53,14 +64,19 @@ export function createFormatDocumentTool(
         properties: {
           filePath: {
             type: "string",
-            description: "Path to the file to format (relative to workspace or absolute)",
+            description:
+              "Path to the file to format (relative to workspace or absolute)",
           },
         },
         required: ["filePath"],
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>, signal?: AbortSignal, progress?: ProgressFn) => {
+    handler: async (
+      args: Record<string, unknown>,
+      signal?: AbortSignal,
+      progress?: ProgressFn,
+    ) => {
       progress?.(0, 100);
       const rawPath = requireString(args, "filePath");
       const resolved = resolveFilePath(rawPath, workspace);
@@ -81,7 +97,11 @@ export function createFormatDocumentTool(
             // Read file content after formatting
             const contentAfter = fs.readFileSync(resolved, "utf-8");
             if (contentBefore === contentAfter) {
-              return success({ formatted: true, source: "extension", changes: "none" });
+              return success({
+                formatted: true,
+                source: "extension",
+                changes: "none",
+              });
             }
             return success({
               formatted: true,

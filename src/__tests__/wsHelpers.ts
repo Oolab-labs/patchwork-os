@@ -1,4 +1,4 @@
-import { WebSocket } from "ws";
+import type { WebSocket } from "ws";
 
 /** Send a JSON-RPC message over a WebSocket. */
 export function send(ws: WebSocket, msg: Record<string, unknown>): void {

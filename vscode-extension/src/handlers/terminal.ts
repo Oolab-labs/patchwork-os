@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { MAX_TRACKED_TERMINALS, MAX_LINES_PER_TERMINAL } from "../constants";
+import { MAX_LINES_PER_TERMINAL, MAX_TRACKED_TERMINALS } from "../constants";
 import type { TerminalBuffer } from "../types";
 
 const terminalBuffers = new Map<vscode.Terminal, TerminalBuffer>();
@@ -36,7 +36,8 @@ export function readLastLines(buf: TerminalBuffer, count: number): string[] {
   if (available === 0) return [];
 
   const result: string[] = [];
-  let readIdx = (buf.writeIndex - available + buf.lines.length) % buf.lines.length;
+  let readIdx =
+    (buf.writeIndex - available + buf.lines.length) % buf.lines.length;
   for (let i = 0; i < available; i++) {
     result.push(buf.lines[readIdx]!);
     readIdx = (readIdx + 1) % buf.lines.length;
@@ -44,7 +45,9 @@ export function readLastLines(buf: TerminalBuffer, count: number): string[] {
   return result;
 }
 
-export function getOrCreateBuffer(terminal: vscode.Terminal): TerminalBuffer | null {
+export function getOrCreateBuffer(
+  terminal: vscode.Terminal,
+): TerminalBuffer | null {
   const existing = terminalBuffers.get(terminal);
   if (existing) return existing;
 
@@ -160,7 +163,10 @@ export async function handleWaitForTerminalOutput(
   try {
     regex = new RegExp(patternStr);
   } catch {
-    return { matched: false, error: `Invalid regex pattern: ${JSON.stringify(patternStr)}` };
+    return {
+      matched: false,
+      error: `Invalid regex pattern: ${JSON.stringify(patternStr)}`,
+    };
   }
   // Reject patterns prone to catastrophic backtracking when polled repeatedly:
   //   (a+)+, (a*)*, (a|a)+ style nested quantifiers
@@ -171,7 +177,11 @@ export async function handleWaitForTerminalOutput(
     /\([^)]*\{[^}]+\}\)[+*{?]/.test(patternStr) ||
     /\([^|)]+\|[^)]+\)[+*]/.test(patternStr)
   ) {
-    return { matched: false, error: "Pattern contains nested or ambiguous quantifiers which can cause catastrophic backtracking. Simplify the regex." };
+    return {
+      matched: false,
+      error:
+        "Pattern contains nested or ambiguous quantifiers which can cause catastrophic backtracking. Simplify the regex.",
+    };
   }
 
   const timeoutMs =
@@ -194,7 +204,10 @@ export async function handleWaitForTerminalOutput(
   if (typeof params.name === "string") {
     terminal = vscode.window.terminals.find((t) => t.name === params.name);
     if (!terminal) {
-      return { matched: false, error: `Terminal not found with name "${params.name}"` };
+      return {
+        matched: false,
+        error: `Terminal not found with name "${params.name}"`,
+      };
     }
   } else if (typeof params.index === "number") {
     terminal = vscode.window.terminals[params.index];
@@ -204,7 +217,10 @@ export async function handleWaitForTerminalOutput(
   } else {
     terminal = vscode.window.activeTerminal;
     if (!terminal) {
-      return { matched: false, error: "No active terminal. Specify a terminal by name or index." };
+      return {
+        matched: false,
+        error: "No active terminal. Specify a terminal by name or index.",
+      };
     }
   }
 
@@ -213,7 +229,8 @@ export async function handleWaitForTerminalOutput(
   if (!buf) {
     return {
       matched: false,
-      error: "Maximum tracked terminals reached. Close some terminals and try again.",
+      error:
+        "Maximum tracked terminals reached. Close some terminals and try again.",
     };
   }
 
@@ -235,7 +252,8 @@ export async function handleWaitForTerminalOutput(
       resolve(result);
     };
 
-    const onAbort = () => finish({ matched: false, aborted: true, terminalName });
+    const onAbort = () =>
+      finish({ matched: false, aborted: true, terminalName });
     signal?.addEventListener("abort", onAbort);
 
     const check = () => {
@@ -250,14 +268,24 @@ export async function handleWaitForTerminalOutput(
 
         for (const line of lines) {
           if (regex.test(line)) {
-            finish({ matched: true, matchedLine: line, elapsed: Math.round(elapsed), terminalName });
+            finish({
+              matched: true,
+              matchedLine: line,
+              elapsed: Math.round(elapsed),
+              terminalName,
+            });
             return;
           }
         }
       }
 
       if (elapsed >= timeoutMs) {
-        finish({ matched: false, timedOut: true, elapsed: Math.round(elapsed), terminalName });
+        finish({
+          matched: false,
+          timedOut: true,
+          elapsed: Math.round(elapsed),
+          terminalName,
+        });
       }
     };
 
@@ -289,7 +317,10 @@ export async function handleExecuteInTerminal(
     return { success: false, error: "Command must not contain newlines" };
   }
   if (EXEC_METACHAR_RE.test(command)) {
-    return { success: false, error: "Command must not contain shell metacharacters" };
+    return {
+      success: false,
+      error: "Command must not contain shell metacharacters",
+    };
   }
 
   const timeoutMs =
@@ -303,7 +334,10 @@ export async function handleExecuteInTerminal(
   if (typeof params.name === "string") {
     terminal = vscode.window.terminals.find((t) => t.name === params.name);
     if (!terminal) {
-      return { success: false, error: `Terminal not found with name "${params.name}"` };
+      return {
+        success: false,
+        error: `Terminal not found with name "${params.name}"`,
+      };
     }
   } else if (typeof params.index === "number") {
     terminal = vscode.window.terminals[params.index];
@@ -311,7 +345,9 @@ export async function handleExecuteInTerminal(
       return { success: false, error: `No terminal at index ${params.index}` };
     }
   } else {
-    terminal = vscode.window.activeTerminal ?? vscode.window.createTerminal({ name: "Claude" });
+    terminal =
+      vscode.window.activeTerminal ??
+      vscode.window.createTerminal({ name: "Claude" });
   }
 
   if (show) terminal.show();
@@ -364,24 +400,28 @@ export async function handleExecuteInTerminal(
 
   // Wait for execution end with timeout — always resolves, never rejects
   let endDisposable: vscode.Disposable | undefined;
-  const result = await new Promise<{ exitCode: number | undefined; timedOut: boolean }>(
-    (resolve) => {
-      const timer = setTimeout(() => {
-        endDisposable?.dispose();
-        resolve({ exitCode: undefined, timedOut: true });
-      }, timeoutMs);
+  const result = await new Promise<{
+    exitCode: number | undefined;
+    timedOut: boolean;
+  }>((resolve) => {
+    const timer = setTimeout(() => {
+      endDisposable?.dispose();
+      resolve({ exitCode: undefined, timedOut: true });
+    }, timeoutMs);
 
-      endDisposable = vscode.window.onDidEndTerminalShellExecution((event) => {
-        if (event.execution !== execution) return;
-        clearTimeout(timer);
-        endDisposable?.dispose();
-        resolve({ exitCode: event.exitCode, timedOut: false });
-      });
-    },
-  );
+    endDisposable = vscode.window.onDidEndTerminalShellExecution((event) => {
+      if (event.execution !== execution) return;
+      clearTimeout(timer);
+      endDisposable?.dispose();
+      resolve({ exitCode: event.exitCode, timedOut: false });
+    });
+  });
 
   // Drain any remaining buffered output (brief grace period), then terminate the iterator
-  await Promise.race([readPromise, new Promise<void>((r) => setTimeout(r, 500))]);
+  await Promise.race([
+    readPromise,
+    new Promise<void>((r) => setTimeout(r, 500)),
+  ]);
   reader.return?.();
 
   const output = stripAnsi(outputChunks.join(""));
@@ -412,7 +452,8 @@ export async function handleCreateTerminal(
 ): Promise<unknown> {
   const options: vscode.TerminalOptions = {};
   if (params.name !== undefined) {
-    if (typeof params.name !== "string") throw new Error("name must be a string");
+    if (typeof params.name !== "string")
+      throw new Error("name must be a string");
     options.name = params.name;
   }
   if (params.cwd !== undefined) {
@@ -420,7 +461,11 @@ export async function handleCreateTerminal(
     options.cwd = params.cwd;
   }
   if (params.env !== undefined) {
-    if (typeof params.env !== "object" || params.env === null || Array.isArray(params.env)) {
+    if (
+      typeof params.env !== "object" ||
+      params.env === null ||
+      Array.isArray(params.env)
+    ) {
       throw new Error("env must be an object");
     }
     options.env = params.env as Record<string, string>;
@@ -472,7 +517,8 @@ export async function handleSendTerminalCommand(
   if (SHELL_METACHAR_RE.test(text)) {
     return {
       success: false,
-      error: "Terminal command must not contain shell metacharacters or newlines",
+      error:
+        "Terminal command must not contain shell metacharacters or newlines",
     };
   }
   const name = typeof params.name === "string" ? params.name : undefined;

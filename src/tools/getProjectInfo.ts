@@ -13,7 +13,6 @@ interface PackageJson {
   workspaces?: string[] | { packages?: string[] };
 }
 
-
 function readJsonSafe<T>(filePath: string): T | null {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
@@ -41,26 +40,42 @@ function existsFile(filePath: string): boolean {
 function detectConfigFiles(workspace: string): string[] {
   const candidates = [
     // Build & bundle
-    "tsconfig.json", "tsconfig.base.json",
-    "vite.config.ts", "vite.config.js",
-    "webpack.config.js", "webpack.config.ts",
-    "rollup.config.js", "rollup.config.ts",
-    "esbuild.mjs", "esbuild.js",
+    "tsconfig.json",
+    "tsconfig.base.json",
+    "vite.config.ts",
+    "vite.config.js",
+    "webpack.config.js",
+    "webpack.config.ts",
+    "rollup.config.js",
+    "rollup.config.ts",
+    "esbuild.mjs",
+    "esbuild.js",
     // Test
-    "vitest.config.ts", "vitest.config.js",
-    "jest.config.ts", "jest.config.js",
-    "pytest.ini", "pyproject.toml",
+    "vitest.config.ts",
+    "vitest.config.js",
+    "jest.config.ts",
+    "jest.config.js",
+    "pytest.ini",
+    "pyproject.toml",
     // Lint & format
-    ".eslintrc.json", ".eslintrc.js", "eslint.config.js", "eslint.config.mjs",
-    ".prettierrc", ".prettierrc.json",
+    ".eslintrc.json",
+    ".eslintrc.js",
+    "eslint.config.js",
+    "eslint.config.mjs",
+    ".prettierrc",
+    ".prettierrc.json",
     "biome.json",
     // Runtime & framework
-    "next.config.js", "next.config.ts", "next.config.mjs",
+    "next.config.js",
+    "next.config.ts",
+    "next.config.mjs",
     "astro.config.mjs",
     "svelte.config.js",
     "nuxt.config.ts",
     // Container & infra
-    "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
+    "Dockerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
     ".env.example",
     // CI
     ".github/workflows",
@@ -78,12 +93,24 @@ function detectConfigFiles(workspace: string): string[] {
 
 function getTopLevelDirs(workspace: string): string[] {
   const ignored = new Set([
-    "node_modules", ".git", ".next", "dist", "build", "out",
-    ".cache", "__pycache__", ".venv", "venv", "target", ".turbo",
-    "coverage", ".nyc_output",
+    "node_modules",
+    ".git",
+    ".next",
+    "dist",
+    "build",
+    "out",
+    ".cache",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "target",
+    ".turbo",
+    "coverage",
+    ".nyc_output",
   ]);
   try {
-    return fs.readdirSync(workspace)
+    return fs
+      .readdirSync(workspace)
       .filter((entry) => {
         if (ignored.has(entry)) return false;
         try {
@@ -104,22 +131,36 @@ async function getGitInfo(workspace: string): Promise<{
   behind: number;
   hasUncommittedChanges: boolean;
 } | null> {
-  const check = await execSafe("git", ["rev-parse", "--git-dir"], { cwd: workspace, timeout: 3000 });
+  const check = await execSafe("git", ["rev-parse", "--git-dir"], {
+    cwd: workspace,
+    timeout: 3000,
+  });
   if (check.exitCode !== 0) return null;
 
-  const branchResult = await execSafe("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: workspace, timeout: 3000 });
+  const branchResult = await execSafe(
+    "git",
+    ["rev-parse", "--abbrev-ref", "HEAD"],
+    { cwd: workspace, timeout: 3000 },
+  );
   const branch = branchResult.stdout.trim() || null;
 
   let ahead = 0;
   let behind = 0;
-  const rl = await execSafe("git", ["rev-list", "--count", "--left-right", "HEAD...@{u}"], { cwd: workspace, timeout: 3000 });
+  const rl = await execSafe(
+    "git",
+    ["rev-list", "--count", "--left-right", "HEAD...@{u}"],
+    { cwd: workspace, timeout: 3000 },
+  );
   if (rl.exitCode === 0) {
     const parts = rl.stdout.trim().split(/\s+/);
-    ahead = parseInt(parts[0] ?? "0", 10);
-    behind = parseInt(parts[1] ?? "0", 10);
+    ahead = Number.parseInt(parts[0] ?? "0", 10);
+    behind = Number.parseInt(parts[1] ?? "0", 10);
   }
 
-  const statusResult = await execSafe("git", ["status", "--porcelain"], { cwd: workspace, timeout: 3000 });
+  const statusResult = await execSafe("git", ["status", "--porcelain"], {
+    cwd: workspace,
+    timeout: 3000,
+  });
   const hasUncommittedChanges = statusResult.stdout.trim().length > 0;
 
   return { branch, ahead, behind, hasUncommittedChanges };
@@ -154,20 +195,35 @@ export function createGetProjectInfoTool(workspace: string) {
             ...pkg.dependencies,
             ...pkg.devDependencies,
           };
-          const hasTypeScript = "typescript" in allDeps || existsFile(path.join(workspace, "tsconfig.json"));
+          const hasTypeScript =
+            "typescript" in allDeps ||
+            existsFile(path.join(workspace, "tsconfig.json"));
 
           // Detect package manager
           let packageManager = "npm";
-          if (existsFile(path.join(workspace, "pnpm-lock.yaml"))) packageManager = "pnpm";
-          else if (existsFile(path.join(workspace, "yarn.lock"))) packageManager = "yarn";
-          else if (existsFile(path.join(workspace, "bun.lockb")) || existsFile(path.join(workspace, "bun.lock"))) packageManager = "bun";
+          if (existsFile(path.join(workspace, "pnpm-lock.yaml")))
+            packageManager = "pnpm";
+          else if (existsFile(path.join(workspace, "yarn.lock")))
+            packageManager = "yarn";
+          else if (
+            existsFile(path.join(workspace, "bun.lockb")) ||
+            existsFile(path.join(workspace, "bun.lock"))
+          )
+            packageManager = "bun";
 
           // Key framework detection
           const frameworks: string[] = [];
           const fwMap: Record<string, string> = {
-            next: "Next.js", react: "React", vue: "Vue", svelte: "Svelte",
-            astro: "Astro", express: "Express", fastify: "Fastify", hono: "Hono",
-            vitest: "Vitest", jest: "Jest",
+            next: "Next.js",
+            react: "React",
+            vue: "Vue",
+            svelte: "Svelte",
+            astro: "Astro",
+            express: "Express",
+            fastify: "Fastify",
+            hono: "Hono",
+            vitest: "Vitest",
+            jest: "Jest",
           };
           for (const [dep, label] of Object.entries(fwMap)) {
             if (dep in allDeps) frameworks.push(label);
@@ -177,7 +233,16 @@ export function createGetProjectInfoTool(workspace: string) {
           const scripts = pkg.scripts ?? {};
           const importantScripts = Object.fromEntries(
             Object.entries(scripts).filter(([k]) =>
-              ["build", "dev", "start", "test", "lint", "check", "typecheck", "format"].includes(k),
+              [
+                "build",
+                "dev",
+                "start",
+                "test",
+                "lint",
+                "check",
+                "typecheck",
+                "format",
+              ].includes(k),
             ),
           );
 
@@ -232,13 +297,23 @@ export function createGetProjectInfoTool(workspace: string) {
       const pyprojectPath = path.join(workspace, "pyproject.toml");
       const requirementsPath = path.join(workspace, "requirements.txt");
       const setupPyPath = path.join(workspace, "setup.py");
-      if (existsFile(pyprojectPath) || existsFile(requirementsPath) || existsFile(setupPyPath)) {
-        const pyproject = existsFile(pyprojectPath) ? readFileSafe(pyprojectPath) : null;
+      if (
+        existsFile(pyprojectPath) ||
+        existsFile(requirementsPath) ||
+        existsFile(setupPyPath)
+      ) {
+        const pyproject = existsFile(pyprojectPath)
+          ? readFileSafe(pyprojectPath)
+          : null;
         const nameMatch = pyproject?.match(/^\s*name\s*=\s*"([^"]+)"/m);
         const versionMatch = pyproject?.match(/^\s*version\s*=\s*"([^"]+)"/m);
 
         // Detect test framework
-        const testFramework = pyproject?.includes("pytest") || existsFile(path.join(workspace, "pytest.ini")) ? "pytest" : null;
+        const testFramework =
+          pyproject?.includes("pytest") ||
+          existsFile(path.join(workspace, "pytest.ini"))
+            ? "pytest"
+            : null;
 
         projects.push({
           type: "python",

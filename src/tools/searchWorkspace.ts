@@ -57,7 +57,11 @@ export function createSearchWorkspaceTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>, signal?: AbortSignal, progress?: ProgressFn) => {
+    handler: async (
+      args: Record<string, unknown>,
+      signal?: AbortSignal,
+      progress?: ProgressFn,
+    ) => {
       progress?.(0, 100);
       const query = requireString(args, "query", 500);
       if (query.trim().length === 0) throw new Error("query must not be empty");
@@ -76,7 +80,7 @@ export function createSearchWorkspaceTool(
         ) {
           return error(
             "Pattern contains nested quantifiers (e.g. (a+)+) which can cause catastrophic backtracking (ReDoS). " +
-            "Simplify the regex — use a literal string match or a non-nested quantifier.",
+              "Simplify the regex — use a literal string match or a non-nested quantifier.",
           );
         }
       }
@@ -126,7 +130,10 @@ export function createSearchWorkspaceTool(
           matches,
           totalMatches: matches.length,
           tool: "rg",
-          ...(truncated && { truncated: true, note: "Result limit reached — increase maxResults or narrow your query" }),
+          ...(truncated && {
+            truncated: true,
+            note: "Result limit reached — increase maxResults or narrow your query",
+          }),
         });
       }
 
@@ -168,7 +175,10 @@ export function createSearchWorkspaceTool(
         matches,
         totalMatches: matches.length,
         tool: "grep",
-        ...(truncated && { truncated: true, note: "Result limit reached — increase maxResults or narrow your query" }),
+        ...(truncated && {
+          truncated: true,
+          note: "Result limit reached — increase maxResults or narrow your query",
+        }),
       });
     },
   };

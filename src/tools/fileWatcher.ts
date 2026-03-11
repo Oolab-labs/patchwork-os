@@ -1,5 +1,8 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { requireString, success, error } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import { error, requireString, success } from "./utils.js";
 
 export function createWatchFilesTool(extensionClient: ExtensionClient) {
   return {
@@ -13,8 +16,7 @@ export function createWatchFilesTool(extensionClient: ExtensionClient) {
         properties: {
           id: {
             type: "string" as const,
-            description:
-              "Unique ID for this watcher (used to unwatch later)",
+            description: "Unique ID for this watcher (used to unwatch later)",
           },
           pattern: {
             type: "string" as const,
@@ -40,8 +42,14 @@ export function createWatchFilesTool(extensionClient: ExtensionClient) {
         return error("id and pattern must not contain control characters");
       }
       // Reject patterns that could escape the workspace
-      if (pattern.startsWith("/") || pattern.startsWith("\\") || pattern.includes("..")) {
-        return error("pattern must be relative to the workspace (no absolute paths or '..')");
+      if (
+        pattern.startsWith("/") ||
+        pattern.startsWith("\\") ||
+        pattern.includes("..")
+      ) {
+        return error(
+          "pattern must be relative to the workspace (no absolute paths or '..')",
+        );
       }
       try {
         const result = await extensionClient.watchFiles(id, pattern);
@@ -51,7 +59,9 @@ export function createWatchFilesTool(extensionClient: ExtensionClient) {
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — file watching may be unavailable");
+          return error(
+            "Extension timed out — file watching may be unavailable",
+          );
         }
         throw err;
       }
@@ -94,7 +104,9 @@ export function createUnwatchFilesTool(extensionClient: ExtensionClient) {
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — file watching may be unavailable");
+          return error(
+            "Extension timed out — file watching may be unavailable",
+          );
         }
         throw err;
       }

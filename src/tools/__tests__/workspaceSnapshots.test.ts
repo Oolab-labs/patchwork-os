@@ -5,10 +5,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createCreateSnapshotTool,
+  createDeleteSnapshotTool,
   createListSnapshotsTool,
   createRestoreSnapshotTool,
   createShowSnapshotTool,
-  createDeleteSnapshotTool,
 } from "../workspaceSnapshots.js";
 
 function parse(result: { content: Array<{ type: string; text: string }> }) {
@@ -21,12 +21,18 @@ describe("workspaceSnapshots tools", () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "snapshots-test-"));
     execSync("git init", { cwd: tmpDir, stdio: "ignore" });
-    execSync("git config user.email test@test.com", { cwd: tmpDir, stdio: "ignore" });
+    execSync("git config user.email test@test.com", {
+      cwd: tmpDir,
+      stdio: "ignore",
+    });
     execSync("git config user.name Test", { cwd: tmpDir, stdio: "ignore" });
     // Need at least one commit for git stash to work
     fs.writeFileSync(path.join(tmpDir, "base.txt"), "base content\n");
     execSync("git add base.txt", { cwd: tmpDir, stdio: "ignore" });
-    execSync('git commit -m "initial commit"', { cwd: tmpDir, stdio: "ignore" });
+    execSync('git commit -m "initial commit"', {
+      cwd: tmpDir,
+      stdio: "ignore",
+    });
     // Add an uncommitted change so stash has something to save
     fs.writeFileSync(path.join(tmpDir, "base.txt"), "modified content\n");
   });
@@ -59,7 +65,9 @@ describe("workspaceSnapshots tools", () => {
 
     expect(data.snapshots).toBeDefined();
     expect(data.count).toBeGreaterThanOrEqual(1);
-    const found = data.snapshots.find((s: { name: string }) => s.name === "list-test-snapshot");
+    const found = data.snapshots.find(
+      (s: { name: string }) => s.name === "list-test-snapshot",
+    );
     expect(found).toBeDefined();
   });
 
@@ -83,14 +91,22 @@ describe("workspaceSnapshots tools", () => {
     const listTool = createListSnapshotsTool(tmpDir);
     const listResult = await listTool.handler({});
     const listData = parse(listResult);
-    const snap = listData.snapshots.find((s: { name: string }) => s.name === "my-snapshot");
+    const snap = listData.snapshots.find(
+      (s: { name: string }) => s.name === "my-snapshot",
+    );
     expect(snap).toBeDefined();
     expect(snap.index).toBe(0);
 
     // Simulate index drift: push a new (non-snapshot) stash on top, shifting "my-snapshot" to index 1.
     // The new stash does NOT have the claude-snapshot prefix.
-    fs.writeFileSync(path.join(tmpDir, "base.txt"), "another change for drift\n");
-    execSync('git stash push -m "unrelated stash"', { cwd: tmpDir, stdio: "ignore" });
+    fs.writeFileSync(
+      path.join(tmpDir, "base.txt"),
+      "another change for drift\n",
+    );
+    execSync('git stash push -m "unrelated stash"', {
+      cwd: tmpDir,
+      stdio: "ignore",
+    });
 
     // Restore by original index 0 (which now points to the unrelated stash, not a claude-snapshot).
     // Before the fix: the wrong stash was silently applied.
@@ -112,7 +128,10 @@ describe("workspaceSnapshots tools", () => {
     await createTool.handler({ name: "named-snapshot" });
 
     // Commit the current working tree so stash apply can proceed without conflict
-    execSync("git add -A && git commit -qm 'interim commit'", { cwd: tmpDir, stdio: "ignore" });
+    execSync("git add -A && git commit -qm 'interim commit'", {
+      cwd: tmpDir,
+      stdio: "ignore",
+    });
 
     const restoreTool = createRestoreSnapshotTool(tmpDir);
     const restoreResult = await restoreTool.handler({ index: 0 });
@@ -130,7 +149,9 @@ describe("workspaceSnapshots tools", () => {
     await createTool.handler({ name: "delete-me-snapshot" });
 
     const deleteTool = createDeleteSnapshotTool(tmpDir);
-    const deleteResult = await deleteTool.handler({ name: "delete-me-snapshot" });
+    const deleteResult = await deleteTool.handler({
+      name: "delete-me-snapshot",
+    });
     const deleteData = parse(deleteResult);
     expect(deleteData.deleted).toBe(true);
 
@@ -138,7 +159,9 @@ describe("workspaceSnapshots tools", () => {
     const listResult = await listTool.handler({});
     const listData = parse(listResult);
 
-    const stillPresent = listData.snapshots.find((s: { name: string }) => s.name === "delete-me-snapshot");
+    const stillPresent = listData.snapshots.find(
+      (s: { name: string }) => s.name === "delete-me-snapshot",
+    );
     expect(stillPresent).toBeUndefined();
   });
 });

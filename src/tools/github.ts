@@ -1,4 +1,11 @@
-import { execSafe, requireString, optionalString, optionalInt, success, error } from "./utils.js";
+import {
+  error,
+  execSafe,
+  optionalInt,
+  optionalString,
+  requireString,
+  success,
+} from "./utils.js";
 
 const GH_NOT_FOUND =
   "GitHub CLI (gh) not found. Install it from https://cli.github.com/ and run 'gh auth login'.";
@@ -11,7 +18,11 @@ function isNotFound(msg: string): boolean {
 }
 
 function isNotAuthed(msg: string): boolean {
-  return msg.includes("not authenticated") || msg.includes("auth login") || msg.includes("GITHUB_TOKEN");
+  return (
+    msg.includes("not authenticated") ||
+    msg.includes("auth login") ||
+    msg.includes("GITHUB_TOKEN")
+  );
 }
 
 export function createGithubCreatePRTool(workspace: string) {
@@ -34,11 +45,13 @@ export function createGithubCreatePRTool(workspace: string) {
           },
           body: {
             type: "string",
-            description: "Pull request description. If omitted, uses commit messages to fill the body.",
+            description:
+              "Pull request description. If omitted, uses commit messages to fill the body.",
           },
           base: {
             type: "string",
-            description: "Base branch to merge into (default: repository default branch)",
+            description:
+              "Base branch to merge into (default: repository default branch)",
           },
           draft: {
             type: "boolean",
@@ -72,17 +85,25 @@ export function createGithubCreatePRTool(workspace: string) {
       if (assignee) prArgs.push("--assignee", assignee);
       prArgs.push("--");
 
-      const result = await execSafe("gh", prArgs, { cwd: workspace, signal, timeout: 60_000 });
+      const result = await execSafe("gh", prArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 60_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
         if (isNotFound(msg)) return error(GH_NOT_FOUND);
         if (isNotAuthed(msg)) return error(`${GH_NOT_AUTHED}\n${msg}`);
         if (msg.includes("already exists")) {
-          return error(`A pull request already exists for this branch.\n${msg}`);
+          return error(
+            `A pull request already exists for this branch.\n${msg}`,
+          );
         }
         if (msg.includes("No commits between")) {
-          return error(`No commits between head branch and base — nothing to open a PR for.\n${msg}`);
+          return error(
+            `No commits between head branch and base — nothing to open a PR for.\n${msg}`,
+          );
         }
         return error(`gh pr create failed: ${msg}`);
       }
@@ -90,7 +111,7 @@ export function createGithubCreatePRTool(workspace: string) {
       // gh prints the PR URL on success
       const url = result.stdout.trim();
       const numberMatch = url.match(/\/pull\/(\d+)/);
-      const number = numberMatch ? parseInt(numberMatch[1]!, 10) : null;
+      const number = numberMatch ? Number.parseInt(numberMatch[1]!, 10) : null;
 
       return success({ url, number, title });
     },
@@ -115,7 +136,8 @@ export function createGithubListPRsTool(workspace: string) {
           },
           limit: {
             type: "integer",
-            description: "Maximum number of PRs to return (default: 20, max: 100)",
+            description:
+              "Maximum number of PRs to return (default: 20, max: 100)",
           },
           author: {
             type: "string",
@@ -131,18 +153,28 @@ export function createGithubListPRsTool(workspace: string) {
       const author = optionalString(args, "author", 256);
 
       if (!["open", "closed", "merged", "all"].includes(state)) {
-        return error(`Invalid state "${state}". Must be: open, closed, merged, or all.`);
+        return error(
+          `Invalid state "${state}". Must be: open, closed, merged, or all.`,
+        );
       }
 
       const listArgs = [
-        "pr", "list",
-        "--state", state,
-        "--limit", String(limit),
-        "--json", "number,title,state,url,headRefName,baseRefName,author,createdAt,isDraft",
+        "pr",
+        "list",
+        "--state",
+        state,
+        "--limit",
+        String(limit),
+        "--json",
+        "number,title,state,url,headRefName,baseRefName,author,createdAt,isDraft",
       ];
       if (author) listArgs.push("--author", author);
 
-      const result = await execSafe("gh", listArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", listArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -177,33 +209,43 @@ export function createGithubViewPRTool(workspace: string) {
         properties: {
           number: {
             type: "integer",
-            description: "PR number to view. Omit to view the PR associated with the current branch.",
+            description:
+              "PR number to view. Omit to view the PR associated with the current branch.",
           },
         },
         additionalProperties: false as const,
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      const number = typeof args.number === "number" ? Math.floor(args.number) : undefined;
+      const number =
+        typeof args.number === "number" ? Math.floor(args.number) : undefined;
 
       const viewArgs = [
-        "pr", "view",
+        "pr",
+        "view",
         "--json",
         "number,title,state,url,body,author,createdAt,updatedAt,baseRefName,headRefName,isDraft,mergeable,reviewDecision,reviews",
       ];
       if (number !== undefined) viewArgs.splice(2, 0, String(number));
 
-      const result = await execSafe("gh", viewArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", viewArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
         if (isNotFound(msg)) return error(GH_NOT_FOUND);
         if (isNotAuthed(msg)) return error(GH_NOT_AUTHED);
-        if (msg.includes("no pull requests found") || msg.includes("no open pull request")) {
+        if (
+          msg.includes("no pull requests found") ||
+          msg.includes("no open pull request")
+        ) {
           return error(
             number
               ? `PR #${number} not found.`
-              : `No open pull request for the current branch. Create one with githubCreatePR.`,
+              : "No open pull request for the current branch. Create one with githubCreatePR.",
           );
         }
         return error(`gh pr view failed: ${msg}`);
@@ -239,11 +281,13 @@ export function createGithubListIssuesTool(workspace: string) {
           },
           limit: {
             type: "integer",
-            description: "Maximum number of issues to return (default: 20, max: 100)",
+            description:
+              "Maximum number of issues to return (default: 20, max: 100)",
           },
           assignee: {
             type: "string",
-            description: "Filter by assignee GitHub username. Use '@me' for issues assigned to you.",
+            description:
+              "Filter by assignee GitHub username. Use '@me' for issues assigned to you.",
           },
           label: {
             type: "string",
@@ -265,20 +309,30 @@ export function createGithubListIssuesTool(workspace: string) {
       const milestone = optionalString(args, "milestone", 256);
 
       if (!["open", "closed", "all"].includes(state)) {
-        return error(`Invalid state "${state}". Must be: open, closed, or all.`);
+        return error(
+          `Invalid state "${state}". Must be: open, closed, or all.`,
+        );
       }
 
       const listArgs = [
-        "issue", "list",
-        "--state", state,
-        "--limit", String(limit),
-        "--json", "number,title,state,url,author,assignees,labels,createdAt,updatedAt",
+        "issue",
+        "list",
+        "--state",
+        state,
+        "--limit",
+        String(limit),
+        "--json",
+        "number,title,state,url,author,assignees,labels,createdAt,updatedAt",
       ];
       if (assignee) listArgs.push("--assignee", assignee);
       if (label) listArgs.push("--label", label);
       if (milestone) listArgs.push("--milestone", milestone);
 
-      const result = await execSafe("gh", listArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", listArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -294,7 +348,10 @@ export function createGithubListIssuesTool(workspace: string) {
         return error(`Failed to parse gh output: ${result.stdout.trim()}`);
       }
 
-      return success({ issues, count: Array.isArray(issues) ? issues.length : 0 });
+      return success({
+        issues,
+        count: Array.isArray(issues) ? issues.length : 0,
+      });
     },
   };
 }
@@ -320,16 +377,24 @@ export function createGithubGetIssueTool(workspace: string) {
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      const number = typeof args.number === "number" ? Math.floor(args.number) : undefined;
-      if (!number || number < 1) return error("number must be a positive integer");
+      const number =
+        typeof args.number === "number" ? Math.floor(args.number) : undefined;
+      if (!number || number < 1)
+        return error("number must be a positive integer");
 
       const viewArgs = [
-        "issue", "view", String(number),
+        "issue",
+        "view",
+        String(number),
         "--json",
         "number,title,state,url,body,author,assignees,labels,createdAt,updatedAt,comments,milestone",
       ];
 
-      const result = await execSafe("gh", viewArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", viewArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -375,7 +440,8 @@ export function createGithubCreateIssueTool(workspace: string) {
           },
           assignee: {
             type: "string",
-            description: "GitHub username to assign the issue to. Use '@me' to self-assign.",
+            description:
+              "GitHub username to assign the issue to. Use '@me' to self-assign.",
           },
           label: {
             type: "string",
@@ -407,7 +473,11 @@ export function createGithubCreateIssueTool(workspace: string) {
       if (milestone) issueArgs.push("--milestone", milestone);
       issueArgs.push("--");
 
-      const result = await execSafe("gh", issueArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", issueArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -418,7 +488,7 @@ export function createGithubCreateIssueTool(workspace: string) {
 
       const url = result.stdout.trim();
       const numberMatch = url.match(/\/issues\/(\d+)/);
-      const number = numberMatch ? parseInt(numberMatch[1]!, 10) : null;
+      const number = numberMatch ? Number.parseInt(numberMatch[1]!, 10) : null;
 
       return success({ url, number, title });
     },
@@ -450,13 +520,26 @@ export function createGithubCommentIssueTool(workspace: string) {
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      const number = typeof args.number === "number" ? Math.floor(args.number) : undefined;
-      if (!number || number < 1) return error("number must be a positive integer");
+      const number =
+        typeof args.number === "number" ? Math.floor(args.number) : undefined;
+      if (!number || number < 1)
+        return error("number must be a positive integer");
       const body = requireString(args, "body", 65_536);
 
-      const commentArgs = ["issue", "comment", String(number), "--body", body, "--"];
+      const commentArgs = [
+        "issue",
+        "comment",
+        String(number),
+        "--body",
+        body,
+        "--",
+      ];
 
-      const result = await execSafe("gh", commentArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", commentArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -489,11 +572,13 @@ export function createGithubListRunsTool(workspace: string) {
         properties: {
           branch: {
             type: "string",
-            description: "Filter by branch name. Omit to see runs across all branches.",
+            description:
+              "Filter by branch name. Omit to see runs across all branches.",
           },
           workflow: {
             type: "string",
-            description: "Filter by workflow file name (e.g. 'ci.yml') or workflow name",
+            description:
+              "Filter by workflow file name (e.g. 'ci.yml') or workflow name",
           },
           status: {
             type: "string",
@@ -503,7 +588,8 @@ export function createGithubListRunsTool(workspace: string) {
           },
           limit: {
             type: "integer",
-            description: "Maximum number of runs to return (default: 10, max: 50)",
+            description:
+              "Maximum number of runs to return (default: 10, max: 50)",
           },
         },
         additionalProperties: false as const,
@@ -516,15 +602,22 @@ export function createGithubListRunsTool(workspace: string) {
       const limit = optionalInt(args, "limit", 1, 50) ?? 10;
 
       const listArgs = [
-        "run", "list",
-        "--limit", String(limit),
-        "--json", "databaseId,name,status,conclusion,headBranch,headSha,url,createdAt,updatedAt,workflowName,event",
+        "run",
+        "list",
+        "--limit",
+        String(limit),
+        "--json",
+        "databaseId,name,status,conclusion,headBranch,headSha,url,createdAt,updatedAt,workflowName,event",
       ];
       if (branch) listArgs.push("--branch", branch);
       if (workflow) listArgs.push("--workflow", workflow);
       if (status) listArgs.push("--status", status);
 
-      const result = await execSafe("gh", listArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", listArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -567,34 +660,50 @@ export function createGithubGetRunLogsTool(workspace: string) {
           },
           failedOnly: {
             type: "boolean",
-            description: "Return only logs from failed steps (default: true). Set false for full logs.",
+            description:
+              "Return only logs from failed steps (default: true). Set false for full logs.",
           },
         },
         additionalProperties: false as const,
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      const runId = typeof args.runId === "number" ? Math.floor(args.runId) : undefined;
+      const runId =
+        typeof args.runId === "number" ? Math.floor(args.runId) : undefined;
       if (!runId || runId < 1) return error("runId must be a positive integer");
       const failedOnly = (args.failedOnly as boolean) ?? true;
 
-      const viewArgs = ["run", "view", String(runId), "--log" + (failedOnly ? "-failed" : "")];
+      const viewArgs = [
+        "run",
+        "view",
+        String(runId),
+        `--log${failedOnly ? "-failed" : ""}`,
+      ];
 
-      const result = await execSafe("gh", viewArgs, { cwd: workspace, signal, timeout: 60_000 });
+      const result = await execSafe("gh", viewArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 60_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
         if (isNotFound(msg)) return error(GH_NOT_FOUND);
         if (isNotAuthed(msg)) return error(GH_NOT_AUTHED);
         if (msg.includes("no failed") || msg.includes("no logs")) {
-          return success({ logs: "", note: "No failed step logs found — the run may have succeeded or logs may have expired." });
+          return success({
+            logs: "",
+            note: "No failed step logs found — the run may have succeeded or logs may have expired.",
+          });
         }
         if (msg.includes("Could not find") || msg.includes("not found")) {
           return error(`Run #${runId} not found.`);
         }
         // gh exits non-zero when run is still in progress for --log-failed
         if (msg.includes("in progress") || msg.includes("still running")) {
-          return error(`Run #${runId} is still in progress. Wait for it to complete before fetching logs.`);
+          return error(
+            `Run #${runId} is still in progress. Wait for it to complete before fetching logs.`,
+          );
         }
         return error(`gh run view failed: ${msg}`);
       }
@@ -603,7 +712,7 @@ export function createGithubGetRunLogsTool(workspace: string) {
       let truncated = false;
       if (Buffer.byteLength(logs, "utf8") > MAX_RUN_LOG_BYTES) {
         // Keep the tail — failure details are usually at the end
-        logs = "...[truncated — showing last portion]\n" + logs.slice(-MAX_RUN_LOG_BYTES);
+        logs = `...[truncated — showing last portion]\n${logs.slice(-MAX_RUN_LOG_BYTES)}`;
         truncated = true;
       }
 

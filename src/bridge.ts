@@ -38,7 +38,9 @@ export class Bridge {
     this.activityLog = new ActivityLog();
     this.transport.setActivityLog(this.activityLog);
     this.extensionClient = new ExtensionClient(this.logger);
-    this.transport.setExtensionConnectedFn(() => this.extensionClient.isConnected());
+    this.transport.setExtensionConnectedFn(() =>
+      this.extensionClient.isConnected(),
+    );
 
     // Handle new Claude Code connections
     this.server.on("connection", (ws: WebSocket) => {
@@ -97,7 +99,12 @@ export class Bridge {
       this.listChangedTimer = setTimeout(() => {
         this.listChangedTimer = null;
         if (this.currentWs && this.currentWs.readyState === WebSocket.OPEN) {
-          McpTransport.sendNotification(this.currentWs, "notifications/tools/list_changed", undefined, this.logger);
+          McpTransport.sendNotification(
+            this.currentWs,
+            "notifications/tools/list_changed",
+            undefined,
+            this.logger,
+          );
         }
       }, 2000);
     };
@@ -109,16 +116,41 @@ export class Bridge {
       this.logger.event("extension_connected");
       this.extensionClient.handleExtensionConnection(ws);
       // Refresh workspace folders from extension (multi-root workspace support)
-      this.extensionClient.getWorkspaceFolders().then((folders) => {
-        if (folders && folders.length > 0) {
-          this.config.workspaceFolders = folders.map((f) => f.path);
-          this.logger.info(`Workspace folders: ${this.config.workspaceFolders.join(", ")}`);
-        }
-      }).catch((err: unknown) => {
-          this.logger.warn(`getWorkspaceFolders failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.extensionClient
+        .getWorkspaceFolders()
+        .then((folders) => {
+          if (folders && folders.length > 0) {
+            this.config.workspaceFolders = folders.map((f) => f.path);
+            this.logger.info(
+              `Workspace folders: ${this.config.workspaceFolders.join(", ")}`,
+            );
+            // Send a second list_changed now that workspace paths are up-to-date,
+            // so Claude re-queries with accurate workspace validation.
+            if (
+              this.currentWs &&
+              this.currentWs.readyState === WebSocket.OPEN
+            ) {
+              McpTransport.sendNotification(
+                this.currentWs,
+                "notifications/tools/list_changed",
+                undefined,
+                this.logger,
+              );
+            }
+          }
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `getWorkspaceFolders failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
         });
       if (this.currentWs && this.currentWs.readyState === WebSocket.OPEN) {
-        McpTransport.sendNotification(this.currentWs, "notifications/tools/list_changed", undefined, this.logger);
+        McpTransport.sendNotification(
+          this.currentWs,
+          "notifications/tools/list_changed",
+          undefined,
+          this.logger,
+        );
       }
     });
 
@@ -162,8 +194,12 @@ export class Bridge {
         .map(([k]) => k)
         .join(", ") || "none";
     this.logger.info(`Probed tools: ${probeList()}`);
-    this.logger.info(`Available linters: ${probeList(["tsc", "eslint", "pyright", "ruff", "cargo", "go", "biome"])}`);
-    this.logger.info(`Available test runners: ${probeList(["vitest", "jest", "pytest", "cargo", "go"])}`);
+    this.logger.info(
+      `Available linters: ${probeList(["tsc", "eslint", "pyright", "ruff", "cargo", "go", "biome"])}`,
+    );
+    this.logger.info(
+      `Available test runners: ${probeList(["vitest", "jest", "pytest", "cargo", "go"])}`,
+    );
 
     // 2. Register all tools (needs probes + extensionClient)
     registerAllTools(
@@ -187,7 +223,10 @@ export class Bridge {
     this.lockFile.cleanStale();
 
     // 5. Find port and start server
-    const port = await this.server.findAndListen(this.config.port, this.config.bindAddress);
+    const port = await this.server.findAndListen(
+      this.config.port,
+      this.config.bindAddress,
+    );
 
     // 6. Write lock file
     const lockPath = this.lockFile.write(
@@ -219,7 +258,9 @@ export class Bridge {
     if (!globalHandlersRegistered) {
       globalHandlersRegistered = true;
       process.once("unhandledRejection", (reason) => {
-        this.logger.error(`Unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+        this.logger.error(
+          `Unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
+        );
       });
       process.once("uncaughtException", (err) => {
         this.logger.error(`Uncaught exception: ${err.stack ?? err.message}`);
@@ -234,32 +275,36 @@ export class Bridge {
     this.logger.info(`  Editor:     ${this.config.editorCommand || "none"}`);
     this.logger.info(`  Lock file:  ${lockPath}`);
     this.logger.info(
-      `  To connect: CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude`,
+      "  To connect: CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude",
     );
+    this.logger.info(`  Then type "/ide" in the Claude Code session.`);
     this.logger.info(
-      `  Then type "/ide" in the Claude Code session.`,
+      '  For Remote Control: run "npm run remote" from the claude-ide-bridge directory (auto-restarts on disconnect)',
     );
-    this.logger.info("  For Remote Control: run \"npm run remote\" from the claude-ide-bridge directory (auto-restarts on disconnect)");
     this.logger.event("bridge_started", {
       port,
       workspace: this.config.workspace,
       editor: this.config.editorCommand,
     });
     if (this.config.verbose) {
-      this.logger.debug(`Resolved config: ${JSON.stringify({
-        workspace: this.config.workspace,
-        editor: this.config.editorCommand,
-        linters: this.config.linters,
-        commandTimeout: this.config.commandTimeout,
-        maxResultSize: this.config.maxResultSize,
-        commandAllowlist: this.config.commandAllowlist,
-      })}`);
+      this.logger.debug(
+        `Resolved config: ${JSON.stringify({
+          workspace: this.config.workspace,
+          editor: this.config.editorCommand,
+          linters: this.config.linters,
+          commandTimeout: this.config.commandTimeout,
+          maxResultSize: this.config.maxResultSize,
+          commandAllowlist: this.config.commandAllowlist,
+        })}`,
+      );
     }
   }
 
   private startClaudeDisconnectGrace(): void {
     if (this.claudeDisconnectTimer) return; // Already in grace period
-    this.logger.info(`Claude Code grace period started (${CLAUDE_RECONNECT_GRACE_MS / 1000}s)`);
+    this.logger.info(
+      `Claude Code grace period started (${CLAUDE_RECONNECT_GRACE_MS / 1000}s)`,
+    );
     this.claudeDisconnectTimer = setTimeout(() => {
       this.claudeDisconnectTimer = null;
       this.logger.info("Grace period expired — cleaning up session state");

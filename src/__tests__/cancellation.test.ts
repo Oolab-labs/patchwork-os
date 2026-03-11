@@ -85,10 +85,7 @@ describe("MCP cancellation", () => {
       params: {},
     });
 
-    await waitFor(
-      wsClient,
-      (msg) => msg.id === 1 && msg.result !== undefined,
-    );
+    await waitFor(wsClient, (msg) => msg.id === 1 && msg.result !== undefined);
     send(wsClient, { jsonrpc: "2.0", method: "notifications/initialized" });
     await new Promise((r) => setTimeout(r, 10));
 
@@ -116,10 +113,7 @@ describe("MCP cancellation", () => {
     expect(signalAborted).toBe(true);
 
     // The tool call should still produce a response
-    const response = await waitFor(
-      wsClient,
-      (msg) => msg.id === requestId,
-    );
+    const response = await waitFor(wsClient, (msg) => msg.id === requestId);
     expect(response.id).toBe(requestId);
   });
 
@@ -164,10 +158,7 @@ describe("MCP cancellation", () => {
       method: "initialize",
       params: {},
     });
-    await waitFor(
-      wsClient,
-      (msg) => msg.id === 1 && msg.result !== undefined,
-    );
+    await waitFor(wsClient, (msg) => msg.id === 1 && msg.result !== undefined);
     send(wsClient, { jsonrpc: "2.0", method: "notifications/initialized" });
     await new Promise((r) => setTimeout(r, 10));
 

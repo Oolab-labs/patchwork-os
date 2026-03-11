@@ -1,14 +1,14 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  createFindReferencesTool,
+  createGoToDefinitionTool,
+  createSearchWorkspaceSymbolsTool,
   escapeRegex,
   wordAtPosition,
-  createGoToDefinitionTool,
-  createFindReferencesTool,
-  createSearchWorkspaceSymbolsTool,
 } from "../lsp.js";
 
 // ── Pure helper tests ─────────────────────────────────────────────────────
@@ -89,11 +89,14 @@ describe.skipIf(!rgAvailable)("goToDefinition grep fallback", () => {
 
   beforeAll(() => {
     workspace = fs.mkdtempSync(path.join(os.tmpdir(), "test-lsp-goto-"));
-    tool = createGoToDefinitionTool(workspace, mockDisconnectedExtensionClient());
+    tool = createGoToDefinitionTool(
+      workspace,
+      mockDisconnectedExtensionClient(),
+    );
 
     fs.writeFileSync(
       path.join(workspace, "math.ts"),
-      `export function calculateSum(a: number, b: number): number {\n  return a + b;\n}\n`,
+      "export function calculateSum(a: number, b: number): number {\n  return a + b;\n}\n",
     );
     fs.writeFileSync(
       path.join(workspace, "main.ts"),
@@ -106,19 +109,29 @@ describe.skipIf(!rgAvailable)("goToDefinition grep fallback", () => {
   });
 
   it("finds definition by grep pattern", async () => {
-    const result = await tool.handler({ filePath: "main.ts", line: 2, column: 17 });
+    const result = await tool.handler({
+      filePath: "main.ts",
+      line: 2,
+      column: 17,
+    });
     const data = JSON.parse((result as any).content[0].text);
     expect(data.found).toBe(true);
     expect(data.source).toBe("lexical-grep");
     expect(data.symbol).toBe("calculateSum");
     expect(data.definitions.length).toBeGreaterThanOrEqual(1);
-    const mathDef = data.definitions.find((d: any) => d.filePath.includes("math.ts"));
+    const mathDef = data.definitions.find((d: any) =>
+      d.filePath.includes("math.ts"),
+    );
     expect(mathDef).toBeTruthy();
   });
 
   it("returns not found for symbol at non-word position", async () => {
     // Line 1 col 1 of main.ts is "import" — this IS a word but won't match definition patterns
-    const result = await tool.handler({ filePath: "main.ts", line: 1, column: 1 });
+    const result = await tool.handler({
+      filePath: "main.ts",
+      line: 1,
+      column: 1,
+    });
     const data = JSON.parse((result as any).content[0].text);
     expect(data.source).toBe("lexical-grep");
   });
@@ -130,7 +143,10 @@ describe.skipIf(!rgAvailable)("findReferences grep fallback", () => {
 
   beforeAll(() => {
     workspace = fs.mkdtempSync(path.join(os.tmpdir(), "test-lsp-refs-"));
-    tool = createFindReferencesTool(workspace, mockDisconnectedExtensionClient());
+    tool = createFindReferencesTool(
+      workspace,
+      mockDisconnectedExtensionClient(),
+    );
 
     fs.writeFileSync(
       path.join(workspace, "lib.ts"),
@@ -147,7 +163,11 @@ describe.skipIf(!rgAvailable)("findReferences grep fallback", () => {
   });
 
   it("finds all references across files", async () => {
-    const result = await tool.handler({ filePath: "lib.ts", line: 1, column: 17 });
+    const result = await tool.handler({
+      filePath: "lib.ts",
+      line: 1,
+      column: 17,
+    });
     const data = JSON.parse((result as any).content[0].text);
     expect(data.found).toBe(true);
     expect(data.source).toBe("lexical-grep");
@@ -163,15 +183,18 @@ describe.skipIf(!rgAvailable)("searchWorkspaceSymbols grep fallback", () => {
 
   beforeAll(() => {
     workspace = fs.mkdtempSync(path.join(os.tmpdir(), "test-lsp-symbols-"));
-    tool = createSearchWorkspaceSymbolsTool(workspace, mockDisconnectedExtensionClient());
+    tool = createSearchWorkspaceSymbolsTool(
+      workspace,
+      mockDisconnectedExtensionClient(),
+    );
 
     fs.writeFileSync(
       path.join(workspace, "models.ts"),
-      `export interface UserProfile {\n  name: string;\n}\n\nexport class UserService {\n  getUser() {}\n}\n`,
+      "export interface UserProfile {\n  name: string;\n}\n\nexport class UserService {\n  getUser() {}\n}\n",
     );
     fs.writeFileSync(
       path.join(workspace, "utils.ts"),
-      `export function formatUser(u: any) {\n  return u.name;\n}\n`,
+      "export function formatUser(u: any) {\n  return u.name;\n}\n",
     );
   });
 
@@ -198,7 +221,10 @@ describe.skipIf(!rgAvailable)("searchWorkspaceSymbols grep fallback", () => {
 
 describe("searchWorkspaceSymbols validation", () => {
   it("rejects empty query", async () => {
-    const tool = createSearchWorkspaceSymbolsTool("/tmp", mockDisconnectedExtensionClient());
+    const tool = createSearchWorkspaceSymbolsTool(
+      "/tmp",
+      mockDisconnectedExtensionClient(),
+    );
     const result = await tool.handler({ query: "   " });
     expect((result as any).isError).toBe(true);
   });

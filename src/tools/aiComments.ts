@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { ExtensionClient } from "../extensionClient.js";
-import { optionalString, resolveFilePath, execSafe, success } from "./utils.js";
+import { execSafe, optionalString, resolveFilePath, success } from "./utils.js";
 
 const SEVERITY_PREFIXES: Record<string, string> = {
   fix: "fix",
@@ -27,15 +27,43 @@ function parseSeverityFromComment(comment: string): {
 
 // Grep pattern covering all supported AI comment syntaxes:
 // // AI:, # AI:, /* AI:, <!-- AI:, -- AI:, %% AI:, ' AI:
-const GREP_PATTERN =
-  "(\\/\\/|#|/\\*|<!--|--|%%|')\\s*AI:\\s*";
+const GREP_PATTERN = "(\\/\\/|#|/\\*|<!--|--|%%|')\\s*AI:\\s*";
 
 const GREP_INCLUDE_GLOBS = [
-  "*.ts", "*.tsx", "*.js", "*.jsx", "*.py", "*.rb", "*.go",
-  "*.rs", "*.java", "*.kt", "*.swift", "*.c", "*.cpp", "*.h",
-  "*.cs", "*.php", "*.lua", "*.sql", "*.hs", "*.erl", "*.ex",
-  "*.exs", "*.ml", "*.vb", "*.m", "*.html", "*.vue", "*.svelte",
-  "*.css", "*.scss", "*.yaml", "*.yml", "*.toml", "*.sh",
+  "*.ts",
+  "*.tsx",
+  "*.js",
+  "*.jsx",
+  "*.py",
+  "*.rb",
+  "*.go",
+  "*.rs",
+  "*.java",
+  "*.kt",
+  "*.swift",
+  "*.c",
+  "*.cpp",
+  "*.h",
+  "*.cs",
+  "*.php",
+  "*.lua",
+  "*.sql",
+  "*.hs",
+  "*.erl",
+  "*.ex",
+  "*.exs",
+  "*.ml",
+  "*.vb",
+  "*.m",
+  "*.html",
+  "*.vue",
+  "*.svelte",
+  "*.css",
+  "*.scss",
+  "*.yaml",
+  "*.yml",
+  "*.toml",
+  "*.sh",
 ];
 
 export function createGetAICommentsTool(
@@ -60,10 +88,7 @@ export function createGetAICommentsTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (
-      args: Record<string, unknown>,
-      signal?: AbortSignal,
-    ) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawFile = optionalString(args, "file");
 
       // If extension is connected, use it
@@ -125,12 +150,7 @@ export function createGetAICommentsTool(
       }
 
       // Grep fallback when extension is not connected
-      const grepArgs = [
-        "-rn",
-        "-E",
-        "-m", "500",
-        GREP_PATTERN,
-      ];
+      const grepArgs = ["-rn", "-E", "-m", "500", GREP_PATTERN];
       for (const glob of GREP_INCLUDE_GLOBS) {
         grepArgs.push("--include", glob);
       }
@@ -164,7 +184,7 @@ export function createGetAICommentsTool(
           if (!match) continue;
 
           const file = match[1]!;
-          const lineNum = parseInt(match[2]!, 10);
+          const lineNum = Number.parseInt(match[2]!, 10);
           const fullLine = match[3]!.trim();
 
           // Extract AI comment text

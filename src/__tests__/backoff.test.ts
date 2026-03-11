@@ -33,7 +33,10 @@ afterEach(async () => {
   await new Promise<void>((resolve) => wss.close(() => resolve()));
 });
 
-async function connectClient(): Promise<{ clientWs: WebSocket; serverWs: WebSocket }> {
+async function connectClient(): Promise<{
+  clientWs: WebSocket;
+  serverWs: WebSocket;
+}> {
   const serverConn = new Promise<WebSocket>((resolve) => {
     wss.once("connection", resolve);
   });
@@ -59,7 +62,9 @@ describe("ExtensionClient exponential backoff atomicity", () => {
     expect(state.suspended).toBe(true);
     // suspendedUntil should be ~now + 1000ms (2^0 * 1000)
     expect(state.suspendedUntil).toBeGreaterThanOrEqual(before + 1000);
-    expect(state.suspendedUntil).toBeLessThanOrEqual(before + 10_001 + 1000 + 50);
+    expect(state.suspendedUntil).toBeLessThanOrEqual(
+      before + 10_001 + 1000 + 50,
+    );
 
     clientWs.close();
   });
@@ -135,7 +140,9 @@ describe("ExtensionClient exponential backoff atomicity", () => {
 
     // Immediately try another request — should fast-fail without waiting for timeout
     const start = Date.now();
-    await expect(client.getDiagnostics()).rejects.toThrow(ExtensionTimeoutError);
+    await expect(client.getDiagnostics()).rejects.toThrow(
+      ExtensionTimeoutError,
+    );
     // Should be nearly instantaneous (not waiting 10s)
     expect(Date.now() - start).toBeLessThan(100);
 

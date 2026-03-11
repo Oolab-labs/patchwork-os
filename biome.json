@@ -3,7 +3,17 @@
   "organizeImports": { "enabled": true },
   "linter": {
     "enabled": true,
-    "rules": { "recommended": true }
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noControlCharactersInRegex": "off",
+        "noAssignInExpressions": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "warn"
+      }
+    }
   },
   "formatter": {
     "enabled": true,
@@ -12,5 +22,21 @@
   },
   "files": {
     "ignore": ["dist", "node_modules"]
-  }
+  },
+  "overrides": [
+    {
+      "include": ["**/__tests__/**", "**/*.test.ts", "smoke-test.mjs"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off",
+            "noShadowRestrictedNames": "off"
+          },
+          "style": {
+            "noNonNullAssertion": "off"
+          }
+        }
+      }
+    }
+  ]
 }

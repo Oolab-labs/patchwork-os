@@ -6,16 +6,27 @@ const CUSTOM_REQUEST_TIMEOUT_MS = 8000;
 /** Race a promise against a timeout. Rejects with an error on timeout. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`customRequest timed out after ${ms}ms`)), ms);
+    const timer = setTimeout(
+      () => reject(new Error(`customRequest timed out after ${ms}ms`)),
+      ms,
+    );
     promise.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      (e) => { clearTimeout(timer); reject(e); },
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
     );
   });
 }
 
 interface DebugHandlerDeps {
-  getBridge: () => { sendNotification(method: string, params: unknown): void } | null;
+  getBridge: () => {
+    sendNotification(method: string, params: unknown): void;
+  } | null;
 }
 
 function sendDebugNotification(deps: DebugHandlerDeps): void {
@@ -23,7 +34,10 @@ function sendDebugNotification(deps: DebugHandlerDeps): void {
   if (!bridge) return;
   const session = vscode.debug.activeDebugSession;
   const breakpoints = vscode.debug.breakpoints
-    .filter((bp): bp is vscode.SourceBreakpoint => bp instanceof vscode.SourceBreakpoint)
+    .filter(
+      (bp): bp is vscode.SourceBreakpoint =>
+        bp instanceof vscode.SourceBreakpoint,
+    )
     .map((bp) => ({
       file: bp.location.uri.fsPath,
       line: bp.location.range.start.line + 1,
@@ -43,7 +57,10 @@ function sendDebugNotification(deps: DebugHandlerDeps): void {
 export const handleGetDebugState: RequestHandler = async () => {
   const session = vscode.debug.activeDebugSession;
   const breakpoints = vscode.debug.breakpoints
-    .filter((bp): bp is vscode.SourceBreakpoint => bp instanceof vscode.SourceBreakpoint)
+    .filter(
+      (bp): bp is vscode.SourceBreakpoint =>
+        bp instanceof vscode.SourceBreakpoint,
+    )
     .map((bp) => ({
       file: bp.location.uri.fsPath,
       line: bp.location.range.start.line + 1,
@@ -56,23 +73,31 @@ export const handleGetDebugState: RequestHandler = async () => {
   }
 
   let callStack: unknown[] = [];
-  let scopes: unknown[] = [];
+  const scopes: unknown[] = [];
   let pausedAt: unknown = undefined;
 
   // Helper to call customRequest with a timeout so a hung adapter doesn't block forever.
   const timedRequest = (command: string, args?: unknown) =>
-    withTimeout(session.customRequest(command, args), CUSTOM_REQUEST_TIMEOUT_MS);
+    withTimeout(
+      session.customRequest(command, args),
+      CUSTOM_REQUEST_TIMEOUT_MS,
+    );
 
   try {
     const threads = await timedRequest("threads");
     const threadId: number =
-      Array.isArray((threads as any)?.threads) && (threads as any).threads.length > 0
-        ? ((threads as any).threads[0] as Record<string, unknown>).id as number
+      Array.isArray((threads as any)?.threads) &&
+      (threads as any).threads.length > 0
+        ? (((threads as any).threads[0] as Record<string, unknown>)
+            .id as number)
         : 1;
 
     let frames: Array<Record<string, unknown>> = [];
     try {
-      const stackResponse = await timedRequest("stackTrace", { threadId, levels: 20 });
+      const stackResponse = await timedRequest("stackTrace", {
+        threadId,
+        levels: 20,
+      });
       frames = Array.isArray((stackResponse as any)?.stackFrames)
         ? (stackResponse as any).stackFrames
         : [];
@@ -91,14 +116,19 @@ export const handleGetDebugState: RequestHandler = async () => {
     if (frames.length > 0) {
       const topFrame = frames[0];
       pausedAt = {
-        file: (topFrame.source as Record<string, unknown> | undefined)?.path ?? "",
+        file:
+          (topFrame.source as Record<string, unknown> | undefined)?.path ?? "",
         line: topFrame.line,
         column: topFrame.column,
       };
 
       try {
-        const scopesResponse = await timedRequest("scopes", { frameId: topFrame.id });
-        const rawScopes: Array<Record<string, unknown>> = Array.isArray((scopesResponse as any)?.scopes)
+        const scopesResponse = await timedRequest("scopes", {
+          frameId: topFrame.id,
+        });
+        const rawScopes: Array<Record<string, unknown>> = Array.isArray(
+          (scopesResponse as any)?.scopes,
+        )
           ? (scopesResponse as any).scopes
           : [];
 
@@ -108,7 +138,9 @@ export const handleGetDebugState: RequestHandler = async () => {
               variablesReference: scope.variablesReference,
               count: 50,
             });
-            const vars: Array<Record<string, unknown>> = Array.isArray((varsResponse as any)?.variables)
+            const vars: Array<Record<string, unknown>> = Array.isArray(
+              (varsResponse as any)?.variables,
+            )
               ? (varsResponse as any).variables
               : [];
             scopes.push({
@@ -149,7 +181,8 @@ const handleEvaluateInDebugger: RequestHandler = async (params) => {
   if (typeof expression !== "string" || expression.length === 0) {
     throw new Error("expression is required");
   }
-  const frameId = typeof params.frameId === "number" ? params.frameId : undefined;
+  const frameId =
+    typeof params.frameId === "number" ? params.frameId : undefined;
   const context = typeof params.context === "string" ? params.context : "repl";
 
   const session = vscode.debug.activeDebugSession;
@@ -157,7 +190,11 @@ const handleEvaluateInDebugger: RequestHandler = async (params) => {
     throw new Error("No active debug session");
   }
 
-  const response = await session.customRequest("evaluate", { expression, frameId, context });
+  const response = await session.customRequest("evaluate", {
+    expression,
+    frameId,
+    context,
+  });
   return {
     result: response?.result ?? "",
     type: response?.type,
@@ -202,7 +239,8 @@ const handleSetDebugBreakpoints: RequestHandler = async (params) => {
 };
 
 const handleStartDebugging: RequestHandler = async (params) => {
-  const configName = typeof params.configName === "string" ? params.configName : undefined;
+  const configName =
+    typeof params.configName === "string" ? params.configName : undefined;
   const folder = vscode.workspace.workspaceFolders?.[0];
 
   const started = await vscode.debug.startDebugging(folder, configName ?? "");
@@ -227,7 +265,9 @@ export function createDebugHandlers(deps: DebugHandlerDeps): {
   disposables.push(
     vscode.debug.onDidStartDebugSession(() => sendDebugNotification(deps)),
     vscode.debug.onDidTerminateDebugSession(() => sendDebugNotification(deps)),
-    vscode.debug.onDidChangeActiveDebugSession(() => sendDebugNotification(deps)),
+    vscode.debug.onDidChangeActiveDebugSession(() =>
+      sendDebugNotification(deps),
+    ),
     vscode.debug.onDidChangeBreakpoints(() => sendDebugNotification(deps)),
   );
 

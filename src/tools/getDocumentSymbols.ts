@@ -1,6 +1,13 @@
 import fs from "node:fs";
-import { type ExtensionClient } from "../extensionClient.js";
-import { execSafe, requireString, resolveFilePath, languageIdFromPath, success, error } from "./utils.js";
+import type { ExtensionClient } from "../extensionClient.js";
+import {
+  error,
+  execSafe,
+  languageIdFromPath,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 // Language-specific patterns to detect symbol definitions (grep fallback)
 const SYMBOL_PATTERNS: Record<string, string> = {
@@ -75,11 +82,15 @@ export function createGetDocumentSymbolsTool(
         return error(`File not found: ${filePath}`);
       }
 
-      const rgResult = await execSafe("rg", ["-n", "--no-heading", "-e", pattern, filePath], {
-        cwd: workspace,
-        timeout: 10_000,
-        maxBuffer: 256 * 1024,
-      });
+      const rgResult = await execSafe(
+        "rg",
+        ["-n", "--no-heading", "-e", pattern, filePath],
+        {
+          cwd: workspace,
+          timeout: 10_000,
+          maxBuffer: 256 * 1024,
+        },
+      );
 
       if (!rgResult.stdout.trim()) {
         return success({ symbols: [], count: 0, source: "grep-fallback" });
@@ -96,7 +107,7 @@ export function createGetDocumentSymbolsTool(
         if (!line) continue;
         const m = line.match(/^(\d+):(.*)$/);
         if (!m) continue;
-        const lineNum = parseInt(m[1]!, 10);
+        const lineNum = Number.parseInt(m[1]!, 10);
         const text = m[2]!.trim();
 
         // Extract symbol name and kind from the matched line
@@ -112,28 +123,44 @@ export function createGetDocumentSymbolsTool(
         symbols.push({ name, kind, line: lineNum, parent: null });
       }
 
-      return success({ symbols, count: symbols.length, source: "grep-fallback" });
+      return success({
+        symbols,
+        count: symbols.length,
+        source: "grep-fallback",
+      });
     },
   };
 }
 
 function kindToSymbolKind(raw: string): string {
   switch (raw) {
-    case "class": return "Class";
-    case "interface": return "Interface";
-    case "type": return "TypeParameter";
-    case "enum": return "Enum";
+    case "class":
+      return "Class";
+    case "interface":
+      return "Interface";
+    case "type":
+      return "TypeParameter";
+    case "enum":
+      return "Enum";
     case "function":
     case "fn":
-    case "def": return "Function";
-    case "const": return "Constant";
+    case "def":
+      return "Function";
+    case "const":
+      return "Constant";
     case "let":
-    case "var": return "Variable";
-    case "struct": return "Struct";
-    case "trait": return "Interface";
-    case "impl": return "Class";
+    case "var":
+      return "Variable";
+    case "struct":
+      return "Struct";
+    case "trait":
+      return "Interface";
+    case "impl":
+      return "Class";
     case "mod":
-    case "module": return "Module";
-    default: return "Variable";
+    case "module":
+      return "Module";
+    default:
+      return "Variable";
   }
 }

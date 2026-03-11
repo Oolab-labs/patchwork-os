@@ -4,8 +4,8 @@ import { cargoTestRunner } from "./testRunners/cargoTest.js";
 import { goTestRunner } from "./testRunners/goTest.js";
 import { pytestRunner } from "./testRunners/pytest.js";
 import type { TestResult, TestRunner } from "./testRunners/types.js";
-import { vitestRunner, jestRunner } from "./testRunners/vitestJest.js";
-import { optionalString, optionalBool, success } from "./utils.js";
+import { jestRunner, vitestRunner } from "./testRunners/vitestJest.js";
+import { optionalBool, optionalString, success } from "./utils.js";
 
 const MAX_CACHE_ENTRIES = 50;
 
@@ -22,10 +22,7 @@ interface RunnerCache {
   timestamp: number;
 }
 
-export function createRunTestsTool(
-  workspace: string,
-  probes?: ProbeResults,
-) {
+export function createRunTestsTool(workspace: string, probes?: ProbeResults) {
   const availableRunners = probes
     ? ALL_RUNNERS.filter((r) => r.detect(workspace, probes))
     : [];
@@ -64,7 +61,10 @@ export function createRunTestsTool(
         .catch((err: unknown) => {
           if (!(err instanceof Error) || err.name !== "AbortError") {
             caches.set(cacheKey, { data: [], timestamp: Date.now() });
-            runnerErrors.set(runner.name, err instanceof Error ? err.message : String(err));
+            runnerErrors.set(
+              runner.name,
+              err instanceof Error ? err.message : String(err),
+            );
           }
           return [] as TestResult[];
         })
@@ -103,7 +103,11 @@ export function createRunTestsTool(
       },
     },
 
-    async handler(args: Record<string, unknown>, signal?: AbortSignal, progress?: ProgressFn) {
+    async handler(
+      args: Record<string, unknown>,
+      signal?: AbortSignal,
+      progress?: ProgressFn,
+    ) {
       progress?.(0, 100);
       const filter = optionalString(args, "filter");
       const runnerName = optionalString(args, "runner");
@@ -113,7 +117,14 @@ export function createRunTestsTool(
         return success({
           available: false,
           runners: [],
-          summary: { total: 0, passed: 0, failed: 0, skipped: 0, errored: 0, durationMs: 0 },
+          summary: {
+            total: 0,
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            errored: 0,
+            durationMs: 0,
+          },
           results: [],
           failures: [],
         });
@@ -127,7 +138,14 @@ export function createRunTestsTool(
             available: true,
             runners: availableRunners.map((r) => r.name),
             error: `Runner '${runnerName}' not found. Available: ${availableRunners.map((r) => r.name).join(", ")}`,
-            summary: { total: 0, passed: 0, failed: 0, skipped: 0, errored: 0, durationMs: 0 },
+            summary: {
+              total: 0,
+              passed: 0,
+              failed: 0,
+              skipped: 0,
+              errored: 0,
+              durationMs: 0,
+            },
             results: [],
             failures: [],
           });
@@ -170,7 +188,9 @@ export function createRunTestsTool(
         runners: runners.map((r) => r.name),
         summary,
         results,
-        failures: results.filter((r) => r.status === "failed" || r.status === "errored"),
+        failures: results.filter(
+          (r) => r.status === "failed" || r.status === "errored",
+        ),
         ...(Object.keys(errors).length > 0 && { runnerErrors: errors }),
       });
     },

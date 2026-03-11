@@ -3,7 +3,9 @@ import * as vscode from "vscode";
 function requireFile(params: Record<string, unknown>): string {
   const file = params.file;
   if (typeof file !== "string" || file.length === 0) {
-    throw new Error("file parameter is required and must be a non-empty string");
+    throw new Error(
+      "file parameter is required and must be a non-empty string",
+    );
   }
   return file;
 }
@@ -23,7 +25,10 @@ export async function handleFormatDocument(
   const edits = await vscode.commands.executeCommand<vscode.TextEdit[]>(
     "vscode.executeFormatDocumentProvider",
     editor.document.uri,
-    { tabSize: editor.options.tabSize, insertSpaces: editor.options.insertSpaces },
+    {
+      tabSize: editor.options.tabSize,
+      insertSpaces: editor.options.insertSpaces,
+    },
   );
 
   if (edits && edits.length > 0) {

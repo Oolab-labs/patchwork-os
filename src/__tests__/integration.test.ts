@@ -8,10 +8,10 @@
  *   registerAllTools(transport, config, openedFiles, probes, extensionClient)
  */
 
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { ActivityLog } from "../activityLog.js";
@@ -19,8 +19,8 @@ import type { Config } from "../config.js";
 import { ExtensionClient } from "../extensionClient.js";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
-import { McpTransport } from "../transport.js";
 import { registerAllTools } from "../tools/index.js";
+import { McpTransport } from "../transport.js";
 import { send, waitFor } from "./wsHelpers.js";
 
 function makeMinimalConfig(workspace: string): Config {
@@ -82,11 +82,29 @@ async function setupBridge(registerTools = false): Promise<TestBridge> {
   if (registerTools) {
     const config = makeMinimalConfig(workspace);
     const probes = {
-      git: true, rg: false, fd: false, tsc: false, eslint: false,
-      pyright: false, ruff: false, cargo: false, go: false, biome: false,
-      vitest: false, jest: false, pytest: false, gh: false,
+      git: true,
+      rg: false,
+      fd: false,
+      tsc: false,
+      eslint: false,
+      pyright: false,
+      ruff: false,
+      cargo: false,
+      go: false,
+      biome: false,
+      vitest: false,
+      jest: false,
+      pytest: false,
+      gh: false,
     };
-    registerAllTools(transport, config, new Set<string>(), probes, extensionClient, activityLog);
+    registerAllTools(
+      transport,
+      config,
+      new Set<string>(),
+      probes,
+      extensionClient,
+      activityLog,
+    );
   }
 
   const port = await server.findAndListen(null);
@@ -118,7 +136,16 @@ async function setupBridge(registerTools = false): Promise<TestBridge> {
     return ws;
   };
 
-  return { server, transport, extensionClient, port, authToken, workspace, connectClaude, connectExtension };
+  return {
+    server,
+    transport,
+    extensionClient,
+    port,
+    authToken,
+    workspace,
+    connectClaude,
+    connectExtension,
+  };
 }
 
 afterEach(async () => {
@@ -151,7 +178,9 @@ describe("Integration: initialize + tools/list", () => {
     send(ws, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
     const listResp = await waitFor(ws, (m) => m.id === 2);
 
-    const listResult = listResp.result as { tools: Array<Record<string, unknown>> };
+    const listResult = listResp.result as {
+      tools: Array<Record<string, unknown>>;
+    };
     expect(Array.isArray(listResult.tools)).toBe(true);
     expect(listResult.tools.length).toBeGreaterThan(0);
 
@@ -164,7 +193,9 @@ describe("Integration: initialize + tools/list", () => {
 describe("Integration: extension connect notification", () => {
   it("Claude receives notifications/tools/list_changed when extension connects", async () => {
     // Build a custom setup where we wire the notification in the server "extension" handler
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-integ-notif-"));
+    const workspace = fs.mkdtempSync(
+      path.join(os.tmpdir(), "bridge-integ-notif-"),
+    );
     fs.mkdirSync(path.join(workspace, ".git"), { recursive: true });
     const authToken = randomUUID();
     const logger = new Logger(false);
@@ -184,7 +215,12 @@ describe("Integration: extension connect notification", () => {
     server.on("extension", (ws: WebSocket) => {
       extensionClient.handleExtensionConnection(ws);
       if (claudeWs && (claudeWs as WebSocket).readyState === WebSocket.OPEN) {
-        McpTransport.sendNotification(claudeWs, "notifications/tools/list_changed", undefined, logger);
+        McpTransport.sendNotification(
+          claudeWs,
+          "notifications/tools/list_changed",
+          undefined,
+          logger,
+        );
       }
     });
 
@@ -248,11 +284,13 @@ describe("Integration: pure tool call without extension", () => {
 
     // Must be a valid MCP result (not a JSON-RPC error)
     expect(resp.error).toBeUndefined();
-    const result = resp.result as { content: Array<{ type: string; text: string }> };
+    const result = resp.result as {
+      content: Array<{ type: string; text: string }>;
+    };
     expect(Array.isArray(result.content)).toBe(true);
     expect(result.content[0]?.type).toBe("text");
 
-    const parsed = JSON.parse(result.content[0]!.text);
+    const parsed = JSON.parse(result.content[0]?.text);
     expect(parsed.success).toBe(true);
     expect(Array.isArray(parsed.folders)).toBe(true);
   });
@@ -291,23 +329,47 @@ describe("Integration: extension proxy graceful error", () => {
 // ── Stress tests: extensionRequired filtering ─────────────────────────────────
 
 const EXTENSION_REQUIRED_TOOLS = [
-  "listTerminals", "getTerminalOutput", "createTerminal", "waitForTerminalOutput",
-  "runInTerminal", "disposeTerminal", "sendTerminalCommand",
-  "getDebugState", "evaluateInDebugger", "setDebugBreakpoints", "startDebugging", "stopDebugging",
-  "getNotebookCells", "runNotebookCell", "getNotebookOutput",
-  "readClipboard", "writeClipboard",
-  "listTasks", "runTask",
-  "setEditorDecorations", "clearEditorDecorations",
-  "closeTab", "organizeImports", "getInlayHints", "watchDiagnostics",
-  "executeVSCodeCommand", "listVSCodeCommands",
-  "getHover", "getCodeActions", "applyCodeAction", "renameSymbol", "getCallHierarchy",
+  "listTerminals",
+  "getTerminalOutput",
+  "createTerminal",
+  "waitForTerminalOutput",
+  "runInTerminal",
+  "disposeTerminal",
+  "sendTerminalCommand",
+  "getDebugState",
+  "evaluateInDebugger",
+  "setDebugBreakpoints",
+  "startDebugging",
+  "stopDebugging",
+  "getNotebookCells",
+  "runNotebookCell",
+  "getNotebookOutput",
+  "readClipboard",
+  "writeClipboard",
+  "listTasks",
+  "runTask",
+  "setEditorDecorations",
+  "clearEditorDecorations",
+  "closeTab",
+  "organizeImports",
+  "getInlayHints",
+  "watchDiagnostics",
+  "executeVSCodeCommand",
+  "listVSCodeCommands",
+  "getHover",
+  "getCodeActions",
+  "applyCodeAction",
+  "renameSymbol",
+  "getCallHierarchy",
 ];
 
 describe("Integration: extensionRequired full-registry filter", () => {
   it("tools/list hides all 32 extensionRequired tools when extension is disconnected", async () => {
     const bridge = await setupBridge(true);
     // Must wire the fn — setupBridge does not do this; without it the default is ?? true (all visible)
-    bridge.transport.setExtensionConnectedFn(() => bridge.extensionClient.isConnected());
+    bridge.transport.setExtensionConnectedFn(() =>
+      bridge.extensionClient.isConnected(),
+    );
     const ws = await bridge.connectClaude();
 
     send(ws, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
@@ -321,7 +383,10 @@ describe("Integration: extensionRequired full-registry filter", () => {
     const names = new Set(tools.map((t) => t.name));
 
     for (const toolName of EXTENSION_REQUIRED_TOOLS) {
-      expect(names.has(toolName), `${toolName} should be hidden when extension disconnected`).toBe(false);
+      expect(
+        names.has(toolName),
+        `${toolName} should be hidden when extension disconnected`,
+      ).toBe(false);
     }
     // Pure tools must still be present
     expect(names.has("getGitStatus")).toBe(true);
@@ -335,7 +400,9 @@ describe("Integration: extensionRequired full-registry filter", () => {
 describe("Integration: extensionRequired tools/call isError", () => {
   it("calling extensionRequired tools without extension returns isError:true for tools across different modules", async () => {
     const bridge = await setupBridge(true);
-    bridge.transport.setExtensionConnectedFn(() => bridge.extensionClient.isConnected());
+    bridge.transport.setExtensionConnectedFn(() =>
+      bridge.extensionClient.isConnected(),
+    );
     const ws = await bridge.connectClaude();
 
     send(ws, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
@@ -347,7 +414,14 @@ describe("Integration: extensionRequired tools/call isError", () => {
     const toolsToTest = [
       { name: "listTerminals", arguments: {} },
       { name: "getDebugState", arguments: {} },
-      { name: "getHover", arguments: { filePath: bridge.workspace + "/file.ts", line: 1, column: 1 } },
+      {
+        name: "getHover",
+        arguments: {
+          filePath: `${bridge.workspace}/file.ts`,
+          line: 1,
+          column: 1,
+        },
+      },
     ];
 
     for (let i = 0; i < toolsToTest.length; i++) {
@@ -360,17 +434,27 @@ describe("Integration: extensionRequired tools/call isError", () => {
       });
       const resp = await waitFor(ws, (m) => m.id === 10 + i, 8000);
 
-      expect(resp.error, `${name} must not return JSON-RPC error`).toBeUndefined();
-      const result = resp.result as { content: Array<{ text: string }>; isError: boolean };
+      expect(
+        resp.error,
+        `${name} must not return JSON-RPC error`,
+      ).toBeUndefined();
+      const result = resp.result as {
+        content: Array<{ text: string }>;
+        isError: boolean;
+      };
       expect(result.isError, `${name} must have isError: true`).toBe(true);
-      expect((result.content[0]?.text ?? "").toLowerCase()).toContain("extension");
+      expect((result.content[0]?.text ?? "").toLowerCase()).toContain(
+        "extension",
+      );
     }
   });
 });
 
 describe("Integration: tools/list_changed on extension disconnect", () => {
   it("Claude receives notifications/tools/list_changed when extension disconnects", async () => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-integ-disc-"));
+    const workspace = fs.mkdtempSync(
+      path.join(os.tmpdir(), "bridge-integ-disc-"),
+    );
     fs.mkdirSync(path.join(workspace, ".git"), { recursive: true });
     const authToken = randomUUID();
     const logger = new Logger(false);
@@ -390,7 +474,12 @@ describe("Integration: tools/list_changed on extension disconnect", () => {
     server.on("extension", (ws: WebSocket) => {
       extensionClient.handleExtensionConnection(ws);
       if (claudeWs && (claudeWs as WebSocket).readyState === WebSocket.OPEN) {
-        McpTransport.sendNotification(claudeWs, "notifications/tools/list_changed", undefined, logger);
+        McpTransport.sendNotification(
+          claudeWs,
+          "notifications/tools/list_changed",
+          undefined,
+          logger,
+        );
       }
     });
 
@@ -401,7 +490,12 @@ describe("Integration: tools/list_changed on extension disconnect", () => {
       listChangedTimer = setTimeout(() => {
         listChangedTimer = null;
         if (claudeWs && (claudeWs as WebSocket).readyState === WebSocket.OPEN) {
-          McpTransport.sendNotification(claudeWs, "notifications/tools/list_changed", undefined, logger);
+          McpTransport.sendNotification(
+            claudeWs,
+            "notifications/tools/list_changed",
+            undefined,
+            logger,
+          );
         }
       }, 2000);
     };
@@ -435,7 +529,11 @@ describe("Integration: tools/list_changed on extension disconnect", () => {
     openedClients.push(extWs);
 
     // Consume the connect notification before testing disconnect
-    await waitFor(ws, (m) => m.method === "notifications/tools/list_changed", 5000);
+    await waitFor(
+      ws,
+      (m) => m.method === "notifications/tools/list_changed",
+      5000,
+    );
 
     // Now disconnect and wait for the debounced disconnect notification (~2s)
     const disconnectNotifPromise = waitFor(

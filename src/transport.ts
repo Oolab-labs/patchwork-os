@@ -60,7 +60,11 @@ interface ToolSchema {
   extensionRequired?: boolean;
 }
 
-export type ProgressFn = (progress: number, total?: number, message?: string) => void;
+export type ProgressFn = (
+  progress: number,
+  total?: number,
+  message?: string,
+) => void;
 
 export type ToolHandler = (
   args: Record<string, unknown>,
@@ -244,7 +248,7 @@ export class McpTransport {
             break;
           }
 
-          case "tools/list":
+          case "tools/list": {
             if (!this.initialized) {
               response = {
                 jsonrpc: "2.0",
@@ -267,6 +271,7 @@ export class McpTransport {
               },
             };
             break;
+          }
 
           case "logging/setLevel": {
             const levelParam = (msg.params as { level?: string })?.level;
@@ -356,7 +361,13 @@ export class McpTransport {
                 const progressFn: ProgressFn | undefined =
                   progressToken !== undefined
                     ? (progress: number, total?: number, message?: string) =>
-                        this.sendProgress(ws, progressToken, progress, total, message)
+                        this.sendProgress(
+                          ws,
+                          progressToken,
+                          progress,
+                          total,
+                          message,
+                        )
                     : undefined;
                 this.activeToolCalls++;
                 let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -394,7 +405,10 @@ export class McpTransport {
                   // Only decrement if we're still on the same generation;
                   // detach() already reset activeToolCalls for new connections.
                   if (gen === this.generation) {
-                    this.activeToolCalls = Math.max(0, this.activeToolCalls - 1);
+                    this.activeToolCalls = Math.max(
+                      0,
+                      this.activeToolCalls - 1,
+                    );
                   }
                 }
               } catch (err: unknown) {
@@ -455,7 +469,9 @@ export class McpTransport {
         this.logger.debug(`--> response for ${msg.method}`);
         const sent = await safeSend(ws, JSON.stringify(response), this.logger);
         if (!sent) {
-          this.logger.warn(`Response for ${msg.method} (id=${msg.id}) dropped — socket closed`);
+          this.logger.warn(
+            `Response for ${msg.method} (id=${msg.id}) dropped — socket closed`,
+          );
         }
       } catch (err) {
         this.logger.error(`Failed to handle message: ${err}`);
@@ -483,7 +499,10 @@ export class McpTransport {
         ...(message !== undefined && { message }),
       },
     };
-    if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < BACKPRESSURE_THRESHOLD) {
+    if (
+      ws.readyState === WebSocket.OPEN &&
+      ws.bufferedAmount < BACKPRESSURE_THRESHOLD
+    ) {
       try {
         ws.send(JSON.stringify(msg));
       } catch {

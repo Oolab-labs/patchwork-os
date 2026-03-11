@@ -5,8 +5,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createGitAddTool,
-  createGitCommitTool,
   createGitBlameTool,
+  createGitCommitTool,
   createGitListBranchesTool,
 } from "../gitWrite.js";
 
@@ -20,11 +20,17 @@ describe("gitWrite tools", () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "git-write-test-"));
     execSync("git init", { cwd: tmpDir, stdio: "ignore" });
-    execSync("git config user.email test@test.com", { cwd: tmpDir, stdio: "ignore" });
+    execSync("git config user.email test@test.com", {
+      cwd: tmpDir,
+      stdio: "ignore",
+    });
     execSync("git config user.name Test", { cwd: tmpDir, stdio: "ignore" });
     fs.writeFileSync(path.join(tmpDir, "hello.txt"), "hello world\n");
     execSync("git add hello.txt", { cwd: tmpDir, stdio: "ignore" });
-    execSync('git commit -m "initial commit"', { cwd: tmpDir, stdio: "ignore" });
+    execSync('git commit -m "initial commit"', {
+      cwd: tmpDir,
+      stdio: "ignore",
+    });
   });
 
   afterEach(() => {

@@ -40,7 +40,8 @@ export function createGetCommitDetailsTool(workspace: string) {
           },
           filePath: {
             type: "string",
-            description: "Optional file path to limit the diff output to a single file",
+            description:
+              "Optional file path to limit the diff output to a single file",
           },
         },
       },
@@ -54,15 +55,13 @@ export function createGetCommitDetailsTool(workspace: string) {
 
       const includePatch = optionalBool(args, "includePatch") ?? true;
       const rawPath = optionalString(args, "filePath");
-      const filterPath = rawPath ? resolveFilePath(rawPath, workspace) : undefined;
+      const filterPath = rawPath
+        ? resolveFilePath(rawPath, workspace)
+        : undefined;
 
       // git show with a custom pretty format, then --stat for file summary
       // --format separates the header from the diff body
-      const showArgs = [
-        "show",
-        "--format=fuller",
-        "--stat",
-      ];
+      const showArgs = ["show", "--format=fuller", "--stat"];
       if (!includePatch) showArgs.push("--no-patch");
       showArgs.push(hash);
       if (filterPath) showArgs.push("--", filterPath);
@@ -81,8 +80,14 @@ export function createGetCommitDetailsTool(workspace: string) {
         return success({ error: msg || "git show failed" });
       }
 
-      const { text, truncated } = truncateOutput(result.stdout, MAX_OUTPUT_BYTES);
-      return success({ output: text, ...(truncated ? { truncated: true } : {}) });
+      const { text, truncated } = truncateOutput(
+        result.stdout,
+        MAX_OUTPUT_BYTES,
+      );
+      return success({
+        output: text,
+        ...(truncated ? { truncated: true } : {}),
+      });
     },
   };
 }
@@ -112,7 +117,8 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
           },
           filePath: {
             type: "string",
-            description: "Optional file path to limit the diff to a single file",
+            description:
+              "Optional file path to limit the diff to a single file",
           },
           context: {
             type: "integer",
@@ -135,7 +141,9 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
       if (!VALID_REF_RE.test(ref2)) return success({ error: "Invalid ref2" });
 
       const rawPath = optionalString(args, "filePath");
-      const filterPath = rawPath ? resolveFilePath(rawPath, workspace) : undefined;
+      const filterPath = rawPath
+        ? resolveFilePath(rawPath, workspace)
+        : undefined;
       const context = optionalInt(args, "context", 0, 100) ?? 3;
       const statOnly = optionalBool(args, "statOnly") ?? false;
 
@@ -157,12 +165,17 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim();
         if (msg.includes("unknown revision") || msg.includes("bad object")) {
-          return success({ error: `One or both refs not found: "${ref1}", "${ref2}"` });
+          return success({
+            error: `One or both refs not found: "${ref1}", "${ref2}"`,
+          });
         }
         return success({ error: msg || "git diff failed" });
       }
 
-      const { text, truncated } = truncateOutput(result.stdout, MAX_OUTPUT_BYTES);
+      const { text, truncated } = truncateOutput(
+        result.stdout,
+        MAX_OUTPUT_BYTES,
+      );
       return success({ diff: text, ...(truncated ? { truncated: true } : {}) });
     },
   };

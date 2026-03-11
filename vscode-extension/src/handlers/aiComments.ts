@@ -22,10 +22,13 @@ const AI_COMMENT_PATTERNS: Array<{ regex: RegExp; syntax: string }> = [
 // Per-document cache to avoid re-scanning unchanged documents
 const documentCache = new Map<string, AICommentEntry[]>();
 
-function parseSeverity(commentText: string): { severity: string; text: string } {
+function parseSeverity(commentText: string): {
+  severity: string;
+  text: string;
+} {
   const match = commentText.match(/^(FIX|TODO|QUESTION|WARN|TASK)\s*:?\s*/i);
   if (match) {
-    const key = match[1]!.toLowerCase();
+    const key = match[1]?.toLowerCase();
     return {
       severity: SEVERITY_MAP[key] ?? "task",
       text: commentText.slice(match[0].length).trim(),
@@ -34,14 +37,16 @@ function parseSeverity(commentText: string): { severity: string; text: string } 
   return { severity: "task", text: commentText };
 }
 
-export function scanDocumentForAIComments(doc: vscode.TextDocument): AICommentEntry[] {
+export function scanDocumentForAIComments(
+  doc: vscode.TextDocument,
+): AICommentEntry[] {
   const results: AICommentEntry[] = [];
   const lineCount = doc.lineCount;
   for (let i = 0; i < lineCount; i++) {
     const lineText = doc.lineAt(i).text;
     for (const pattern of AI_COMMENT_PATTERNS) {
       const match = pattern.regex.exec(lineText);
-      if (match && match[1]) {
+      if (match?.[1]) {
         const rawComment = match[1].trim();
         const { severity, text } = parseSeverity(rawComment);
         results.push({

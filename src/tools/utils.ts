@@ -68,7 +68,10 @@ export function optionalBool(
 }
 
 /** Require args[key] to be a non-null object. Throws on failure. */
-export function requireObject(args: Record<string, unknown>, key: string): Record<string, unknown> {
+export function requireObject(
+  args: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> {
   const val = args[key];
   if (val === null || typeof val !== "object" || Array.isArray(val)) {
     throw new Error(`${key} must be an object`);
@@ -77,7 +80,10 @@ export function requireObject(args: Record<string, unknown>, key: string): Recor
 }
 
 /** Require args[key] to be an array. Throws on failure. */
-export function requireArray(args: Record<string, unknown>, key: string): unknown[] {
+export function requireArray(
+  args: Record<string, unknown>,
+  key: string,
+): unknown[] {
   const val = args[key];
   if (!Array.isArray(val)) {
     throw new Error(`${key} must be an array`);
@@ -86,7 +92,10 @@ export function requireArray(args: Record<string, unknown>, key: string): unknow
 }
 
 /** Return args[key] if it is an array, undefined if absent, throw if wrong type. */
-export function optionalArray(args: Record<string, unknown>, key: string): unknown[] | undefined {
+export function optionalArray(
+  args: Record<string, unknown>,
+  key: string,
+): unknown[] | undefined {
   const val = args[key];
   if (val === undefined) return undefined;
   if (!Array.isArray(val)) {
@@ -163,7 +172,10 @@ export function resolveFilePath(filePath: string, workspace: string): string {
   return resolved;
 }
 
-export async function findLineNumber(filePath: string, text: string): Promise<number | null> {
+export async function findLineNumber(
+  filePath: string,
+  text: string,
+): Promise<number | null> {
   try {
     const content = await fs.promises.readFile(filePath, "utf-8");
     const lines = content.split("\n");
@@ -193,7 +205,9 @@ export function error(data: unknown): {
 }
 
 export function extensionRequired(feature: string) {
-  return error(`VS Code extension not connected — ${feature} requires the extension`);
+  return error(
+    `VS Code extension not connected — ${feature} requires the extension`,
+  );
 }
 
 export function requireInt(

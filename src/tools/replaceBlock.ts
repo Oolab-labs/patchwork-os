@@ -1,8 +1,20 @@
 import fs from "node:fs/promises";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { requireString, optionalBool, resolveFilePath, success, error } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  optionalBool,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
-export function createReplaceBlockTool(workspace: string, extensionClient?: ExtensionClient) {
+export function createReplaceBlockTool(
+  workspace: string,
+  extensionClient?: ExtensionClient,
+) {
   return {
     schema: {
       name: "replaceBlock",
@@ -24,7 +36,8 @@ export function createReplaceBlockTool(workspace: string, extensionClient?: Exte
           },
           oldContent: {
             type: "string" as const,
-            description: "The exact text to find and replace (must match precisely, including whitespace)",
+            description:
+              "The exact text to find and replace (must match precisely, including whitespace)",
           },
           newContent: {
             type: "string" as const,
@@ -53,7 +66,12 @@ export function createReplaceBlockTool(workspace: string, extensionClient?: Exte
       // Try extension first — operates on the live buffer including unsaved changes
       if (extensionClient?.isConnected()) {
         try {
-          const result = await extensionClient.replaceBlock(filePath, oldContent, newContent, save);
+          const result = await extensionClient.replaceBlock(
+            filePath,
+            oldContent,
+            newContent,
+            save,
+          );
           if (result !== null) {
             return success(result);
           }
@@ -76,7 +94,9 @@ export function createReplaceBlockTool(workspace: string, extensionClient?: Exte
 
       const firstIndex = text.indexOf(oldContent);
       if (firstIndex === -1) {
-        return error("oldContent not found in file — verify the exact text including whitespace and line endings");
+        return error(
+          "oldContent not found in file — verify the exact text including whitespace and line endings",
+        );
       }
 
       const secondIndex = text.indexOf(oldContent, firstIndex + 1);
@@ -84,10 +104,15 @@ export function createReplaceBlockTool(workspace: string, extensionClient?: Exte
         let count = 2;
         let idx = secondIndex;
         while ((idx = text.indexOf(oldContent, idx + 1)) !== -1) count++;
-        return error(`oldContent matches ${count} locations — add more surrounding context to make it unique`);
+        return error(
+          `oldContent matches ${count} locations — add more surrounding context to make it unique`,
+        );
       }
 
-      const newText = text.slice(0, firstIndex) + newContent + text.slice(firstIndex + oldContent.length);
+      const newText =
+        text.slice(0, firstIndex) +
+        newContent +
+        text.slice(firstIndex + oldContent.length);
 
       // Optimistic concurrency check — detect concurrent modification
       const statAfter = await fs.stat(filePath);

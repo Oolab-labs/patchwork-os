@@ -1,9 +1,18 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { __reset, Uri, Position, Range, WorkspaceEdit } from "../__mocks__/vscode";
 import { createLspHandlers } from "../../handlers/lsp";
+import {
+  Position,
+  Range,
+  Uri,
+  WorkspaceEdit,
+  __reset,
+} from "../__mocks__/vscode";
 
-let handlers: Record<string, (params: Record<string, unknown>) => Promise<unknown>>;
+let handlers: Record<
+  string,
+  (params: Record<string, unknown>) => Promise<unknown>
+>;
 
 beforeEach(() => {
   __reset();
@@ -13,17 +22,22 @@ beforeEach(() => {
 // ── goToDefinition ────────────────────────────────────────────
 
 describe("goToDefinition", () => {
-  const call = (params: Record<string, unknown>) => handlers["extension/goToDefinition"](params);
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/goToDefinition"](params);
 
   it("returns locations for Location[] result", async () => {
     const loc = { uri: Uri.file("/def.ts"), range: new Range(9, 4, 9, 10) };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
 
-    const result = (await call({ file: "/test.ts", line: 5, column: 3 })) as any[];
+    const result = (await call({
+      file: "/test.ts",
+      line: 5,
+      column: 3,
+    })) as any[];
     expect(result).toHaveLength(1);
     expect(result[0].file).toBe("/def.ts");
-    expect(result[0].line).toBe(10);   // 9 + 1
-    expect(result[0].column).toBe(5);  // 4 + 1
+    expect(result[0].line).toBe(10); // 9 + 1
+    expect(result[0].column).toBe(5); // 4 + 1
   });
 
   it("returns locations for LocationLink[] result", async () => {
@@ -33,7 +47,11 @@ describe("goToDefinition", () => {
     };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([link]);
 
-    const result = (await call({ file: "/test.ts", line: 1, column: 1 })) as any[];
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+    })) as any[];
     expect(result[0].file).toBe("/target.ts");
   });
 
@@ -59,13 +77,18 @@ describe("goToDefinition", () => {
 // ── findReferences ────────────────────────────────────────────
 
 describe("findReferences", () => {
-  const call = (params: Record<string, unknown>) => handlers["extension/findReferences"](params);
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/findReferences"](params);
 
   it("returns references", async () => {
     const loc = { uri: Uri.file("/a.ts"), range: new Range(2, 0, 2, 5) };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
 
-    const result = (await call({ file: "/test.ts", line: 1, column: 1 })) as any;
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+    })) as any;
     expect(result.count).toBe(1);
     expect(result.references[0].file).toBe("/a.ts");
     expect(result.references[0].line).toBe(3);
@@ -73,7 +96,11 @@ describe("findReferences", () => {
 
   it("returns empty references when none found", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
-    const result = (await call({ file: "/test.ts", line: 1, column: 1 })) as any;
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+    })) as any;
     expect(result.references).toEqual([]);
   });
 });
@@ -81,7 +108,8 @@ describe("findReferences", () => {
 // ── getHover ──────────────────────────────────────────────────
 
 describe("getHover", () => {
-  const call = (params: Record<string, unknown>) => handlers["extension/getHover"](params);
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/getHover"](params);
 
   it("returns hover contents", async () => {
     const hover = {
@@ -90,7 +118,11 @@ describe("getHover", () => {
     };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([hover]);
 
-    const result = (await call({ file: "/test.ts", line: 1, column: 1 })) as any;
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+    })) as any;
     expect(result.contents).toEqual(["function foo(): void", "some docs"]);
     expect(result.range).toBeDefined();
   });
@@ -104,15 +136,23 @@ describe("getHover", () => {
 // ── getCodeActions ────────────────────────────────────────────
 
 describe("getCodeActions", () => {
-  const call = (params: Record<string, unknown>) => handlers["extension/getCodeActions"](params);
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/getCodeActions"](params);
 
   it("returns code actions", async () => {
-    const action = { title: "Fix import", kind: { value: "quickfix" }, isPreferred: true };
+    const action = {
+      title: "Fix import",
+      kind: { value: "quickfix" },
+      isPreferred: true,
+    };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([action]);
 
     const result = (await call({
       file: "/test.ts",
-      startLine: 1, startColumn: 1, endLine: 1, endColumn: 5,
+      startLine: 1,
+      startColumn: 1,
+      endLine: 1,
+      endColumn: 5,
     })) as any;
     expect(result.actions).toHaveLength(1);
     expect(result.actions[0].title).toBe("Fix import");
@@ -123,7 +163,10 @@ describe("getCodeActions", () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
     const result = (await call({
       file: "/test.ts",
-      startLine: 1, startColumn: 1, endLine: 1, endColumn: 1,
+      startLine: 1,
+      startColumn: 1,
+      endLine: 1,
+      endColumn: 1,
     })) as any;
     expect(result.actions).toEqual([]);
   });
@@ -132,15 +175,25 @@ describe("getCodeActions", () => {
 // ── applyCodeAction ───────────────────────────────────────────
 
 describe("applyCodeAction", () => {
-  const call = (params: Record<string, unknown>) => handlers["extension/applyCodeAction"](params);
-  const baseParams = { file: "/test.ts", startLine: 1, startColumn: 1, endLine: 1, endColumn: 5 };
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/applyCodeAction"](params);
+  const baseParams = {
+    file: "/test.ts",
+    startLine: 1,
+    startColumn: 1,
+    endLine: 1,
+    endColumn: 5,
+  };
 
   it("applies action with edit", async () => {
     const edit = new WorkspaceEdit();
     const action = { title: "Fix it", edit, command: undefined };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([action]);
 
-    const result = (await call({ ...baseParams, actionTitle: "Fix it" })) as any;
+    const result = (await call({
+      ...baseParams,
+      actionTitle: "Fix it",
+    })) as any;
     expect(result.applied).toBe(true);
     expect(vscode.workspace.applyEdit).toHaveBeenCalledWith(edit);
   });
@@ -152,10 +205,13 @@ describe("applyCodeAction", () => {
       command: { command: "editor.fix", arguments: ["arg1"] },
     };
     vi.mocked(vscode.commands.executeCommand)
-      .mockResolvedValueOnce([action])  // getCodeActions
+      .mockResolvedValueOnce([action]) // getCodeActions
       .mockResolvedValueOnce(undefined); // executeCommand
 
-    const result = (await call({ ...baseParams, actionTitle: "Run fix" })) as any;
+    const result = (await call({
+      ...baseParams,
+      actionTitle: "Run fix",
+    })) as any;
     expect(result.applied).toBe(true);
     expect(result.command).toBe("editor.fix");
   });
@@ -164,7 +220,10 @@ describe("applyCodeAction", () => {
     const action = { title: "Other", edit: undefined };
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([action]);
 
-    const result = (await call({ ...baseParams, actionTitle: "Missing" })) as any;
+    const result = (await call({
+      ...baseParams,
+      actionTitle: "Missing",
+    })) as any;
     expect(result.applied).toBe(false);
     expect(result.available).toContain("Other");
   });
@@ -179,7 +238,8 @@ describe("applyCodeAction", () => {
 // ── renameSymbol ──────────────────────────────────────────────
 
 describe("renameSymbol", () => {
-  const call = (params: Record<string, unknown>) => handlers["extension/renameSymbol"](params);
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/renameSymbol"](params);
 
   it("renames symbol successfully", async () => {
     const edit = new WorkspaceEdit();
@@ -187,7 +247,12 @@ describe("renameSymbol", () => {
     (edit as any).__entries = [[uri, [{}, {}]]]; // 2 edits in 1 file
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(edit);
 
-    const result = (await call({ file: "/test.ts", line: 5, column: 3, newName: "bar" })) as any;
+    const result = (await call({
+      file: "/test.ts",
+      line: 5,
+      column: 3,
+      newName: "bar",
+    })) as any;
     expect(result.success).toBe(true);
     expect(result.newName).toBe("bar");
     expect(result.affectedFiles).toHaveLength(1);
@@ -196,7 +261,12 @@ describe("renameSymbol", () => {
 
   it("returns error when rename not supported", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
-    const result = (await call({ file: "/test.ts", line: 1, column: 1, newName: "x" })) as any;
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+      newName: "x",
+    })) as any;
     expect(result.success).toBe(false);
   });
 
@@ -205,7 +275,12 @@ describe("renameSymbol", () => {
     (edit as any).__entries = [];
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(edit);
 
-    const result = (await call({ file: "/test.ts", line: 1, column: 1, newName: "x" })) as any;
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+      newName: "x",
+    })) as any;
     expect(result.success).toBe(false);
     expect(result.error).toContain("No edits");
   });
@@ -214,7 +289,8 @@ describe("renameSymbol", () => {
 // ── searchSymbols ─────────────────────────────────────────────
 
 describe("searchSymbols", () => {
-  const call = (params: Record<string, unknown>) => handlers["extension/searchSymbols"](params);
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/searchSymbols"](params);
 
   it("returns symbols", async () => {
     const sym = {

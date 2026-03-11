@@ -1,11 +1,11 @@
 import {
-  requireString,
-  optionalString,
-  optionalInt,
-  optionalBool,
-  execSafe,
-  success,
   error,
+  execSafe,
+  optionalBool,
+  optionalInt,
+  optionalString,
+  requireString,
+  success,
   truncateOutput,
 } from "./utils.js";
 
@@ -28,7 +28,7 @@ function parseStashList(stdout: string): ParsedSnapshot[] {
     );
     if (match) {
       snapshots.push({
-        index: parseInt(match[1]!, 10),
+        index: Number.parseInt(match[1]!, 10),
         name: match[2]!,
         timestamp: match[3]!,
         ref: `stash@{${match[1]}}`,
@@ -39,9 +39,14 @@ function parseStashList(stdout: string): ParsedSnapshot[] {
 }
 
 function sanitizeName(name: string): string {
-  const sanitized = name.replace(/[\n\r]/g, " ").replace(/[^\w\s\-_.]/g, "").trim();
+  const sanitized = name
+    .replace(/[\n\r]/g, " ")
+    .replace(/[^\w\s\-_.]/g, "")
+    .trim();
   if (!sanitized) {
-    throw new Error("Snapshot name must contain at least one word character after sanitization");
+    throw new Error(
+      "Snapshot name must contain at least one word character after sanitization",
+    );
   }
   return sanitized;
 }
@@ -52,7 +57,10 @@ async function verifySnapshotIndex(
   workspace: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const verifyResult = await execSafe("git", ["stash", "list"], { cwd: workspace, signal });
+  const verifyResult = await execSafe("git", ["stash", "list"], {
+    cwd: workspace,
+    signal,
+  });
   const current = parseStashList(verifyResult.stdout);
   const atIndex = current.find((s) => s.index === index);
   if (!atIndex || atIndex.name !== name) {
@@ -84,10 +92,7 @@ export function createCreateSnapshotTool(workspace: string) {
         additionalProperties: false as const,
       },
     },
-    handler: async (
-      args: Record<string, unknown>,
-      signal?: AbortSignal,
-    ) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const name = sanitizeName(requireString(args, "name", 200));
       const includeUntracked = optionalBool(args, "includeUntracked") ?? true;
 
@@ -122,10 +127,7 @@ export function createCreateSnapshotTool(workspace: string) {
         signal,
       });
 
-      if (
-        result.exitCode === 0 &&
-        result.stdout.includes("No local changes")
-      ) {
+      if (result.exitCode === 0 && result.stdout.includes("No local changes")) {
         return success({
           created: false,
           message: "No changes to snapshot",
@@ -151,7 +153,11 @@ export function createCreateSnapshotTool(workspace: string) {
         message: result.stdout.trim(),
         ...(restored
           ? { workingTreeRestored: true }
-          : { workingTreeRestored: false, restoreWarning: "Changes were stashed but could not be auto-restored. Use restoreSnapshot to get them back." }),
+          : {
+              workingTreeRestored: false,
+              restoreWarning:
+                "Changes were stashed but could not be auto-restored. Use restoreSnapshot to get them back.",
+            }),
       });
     },
   };
@@ -170,10 +176,7 @@ export function createListSnapshotsTool(workspace: string) {
         additionalProperties: false as const,
       },
     },
-    handler: async (
-      _args: Record<string, unknown>,
-      signal?: AbortSignal,
-    ) => {
+    handler: async (_args: Record<string, unknown>, signal?: AbortSignal) => {
       const gitCheck = await execSafe("git", ["rev-parse", "--git-dir"], {
         cwd: workspace,
         signal,
@@ -217,10 +220,7 @@ export function createRestoreSnapshotTool(workspace: string) {
         additionalProperties: false as const,
       },
     },
-    handler: async (
-      args: Record<string, unknown>,
-      signal?: AbortSignal,
-    ) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const name = optionalString(args, "name");
       let index = optionalInt(args, "index", 0, 1000);
 
@@ -268,7 +268,12 @@ export function createRestoreSnapshotTool(workspace: string) {
       }
 
       // Verify stash at resolved index still matches the expected name (TOCTOU protection)
-      const shiftErr = await verifySnapshotIndex(index!, resolvedName, workspace, signal);
+      const shiftErr = await verifySnapshotIndex(
+        index!,
+        resolvedName,
+        workspace,
+        signal,
+      );
       if (shiftErr) return error(shiftErr);
 
       const result = await execSafe(
@@ -327,10 +332,7 @@ export function createDeleteSnapshotTool(workspace: string) {
         additionalProperties: false as const,
       },
     },
-    handler: async (
-      args: Record<string, unknown>,
-      signal?: AbortSignal,
-    ) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const name = optionalString(args, "name");
       let index = optionalInt(args, "index", 0, 1000);
 
@@ -361,7 +363,12 @@ export function createDeleteSnapshotTool(workspace: string) {
 
       // Verify stash at resolved index still matches (TOCTOU protection)
       if (name !== undefined) {
-        const shiftErr = await verifySnapshotIndex(index!, name, workspace, signal);
+        const shiftErr = await verifySnapshotIndex(
+          index!,
+          name,
+          workspace,
+          signal,
+        );
         if (shiftErr) return error(shiftErr);
       }
 
@@ -404,11 +411,13 @@ export function createDiffSnapshotTool(workspace: string) {
           },
           index: {
             type: "integer",
-            description: "Stash index to diff against. Use listSnapshots to find indices.",
+            description:
+              "Stash index to diff against. Use listSnapshots to find indices.",
           },
           stat: {
             type: "boolean",
-            description: "If true, show only a file summary (--stat) instead of the full diff. Default: false",
+            description:
+              "If true, show only a file summary (--stat) instead of the full diff. Default: false",
           },
         },
         additionalProperties: false as const,
@@ -446,7 +455,12 @@ export function createDiffSnapshotTool(workspace: string) {
 
       // Verify stash at resolved index still matches (TOCTOU protection)
       if (name !== undefined) {
-        const shiftErr = await verifySnapshotIndex(index!, name, workspace, signal);
+        const shiftErr = await verifySnapshotIndex(
+          index!,
+          name,
+          workspace,
+          signal,
+        );
         if (shiftErr) return error(shiftErr);
       }
 
@@ -513,10 +527,7 @@ export function createShowSnapshotTool(workspace: string) {
         additionalProperties: false as const,
       },
     },
-    handler: async (
-      args: Record<string, unknown>,
-      signal?: AbortSignal,
-    ) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const name = optionalString(args, "name");
       let index = optionalInt(args, "index", 0, 1000);
       const stat = optionalBool(args, "stat") ?? false;
@@ -548,7 +559,12 @@ export function createShowSnapshotTool(workspace: string) {
 
       // Verify stash at resolved index still matches (TOCTOU protection)
       if (name !== undefined) {
-        const shiftErr = await verifySnapshotIndex(index!, name, workspace, signal);
+        const shiftErr = await verifySnapshotIndex(
+          index!,
+          name,
+          workspace,
+          signal,
+        );
         if (shiftErr) return error(shiftErr);
       }
 

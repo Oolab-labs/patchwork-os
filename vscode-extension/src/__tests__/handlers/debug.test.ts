@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { __reset, _mockDebugSession, debug } from "../__mocks__/vscode";
 import { handleGetDebugState } from "../../handlers/debug";
+import { __reset, _mockDebugSession, debug } from "../__mocks__/vscode";
 
 beforeEach(() => {
   __reset();
@@ -60,7 +60,10 @@ describe("handleGetDebugState", () => {
   it("times out if customRequest hangs and resolves gracefully", async () => {
     const session = _mockDebugSession({
       customRequest: vi.fn(
-        () => new Promise<unknown>(() => { /* never resolves */ }),
+        () =>
+          new Promise<unknown>(() => {
+            /* never resolves */
+          }),
       ),
     });
     debug.activeDebugSession = session as any;
@@ -84,10 +87,17 @@ describe("handleGetDebugState", () => {
         if (cmd === "stackTrace")
           return {
             stackFrames: [
-              { id: 10, name: "myFunc", source: { path: "/app/index.ts" }, line: 5, column: 1 },
+              {
+                id: 10,
+                name: "myFunc",
+                source: { path: "/app/index.ts" },
+                line: 5,
+                column: 1,
+              },
             ],
           };
-        if (cmd === "scopes") return { scopes: [{ name: "Local", variablesReference: 100 }] };
+        if (cmd === "scopes")
+          return { scopes: [{ name: "Local", variablesReference: 100 }] };
         if (cmd === "variables")
           return { variables: [{ name: "x", value: "42", type: "number" }] };
         return {};

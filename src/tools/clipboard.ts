@@ -1,4 +1,7 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import { error, extensionRequired, success } from "./utils.js";
 
 export function createReadClipboardTool(extensionClient: ExtensionClient) {

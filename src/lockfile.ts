@@ -62,7 +62,10 @@ export class LockFileManager {
         fs.unlinkSync(lockPath);
         const fd = fs.openSync(
           lockPath,
-          fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0),
+          fs.constants.O_WRONLY |
+            fs.constants.O_CREAT |
+            fs.constants.O_EXCL |
+            (fs.constants.O_NOFOLLOW ?? 0),
           0o600,
         );
         fs.writeSync(fd, data);
@@ -101,7 +104,9 @@ export class LockFileManager {
           // Skip suspiciously large files to prevent OOM
           const stat = fs.statSync(filePath);
           if (stat.size > 4096) {
-            this.logger.warn(`Removing oversized lock file: ${file} (${stat.size} bytes)`);
+            this.logger.warn(
+              `Removing oversized lock file: ${file} (${stat.size} bytes)`,
+            );
             fs.unlinkSync(filePath);
             continue;
           }
@@ -135,11 +140,15 @@ export class LockFileManager {
             }
           }
         } catch (err) {
-          this.logger.warn(`Skipping malformed lock file ${file}: ${err instanceof Error ? err.message : String(err)}`);
+          this.logger.warn(
+            `Skipping malformed lock file ${file}: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
     } catch (err) {
-      this.logger.warn(`Failed to scan lock directory: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(
+        `Failed to scan lock directory: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 }

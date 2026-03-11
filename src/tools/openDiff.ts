@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { requireString, resolveFilePath, success, error } from "./utils.js";
+import { error, requireString, resolveFilePath, success } from "./utils.js";
 
 const MAX_DIFF_CONTENT_BYTES = 5 * 1024 * 1024; // 5 MB
 const MAX_TRACKED_DIRS = 10;
@@ -37,12 +37,7 @@ export function createOpenDiffTool(
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object",
         additionalProperties: false,
-        required: [
-          "oldFilePath",
-          "newFilePath",
-          "newFileContents",
-          "tabName",
-        ],
+        required: ["oldFilePath", "newFilePath", "newFileContents", "tabName"],
         properties: {
           oldFilePath: {
             type: "string",
@@ -84,7 +79,9 @@ export function createOpenDiffTool(
       }
 
       // Write new contents to a temp file
-      const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claude-diff-"));
+      const tmpDir = await fs.promises.mkdtemp(
+        path.join(os.tmpdir(), "claude-diff-"),
+      );
       let tmpFile = "";
       try {
         await fs.promises.chmod(tmpDir, 0o700);

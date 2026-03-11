@@ -1,9 +1,27 @@
-import { execSafe, requireInt, requireString, optionalString, optionalArray, success, error, truncateOutput } from "../utils.js";
-import { GH_NOT_FOUND, GH_NOT_AUTHED, isNotFound, isNotAuthed } from "./shared.js";
+import {
+  error,
+  execSafe,
+  optionalArray,
+  optionalString,
+  requireInt,
+  requireString,
+  success,
+  truncateOutput,
+} from "../utils.js";
+import {
+  GH_NOT_AUTHED,
+  GH_NOT_FOUND,
+  isNotAuthed,
+  isNotFound,
+} from "./shared.js";
 
 const MAX_DIFF_BYTES = 256 * 1024; // 256 KB
 
-async function resolveRepo(workspace: string, repoArg: string | undefined, signal?: AbortSignal): Promise<string | null> {
+async function resolveRepo(
+  workspace: string,
+  repoArg: string | undefined,
+  signal?: AbortSignal,
+): Promise<string | null> {
   if (repoArg) return repoArg;
   const result = await execSafe(
     "gh",
@@ -36,7 +54,8 @@ export function createGithubGetPRDiffTool(workspace: string) {
           },
           repo: {
             type: "string",
-            description: "Repository in owner/repo format. Defaults to the repository of the current workspace.",
+            description:
+              "Repository in owner/repo format. Defaults to the repository of the current workspace.",
           },
         },
         additionalProperties: false as const,
@@ -55,7 +74,9 @@ export function createGithubGetPRDiffTool(workspace: string) {
         execSafe(
           "gh",
           [
-            "pr", "view", String(prNumber),
+            "pr",
+            "view",
+            String(prNumber),
             ...repoFlags,
             "--json",
             "number,title,body,state,baseRefName,headRefName,additions,deletions,changedFiles,files,author,createdAt,isDraft,mergeable",
@@ -63,11 +84,11 @@ export function createGithubGetPRDiffTool(workspace: string) {
           ],
           { cwd: workspace, signal, timeout: 30_000 },
         ),
-        execSafe(
-          "gh",
-          ["pr", "diff", String(prNumber), ...repoFlags, "--"],
-          { cwd: workspace, signal, timeout: 30_000 },
-        ),
+        execSafe("gh", ["pr", "diff", String(prNumber), ...repoFlags, "--"], {
+          cwd: workspace,
+          signal,
+          timeout: 30_000,
+        }),
       ]);
 
       if (metaResult.exitCode !== 0) {
@@ -75,17 +96,27 @@ export function createGithubGetPRDiffTool(workspace: string) {
         if (isNotFound(msg)) return error(GH_NOT_FOUND);
         if (isNotAuthed(msg)) return error(`${GH_NOT_AUTHED}\n${msg}`);
         if (msg.includes("Could not resolve") || msg.includes("not found")) {
-          return error(`PR #${prNumber} not found. Check the PR number and repository.`);
+          return error(
+            `PR #${prNumber} not found. Check the PR number and repository.`,
+          );
         }
         return error(`gh pr view failed: ${msg}`);
       }
 
-      let meta: unknown;
+      let meta: Record<string, unknown>;
       try {
-        meta = JSON.parse(metaResult.stdout.trim());
+        meta = JSON.parse(metaResult.stdout.trim()) as Record<string, unknown>;
       } catch {
-        return error(`Failed to parse PR metadata: ${metaResult.stdout.trim()}`);
+        return error(
+          `Failed to parse PR metadata: ${metaResult.stdout.trim()}`,
+        );
       }
+
+      // Warn if files list is incomplete due to GitHub API pagination (>300 files)
+      const files = Array.isArray(meta.files) ? meta.files : [];
+      const changedFiles =
+        typeof meta.changedFiles === "number" ? meta.changedFiles : 0;
+      const filesIncomplete = changedFiles > 0 && files.length < changedFiles;
 
       // Diff fetch fails when the head branch was deleted after merge — treat as non-fatal
       let diff = "";
@@ -103,9 +134,20 @@ export function createGithubGetPRDiffTool(workspace: string) {
       }
 
       return success({
-        ...(meta as object),
+        ...meta,
         diff,
-        ...(diffTruncated ? { truncated: true, note: "Diff truncated at 256 KB — use getGitDiff or gh pr diff for the full output." } : {}),
+        ...(diffTruncated
+          ? {
+              truncated: true,
+              note: "Diff truncated at 256 KB — use getGitDiff or gh pr diff for the full output.",
+            }
+          : {}),
+        ...(filesIncomplete
+          ? {
+              filesIncomplete: true,
+              filesNote: `Only ${files.length} of ${changedFiles} changed files returned. Use 'gh pr view ${prNumber} --json files' for the full list.`,
+            }
+          : {}),
       });
     },
     timeoutMs: 30_000,
@@ -135,23 +177,37 @@ export function createGithubPostPRReviewTool(workspace: string) {
           },
           body: {
             type: "string",
-            description: "Overview review comment in Markdown. Summarize findings, severity, and any patterns noticed.",
+            description:
+              "Overview review comment in Markdown. Summarize findings, severity, and any patterns noticed.",
           },
           comments: {
             type: "array",
-            description: "Inline comments on specific diff lines. Only lines present in the diff can be annotated.",
+            description:
+              "Inline comments on specific diff lines. Only lines present in the diff can be annotated.",
             items: {
               type: "object",
               required: ["path", "line", "body"],
               properties: {
-                path: { type: "string", description: "File path relative to repo root (e.g. src/foo.ts)" },
-                line: { type: "integer", description: "Line number in the file" },
+                path: {
+                  type: "string",
+                  description:
+                    "File path relative to repo root (e.g. src/foo.ts)",
+                },
+                line: {
+                  type: "integer",
+                  description: "Line number in the file",
+                },
                 side: {
                   type: "string",
                   enum: ["LEFT", "RIGHT"],
-                  description: "Diff side: RIGHT for added/context lines (default), LEFT for deleted lines.",
+                  description:
+                    "Diff side: RIGHT for added/context lines (default), LEFT for deleted lines.",
                 },
-                body: { type: "string", description: "Comment text describing the issue found on this line" },
+                body: {
+                  type: "string",
+                  description:
+                    "Comment text describing the issue found on this line",
+                },
               },
               additionalProperties: false,
             },
@@ -159,11 +215,13 @@ export function createGithubPostPRReviewTool(workspace: string) {
           event: {
             type: "string",
             enum: ["COMMENT", "REQUEST_CHANGES"],
-            description: "Review event. COMMENT (default) leaves a non-blocking review. REQUEST_CHANGES blocks merging until resolved.",
+            description:
+              "Review event. COMMENT (default) leaves a non-blocking review. REQUEST_CHANGES blocks merging until resolved.",
           },
           repo: {
             type: "string",
-            description: "Repository in owner/repo format. Defaults to the repository of the current workspace.",
+            description:
+              "Repository in owner/repo format. Defaults to the repository of the current workspace.",
           },
         },
         additionalProperties: false as const,
@@ -177,29 +235,58 @@ export function createGithubPostPRReviewTool(workspace: string) {
       const eventArg = optionalString(args, "event", 32) ?? "COMMENT";
 
       if (!["COMMENT", "REQUEST_CHANGES"].includes(eventArg)) {
-        return error(`Invalid event "${eventArg}". Must be COMMENT or REQUEST_CHANGES.`);
+        return error(
+          `Invalid event "${eventArg}". Must be COMMENT or REQUEST_CHANGES.`,
+        );
       }
 
       // Validate inline comments shape
-      const inlineComments: Array<{ path: string; line: number; side: string; body: string }> = [];
+      const inlineComments: Array<{
+        path: string;
+        line: number;
+        side: string;
+        body: string;
+      }> = [];
       if (comments) {
         for (const c of comments) {
-          if (typeof c !== "object" || c === null) return error("Each comment must be an object.");
+          if (typeof c !== "object" || c === null)
+            return error("Each comment must be an object.");
           const obj = c as Record<string, unknown>;
-          if (typeof obj.path !== "string" || !obj.path) return error("Each comment must have a non-empty 'path' string.");
-          if (typeof obj.line !== "number" || !Number.isInteger(obj.line) || obj.line < 1) {
+          if (typeof obj.path !== "string" || !obj.path)
+            return error("Each comment must have a non-empty 'path' string.");
+          if (obj.path.includes("..") || obj.path.startsWith("/")) {
+            return error(
+              "Comment path must be relative to the repo root and cannot contain '..' or start with '/'.",
+            );
+          }
+          if (
+            typeof obj.line !== "number" ||
+            !Number.isInteger(obj.line) ||
+            obj.line < 1
+          ) {
             return error("Each comment must have a positive integer 'line'.");
           }
-          if (typeof obj.body !== "string" || !obj.body) return error("Each comment must have a non-empty 'body' string.");
-          const side = typeof obj.side === "string" && obj.side === "LEFT" ? "LEFT" : "RIGHT";
-          inlineComments.push({ path: obj.path, line: obj.line, side, body: obj.body });
+          if (typeof obj.body !== "string" || !obj.body)
+            return error("Each comment must have a non-empty 'body' string.");
+          const side =
+            typeof obj.side === "string" && obj.side === "LEFT"
+              ? "LEFT"
+              : "RIGHT";
+          inlineComments.push({
+            path: obj.path,
+            line: obj.line,
+            side,
+            body: obj.body,
+          });
         }
       }
 
       // Resolve owner/repo
       const repo = await resolveRepo(workspace, repoArg, signal);
       if (!repo) {
-        return error("Could not determine repository. Pass 'repo' as owner/repo or run from inside a git repository.");
+        return error(
+          "Could not determine repository. Pass 'repo' as owner/repo or run from inside a git repository.",
+        );
       }
 
       // Build the review payload and post via gh api using --input (stdin) to avoid arg-length limits.
@@ -218,8 +305,10 @@ export function createGithubPostPRReviewTool(workspace: string) {
       const apiArgs = [
         "api",
         `repos/${repo}/pulls/${prNumber}/reviews`,
-        "-X", "POST",
-        "--input", "-",
+        "-X",
+        "POST",
+        "--input",
+        "-",
         "--",
       ];
 
@@ -234,12 +323,22 @@ export function createGithubPostPRReviewTool(workspace: string) {
         const msg = result.stderr.trim() || result.stdout.trim();
         if (isNotFound(msg)) return error(GH_NOT_FOUND);
         if (isNotAuthed(msg)) return error(`${GH_NOT_AUTHED}\n${msg}`);
-        if (msg.includes("pull_request_review_thread.line") || msg.includes("is not part of the pull request")) {
+        if (msg.includes("HTTP 429") || msg.includes("secondary rate limit")) {
           return error(
-            `One or more inline comment lines are not part of the diff. ` +
-            `Only lines that appear in the diff hunks can receive inline comments. ` +
-            `Verify line numbers against the diff returned by githubGetPRDiff, ` +
-            `and ensure side:'LEFT' is used for deleted lines.\n${msg}`,
+            `GitHub API rate limited. Wait a few minutes and retry.\n${msg}`,
+          );
+        }
+        if (msg.includes("HTTP 403") && !isNotAuthed(msg)) {
+          return error(
+            `GitHub API access forbidden. Check repository permissions or secondary rate limits.\n${msg}`,
+          );
+        }
+        if (
+          msg.includes("pull_request_review_thread.line") ||
+          msg.includes("is not part of the pull request")
+        ) {
+          return error(
+            `One or more inline comment lines are not part of the diff. Only lines that appear in the diff hunks can receive inline comments. Verify line numbers against the diff returned by githubGetPRDiff, and ensure side:'LEFT' is used for deleted lines.\n${msg}`,
           );
         }
         return error(`Failed to post review: ${msg}`);
@@ -247,14 +346,18 @@ export function createGithubPostPRReviewTool(workspace: string) {
 
       let reviewData: Record<string, unknown> = {};
       try {
-        reviewData = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
+        reviewData = JSON.parse(result.stdout.trim()) as Record<
+          string,
+          unknown
+        >;
       } catch {
         // Non-fatal — return what we know
       }
 
       return success({
         reviewId: reviewData.id ?? null,
-        url: reviewData.html_url ?? `https://github.com/${repo}/pull/${prNumber}`,
+        url:
+          reviewData.html_url ?? `https://github.com/${repo}/pull/${prNumber}`,
         event: eventArg,
         commentsPosted: inlineComments.length,
       });

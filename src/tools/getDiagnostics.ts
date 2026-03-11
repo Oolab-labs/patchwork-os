@@ -1,4 +1,7 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import type { ProbeResults } from "../probe.js";
 import { biomeLinter } from "./linters/biome.js";
 import { cargoLinter } from "./linters/cargo.js";
@@ -70,10 +73,7 @@ export function createGetDiagnosticsTool(
         })
         .catch((err: unknown) => {
           // Don't cache aborted results — they're incomplete
-          if (
-            !(err instanceof Error) ||
-            err.name !== "AbortError"
-          ) {
+          if (!(err instanceof Error) || err.name !== "AbortError") {
             caches.set(linter.name, { data: [], timestamp: Date.now() });
           }
           return [] as LintDiagnostic[];
@@ -105,11 +105,13 @@ export function createGetDiagnosticsTool(
           severity: {
             type: "string",
             enum: ["error", "warning", "hint", "information"],
-            description: "Only return diagnostics at or above this severity. Use 'error' to hide warnings and focus on build-breaking issues.",
+            description:
+              "Only return diagnostics at or above this severity. Use 'error' to hide warnings and focus on build-breaking issues.",
           },
           maxResults: {
             type: "number",
-            description: "Limit the number of diagnostics returned. Default: 500. Use a lower value for large projects.",
+            description:
+              "Limit the number of diagnostics returned. Default: 500. Use a lower value for large projects.",
           },
         },
       },
@@ -118,17 +120,35 @@ export function createGetDiagnosticsTool(
     timeoutMs: 5_000,
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const uri = optionalString(args, "uri");
-      const severityFilter = optionalString(args, "severity") as "error" | "warning" | "hint" | "information" | undefined;
-      const maxResults = typeof args.maxResults === "number" ? Math.min(Math.max(1, Math.floor(args.maxResults)), 2000) : 500;
+      const severityFilter = optionalString(args, "severity") as
+        | "error"
+        | "warning"
+        | "hint"
+        | "information"
+        | undefined;
+      const maxResults =
+        typeof args.maxResults === "number"
+          ? Math.min(Math.max(1, Math.floor(args.maxResults)), 2000)
+          : 500;
 
-      const SEVERITY_RANK: Record<string, number> = { error: 3, warning: 2, information: 1, hint: 0 };
-      const minRank = severityFilter !== undefined ? (SEVERITY_RANK[severityFilter] ?? 0) : -1;
+      const SEVERITY_RANK: Record<string, number> = {
+        error: 3,
+        warning: 2,
+        information: 1,
+        hint: 0,
+      };
+      const minRank =
+        severityFilter !== undefined
+          ? (SEVERITY_RANK[severityFilter] ?? 0)
+          : -1;
 
       function applyFilters(diags: unknown[]): unknown[] {
         let filtered = diags;
         if (minRank >= 0) {
           filtered = filtered.filter((d) => {
-            const sev = (d as Record<string, unknown>).severity as string | undefined;
+            const sev = (d as Record<string, unknown>).severity as
+              | string
+              | undefined;
             return (SEVERITY_RANK[sev ?? "hint"] ?? 0) >= minRank;
           });
         }
@@ -148,7 +168,12 @@ export function createGetDiagnosticsTool(
               linters: ["vscode-lsp"],
               diagnostics: filtered,
               ...(severityFilter ? { severityFilter } : {}),
-              ...(filtered.length < (extDiags as unknown[]).length ? { truncated: true, totalBeforeFilter: (extDiags as unknown[]).length } : {}),
+              ...(filtered.length < (extDiags as unknown[]).length
+                ? {
+                    truncated: true,
+                    totalBeforeFilter: (extDiags as unknown[]).length,
+                  }
+                : {}),
             });
           }
         } catch (err) {
@@ -185,7 +210,9 @@ export function createGetDiagnosticsTool(
       }
 
       const totalBeforeFilter = diagnostics.length;
-      const filteredDiags = applyFilters(diagnostics as unknown[]) as typeof diagnostics;
+      const filteredDiags = applyFilters(
+        diagnostics as unknown[],
+      ) as typeof diagnostics;
 
       const summary = {
         total: filteredDiags.length,
@@ -200,7 +227,9 @@ export function createGetDiagnosticsTool(
         summary,
         diagnostics: filteredDiags,
         ...(severityFilter ? { severityFilter } : {}),
-        ...(filteredDiags.length < totalBeforeFilter ? { truncated: true, totalBeforeFilter } : {}),
+        ...(filteredDiags.length < totalBeforeFilter
+          ? { truncated: true, totalBeforeFilter }
+          : {}),
       });
     },
   };

@@ -1,12 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { __reset, _mockTextDocument, Uri } from "../__mocks__/vscode";
 import {
-  scanDocumentForAIComments,
-  scanAllOpenDocuments,
-  invalidateDocumentCache,
   handleGetAIComments,
+  invalidateDocumentCache,
+  scanAllOpenDocuments,
+  scanDocumentForAIComments,
 } from "../../handlers/aiComments";
+import { Uri, __reset, _mockTextDocument } from "../__mocks__/vscode";
 
 function makeDocWithLines(lines: string[], fsPath = "/workspace/file.ts") {
   return _mockTextDocument({
@@ -25,7 +25,10 @@ beforeEach(() => {
 
 describe("scanDocumentForAIComments", () => {
   it("detects // AI: comments", () => {
-    const doc = makeDocWithLines(["const x = 1;", "// AI: FIX: memory leak here"]);
+    const doc = makeDocWithLines([
+      "const x = 1;",
+      "// AI: FIX: memory leak here",
+    ]);
     const results = scanDocumentForAIComments(doc as any);
     expect(results).toHaveLength(1);
     expect(results[0].severity).toBe("fix");
@@ -101,8 +104,14 @@ describe("scanAllOpenDocuments", () => {
   });
 
   it("uses cache on second call", () => {
-    const lineAt = vi.fn((n: number) => ({ text: n === 0 ? "// AI: note" : "" }));
-    const doc = _mockTextDocument({ fsPath: "/workspace/file.ts", lineCount: 1, lineAt });
+    const lineAt = vi.fn((n: number) => ({
+      text: n === 0 ? "// AI: note" : "",
+    }));
+    const doc = _mockTextDocument({
+      fsPath: "/workspace/file.ts",
+      lineCount: 1,
+      lineAt,
+    });
     vscode.workspace.textDocuments = [doc] as any;
 
     scanAllOpenDocuments();

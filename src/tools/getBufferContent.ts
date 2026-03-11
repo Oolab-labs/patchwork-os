@@ -1,10 +1,22 @@
 import fs from "node:fs/promises";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { requireString, optionalInt, resolveFilePath, success, error } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  optionalInt,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 const MAX_CONTENT_BYTES = 512 * 1024; // 512 KB hard cap
 
-export function createGetBufferContentTool(workspace: string, extensionClient?: ExtensionClient) {
+export function createGetBufferContentTool(
+  workspace: string,
+  extensionClient?: ExtensionClient,
+) {
   return {
     schema: {
       name: "getBufferContent",

@@ -23,11 +23,13 @@ export function createTaskHandlers(): {
       throw new Error("name is required");
     }
     const type = typeof params.type === "string" ? params.type : undefined;
-    const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 60_000;
+    const timeoutMs =
+      typeof params.timeoutMs === "number" ? params.timeoutMs : 60_000;
 
     const tasks = await vscode.tasks.fetchTasks();
-    const task = tasks.find((t) =>
-      t.name === name && (type === undefined || t.definition.type === type),
+    const task = tasks.find(
+      (t) =>
+        t.name === name && (type === undefined || t.definition.type === type),
     );
 
     if (!task) {
@@ -40,40 +42,41 @@ export function createTaskHandlers(): {
     const startTime = Date.now();
 
     // Wait for the task process to end
-    const result = await new Promise<{ exitCode: number | undefined; durationMs: number }>(
-      (resolve) => {
-        let settled = false;
-        let taskEndGraceTimer: ReturnType<typeof setTimeout> | null = null;
+    const result = await new Promise<{
+      exitCode: number | undefined;
+      durationMs: number;
+    }>((resolve) => {
+      let settled = false;
+      let taskEndGraceTimer: ReturnType<typeof setTimeout> | null = null;
 
-        const settle = (exitCode: number | undefined) => {
-          if (settled) return;
-          settled = true;
-          if (taskEndGraceTimer) clearTimeout(taskEndGraceTimer);
-          clearTimeout(timeoutId);
-          processDisposable.dispose();
-          taskEndDisposable.dispose();
-          resolve({ exitCode, durationMs: Date.now() - startTime });
-        };
+      const settle = (exitCode: number | undefined) => {
+        if (settled) return;
+        settled = true;
+        if (taskEndGraceTimer) clearTimeout(taskEndGraceTimer);
+        clearTimeout(timeoutId);
+        processDisposable.dispose();
+        taskEndDisposable.dispose();
+        resolve({ exitCode, durationMs: Date.now() - startTime });
+      };
 
-        // onDidEndTaskProcess fires with exit code when process exits
-        const processDisposable = vscode.tasks.onDidEndTaskProcess((e) => {
-          if (e.execution === execution) {
-            settle(e.exitCode);
-          }
-        });
+      // onDidEndTaskProcess fires with exit code when process exits
+      const processDisposable = vscode.tasks.onDidEndTaskProcess((e) => {
+        if (e.execution === execution) {
+          settle(e.exitCode);
+        }
+      });
 
-        // Fallback: if no process event fires (e.g. shell task), listen for task end
-        const taskEndDisposable = vscode.tasks.onDidEndTask((e) => {
-          if (e.execution === execution) {
-            // Give the process event a moment to fire first
-            taskEndGraceTimer = setTimeout(() => settle(undefined), 500);
-          }
-        });
+      // Fallback: if no process event fires (e.g. shell task), listen for task end
+      const taskEndDisposable = vscode.tasks.onDidEndTask((e) => {
+        if (e.execution === execution) {
+          // Give the process event a moment to fire first
+          taskEndGraceTimer = setTimeout(() => settle(undefined), 500);
+        }
+      });
 
-        // Timeout — disposes both listeners via settle()
-        const timeoutId = setTimeout(() => settle(undefined), timeoutMs);
-      },
-    );
+      // Timeout — disposes both listeners via settle()
+      const timeoutId = setTimeout(() => settle(undefined), timeoutMs);
+    });
 
     return {
       name: task.name,

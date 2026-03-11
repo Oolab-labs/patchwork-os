@@ -12,11 +12,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { Config } from "../../config.js";
+import {
+  createReadClipboardTool,
+  createWriteClipboardTool,
+} from "../clipboard.js";
 import { createGetBufferContentTool } from "../getBufferContent.js";
 import { createReplaceBlockTool } from "../replaceBlock.js";
-import { createReadClipboardTool, createWriteClipboardTool } from "../clipboard.js";
-import { createExecuteVSCodeCommandTool, createListVSCodeCommandsTool } from "../vscodeCommands.js";
-import type { Config } from "../../config.js";
+import {
+  createExecuteVSCodeCommandTool,
+  createListVSCodeCommandsTool,
+} from "../vscodeCommands.js";
 
 // ── Mock helpers ──────────────────────────────────────────────────────────────
 
@@ -69,8 +75,11 @@ describe("getBufferContent: disconnected extension", () => {
   });
 
   it("falls back to disk content when extension is not connected", async () => {
-    const tool = createGetBufferContentTool(workspace, mockDisconnectedExtensionClient());
-    const result = await tool.handler({ filePath: "sample.ts" }) as any;
+    const tool = createGetBufferContentTool(
+      workspace,
+      mockDisconnectedExtensionClient(),
+    );
+    const result = (await tool.handler({ filePath: "sample.ts" })) as any;
     // Should succeed (disk fallback), not return an error
     expect(result.isError).toBeUndefined();
     expect(result.content[0].text).toBeDefined();
@@ -80,8 +89,11 @@ describe("getBufferContent: disconnected extension", () => {
   });
 
   it("returns isError when file does not exist", async () => {
-    const tool = createGetBufferContentTool(workspace, mockDisconnectedExtensionClient());
-    const result = await tool.handler({ filePath: "nonexistent.ts" }) as any;
+    const tool = createGetBufferContentTool(
+      workspace,
+      mockDisconnectedExtensionClient(),
+    );
+    const result = (await tool.handler({ filePath: "nonexistent.ts" })) as any;
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("not found");
   });
@@ -104,12 +116,15 @@ describe("replaceBlock: disconnected extension", () => {
     const testFile = path.join(workspace, "edit.ts");
     fs.writeFileSync(testFile, "const a = 1;\nconst b = 2;\n");
 
-    const tool = createReplaceBlockTool(workspace, mockDisconnectedExtensionClient());
-    const result = await tool.handler({
+    const tool = createReplaceBlockTool(
+      workspace,
+      mockDisconnectedExtensionClient(),
+    );
+    const result = (await tool.handler({
       filePath: "edit.ts",
       oldContent: "const a = 1;",
       newContent: "const a = 42;",
-    }) as any;
+    })) as any;
 
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(result.content[0].text);
@@ -122,12 +137,15 @@ describe("replaceBlock: disconnected extension", () => {
     const testFile = path.join(workspace, "notfound.ts");
     fs.writeFileSync(testFile, "const z = 99;\n");
 
-    const tool = createReplaceBlockTool(workspace, mockDisconnectedExtensionClient());
-    const result = await tool.handler({
+    const tool = createReplaceBlockTool(
+      workspace,
+      mockDisconnectedExtensionClient(),
+    );
+    const result = (await tool.handler({
       filePath: "notfound.ts",
       oldContent: "const x = 1;",
       newContent: "const x = 2;",
-    }) as any;
+    })) as any;
 
     expect(result.isError).toBe(true);
     const msg = JSON.parse(result.content[0].text) as string;
@@ -140,7 +158,7 @@ describe("replaceBlock: disconnected extension", () => {
 describe("readClipboard: disconnected extension", () => {
   it("returns isError:true with extension-required message", async () => {
     const tool = createReadClipboardTool(mockDisconnectedExtensionClient());
-    const result = await tool.handler() as any;
+    const result = (await tool.handler()) as any;
     expect(result.isError).toBe(true);
     const msg = JSON.parse(result.content[0].text) as string;
     expect(msg.toLowerCase()).toContain("extension");
@@ -150,7 +168,7 @@ describe("readClipboard: disconnected extension", () => {
 describe("writeClipboard: disconnected extension", () => {
   it("returns isError:true with extension-required message", async () => {
     const tool = createWriteClipboardTool(mockDisconnectedExtensionClient());
-    const result = await tool.handler({ text: "hello" }) as any;
+    const result = (await tool.handler({ text: "hello" })) as any;
     expect(result.isError).toBe(true);
     const msg = JSON.parse(result.content[0].text) as string;
     expect(msg.toLowerCase()).toContain("extension");
@@ -169,9 +187,16 @@ function mockConnectedExtensionClient(executeResult: unknown = null): any {
 
 describe("executeVSCodeCommand: allowlist enforcement", () => {
   it("rejects a command not in the allowlist (extension connected)", async () => {
-    const config = makeMinimalConfig({ vscodeCommandAllowlist: ["workbench.action.openSettings"] });
-    const tool = createExecuteVSCodeCommandTool(mockConnectedExtensionClient(), config);
-    const result = await tool.handler({ command: "editor.action.formatDocument" }) as any;
+    const config = makeMinimalConfig({
+      vscodeCommandAllowlist: ["workbench.action.openSettings"],
+    });
+    const tool = createExecuteVSCodeCommandTool(
+      mockConnectedExtensionClient(),
+      config,
+    );
+    const result = (await tool.handler({
+      command: "editor.action.formatDocument",
+    })) as any;
     expect(result.isError).toBe(true);
     const msg = JSON.parse(result.content[0].text) as string;
     expect(msg).toContain("not in the vscodeCommandAllowlist");
@@ -179,17 +204,29 @@ describe("executeVSCodeCommand: allowlist enforcement", () => {
 
   it("rejects all commands when no allowlist is configured (extension connected)", async () => {
     const config = makeMinimalConfig({ vscodeCommandAllowlist: [] });
-    const tool = createExecuteVSCodeCommandTool(mockConnectedExtensionClient(), config);
-    const result = await tool.handler({ command: "editor.action.formatDocument" }) as any;
+    const tool = createExecuteVSCodeCommandTool(
+      mockConnectedExtensionClient(),
+      config,
+    );
+    const result = (await tool.handler({
+      command: "editor.action.formatDocument",
+    })) as any;
     expect(result.isError).toBe(true);
     const msg = JSON.parse(result.content[0].text) as string;
     expect(msg).toContain("allowlist");
   });
 
   it("returns isError:true when extension not connected", async () => {
-    const config = makeMinimalConfig({ vscodeCommandAllowlist: ["editor.action.formatDocument"] });
-    const tool = createExecuteVSCodeCommandTool(mockDisconnectedExtensionClient(), config);
-    const result = await tool.handler({ command: "editor.action.formatDocument" }) as any;
+    const config = makeMinimalConfig({
+      vscodeCommandAllowlist: ["editor.action.formatDocument"],
+    });
+    const tool = createExecuteVSCodeCommandTool(
+      mockDisconnectedExtensionClient(),
+      config,
+    );
+    const result = (await tool.handler({
+      command: "editor.action.formatDocument",
+    })) as any;
     expect(result.isError).toBe(true);
     const msg = JSON.parse(result.content[0].text) as string;
     expect(msg.toLowerCase()).toContain("extension");
@@ -198,8 +235,10 @@ describe("executeVSCodeCommand: allowlist enforcement", () => {
 
 describe("listVSCodeCommands: disconnected extension", () => {
   it("returns isError:true when extension not connected", async () => {
-    const tool = createListVSCodeCommandsTool(mockDisconnectedExtensionClient());
-    const result = await tool.handler({}) as any;
+    const tool = createListVSCodeCommandsTool(
+      mockDisconnectedExtensionClient(),
+    );
+    const result = (await tool.handler({})) as any;
     expect(result.isError).toBe(true);
     const msg = JSON.parse(result.content[0].text) as string;
     expect(msg.toLowerCase()).toContain("extension");

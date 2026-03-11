@@ -9,5 +9,10 @@ export function isNotFound(msg: string): boolean {
 }
 
 export function isNotAuthed(msg: string): boolean {
-  return msg.includes("not authenticated") || msg.includes("auth login") || msg.includes("GITHUB_TOKEN") || msg.includes("HTTP 401");
+  return (
+    msg.includes("not authenticated") ||
+    msg.includes("auth login") ||
+    msg.includes("GITHUB_TOKEN") ||
+    msg.includes("HTTP 401")
+  );
 }

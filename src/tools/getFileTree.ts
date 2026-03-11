@@ -112,7 +112,8 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
           if (item.isDirectory() && IGNORED_DIRS.has(item.name)) continue;
           const rel = path.relative(workspace, path.join(dir, item.name));
           entries.push(item.isDirectory() ? `${rel}/` : rel);
-          if (item.isDirectory()) await walk(path.join(dir, item.name), depth + 1);
+          if (item.isDirectory())
+            await walk(path.join(dir, item.name), depth + 1);
         }
       }
       await walk(targetDir, 1);

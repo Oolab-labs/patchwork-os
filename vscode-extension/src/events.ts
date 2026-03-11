@@ -1,22 +1,26 @@
 import * as vscode from "vscode";
 import WebSocket from "ws";
 
+import type { BridgeConnection } from "./connection";
 import {
-  SELECTION_DEBOUNCE,
-  DIAGNOSTICS_DEBOUNCE,
   AI_COMMENTS_DEBOUNCE,
+  DIAGNOSTICS_DEBOUNCE,
   MAX_DIAGNOSTICS_PER_FILE,
   MAX_SELECTED_TEXT_BYTES,
+  SELECTION_DEBOUNCE,
 } from "./constants";
-import { diagnosticToJson } from "./handlers/diagnostics";
-import { scanDocumentForAIComments, scanAllOpenDocuments, invalidateDocumentCache } from "./handlers/aiComments";
 import {
-  getOrCreateBuffer,
+  invalidateDocumentCache,
+  scanAllOpenDocuments,
+  scanDocumentForAIComments,
+} from "./handlers/aiComments";
+import { diagnosticToJson } from "./handlers/diagnostics";
+import {
   deleteTerminalBuffer,
-  writeToRingBuffer,
+  getOrCreateBuffer,
   setOutputCaptureEnabled,
+  writeToRingBuffer,
 } from "./handlers/terminal";
-import type { BridgeConnection } from "./connection";
 
 export function registerEvents(
   context: vscode.ExtensionContext,
@@ -37,7 +41,9 @@ export function registerEvents(
           const diags = vscode.languages.getDiagnostics(uri);
           bridge.sendNotification("extension/diagnosticsChanged", {
             file: uri.fsPath,
-            diagnostics: diags.slice(0, MAX_DIAGNOSTICS_PER_FILE).map(diagnosticToJson),
+            diagnostics: diags
+              .slice(0, MAX_DIAGNOSTICS_PER_FILE)
+              .map(diagnosticToJson),
           });
         }
         bridge.pendingDiagnosticUris.clear();
@@ -55,9 +61,13 @@ export function registerEvents(
         const sel = e.selections[0];
         if (!sel) return;
         let selectedText = e.textEditor.document.getText(sel);
-        if (Buffer.byteLength(selectedText, "utf-8") > MAX_SELECTED_TEXT_BYTES) {
+        if (
+          Buffer.byteLength(selectedText, "utf-8") > MAX_SELECTED_TEXT_BYTES
+        ) {
           // Truncate by bytes, not characters, to respect the byte limit for multi-byte text
-          selectedText = Buffer.from(selectedText, "utf-8").subarray(0, MAX_SELECTED_TEXT_BYTES).toString("utf-8");
+          selectedText = Buffer.from(selectedText, "utf-8")
+            .subarray(0, MAX_SELECTED_TEXT_BYTES)
+            .toString("utf-8");
         }
         bridge.sendNotification("extension/selectionChanged", {
           file: e.textEditor.document.uri.fsPath,
@@ -147,21 +157,26 @@ export function registerEvents(
 
   // Terminal output capture (proposed API — graceful degradation)
   try {
-    const onDidWriteTerminalData = (vscode.window as any).onDidWriteTerminalData;
+    const onDidWriteTerminalData = (vscode.window as any)
+      .onDidWriteTerminalData;
     if (typeof onDidWriteTerminalData === "function") {
-      const disposable = onDidWriteTerminalData((e: { terminal: vscode.Terminal; data: string }) => {
-        const buf = getOrCreateBuffer(e.terminal);
-        if (buf) {
-          buf.name = e.terminal.name;
-          writeToRingBuffer(buf, e.data);
-        }
-      });
+      const disposable = onDidWriteTerminalData(
+        (e: { terminal: vscode.Terminal; data: string }) => {
+          const buf = getOrCreateBuffer(e.terminal);
+          if (buf) {
+            buf.name = e.terminal.name;
+            writeToRingBuffer(buf, e.data);
+          }
+        },
+      );
       context.subscriptions.push(disposable);
       setOutputCaptureEnabled(true);
       bridge.log("Terminal output capture enabled");
     }
   } catch {
-    bridge.log("Terminal output capture unavailable (proposed API not supported)");
+    bridge.log(
+      "Terminal output capture unavailable (proposed API not supported)",
+    );
   }
 
   // Initialize buffers for already-open terminals
@@ -188,15 +203,21 @@ export function registerEvents(
 
   // Copy Connection Info command
   context.subscriptions.push(
-    vscode.commands.registerCommand("claudeIdeBridge.copyConnectionInfo", () => {
-      const version = (context.extension?.packageJSON?.version as string) ?? "unknown";
-      const info = [
-        `State: ${bridge.ws?.readyState === WebSocket.OPEN ? "Connected" : "Disconnected"}`,
-        `Extension version: ${version}`,
-        `VS Code: ${vscode.version}`,
-      ].join("\n");
-      vscode.env.clipboard.writeText(info);
-      vscode.window.showInformationMessage("Connection info copied to clipboard");
-    }),
+    vscode.commands.registerCommand(
+      "claudeIdeBridge.copyConnectionInfo",
+      () => {
+        const version =
+          (context.extension?.packageJSON?.version as string) ?? "unknown";
+        const info = [
+          `State: ${bridge.ws?.readyState === WebSocket.OPEN ? "Connected" : "Disconnected"}`,
+          `Extension version: ${version}`,
+          `VS Code: ${vscode.version}`,
+        ].join("\n");
+        vscode.env.clipboard.writeText(info);
+        vscode.window.showInformationMessage(
+          "Connection info copied to clipboard",
+        );
+      },
+    ),
   );
 }

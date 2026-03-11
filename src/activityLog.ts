@@ -55,23 +55,33 @@ export class ActivityLog {
   toPrometheus(): string {
     const s = this.stats();
     const lines: string[] = [];
-    lines.push("# HELP bridge_tool_calls_total Total tool calls by tool name and status");
+    lines.push(
+      "# HELP bridge_tool_calls_total Total tool calls by tool name and status",
+    );
     lines.push("# TYPE bridge_tool_calls_total counter");
     for (const [tool, data] of Object.entries(s)) {
       const t = escapeLabelValue(tool);
-      lines.push(`bridge_tool_calls_total{tool="${t}",status="success"} ${data.count - data.errors}`);
-      lines.push(`bridge_tool_calls_total{tool="${t}",status="error"} ${data.errors}`);
+      lines.push(
+        `bridge_tool_calls_total{tool="${t}",status="success"} ${data.count - data.errors}`,
+      );
+      lines.push(
+        `bridge_tool_calls_total{tool="${t}",status="error"} ${data.errors}`,
+      );
     }
-    lines.push("# HELP bridge_tool_duration_ms_avg Average tool duration in milliseconds");
+    lines.push(
+      "# HELP bridge_tool_duration_ms_avg Average tool duration in milliseconds",
+    );
     lines.push("# TYPE bridge_tool_duration_ms_avg gauge");
     for (const [tool, data] of Object.entries(s)) {
       const t = escapeLabelValue(tool);
-      lines.push(`bridge_tool_duration_ms_avg{tool="${t}"} ${data.avgDurationMs}`);
+      lines.push(
+        `bridge_tool_duration_ms_avg{tool="${t}"} ${data.avgDurationMs}`,
+      );
     }
     lines.push("# HELP bridge_uptime_seconds Process uptime in seconds");
     lines.push("# TYPE bridge_uptime_seconds gauge");
     lines.push(`bridge_uptime_seconds ${Math.floor(process.uptime())}`);
-    return lines.join("\n") + "\n";
+    return `${lines.join("\n")}\n`;
   }
 
   stats(): Record<

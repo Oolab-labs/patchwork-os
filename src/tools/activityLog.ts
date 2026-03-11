@@ -1,5 +1,5 @@
 import type { ActivityLog } from "../activityLog.js";
-import { optionalBool, optionalString, optionalInt, success } from "./utils.js";
+import { optionalBool, optionalInt, optionalString, success } from "./utils.js";
 
 export function createGetActivityLogTool(activityLog: ActivityLog) {
   return {

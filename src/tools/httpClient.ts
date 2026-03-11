@@ -1,19 +1,27 @@
 import fs from "node:fs/promises";
 import {
+  error,
   optionalBool,
   optionalInt,
   optionalString,
   requireString,
   resolveFilePath,
   success,
-  error,
   truncateOutput,
 } from "./utils.js";
 
-const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
+const ALLOWED_METHODS = new Set([
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+]);
 
-const DEFAULT_RESPONSE_BYTES = 50 * 1024;   // 50 KB
-const MAX_RESPONSE_BYTES = 1024 * 1024;     // 1 MB hard cap
+const DEFAULT_RESPONSE_BYTES = 50 * 1024; // 50 KB
+const MAX_RESPONSE_BYTES = 1024 * 1024; // 1 MB hard cap
 
 /**
  * Block requests to private/loopback addresses to prevent SSRF.
@@ -22,9 +30,10 @@ const MAX_RESPONSE_BYTES = 1024 * 1024;     // 1 MB hard cap
  */
 function isPrivateHost(hostname: string): boolean {
   // Strip IPv6 brackets: [::1] → ::1
-  const host = hostname.startsWith("[") && hostname.endsWith("]")
-    ? hostname.slice(1, -1).toLowerCase()
-    : hostname.toLowerCase();
+  const host =
+    hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1).toLowerCase()
+      : hostname.toLowerCase();
 
   if (host === "localhost" || host.endsWith(".localhost")) return true;
   if (host === "0.0.0.0") return true;
@@ -34,18 +43,18 @@ function isPrivateHost(hostname: string): boolean {
   if (ipv4) {
     const a = Number(ipv4[1]);
     const b = Number(ipv4[2]);
-    if (a === 127) return true;                        // 127.0.0.0/8  loopback
-    if (a === 10) return true;                         // 10.0.0.0/8   RFC 1918 private
-    if (a === 172 && b >= 16 && b <= 31) return true;  // 172.16.0.0/12 RFC 1918 private
-    if (a === 192 && b === 168) return true;            // 192.168.0.0/16 RFC 1918 private
-    if (a === 169 && b === 254) return true;            // 169.254.0.0/16 link-local / AWS metadata endpoint
+    if (a === 127) return true; // 127.0.0.0/8  loopback
+    if (a === 10) return true; // 10.0.0.0/8   RFC 1918 private
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 RFC 1918 private
+    if (a === 192 && b === 168) return true; // 192.168.0.0/16 RFC 1918 private
+    if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local / AWS metadata endpoint
     if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT (RFC 6598)
-    if (a === 0) return true;                          // 0.0.0.0/8
+    if (a === 0) return true; // 0.0.0.0/8
   }
 
   // IPv6 checks
-  if (host === "::1") return true;                              // loopback
-  if (host.startsWith("fe80:")) return true;                    // link-local
+  if (host === "::1") return true; // loopback
+  if (host.startsWith("fe80:")) return true; // link-local
   if (host.startsWith("fc") || host.startsWith("fd")) return true; // ULA (RFC 4193)
 
   return false;
@@ -73,7 +82,8 @@ export function createSendHttpRequestTool() {
           },
           url: {
             type: "string",
-            description: "Full URL including protocol (must be http:// or https://)",
+            description:
+              "Full URL including protocol (must be http:// or https://)",
           },
           headers: {
             type: "object",
@@ -88,7 +98,8 @@ export function createSendHttpRequestTool() {
           },
           timeoutMs: {
             type: "integer",
-            description: "Request timeout in milliseconds. Default: 30000, max: 120000.",
+            description:
+              "Request timeout in milliseconds. Default: 30000, max: 120000.",
           },
           maxResponseBytes: {
             type: "integer",
@@ -96,7 +107,8 @@ export function createSendHttpRequestTool() {
           },
           followRedirects: {
             type: "boolean",
-            description: "Follow HTTP redirects (capped at 10 hops). Default: true.",
+            description:
+              "Follow HTTP redirects (capped at 10 hops). Default: true.",
           },
         },
       },
@@ -107,7 +119,9 @@ export function createSendHttpRequestTool() {
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const method = requireString(args, "method", 16).toUpperCase();
       if (!ALLOWED_METHODS.has(method)) {
-        return error(`Unsupported method "${method}". Allowed: ${[...ALLOWED_METHODS].join(", ")}`);
+        return error(
+          `Unsupported method "${method}". Allowed: ${[...ALLOWED_METHODS].join(", ")}`,
+        );
       }
 
       const urlStr = requireString(args, "url", 4096);
@@ -118,12 +132,13 @@ export function createSendHttpRequestTool() {
         return error(`Invalid URL: "${urlStr}"`);
       }
       if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-        return error(`URL must use http:// or https://, got "${parsedUrl.protocol}"`);
+        return error(
+          `URL must use http:// or https://, got "${parsedUrl.protocol}"`,
+        );
       }
       if (isPrivateHost(parsedUrl.hostname)) {
         return error(
-          `Requests to private/loopback addresses are not allowed ("${parsedUrl.hostname}"). ` +
-          `Only public hosts are permitted.`,
+          `Requests to private/loopback addresses are not allowed ("${parsedUrl.hostname}"). Only public hosts are permitted.`,
         );
       }
 
@@ -134,7 +149,9 @@ export function createSendHttpRequestTool() {
         if (typeof rawHeaders !== "object" || Array.isArray(rawHeaders)) {
           return error("headers must be a plain object of string values");
         }
-        for (const [k, v] of Object.entries(rawHeaders as Record<string, unknown>)) {
+        for (const [k, v] of Object.entries(
+          rawHeaders as Record<string, unknown>,
+        )) {
           if (typeof v !== "string") {
             return error(`Header value for "${k}" must be a string`);
           }
@@ -148,7 +165,8 @@ export function createSendHttpRequestTool() {
         120_000,
       );
       const maxBytes = Math.min(
-        optionalInt(args, "maxResponseBytes", 1, MAX_RESPONSE_BYTES) ?? DEFAULT_RESPONSE_BYTES,
+        optionalInt(args, "maxResponseBytes", 1, MAX_RESPONSE_BYTES) ??
+          DEFAULT_RESPONSE_BYTES,
         MAX_RESPONSE_BYTES,
       );
       const followRedirects = optionalBool(args, "followRedirects") ?? true;
@@ -158,11 +176,17 @@ export function createSendHttpRequestTool() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       if (signal) {
-        signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
+        signal.addEventListener(
+          "abort",
+          () => controller.abort(signal.reason),
+          { once: true },
+        );
       }
 
       const requestBody =
-        body !== undefined && method !== "GET" && method !== "HEAD" ? body : undefined;
+        body !== undefined && method !== "GET" && method !== "HEAD"
+          ? body
+          : undefined;
 
       const start = Date.now();
       try {
@@ -201,7 +225,9 @@ export function createSendHttpRequestTool() {
           }
           if (!["http:", "https:"].includes(nextUrl.protocol)) {
             clearTimeout(timeoutId);
-            return error(`Redirect to non-http(s) protocol blocked: "${nextUrl.protocol}"`);
+            return error(
+              `Redirect to non-http(s) protocol blocked: "${nextUrl.protocol}"`,
+            );
           }
           if (isPrivateHost(nextUrl.hostname)) {
             clearTimeout(timeoutId);
@@ -228,8 +254,7 @@ export function createSendHttpRequestTool() {
           const declaredLength = Number(contentLengthHeader);
           if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
             return error(
-              `Response Content-Length (${declaredLength} bytes) exceeds maxResponseBytes (${maxBytes} bytes). ` +
-              `Increase maxResponseBytes or use a different approach to fetch this resource.`,
+              `Response Content-Length (${declaredLength} bytes) exceeds maxResponseBytes (${maxBytes} bytes). Increase maxResponseBytes or use a different approach to fetch this resource.`,
             );
           }
         }
@@ -238,7 +263,10 @@ export function createSendHttpRequestTool() {
         const arrayBuf = await resp.arrayBuffer();
         const fullBytes = arrayBuf.byteLength;
         const rawBody = Buffer.from(arrayBuf).toString("utf-8");
-        const { text: responseBody, truncated } = truncateOutput(rawBody, maxBytes);
+        const { text: responseBody, truncated } = truncateOutput(
+          rawBody,
+          maxBytes,
+        );
 
         return success({
           status: resp.status,
@@ -286,17 +314,17 @@ function parseHttpFileContent(content: string): ParsedRequest[] {
     let i = 0;
 
     // Skip leading blank lines
-    while (i < lines.length && !lines[i]!.trim()) i++;
+    while (i < lines.length && !lines[i]?.trim()) i++;
     if (i >= lines.length) continue;
 
     // If the first non-blank line is NOT a request line, treat it as the request name
     let name: string | undefined;
-    const candidate = lines[i]!.trim();
+    const candidate = lines[i]?.trim();
     if (candidate && !REQUEST_LINE_RE.test(candidate)) {
       name = candidate;
       i++;
       // Skip blank lines between name and request line
-      while (i < lines.length && !lines[i]!.trim()) i++;
+      while (i < lines.length && !lines[i]?.trim()) i++;
     }
 
     const requestLine = (lines[i] ?? "").trim();

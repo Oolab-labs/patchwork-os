@@ -1,5 +1,15 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { error, extensionRequired, optionalInt, optionalString, requireString, success } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  extensionRequired,
+  optionalInt,
+  optionalString,
+  requireString,
+  success,
+} from "./utils.js";
 
 export function createListTasksTool(extensionClient: ExtensionClient) {
   return {
@@ -55,7 +65,8 @@ export function createRunTaskTool(extensionClient: ExtensionClient) {
           },
           type: {
             type: "string" as const,
-            description: "Task type to disambiguate if multiple tasks share a name",
+            description:
+              "Task type to disambiguate if multiple tasks share a name",
           },
           timeoutMs: {
             type: "integer" as const,
@@ -72,10 +83,14 @@ export function createRunTaskTool(extensionClient: ExtensionClient) {
       }
       const name = requireString(args, "name", 256);
       const type = optionalString(args, "type", 128);
-      const timeoutMs = Math.min(optionalInt(args, "timeoutMs", 1000, 300_000) ?? 60_000, 300_000);
+      const timeoutMs = Math.min(
+        optionalInt(args, "timeoutMs", 1000, 300_000) ?? 60_000,
+        300_000,
+      );
       try {
         const result = await extensionClient.runTask(name, type, timeoutMs);
-        if (result === null) return error(`Task "${name}" not found or failed to start`);
+        if (result === null)
+          return error(`Task "${name}" not found or failed to start`);
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {

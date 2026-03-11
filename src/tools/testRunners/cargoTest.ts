@@ -22,10 +22,15 @@ export const cargoTestRunner: TestRunner = {
     return probes.cargo && fs.existsSync(path.join(workspace, "Cargo.toml"));
   },
 
-  async run(cwd: string, filter?: string, signal?: AbortSignal): Promise<TestResult[]> {
+  async run(
+    cwd: string,
+    filter?: string,
+    signal?: AbortSignal,
+  ): Promise<TestResult[]> {
     const args = ["test"];
     if (filter) {
-      if (filter.startsWith("-")) throw new Error("filter must not start with '-'");
+      if (filter.startsWith("-"))
+        throw new Error("filter must not start with '-'");
       args.push(filter);
     }
     args.push("--", "--color=never");
@@ -36,7 +41,7 @@ export const cargoTestRunner: TestRunner = {
       signal,
     });
 
-    return parseOutput(result.stdout + "\n" + result.stderr, cwd);
+    return parseOutput(`${result.stdout}\n${result.stderr}`, cwd);
   },
 };
 
@@ -81,8 +86,8 @@ function parseOutput(output: string, cwd: string): TestResult[] {
     if (panicMatch) {
       const message = panicMatch[1]!;
       const file = path.relative(cwd, path.resolve(cwd, panicMatch[2]!));
-      const lineNum = parseInt(panicMatch[3]!, 10);
-      const col = parseInt(panicMatch[4]!, 10);
+      const lineNum = Number.parseInt(panicMatch[3]!, 10);
+      const col = Number.parseInt(panicMatch[4]!, 10);
 
       // Find the matching failed test result and update it
       const failResult = findNearestFailure(results, failedTests, file);
@@ -99,8 +104,8 @@ function parseOutput(output: string, cwd: string): TestResult[] {
     panicMatch = PANIC_NEW_RE.exec(line);
     if (panicMatch) {
       const file = path.relative(cwd, path.resolve(cwd, panicMatch[1]!));
-      const lineNum = parseInt(panicMatch[2]!, 10);
-      const col = parseInt(panicMatch[3]!, 10);
+      const lineNum = Number.parseInt(panicMatch[2]!, 10);
+      const col = Number.parseInt(panicMatch[3]!, 10);
       // Message is on the next line
       const message = lines[i + 1]?.trim() ?? "";
 

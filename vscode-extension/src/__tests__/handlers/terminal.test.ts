@@ -1,20 +1,20 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { __reset, _mockTerminal } from "../__mocks__/vscode";
 import {
+  deleteTerminalBuffer,
+  getOrCreateBuffer,
+  handleCreateTerminal,
+  handleExecuteInTerminal,
+  handleGetTerminalOutput,
+  handleListTerminals,
+  handleSendTerminalCommand,
+  readLastLines,
+  setOutputCaptureEnabled,
   stripAnsi,
   writeToRingBuffer,
-  readLastLines,
-  handleListTerminals,
-  handleGetTerminalOutput,
-  handleCreateTerminal,
-  handleSendTerminalCommand,
-  handleExecuteInTerminal,
-  setOutputCaptureEnabled,
-  getOrCreateBuffer,
-  deleteTerminalBuffer,
 } from "../../handlers/terminal";
 import type { TerminalBuffer } from "../../types";
+import { __reset, _mockTerminal } from "../__mocks__/vscode";
 
 function freshBuffer(name = "test"): TerminalBuffer {
   return { name, lines: [], partialLine: "", writeIndex: 0, totalWritten: 0 };
@@ -67,7 +67,9 @@ describe("stripAnsi", () => {
   });
 
   it("strips complex mixed sequences", () => {
-    expect(stripAnsi("\x1b[1;32m✓\x1b[0m passing \x1b[90m(5ms)\x1b[0m")).toBe("✓ passing (5ms)");
+    expect(stripAnsi("\x1b[1;32m✓\x1b[0m passing \x1b[90m(5ms)\x1b[0m")).toBe(
+      "✓ passing (5ms)",
+    );
   });
 });
 
@@ -104,7 +106,7 @@ describe("writeToRingBuffer", () => {
 
   it("wraps around at MAX_LINES_PER_TERMINAL", () => {
     const buf = freshBuffer();
-    const lines = Array.from({ length: 5001 }, (_, i) => `line${i}`).join("\n") + "\n";
+    const lines = `${Array.from({ length: 5001 }, (_, i) => `line${i}`).join("\n")}\n`;
     writeToRingBuffer(buf, lines);
     expect(buf.lines.length).toBe(5000);
     expect(buf.totalWritten).toBe(5001);
@@ -114,7 +116,7 @@ describe("writeToRingBuffer", () => {
 
   it("wraps multiple times correctly", () => {
     const buf = freshBuffer();
-    const fill = Array.from({ length: 5000 }, (_, i) => `old${i}`).join("\n") + "\n";
+    const fill = `${Array.from({ length: 5000 }, (_, i) => `old${i}`).join("\n")}\n`;
     writeToRingBuffer(buf, fill);
     writeToRingBuffer(buf, "new0\nnew1\nnew2\n");
     expect(buf.lines[0]).toBe("new0");
@@ -145,7 +147,7 @@ describe("readLastLines", () => {
 
   it("handles wrap-around correctly", () => {
     const buf = freshBuffer();
-    const fill = Array.from({ length: 5002 }, (_, i) => `L${i}`).join("\n") + "\n";
+    const fill = `${Array.from({ length: 5002 }, (_, i) => `L${i}`).join("\n")}\n`;
     writeToRingBuffer(buf, fill);
     const last3 = readLastLines(buf, 3);
     expect(last3).toEqual(["L4999", "L5000", "L5001"]);
@@ -163,7 +165,11 @@ describe("readLastLines", () => {
 describe("handleListTerminals", () => {
   it("returns empty list when no terminals", async () => {
     const result = (await handleListTerminals()) as any;
-    expect(result).toEqual({ terminals: [], count: 0, outputCaptureAvailable: false });
+    expect(result).toEqual({
+      terminals: [],
+      count: 0,
+      outputCaptureAvailable: false,
+    });
   });
 
   it("lists terminals with active marking", async () => {
@@ -218,7 +224,10 @@ describe("handleGetTerminalOutput", () => {
     const buf = getOrCreateBuffer(t as any)!;
     writeToRingBuffer(buf, "hello\nworld\n");
 
-    const result = (await handleGetTerminalOutput({ name: "t1", lines: 10 })) as any;
+    const result = (await handleGetTerminalOutput({
+      name: "t1",
+      lines: 10,
+    })) as any;
     expect(result.available).toBe(true);
     expect(result.lines).toEqual(["hello", "world"]);
     expect(result.lineCount).toBe(2);
@@ -274,15 +283,21 @@ describe("handleCreateTerminal", () => {
   });
 
   it("throws on invalid name type", async () => {
-    await expect(handleCreateTerminal({ name: 123 })).rejects.toThrow("name must be a string");
+    await expect(handleCreateTerminal({ name: 123 })).rejects.toThrow(
+      "name must be a string",
+    );
   });
 
   it("throws on invalid cwd type", async () => {
-    await expect(handleCreateTerminal({ cwd: 123 })).rejects.toThrow("cwd must be a string");
+    await expect(handleCreateTerminal({ cwd: 123 })).rejects.toThrow(
+      "cwd must be a string",
+    );
   });
 
   it("throws on invalid env type", async () => {
-    await expect(handleCreateTerminal({ env: "bad" })).rejects.toThrow("env must be an object");
+    await expect(handleCreateTerminal({ env: "bad" })).rejects.toThrow(
+      "env must be an object",
+    );
   });
 });
 
@@ -292,7 +307,10 @@ describe("handleSendTerminalCommand", () => {
   it("sends text to terminal by name", async () => {
     const t = _mockTerminal({ name: "bash" });
     vscode.window.terminals = [t] as any;
-    const result = (await handleSendTerminalCommand({ text: "ls", name: "bash" })) as any;
+    const result = (await handleSendTerminalCommand({
+      text: "ls",
+      name: "bash",
+    })) as any;
     expect(result.success).toBe(true);
     expect(t.sendText).toHaveBeenCalledWith("ls", true);
   });
@@ -300,15 +318,34 @@ describe("handleSendTerminalCommand", () => {
   it("sends text by index", async () => {
     const t = _mockTerminal({ name: "zsh" });
     vscode.window.terminals = [t] as any;
-    const result = (await handleSendTerminalCommand({ text: "pwd", index: 0 })) as any;
+    const result = (await handleSendTerminalCommand({
+      text: "pwd",
+      index: 0,
+    })) as any;
     expect(result.success).toBe(true);
   });
 
   it("rejects shell metacharacters", async () => {
     const t = _mockTerminal({ name: "bash" });
     vscode.window.terminals = [t] as any;
-    for (const char of [";", "&", "|", "`", "$", "(", ")", "<", ">", "!", "\n", "\r"]) {
-      const result = (await handleSendTerminalCommand({ text: `cmd${char}evil`, name: "bash" })) as any;
+    for (const char of [
+      ";",
+      "&",
+      "|",
+      "`",
+      "$",
+      "(",
+      ")",
+      "<",
+      ">",
+      "!",
+      "\n",
+      "\r",
+    ]) {
+      const result = (await handleSendTerminalCommand({
+        text: `cmd${char}evil`,
+        name: "bash",
+      })) as any;
       expect(result.success).toBe(false);
       expect(result.error).toContain("metacharacters");
     }
@@ -316,7 +353,10 @@ describe("handleSendTerminalCommand", () => {
 
   it("returns error when terminal not found", async () => {
     vscode.window.terminals = [];
-    const result = (await handleSendTerminalCommand({ text: "ls", name: "nope" })) as any;
+    const result = (await handleSendTerminalCommand({
+      text: "ls",
+      name: "nope",
+    })) as any;
     expect(result.success).toBe(false);
     expect(result.error).toContain("not found");
   });
@@ -324,12 +364,18 @@ describe("handleSendTerminalCommand", () => {
   it("respects addNewline=false", async () => {
     const t = _mockTerminal({ name: "t" });
     vscode.window.terminals = [t] as any;
-    await handleSendTerminalCommand({ text: "x", name: "t", addNewline: false });
+    await handleSendTerminalCommand({
+      text: "x",
+      name: "t",
+      addNewline: false,
+    });
     expect(t.sendText).toHaveBeenCalledWith("x", false);
   });
 
   it("throws on non-string text", async () => {
-    await expect(handleSendTerminalCommand({ text: 42 })).rejects.toThrow("text must be a string");
+    await expect(handleSendTerminalCommand({ text: 42 })).rejects.toThrow(
+      "text must be a string",
+    );
   });
 });
 
@@ -340,7 +386,7 @@ describe("getOrCreateBuffer", () => {
     const t = _mockTerminal({ name: "bash" });
     const buf = getOrCreateBuffer(t as any);
     expect(buf).not.toBeNull();
-    expect(buf!.name).toBe("bash");
+    expect(buf?.name).toBe("bash");
     deleteTerminalBuffer(t as any);
   });
 
@@ -377,11 +423,17 @@ describe("handleExecuteInTerminal — reader rejection after grace period", () =
     // Build a reader whose next() blocks until forced closed, then throws.
     // This simulates VS Code's stream when the terminal is disposed mid-read.
     let forceClose!: () => void;
-    const closeSignal = new Promise<void>((r) => { forceClose = r; });
+    const closeSignal = new Promise<void>((r) => {
+      forceClose = r;
+    });
 
     let chunkDelivered = false;
-    const mockReader: AsyncIterableIterator<string> & { return?: () => Promise<any> } = {
-      [Symbol.asyncIterator]() { return this; },
+    const mockReader: AsyncIterableIterator<string> & {
+      return?: () => Promise<any>;
+    } = {
+      [Symbol.asyncIterator]() {
+        return this;
+      },
       async next(): Promise<IteratorResult<string>> {
         if (!chunkDelivered) {
           chunkDelivered = true;
@@ -399,14 +451,19 @@ describe("handleExecuteInTerminal — reader rejection after grace period", () =
 
     // Mock a terminal with shell integration
     let capturedEndHandler!: (ev: any) => void;
-    vi.mocked(vscode.window.onDidEndTerminalShellExecution).mockImplementation((handler: any) => {
-      capturedEndHandler = handler;
-      return { dispose: vi.fn() };
-    });
+    vi.mocked(vscode.window.onDidEndTerminalShellExecution).mockImplementation(
+      (handler: any) => {
+        capturedEndHandler = handler;
+        return { dispose: vi.fn() };
+      },
+    );
 
     const mockExecution = {};
     const mockShellIntegration = {
-      executeCommand: vi.fn(() => ({ ...mockExecution, read: () => mockReader })),
+      executeCommand: vi.fn(() => ({
+        ...mockExecution,
+        read: () => mockReader,
+      })),
     };
     const terminal = {
       name: "test",
@@ -417,7 +474,10 @@ describe("handleExecuteInTerminal — reader rejection after grace period", () =
     vscode.window.activeTerminal = terminal as any;
 
     // Start the handler — it waits for shell execution end
-    const handlerPromise = handleExecuteInTerminal({ command: "echo hi", timeoutMs: 30_000 });
+    const handlerPromise = handleExecuteInTerminal({
+      command: "echo hi",
+      timeoutMs: 30_000,
+    });
 
     // Let setup microtasks run so onDidEndTerminalShellExecution is registered
     await Promise.resolve();
@@ -426,12 +486,13 @@ describe("handleExecuteInTerminal — reader rejection after grace period", () =
     // Fire the shell execution end event — this resolves the main wait, then the
     // 500ms grace timer starts. The grace timer will win the race because the
     // reader's next() is still blocked.
-    const execution = mockShellIntegration.executeCommand.mock.results[0]!.value;
+    const execution =
+      mockShellIntegration.executeCommand.mock.results[0]?.value;
     capturedEndHandler({ execution, exitCode: 0 });
 
     // Wait for the handler to complete. The 500ms grace timer runs in real time
     // — we need to wait it out. (The handler uses real setTimeout internally.)
-    const result = await handlerPromise as any;
+    const result = (await handlerPromise) as any;
 
     // BUG 2: without the fix, reader.return() causes next() to throw, readPromise
     // rejects, and because nobody awaits it after the race(), it becomes an

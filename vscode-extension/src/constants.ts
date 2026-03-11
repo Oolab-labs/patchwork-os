@@ -1,5 +1,5 @@
-import * as os from "os";
-import * as path from "path";
+import * as os from "node:os";
+import * as path from "node:path";
 
 export const RECONNECT_BASE_DELAY = 1000;
 export const RECONNECT_MAX_DELAY = 30000;

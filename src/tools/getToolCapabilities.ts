@@ -54,8 +54,13 @@ export function createGetToolCapabilitiesTool(
         features: {
           diagnostics:
             extensionClient.isConnected() ||
-            probes.tsc || probes.eslint || probes.pyright ||
-            probes.ruff || probes.cargo || probes.go || probes.biome
+            probes.tsc ||
+            probes.eslint ||
+            probes.pyright ||
+            probes.ruff ||
+            probes.cargo ||
+            probes.go ||
+            probes.biome
               ? "available"
               : "unavailable",
           search: probes.rg ? "rg" : "grep-fallback",
@@ -90,31 +95,98 @@ export function createGetToolCapabilitiesTool(
         availableTools: {
           // Always available (work with or without extension)
           files: [
-            "openFile", "createFile", "deleteFile", "renameFile",
-            "findFiles", "getFileTree", "getOpenEditors", "checkDocumentDirty",
-            "saveDocument", "getBufferContent",
-            ...(extensionClient.isConnected() ? ["watchFiles", "unwatchFiles"] : []),
+            "openFile",
+            "createFile",
+            "deleteFile",
+            "renameFile",
+            "findFiles",
+            "getFileTree",
+            "getOpenEditors",
+            "checkDocumentDirty",
+            "saveDocument",
+            "getBufferContent",
+            ...(extensionClient.isConnected()
+              ? ["watchFiles", "unwatchFiles"]
+              : []),
           ],
           editing: [
-            "replaceBlock", "editText", "openDiff", "closeAllDiffTabs",
-            "formatDocument", "fixAllLintErrors",
-            ...(extensionClient.isConnected() ? ["closeTab", "organizeImports"] : []),
+            "replaceBlock",
+            "editText",
+            "openDiff",
+            "closeAllDiffTabs",
+            "formatDocument",
+            "fixAllLintErrors",
+            ...(extensionClient.isConnected()
+              ? ["closeTab", "organizeImports"]
+              : []),
           ],
-          git: ["getGitStatus", "getGitDiff", "getGitLog", "gitAdd", "gitCommit", "gitCheckout", "gitBlame"],
+          git: [
+            "getGitStatus",
+            "getGitDiff",
+            "getGitLog",
+            "gitAdd",
+            "gitCommit",
+            "gitCheckout",
+            "gitBlame",
+          ],
           diagnostics: [
-            "getDiagnostics", "diffDebug", "runTests",
+            "getDiagnostics",
+            "diffDebug",
+            "runTests",
             ...(extensionClient.isConnected() ? ["watchDiagnostics"] : []),
           ],
           search: ["searchWorkspace", "searchAndReplace"],
           lsp: extensionClient.isConnected()
-            ? ["getDocumentSymbols", "goToDefinition", "findReferences", "getHover", "getCodeActions", "applyCodeAction", "renameSymbol", "searchWorkspaceSymbols"]
-            : ["getDocumentSymbols (grep fallback)", "goToDefinition (grep fallback)", "findReferences (grep fallback)", "searchWorkspaceSymbols (grep fallback)"],
-          planning: ["checkScope", "expandScope", "createPlan", "updatePlan", "getPlan", "deletePlan", "listPlans"],
-          snapshots: ["createSnapshot", "listSnapshots", "restoreSnapshot", "deleteSnapshot", "showSnapshot"],
+            ? [
+                "getDocumentSymbols",
+                "goToDefinition",
+                "findReferences",
+                "getHover",
+                "getCodeActions",
+                "applyCodeAction",
+                "renameSymbol",
+                "searchWorkspaceSymbols",
+              ]
+            : [
+                "getDocumentSymbols (grep fallback)",
+                "goToDefinition (grep fallback)",
+                "findReferences (grep fallback)",
+                "searchWorkspaceSymbols (grep fallback)",
+              ],
+          planning: [
+            "checkScope",
+            "expandScope",
+            "createPlan",
+            "updatePlan",
+            "getPlan",
+            "deletePlan",
+            "listPlans",
+          ],
+          snapshots: [
+            "createSnapshot",
+            "listSnapshots",
+            "restoreSnapshot",
+            "deleteSnapshot",
+            "showSnapshot",
+          ],
           terminal: extensionClient.isConnected()
-            ? ["listTerminals", "getTerminalOutput", "createTerminal", "sendTerminalCommand"]
+            ? [
+                "listTerminals",
+                "getTerminalOutput",
+                "createTerminal",
+                "sendTerminalCommand",
+              ]
             : [],
-          other: ["runCommand", "getToolCapabilities", "getProjectInfo", "getAIComments", "getActivityLog", "getCurrentSelection", "getLatestSelection", "getWorkspaceFolders"],
+          other: [
+            "runCommand",
+            "getToolCapabilities",
+            "getProjectInfo",
+            "getAIComments",
+            "getActivityLog",
+            "getCurrentSelection",
+            "getLatestSelection",
+            "getWorkspaceFolders",
+          ],
         },
       });
     },

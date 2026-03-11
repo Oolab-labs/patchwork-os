@@ -26,22 +26,35 @@ interface JsonReport {
   testResults?: JsonTestFile[];
 }
 
-function extractLineFromStack(stack: string): { line: number; column: number } | null {
+function extractLineFromStack(
+  stack: string,
+): { line: number; column: number } | null {
   // Match "at ... (file:line:col)" or "at file:line:col"
   const match = stack.match(/at\s+.*?[(/]([^):\s]+):(\d+):(\d+)/);
   if (match) {
-    return { line: parseInt(match[2]!, 10), column: parseInt(match[3]!, 10) };
+    return {
+      line: Number.parseInt(match[2]!, 10),
+      column: Number.parseInt(match[3]!, 10),
+    };
   }
   return null;
 }
 
-function parseJsonReport(stdout: string, workspace: string, source: string): TestResult[] {
+function parseJsonReport(
+  stdout: string,
+  workspace: string,
+  source: string,
+): TestResult[] {
   // Search for the JSON report by looking for known top-level keys first,
   // then falling back to scanning { positions. This avoids O(n^2) on large output.
   let report: JsonReport | null = null;
 
   // Fast path: look for known JSON report markers
-  const markers = ['{"numTotalTestSuites"', '{"testResults"', '{"numFailedTestSuites"'];
+  const markers = [
+    '{"numTotalTestSuites"',
+    '{"testResults"',
+    '{"numFailedTestSuites"',
+  ];
   for (const marker of markers) {
     const idx = stdout.indexOf(marker);
     if (idx !== -1) {
@@ -116,7 +129,9 @@ function parseJsonReport(stdout: string, workspace: string, source: string): Tes
 
 function hasDevDep(workspace: string, pkg: string): boolean {
   try {
-    const pkgJson = JSON.parse(fs.readFileSync(path.join(workspace, "package.json"), "utf-8"));
+    const pkgJson = JSON.parse(
+      fs.readFileSync(path.join(workspace, "package.json"), "utf-8"),
+    );
     return !!(pkgJson.devDependencies?.[pkg] || pkgJson.dependencies?.[pkg]);
   } catch {
     return false;
@@ -149,11 +164,17 @@ export const vitestRunner: TestRunner = {
     );
   },
 
-  async run(cwd: string, filter?: string, signal?: AbortSignal): Promise<TestResult[]> {
+  async run(
+    cwd: string,
+    filter?: string,
+    signal?: AbortSignal,
+  ): Promise<TestResult[]> {
     // Prefer local node_modules/.bin to avoid npx auto-downloading packages
     const bin = resolveLocalBin(cwd, "vitest");
     const cmd = bin ?? "npx";
-    const args = bin ? ["run", "--reporter=json"] : ["--no", "vitest", "run", "--reporter=json"];
+    const args = bin
+      ? ["run", "--reporter=json"]
+      : ["--no", "vitest", "run", "--reporter=json"];
     if (filter) args.push("--", filter);
     const result = await execSafe(cmd, args, {
       cwd,
@@ -181,11 +202,17 @@ export const jestRunner: TestRunner = {
     );
   },
 
-  async run(cwd: string, filter?: string, signal?: AbortSignal): Promise<TestResult[]> {
+  async run(
+    cwd: string,
+    filter?: string,
+    signal?: AbortSignal,
+  ): Promise<TestResult[]> {
     // Prefer local node_modules/.bin to avoid npx auto-downloading packages
     const bin = resolveLocalBin(cwd, "jest");
     const cmd = bin ?? "npx";
-    const args = bin ? ["--json", "--forceExit"] : ["--no", "jest", "--json", "--forceExit"];
+    const args = bin
+      ? ["--json", "--forceExit"]
+      : ["--no", "jest", "--json", "--forceExit"];
     if (filter) args.push("--", filter);
     const result = await execSafe(cmd, args, {
       cwd,

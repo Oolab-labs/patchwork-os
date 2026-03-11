@@ -18,7 +18,9 @@ export function diagnosticToJson(d: vscode.Diagnostic) {
     endColumn: d.range.end.character + 1,
     source: d.source ?? "",
     code:
-      typeof d.code === "object" ? (d.code as { value: unknown }).value : d.code,
+      typeof d.code === "object"
+        ? (d.code as { value: unknown }).value
+        : d.code,
   };
 }
 

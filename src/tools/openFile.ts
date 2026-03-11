@@ -1,14 +1,17 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
 import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
   findLineNumber,
   optionalInt,
   optionalString,
   requireString,
   resolveFilePath,
   success,
-  error,
 } from "./utils.js";
 
 export function createOpenFileTool(

@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { __reset } from "./__mocks__/vscode";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
+import { __reset } from "./__mocks__/vscode";
 
 // Mock the ws module
 vi.mock("ws", () => {
-  const { EventEmitter } = require("events");
+  const { EventEmitter } = require("node:events");
   class MockWebSocket extends EventEmitter {
     static OPEN = 1;
     static CLOSED = 3;
@@ -17,7 +17,11 @@ vi.mock("ws", () => {
       EventEmitter.prototype.removeAllListeners.call(this);
       return this;
     });
-    removeListener = vi.fn(function (this: MockWebSocket, event: string, fn: Function) {
+    removeListener = vi.fn(function (
+      this: MockWebSocket,
+      event: string,
+      fn: Function,
+    ) {
       EventEmitter.prototype.removeListener.call(this, event, fn as any);
       return this;
     });
@@ -30,10 +34,10 @@ vi.mock("../lockfiles", () => ({
   readLockFilesAsync: vi.fn(async () => null),
 }));
 
+import WebSocket from "ws";
 // Must import after mocks are set up
 import { BridgeConnection } from "../connection";
 import { readLockFilesAsync } from "../lockfiles";
-import WebSocket from "ws";
 
 beforeEach(() => {
   __reset();
@@ -66,7 +70,7 @@ describe("send", () => {
     (bridge.ws as any).readyState = WebSocket.OPEN;
 
     bridge.send({ test: true });
-    expect(bridge.ws!.send).toHaveBeenCalledWith('{"test":true}');
+    expect(bridge.ws?.send).toHaveBeenCalledWith('{"test":true}');
   });
 
   it("no-ops when ws is null", () => {
@@ -81,14 +85,16 @@ describe("send", () => {
     (bridge.ws as any).readyState = WebSocket.CLOSED;
 
     bridge.send({ test: true });
-    expect(bridge.ws!.send).not.toHaveBeenCalled();
+    expect(bridge.ws?.send).not.toHaveBeenCalled();
   });
 
   it("swallows send errors", () => {
     const bridge = createBridge();
     bridge.ws = new WebSocket("ws://fake") as any;
     (bridge.ws as any).readyState = WebSocket.OPEN;
-    (bridge.ws!.send as any).mockImplementation(() => { throw new Error("broken"); });
+    (bridge.ws?.send as any).mockImplementation(() => {
+      throw new Error("broken");
+    });
 
     expect(() => bridge.send({ test: true })).not.toThrow();
   });
@@ -103,7 +109,7 @@ describe("sendNotification", () => {
     (bridge.ws as any).readyState = WebSocket.OPEN;
 
     bridge.sendNotification("test/method", { key: "val" });
-    const sent = JSON.parse((bridge.ws!.send as any).mock.calls[0][0]);
+    const sent = JSON.parse((bridge.ws?.send as any).mock.calls[0][0]);
     expect(sent.jsonrpc).toBe("2.0");
     expect(sent.method).toBe("test/method");
     expect(sent.params).toEqual({ key: "val" });
@@ -117,7 +123,7 @@ describe("sendResponse", () => {
     (bridge.ws as any).readyState = WebSocket.OPEN;
 
     bridge.sendResponse(1, { data: "ok" });
-    const sent = JSON.parse((bridge.ws!.send as any).mock.calls[0][0]);
+    const sent = JSON.parse((bridge.ws?.send as any).mock.calls[0][0]);
     expect(sent.id).toBe(1);
     expect(sent.result).toEqual({ data: "ok" });
   });
@@ -128,7 +134,7 @@ describe("sendResponse", () => {
     (bridge.ws as any).readyState = WebSocket.OPEN;
 
     bridge.sendResponse(1, undefined, { code: -32000, message: "fail" });
-    const sent = JSON.parse((bridge.ws!.send as any).mock.calls[0][0]);
+    const sent = JSON.parse((bridge.ws?.send as any).mock.calls[0][0]);
     expect(sent.error).toEqual({ code: -32000, message: "fail" });
   });
 });
@@ -144,12 +150,19 @@ describe("handleMessage", () => {
     const handler = vi.fn(async () => ({ result: "ok" }));
     bridge.setHandlers({ "test/method": handler });
 
-    bridge.handleMessage(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "test/method", params: { x: 1 } }));
+    bridge.handleMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "test/method",
+        params: { x: 1 },
+      }),
+    );
     await vi.advanceTimersByTimeAsync(0);
 
     expect(handler).toHaveBeenCalledWith({ x: 1 }, expect.any(AbortSignal));
-    expect(bridge.ws!.send).toHaveBeenCalled();
-    const sent = JSON.parse((bridge.ws!.send as any).mock.calls[0][0]);
+    expect(bridge.ws?.send).toHaveBeenCalled();
+    const sent = JSON.parse((bridge.ws?.send as any).mock.calls[0][0]);
     expect(sent.result).toEqual({ result: "ok" });
   });
 
@@ -158,8 +171,10 @@ describe("handleMessage", () => {
     bridge.ws = new WebSocket("ws://fake") as any;
     (bridge.ws as any).readyState = WebSocket.OPEN;
 
-    bridge.handleMessage(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "unknown/method" }));
-    const sent = JSON.parse((bridge.ws!.send as any).mock.calls[0][0]);
+    bridge.handleMessage(
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "unknown/method" }),
+    );
+    const sent = JSON.parse((bridge.ws?.send as any).mock.calls[0][0]);
     expect(sent.error.code).toBe(-32601);
   });
 
@@ -168,11 +183,17 @@ describe("handleMessage", () => {
     bridge.ws = new WebSocket("ws://fake") as any;
     (bridge.ws as any).readyState = WebSocket.OPEN;
 
-    bridge.setHandlers({ "test/fail": vi.fn(async () => { throw new Error("boom"); }) });
-    bridge.handleMessage(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "test/fail" }));
+    bridge.setHandlers({
+      "test/fail": vi.fn(async () => {
+        throw new Error("boom");
+      }),
+    });
+    bridge.handleMessage(
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "test/fail" }),
+    );
     await vi.advanceTimersByTimeAsync(0);
 
-    const sent = JSON.parse((bridge.ws!.send as any).mock.calls[0][0]);
+    const sent = JSON.parse((bridge.ws?.send as any).mock.calls[0][0]);
     expect(sent.error.code).toBe(-32000);
     expect(sent.error.message).toContain("boom");
   });
@@ -184,11 +205,13 @@ describe("handleMessage", () => {
 
     const neverResolve = vi.fn(() => new Promise(() => {}));
     bridge.setHandlers({ "test/hang": neverResolve });
-    bridge.handleMessage(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "test/hang" }));
+    bridge.handleMessage(
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "test/hang" }),
+    );
 
     await vi.advanceTimersByTimeAsync(30_000);
 
-    const sent = JSON.parse((bridge.ws!.send as any).mock.calls[0][0]);
+    const sent = JSON.parse((bridge.ws?.send as any).mock.calls[0][0]);
     expect(sent.error.message).toContain("timed out");
   });
 
@@ -196,11 +219,13 @@ describe("handleMessage", () => {
     const bridge = createBridge();
     expect(bridge.claudeConnected).toBe(false);
 
-    bridge.handleMessage(JSON.stringify({
-      jsonrpc: "2.0",
-      method: "bridge/claudeConnectionChanged",
-      params: { connected: true },
-    }));
+    bridge.handleMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeConnectionChanged",
+        params: { connected: true },
+      }),
+    );
     expect(bridge.claudeConnected).toBe(true);
   });
 
@@ -224,7 +249,7 @@ describe("startHeartbeat", () => {
     (bridge as any).startHeartbeat();
 
     // Should have exactly 1 pong listener, not 3
-    const pongListenerCount = bridge.ws!.listenerCount("pong");
+    const pongListenerCount = bridge.ws?.listenerCount("pong");
     expect(pongListenerCount).toBe(1);
   });
 
@@ -235,14 +260,14 @@ describe("startHeartbeat", () => {
 
     // Add a non-heartbeat pong listener
     const otherPongHandler = () => {};
-    bridge.ws!.on("pong", otherPongHandler);
+    bridge.ws?.on("pong", otherPongHandler);
 
     (bridge as any).startHeartbeat();
-    expect(bridge.ws!.listenerCount("pong")).toBe(2); // other + heartbeat
+    expect(bridge.ws?.listenerCount("pong")).toBe(2); // other + heartbeat
 
     (bridge as any).stopHeartbeat();
     // The other pong listener should still be there
-    expect(bridge.ws!.listenerCount("pong")).toBe(1);
+    expect(bridge.ws?.listenerCount("pong")).toBe(1);
   });
 });
 
@@ -350,7 +375,11 @@ describe("tryConnect", () => {
   it("connect() sets state to CONNECTING before creating WebSocket to prevent concurrent connects", async () => {
     let resolveLock!: (v: { port: number; authToken: string } | null) => void;
     vi.mocked(readLockFilesAsync)
-      .mockReturnValueOnce(new Promise((resolve) => { resolveLock = resolve; }))
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveLock = resolve;
+        }),
+      )
       .mockResolvedValue({ port: 5678, authToken: "token2" });
 
     const bridge = createBridge();

@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { __reset } from "../__mocks__/vscode";
 import { createDecorationHandlers } from "../../handlers/decorations";
+import { __reset } from "../__mocks__/vscode";
 
 function setup() {
   const { handlers, disposeAll } = createDecorationHandlers();
@@ -38,14 +38,21 @@ describe("setDecorations", () => {
   it("throws on invalid id", async () => {
     const { handlers } = setup();
     await expect(
-      handlers["extension/setDecorations"]({ id: "bad id!", file: "/test.ts", decorations: [] }),
+      handlers["extension/setDecorations"]({
+        id: "bad id!",
+        file: "/test.ts",
+        decorations: [],
+      }),
     ).rejects.toThrow("alphanumeric");
   });
 
   it("throws on missing id", async () => {
     const { handlers } = setup();
     await expect(
-      handlers["extension/setDecorations"]({ file: "/test.ts", decorations: [] }),
+      handlers["extension/setDecorations"]({
+        file: "/test.ts",
+        decorations: [],
+      }),
     ).rejects.toThrow("id is required");
   });
 
@@ -88,10 +95,12 @@ describe("setDecorations", () => {
   it("does not apply decorations with a disposed type when editor becomes visible during dispose (BUG 2)", async () => {
     // Capture the onDidChangeVisibleTextEditors listener
     let visibilityListener: ((editors: any[]) => void) | undefined;
-    vi.mocked(vscode.window.onDidChangeVisibleTextEditors).mockImplementation((cb) => {
-      visibilityListener = cb;
-      return { dispose: vi.fn() };
-    });
+    vi.mocked(vscode.window.onDidChangeVisibleTextEditors).mockImplementation(
+      (cb) => {
+        visibilityListener = cb;
+        return { dispose: vi.fn() };
+      },
+    );
 
     const applyCallsWithFirstType: any[][] = [];
     const newEditor = {
@@ -157,14 +166,18 @@ describe("clearDecorations", () => {
       decorations: [{ startLine: 1, style: "info" }],
     });
 
-    const result = (await handlers["extension/clearDecorations"]({ id: "x" })) as any;
+    const result = (await handlers["extension/clearDecorations"]({
+      id: "x",
+    })) as any;
     expect(result.cleared).toBe(1);
     expect(disposeType).toHaveBeenCalled();
   });
 
   it("returns 0 when id not found", async () => {
     const { handlers } = setup();
-    const result = (await handlers["extension/clearDecorations"]({ id: "nonexistent" })) as any;
+    const result = (await handlers["extension/clearDecorations"]({
+      id: "nonexistent",
+    })) as any;
     expect(result.cleared).toBe(0);
   });
 
@@ -200,7 +213,9 @@ describe("clearDecorations", () => {
       dispose: disposeType,
     } as any);
 
-    const setDecorations = vi.fn((_type: any, _ranges: any[]) => callOrder.push("clear"));
+    const setDecorations = vi.fn((_type: any, _ranges: any[]) =>
+      callOrder.push("clear"),
+    );
     const editor = {
       document: { uri: { fsPath: "/test.ts" } },
       setDecorations,
@@ -232,7 +247,9 @@ describe("clearDecorations", () => {
 describe("disposeAll", () => {
   it("disposes all active decoration types", async () => {
     const dispose = vi.fn();
-    vi.mocked(vscode.window.createTextEditorDecorationType).mockReturnValue({ dispose } as any);
+    vi.mocked(vscode.window.createTextEditorDecorationType).mockReturnValue({
+      dispose,
+    } as any);
 
     const { handlers, disposeAll } = setup();
     await handlers["extension/setDecorations"]({

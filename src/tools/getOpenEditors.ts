@@ -1,9 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import { languageIdFromPath, success } from "./utils.js";
 
-export function createGetOpenEditorsTool(openedFiles: Set<string>, extensionClient?: ExtensionClient) {
+export function createGetOpenEditorsTool(
+  openedFiles: Set<string>,
+  extensionClient?: ExtensionClient,
+) {
   return {
     schema: {
       name: "getOpenEditors",
@@ -24,25 +30,28 @@ export function createGetOpenEditorsTool(openedFiles: Set<string>, extensionClie
           const result = await extensionClient.getOpenFiles();
           if (result !== null && Array.isArray(result)) {
             // result is TabInfo[] — enrich with languageId and lineCount from disk (async)
-            const tabs = await Promise.all(result.map(async (tab) => {
-              let lineCount: number | undefined;
-              try {
-                const stat = await fs.promises.stat(tab.filePath);
-                lineCount = Math.max(1, Math.ceil(stat.size / 40));
-              } catch {
-                lineCount = undefined;
-              }
-              return {
-                uri: `file://${tab.filePath}`,
-                isActive: tab.isActive,
-                isDirty: tab.isDirty,
-                label: path.basename(tab.filePath),
-                fileName: tab.filePath,
-                languageId: tab.languageId ?? languageIdFromPath(tab.filePath),
-                lineCount,
-                source: "vscode",
-              };
-            }));
+            const tabs = await Promise.all(
+              result.map(async (tab) => {
+                let lineCount: number | undefined;
+                try {
+                  const stat = await fs.promises.stat(tab.filePath);
+                  lineCount = Math.max(1, Math.ceil(stat.size / 40));
+                } catch {
+                  lineCount = undefined;
+                }
+                return {
+                  uri: `file://${tab.filePath}`,
+                  isActive: tab.isActive,
+                  isDirty: tab.isDirty,
+                  label: path.basename(tab.filePath),
+                  fileName: tab.filePath,
+                  languageId:
+                    tab.languageId ?? languageIdFromPath(tab.filePath),
+                  lineCount,
+                  source: "vscode",
+                };
+              }),
+            );
             return success({ tabs, source: "vscode" });
           }
         } catch (err) {

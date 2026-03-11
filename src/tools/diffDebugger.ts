@@ -1,13 +1,13 @@
 import path from "node:path";
 import type { ToolHandler } from "../transport.js";
 import {
-  optionalString,
+  error,
+  execSafe,
   optionalBool,
   optionalInt,
+  optionalString,
   resolveFilePath,
-  execSafe,
   success,
-  error,
 } from "./utils.js";
 
 interface ChangedRegion {
@@ -40,19 +40,20 @@ function parseDiffHunks(diffOutput: string): Map<string, ChangedRegion[]> {
     if (currentFile && line.startsWith("@@")) {
       const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@(.*)/);
       if (match) {
-        const newStart = parseInt(match[1]!, 10);
-        const newCount = match[2] !== undefined ? parseInt(match[2], 10) : 1;
+        const newStart = Number.parseInt(match[1]!, 10);
+        const newCount =
+          match[2] !== undefined ? Number.parseInt(match[2], 10) : 1;
         const header = match[3]?.trim() ?? "";
 
         if (newCount === 0) {
           // Pure deletion — record as a point
-          regions.get(currentFile)!.push({
+          regions.get(currentFile)?.push({
             startLine: newStart,
             endLine: newStart,
             header,
           });
         } else {
-          regions.get(currentFile)!.push({
+          regions.get(currentFile)?.push({
             startLine: newStart,
             endLine: newStart + newCount - 1,
             header,
@@ -127,22 +128,21 @@ export function createDiffDebugTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (
-      args: Record<string, unknown>,
-      signal?: AbortSignal,
-    ) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const commitRange = optionalString(args, "commitRange");
       const staged = optionalBool(args, "staged") ?? false;
       const rawPath = optionalString(args, "filePath");
       const proximity = optionalInt(args, "proximity", 0, 50) ?? 3;
 
       // Reject git flag injection and invalid characters in commit range
-      if (commitRange && commitRange.startsWith("-")) {
+      if (commitRange?.startsWith("-")) {
         return error("commitRange must be a revision range, not a flag");
       }
       // Allow word chars, dots, dashes, slashes, and git range/ref syntax (~^@:.)
       if (commitRange && !/^[\w.\-/^~@:.]+$/.test(commitRange)) {
-        return error("commitRange contains invalid characters — use a valid git revision range (e.g. 'HEAD~3..HEAD')");
+        return error(
+          "commitRange contains invalid characters — use a valid git revision range (e.g. 'HEAD~3..HEAD')",
+        );
       }
 
       // Build diff command
@@ -161,11 +161,8 @@ export function createDiffDebugTool(
         cwd: workspace,
         signal,
       });
-      if (
-        diffResult.exitCode !== 0 &&
-        !diffResult.stdout
-      ) {
-        return error("git diff failed: " + diffResult.stderr.trim());
+      if (diffResult.exitCode !== 0 && !diffResult.stdout) {
+        return error(`git diff failed: ${diffResult.stderr.trim()}`);
       }
 
       const changedRegions = parseDiffHunks(diffResult.stdout);
@@ -195,18 +192,16 @@ export function createDiffDebugTool(
       // Apply severity/source filters
       const rawSeverity = args.severity;
       const severityFilter: string[] | null = rawSeverity
-        ? (Array.isArray(rawSeverity)
-            ? rawSeverity
-            : [rawSeverity]
-          ).filter((s): s is string => typeof s === "string")
+        ? (Array.isArray(rawSeverity) ? rawSeverity : [rawSeverity]).filter(
+            (s): s is string => typeof s === "string",
+          )
         : null;
 
       const rawSource = args.source;
       const sourceFilter: string[] | null = rawSource
-        ? (Array.isArray(rawSource)
-            ? rawSource
-            : [rawSource]
-          ).filter((s): s is string => typeof s === "string")
+        ? (Array.isArray(rawSource) ? rawSource : [rawSource]).filter(
+            (s): s is string => typeof s === "string",
+          )
         : null;
 
       if (severityFilter) {
@@ -272,10 +267,14 @@ export function createDiffDebugTool(
           continue;
         }
 
-        let minDist = Infinity;
+        let minDist = Number.POSITIVE_INFINITY;
         let nearestHunk: ChangedRegion | null = null;
         for (const region of regions) {
-          const dist = lineDistance(diag.line, region.startLine, region.endLine);
+          const dist = lineDistance(
+            diag.line,
+            region.startLine,
+            region.endLine,
+          );
           if (dist < minDist) {
             minDist = dist;
             nearestHunk = region;
@@ -299,7 +298,7 @@ export function createDiffDebugTool(
               }
             : null,
           likelyIntroducedByChange: minDist <= proximity,
-          distance: minDist === Infinity ? null : minDist,
+          distance: minDist === Number.POSITIVE_INFINITY ? null : minDist,
         });
       }
 
@@ -314,9 +313,8 @@ export function createDiffDebugTool(
 
       const summary = {
         totalDiagnostics: correlations.length,
-        likelyIntroduced: correlations.filter(
-          (c) => c.likelyIntroducedByChange,
-        ).length,
+        likelyIntroduced: correlations.filter((c) => c.likelyIntroducedByChange)
+          .length,
         unrelatedToChanges: correlations.filter(
           (c) => !c.likelyIntroducedByChange,
         ).length,

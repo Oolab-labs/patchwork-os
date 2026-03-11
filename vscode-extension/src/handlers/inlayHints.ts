@@ -1,7 +1,9 @@
 import * as vscode from "vscode";
 import { MAX_HINTS } from "../constants";
 
-export async function handleGetInlayHints(params: Record<string, unknown>): Promise<unknown> {
+export async function handleGetInlayHints(
+  params: Record<string, unknown>,
+): Promise<unknown> {
   const file = params.file;
   const startLine = params.startLine;
   const endLine = params.endLine;
@@ -28,7 +30,11 @@ export async function handleGetInlayHints(params: Record<string, unknown>): Prom
       range,
     );
   } catch {
-    return { hints: [], count: 0, message: "Inlay hint provider unavailable for this file type" };
+    return {
+      hints: [],
+      count: 0,
+      message: "Inlay hint provider unavailable for this file type",
+    };
   }
 
   if (!hints || hints.length === 0) {
@@ -37,20 +43,26 @@ export async function handleGetInlayHints(params: Record<string, unknown>): Prom
 
   const capped = hints.slice(0, MAX_HINTS);
   const serialized = capped.map((h) => {
-    const label = typeof h.label === "string"
-      ? h.label
-      : h.label.map((part) => part.value).join("");
+    const label =
+      typeof h.label === "string"
+        ? h.label
+        : h.label.map((part) => part.value).join("");
     return {
       position: { line: h.position.line + 1, column: h.position.character + 1 },
       label,
-      kind: h.kind === vscode.InlayHintKind.Type
-        ? "type"
-        : h.kind === vscode.InlayHintKind.Parameter
-          ? "parameter"
-          : "other",
+      kind:
+        h.kind === vscode.InlayHintKind.Type
+          ? "type"
+          : h.kind === vscode.InlayHintKind.Parameter
+            ? "parameter"
+            : "other",
       tooltip: typeof h.tooltip === "string" ? h.tooltip : undefined,
     };
   });
 
-  return { hints: serialized, count: hints.length, capped: hints.length > MAX_HINTS };
+  return {
+    hints: serialized,
+    count: hints.length,
+    capped: hints.length > MAX_HINTS,
+  };
 }

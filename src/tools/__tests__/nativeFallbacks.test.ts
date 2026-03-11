@@ -2,8 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { applyEditsToContent, type TextEdit } from "../editText.js";
-import { createCreateFileTool, createDeleteFileTool, createRenameFileTool } from "../fileOperations.js";
+import { type TextEdit, applyEditsToContent } from "../editText.js";
+import {
+  createCreateFileTool,
+  createDeleteFileTool,
+  createRenameFileTool,
+} from "../fileOperations.js";
 
 // ── applyEditsToContent (pure function, no I/O) ──────────────────────────
 
@@ -60,21 +64,42 @@ describe("applyEditsToContent", () => {
 
   it("replaces text within a single line", () => {
     const result = applyEditsToContent("hello world", [
-      { type: "replace", line: 1, column: 7, endLine: 1, endColumn: 12, text: "earth" },
+      {
+        type: "replace",
+        line: 1,
+        column: 7,
+        endLine: 1,
+        endColumn: 12,
+        text: "earth",
+      },
     ]);
     expect(result).toBe("hello earth");
   });
 
   it("replaces text across multiple lines", () => {
     const result = applyEditsToContent("aaa\nbbb\nccc", [
-      { type: "replace", line: 1, column: 4, endLine: 3, endColumn: 1, text: "XXX\n" },
+      {
+        type: "replace",
+        line: 1,
+        column: 4,
+        endLine: 3,
+        endColumn: 1,
+        text: "XXX\n",
+      },
     ]);
     expect(result).toBe("aaaXXX\nccc");
   });
 
   it("replaces with multi-line text", () => {
     const result = applyEditsToContent("hello world", [
-      { type: "replace", line: 1, column: 6, endLine: 1, endColumn: 7, text: "\n" },
+      {
+        type: "replace",
+        line: 1,
+        column: 6,
+        endLine: 1,
+        endColumn: 7,
+        text: "\n",
+      },
     ]);
     expect(result).toBe("hello\nworld");
   });
@@ -90,8 +115,22 @@ describe("applyEditsToContent", () => {
 
   it("applies edits on different lines", () => {
     const result = applyEditsToContent("line1\nline2\nline3", [
-      { type: "replace", line: 3, column: 1, endLine: 3, endColumn: 6, text: "LINE3" },
-      { type: "replace", line: 1, column: 1, endLine: 1, endColumn: 6, text: "LINE1" },
+      {
+        type: "replace",
+        line: 3,
+        column: 1,
+        endLine: 3,
+        endColumn: 6,
+        text: "LINE3",
+      },
+      {
+        type: "replace",
+        line: 1,
+        column: 1,
+        endLine: 1,
+        endColumn: 6,
+        text: "LINE1",
+      },
     ]);
     expect(result).toBe("LINE1\nline2\nLINE3");
   });
@@ -118,12 +157,28 @@ describe("applyEditsToContent", () => {
   });
 
   it("rejects overlapping edits (replace lines 3-7 and replace lines 5-9)", () => {
-    const lines = Array.from({ length: 10 }, (_, i) => `line${i + 1}`).join("\n");
+    const lines = Array.from({ length: 10 }, (_, i) => `line${i + 1}`).join(
+      "\n",
+    );
     // These two edits overlap: first covers lines 3-7, second covers lines 5-9
     expect(() =>
       applyEditsToContent(lines, [
-        { type: "replace", line: 3, column: 1, endLine: 7, endColumn: 6, text: "REPLACED_A" },
-        { type: "replace", line: 5, column: 1, endLine: 9, endColumn: 6, text: "REPLACED_B" },
+        {
+          type: "replace",
+          line: 3,
+          column: 1,
+          endLine: 7,
+          endColumn: 6,
+          text: "REPLACED_A",
+        },
+        {
+          type: "replace",
+          line: 5,
+          column: 1,
+          endLine: 9,
+          endColumn: 6,
+          text: "REPLACED_B",
+        },
       ]),
     ).toThrow(/overlapping edits/i);
   });
@@ -154,7 +209,10 @@ describe("createFile native fallback", () => {
   });
 
   it("creates a file with content", async () => {
-    const result = await tool.handler({ filePath: "test.txt", content: "hello" });
+    const result = await tool.handler({
+      filePath: "test.txt",
+      content: "hello",
+    });
     expect((result as any).isError).toBeUndefined();
     const content = fs.readFileSync(path.join(workspace, "test.txt"), "utf-8");
     expect(content).toBe("hello");
@@ -168,25 +226,42 @@ describe("createFile native fallback", () => {
   });
 
   it("creates nested directories for file", async () => {
-    const result = await tool.handler({ filePath: "deep/nested/file.txt", content: "nested" });
+    const result = await tool.handler({
+      filePath: "deep/nested/file.txt",
+      content: "nested",
+    });
     expect((result as any).isError).toBeUndefined();
-    const content = fs.readFileSync(path.join(workspace, "deep/nested/file.txt"), "utf-8");
+    const content = fs.readFileSync(
+      path.join(workspace, "deep/nested/file.txt"),
+      "utf-8",
+    );
     expect(content).toBe("nested");
   });
 
   it("refuses to overwrite without flag", async () => {
     fs.writeFileSync(path.join(workspace, "existing.txt"), "old");
-    const result = await tool.handler({ filePath: "existing.txt", content: "new" });
+    const result = await tool.handler({
+      filePath: "existing.txt",
+      content: "new",
+    });
     expect((result as any).isError).toBe(true);
     // Original content preserved
-    expect(fs.readFileSync(path.join(workspace, "existing.txt"), "utf-8")).toBe("old");
+    expect(fs.readFileSync(path.join(workspace, "existing.txt"), "utf-8")).toBe(
+      "old",
+    );
   });
 
   it("overwrites with flag", async () => {
     fs.writeFileSync(path.join(workspace, "overwrite.txt"), "old");
-    const result = await tool.handler({ filePath: "overwrite.txt", content: "new", overwrite: true });
+    const result = await tool.handler({
+      filePath: "overwrite.txt",
+      content: "new",
+      overwrite: true,
+    });
     expect((result as any).isError).toBeUndefined();
-    expect(fs.readFileSync(path.join(workspace, "overwrite.txt"), "utf-8")).toBe("new");
+    expect(
+      fs.readFileSync(path.join(workspace, "overwrite.txt"), "utf-8"),
+    ).toBe("new");
   });
 });
 
@@ -205,7 +280,10 @@ describe("deleteFile native fallback", () => {
 
   it("refuses trash deletion without extension", async () => {
     fs.writeFileSync(path.join(workspace, "trash-me.txt"), "data");
-    const result = await tool.handler({ filePath: "trash-me.txt", useTrash: true });
+    const result = await tool.handler({
+      filePath: "trash-me.txt",
+      useTrash: true,
+    });
     expect((result as any).isError).toBe(true);
     // File should still exist
     expect(fs.existsSync(path.join(workspace, "trash-me.txt"))).toBe(true);
@@ -213,7 +291,10 @@ describe("deleteFile native fallback", () => {
 
   it("permanently deletes a file when useTrash is false", async () => {
     fs.writeFileSync(path.join(workspace, "delete-me.txt"), "data");
-    const result = await tool.handler({ filePath: "delete-me.txt", useTrash: false });
+    const result = await tool.handler({
+      filePath: "delete-me.txt",
+      useTrash: false,
+    });
     expect((result as any).isError).toBeUndefined();
     expect(fs.existsSync(path.join(workspace, "delete-me.txt"))).toBe(false);
   });
@@ -228,7 +309,11 @@ describe("deleteFile native fallback", () => {
   it("deletes directory recursively", async () => {
     fs.mkdirSync(path.join(workspace, "rmdir"), { recursive: true });
     fs.writeFileSync(path.join(workspace, "rmdir/file.txt"), "data");
-    const result = await tool.handler({ filePath: "rmdir", useTrash: false, recursive: true });
+    const result = await tool.handler({
+      filePath: "rmdir",
+      useTrash: false,
+      recursive: true,
+    });
     expect((result as any).isError).toBeUndefined();
     expect(fs.existsSync(path.join(workspace, "rmdir"))).toBe(false);
   });
@@ -254,17 +339,27 @@ describe("renameFile native fallback", () => {
 
   it("renames a file", async () => {
     fs.writeFileSync(path.join(workspace, "old.txt"), "data");
-    const result = await tool.handler({ oldPath: "old.txt", newPath: "new.txt" });
+    const result = await tool.handler({
+      oldPath: "old.txt",
+      newPath: "new.txt",
+    });
     expect((result as any).isError).toBeUndefined();
     expect(fs.existsSync(path.join(workspace, "old.txt"))).toBe(false);
-    expect(fs.readFileSync(path.join(workspace, "new.txt"), "utf-8")).toBe("data");
+    expect(fs.readFileSync(path.join(workspace, "new.txt"), "utf-8")).toBe(
+      "data",
+    );
   });
 
   it("moves to a nested path (creates parent dirs)", async () => {
     fs.writeFileSync(path.join(workspace, "src.txt"), "data");
-    const result = await tool.handler({ oldPath: "src.txt", newPath: "a/b/dest.txt" });
+    const result = await tool.handler({
+      oldPath: "src.txt",
+      newPath: "a/b/dest.txt",
+    });
     expect((result as any).isError).toBeUndefined();
-    expect(fs.readFileSync(path.join(workspace, "a/b/dest.txt"), "utf-8")).toBe("data");
+    expect(fs.readFileSync(path.join(workspace, "a/b/dest.txt"), "utf-8")).toBe(
+      "data",
+    );
   });
 
   it("refuses to overwrite without flag", async () => {
@@ -279,7 +374,11 @@ describe("renameFile native fallback", () => {
   it("overwrites with flag", async () => {
     fs.writeFileSync(path.join(workspace, "a.txt"), "aaa");
     fs.writeFileSync(path.join(workspace, "b.txt"), "bbb");
-    const result = await tool.handler({ oldPath: "a.txt", newPath: "b.txt", overwrite: true });
+    const result = await tool.handler({
+      oldPath: "a.txt",
+      newPath: "b.txt",
+      overwrite: true,
+    });
     expect((result as any).isError).toBeUndefined();
     expect(fs.readFileSync(path.join(workspace, "b.txt"), "utf-8")).toBe("aaa");
   });

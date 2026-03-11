@@ -1,16 +1,45 @@
 import type { RequestHandler } from "../types";
-import { handleGetDiagnostics } from "./diagnostics";
-import { handleGetSelection } from "./selection";
-import { handleGetOpenFiles, handleIsDirty, handleOpenFile, handleSaveFile, handleCloseTab, handleGetFileContent, handleCreateFile, handleDeleteFile, handleRenameFile, handleGetWorkspaceFolders } from "./files";
 import { handleGetAIComments } from "./aiComments";
-import { handleListTerminals, handleGetTerminalOutput, handleCreateTerminal, handleDisposeTerminal, handleSendTerminalCommand, handleExecuteInTerminal, handleWaitForTerminalOutput } from "./terminal";
-import { handleEditText, handleReplaceBlock } from "./editText";
-import { handleFormatDocument, handleFixAllLintErrors, handleOrganizeImports } from "./codeActions";
 import { handleReadClipboard, handleWriteClipboard } from "./clipboard";
-import { handleGetWorkspaceSettings, handleSetWorkspaceSetting } from "./workspaceSettings";
-import { handleExecuteVSCodeCommand, handleListVSCodeCommands } from "./vscodeCommands";
+import {
+  handleFixAllLintErrors,
+  handleFormatDocument,
+  handleOrganizeImports,
+} from "./codeActions";
+import { handleGetDiagnostics } from "./diagnostics";
+import { handleEditText, handleReplaceBlock } from "./editText";
+import {
+  handleCloseTab,
+  handleCreateFile,
+  handleDeleteFile,
+  handleGetFileContent,
+  handleGetOpenFiles,
+  handleGetWorkspaceFolders,
+  handleIsDirty,
+  handleOpenFile,
+  handleRenameFile,
+  handleSaveFile,
+} from "./files";
 import { handleGetInlayHints } from "./inlayHints";
+import { handleGetSelection } from "./selection";
+import {
+  handleCreateTerminal,
+  handleDisposeTerminal,
+  handleExecuteInTerminal,
+  handleGetTerminalOutput,
+  handleListTerminals,
+  handleSendTerminalCommand,
+  handleWaitForTerminalOutput,
+} from "./terminal";
 import { handleGetTypeHierarchy } from "./typeHierarchy";
+import {
+  handleExecuteVSCodeCommand,
+  handleListVSCodeCommands,
+} from "./vscodeCommands";
+import {
+  handleGetWorkspaceSettings,
+  handleSetWorkspaceSetting,
+} from "./workspaceSettings";
 
 // Base handlers that need no DI
 export const baseHandlers: Record<string, RequestHandler> = {

@@ -1,9 +1,26 @@
 import fs from "node:fs";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { execSafe, optionalInt, requireString, requireInt, resolveFilePath, languageIdFromPath, success, error, extensionRequired } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  execSafe,
+  extensionRequired,
+  languageIdFromPath,
+  optionalInt,
+  requireInt,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 // --- Short-lived LSP result cache ---
-interface LspCacheEntry { result: unknown; mtimeMs: number; expiresAt: number; }
+interface LspCacheEntry {
+  result: unknown;
+  mtimeMs: number;
+  expiresAt: number;
+}
 const lspCache = new Map<string, LspCacheEntry>();
 const LSP_CACHE_TTL_MS = 3_000;
 const LSP_CACHE_MAX = 100;
@@ -27,7 +44,11 @@ function lspCacheSet(key: string, result: unknown, mtimeMs: number): void {
     const firstKey = lspCache.keys().next().value;
     if (firstKey !== undefined) lspCache.delete(firstKey);
   }
-  lspCache.set(key, { result, mtimeMs, expiresAt: Date.now() + LSP_CACHE_TTL_MS });
+  lspCache.set(key, {
+    result,
+    mtimeMs,
+    expiresAt: Date.now() + LSP_CACHE_TTL_MS,
+  });
 }
 
 // Language-specific regex patterns for symbol definitions
@@ -55,9 +76,12 @@ export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-
 /** Extract the word (symbol name) at a given 1-based line/column from file content */
-export function wordAtPosition(content: string, line: number, column: number): string | null {
+export function wordAtPosition(
+  content: string,
+  line: number,
+  column: number,
+): string | null {
   const lines = content.split("\n");
   const lineText = lines[line - 1];
   if (!lineText) return null;
@@ -105,8 +129,8 @@ async function grepForSymbol(
     if (m) {
       matches.push({
         filePath: m[1]!,
-        line: parseInt(m[2]!, 10),
-        column: parseInt(m[3]!, 10),
+        line: Number.parseInt(m[2]!, 10),
+        column: Number.parseInt(m[3]!, 10),
         text: m[4]!.trim(),
       });
     }
@@ -163,9 +187,17 @@ export function createGoToDefinitionTool(
             const cached = lspCacheGet(cacheKey, stat.mtimeMs);
             if (cached !== undefined) return success(cached);
           }
-          const result = await extensionClient.goToDefinition(filePath, line, column, signal);
+          const result = await extensionClient.goToDefinition(
+            filePath,
+            line,
+            column,
+            signal,
+          );
           if (result === null) {
-            return success({ found: false, message: "No definition found at this position" });
+            return success({
+              found: false,
+              message: "No definition found at this position",
+            });
           }
           if (stat) lspCacheSet(cacheKey, result, stat.mtimeMs);
           return success(result);
@@ -180,7 +212,10 @@ export function createGoToDefinitionTool(
         const content = await fs.promises.readFile(filePath, "utf-8");
         const symbol = wordAtPosition(content, line, column);
         if (!symbol) {
-          return success({ found: false, message: "No symbol found at this position" });
+          return success({
+            found: false,
+            message: "No symbol found at this position",
+          });
         }
 
         const langId = languageIdFromPath(filePath);
@@ -212,10 +247,13 @@ export function createGoToDefinitionTool(
             column: m.column,
             text: m.text,
           })),
-          warning: "Results are from text search, not semantic analysis — may include false positives",
+          warning:
+            "Results are from text search, not semantic analysis — may include false positives",
         });
       } catch (err) {
-        return error(`Grep fallback failed: ${err instanceof Error ? err.message : String(err)}`);
+        return error(
+          `Grep fallback failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
   };
@@ -262,7 +300,12 @@ export function createFindReferencesTool(
       // Try extension first (semantic)
       if (extensionClient.isConnected()) {
         try {
-          const result = await extensionClient.findReferences(filePath, line, column, signal);
+          const result = await extensionClient.findReferences(
+            filePath,
+            line,
+            column,
+            signal,
+          );
           if (result === null) {
             return success({ found: false, references: [] });
           }
@@ -278,7 +321,11 @@ export function createFindReferencesTool(
         const content = await fs.promises.readFile(filePath, "utf-8");
         const symbol = wordAtPosition(content, line, column);
         if (!symbol) {
-          return success({ found: false, references: [], message: "No symbol found at this position" });
+          return success({
+            found: false,
+            references: [],
+            message: "No symbol found at this position",
+          });
         }
 
         const langId = languageIdFromPath(filePath);
@@ -298,10 +345,13 @@ export function createFindReferencesTool(
             text: m.text,
           })),
           count: matches.length,
-          warning: "Results are from text search — may include false positives from identically-named symbols in different scopes",
+          warning:
+            "Results are from text search — may include false positives from identically-named symbols in different scopes",
         });
       } catch (err) {
-        return error(`Grep fallback failed: ${err instanceof Error ? err.message : String(err)}`);
+        return error(
+          `Grep fallback failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
   };
@@ -356,15 +406,25 @@ export function createGetHoverTool(
           const cached = lspCacheGet(cacheKey, stat.mtimeMs);
           if (cached !== undefined) return success(cached);
         }
-        const result = await extensionClient.getHover(filePath, line, column, signal);
+        const result = await extensionClient.getHover(
+          filePath,
+          line,
+          column,
+          signal,
+        );
         if (result === null) {
-          return success({ found: false, message: "No hover information at this position" });
+          return success({
+            found: false,
+            message: "No hover information at this position",
+          });
         }
         if (stat) lspCacheSet(cacheKey, result, stat.mtimeMs);
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — the language server may be slow or unresponsive");
+          return error(
+            "Extension timed out — the language server may be slow or unresponsive",
+          );
         }
         throw err;
       }
@@ -407,7 +467,13 @@ export function createGetCodeActionsTool(
             description: "End column (1-based)",
           },
         },
-        required: ["filePath", "startLine", "startColumn", "endLine", "endColumn"],
+        required: [
+          "filePath",
+          "startLine",
+          "startColumn",
+          "endLine",
+          "endColumn",
+        ],
         additionalProperties: false as const,
       },
     },
@@ -437,7 +503,9 @@ export function createGetCodeActionsTool(
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — the language server may be slow or unresponsive");
+          return error(
+            "Extension timed out — the language server may be slow or unresponsive",
+          );
         }
         throw err;
       }
@@ -519,12 +587,16 @@ export function createApplyCodeActionTool(
           actionTitle,
         );
         if (result === null) {
-          return error("Extension returned no result — code action may not be available");
+          return error(
+            "Extension returned no result — code action may not be available",
+          );
         }
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — code action may require more time");
+          return error(
+            "Extension timed out — code action may require more time",
+          );
         }
         throw err;
       }
@@ -589,12 +661,16 @@ export function createRenameSymbolTool(
           newName,
         );
         if (result === null) {
-          return error("Extension returned no result — symbol may not be renameable at this position");
+          return error(
+            "Extension returned no result — symbol may not be renameable at this position",
+          );
         }
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — rename may require more time on large projects");
+          return error(
+            "Extension timed out — rename may require more time on large projects",
+          );
         }
         throw err;
       }
@@ -612,7 +688,7 @@ export function createGetCallHierarchyTool(
       extensionRequired: true,
       description:
         "Get the call hierarchy for a function or method — who calls it (incoming) and what it calls (outgoing). " +
-        "Use direction=\"incoming\" to find all callers of a function, \"outgoing\" to see everything it calls, or \"both\" (default). " +
+        'Use direction="incoming" to find all callers of a function, "outgoing" to see everything it calls, or "both" (default). ' +
         "Requires the VS Code extension to be connected.",
       annotations: { readOnlyHint: true },
       inputSchema: {
@@ -633,11 +709,13 @@ export function createGetCallHierarchyTool(
           direction: {
             type: "string" as const,
             enum: ["incoming", "outgoing", "both"],
-            description: "\"incoming\" = callers of this function, \"outgoing\" = functions this calls, \"both\" = all (default)",
+            description:
+              '"incoming" = callers of this function, "outgoing" = functions this calls, "both" = all (default)',
           },
           maxResults: {
             type: "integer" as const,
-            description: "Maximum callers/callees to return per direction (default: 50, max: 200)",
+            description:
+              "Maximum callers/callees to return per direction (default: 50, max: 200)",
           },
         },
         required: ["filePath", "line", "column"],
@@ -648,23 +726,39 @@ export function createGetCallHierarchyTool(
       if (!extensionClient.isConnected()) {
         return extensionRequired("getCallHierarchy");
       }
-      const filePath = resolveFilePath(requireString(args, "filePath"), workspace);
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
-      const rawDirection = typeof args.direction === "string" ? args.direction : "both";
+      const rawDirection =
+        typeof args.direction === "string" ? args.direction : "both";
       if (!["incoming", "outgoing", "both"].includes(rawDirection)) {
-        return error("direction must be \"incoming\", \"outgoing\", or \"both\"");
+        return error('direction must be "incoming", "outgoing", or "both"');
       }
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
       try {
-        const result = await extensionClient.getCallHierarchy(filePath, line, column, rawDirection, maxResults);
+        const result = await extensionClient.getCallHierarchy(
+          filePath,
+          line,
+          column,
+          rawDirection,
+          maxResults,
+        );
         if (result === null) {
-          return success({ found: false, message: "No call hierarchy available at this position — ensure a language server is active" });
+          return success({
+            found: false,
+            message:
+              "No call hierarchy available at this position — ensure a language server is active",
+          });
         }
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — the language server may be slow or unresponsive");
+          return error(
+            "Extension timed out — the language server may be slow or unresponsive",
+          );
         }
         throw err;
       }
@@ -691,8 +785,7 @@ export function createSearchWorkspaceSymbolsTool(
           },
           maxResults: {
             type: "integer" as const,
-            description:
-              "Maximum results to return (default: 50, max: 200)",
+            description: "Maximum results to return (default: 50, max: 200)",
           },
         },
         required: ["query"],
@@ -724,12 +817,17 @@ export function createSearchWorkspaceSymbolsTool(
       try {
         const escaped = escapeRegex(query);
         // Generic definition pattern covering common languages
-        const pattern =
-          `(export\\s+)?(class|interface|type|enum|function|const|let|var|async\\s+function|def|async\\s+def|fn|struct|trait|impl|mod)\\s+${escaped}`;
+        const pattern = `(export\\s+)?(class|interface|type|enum|function|const|let|var|async\\s+function|def|async\\s+def|fn|struct|trait|impl|mod)\\s+${escaped}`;
 
         // Scope search to common source file types to avoid scanning binaries/node_modules
-        const defaultGlob = "*.{ts,tsx,js,jsx,mjs,cjs,py,rs,go,java,c,cpp,h,hpp,rb,php,swift,kt,scala}";
-        const matches = await grepForSymbol(workspace, pattern, defaultGlob, maxResults);
+        const defaultGlob =
+          "*.{ts,tsx,js,jsx,mjs,cjs,py,rs,go,java,c,cpp,h,hpp,rb,php,swift,kt,scala}";
+        const matches = await grepForSymbol(
+          workspace,
+          pattern,
+          defaultGlob,
+          maxResults,
+        );
 
         return success({
           source: "lexical-grep",
@@ -741,10 +839,13 @@ export function createSearchWorkspaceSymbolsTool(
             text: m.text,
           })),
           count: matches.length,
-          warning: "Results are from text pattern matching, not semantic symbol resolution",
+          warning:
+            "Results are from text pattern matching, not semantic symbol resolution",
         });
       } catch (err) {
-        return error(`Grep fallback failed: ${err instanceof Error ? err.message : String(err)}`);
+        return error(
+          `Grep fallback failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
   };

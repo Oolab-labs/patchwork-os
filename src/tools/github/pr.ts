@@ -1,5 +1,18 @@
-import { execSafe, requireString, optionalString, optionalInt, optionalBool, success, error } from "../utils.js";
-import { GH_NOT_FOUND, GH_NOT_AUTHED, isNotFound, isNotAuthed } from "./shared.js";
+import {
+  error,
+  execSafe,
+  optionalBool,
+  optionalInt,
+  optionalString,
+  requireString,
+  success,
+} from "../utils.js";
+import {
+  GH_NOT_AUTHED,
+  GH_NOT_FOUND,
+  isNotAuthed,
+  isNotFound,
+} from "./shared.js";
 
 export function createGithubCreatePRTool(workspace: string) {
   return {
@@ -21,11 +34,13 @@ export function createGithubCreatePRTool(workspace: string) {
           },
           body: {
             type: "string",
-            description: "Pull request description. If omitted, uses commit messages to fill the body.",
+            description:
+              "Pull request description. If omitted, uses commit messages to fill the body.",
           },
           base: {
             type: "string",
-            description: "Base branch to merge into (default: repository default branch)",
+            description:
+              "Base branch to merge into (default: repository default branch)",
           },
           draft: {
             type: "boolean",
@@ -59,24 +74,32 @@ export function createGithubCreatePRTool(workspace: string) {
       if (assignee) prArgs.push("--assignee", assignee);
       prArgs.push("--");
 
-      const result = await execSafe("gh", prArgs, { cwd: workspace, signal, timeout: 60_000 });
+      const result = await execSafe("gh", prArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 60_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
         if (isNotFound(msg)) return error(GH_NOT_FOUND);
         if (isNotAuthed(msg)) return error(`${GH_NOT_AUTHED}\n${msg}`);
         if (msg.includes("already exists")) {
-          return error(`A pull request already exists for this branch.\n${msg}`);
+          return error(
+            `A pull request already exists for this branch.\n${msg}`,
+          );
         }
         if (msg.includes("No commits between")) {
-          return error(`No commits between head branch and base — nothing to open a PR for.\n${msg}`);
+          return error(
+            `No commits between head branch and base — nothing to open a PR for.\n${msg}`,
+          );
         }
         return error(`gh pr create failed: ${msg}`);
       }
 
       const url = result.stdout.trim();
       const numberMatch = url.match(/\/pull\/(\d+)/);
-      const number = numberMatch ? parseInt(numberMatch[1]!, 10) : null;
+      const number = numberMatch ? Number.parseInt(numberMatch[1]!, 10) : null;
 
       return success({ url, number, title });
     },
@@ -101,7 +124,8 @@ export function createGithubListPRsTool(workspace: string) {
           },
           limit: {
             type: "integer",
-            description: "Maximum number of PRs to return (default: 20, max: 100)",
+            description:
+              "Maximum number of PRs to return (default: 20, max: 100)",
           },
           author: {
             type: "string",
@@ -117,18 +141,28 @@ export function createGithubListPRsTool(workspace: string) {
       const author = optionalString(args, "author", 256);
 
       if (!["open", "closed", "merged", "all"].includes(state)) {
-        return error(`Invalid state "${state}". Must be: open, closed, merged, or all.`);
+        return error(
+          `Invalid state "${state}". Must be: open, closed, merged, or all.`,
+        );
       }
 
       const listArgs = [
-        "pr", "list",
-        "--state", state,
-        "--limit", String(limit),
-        "--json", "number,title,state,url,headRefName,baseRefName,author,createdAt,isDraft",
+        "pr",
+        "list",
+        "--state",
+        state,
+        "--limit",
+        String(limit),
+        "--json",
+        "number,title,state,url,headRefName,baseRefName,author,createdAt,isDraft",
       ];
       if (author) listArgs.push("--author", author);
 
-      const result = await execSafe("gh", listArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", listArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -163,33 +197,43 @@ export function createGithubViewPRTool(workspace: string) {
         properties: {
           number: {
             type: "integer",
-            description: "PR number to view. Omit to view the PR associated with the current branch.",
+            description:
+              "PR number to view. Omit to view the PR associated with the current branch.",
           },
         },
         additionalProperties: false as const,
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      const number = typeof args.number === "number" ? Math.floor(args.number) : undefined;
+      const number =
+        typeof args.number === "number" ? Math.floor(args.number) : undefined;
 
       const viewArgs = [
-        "pr", "view",
+        "pr",
+        "view",
         "--json",
         "number,title,state,url,body,author,createdAt,updatedAt,baseRefName,headRefName,isDraft,mergeable,reviewDecision,reviews",
       ];
       if (number !== undefined) viewArgs.splice(2, 0, String(number));
 
-      const result = await execSafe("gh", viewArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", viewArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
         if (isNotFound(msg)) return error(GH_NOT_FOUND);
         if (isNotAuthed(msg)) return error(GH_NOT_AUTHED);
-        if (msg.includes("no pull requests found") || msg.includes("no open pull request")) {
+        if (
+          msg.includes("no pull requests found") ||
+          msg.includes("no open pull request")
+        ) {
           return error(
             number
               ? `PR #${number} not found.`
-              : `No open pull request for the current branch. Create one with githubCreatePR.`,
+              : "No open pull request for the current branch. Create one with githubCreatePR.",
           );
         }
         return error(`gh pr view failed: ${msg}`);

@@ -103,6 +103,14 @@ npm run build
 | `getGitDiff` | Diff output (staged/unstaged/commit ranges) |
 | `getGitLog` | Commit history |
 
+### PR Code Review
+| Tool | Description |
+|------|-------------|
+| `githubGetPRDiff` | Fetch PR metadata and unified diff |
+| `githubPostPRReview` | Post review with overview + inline comments |
+
+Use `/review-pr <number>` for a structured review workflow: fetches the PR, analyzes for bugs/security/performance issues, ranks by severity, verifies findings, and posts a review to GitHub.
+
 ### Linting & Formatting
 | Tool | Description |
 |------|-------------|

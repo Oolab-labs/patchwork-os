@@ -16,6 +16,10 @@ export interface TestResult {
 export interface TestRunner {
   name: string;
   detect(workspace: string, probes: ProbeResults): boolean;
-  run(cwd: string, filter?: string, signal?: AbortSignal): Promise<TestResult[]>;
+  run(
+    cwd: string,
+    filter?: string,
+    signal?: AbortSignal,
+  ): Promise<TestResult[]>;
   cacheTtl: number;
 }

@@ -1,19 +1,22 @@
-import * as fsp from "fs/promises";
-import * as path from "path";
+import * as fsp from "node:fs/promises";
+import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { LOCK_DIR } from "./constants";
 import type { LockFileData } from "./types";
 
 // Async version — preferred to avoid blocking the extension host thread
-export async function readLockFilesAsync(): Promise<LockFileData | null> {
+export async function readLockFilesAsync(
+  lockDir?: string,
+): Promise<LockFileData | null> {
+  const dir = lockDir || LOCK_DIR;
   try {
     try {
-      await fsp.access(LOCK_DIR);
+      await fsp.access(dir);
     } catch {
       return null;
     }
-    const allFiles = await fsp.readdir(LOCK_DIR);
+    const allFiles = await fsp.readdir(dir);
     const files = allFiles.filter((f) => f.endsWith(".lock"));
     const currentWorkspace =
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
@@ -22,7 +25,7 @@ export async function readLockFilesAsync(): Promise<LockFileData | null> {
     const stats = await Promise.all(
       files.map(async (f) => {
         try {
-          const stat = await fsp.stat(path.join(LOCK_DIR, f));
+          const stat = await fsp.stat(path.join(dir, f));
           return { file: f, mtimeMs: stat.mtimeMs };
         } catch {
           return { file: f, mtimeMs: 0 };
@@ -33,11 +36,11 @@ export async function readLockFilesAsync(): Promise<LockFileData | null> {
 
     for (const { file } of stats) {
       try {
-        const raw = await fsp.readFile(path.join(LOCK_DIR, file), "utf-8");
+        const raw = await fsp.readFile(path.join(dir, file), "utf-8");
         const content = JSON.parse(raw);
 
-        const port = parseInt(path.basename(file, ".lock"), 10);
-        if (isNaN(port)) continue;
+        const port = Number.parseInt(path.basename(file, ".lock"), 10);
+        if (Number.isNaN(port)) continue;
         if (!content.authToken) continue;
 
         try {
@@ -56,7 +59,10 @@ export async function readLockFilesAsync(): Promise<LockFileData | null> {
         if (ageMs > 2 * 60 * 60 * 1000) continue;
 
         if (currentWorkspace && content.workspace) {
-          if (path.resolve(content.workspace) !== path.resolve(currentWorkspace)) continue;
+          if (
+            path.resolve(content.workspace) !== path.resolve(currentWorkspace)
+          )
+            continue;
         }
 
         return {
@@ -65,13 +71,10 @@ export async function readLockFilesAsync(): Promise<LockFileData | null> {
           pid: content.pid,
           workspace: content.workspace,
         };
-      } catch {
-        continue;
-      }
+      } catch {}
     }
   } catch {
     // Lock dir doesn't exist or can't read
   }
   return null;
 }
-

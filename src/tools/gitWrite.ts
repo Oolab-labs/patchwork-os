@@ -1,4 +1,12 @@
-import { execSafe, requireString, optionalString, optionalBool, resolveFilePath, success, error } from "./utils.js";
+import {
+  error,
+  execSafe,
+  optionalBool,
+  optionalString,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 const VALID_REF_RE = /^[\w.\-/]+$/;
 
@@ -14,17 +22,32 @@ async function runGit(
     maxBuffer: opts.maxBuffer,
   });
   if (result.timedOut) throw new Error("git command timed out");
-  if (result.exitCode !== 0) throw new Error(result.stderr.trim() || result.stdout.trim() || "git command failed");
+  if (result.exitCode !== 0)
+    throw new Error(
+      result.stderr.trim() || result.stdout.trim() || "git command failed",
+    );
   return result;
 }
 
-async function checkGitRepo(workspace: string, signal?: AbortSignal): Promise<boolean> {
-  const r = await execSafe("git", ["rev-parse", "--git-dir"], { cwd: workspace, signal });
+async function checkGitRepo(
+  workspace: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const r = await execSafe("git", ["rev-parse", "--git-dir"], {
+    cwd: workspace,
+    signal,
+  });
   return r.exitCode === 0;
 }
 
-async function currentBranch(workspace: string, signal?: AbortSignal): Promise<string> {
-  const r = await execSafe("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: workspace, signal });
+async function currentBranch(
+  workspace: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const r = await execSafe("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd: workspace,
+    signal,
+  });
   return r.stdout.trim();
 }
 
@@ -35,7 +58,9 @@ function validatePaths(files: string[], workspace: string): string | null {
     try {
       resolveFilePath(f, workspace);
     } catch (err) {
-      return err instanceof Error ? err.message : `Path escapes workspace: ${f}`;
+      return err instanceof Error
+        ? err.message
+        : `Path escapes workspace: ${f}`;
     }
   }
   return null;
@@ -57,7 +82,8 @@ export function createGitAddTool(workspace: string) {
           files: {
             type: "array",
             items: { type: "string" },
-            description: "File paths to stage (absolute or workspace-relative). If omitted, stages all modified tracked files.",
+            description:
+              "File paths to stage (absolute or workspace-relative). If omitted, stages all modified tracked files.",
           },
           addUntracked: {
             type: "boolean",
@@ -90,12 +116,21 @@ export function createGitAddTool(workspace: string) {
       try {
         await runGit(addArgs, workspace, { signal, timeout: 15_000 });
       } catch (e) {
-        return error(`git add failed: ${e instanceof Error ? e.message : "unknown error"}`);
+        return error(
+          `git add failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        );
       }
 
       // Show what's now staged
-      const statusResult = await execSafe("git", ["diff", "--name-only", "--cached"], { cwd: workspace, signal });
-      const staged = statusResult.stdout.split("\n").map((f) => f.trim()).filter(Boolean);
+      const statusResult = await execSafe(
+        "git",
+        ["diff", "--name-only", "--cached"],
+        { cwd: workspace, signal },
+      );
+      const staged = statusResult.stdout
+        .split("\n")
+        .map((f) => f.trim())
+        .filter(Boolean);
 
       return success({ staged, count: staged.length });
     },
@@ -122,11 +157,13 @@ export function createGitCommitTool(workspace: string) {
           files: {
             type: "array",
             items: { type: "string" },
-            description: "Files to stage before committing. If omitted, commits whatever is already staged.",
+            description:
+              "Files to stage before committing. If omitted, commits whatever is already staged.",
           },
           addAll: {
             type: "boolean",
-            description: "Stage all tracked changes before committing (git add -u). Default: false.",
+            description:
+              "Stage all tracked changes before committing (git add -u). Default: false.",
           },
         },
         required: ["message"],
@@ -152,48 +189,83 @@ export function createGitCommitTool(workspace: string) {
         const pathErr = validatePaths(files, workspace);
         if (pathErr) return error(pathErr);
         try {
-          await runGit(["add", "--", ...files], workspace, { signal, timeout: 15_000 });
+          await runGit(["add", "--", ...files], workspace, {
+            signal,
+            timeout: 15_000,
+          });
         } catch (e) {
-          return error(`git add failed: ${e instanceof Error ? e.message : "unknown error"}`);
+          return error(
+            `git add failed: ${e instanceof Error ? e.message : "unknown error"}`,
+          );
         }
       } else if (addAll) {
         try {
           await runGit(["add", "-u"], workspace, { signal, timeout: 15_000 });
         } catch (e) {
-          return error(`git add -u failed: ${e instanceof Error ? e.message : "unknown error"}`);
+          return error(
+            `git add -u failed: ${e instanceof Error ? e.message : "unknown error"}`,
+          );
         }
       }
 
       // Check there is something staged
-      const diffCheck = await execSafe("git", ["diff", "--cached", "--quiet"], { cwd: workspace, signal });
+      const diffCheck = await execSafe("git", ["diff", "--cached", "--quiet"], {
+        cwd: workspace,
+        signal,
+      });
       if (diffCheck.exitCode === 0) {
         // exit 0 = nothing staged
-        const status = await execSafe("git", ["status", "--short"], { cwd: workspace, signal });
+        const status = await execSafe("git", ["status", "--short"], {
+          cwd: workspace,
+          signal,
+        });
         return error(
-          "Nothing staged to commit. " +
-          (status.stdout.trim()
-            ? `Unstaged changes exist:\n${status.stdout.trim()}\nUse gitAdd or pass files to this tool.`
-            : "Working tree is clean."),
+          `Nothing staged to commit. ${
+            status.stdout.trim()
+              ? `Unstaged changes exist:\n${status.stdout.trim()}\nUse gitAdd or pass files to this tool.`
+              : "Working tree is clean."
+          }`,
         );
       }
 
       // List staged files before committing (for return value)
-      const stagedResult = await execSafe("git", ["diff", "--name-only", "--cached"], { cwd: workspace, signal });
-      const stagedFiles = stagedResult.stdout.split("\n").map((f) => f.trim()).filter(Boolean);
+      const stagedResult = await execSafe(
+        "git",
+        ["diff", "--name-only", "--cached"],
+        { cwd: workspace, signal },
+      );
+      const stagedFiles = stagedResult.stdout
+        .split("\n")
+        .map((f) => f.trim())
+        .filter(Boolean);
 
       // Commit
       try {
-        await runGit(["commit", "-m", message], workspace, { signal, timeout: 30_000 });
+        await runGit(["commit", "-m", message], workspace, {
+          signal,
+          timeout: 30_000,
+        });
       } catch (e) {
-        return error(`git commit failed: ${e instanceof Error ? e.message : "unknown error"}`);
+        return error(
+          `git commit failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        );
       }
 
       // Get commit hash
-      const hashResult = await execSafe("git", ["rev-parse", "HEAD"], { cwd: workspace, signal });
+      const hashResult = await execSafe("git", ["rev-parse", "HEAD"], {
+        cwd: workspace,
+        signal,
+      });
       const hash = hashResult.stdout.trim().slice(0, 12);
       const branch = await currentBranch(workspace, signal);
 
-      return success({ hash, branch, message, files: stagedFiles, count: stagedFiles.length });
+      return success({
+        hash,
+        branch,
+        message,
+        files: stagedFiles,
+        count: stagedFiles.length,
+      });
     },
   };
 }
@@ -216,11 +288,13 @@ export function createGitCheckoutTool(workspace: string) {
           },
           create: {
             type: "boolean",
-            description: "Create the branch if it does not exist. Default: false.",
+            description:
+              "Create the branch if it does not exist. Default: false.",
           },
           base: {
             type: "string",
-            description: "Base branch or commit to create from (only used when create: true). Defaults to HEAD.",
+            description:
+              "Base branch or commit to create from (only used when create: true). Defaults to HEAD.",
           },
         },
         required: ["branch"],
@@ -261,22 +335,29 @@ export function createGitCheckoutTool(workspace: string) {
         const msg = e instanceof Error ? e.message : "unknown error";
         // Surface helpful hints for common errors
         if (msg.includes("already exists")) {
-          return error(`Branch '${branch}' already exists. Use create: false to switch to it, or choose a different name.`);
+          return error(
+            `Branch '${branch}' already exists. Use create: false to switch to it, or choose a different name.`,
+          );
         }
         if (msg.includes("did not match") || msg.includes("pathspec")) {
           return error(
-            `Branch '${branch}' not found locally. ` +
-            `If it exists on remote, run gitFetch first to update remote-tracking branches, then retry.`,
+            `Branch '${branch}' not found locally. If it exists on remote, run gitFetch first to update remote-tracking branches, then retry.`,
           );
         }
         if (msg.includes("local changes")) {
-          return error(`Cannot switch branch: you have uncommitted changes. Use gitStash to save them, then switch branches and use gitStashPop to restore.\n${msg}`);
+          return error(
+            `Cannot switch branch: you have uncommitted changes. Use gitStash to save them, then switch branches and use gitStashPop to restore.\n${msg}`,
+          );
         }
         return error(`git checkout failed: ${msg}`);
       }
 
       const newBranch = await currentBranch(workspace, signal);
-      return success({ branch: newBranch, previousBranch: prevBranch, created: create });
+      return success({
+        branch: newBranch,
+        previousBranch: prevBranch,
+        created: create,
+      });
     },
   };
 }
@@ -300,11 +381,13 @@ export function createGitBlameTool(workspace: string) {
           },
           startLine: {
             type: "number",
-            description: "First line number to blame (1-based, inclusive). Omit for start of file.",
+            description:
+              "First line number to blame (1-based, inclusive). Omit for start of file.",
           },
           endLine: {
             type: "number",
-            description: "Last line number to blame (1-based, inclusive). Omit for end of file.",
+            description:
+              "Last line number to blame (1-based, inclusive). Omit for end of file.",
           },
         },
         required: ["filePath"],
@@ -318,8 +401,14 @@ export function createGitBlameTool(workspace: string) {
 
       const rawPath = requireString(args, "filePath");
       const filePath = resolveFilePath(rawPath, workspace);
-      const startLine = typeof args.startLine === "number" ? Math.max(1, Math.floor(args.startLine)) : undefined;
-      const endLine = typeof args.endLine === "number" ? Math.max(1, Math.floor(args.endLine)) : undefined;
+      const startLine =
+        typeof args.startLine === "number"
+          ? Math.max(1, Math.floor(args.startLine))
+          : undefined;
+      const endLine =
+        typeof args.endLine === "number"
+          ? Math.max(1, Math.floor(args.endLine))
+          : undefined;
 
       const blameArgs = ["blame", "--porcelain"];
       if (startLine !== undefined && endLine !== undefined) {
@@ -331,7 +420,11 @@ export function createGitBlameTool(workspace: string) {
 
       let blameOutput: string;
       try {
-        ({ stdout: blameOutput } = await runGit(blameArgs, workspace, { signal, timeout: 15_000, maxBuffer: 512 * 1024 }));
+        ({ stdout: blameOutput } = await runGit(blameArgs, workspace, {
+          signal,
+          timeout: 15_000,
+          maxBuffer: 512 * 1024,
+        }));
       } catch (e) {
         const msg = e instanceof Error ? e.message : "unknown error";
         if (msg.includes("no such path")) {
@@ -342,8 +435,22 @@ export function createGitBlameTool(workspace: string) {
 
       // Parse porcelain format
       const lines = blameOutput.split("\n");
-      const commits = new Map<string, { author: string; authorEmail: string; summary: string; timestamp: number }>();
-      const blameLines: Array<{ line: number; hash: string; author: string; summary: string; code: string }> = [];
+      const commits = new Map<
+        string,
+        {
+          author: string;
+          authorEmail: string;
+          summary: string;
+          timestamp: number;
+        }
+      >();
+      const blameLines: Array<{
+        line: number;
+        hash: string;
+        author: string;
+        summary: string;
+        code: string;
+      }> = [];
 
       let currentHash = "";
       let lineNum = 0;
@@ -355,14 +462,19 @@ export function createGitBlameTool(workspace: string) {
         const headerMatch = l.match(/^([0-9a-f]{40})\s+\d+\s+(\d+)/);
         if (headerMatch) {
           currentHash = headerMatch[1]!;
-          lineNum = parseInt(headerMatch[2]!, 10);
+          lineNum = Number.parseInt(headerMatch[2]!, 10);
           continue;
         }
 
         if (l.startsWith("author ") && !l.startsWith("author-")) {
           const existing = commits.get(currentHash);
           if (!existing) {
-            commits.set(currentHash, { author: l.slice(7), authorEmail: "", summary: "", timestamp: 0 });
+            commits.set(currentHash, {
+              author: l.slice(7),
+              authorEmail: "",
+              summary: "",
+              timestamp: 0,
+            });
           } else {
             existing.author = l.slice(7);
           }
@@ -371,7 +483,7 @@ export function createGitBlameTool(workspace: string) {
           if (entry) entry.authorEmail = l.slice(12).replace(/[<>]/g, "");
         } else if (l.startsWith("author-time ")) {
           const entry = commits.get(currentHash);
-          if (entry) entry.timestamp = parseInt(l.slice(12), 10);
+          if (entry) entry.timestamp = Number.parseInt(l.slice(12), 10);
         } else if (l.startsWith("summary ")) {
           const entry = commits.get(currentHash);
           if (entry) entry.summary = l.slice(8);
@@ -437,7 +549,11 @@ export function createGitFetchTool(workspace: string) {
       let fetchStdout: string;
       let fetchStderr: string;
       try {
-        ({ stdout: fetchStdout, stderr: fetchStderr } = await runGit(fetchArgs, workspace, { signal, timeout: 60_000 }));
+        ({ stdout: fetchStdout, stderr: fetchStderr } = await runGit(
+          fetchArgs,
+          workspace,
+          { signal, timeout: 60_000 },
+        ));
       } catch (e) {
         const msg = e instanceof Error ? e.message : "unknown error";
         if (
@@ -446,10 +562,14 @@ export function createGitFetchTool(workspace: string) {
           msg.includes("Permission denied") ||
           msg.includes("could not read Username")
         ) {
-          return error(`Authentication failed. Check your git credentials.\n${msg}`);
+          return error(
+            `Authentication failed. Check your git credentials.\n${msg}`,
+          );
         }
         if (msg.includes("does not appear") || msg.includes("not found")) {
-          return error(`Remote '${remote}' not found. Check configured remotes.`);
+          return error(
+            `Remote '${remote}' not found. Check configured remotes.`,
+          );
         }
         return error(`git fetch failed: ${msg}`);
       }
@@ -476,7 +596,8 @@ export function createGitListBranchesTool(workspace: string) {
         properties: {
           includeRemote: {
             type: "boolean",
-            description: "Include remote-tracking branches (e.g. origin/main). Default: false.",
+            description:
+              "Include remote-tracking branches (e.g. origin/main). Default: false.",
           },
         },
         additionalProperties: false as const,
@@ -491,9 +612,13 @@ export function createGitListBranchesTool(workspace: string) {
 
       let branchOutput: string;
       try {
-        ({ stdout: branchOutput } = await runGit(["branch"], workspace, { signal }));
+        ({ stdout: branchOutput } = await runGit(["branch"], workspace, {
+          signal,
+        }));
       } catch (e) {
-        return error(`git branch failed: ${e instanceof Error ? e.message : "unknown error"}`);
+        return error(
+          `git branch failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        );
       }
 
       const local = branchOutput
@@ -506,10 +631,17 @@ export function createGitListBranchesTool(workspace: string) {
         }));
 
       const current = local.find((b) => b.current)?.name ?? "";
-      const result: { local: typeof local; current: string; remote?: string[] } = { local, current };
+      const result: {
+        local: typeof local;
+        current: string;
+        remote?: string[];
+      } = { local, current };
 
       if (includeRemote) {
-        const remoteResult = await execSafe("git", ["branch", "-r"], { cwd: workspace, signal });
+        const remoteResult = await execSafe("git", ["branch", "-r"], {
+          cwd: workspace,
+          signal,
+        });
         if (remoteResult.exitCode === 0) {
           result.remote = remoteResult.stdout
             .split("\n")
@@ -543,11 +675,13 @@ export function createGitPullTool(workspace: string) {
           },
           branch: {
             type: "string",
-            description: "Remote branch to pull from (default: tracking branch for current branch)",
+            description:
+              "Remote branch to pull from (default: tracking branch for current branch)",
           },
           rebase: {
             type: "boolean",
-            description: "Rebase local commits on top of remote changes instead of merging. Default: false.",
+            description:
+              "Rebase local commits on top of remote changes instead of merging. Default: false.",
           },
         },
         additionalProperties: false as const,
@@ -576,7 +710,10 @@ export function createGitPullTool(workspace: string) {
 
       let pullOutput: string;
       try {
-        ({ stdout: pullOutput } = await runGit(pullArgs, workspace, { signal, timeout: 60_000 }));
+        ({ stdout: pullOutput } = await runGit(pullArgs, workspace, {
+          signal,
+          timeout: 60_000,
+        }));
       } catch (e) {
         const msg = e instanceof Error ? e.message : "unknown error";
         if (msg.includes("CONFLICT")) {
@@ -584,9 +721,13 @@ export function createGitPullTool(workspace: string) {
             `Merge conflict during pull. Resolve conflicts manually, then use gitAdd + gitCommit.\n${msg}`,
           );
         }
-        if (msg.includes("no tracking information") || msg.includes("has no upstream") || msg.includes("no upstream")) {
+        if (
+          msg.includes("no tracking information") ||
+          msg.includes("has no upstream") ||
+          msg.includes("no upstream")
+        ) {
           return error(
-            `No upstream branch configured for the current branch. Specify remote and branch explicitly.`,
+            "No upstream branch configured for the current branch. Specify remote and branch explicitly.",
           );
         }
         if (
@@ -595,12 +736,16 @@ export function createGitPullTool(workspace: string) {
           msg.includes("Permission denied") ||
           msg.includes("could not read Username")
         ) {
-          return error(`Authentication failed. Check your git credentials.\n${msg}`);
+          return error(
+            `Authentication failed. Check your git credentials.\n${msg}`,
+          );
         }
         return error(`git pull failed: ${msg}`);
       }
 
-      const alreadyUpToDate = pullOutput.includes("Already up to date") || pullOutput.includes("Already up-to-date");
+      const alreadyUpToDate =
+        pullOutput.includes("Already up to date") ||
+        pullOutput.includes("Already up-to-date");
 
       return success({ alreadyUpToDate, output: pullOutput });
     },
@@ -630,11 +775,13 @@ export function createGitPushTool(workspace: string) {
           },
           setUpstream: {
             type: "boolean",
-            description: "Set the upstream tracking branch (-u). Use on first push of a new branch. Default: false.",
+            description:
+              "Set the upstream tracking branch (-u). Use on first push of a new branch. Default: false.",
           },
           force: {
             type: "boolean",
-            description: "Force push with --force-with-lease. Blocked on main/master. Default: false.",
+            description:
+              "Force push with --force-with-lease. Blocked on main/master. Default: false.",
           },
         },
         additionalProperties: false as const,
@@ -673,20 +820,30 @@ export function createGitPushTool(workspace: string) {
       let pushStdout: string;
       let pushStderr: string;
       try {
-        ({ stdout: pushStdout, stderr: pushStderr } = await runGit(pushArgs, workspace, { signal, timeout: 60_000 }));
+        ({ stdout: pushStdout, stderr: pushStderr } = await runGit(
+          pushArgs,
+          workspace,
+          { signal, timeout: 60_000 },
+        ));
       } catch (e) {
         const msg = e instanceof Error ? e.message : "unknown error";
         if (msg.includes("rejected") && msg.includes("non-fast-forward")) {
           return error(
-            `Push rejected: remote has commits not present locally. Run gitPull to sync, then push again.`,
+            "Push rejected: remote has commits not present locally. Run gitPull to sync, then push again.",
           );
         }
-        if (msg.includes("rejected") && (msg.includes("stale") || msg.includes("force-with-lease"))) {
+        if (
+          msg.includes("rejected") &&
+          (msg.includes("stale") || msg.includes("force-with-lease"))
+        ) {
           return error(
-            `Force push rejected: remote branch was updated since your last fetch. Run gitPull to sync first.`,
+            "Force push rejected: remote branch was updated since your last fetch. Run gitPull to sync first.",
           );
         }
-        if (msg.includes("has no upstream") || msg.includes("no upstream branch")) {
+        if (
+          msg.includes("has no upstream") ||
+          msg.includes("no upstream branch")
+        ) {
           return error(
             `Branch '${branch}' has no upstream. Use setUpstream: true to set the tracking branch on first push.`,
           );
@@ -698,12 +855,17 @@ export function createGitPushTool(workspace: string) {
           msg.includes("Repository not found") ||
           msg.includes("could not read Username")
         ) {
-          return error(`Authentication failed. Check your git credentials.\n${msg}`);
+          return error(
+            `Authentication failed. Check your git credentials.\n${msg}`,
+          );
         }
         return error(`git push failed: ${msg}`);
       }
 
-      const hashResult = await execSafe("git", ["rev-parse", "HEAD"], { cwd: workspace, signal });
+      const hashResult = await execSafe("git", ["rev-parse", "HEAD"], {
+        cwd: workspace,
+        signal,
+      });
       const hash = hashResult.stdout.trim().slice(0, 12);
 
       return success({
@@ -756,9 +918,15 @@ export function createGitStashTool(workspace: string) {
       let stashStdout: string;
       let stashStderr: string;
       try {
-        ({ stdout: stashStdout, stderr: stashStderr } = await runGit(stashArgs, workspace, { signal, timeout: 15_000 }));
+        ({ stdout: stashStdout, stderr: stashStderr } = await runGit(
+          stashArgs,
+          workspace,
+          { signal, timeout: 15_000 },
+        ));
       } catch (e) {
-        return error(`git stash failed: ${e instanceof Error ? e.message : "unknown error"}`);
+        return error(
+          `git stash failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        );
       }
 
       const output = stashStdout.trim() || stashStderr.trim();
@@ -766,7 +934,11 @@ export function createGitStashTool(workspace: string) {
         return success({ stashed: false, reason: "No local changes to save" });
       }
 
-      const listResult = await execSafe("git", ["stash", "list", "--max-count=1"], { cwd: workspace, signal });
+      const listResult = await execSafe(
+        "git",
+        ["stash", "list", "--max-count=1"],
+        { cwd: workspace, signal },
+      );
       const stashRef = listResult.stdout.trim().split(":")[0] ?? "stash@{0}";
 
       return success({ stashed: true, stashRef, output });
@@ -788,7 +960,8 @@ export function createGitStashPopTool(workspace: string) {
         properties: {
           index: {
             type: "integer",
-            description: "Stash entry index to pop (0 = most recent). Default: 0.",
+            description:
+              "Stash entry index to pop (0 = most recent). Default: 0.",
           },
         },
         additionalProperties: false as const,
@@ -799,12 +972,19 @@ export function createGitStashPopTool(workspace: string) {
         return error("Not a git repository");
       }
 
-      const index = typeof args.index === "number" ? Math.max(0, Math.floor(args.index)) : 0;
+      const index =
+        typeof args.index === "number"
+          ? Math.max(0, Math.floor(args.index))
+          : 0;
       const stashRef = `stash@{${index}}`;
 
       let popOutput: string;
       try {
-        ({ stdout: popOutput } = await runGit(["stash", "pop", stashRef], workspace, { signal, timeout: 15_000 }));
+        ({ stdout: popOutput } = await runGit(
+          ["stash", "pop", stashRef],
+          workspace,
+          { signal, timeout: 15_000 },
+        ));
       } catch (e) {
         const msg = e instanceof Error ? e.message : "unknown error";
         if (msg.includes("CONFLICT")) {
@@ -812,8 +992,13 @@ export function createGitStashPopTool(workspace: string) {
             `Merge conflict while applying stash. Resolve conflicts, then use gitAdd to mark them resolved.\n${msg}`,
           );
         }
-        if (msg.includes("No stash entries") || msg.includes("is not a valid reference")) {
-          return error(`No stash entry at index ${index}. Use gitStashList to see available entries.`);
+        if (
+          msg.includes("No stash entries") ||
+          msg.includes("is not a valid reference")
+        ) {
+          return error(
+            `No stash entry at index ${index}. Use gitStashList to see available entries.`,
+          );
         }
         return error(`git stash pop failed: ${msg}`);
       }
@@ -845,9 +1030,15 @@ export function createGitStashListTool(workspace: string) {
 
       let listOutput: string;
       try {
-        ({ stdout: listOutput } = await runGit(["stash", "list", "--format=%gd|%gs|%cr"], workspace, { signal }));
+        ({ stdout: listOutput } = await runGit(
+          ["stash", "list", "--format=%gd|%gs|%cr"],
+          workspace,
+          { signal },
+        ));
       } catch (e) {
-        return error(`git stash list failed: ${e instanceof Error ? e.message : "unknown error"}`);
+        return error(
+          `git stash list failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        );
       }
 
       const entries = listOutput
@@ -856,8 +1047,16 @@ export function createGitStashListTool(workspace: string) {
         .filter(Boolean)
         .map((l) => {
           const [ref, subject, age] = l.split("|");
-          const index = parseInt(ref?.match(/\{(\d+)\}/)?.[1] ?? "0", 10);
-          return { index, ref: ref ?? "", subject: subject ?? "", age: age ?? "" };
+          const index = Number.parseInt(
+            ref?.match(/\{(\d+)\}/)?.[1] ?? "0",
+            10,
+          );
+          return {
+            index,
+            ref: ref ?? "",
+            subject: subject ?? "",
+            age: age ?? "",
+          };
         });
 
       return success({ entries, count: entries.length });

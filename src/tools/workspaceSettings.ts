@@ -1,7 +1,12 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import { error, extensionRequired, success } from "./utils.js";
 
-export function createGetWorkspaceSettingsTool(extensionClient: ExtensionClient) {
+export function createGetWorkspaceSettingsTool(
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "getWorkspaceSettings",
@@ -16,7 +21,8 @@ export function createGetWorkspaceSettingsTool(extensionClient: ExtensionClient)
         properties: {
           section: {
             type: "string" as const,
-            description: "Settings section to read (e.g. 'editor', 'typescript'). Omit for all.",
+            description:
+              "Settings section to read (e.g. 'editor', 'typescript'). Omit for all.",
           },
           target: {
             type: "string" as const,
@@ -31,10 +37,14 @@ export function createGetWorkspaceSettingsTool(extensionClient: ExtensionClient)
       if (!extensionClient.isConnected()) {
         return extensionRequired("getWorkspaceSettings");
       }
-      const section = typeof args.section === "string" ? args.section : undefined;
+      const section =
+        typeof args.section === "string" ? args.section : undefined;
       const target = typeof args.target === "string" ? args.target : undefined;
       try {
-        const result = await extensionClient.getWorkspaceSettings(section, target);
+        const result = await extensionClient.getWorkspaceSettings(
+          section,
+          target,
+        );
         if (result === null) return error("Failed to read workspace settings");
         return success(result);
       } catch (err) {
@@ -47,7 +57,9 @@ export function createGetWorkspaceSettingsTool(extensionClient: ExtensionClient)
   };
 }
 
-export function createSetWorkspaceSettingTool(extensionClient: ExtensionClient) {
+export function createSetWorkspaceSettingTool(
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "setWorkspaceSetting",
@@ -81,12 +93,20 @@ export function createSetWorkspaceSettingTool(extensionClient: ExtensionClient) 
         return extensionRequired("setWorkspaceSetting");
       }
       const key = args.key;
-      if (typeof key !== "string" || key.length === 0) return error("key is required");
+      if (typeof key !== "string" || key.length === 0)
+        return error("key is required");
       const value = args.value;
       const target = typeof args.target === "string" ? args.target : undefined;
       try {
-        const result = await extensionClient.setWorkspaceSetting(key, value, target);
-        if (result === null) return error("Failed to write setting — ensure a workspace folder is open");
+        const result = await extensionClient.setWorkspaceSetting(
+          key,
+          value,
+          target,
+        );
+        if (result === null)
+          return error(
+            "Failed to write setting — ensure a workspace folder is open",
+          );
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {

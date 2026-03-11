@@ -1,7 +1,20 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { error, extensionRequired, requireInt, requireString, resolveFilePath, success } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  extensionRequired,
+  requireInt,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
-export function createGetInlayHintsTool(workspace: string, extensionClient: ExtensionClient) {
+export function createGetInlayHintsTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "getInlayHints",
@@ -41,7 +54,11 @@ export function createGetInlayHintsTool(workspace: string, extensionClient: Exte
       const startLine = requireInt(args, "startLine", 1, 1_000_000);
       const endLine = requireInt(args, "endLine", 1, 1_000_000);
       try {
-        const result = await extensionClient.getInlayHints(file, startLine, endLine);
+        const result = await extensionClient.getInlayHints(
+          file,
+          startLine,
+          endLine,
+        );
         if (result === null) return error("Failed to get inlay hints");
         return success(result);
       } catch (err) {

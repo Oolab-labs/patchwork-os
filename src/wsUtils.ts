@@ -6,11 +6,17 @@ export const BACKPRESSURE_THRESHOLD = 1_048_576; // 1MB — pause sending until 
 export const DRAIN_TIMEOUT_MS = 5_000; // Don't wait forever for drain
 
 /** Wait for the WebSocket send buffer to drain below threshold */
-export function waitForDrain(ws: WebSocket, logger: Logger, label = "Backpressure"): Promise<void> {
+export function waitForDrain(
+  ws: WebSocket,
+  logger: Logger,
+  label = "Backpressure",
+): Promise<void> {
   if (ws.bufferedAmount < BACKPRESSURE_THRESHOLD) {
     return Promise.resolve();
   }
-  logger.warn(`${label}: waiting for drain (buffered: ${ws.bufferedAmount} bytes)`);
+  logger.warn(
+    `${label}: waiting for drain (buffered: ${ws.bufferedAmount} bytes)`,
+  );
   return new Promise<void>((resolve) => {
     const raw = (ws as unknown as { _socket?: Socket })._socket;
     if (!raw) {
@@ -40,7 +46,11 @@ export function waitForDrain(ws: WebSocket, logger: Logger, label = "Backpressur
 
 /** Send a JSON-RPC message with backpressure awareness.
  *  Returns false if the message was not sent (socket not open). */
-export async function safeSend(ws: WebSocket, data: string, logger: Logger): Promise<boolean> {
+export async function safeSend(
+  ws: WebSocket,
+  data: string,
+  logger: Logger,
+): Promise<boolean> {
   if (ws.readyState !== WebSocket.OPEN) return false;
   await waitForDrain(ws, logger);
   if (ws.readyState !== WebSocket.OPEN) return false;

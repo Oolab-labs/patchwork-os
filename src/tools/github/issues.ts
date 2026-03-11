@@ -1,5 +1,17 @@
-import { execSafe, requireString, optionalString, optionalInt, success, error } from "../utils.js";
-import { GH_NOT_FOUND, GH_NOT_AUTHED, isNotFound, isNotAuthed } from "./shared.js";
+import {
+  error,
+  execSafe,
+  optionalInt,
+  optionalString,
+  requireString,
+  success,
+} from "../utils.js";
+import {
+  GH_NOT_AUTHED,
+  GH_NOT_FOUND,
+  isNotAuthed,
+  isNotFound,
+} from "./shared.js";
 
 export function createGithubListIssuesTool(workspace: string) {
   return {
@@ -19,11 +31,13 @@ export function createGithubListIssuesTool(workspace: string) {
           },
           limit: {
             type: "integer",
-            description: "Maximum number of issues to return (default: 20, max: 100)",
+            description:
+              "Maximum number of issues to return (default: 20, max: 100)",
           },
           assignee: {
             type: "string",
-            description: "Filter by assignee GitHub username. Use '@me' for issues assigned to you.",
+            description:
+              "Filter by assignee GitHub username. Use '@me' for issues assigned to you.",
           },
           label: {
             type: "string",
@@ -45,20 +59,30 @@ export function createGithubListIssuesTool(workspace: string) {
       const milestone = optionalString(args, "milestone", 256);
 
       if (!["open", "closed", "all"].includes(state)) {
-        return error(`Invalid state "${state}". Must be: open, closed, or all.`);
+        return error(
+          `Invalid state "${state}". Must be: open, closed, or all.`,
+        );
       }
 
       const listArgs = [
-        "issue", "list",
-        "--state", state,
-        "--limit", String(limit),
-        "--json", "number,title,state,url,author,assignees,labels,createdAt,updatedAt",
+        "issue",
+        "list",
+        "--state",
+        state,
+        "--limit",
+        String(limit),
+        "--json",
+        "number,title,state,url,author,assignees,labels,createdAt,updatedAt",
       ];
       if (assignee) listArgs.push("--assignee", assignee);
       if (label) listArgs.push("--label", label);
       if (milestone) listArgs.push("--milestone", milestone);
 
-      const result = await execSafe("gh", listArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", listArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -74,7 +98,10 @@ export function createGithubListIssuesTool(workspace: string) {
         return error(`Failed to parse gh output: ${result.stdout.trim()}`);
       }
 
-      return success({ issues, count: Array.isArray(issues) ? issues.length : 0 });
+      return success({
+        issues,
+        count: Array.isArray(issues) ? issues.length : 0,
+      });
     },
   };
 }
@@ -100,16 +127,24 @@ export function createGithubGetIssueTool(workspace: string) {
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      const number = typeof args.number === "number" ? Math.floor(args.number) : undefined;
-      if (!number || number < 1) return error("number must be a positive integer");
+      const number =
+        typeof args.number === "number" ? Math.floor(args.number) : undefined;
+      if (!number || number < 1)
+        return error("number must be a positive integer");
 
       const viewArgs = [
-        "issue", "view", String(number),
+        "issue",
+        "view",
+        String(number),
         "--json",
         "number,title,state,url,body,author,assignees,labels,createdAt,updatedAt,comments,milestone",
       ];
 
-      const result = await execSafe("gh", viewArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", viewArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -155,7 +190,8 @@ export function createGithubCreateIssueTool(workspace: string) {
           },
           assignee: {
             type: "string",
-            description: "GitHub username to assign the issue to. Use '@me' to self-assign.",
+            description:
+              "GitHub username to assign the issue to. Use '@me' to self-assign.",
           },
           label: {
             type: "string",
@@ -187,7 +223,11 @@ export function createGithubCreateIssueTool(workspace: string) {
       if (milestone) issueArgs.push("--milestone", milestone);
       issueArgs.push("--");
 
-      const result = await execSafe("gh", issueArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", issueArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();
@@ -198,7 +238,7 @@ export function createGithubCreateIssueTool(workspace: string) {
 
       const url = result.stdout.trim();
       const numberMatch = url.match(/\/issues\/(\d+)/);
-      const number = numberMatch ? parseInt(numberMatch[1]!, 10) : null;
+      const number = numberMatch ? Number.parseInt(numberMatch[1]!, 10) : null;
 
       return success({ url, number, title });
     },
@@ -230,13 +270,26 @@ export function createGithubCommentIssueTool(workspace: string) {
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      const number = typeof args.number === "number" ? Math.floor(args.number) : undefined;
-      if (!number || number < 1) return error("number must be a positive integer");
+      const number =
+        typeof args.number === "number" ? Math.floor(args.number) : undefined;
+      if (!number || number < 1)
+        return error("number must be a positive integer");
       const body = requireString(args, "body", 65_536);
 
-      const commentArgs = ["issue", "comment", String(number), "--body", body, "--"];
+      const commentArgs = [
+        "issue",
+        "comment",
+        String(number),
+        "--body",
+        body,
+        "--",
+      ];
 
-      const result = await execSafe("gh", commentArgs, { cwd: workspace, signal, timeout: 30_000 });
+      const result = await execSafe("gh", commentArgs, {
+        cwd: workspace,
+        signal,
+        timeout: 30_000,
+      });
 
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim() || result.stdout.trim();

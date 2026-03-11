@@ -1,7 +1,22 @@
-import { ExtensionTimeoutError, type ExtensionClient, type DecorationSpec } from "../extensionClient.js";
-import { error, extensionRequired, optionalArray, optionalString, requireString, resolveFilePath, success } from "./utils.js";
+import {
+  type DecorationSpec,
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  extensionRequired,
+  optionalArray,
+  optionalString,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
-export function createSetEditorDecorationsTool(workspace: string, extensionClient: ExtensionClient) {
+export function createSetEditorDecorationsTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "setEditorDecorations",
@@ -20,7 +35,8 @@ export function createSetEditorDecorationsTool(workspace: string, extensionClien
         properties: {
           id: {
             type: "string" as const,
-            description: "Logical group name for these decorations (alphanumeric + hyphens)",
+            description:
+              "Logical group name for these decorations (alphanumeric + hyphens)",
           },
           file: {
             type: "string" as const,
@@ -33,13 +49,32 @@ export function createSetEditorDecorationsTool(workspace: string, extensionClien
               type: "object" as const,
               required: ["startLine"],
               properties: {
-                startLine: { type: "integer" as const, description: "Start line (1-based)" },
-                endLine: { type: "integer" as const, description: "End line (1-based, defaults to startLine)" },
-                message: { type: "string" as const, description: "Inline message shown after the line" },
-                hoverMessage: { type: "string" as const, description: "Tooltip shown on hover" },
+                startLine: {
+                  type: "integer" as const,
+                  description: "Start line (1-based)",
+                },
+                endLine: {
+                  type: "integer" as const,
+                  description: "End line (1-based, defaults to startLine)",
+                },
+                message: {
+                  type: "string" as const,
+                  description: "Inline message shown after the line",
+                },
+                hoverMessage: {
+                  type: "string" as const,
+                  description: "Tooltip shown on hover",
+                },
                 style: {
                   type: "string" as const,
-                  enum: ["info", "warning", "error", "focus", "strikethrough", "dim"],
+                  enum: [
+                    "info",
+                    "warning",
+                    "error",
+                    "focus",
+                    "strikethrough",
+                    "dim",
+                  ],
                   description: "Visual style (default: info)",
                 },
               },
@@ -58,14 +93,30 @@ export function createSetEditorDecorationsTool(workspace: string, extensionClien
       const file = resolveFilePath(requireString(args, "file"), workspace);
       const rawDecorations = optionalArray(args, "decorations") ?? [];
       const decorations: DecorationSpec[] = rawDecorations.map((d, i) => {
-        if (typeof d !== "object" || d === null) throw new Error(`decorations[${i}] must be an object`);
+        if (typeof d !== "object" || d === null)
+          throw new Error(`decorations[${i}] must be an object`);
         const dec = d as Record<string, unknown>;
-        if (typeof dec.startLine !== "number") throw new Error(`decorations[${i}].startLine must be a number`);
-        if (!["info","warning","error","focus","strikethrough","dim"].includes(dec.style as string)) throw new Error(`decorations[${i}].style is invalid`);
+        if (typeof dec.startLine !== "number")
+          throw new Error(`decorations[${i}].startLine must be a number`);
+        if (
+          ![
+            "info",
+            "warning",
+            "error",
+            "focus",
+            "strikethrough",
+            "dim",
+          ].includes(dec.style as string)
+        )
+          throw new Error(`decorations[${i}].style is invalid`);
         return dec as unknown as DecorationSpec;
       });
       try {
-        const result = await extensionClient.setDecorations(id, file, decorations);
+        const result = await extensionClient.setDecorations(
+          id,
+          file,
+          decorations,
+        );
         if (result === null) return error("Failed to set decorations");
         return success(result);
       } catch (err) {
@@ -78,7 +129,9 @@ export function createSetEditorDecorationsTool(workspace: string, extensionClien
   };
 }
 
-export function createClearEditorDecorationsTool(extensionClient: ExtensionClient) {
+export function createClearEditorDecorationsTool(
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "clearEditorDecorations",

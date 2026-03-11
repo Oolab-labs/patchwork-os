@@ -15,14 +15,16 @@ const MAX_ARG_LENGTH = 4096;
 
 /** Flags that allow interpreter commands to execute arbitrary code */
 const DANGEROUS_INTERPRETER_FLAGS = new Set([
-  "-e", "--eval",
+  "-e",
+  "--eval",
   "-c",
-  "--print", "-p",
+  "--print",
+  "-p",
   "--input-type",
-  "--import",                // Node.js ESM loader
-  "--loader",                // Custom ESM loader
-  "--experimental-loader",   // Custom ESM loader (legacy)
-  "-m",                      // Python module execution
+  "--import", // Node.js ESM loader
+  "--loader", // Custom ESM loader
+  "--experimental-loader", // Custom ESM loader (legacy)
+  "-m", // Python module execution
 ]);
 
 /** Flags that redirect where commands read config/manifests from */
@@ -31,10 +33,12 @@ const DANGEROUS_PATH_FLAGS = new Set([
   "--manifest-path",
   "--config",
   "--rcfile",
-  "--require", "-r",
-  "--userconfig",            // npm config redirection
-  "--globalconfig",          // npm config redirection
-  "-f", "--makefile",        // make Makefile path
+  "--require",
+  "-r",
+  "--userconfig", // npm config redirection
+  "--globalconfig", // npm config redirection
+  "-f",
+  "--makefile", // make Makefile path
 ]);
 
 function validateCommand(command: string, allowlist: string[]): void {

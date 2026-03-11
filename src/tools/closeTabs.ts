@@ -1,8 +1,14 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import { cleanupTempDirs, trackedTempDirCount } from "./openDiff.js";
-import { requireString, resolveFilePath, success, error } from "./utils.js";
+import { error, requireString, resolveFilePath, success } from "./utils.js";
 
-export function createCloseTabTool(workspace?: string, extensionClient?: ExtensionClient) {
+export function createCloseTabTool(
+  workspace?: string,
+  extensionClient?: ExtensionClient,
+) {
   return {
     schema: {
       name: "closeTab",
@@ -16,13 +22,19 @@ export function createCloseTabTool(workspace?: string, extensionClient?: Extensi
         additionalProperties: false,
         required: ["filePath"],
         properties: {
-          filePath: { type: "string", description: "Path to the file whose tab should be closed (absolute or workspace-relative)" },
+          filePath: {
+            type: "string",
+            description:
+              "Path to the file whose tab should be closed (absolute or workspace-relative)",
+          },
         },
       },
     },
     async handler(args: Record<string, unknown>) {
       const rawPath = requireString(args, "filePath", 4096);
-      const filePath = workspace ? resolveFilePath(rawPath, workspace) : rawPath;
+      const filePath = workspace
+        ? resolveFilePath(rawPath, workspace)
+        : rawPath;
 
       if (!extensionClient?.isConnected()) {
         return error("closeTab requires the VS Code extension to be connected");
@@ -55,7 +67,8 @@ export function createCloseAllDiffTabsTool() {
   return {
     schema: {
       name: "closeAllDiffTabs",
-      description: "Close all diff tabs in the editor and clean up temporary diff directories",
+      description:
+        "Close all diff tabs in the editor and clean up temporary diff directories",
       annotations: { destructiveHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

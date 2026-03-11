@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { requireString, requireNumber } from "./validation";
 import { assertWithinWorkspace } from "./files";
+import { requireNumber, requireString } from "./validation";
 
 export async function handleEditText(
   params: Record<string, unknown>,
@@ -89,16 +89,22 @@ export async function handleReplaceBlock(
   const uri = vscode.Uri.file(filePath);
 
   // Get current buffer text (captures unsaved edits)
-  let doc = vscode.workspace.textDocuments.find((d) => d.uri.fsPath === uri.fsPath);
+  let doc = vscode.workspace.textDocuments.find(
+    (d) => d.uri.fsPath === uri.fsPath,
+  );
   if (!doc) {
     doc = await vscode.workspace.openTextDocument(uri);
   }
   const text = doc.getText();
 
   // Count matches — must be exactly one
-  let firstIndex = text.indexOf(oldContent);
+  const firstIndex = text.indexOf(oldContent);
   if (firstIndex === -1) {
-    return { success: false, error: "oldContent not found in file — verify the exact text including whitespace and line endings" };
+    return {
+      success: false,
+      error:
+        "oldContent not found in file — verify the exact text including whitespace and line endings",
+    };
   }
   const secondIndex = text.indexOf(oldContent, firstIndex + 1);
   if (secondIndex !== -1) {
@@ -106,22 +112,25 @@ export async function handleReplaceBlock(
     let count = 2;
     let idx = secondIndex;
     while ((idx = text.indexOf(oldContent, idx + 1)) !== -1) count++;
-    return { success: false, error: `oldContent matches ${count} locations — add more surrounding context to make it unique` };
+    return {
+      success: false,
+      error: `oldContent matches ${count} locations — add more surrounding context to make it unique`,
+    };
   }
 
   // Convert offset to VS Code Position
   const before = text.slice(0, firstIndex);
   const startLines = before.split("\n");
   const startLine = startLines.length - 1;
-  const startChar = startLines[startLines.length - 1]!.length;
+  const startChar = startLines[startLines.length - 1]?.length;
 
   const matched = text.slice(firstIndex, firstIndex + oldContent.length);
   const matchedLines = matched.split("\n");
   const endLine = startLine + matchedLines.length - 1;
   const endChar =
     matchedLines.length === 1
-      ? startChar + matchedLines[0]!.length
-      : matchedLines[matchedLines.length - 1]!.length;
+      ? startChar + matchedLines[0]?.length
+      : matchedLines[matchedLines.length - 1]?.length;
 
   const range = new vscode.Range(startLine, startChar, endLine, endChar);
   const wsEdit = new vscode.WorkspaceEdit();

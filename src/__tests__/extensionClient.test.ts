@@ -227,7 +227,8 @@ describe("ExtensionClient", () => {
     // Simulate watchDiagnostics adding a listener
     const remove1 = client.addDiagnosticsListener(() => {});
     const remove2 = client.addDiagnosticsListener(() => {});
-    void remove1; void remove2; // suppress unused warning
+    void remove1;
+    void remove2; // suppress unused warning
 
     // Verify listeners were added (via side-effect: disconnect should clear them)
     ws.close();
@@ -245,14 +246,29 @@ describe("ExtensionClient", () => {
 
     // Add one listener to the new session
     let callCount = 0;
-    client.addDiagnosticsListener(() => { callCount++; });
+    client.addDiagnosticsListener(() => {
+      callCount++;
+    });
 
     // Send a diagnosticsChanged notification FROM the extension side (ws3) to the bridge
-    ws3.send(JSON.stringify({
-      jsonrpc: "2.0",
-      method: "extension/diagnosticsChanged",
-      params: { file: "/foo.ts", diagnostics: [{ file: "/foo.ts", line: 1, column: 1, severity: "error", message: "oops" }] },
-    }));
+    ws3.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/diagnosticsChanged",
+        params: {
+          file: "/foo.ts",
+          diagnostics: [
+            {
+              file: "/foo.ts",
+              line: 1,
+              column: 1,
+              severity: "error",
+              message: "oops",
+            },
+          ],
+        },
+      }),
+    );
     await new Promise((r) => setTimeout(r, 50));
 
     // Only the one new listener should fire — not the two stale ones from before disconnect
@@ -272,7 +288,10 @@ describe("ExtensionClient", () => {
     client.handleExtensionConnection(serverWs);
 
     // Spy on the logger — Logger exposes .warn() publicly
-    const warnSpy = vi.spyOn(client["logger" as never] as { warn: (msg: string) => void }, "warn");
+    const warnSpy = vi.spyOn(
+      client["logger" as never] as { warn: (msg: string) => void },
+      "warn",
+    );
 
     ws.send(
       JSON.stringify({
@@ -283,7 +302,9 @@ describe("ExtensionClient", () => {
     );
 
     await new Promise((r) => setTimeout(r, 50));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("major version mismatch"));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("major version mismatch"),
+    );
 
     ws.close();
   });
@@ -307,7 +328,9 @@ describe("ExtensionClient", () => {
 
     // Next request should throw ExtensionTimeoutError immediately (still within 1s backoff)
     const start = Date.now();
-    await expect(client.getDiagnostics()).rejects.toThrow(ExtensionTimeoutError);
+    await expect(client.getDiagnostics()).rejects.toThrow(
+      ExtensionTimeoutError,
+    );
     expect(Date.now() - start).toBeLessThan(100); // synchronous fast-fail
 
     ws.close();

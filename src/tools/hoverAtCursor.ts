@@ -1,4 +1,7 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import { error, extensionRequired, success } from "./utils.js";
 
 export function createGetHoverAtCursorTool(extensionClient: ExtensionClient) {
@@ -35,7 +38,13 @@ export function createGetHoverAtCursorTool(extensionClient: ExtensionClient) {
       try {
         const result = await extensionClient.getHover(file, line, column);
         if (result === null) {
-          return success({ found: false, file, line, column, message: "No hover information available at cursor position" });
+          return success({
+            found: false,
+            file,
+            line,
+            column,
+            message: "No hover information available at cursor position",
+          });
         }
         return success({ found: true, file, line, column, hover: result });
       } catch (err) {

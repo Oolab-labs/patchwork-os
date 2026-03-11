@@ -26,10 +26,15 @@ export const goTestRunner: TestRunner = {
     return probes.go && fs.existsSync(path.join(workspace, "go.mod"));
   },
 
-  async run(cwd: string, filter?: string, signal?: AbortSignal): Promise<TestResult[]> {
+  async run(
+    cwd: string,
+    filter?: string,
+    signal?: AbortSignal,
+  ): Promise<TestResult[]> {
     const args = ["test", "-json", "-count=1", "./..."];
     if (filter) {
-      if (filter.startsWith("-")) throw new Error("filter must not start with '-'");
+      if (filter.startsWith("-"))
+        throw new Error("filter must not start with '-'");
       args.splice(3, 0, "-run", filter);
     }
     const result = await execSafe("go", args, {
@@ -73,7 +78,11 @@ function parseNdjson(stdout: string, cwd: string): TestResult[] {
       durations.set(key, Math.round(event.Elapsed * 1000));
     }
 
-    if (event.Action === "pass" || event.Action === "fail" || event.Action === "skip") {
+    if (
+      event.Action === "pass" ||
+      event.Action === "fail" ||
+      event.Action === "skip"
+    ) {
       let status: TestStatus = "passed";
       if (event.Action === "fail") status = "failed";
       else if (event.Action === "skip") status = "skipped";
@@ -87,7 +96,9 @@ function parseNdjson(stdout: string, cwd: string): TestResult[] {
         file,
         line: lineNum,
         column: 1,
-        duration: durations.get(key) ?? (event.Elapsed ? Math.round(event.Elapsed * 1000) : 0),
+        duration:
+          durations.get(key) ??
+          (event.Elapsed ? Math.round(event.Elapsed * 1000) : 0),
         message: status === "failed" ? message : "",
         source: "go-test",
       });
@@ -109,9 +120,13 @@ function extractLocation(
     const match = FILE_LINE_RE.exec(out);
     if (match && !file) {
       file = path.relative(cwd, path.resolve(cwd, match[1]!));
-      lineNum = parseInt(match[2]!, 10);
+      lineNum = Number.parseInt(match[2]!, 10);
       if (match[3]) messages.push(match[3]);
-    } else if (out.trim() && !out.startsWith("=== RUN") && !out.startsWith("--- FAIL")) {
+    } else if (
+      out.trim() &&
+      !out.startsWith("=== RUN") &&
+      !out.startsWith("--- FAIL")
+    ) {
       messages.push(out.trim());
     }
   }

@@ -47,9 +47,7 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
         const files = result.stdout
           .split("\n")
           .filter(Boolean)
-          .map((f) =>
-            makeRelative(f, workspace),
-          );
+          .map((f) => makeRelative(f, workspace));
         return success({ files, total: files.length, tool: "fd" });
       }
 
@@ -99,9 +97,7 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
       const files = result.stdout
         .split("\n")
         .filter(Boolean)
-        .map((f) =>
-          makeRelative(f, workspace),
-        )
+        .map((f) => makeRelative(f, workspace))
         .slice(0, 100);
       return success({ files, total: files.length, tool: "find" });
     },

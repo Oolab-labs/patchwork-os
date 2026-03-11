@@ -2,11 +2,15 @@ import fs from "node:fs";
 import type { ExtensionClient } from "../extensionClient.js";
 import { requireString, resolveFilePath, success } from "./utils.js";
 
-export function createCheckDocumentDirtyTool(workspace: string, extensionClient?: ExtensionClient) {
+export function createCheckDocumentDirtyTool(
+  workspace: string,
+  extensionClient?: ExtensionClient,
+) {
   return {
     schema: {
       name: "checkDocumentDirty",
-      description: "Check if a document has unsaved changes. Uses real-time VS Code buffer state when the extension is connected. Without the extension, returns a heuristic result that may be inaccurate.",
+      description:
+        "Check if a document has unsaved changes. Uses real-time VS Code buffer state when the extension is connected. Without the extension, returns a heuristic result that may be inaccurate.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

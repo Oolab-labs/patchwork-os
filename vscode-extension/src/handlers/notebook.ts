@@ -10,20 +10,31 @@ function serializeCellOutput(cell: vscode.NotebookCell): unknown[] {
     for (const item of output.items) {
       if (totalBytes >= MAX_OUTPUT_BYTES) break;
 
-      if (item.mime === "text/plain" || item.mime === "text/html" || item.mime === "application/vnd.code.notebook.stdout" || item.mime === "application/vnd.code.notebook.stderr") {
+      if (
+        item.mime === "text/plain" ||
+        item.mime === "text/html" ||
+        item.mime === "application/vnd.code.notebook.stdout" ||
+        item.mime === "application/vnd.code.notebook.stderr"
+      ) {
         const text = new TextDecoder().decode(item.data);
         const bytes = item.data.byteLength;
         totalBytes += bytes;
         results.push({
           mime: item.mime,
-          text: totalBytes > MAX_OUTPUT_BYTES ? text.slice(0, MAX_OUTPUT_BYTES - (totalBytes - bytes)) + "\n[truncated]" : text,
+          text:
+            totalBytes > MAX_OUTPUT_BYTES
+              ? `${text.slice(0, MAX_OUTPUT_BYTES - (totalBytes - bytes))}\n[truncated]`
+              : text,
         });
       } else if (item.mime.startsWith("text/")) {
         const text = new TextDecoder().decode(item.data);
         totalBytes += item.data.byteLength;
         results.push({ mime: item.mime, text });
       } else {
-        results.push({ mime: item.mime, text: `[binary ${item.data.byteLength} bytes]` });
+        results.push({
+          mime: item.mime,
+          text: `[binary ${item.data.byteLength} bytes]`,
+        });
       }
     }
   }
@@ -47,7 +58,7 @@ export function createNotebookHandlers(): {
       kind: cell.kind === vscode.NotebookCellKind.Code ? "code" : "markdown",
       languageId: cell.document.languageId,
       source: cell.document.getText(),
-      executionCount: (cell.executionSummary?.executionOrder) ?? null,
+      executionCount: cell.executionSummary?.executionOrder ?? null,
       hasOutput: cell.outputs.length > 0,
     }));
 
@@ -60,7 +71,8 @@ export function createNotebookHandlers(): {
     if (typeof file !== "string") throw new Error("file is required");
     if (typeof cellIndex !== "number") throw new Error("cellIndex is required");
 
-    const timeoutMs = typeof params.timeoutMs === "number" ? params.timeoutMs : 30_000;
+    const timeoutMs =
+      typeof params.timeoutMs === "number" ? params.timeoutMs : 30_000;
     const uri = vscode.Uri.file(file);
     const notebook = await vscode.workspace.openNotebookDocument(uri);
 
@@ -69,7 +81,9 @@ export function createNotebookHandlers(): {
 
     const cell = notebook.cellAt(cellIndex);
     if (!cell) {
-      throw new Error(`Cell at index ${cellIndex} not found (notebook has ${notebook.cellCount} cells)`);
+      throw new Error(
+        `Cell at index ${cellIndex} not found (notebook has ${notebook.cellCount} cells)`,
+      );
     }
 
     const startTime = Date.now();
@@ -90,17 +104,24 @@ export function createNotebookHandlers(): {
         disposable.dispose();
         resolve();
       };
-      const disposable = vscode.notebooks.onDidChangeNotebookCellExecutionState((e) => {
-        if (e.cell === cell && e.state === vscode.NotebookCellExecutionState.Idle) {
-          finish();
-        }
-      });
+      const disposable = vscode.notebooks.onDidChangeNotebookCellExecutionState(
+        (e) => {
+          if (
+            e.cell === cell &&
+            e.state === vscode.NotebookCellExecutionState.Idle
+          ) {
+            finish();
+          }
+        },
+      );
       const timer = setTimeout(finish, timeoutMs);
     });
 
     const postCell = notebook.cellAt(cellIndex);
     if (!postCell) {
-      throw new Error(`Cell at index ${cellIndex} is no longer available (notebook was modified during execution)`);
+      throw new Error(
+        `Cell at index ${cellIndex} is no longer available (notebook was modified during execution)`,
+      );
     }
     const output = serializeCellOutput(postCell);
     return {

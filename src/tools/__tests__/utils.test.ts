@@ -59,7 +59,7 @@ describe("resolveFilePath", () => {
   });
 
   it("prevents workspace prefix bypass (e.g., workspace-evil)", () => {
-    const evilDir = workspace + "-evil";
+    const evilDir = `${workspace}-evil`;
     fs.mkdirSync(evilDir, { recursive: true });
     try {
       expect(() =>

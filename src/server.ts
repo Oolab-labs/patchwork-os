@@ -157,7 +157,9 @@ export class Server extends EventEmitter {
           enableTcpKeepalive(ws);
           setupPongHandler(alive);
           this.emit("extension", ws);
-          ws.once("close", () => { this.lastExtensionConnectionTime = 0; });
+          ws.once("close", () => {
+            this.lastExtensionConnectionTime = 0;
+          });
         });
         return;
       }
@@ -259,7 +261,14 @@ export class Server extends EventEmitter {
     bindAddress = "127.0.0.1",
   ): Promise<number> {
     if (preferredPort) {
-      return this.listen(preferredPort, bindAddress);
+      if (preferredPort < 1 || preferredPort > 65535) {
+        this.logger.warn(
+          `Invalid port ${preferredPort} (must be 1-65535), falling back to OS-assigned port`,
+        );
+        preferredPort = null;
+      } else {
+        return this.listen(preferredPort, bindAddress);
+      }
     }
     // Port 0 lets the OS kernel assign a free port atomically
     return this.listen(0, bindAddress);

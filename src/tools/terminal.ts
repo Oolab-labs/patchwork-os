@@ -1,19 +1,47 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { requireString, optionalString, optionalInt, optionalBool, resolveFilePath, success, error, extensionRequired } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  extensionRequired,
+  optionalBool,
+  optionalInt,
+  optionalString,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 /** Environment variable names that could enable privilege escalation */
 const DANGEROUS_ENV_VARS = new Set([
-  "PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
-  "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH",
-  "NODE_OPTIONS", "NODE_PATH",
-  "PYTHONSTARTUP", "PYTHONPATH", "PYTHONHOME",
-  "RUBYOPT", "RUBYLIB",
-  "PERL5OPT", "PERL5LIB",
+  "PATH",
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "DYLD_FRAMEWORK_PATH",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "PYTHONSTARTUP",
+  "PYTHONPATH",
+  "PYTHONHOME",
+  "RUBYOPT",
+  "RUBYLIB",
+  "PERL5OPT",
+  "PERL5LIB",
   "CLASSPATH",
-  "BASH_ENV", "ENV", "ZDOTDIR",
-  "EDITOR", "VISUAL", "SHELL", "HOME",
-  "XDG_CONFIG_HOME", "XDG_DATA_HOME",
-  "GIT_SSH_COMMAND", "GIT_EXEC_PATH",
+  "BASH_ENV",
+  "ENV",
+  "ZDOTDIR",
+  "EDITOR",
+  "VISUAL",
+  "SHELL",
+  "HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "GIT_SSH_COMMAND",
+  "GIT_EXEC_PATH",
   "NPM_CONFIG_SCRIPT_SHELL",
   "CARGO_HOME",
 ]);
@@ -44,7 +72,9 @@ export function createListTerminalsTool(extensionClient: ExtensionClient) {
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — terminal features may be unavailable");
+          return error(
+            "Extension timed out — terminal features may be unavailable",
+          );
         }
         throw err;
       }
@@ -93,14 +123,20 @@ export function createGetTerminalOutputTool(extensionClient: ExtensionClient) {
         );
       }
       try {
-        const result = await extensionClient.getTerminalOutput(name, index, lines);
+        const result = await extensionClient.getTerminalOutput(
+          name,
+          index,
+          lines,
+        );
         if (result === null) {
           return error("Terminal not found");
         }
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — terminal features may be unavailable");
+          return error(
+            "Extension timed out — terminal features may be unavailable",
+          );
         }
         throw err;
       }
@@ -108,7 +144,10 @@ export function createGetTerminalOutputTool(extensionClient: ExtensionClient) {
   };
 }
 
-export function createCreateTerminalTool(workspace: string, extensionClient: ExtensionClient) {
+export function createCreateTerminalTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "createTerminal",
@@ -124,16 +163,19 @@ export function createCreateTerminalTool(workspace: string, extensionClient: Ext
           },
           cwd: {
             type: "string" as const,
-            description: "Working directory for the terminal (must be within workspace)",
+            description:
+              "Working directory for the terminal (must be within workspace)",
           },
           env: {
             type: "object" as const,
-            description: "Additional environment variables (key-value pairs, max 50 entries)",
+            description:
+              "Additional environment variables (key-value pairs, max 50 entries)",
             additionalProperties: { type: "string" as const },
           },
           show: {
             type: "boolean" as const,
-            description: "Show the terminal panel after creation (default: true)",
+            description:
+              "Show the terminal panel after creation (default: true)",
           },
         },
         additionalProperties: false as const,
@@ -145,11 +187,17 @@ export function createCreateTerminalTool(workspace: string, extensionClient: Ext
       }
       const name = optionalString(args, "name", 256);
       const rawCwd = optionalString(args, "cwd");
-      const resolvedCwd = rawCwd ? resolveFilePath(rawCwd, workspace) : undefined;
+      const resolvedCwd = rawCwd
+        ? resolveFilePath(rawCwd, workspace)
+        : undefined;
       const rawEnv = args.env;
       let env: Record<string, string> | undefined;
       if (rawEnv !== undefined) {
-        if (typeof rawEnv !== "object" || rawEnv === null || Array.isArray(rawEnv)) {
+        if (
+          typeof rawEnv !== "object" ||
+          rawEnv === null ||
+          Array.isArray(rawEnv)
+        ) {
           return error("'env' must be an object with string key-value pairs");
         }
         const keys = Object.keys(rawEnv as Record<string, unknown>);
@@ -157,12 +205,16 @@ export function createCreateTerminalTool(workspace: string, extensionClient: Ext
           return error("'env' must have at most 50 entries");
         }
         env = {};
-        for (const [k, v] of Object.entries(rawEnv as Record<string, unknown>)) {
+        for (const [k, v] of Object.entries(
+          rawEnv as Record<string, unknown>,
+        )) {
           if (typeof v !== "string") {
             return error(`env["${k}"] must be a string`);
           }
           if (DANGEROUS_ENV_VARS.has(k.toUpperCase())) {
-            return error(`Environment variable "${k}" is blocked for security — it can redirect command execution`);
+            return error(
+              `Environment variable "${k}" is blocked for security — it can redirect command execution`,
+            );
           }
           env[k] = v;
         }
@@ -170,14 +222,21 @@ export function createCreateTerminalTool(workspace: string, extensionClient: Ext
       const show = optionalBool(args, "show") ?? true;
 
       try {
-        const result = await extensionClient.createTerminal(name, resolvedCwd, env, show);
+        const result = await extensionClient.createTerminal(
+          name,
+          resolvedCwd,
+          env,
+          show,
+        );
         if (result === null) {
           return error("Failed to create terminal");
         }
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — terminal features may be unavailable");
+          return error(
+            "Extension timed out — terminal features may be unavailable",
+          );
         }
         throw err;
       }
@@ -185,7 +244,9 @@ export function createCreateTerminalTool(workspace: string, extensionClient: Ext
   };
 }
 
-export function createWaitForTerminalOutputTool(extensionClient: ExtensionClient) {
+export function createWaitForTerminalOutputTool(
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "waitForTerminalOutput",
@@ -203,19 +264,23 @@ export function createWaitForTerminalOutputTool(extensionClient: ExtensionClient
         properties: {
           pattern: {
             type: "string" as const,
-            description: "JavaScript regex pattern to match against terminal output lines",
+            description:
+              "JavaScript regex pattern to match against terminal output lines",
           },
           name: {
             type: "string" as const,
-            description: "Terminal name to watch (from listTerminals). Uses active terminal if omitted.",
+            description:
+              "Terminal name to watch (from listTerminals). Uses active terminal if omitted.",
           },
           index: {
             type: "integer" as const,
-            description: "Terminal index (0-based) from listTerminals. Used if name is not specified.",
+            description:
+              "Terminal index (0-based) from listTerminals. Used if name is not specified.",
           },
           timeout: {
             type: "integer" as const,
-            description: "Seconds to wait before giving up (default: 30, max: 300)",
+            description:
+              "Seconds to wait before giving up (default: 30, max: 300)",
           },
         },
         additionalProperties: false as const,
@@ -236,26 +301,41 @@ export function createWaitForTerminalOutputTool(extensionClient: ExtensionClient
       try {
         new RegExp(pattern);
       } catch (e) {
-        return error(`Invalid regex pattern: ${e instanceof Error ? e.message : String(e)}`);
+        return error(
+          `Invalid regex pattern: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
       // Reject patterns with nested quantifiers — these can cause catastrophic backtracking (ReDoS)
       // when tested repeatedly against terminal output lines over a long polling window.
-      if (/\([^)]*[+*]\)[+*?]/.test(pattern) || /\([^)]*\{[^}]+\}\)[+*{?]/.test(pattern) || /[+*][+*]|\{[^}]+\}[+*]/.test(pattern)) {
+      if (
+        /\([^)]*[+*]\)[+*?]/.test(pattern) ||
+        /\([^)]*\{[^}]+\}\)[+*{?]/.test(pattern) ||
+        /[+*][+*]|\{[^}]+\}[+*]/.test(pattern)
+      ) {
         return error(
           "Pattern contains nested quantifiers (e.g. (a+)+) which can cause catastrophic backtracking. " +
-          "Simplify the regex — use a literal string match or a non-nested quantifier.",
+            "Simplify the regex — use a literal string match or a non-nested quantifier.",
         );
       }
 
       try {
-        const result = await extensionClient.waitForTerminalOutput(pattern, name, index, timeoutMs);
+        const result = await extensionClient.waitForTerminalOutput(
+          pattern,
+          name,
+          index,
+          timeoutMs,
+        );
         if (result === null) {
-          return error("Extension did not respond — ensure the VS Code extension is running");
+          return error(
+            "Extension did not respond — ensure the VS Code extension is running",
+          );
         }
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension connection timed out waiting for terminal output");
+          return error(
+            "Extension connection timed out waiting for terminal output",
+          );
         }
         throw err;
       }
@@ -283,23 +363,28 @@ export function createRunInTerminalTool(
         properties: {
           command: {
             type: "string" as const,
-            description: "The shell command to execute (no shell metacharacters or newlines)",
+            description:
+              "The shell command to execute (no shell metacharacters or newlines)",
           },
           name: {
             type: "string" as const,
-            description: "Terminal name to run in (from listTerminals). Uses active terminal if omitted.",
+            description:
+              "Terminal name to run in (from listTerminals). Uses active terminal if omitted.",
           },
           index: {
             type: "integer" as const,
-            description: "Terminal index (0-based) from listTerminals. Used if name is not specified.",
+            description:
+              "Terminal index (0-based) from listTerminals. Used if name is not specified.",
           },
           timeout: {
             type: "integer" as const,
-            description: "Seconds to wait for command completion (default: 30, max: 300)",
+            description:
+              "Seconds to wait for command completion (default: 30, max: 300)",
           },
           show: {
             type: "boolean" as const,
-            description: "Focus the terminal panel while running (default: true)",
+            description:
+              "Focus the terminal panel while running (default: true)",
           },
         },
         additionalProperties: false as const,
@@ -318,7 +403,9 @@ export function createRunInTerminalTool(
       const timeoutMs = timeoutSec * 1_000;
 
       if (/[\n\r]/.test(command)) {
-        return error("Command must not contain newlines. Send one command at a time.");
+        return error(
+          "Command must not contain newlines. Send one command at a time.",
+        );
       }
       if (/[;&|`$()<>{}!\\~]/.test(command)) {
         return error(
@@ -337,14 +424,24 @@ export function createRunInTerminalTool(
       }
 
       try {
-        const result = await extensionClient.executeInTerminal(command, name, index, timeoutMs, show);
+        const result = await extensionClient.executeInTerminal(
+          command,
+          name,
+          index,
+          timeoutMs,
+          show,
+        );
         if (result === null) {
-          return error("Extension did not respond — ensure the VS Code extension is running");
+          return error(
+            "Extension did not respond — ensure the VS Code extension is running",
+          );
         }
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension connection timed out waiting for the command to complete");
+          return error(
+            "Extension connection timed out waiting for the command to complete",
+          );
         }
         throw err;
       }
@@ -382,7 +479,9 @@ export function createDisposeTerminalTool(extensionClient: ExtensionClient) {
       const name = optionalString(args, "name", 256);
       const index = optionalInt(args, "index", 0, 100);
       if (name === undefined && index === undefined) {
-        return error("At least one of 'name' or 'index' must be provided to identify the terminal");
+        return error(
+          "At least one of 'name' or 'index' must be provided to identify the terminal",
+        );
       }
       try {
         const result = await extensionClient.disposeTerminal(name, index);
@@ -392,7 +491,9 @@ export function createDisposeTerminalTool(extensionClient: ExtensionClient) {
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — terminal features may be unavailable");
+          return error(
+            "Extension timed out — terminal features may be unavailable",
+          );
         }
         throw err;
       }
@@ -400,7 +501,10 @@ export function createDisposeTerminalTool(extensionClient: ExtensionClient) {
   };
 }
 
-export function createSendTerminalCommandTool(extensionClient: ExtensionClient, commandAllowlist: string[]) {
+export function createSendTerminalCommandTool(
+  extensionClient: ExtensionClient,
+  commandAllowlist: string[],
+) {
   return {
     schema: {
       name: "sendTerminalCommand",
@@ -444,19 +548,23 @@ export function createSendTerminalCommandTool(extensionClient: ExtensionClient, 
       const addNewline = optionalBool(args, "addNewline") ?? true;
 
       if (name === undefined && index === undefined) {
-        return error("At least one of 'name' or 'index' must be provided to identify the terminal");
+        return error(
+          "At least one of 'name' or 'index' must be provided to identify the terminal",
+        );
       }
 
       // Block newlines — they would split into multiple independent commands in the terminal
       if (/[\n\r]/.test(text)) {
-        return error("Terminal command must not contain newlines. Send one command at a time.");
+        return error(
+          "Terminal command must not contain newlines. Send one command at a time.",
+        );
       }
 
       // Block shell metacharacters — terminal runs in a shell, so these bypass the allowlist
       if (/[;&|`$()<>{}!\\~]/.test(text)) {
         return error(
           "Terminal command must not contain shell metacharacters (;&|`$()<>{}!\\~). " +
-          "Use runCommand for safer execution without a shell.",
+            "Use runCommand for safer execution without a shell.",
         );
       }
 
@@ -465,20 +573,27 @@ export function createSendTerminalCommandTool(extensionClient: ExtensionClient, 
       if (firstWord && !commandAllowlist.includes(firstWord)) {
         return error(
           `Command "${firstWord}" is not in the allowlist. ` +
-          `Allowed commands: ${commandAllowlist.join(", ")}. ` +
-          `Use --allow-command ${firstWord} to add it.`,
+            `Allowed commands: ${commandAllowlist.join(", ")}. ` +
+            `Use --allow-command ${firstWord} to add it.`,
         );
       }
 
       try {
-        const result = await extensionClient.sendTerminalCommand(text, name, index, addNewline);
+        const result = await extensionClient.sendTerminalCommand(
+          text,
+          name,
+          index,
+          addNewline,
+        );
         if (result === null) {
           return error("Failed to send command to terminal");
         }
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — terminal features may be unavailable");
+          return error(
+            "Extension timed out — terminal features may be unavailable",
+          );
         }
         throw err;
       }

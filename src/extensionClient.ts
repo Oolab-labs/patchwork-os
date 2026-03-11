@@ -1,7 +1,7 @@
 import { WebSocket } from "ws";
 import type { Logger } from "./logger.js";
-import { safeSend, waitForDrain } from "./wsUtils.js";
 import { BRIDGE_PROTOCOL_VERSION } from "./version.js";
+import { safeSend, waitForDrain } from "./wsUtils.js";
 
 /** Thrown when an extension request times out — distinguishable from "no results" (null). */
 export class ExtensionTimeoutError extends Error {
@@ -55,9 +55,23 @@ export interface DebugState {
   sessionType?: string;
   isPaused: boolean;
   pausedAt?: { file: string; line: number; column: number };
-  callStack?: Array<{ id: number; name: string; file: string; line: number; column: number }>;
-  scopes?: Array<{ name: string; variables: Array<{ name: string; value: string; type: string }> }>;
-  breakpoints: Array<{ file: string; line: number; condition?: string; enabled: boolean }>;
+  callStack?: Array<{
+    id: number;
+    name: string;
+    file: string;
+    line: number;
+    column: number;
+  }>;
+  scopes?: Array<{
+    name: string;
+    variables: Array<{ name: string; value: string; type: string }>;
+  }>;
+  breakpoints: Array<{
+    file: string;
+    line: number;
+    condition?: string;
+    enabled: boolean;
+  }>;
 }
 
 export interface BreakpointSpec {
@@ -105,7 +119,7 @@ export class ExtensionClient {
   public latestDiagnostics = new Map<string, Diagnostic[]>();
   public latestSelection: SelectionState | null = null;
   public latestActiveFile: string | null = null;
-  public lastDiagnosticsUpdate: number = 0;
+  public lastDiagnosticsUpdate = 0;
 
   // AI comment cache (pushed by extension)
   public latestAIComments = new Map<string, AIComment[]>();
@@ -117,9 +131,7 @@ export class ExtensionClient {
   public onDiagnosticsChanged:
     | ((file: string, diagnostics: Diagnostic[]) => void)
     | null = null;
-  public onAICommentsChanged:
-    | ((comments: AIComment[]) => void)
-    | null = null;
+  public onAICommentsChanged: ((comments: AIComment[]) => void) | null = null;
   public onFileChanged:
     | ((id: string, type: string, file: string) => void)
     | null = null;
@@ -127,7 +139,9 @@ export class ExtensionClient {
   public onDebugSessionChanged: ((state: DebugState) => void) | null = null;
 
   // Listener set for diagnostics (used by watchDiagnostics long-poll)
-  private diagnosticsListeners = new Set<(file: string, diagnostics: Diagnostic[]) => void>();
+  private diagnosticsListeners = new Set<
+    (file: string, diagnostics: Diagnostic[]) => void
+  >();
 
   constructor(private logger: Logger) {}
 
@@ -140,7 +154,9 @@ export class ExtensionClient {
     try {
       fn(...args);
     } catch (err) {
-      this.logger.error(`Callback error: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(
+        `Callback error: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -184,7 +200,9 @@ export class ExtensionClient {
               pending.resolve(msg.result);
             }
           } else {
-            this.logger.debug(`Orphaned extension response for id=${msg.id} (likely timed out)`);
+            this.logger.debug(
+              `Orphaned extension response for id=${msg.id} (likely timed out)`,
+            );
           }
           return;
         }
@@ -252,7 +270,8 @@ export class ExtensionClient {
         // Update timestamp and forward to Claude Code
         this.lastDiagnosticsUpdate = Date.now();
         this.safeCallback(this.onDiagnosticsChanged, file, diagnostics);
-        for (const fn of [...this.diagnosticsListeners]) this.safeCallback(fn, file, diagnostics);
+        for (const fn of [...this.diagnosticsListeners])
+          this.safeCallback(fn, file, diagnostics);
         break;
       }
       case "extension/selectionChanged": {
@@ -308,7 +327,10 @@ export class ExtensionClient {
           const firstKey = this.latestAIComments.keys().next().value;
           if (firstKey !== undefined) this.latestAIComments.delete(firstKey);
         }
-        this.safeCallback(this.onAICommentsChanged, comments as unknown as AIComment[]);
+        this.safeCallback(
+          this.onAICommentsChanged,
+          comments as unknown as AIComment[],
+        );
         break;
       }
       case "extension/fileChanged": {
@@ -325,7 +347,10 @@ export class ExtensionClient {
         break;
       }
       case "extension/hello": {
-        const extVer = typeof p.extensionVersion === "string" ? p.extensionVersion : "unknown";
+        const extVer =
+          typeof p.extensionVersion === "string"
+            ? p.extensionVersion
+            : "unknown";
         this.logger.info(`Extension hello: version=${extVer}`);
         const [extMajor] = extVer.split(".").map(Number);
         const [bridgeMajor] = BRIDGE_PROTOCOL_VERSION.split(".").map(Number);
@@ -340,7 +365,9 @@ export class ExtensionClient {
         break;
       case "extension/debugSessionChanged": {
         if (typeof p.hasActiveSession !== "boolean") {
-          this.logger.debug("Ignoring malformed debugSessionChanged notification");
+          this.logger.debug(
+            "Ignoring malformed debugSessionChanged notification",
+          );
           return;
         }
         const state = p as unknown as DebugState;
@@ -353,7 +380,12 @@ export class ExtensionClient {
     }
   }
 
-  private async request(method: string, params?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<unknown> {
+  private async request(
+    method: string,
+    params?: unknown,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     // Exponential backoff — fast-fail if extension is repeatedly timing out
     const now = Date.now();
     if (now < this.extensionSuspendedUntil) {
@@ -362,7 +394,9 @@ export class ExtensionClient {
     // Half-open: backoff expired but failures recorded — allow one probe through
     if (this.extensionFailures > 0 && !this.extensionHalfOpen) {
       this.extensionHalfOpen = true;
-      this.logger.debug(`Extension circuit breaker half-open — probing with ${method}`);
+      this.logger.debug(
+        `Extension circuit breaker half-open — probing with ${method}`,
+      );
     }
 
     if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -394,7 +428,9 @@ export class ExtensionClient {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);
         signal?.removeEventListener("abort", onAbort);
-        this.logger.warn(`Extension request ${method} timed out after ${timeout}ms`);
+        this.logger.warn(
+          `Extension request ${method} timed out after ${timeout}ms`,
+        );
         settle(() => reject(new ExtensionTimeoutError(method)));
       }, timeout);
 
@@ -436,7 +472,9 @@ export class ExtensionClient {
           this.pendingRequests.delete(id);
           clearTimeout(timer);
           signal?.removeEventListener("abort", onAbort);
-          settle(() => reject(new Error(`Failed to send extension request: ${err}`)));
+          settle(() =>
+            reject(new Error(`Failed to send extension request: ${err}`)),
+          );
         }
       } else {
         this.pendingRequests.delete(id);
@@ -465,7 +503,9 @@ export class ExtensionClient {
         const capMs = Math.min(1_000 * 2 ** (failures - 1), 60_000);
         const backoffMs = Math.floor(Math.random() * capMs) + 1;
         this.extensionSuspendedUntil = Date.now() + backoffMs;
-        this.logger.warn(`Extension timed out (failure #${failures}) — suspending for ${Math.round(backoffMs / 100) / 10}s`);
+        this.logger.warn(
+          `Extension timed out (failure #${failures}) — suspending for ${Math.round(backoffMs / 100) / 10}s`,
+        );
       }
       throw err;
     }
@@ -474,7 +514,12 @@ export class ExtensionClient {
   /** Like request() but returns null on disconnect instead of rejecting.
    *  ExtensionTimeoutError is NOT caught — callers must handle it to distinguish
    *  timeout from genuine "no results" (null). */
-  private async requestOrNull(method: string, params?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<unknown> {
+  private async requestOrNull(
+    method: string,
+    params?: unknown,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     return this.request(method, params, timeoutMs, signal).catch((err) => {
       if (err instanceof ExtensionTimeoutError) throw err;
       return null;
@@ -490,8 +535,18 @@ export class ExtensionClient {
   }
 
   /** Typed shorthand for requestOrNull — returns T | null without an intermediate variable */
-  private async proxy<T>(method: string, params?: unknown, timeout?: number, signal?: AbortSignal): Promise<T | null> {
-    return this.requestOrNull(method, params, timeout, signal) as Promise<T | null>;
+  private async proxy<T>(
+    method: string,
+    params?: unknown,
+    timeout?: number,
+    signal?: AbortSignal,
+  ): Promise<T | null> {
+    return this.requestOrNull(
+      method,
+      params,
+      timeout,
+      signal,
+    ) as Promise<T | null>;
   }
 
   async getDiagnostics(file?: string): Promise<Diagnostic[] | null> {
@@ -515,7 +570,10 @@ export class ExtensionClient {
   }
 
   async openFile(file: string, line?: number): Promise<boolean> {
-    const result = await this.requestOrNull("extension/openFile", { file, line });
+    const result = await this.requestOrNull("extension/openFile", {
+      file,
+      line,
+    });
     return result === true;
   }
 
@@ -541,7 +599,12 @@ export class ExtensionClient {
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/goToDefinition", { file, line, column }, undefined, signal);
+    return this.requestOrNull(
+      "extension/goToDefinition",
+      { file, line, column },
+      undefined,
+      signal,
+    );
   }
 
   async findReferences(
@@ -550,7 +613,12 @@ export class ExtensionClient {
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/findReferences", { file, line, column }, undefined, signal);
+    return this.requestOrNull(
+      "extension/findReferences",
+      { file, line, column },
+      undefined,
+      signal,
+    );
   }
 
   async getHover(
@@ -559,7 +627,12 @@ export class ExtensionClient {
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/getHover", { file, line, column }, undefined, signal);
+    return this.requestOrNull(
+      "extension/getHover",
+      { file, line, column },
+      undefined,
+      signal,
+    );
   }
 
   async getCodeActions(
@@ -603,7 +676,11 @@ export class ExtensionClient {
     newName: string,
   ): Promise<unknown> {
     // Rename can be slow on large projects
-    return this.requestOrNull("extension/renameSymbol", { file, line, column, newName }, 15_000);
+    return this.requestOrNull(
+      "extension/renameSymbol",
+      { file, line, column, newName },
+      15_000,
+    );
   }
 
   async searchSymbols(query: string, maxResults?: number): Promise<unknown> {
@@ -624,8 +701,16 @@ export class ExtensionClient {
     return this.requestOrNull("extension/listTerminals");
   }
 
-  async getTerminalOutput(name?: string, index?: number, lines?: number): Promise<unknown> {
-    return this.requestOrNull("extension/getTerminalOutput", { name, index, lines });
+  async getTerminalOutput(
+    name?: string,
+    index?: number,
+    lines?: number,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/getTerminalOutput", {
+      name,
+      index,
+      lines,
+    });
   }
 
   async disposeTerminal(name?: string, index?: number): Promise<unknown> {
@@ -634,26 +719,68 @@ export class ExtensionClient {
 
   // --- File Operations ---
 
-  async createFile(filePath: string, content?: string, isDirectory?: boolean, overwrite?: boolean, openAfterCreate?: boolean): Promise<unknown> {
-    return this.requestOrNull("extension/createFile", { filePath, content, isDirectory, overwrite, openAfterCreate });
+  async createFile(
+    filePath: string,
+    content?: string,
+    isDirectory?: boolean,
+    overwrite?: boolean,
+    openAfterCreate?: boolean,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/createFile", {
+      filePath,
+      content,
+      isDirectory,
+      overwrite,
+      openAfterCreate,
+    });
   }
 
-  async deleteFile(filePath: string, recursive?: boolean, useTrash?: boolean): Promise<unknown> {
-    return this.requestOrNull("extension/deleteFile", { filePath, recursive, useTrash });
+  async deleteFile(
+    filePath: string,
+    recursive?: boolean,
+    useTrash?: boolean,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/deleteFile", {
+      filePath,
+      recursive,
+      useTrash,
+    });
   }
 
-  async renameFile(oldPath: string, newPath: string, overwrite?: boolean): Promise<unknown> {
-    return this.requestOrNull("extension/renameFile", { oldPath, newPath, overwrite });
+  async renameFile(
+    oldPath: string,
+    newPath: string,
+    overwrite?: boolean,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/renameFile", {
+      oldPath,
+      newPath,
+      overwrite,
+    });
   }
 
   // --- Text Editing ---
 
-  async editText(filePath: string, edits: unknown[], save?: boolean): Promise<unknown> {
+  async editText(
+    filePath: string,
+    edits: unknown[],
+    save?: boolean,
+  ): Promise<unknown> {
     return this.requestOrNull("extension/editText", { filePath, edits, save });
   }
 
-  async replaceBlock(filePath: string, oldContent: string, newContent: string, save?: boolean): Promise<unknown> {
-    return this.requestOrNull("extension/replaceBlock", { filePath, oldContent, newContent, save });
+  async replaceBlock(
+    filePath: string,
+    oldContent: string,
+    newContent: string,
+    save?: boolean,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/replaceBlock", {
+      filePath,
+      oldContent,
+      newContent,
+      save,
+    });
   }
 
   async getDocumentSymbols(file: string): Promise<unknown> {
@@ -667,7 +794,11 @@ export class ExtensionClient {
     direction?: string,
     maxResults?: number,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/getCallHierarchy", { file, line, column, direction, maxResults }, 15_000);
+    return this.requestOrNull(
+      "extension/getCallHierarchy",
+      { file, line, column, direction, maxResults },
+      15_000,
+    );
   }
 
   // --- Code Actions (format, fix, organize) ---
@@ -686,12 +817,32 @@ export class ExtensionClient {
 
   // --- Terminal Control ---
 
-  async createTerminal(name?: string, cwd?: string, env?: Record<string, string>, show?: boolean): Promise<unknown> {
-    return this.requestOrNull("extension/createTerminal", { name, cwd, env, show });
+  async createTerminal(
+    name?: string,
+    cwd?: string,
+    env?: Record<string, string>,
+    show?: boolean,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/createTerminal", {
+      name,
+      cwd,
+      env,
+      show,
+    });
   }
 
-  async sendTerminalCommand(text: string, name?: string, index?: number, addNewline?: boolean): Promise<unknown> {
-    return this.requestOrNull("extension/sendTerminalCommand", { text, name, index, addNewline });
+  async sendTerminalCommand(
+    text: string,
+    name?: string,
+    index?: number,
+    addNewline?: boolean,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/sendTerminalCommand", {
+      text,
+      name,
+      index,
+      addNewline,
+    });
   }
 
   async waitForTerminalOutput(
@@ -730,16 +881,34 @@ export class ExtensionClient {
     return this.proxy<DebugState>("extension/getDebugState");
   }
 
-  async evaluateInDebugger(expression: string, frameId?: number, context?: string): Promise<unknown> {
-    return this.requestOrNull("extension/evaluateInDebugger", { expression, frameId, context });
+  async evaluateInDebugger(
+    expression: string,
+    frameId?: number,
+    context?: string,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/evaluateInDebugger", {
+      expression,
+      frameId,
+      context,
+    });
   }
 
-  async setDebugBreakpoints(file: string, breakpoints: BreakpointSpec[]): Promise<unknown> {
-    return this.requestOrNull("extension/setDebugBreakpoints", { file, breakpoints });
+  async setDebugBreakpoints(
+    file: string,
+    breakpoints: BreakpointSpec[],
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/setDebugBreakpoints", {
+      file,
+      breakpoints,
+    });
   }
 
   async startDebugging(configName?: string): Promise<unknown> {
-    return this.requestOrNull("extension/startDebugging", { configName }, 15_000);
+    return this.requestOrNull(
+      "extension/startDebugging",
+      { configName },
+      15_000,
+    );
   }
 
   async stopDebugging(): Promise<unknown> {
@@ -748,8 +917,16 @@ export class ExtensionClient {
 
   // --- Decorations ---
 
-  async setDecorations(id: string, file: string, decorations: DecorationSpec[]): Promise<unknown> {
-    return this.requestOrNull("extension/setDecorations", { id, file, decorations });
+  async setDecorations(
+    id: string,
+    file: string,
+    decorations: DecorationSpec[],
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/setDecorations", {
+      id,
+      file,
+      decorations,
+    });
   }
 
   async clearDecorations(id?: string): Promise<unknown> {
@@ -758,8 +935,14 @@ export class ExtensionClient {
 
   // --- VS Code Commands ---
 
-  async executeVSCodeCommand(command: string, args?: unknown[]): Promise<unknown> {
-    return this.requestOrNull("extension/executeVSCodeCommand", { command, args });
+  async executeVSCodeCommand(
+    command: string,
+    args?: unknown[],
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/executeVSCodeCommand", {
+      command,
+      args,
+    });
   }
 
   async listVSCodeCommands(filter?: string): Promise<string[] | null> {
@@ -768,12 +951,26 @@ export class ExtensionClient {
 
   // --- Workspace Settings ---
 
-  async getWorkspaceSettings(section?: string, target?: string): Promise<unknown> {
-    return this.requestOrNull("extension/getWorkspaceSettings", { section, target });
+  async getWorkspaceSettings(
+    section?: string,
+    target?: string,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/getWorkspaceSettings", {
+      section,
+      target,
+    });
   }
 
-  async setWorkspaceSetting(key: string, value: unknown, target?: string): Promise<unknown> {
-    return this.requestOrNull("extension/setWorkspaceSetting", { key, value, target });
+  async setWorkspaceSetting(
+    key: string,
+    value: unknown,
+    target?: string,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/setWorkspaceSetting", {
+      key,
+      value,
+      target,
+    });
   }
 
   // --- Clipboard ---
@@ -788,14 +985,32 @@ export class ExtensionClient {
 
   // --- Inlay Hints ---
 
-  async getInlayHints(file: string, startLine: number, endLine: number): Promise<unknown> {
-    return this.requestOrNull("extension/getInlayHints", { file, startLine, endLine });
+  async getInlayHints(
+    file: string,
+    startLine: number,
+    endLine: number,
+  ): Promise<unknown> {
+    return this.requestOrNull("extension/getInlayHints", {
+      file,
+      startLine,
+      endLine,
+    });
   }
 
   // --- Type Hierarchy ---
 
-  async getTypeHierarchy(file: string, line: number, column: number, direction?: string, maxResults?: number): Promise<unknown> {
-    return this.requestOrNull("extension/getTypeHierarchy", { file, line, column, direction, maxResults }, 15_000);
+  async getTypeHierarchy(
+    file: string,
+    line: number,
+    column: number,
+    direction?: string,
+    maxResults?: number,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/getTypeHierarchy",
+      { file, line, column, direction, maxResults },
+      15_000,
+    );
   }
 
   // --- Tasks ---
@@ -804,9 +1019,17 @@ export class ExtensionClient {
     return this.requestOrNull("extension/listTasks", undefined, 15_000);
   }
 
-  async runTask(name: string, type?: string, timeoutMs?: number): Promise<unknown> {
+  async runTask(
+    name: string,
+    type?: string,
+    timeoutMs?: number,
+  ): Promise<unknown> {
     const requestTimeout = (timeoutMs ?? 60_000) + 5_000;
-    return this.requestOrNull("extension/runTask", { name, type, timeoutMs }, requestTimeout);
+    return this.requestOrNull(
+      "extension/runTask",
+      { name, type, timeoutMs },
+      requestTimeout,
+    );
   }
 
   // --- Workspace Folders ---
@@ -821,13 +1044,24 @@ export class ExtensionClient {
     return this.requestOrNull("extension/getNotebookCells", { file });
   }
 
-  async runNotebookCell(file: string, cellIndex: number, timeoutMs?: number): Promise<unknown> {
+  async runNotebookCell(
+    file: string,
+    cellIndex: number,
+    timeoutMs?: number,
+  ): Promise<unknown> {
     const requestTimeout = (timeoutMs ?? 30_000) + 5_000;
-    return this.requestOrNull("extension/runNotebookCell", { file, cellIndex, timeoutMs }, requestTimeout);
+    return this.requestOrNull(
+      "extension/runNotebookCell",
+      { file, cellIndex, timeoutMs },
+      requestTimeout,
+    );
   }
 
   async getNotebookOutput(file: string, cellIndex: number): Promise<unknown> {
-    return this.requestOrNull("extension/getNotebookOutput", { file, cellIndex });
+    return this.requestOrNull("extension/getNotebookOutput", {
+      file,
+      cellIndex,
+    });
   }
 
   // --- Diagnostics Helpers ---
@@ -837,7 +1071,9 @@ export class ExtensionClient {
     return Array.from(this.latestDiagnostics.values()).flat();
   }
 
-  addDiagnosticsListener(listener: (file: string, diagnostics: Diagnostic[]) => void): () => void {
+  addDiagnosticsListener(
+    listener: (file: string, diagnostics: Diagnostic[]) => void,
+  ): () => void {
     this.diagnosticsListeners.add(listener);
     return () => this.diagnosticsListeners.delete(listener);
   }
@@ -845,14 +1081,22 @@ export class ExtensionClient {
   /** Notify the extension about Claude Code connection state changes */
   notifyClaudeConnectionState(connected: boolean): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    void safeSend(this.ws, JSON.stringify({
-      jsonrpc: "2.0",
-      method: "bridge/claudeConnectionChanged",
-      params: { connected },
-    }), this.logger);
+    void safeSend(
+      this.ws,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeConnectionChanged",
+        params: { connected },
+      }),
+      this.logger,
+    );
   }
 
-  getCircuitBreakerState(): { suspended: boolean; suspendedUntil: number; failures: number } {
+  getCircuitBreakerState(): {
+    suspended: boolean;
+    suspendedUntil: number;
+    failures: number;
+  } {
     return {
       suspended: Date.now() < this.extensionSuspendedUntil,
       suspendedUntil: this.extensionSuspendedUntil,

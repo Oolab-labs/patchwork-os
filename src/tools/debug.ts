@@ -1,5 +1,18 @@
-import { ExtensionTimeoutError, type ExtensionClient, type BreakpointSpec } from "../extensionClient.js";
-import { error, extensionRequired, optionalInt, optionalString, requireArray, requireString, resolveFilePath, success } from "./utils.js";
+import {
+  type BreakpointSpec,
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  extensionRequired,
+  optionalInt,
+  optionalString,
+  requireArray,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 export function createGetDebugStateTool(extensionClient: ExtensionClient) {
   return {
@@ -25,7 +38,11 @@ export function createGetDebugStateTool(extensionClient: ExtensionClient) {
       try {
         const result = await extensionClient.getDebugState();
         if (result === null) {
-          return success({ hasActiveSession: false, isPaused: false, breakpoints: [] });
+          return success({
+            hasActiveSession: false,
+            isPaused: false,
+            breakpoints: [],
+          });
         }
         return success(result);
       } catch (err) {
@@ -59,7 +76,8 @@ export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
           },
           frameId: {
             type: "integer" as const,
-            description: "Stack frame ID from getDebugState callStack (0=top frame)",
+            description:
+              "Stack frame ID from getDebugState callStack (0=top frame)",
           },
           context: {
             type: "string" as const,
@@ -79,8 +97,13 @@ export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
       const frameId = optionalInt(args, "frameId", 0, 10_000);
       const context = optionalString(args, "context") ?? "repl";
       try {
-        const result = await extensionClient.evaluateInDebugger(expression, frameId, context);
-        if (result === null) return error("No active debug session or evaluation failed");
+        const result = await extensionClient.evaluateInDebugger(
+          expression,
+          frameId,
+          context,
+        );
+        if (result === null)
+          return error("No active debug session or evaluation failed");
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
@@ -92,7 +115,10 @@ export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
   };
 }
 
-export function createSetDebugBreakpointsTool(workspace: string, extensionClient: ExtensionClient) {
+export function createSetDebugBreakpointsTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "setDebugBreakpoints",
@@ -113,15 +139,28 @@ export function createSetDebugBreakpointsTool(workspace: string, extensionClient
           },
           breakpoints: {
             type: "array" as const,
-            description: "Breakpoints to set (replaces existing ones for this file)",
+            description:
+              "Breakpoints to set (replaces existing ones for this file)",
             items: {
               type: "object" as const,
               required: ["line"],
               properties: {
-                line: { type: "integer" as const, description: "Line number (1-based)" },
-                condition: { type: "string" as const, description: "Conditional expression" },
-                logMessage: { type: "string" as const, description: "Logpoint message (no pause, just log)" },
-                hitCondition: { type: "string" as const, description: "Hit condition (e.g. '>5')" },
+                line: {
+                  type: "integer" as const,
+                  description: "Line number (1-based)",
+                },
+                condition: {
+                  type: "string" as const,
+                  description: "Conditional expression",
+                },
+                logMessage: {
+                  type: "string" as const,
+                  description: "Logpoint message (no pause, just log)",
+                },
+                hitCondition: {
+                  type: "string" as const,
+                  description: "Hit condition (e.g. '>5')",
+                },
               },
               additionalProperties: false as const,
             },
@@ -137,9 +176,11 @@ export function createSetDebugBreakpointsTool(workspace: string, extensionClient
       const file = resolveFilePath(requireString(args, "file"), workspace);
       const rawBreakpoints = requireArray(args, "breakpoints");
       const breakpoints: BreakpointSpec[] = rawBreakpoints.map((b, i) => {
-        if (typeof b !== "object" || b === null) throw new Error(`breakpoints[${i}] must be an object`);
+        if (typeof b !== "object" || b === null)
+          throw new Error(`breakpoints[${i}] must be an object`);
         const bp = b as Record<string, unknown>;
-        if (typeof bp.line !== "number") throw new Error(`breakpoints[${i}].line must be a number`);
+        if (typeof bp.line !== "number")
+          throw new Error(`breakpoints[${i}].line must be a number`);
         return bp as unknown as BreakpointSpec;
       });
       const bps = breakpoints;

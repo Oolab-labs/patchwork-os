@@ -1,6 +1,9 @@
 import fs from "node:fs";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { requireString, resolveFilePath, success, error } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import { error, requireString, resolveFilePath, success } from "./utils.js";
 
 export function createOrganizeImportsTool(
   workspace: string,
@@ -18,7 +21,8 @@ export function createOrganizeImportsTool(
         properties: {
           filePath: {
             type: "string",
-            description: "Path to the file to organize imports in (relative to workspace or absolute)",
+            description:
+              "Path to the file to organize imports in (relative to workspace or absolute)",
           },
         },
         required: ["filePath"],
@@ -38,7 +42,8 @@ export function createOrganizeImportsTool(
 
       if (!extensionClient.isConnected()) {
         return error({
-          error: "Extension not connected — organize imports requires the VS Code extension",
+          error:
+            "Extension not connected — organize imports requires the VS Code extension",
         });
       }
 
@@ -47,7 +52,9 @@ export function createOrganizeImportsTool(
         result = await extensionClient.organizeImports(resolved);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out — organize imports may require more time");
+          return error(
+            "Extension timed out — organize imports may require more time",
+          );
         }
         throw err;
       }

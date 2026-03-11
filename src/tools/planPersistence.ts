@@ -1,11 +1,11 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import {
+  error,
   optionalString,
   requireString,
   resolveFilePath,
   success,
-  error,
 } from "./utils.js";
 
 interface PlanFrontmatter {
@@ -70,7 +70,7 @@ function parsePlanMarkdown(content: string): ParsedPlan {
     const taskMatch = line.match(/^- \[([ xX])\] (.+)/);
     if (taskMatch) {
       currentSection.tasks.push({
-        completed: taskMatch[1]!.toLowerCase() === "x",
+        completed: taskMatch[1]?.toLowerCase() === "x",
         text: taskMatch[2]!,
       });
     } else {
@@ -110,9 +110,7 @@ function serializePlan(plan: ParsedPlan): string {
   return lines.join("\n");
 }
 
-export function createPlanTools(
-  workspace: string,
-) {
+export function createPlanTools(workspace: string) {
   const createPlan = {
     schema: {
       name: "createPlan",
@@ -158,7 +156,12 @@ export function createPlanTools(
       }
       const resolved = resolveFilePath(fileName, workspace);
 
-      if (await fsp.access(resolved).then(() => true, () => false)) {
+      if (
+        await fsp.access(resolved).then(
+          () => true,
+          () => false,
+        )
+      ) {
         return error(
           `Plan file "${fileName}" already exists. Use updatePlan to modify it.`,
         );
@@ -268,7 +271,12 @@ export function createPlanTools(
       const fileName = optionalString(args, "fileName") ?? ".claude-plan.md";
       const resolved = resolveFilePath(fileName, workspace);
 
-      if (!await fsp.access(resolved).then(() => true, () => false)) {
+      if (
+        !(await fsp.access(resolved).then(
+          () => true,
+          () => false,
+        ))
+      ) {
         return error(
           `Plan file "${fileName}" not found. Use createPlan to create one.`,
         );
@@ -386,7 +394,12 @@ export function createPlanTools(
       const fileName = optionalString(args, "fileName") ?? ".claude-plan.md";
       const resolved = resolveFilePath(fileName, workspace);
 
-      if (!await fsp.access(resolved).then(() => true, () => false)) {
+      if (
+        !(await fsp.access(resolved).then(
+          () => true,
+          () => false,
+        ))
+      ) {
         return success({ found: false, fileName });
       }
 
@@ -429,8 +442,7 @@ export function createPlanTools(
         properties: {
           fileName: {
             type: "string",
-            description:
-              "Plan filename to delete (e.g., '.claude-plan.md')",
+            description: "Plan filename to delete (e.g., '.claude-plan.md')",
           },
         },
         additionalProperties: false as const,
@@ -452,7 +464,12 @@ export function createPlanTools(
       }
       const resolved = resolveFilePath(fileName, workspace);
 
-      if (!await fsp.access(resolved).then(() => true, () => false)) {
+      if (
+        !(await fsp.access(resolved).then(
+          () => true,
+          () => false,
+        ))
+      ) {
         return error(`Plan file "${fileName}" not found.`);
       }
 

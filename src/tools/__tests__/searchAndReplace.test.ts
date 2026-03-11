@@ -32,8 +32,13 @@ describe("searchAndReplace tool", () => {
   beforeEach(() => {
     // Use realpathSync to resolve macOS /var -> /private/var symlink so the
     // workspace path matches what rg returns (absolute real paths).
-    tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sar-test-")));
-    fs.writeFileSync(path.join(tmpDir, "alpha.txt"), "hello world\nhello again\n");
+    tmpDir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "sar-test-")),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "alpha.txt"),
+      "hello world\nhello again\n",
+    );
     fs.writeFileSync(path.join(tmpDir, "beta.txt"), "goodbye world\n");
 
     // Install the rg shim and prepend its bin dir to PATH
@@ -62,13 +67,20 @@ describe("searchAndReplace tool", () => {
   it("dryRun: true does not modify files", async () => {
     const original = fs.readFileSync(path.join(tmpDir, "alpha.txt"), "utf-8");
     const tool = createSearchAndReplaceTool(tmpDir);
-    const result = await tool.handler({ pattern: "hello", replacement: "hi", dryRun: true });
+    const result = await tool.handler({
+      pattern: "hello",
+      replacement: "hi",
+      dryRun: true,
+    });
     const data = parse(result);
 
     expect(data.dryRun).toBe(true);
     expect(data.totalReplacements).toBeGreaterThanOrEqual(1);
     // File should be unchanged
-    const afterContent = fs.readFileSync(path.join(tmpDir, "alpha.txt"), "utf-8");
+    const afterContent = fs.readFileSync(
+      path.join(tmpDir, "alpha.txt"),
+      "utf-8",
+    );
     expect(afterContent).toBe(original);
   });
 
@@ -88,7 +100,10 @@ describe("searchAndReplace tool", () => {
 
   it("pattern that matches nothing returns 0 files modified", async () => {
     const tool = createSearchAndReplaceTool(tmpDir);
-    const result = await tool.handler({ pattern: "zzz_no_match_zzz", replacement: "x" });
+    const result = await tool.handler({
+      pattern: "zzz_no_match_zzz",
+      replacement: "x",
+    });
     const data = parse(result);
 
     expect(data.matched).toBe(0);

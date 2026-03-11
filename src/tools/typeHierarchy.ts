@@ -1,7 +1,22 @@
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
-import { error, extensionRequired, optionalInt, optionalString, requireInt, requireString, resolveFilePath, success } from "./utils.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
+import {
+  error,
+  extensionRequired,
+  optionalInt,
+  optionalString,
+  requireInt,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
-export function createGetTypeHierarchyTool(workspace: string, extensionClient: ExtensionClient) {
+export function createGetTypeHierarchyTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
   return {
     schema: {
       name: "getTypeHierarchy",
@@ -50,7 +65,13 @@ export function createGetTypeHierarchyTool(workspace: string, extensionClient: E
       const direction = optionalString(args, "direction") ?? "both";
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 20;
       try {
-        const result = await extensionClient.getTypeHierarchy(file, line, column, direction, maxResults);
+        const result = await extensionClient.getTypeHierarchy(
+          file,
+          line,
+          column,
+          direction,
+          maxResults,
+        );
         if (result === null) return error("Failed to get type hierarchy");
         return success(result);
       } catch (err) {

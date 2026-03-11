@@ -16,6 +16,27 @@
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Claude IDE Bridge",
+      "properties": {
+        "claudeIdeBridge.logLevel": {
+          "type": "string",
+          "enum": ["info", "debug", "warn"],
+          "default": "info",
+          "description": "Log verbosity level for the output channel."
+        },
+        "claudeIdeBridge.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically connect to the bridge on startup."
+        },
+        "claudeIdeBridge.lockFileDir": {
+          "type": "string",
+          "default": "",
+          "description": "Override the lock file directory (default: ~/.claude/ide/). Useful for multi-bridge setups."
+        }
+      }
+    },
     "commands": [
       {
         "command": "claudeIdeBridge.reconnect",

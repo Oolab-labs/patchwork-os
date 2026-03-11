@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ActivityLog } from "../activityLog.js";
 
 describe("ActivityLog", () => {
@@ -63,11 +63,11 @@ describe("ActivityLog", () => {
     log.record("runCommand", 100, "success");
 
     const stats = log.stats();
-    expect(stats["openFile"]?.count).toBe(3);
-    expect(stats["openFile"]?.avgDurationMs).toBe(20);
-    expect(stats["openFile"]?.errors).toBe(1);
-    expect(stats["runCommand"]?.count).toBe(1);
-    expect(stats["runCommand"]?.errors).toBe(0);
+    expect(stats.openFile?.count).toBe(3);
+    expect(stats.openFile?.avgDurationMs).toBe(20);
+    expect(stats.openFile?.errors).toBe(1);
+    expect(stats.runCommand?.count).toBe(1);
+    expect(stats.runCommand?.errors).toBe(0);
   });
 
   it("performs batch eviction at 120% capacity", () => {
@@ -104,11 +104,19 @@ describe("ActivityLog", () => {
     const output = log.toPrometheus();
 
     // Counter lines for openFile
-    expect(output).toContain('bridge_tool_calls_total{tool="openFile",status="success"} 2');
-    expect(output).toContain('bridge_tool_calls_total{tool="openFile",status="error"} 1');
+    expect(output).toContain(
+      'bridge_tool_calls_total{tool="openFile",status="success"} 2',
+    );
+    expect(output).toContain(
+      'bridge_tool_calls_total{tool="openFile",status="error"} 1',
+    );
     // Counter lines for runCommand
-    expect(output).toContain('bridge_tool_calls_total{tool="runCommand",status="success"} 1');
-    expect(output).toContain('bridge_tool_calls_total{tool="runCommand",status="error"} 0');
+    expect(output).toContain(
+      'bridge_tool_calls_total{tool="runCommand",status="success"} 1',
+    );
+    expect(output).toContain(
+      'bridge_tool_calls_total{tool="runCommand",status="error"} 0',
+    );
     // Gauge lines
     expect(output).toContain('bridge_tool_duration_ms_avg{tool="openFile"} 20');
     // Uptime gauge present

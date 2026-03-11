@@ -9,10 +9,10 @@
  * to verify openedFiles state across connection lifecycles.
  */
 
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { Logger } from "../logger.js";

@@ -1,6 +1,12 @@
 import type { ExtensionClient } from "../extensionClient.js";
-import { optionalString, optionalInt, resolveFilePath, success, extensionRequired } from "./utils.js";
 import type { ToolHandler } from "../transport.js";
+import {
+  extensionRequired,
+  optionalInt,
+  optionalString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 export function createWatchDiagnosticsTool(
   workspace: string,
@@ -21,15 +27,18 @@ export function createWatchDiagnosticsTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Optional: only watch diagnostics for this specific file",
+            description:
+              "Optional: only watch diagnostics for this specific file",
           },
           timeoutMs: {
             type: "integer" as const,
-            description: "Max wait time in milliseconds (default: 10000, max: 30000)",
+            description:
+              "Max wait time in milliseconds (default: 10000, max: 30000)",
           },
           sinceTimestamp: {
             type: "integer" as const,
-            description: "Only return if diagnostics changed after this timestamp (from a previous watchDiagnostics call)",
+            description:
+              "Only return if diagnostics changed after this timestamp (from a previous watchDiagnostics call)",
           },
         },
         additionalProperties: false as const,
@@ -42,13 +51,26 @@ export function createWatchDiagnosticsTool(
       }
 
       const rawPath = optionalString(args, "filePath");
-      const resolvedPath = rawPath ? resolveFilePath(rawPath, workspace) : undefined;
-      const timeoutMs = Math.min(optionalInt(args, "timeoutMs", 1000, 30_000) ?? 10_000, 30_000);
-      const sinceTimestamp = optionalInt(args, "sinceTimestamp", 0, Number.MAX_SAFE_INTEGER);
+      const resolvedPath = rawPath
+        ? resolveFilePath(rawPath, workspace)
+        : undefined;
+      const timeoutMs = Math.min(
+        optionalInt(args, "timeoutMs", 1000, 30_000) ?? 10_000,
+        30_000,
+      );
+      const sinceTimestamp = optionalInt(
+        args,
+        "sinceTimestamp",
+        0,
+        Number.MAX_SAFE_INTEGER,
+      );
 
       // Check if already changed since requested timestamp.
       // Use explicit undefined check — sinceTimestamp=0 is valid and must not be skipped.
-      if (sinceTimestamp !== undefined && extensionClient.lastDiagnosticsUpdate > sinceTimestamp) {
+      if (
+        sinceTimestamp !== undefined &&
+        extensionClient.lastDiagnosticsUpdate > sinceTimestamp
+      ) {
         const diagnostics = extensionClient.getCachedDiagnostics(resolvedPath);
         return success({
           changed: true,
@@ -66,13 +88,16 @@ export function createWatchDiagnosticsTool(
           if (settled) return;
           settled = true;
           cleanup();
-          const diagnostics = extensionClient.getCachedDiagnostics(resolvedPath);
-          resolve(success({
-            changed,
-            timestamp: extensionClient.lastDiagnosticsUpdate,
-            diagnostics,
-            count: diagnostics.length,
-          }));
+          const diagnostics =
+            extensionClient.getCachedDiagnostics(resolvedPath);
+          resolve(
+            success({
+              changed,
+              timestamp: extensionClient.lastDiagnosticsUpdate,
+              diagnostics,
+              count: diagnostics.length,
+            }),
+          );
         };
 
         const unsubscribe = extensionClient.addDiagnosticsListener((file) => {

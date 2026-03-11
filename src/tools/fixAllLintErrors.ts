@@ -1,8 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ExtensionTimeoutError, type ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, requireString, resolveFilePath, success, error } from "./utils.js";
+import {
+  error,
+  execSafe,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 interface FixerOption {
   cmd: string;
@@ -20,8 +29,10 @@ const PY_FIXERS: FixerOption[] = [
 ];
 
 const EXT_FIXERS: Record<string, FixerOption[]> = {
-  ".ts": JS_FIXERS, ".tsx": JS_FIXERS,
-  ".js": JS_FIXERS, ".jsx": JS_FIXERS,
+  ".ts": JS_FIXERS,
+  ".tsx": JS_FIXERS,
+  ".js": JS_FIXERS,
+  ".jsx": JS_FIXERS,
   ".py": PY_FIXERS,
 };
 
@@ -41,7 +52,8 @@ export function createFixAllLintErrorsTool(
         properties: {
           filePath: {
             type: "string",
-            description: "Path to the file to fix (relative to workspace or absolute)",
+            description:
+              "Path to the file to fix (relative to workspace or absolute)",
           },
         },
         required: ["filePath"],

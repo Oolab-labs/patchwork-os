@@ -27,7 +27,9 @@ describe("getProjectInfo tool", () => {
     expect(data.workspace).toBe(tmpDir);
     expect(data.project).toBeDefined();
     // For an unknown project type, name should be the basename of the directory
-    const project = Array.isArray(data.project) ? data.project[0] : data.project;
+    const project = Array.isArray(data.project)
+      ? data.project[0]
+      : data.project;
     expect(project.name).toBeDefined();
     expect(typeof project.name).toBe("string");
     expect(project.name.length).toBeGreaterThan(0);
@@ -39,13 +41,18 @@ describe("getProjectInfo tool", () => {
       path.join(tmpDir, "package.json"),
       JSON.stringify({ name: "ts-project", version: "1.0.0" }),
     );
-    fs.writeFileSync(path.join(tmpDir, "tsconfig.json"), JSON.stringify({ compilerOptions: {} }));
+    fs.writeFileSync(
+      path.join(tmpDir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: {} }),
+    );
 
     const tool = createGetProjectInfoTool(tmpDir);
     const result = await tool.handler();
     const data = parse(result);
 
-    const project = Array.isArray(data.project) ? data.project[0] : data.project;
+    const project = Array.isArray(data.project)
+      ? data.project[0]
+      : data.project;
     expect(project.type).toBe("typescript");
     expect(project.name).toBe("ts-project");
   });
@@ -55,7 +62,9 @@ describe("getProjectInfo tool", () => {
     const result = await tool.handler();
     const data = parse(result);
 
-    const project = Array.isArray(data.project) ? data.project[0] : data.project;
+    const project = Array.isArray(data.project)
+      ? data.project[0]
+      : data.project;
     expect(project.name).toBe(path.basename(tmpDir));
   });
 });

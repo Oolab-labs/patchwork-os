@@ -45,9 +45,14 @@ export function createDecorationHandlers(): {
   const activeDecorations = new Map<string, DecorationEntry>();
   const disposables: vscode.Disposable[] = [];
 
-  function applyToEditor(editor: vscode.TextEditor, entry: DecorationEntry): void {
+  function applyToEditor(
+    editor: vscode.TextEditor,
+    entry: DecorationEntry,
+  ): void {
     if (entry.isDisposed) return;
-    const fileRangesForEditor = entry.fileRanges.get(editor.document.uri.fsPath);
+    const fileRangesForEditor = entry.fileRanges.get(
+      editor.document.uri.fsPath,
+    );
     if (fileRangesForEditor) {
       editor.setDecorations(entry.type, fileRangesForEditor);
     }
@@ -67,16 +72,20 @@ export function createDecorationHandlers(): {
   const handleSetDecorations: RequestHandler = async (params) => {
     const id = params.id;
     const file = params.file;
-    if (typeof id !== "string" || id.length === 0) throw new Error("id is required");
+    if (typeof id !== "string" || id.length === 0)
+      throw new Error("id is required");
     if (typeof file !== "string") throw new Error("file is required");
-    if (!/^[\w\-]+$/.test(id)) throw new Error("id must be alphanumeric with hyphens/underscores only");
+    if (!/^[\w\-]+$/.test(id))
+      throw new Error("id must be alphanumeric with hyphens/underscores only");
 
     const specs = Array.isArray(params.decorations) ? params.decorations : [];
 
     // Get or create the decoration type for this ID
-    const requestedStyle = typeof (specs[0] as Record<string, unknown> | undefined)?.style === "string"
-      ? (specs[0] as Record<string, unknown>).style as string
-      : "info";
+    const requestedStyle =
+      typeof (specs[0] as Record<string, unknown> | undefined)?.style ===
+      "string"
+        ? ((specs[0] as Record<string, unknown>).style as string)
+        : "info";
     let entry = activeDecorations.get(id);
     if (entry && entry.style !== requestedStyle) {
       // Style changed — clear editors, remove from map, mark disposed, then dispose.
@@ -94,29 +103,47 @@ export function createDecorationHandlers(): {
     if (!entry) {
       const renderOptions = STYLE_MAP[requestedStyle] ?? STYLE_MAP.info;
       const type = vscode.window.createTextEditorDecorationType(renderOptions);
-      entry = { type, style: requestedStyle, fileRanges: new Map(), isDisposed: false };
+      entry = {
+        type,
+        style: requestedStyle,
+        fileRanges: new Map(),
+        isDisposed: false,
+      };
       activeDecorations.set(id, entry);
     }
 
-    const decorationOptions: vscode.DecorationOptions[] = specs.map((spec: Record<string, unknown>) => {
-      const startLine = typeof spec.startLine === "number" ? Math.max(0, spec.startLine - 1) : 0;
-      const endLine = typeof spec.endLine === "number" ? Math.max(0, spec.endLine - 1) : startLine;
-      const range = new vscode.Range(startLine, 0, endLine, Number.MAX_SAFE_INTEGER);
-      const result: vscode.DecorationOptions = { range };
-      if (typeof spec.hoverMessage === "string") {
-        result.hoverMessage = spec.hoverMessage;
-      }
-      if (typeof spec.message === "string") {
-        result.renderOptions = {
-          after: {
-            contentText: `  ${spec.message}`,
-            color: new vscode.ThemeColor("editorCodeLens.foreground"),
-            fontStyle: "italic",
-          },
-        };
-      }
-      return result;
-    });
+    const decorationOptions: vscode.DecorationOptions[] = specs.map(
+      (spec: Record<string, unknown>) => {
+        const startLine =
+          typeof spec.startLine === "number"
+            ? Math.max(0, spec.startLine - 1)
+            : 0;
+        const endLine =
+          typeof spec.endLine === "number"
+            ? Math.max(0, spec.endLine - 1)
+            : startLine;
+        const range = new vscode.Range(
+          startLine,
+          0,
+          endLine,
+          Number.MAX_SAFE_INTEGER,
+        );
+        const result: vscode.DecorationOptions = { range };
+        if (typeof spec.hoverMessage === "string") {
+          result.hoverMessage = spec.hoverMessage;
+        }
+        if (typeof spec.message === "string") {
+          result.renderOptions = {
+            after: {
+              contentText: `  ${spec.message}`,
+              color: new vscode.ThemeColor("editorCodeLens.foreground"),
+              fontStyle: "italic",
+            },
+          };
+        }
+        return result;
+      },
+    );
 
     entry.fileRanges.set(file, decorationOptions);
 

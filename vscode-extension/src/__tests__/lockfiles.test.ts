@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock vscode before importing lockfiles
 vi.mock("vscode", async () => {
@@ -19,7 +19,7 @@ vi.mock("../constants", () => ({
   LOCK_DIR: "/mock/lock/dir",
 }));
 
-import * as fsp from "fs/promises";
+import * as fsp from "node:fs/promises";
 import { readLockFilesAsync } from "../lockfiles";
 
 const NOW = 1_700_000_000_000; // fixed "now" in ms

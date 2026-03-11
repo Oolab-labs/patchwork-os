@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { success, error, findLineNumber } from "../utils.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { error, findLineNumber, success } from "../utils.js";
 
 describe("success() and error() format", () => {
   it("success returns compact JSON (no pretty-printing)", () => {
@@ -64,6 +64,8 @@ describe("findLineNumber (async)", () => {
   });
 
   it("returns null for non-existent file", async () => {
-    expect(await findLineNumber("/tmp/nonexistent-file-12345.txt", "text")).toBeNull();
+    expect(
+      await findLineNumber("/tmp/nonexistent-file-12345.txt", "text"),
+    ).toBeNull();
   });
 });

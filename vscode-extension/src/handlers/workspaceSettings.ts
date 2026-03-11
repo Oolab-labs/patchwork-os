@@ -1,9 +1,16 @@
 import * as vscode from "vscode";
 
-const BLOCKED_SECTIONS = new Set(["security", "extensions.autoUpdate", "extensions.autoInstallDependencies"]);
+const BLOCKED_SECTIONS = new Set([
+  "security",
+  "extensions.autoUpdate",
+  "extensions.autoInstallDependencies",
+]);
 
-export async function handleGetWorkspaceSettings(params: Record<string, unknown>): Promise<unknown> {
-  const section = typeof params.section === "string" ? params.section : undefined;
+export async function handleGetWorkspaceSettings(
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const section =
+    typeof params.section === "string" ? params.section : undefined;
   const config = vscode.workspace.getConfiguration(section);
 
   // Get the raw configuration object
@@ -26,18 +33,23 @@ export async function handleGetWorkspaceSettings(params: Record<string, unknown>
   return { section: section ?? "(root)", settings: result };
 }
 
-export async function handleSetWorkspaceSetting(params: Record<string, unknown>): Promise<unknown> {
+export async function handleSetWorkspaceSetting(
+  params: Record<string, unknown>,
+): Promise<unknown> {
   const key = params.key;
   if (typeof key !== "string" || key.length === 0) {
     throw new Error("key is required and must be a non-empty string");
   }
   const value = params.value;
-  const targetStr = typeof params.target === "string" ? params.target : "workspace";
+  const targetStr =
+    typeof params.target === "string" ? params.target : "workspace";
 
   // Block writes to sensitive sections
   const topSection = key.split(".")[0];
   if (topSection && BLOCKED_SECTIONS.has(topSection)) {
-    throw new Error(`Writing to "${topSection}" settings is blocked for safety`);
+    throw new Error(
+      `Writing to "${topSection}" settings is blocked for safety`,
+    );
   }
 
   const target =

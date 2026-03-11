@@ -2,7 +2,10 @@ import path from "node:path";
 import type { ExtensionClient } from "../extensionClient.js";
 import { success } from "./utils.js";
 
-export function createGetWorkspaceFoldersTool(workspaceFolders: string[], extensionClient?: ExtensionClient) {
+export function createGetWorkspaceFoldersTool(
+  workspaceFolders: string[],
+  extensionClient?: ExtensionClient,
+) {
   return {
     schema: {
       name: "getWorkspaceFolders",

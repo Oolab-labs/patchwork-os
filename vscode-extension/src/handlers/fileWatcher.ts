@@ -3,7 +3,9 @@ import { MAX_WATCHERS } from "../constants";
 import type { RequestHandler } from "../types";
 
 interface FileWatcherDeps {
-  getBridge: () => { sendNotification(method: string, params: Record<string, unknown>): void } | null;
+  getBridge: () => {
+    sendNotification(method: string, params: Record<string, unknown>): void;
+  } | null;
 }
 
 export function createFileWatcherHandlers(deps: FileWatcherDeps) {
@@ -16,8 +18,16 @@ export function createFileWatcherHandlers(deps: FileWatcherDeps) {
     if (!pattern || !id) {
       return { watching: false, error: "Both 'id' and 'pattern' are required" };
     }
-    if (typeof pattern !== "string" || pattern.startsWith("/") || pattern.includes("..")) {
-      return { watching: false, error: "pattern must be a relative glob (e.g. '**/*.ts') — absolute paths and '..' are not allowed" };
+    if (
+      typeof pattern !== "string" ||
+      pattern.startsWith("/") ||
+      pattern.includes("..")
+    ) {
+      return {
+        watching: false,
+        error:
+          "pattern must be a relative glob (e.g. '**/*.ts') — absolute paths and '..' are not allowed",
+      };
     }
 
     if (activeWatchers.size >= MAX_WATCHERS && !activeWatchers.has(id)) {

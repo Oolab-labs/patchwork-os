@@ -1,16 +1,21 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { __reset, _mockTextDocument, TabInputText, Uri } from "../__mocks__/vscode";
 import {
-  handleGetOpenFiles,
-  handleIsDirty,
-  handleOpenFile,
-  handleSaveFile,
   handleCloseTab,
   handleCreateFile,
   handleDeleteFile,
+  handleGetOpenFiles,
+  handleIsDirty,
+  handleOpenFile,
   handleRenameFile,
+  handleSaveFile,
 } from "../../handlers/files";
+import {
+  TabInputText,
+  Uri,
+  __reset,
+  _mockTextDocument,
+} from "../__mocks__/vscode";
 
 beforeEach(() => {
   __reset();
@@ -21,22 +26,34 @@ beforeEach(() => {
 describe("workspace boundary checks", () => {
   it("rejects all paths when no workspace folders", async () => {
     vscode.workspace.workspaceFolders = undefined;
-    await expect(handleOpenFile({ file: "/anywhere/file.ts" })).rejects.toThrow("No workspace is open");
+    await expect(handleOpenFile({ file: "/anywhere/file.ts" })).rejects.toThrow(
+      "No workspace is open",
+    );
   });
 
   it("allows paths inside workspace", async () => {
-    vscode.workspace.workspaceFolders = [{ uri: { fsPath: "/workspace" } }] as any;
-    await expect(handleOpenFile({ file: "/workspace/src/file.ts" })).resolves.not.toThrow();
+    vscode.workspace.workspaceFolders = [
+      { uri: { fsPath: "/workspace" } },
+    ] as any;
+    await expect(
+      handleOpenFile({ file: "/workspace/src/file.ts" }),
+    ).resolves.not.toThrow();
   });
 
   it("allows exact workspace root", async () => {
-    vscode.workspace.workspaceFolders = [{ uri: { fsPath: "/workspace" } }] as any;
+    vscode.workspace.workspaceFolders = [
+      { uri: { fsPath: "/workspace" } },
+    ] as any;
     await expect(handleIsDirty({ file: "/workspace" })).resolves.not.toThrow();
   });
 
   it("rejects paths outside workspace", async () => {
-    vscode.workspace.workspaceFolders = [{ uri: { fsPath: "/workspace" } }] as any;
-    await expect(handleOpenFile({ file: "/other/file.ts" })).rejects.toThrow("outside the workspace");
+    vscode.workspace.workspaceFolders = [
+      { uri: { fsPath: "/workspace" } },
+    ] as any;
+    await expect(handleOpenFile({ file: "/other/file.ts" })).rejects.toThrow(
+      "outside the workspace",
+    );
   });
 });
 
@@ -54,20 +71,40 @@ describe("handleGetOpenFiles", () => {
       {
         tabs: [
           { input: new TabInputText(uri), isActive: true, isDirty: false },
-          { input: new TabInputText(Uri.file("/workspace/other.ts")), isActive: false, isDirty: true },
+          {
+            input: new TabInputText(Uri.file("/workspace/other.ts")),
+            isActive: false,
+            isDirty: true,
+          },
         ],
       },
     ] as any;
 
     const result = (await handleGetOpenFiles()) as any[];
     expect(result).toHaveLength(2);
-    expect(result[0]).toEqual({ filePath: "/workspace/test.ts", isActive: true, isDirty: false });
-    expect(result[1]).toEqual({ filePath: "/workspace/other.ts", isActive: false, isDirty: true });
+    expect(result[0]).toEqual({
+      filePath: "/workspace/test.ts",
+      isActive: true,
+      isDirty: false,
+    });
+    expect(result[1]).toEqual({
+      filePath: "/workspace/other.ts",
+      isActive: false,
+      isDirty: true,
+    });
   });
 
   it("skips non-TabInputText tabs", async () => {
     vscode.window.tabGroups.all = [
-      { tabs: [{ input: { notATabInputText: true }, isActive: false, isDirty: false }] },
+      {
+        tabs: [
+          {
+            input: { notATabInputText: true },
+            isActive: false,
+            isDirty: false,
+          },
+        ],
+      },
     ] as any;
     expect(await handleGetOpenFiles()).toEqual([]);
   });
@@ -77,7 +114,9 @@ describe("handleGetOpenFiles", () => {
 
 describe("handleIsDirty", () => {
   it("throws on non-string file param", async () => {
-    await expect(handleIsDirty({ file: 123 } as any)).rejects.toThrow("must be a non-empty string");
+    await expect(handleIsDirty({ file: 123 } as any)).rejects.toThrow(
+      "must be a non-empty string",
+    );
   });
 
   it("returns true for dirty document", async () => {
@@ -87,7 +126,10 @@ describe("handleIsDirty", () => {
   });
 
   it("returns false for clean document", async () => {
-    const doc = _mockTextDocument({ fsPath: "/workspace/f.ts", isDirty: false });
+    const doc = _mockTextDocument({
+      fsPath: "/workspace/f.ts",
+      isDirty: false,
+    });
     vscode.workspace.textDocuments = [doc];
     expect(await handleIsDirty({ file: "/workspace/f.ts" })).toBe(false);
   });
@@ -108,7 +150,10 @@ describe("handleOpenFile", () => {
     const result = await handleOpenFile({ file: "/workspace/f.ts", line: 10 });
     expect(result).toBe(true);
     expect(vscode.workspace.openTextDocument).toHaveBeenCalled();
-    expect(vscode.window.showTextDocument).toHaveBeenCalledWith(doc, expect.objectContaining({ preview: false }));
+    expect(vscode.window.showTextDocument).toHaveBeenCalledWith(
+      doc,
+      expect.objectContaining({ preview: false }),
+    );
   });
 
   it("defaults to line 1", async () => {
@@ -132,7 +177,10 @@ describe("handleSaveFile", () => {
   });
 
   it("returns error for untitled document", async () => {
-    const doc = _mockTextDocument({ fsPath: "/workspace/f.ts", isUntitled: true });
+    const doc = _mockTextDocument({
+      fsPath: "/workspace/f.ts",
+      isUntitled: true,
+    });
     vscode.workspace.textDocuments = [doc];
     const result = (await handleSaveFile({ file: "/workspace/f.ts" })) as any;
     expect(result.success).toBe(false);
@@ -151,7 +199,11 @@ describe("handleSaveFile", () => {
 describe("handleCloseTab", () => {
   it("closes a matching tab", async () => {
     const uri = Uri.file("/workspace/f.ts");
-    const tab = { input: new TabInputText(uri), isActive: true, isDirty: false };
+    const tab = {
+      input: new TabInputText(uri),
+      isActive: true,
+      isDirty: false,
+    };
     vscode.window.tabGroups.all = [{ tabs: [tab] }] as any;
     vi.mocked(vscode.window.tabGroups.close).mockResolvedValue(true);
 
@@ -172,7 +224,10 @@ describe("handleCloseTab", () => {
 
 describe("handleCreateFile", () => {
   it("creates a file and opens it", async () => {
-    const result = (await handleCreateFile({ filePath: "/workspace/new.ts", content: "hello" })) as any;
+    const result = (await handleCreateFile({
+      filePath: "/workspace/new.ts",
+      content: "hello",
+    })) as any;
     expect(result.success).toBe(true);
     expect(result.isDirectory).toBe(false);
     expect(vscode.workspace.applyEdit).toHaveBeenCalled();
@@ -180,20 +235,28 @@ describe("handleCreateFile", () => {
   });
 
   it("creates a directory", async () => {
-    const result = (await handleCreateFile({ filePath: "/workspace/dir", isDirectory: true })) as any;
+    const result = (await handleCreateFile({
+      filePath: "/workspace/dir",
+      isDirectory: true,
+    })) as any;
     expect(result.success).toBe(true);
     expect(result.isDirectory).toBe(true);
     expect(vscode.workspace.fs.createDirectory).toHaveBeenCalled();
   });
 
   it("skips opening when openAfterCreate=false", async () => {
-    await handleCreateFile({ filePath: "/workspace/new.ts", openAfterCreate: false });
+    await handleCreateFile({
+      filePath: "/workspace/new.ts",
+      openAfterCreate: false,
+    });
     expect(vscode.window.showTextDocument).not.toHaveBeenCalled();
   });
 
   it("returns error when applyEdit fails", async () => {
     vi.mocked(vscode.workspace.applyEdit).mockResolvedValue(false);
-    const result = (await handleCreateFile({ filePath: "/workspace/new.ts" })) as any;
+    const result = (await handleCreateFile({
+      filePath: "/workspace/new.ts",
+    })) as any;
     expect(result.success).toBe(false);
   });
 });
@@ -202,7 +265,9 @@ describe("handleCreateFile", () => {
 
 describe("handleDeleteFile", () => {
   it("deletes a file with defaults", async () => {
-    const result = (await handleDeleteFile({ filePath: "/workspace/f.ts" })) as any;
+    const result = (await handleDeleteFile({
+      filePath: "/workspace/f.ts",
+    })) as any;
     expect(result.success).toBe(true);
     expect(vscode.workspace.fs.delete).toHaveBeenCalledWith(
       expect.objectContaining({ fsPath: "/workspace/f.ts" }),
@@ -211,8 +276,12 @@ describe("handleDeleteFile", () => {
   });
 
   it("returns error on delete failure", async () => {
-    vi.mocked(vscode.workspace.fs.delete).mockRejectedValue(new Error("ENOENT"));
-    const result = (await handleDeleteFile({ filePath: "/workspace/f.ts" })) as any;
+    vi.mocked(vscode.workspace.fs.delete).mockRejectedValue(
+      new Error("ENOENT"),
+    );
+    const result = (await handleDeleteFile({
+      filePath: "/workspace/f.ts",
+    })) as any;
     expect(result.success).toBe(false);
     expect(result.error).toContain("ENOENT");
   });
@@ -222,7 +291,10 @@ describe("handleDeleteFile", () => {
 
 describe("handleRenameFile", () => {
   it("renames a file", async () => {
-    const result = (await handleRenameFile({ oldPath: "/workspace/a.ts", newPath: "/workspace/b.ts" })) as any;
+    const result = (await handleRenameFile({
+      oldPath: "/workspace/a.ts",
+      newPath: "/workspace/b.ts",
+    })) as any;
     expect(result.success).toBe(true);
     expect(result.renamed).toBe(true);
     expect(vscode.workspace.applyEdit).toHaveBeenCalled();
@@ -230,12 +302,17 @@ describe("handleRenameFile", () => {
 
   it("returns error when applyEdit fails", async () => {
     vi.mocked(vscode.workspace.applyEdit).mockResolvedValue(false);
-    const result = (await handleRenameFile({ oldPath: "/workspace/a.ts", newPath: "/workspace/b.ts" })) as any;
+    const result = (await handleRenameFile({
+      oldPath: "/workspace/a.ts",
+      newPath: "/workspace/b.ts",
+    })) as any;
     expect(result.success).toBe(false);
   });
 
   it("checks both paths against workspace", async () => {
-    vscode.workspace.workspaceFolders = [{ uri: { fsPath: "/workspace" } }] as any;
+    vscode.workspace.workspaceFolders = [
+      { uri: { fsPath: "/workspace" } },
+    ] as any;
     await expect(
       handleRenameFile({ oldPath: "/workspace/a.ts", newPath: "/other/b.ts" }),
     ).rejects.toThrow("outside the workspace");
