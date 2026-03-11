@@ -14,7 +14,8 @@ export function createGetGitStatusTool(workspace: string) {
         properties: {
           filePath: {
             type: "string",
-            description: "Optional file path to filter status for",
+            description:
+              "Optional absolute or workspace-relative file path to filter status for",
           },
         },
       },

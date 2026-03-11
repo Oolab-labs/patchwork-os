@@ -24,7 +24,8 @@ export function createGetGitDiffTool(workspace: string) {
         properties: {
           filePath: {
             type: "string",
-            description: "Optional file path to diff",
+            description:
+              "Optional absolute or workspace-relative file path to diff",
           },
           staged: {
             type: "boolean",

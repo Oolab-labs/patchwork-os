@@ -25,7 +25,8 @@ export function createGetGitLogTool(workspace: string) {
           },
           filePath: {
             type: "string",
-            description: "Optional file path to filter log for",
+            description:
+              "Optional absolute or workspace-relative file path to filter log entries for",
           },
         },
       },

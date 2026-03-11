@@ -88,7 +88,7 @@ export function createGetToolCapabilitiesTool(
             ? "available (VS Code LSP)"
             : "partial (lexical grep fallback for goToDefinition, findReferences, searchWorkspaceSymbols — hover, code actions, rename still require extension)",
           terminalOutput: extensionClient.isConnected()
-            ? "available (output capture depends on VS Code proposed API)"
+            ? "available (runInTerminal uses VS Code shell integration; getTerminalOutput uses proposed API)"
             : "unavailable (requires extension)",
         },
         commandAllowlist: config.commandAllowlist,
@@ -128,6 +128,15 @@ export function createGetToolCapabilitiesTool(
             "gitCommit",
             "gitCheckout",
             "gitBlame",
+            "gitFetch",
+            "gitPull",
+            "gitPush",
+            "gitListBranches",
+            "gitStash",
+            "gitStashPop",
+            "gitStashList",
+            "getCommitDetails",
+            "getDiffBetweenRefs",
           ],
           diagnostics: [
             "getDiagnostics",
@@ -146,6 +155,10 @@ export function createGetToolCapabilitiesTool(
                 "applyCodeAction",
                 "renameSymbol",
                 "searchWorkspaceSymbols",
+                "getCallHierarchy",
+                "getTypeHierarchy",
+                "getInlayHints",
+                "getHoverAtCursor",
               ]
             : [
                 "getDocumentSymbols (grep fallback)",
@@ -168,6 +181,7 @@ export function createGetToolCapabilitiesTool(
             "restoreSnapshot",
             "deleteSnapshot",
             "showSnapshot",
+            "diffSnapshot",
           ],
           terminal: extensionClient.isConnected()
             ? [
@@ -175,8 +189,38 @@ export function createGetToolCapabilitiesTool(
                 "getTerminalOutput",
                 "createTerminal",
                 "sendTerminalCommand",
+                "runInTerminal",
+                "waitForTerminalOutput",
+                "disposeTerminal",
               ]
             : [],
+          debug: extensionClient.isConnected()
+            ? [
+                "getDebugState",
+                "evaluateInDebugger",
+                "setDebugBreakpoints",
+                "startDebugging",
+                "stopDebugging",
+              ]
+            : [],
+          http: ["sendHttpRequest", "parseHttpFile"],
+          ...(probes.gh
+            ? {
+                github: [
+                  "githubCreatePR",
+                  "githubListPRs",
+                  "githubViewPR",
+                  "githubGetPRDiff",
+                  "githubPostPRReview",
+                  "githubListIssues",
+                  "githubGetIssue",
+                  "githubCreateIssue",
+                  "githubCommentIssue",
+                  "githubListRuns",
+                  "githubGetRunLogs",
+                ],
+              }
+            : {}),
           other: [
             "runCommand",
             "getToolCapabilities",
@@ -186,6 +230,25 @@ export function createGetToolCapabilitiesTool(
             "getCurrentSelection",
             "getLatestSelection",
             "getWorkspaceFolders",
+            "setActiveWorkspaceFolder",
+            "bridgeStatus",
+            ...(extensionClient.isConnected()
+              ? [
+                  "readClipboard",
+                  "writeClipboard",
+                  "getWorkspaceSettings",
+                  "setWorkspaceSetting",
+                  "executeVSCodeCommand",
+                  "listVSCodeCommands",
+                  "getNotebookCells",
+                  "runNotebookCell",
+                  "getNotebookOutput",
+                  "setEditorDecorations",
+                  "clearEditorDecorations",
+                  "listTasks",
+                  "runTask",
+                ]
+              : []),
           ],
         },
       });

@@ -44,6 +44,58 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
+## Claude Code Platform Integration (NEW)
+
+### Skills & Slash Commands (Shipped)
+- 5 pre-built skills in `.claude/skills/`: `/ide-debug`, `/ide-review`, `/ide-quality`, `/ide-refactor`, `/ide-explore`
+- Package existing use-case workflows as one-command invocations
+- `disable-model-invocation: true` for action skills, `context: fork` for exploration
+- Skills reference bridge MCP tools by name — no bridge code changes needed
+
+### Custom Subagents (Shipped)
+- 3 subagent definitions in `.claude/agents/`: `ide-code-reviewer`, `ide-debugger`, `ide-test-runner`
+- Each uses bridge MCP tools in isolated context
+- `memory: project` enabled for cross-session learning
+- Subagents produce verbose output (LSP queries, terminal logs) that stays out of main context
+
+### Plugin Packaging
+- Package bridge as a Claude Code Plugin: MCP config + skills + subagents + hooks in one installable unit
+- Enables `claude plugins install claude-ide-bridge`
+- Marketplace distribution for team-wide adoption
+- Priority: high (once plugin format stabilizes)
+
+### Hook Integration
+- `PostToolUse` on Edit/Write → auto-run `getDiagnostics` + `setEditorDecorations`
+- `SessionStart` → auto-run `getProjectInfo` and cache
+- `SubagentStart`/`SubagentStop` → set up/tear down bridge resources
+- Ship example hook configs alongside the bridge
+
+### Scheduled IDE Monitoring
+- Bridge tools + `/loop` enable continuous monitoring:
+  - `/loop 5m check getDiagnostics and alert on new errors`
+  - `/loop 10m run tests and report failures`
+- `watchDiagnostics` and `waitForTerminalOutput` already support long-polling
+- Session-scoped (requires active Claude Code session)
+
+### Headless/Agent SDK Integration
+- Bridge MCP enables `claude -p` (headless mode) to have IDE capabilities
+- CI/CD pipelines can use getDiagnostics, fixAllLintErrors, formatDocument
+- Already works via `--mcp-config` pointing to bridge
+
+### Agent Team Support
+- Claude Code's experimental Agent Teams: multiple sessions sharing one bridge
+- 3-5 agents working in parallel (security review + test fixing + PR creation)
+- Requires: multi-session safety, file edit coordination, terminal namespacing
+- Aligns with existing "Collaborative Features" roadmap item
+
+### Visual Output Skills
+- Skills that generate interactive HTML using bridge data
+- Dependency graphs from `getCallHierarchy` + `findReferences`
+- Test coverage heatmaps, diagnostic dashboards
+- Follows Claude Code's codebase-visualizer pattern
+
+---
+
 ## Medium-Term Possibilities
 
 ### Plugin System

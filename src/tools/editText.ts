@@ -126,6 +126,7 @@ export function createEditTextTool(
         "All line and column numbers are 1-based. " +
         "Uses VS Code WorkspaceEdit when connected, falls back to native fs read/write otherwise. " +
         "Note: native fallback has no undo buffer — edits are written directly to disk.",
+      annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
         required: ["filePath", "edits"],

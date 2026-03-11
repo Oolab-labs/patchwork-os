@@ -94,8 +94,9 @@ export function createGetBufferContentTool(
       // Enforce size cap before splitting
       if (Buffer.byteLength(content, "utf-8") > MAX_CONTENT_BYTES) {
         const lines = content.split("\n");
+        const sizeKb = Math.round(Buffer.byteLength(content, "utf-8") / 1024);
         return error(
-          `File too large (${lines.length} lines). Use startLine/endLine to read a specific range.`,
+          `File too large (${lines.length} lines, ${sizeKb}KB). Use startLine/endLine to read in chunks — e.g. startLine:1, endLine:500.`,
         );
       }
 

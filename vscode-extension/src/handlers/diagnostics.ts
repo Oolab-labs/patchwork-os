@@ -50,5 +50,8 @@ export async function handleGetDiagnostics(
       if (totalCount >= MAX_ALL_DIAGNOSTICS) break;
     }
   }
-  return result;
+  return {
+    diagnostics: result,
+    truncated: totalCount >= MAX_ALL_DIAGNOSTICS,
+  };
 }

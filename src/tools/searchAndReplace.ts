@@ -78,12 +78,6 @@ export function createSearchAndReplaceTool(workspace: string) {
       if (pattern.length === 0) {
         return error("pattern must not be empty");
       }
-      if (replacement.length === 0) {
-        return error(
-          "replacement must not be empty (use a non-empty string to replace, or handle deletion explicitly)",
-        );
-      }
-
       // Compile regex once (used for both counting matches and replacement)
       let regex: RegExp | null = null;
       if (isRegex) {

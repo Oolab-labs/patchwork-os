@@ -210,7 +210,17 @@ export class BridgeConnection {
       maxPayload: 4 * 1024 * 1024, // 4MB — match server-side limit
     });
 
+    // If the WebSocket handshake never completes, force a reconnect after 30s
+    // to avoid hanging silently in CONNECTING state indefinitely.
+    const openTimeout = setTimeout(() => {
+      if (gen !== this.generation) return;
+      this.log("WebSocket handshake timed out after 30s, forcing reconnect");
+      this.ws?.terminate();
+      this.handleDisconnect();
+    }, 30_000);
+
     this.ws.on("open", () => {
+      clearTimeout(openTimeout);
       if (gen !== this.generation) return;
       this.state = ConnectionState.CONNECTED;
       this.reconnectAttempts = 0;
@@ -235,18 +245,21 @@ export class BridgeConnection {
     });
 
     this.ws.on("close", () => {
+      clearTimeout(openTimeout);
       if (gen !== this.generation) return;
       this.log("Disconnected from bridge");
       this.handleDisconnect();
     });
 
     this.ws.on("error", (err) => {
+      clearTimeout(openTimeout);
       if (gen !== this.generation) return;
       this.logError(`Connection error: ${err.message}`);
       this.handleDisconnect();
     });
 
     this.ws.on("unexpected-response", (_req, res) => {
+      clearTimeout(openTimeout);
       if (gen !== this.generation) return;
       this.logError(`Upgrade rejected: HTTP ${res.statusCode}`);
       // Use handleDisconnect() for full cleanup (heartbeat, pending handlers,
@@ -447,6 +460,13 @@ export class BridgeConnection {
       }
 
       if (msg.id !== undefined && msg.method) {
+        if (this.pendingHandlers.size >= 50) {
+          this.sendResponse(msg.id, undefined, {
+            code: -32000,
+            message: "Too many pending handlers — try again later",
+          });
+          return;
+        }
         const handler = this.handlers[msg.method as string];
         if (handler) {
           const controller = new AbortController();

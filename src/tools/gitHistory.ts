@@ -41,7 +41,7 @@ export function createGetCommitDetailsTool(workspace: string) {
           filePath: {
             type: "string",
             description:
-              "Optional file path to limit the diff output to a single file",
+              "Optional absolute or workspace-relative file path to limit the diff output to a single file",
           },
         },
       },
@@ -118,7 +118,7 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
           filePath: {
             type: "string",
             description:
-              "Optional file path to limit the diff to a single file",
+              "Optional absolute or workspace-relative file path to limit the diff to a single file",
           },
           context: {
             type: "integer",

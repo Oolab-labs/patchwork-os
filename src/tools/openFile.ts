@@ -31,14 +31,21 @@ export function createOpenFileTool(
         additionalProperties: false,
         required: ["filePath"],
         properties: {
-          filePath: { type: "string", description: "Path to the file to open" },
+          filePath: {
+            type: "string",
+            description:
+              "Absolute or workspace-relative path to the file to open",
+          },
           startLine: {
             type: "integer",
-            description: "Line number to scroll to",
+            minimum: 1,
+            description:
+              "Line number to scroll to (1-based). If both startLine and startText are provided, startLine takes precedence.",
           },
           startText: {
             type: "string",
-            description: "Text pattern to find and scroll to",
+            description:
+              "Text pattern to find and scroll to. If both startLine and startText are provided, startLine takes precedence.",
           },
         },
       },

@@ -25,6 +25,7 @@ export function createReplaceBlockTool(
         "Fails with a clear error if oldContent is not found or appears more than once. " +
         "Use getBufferContent first to get the current text if the file may have unsaved changes. " +
         "Saves the file by default (save: true).",
+      annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
         required: ["filePath", "oldContent", "newContent"],

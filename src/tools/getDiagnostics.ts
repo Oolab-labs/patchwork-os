@@ -100,13 +100,13 @@ export function createGetDiagnosticsTool(
           uri: {
             type: "string",
             description:
-              "Optional file URI or path to filter diagnostics for a specific file",
+              "Optional file filter — accepts an absolute path, workspace-relative path, or file:// URI. When provided, returns diagnostics for that file only.",
           },
           severity: {
             type: "string",
-            enum: ["error", "warning", "hint", "information"],
+            enum: ["error", "warning", "information", "hint"],
             description:
-              "Only return diagnostics at or above this severity. Use 'error' to hide warnings and focus on build-breaking issues.",
+              "Only return diagnostics at or above this severity level. Ordered from highest to lowest: 'error', 'warning', 'information', 'hint'. Use 'error' to focus on build-breaking issues only.",
           },
           maxResults: {
             type: "number",
@@ -161,17 +161,37 @@ export function createGetDiagnosticsTool(
         try {
           const extDiags = await extensionClient.getDiagnostics(uri);
           if (extDiags !== null) {
-            const filtered = applyFilters(extDiags as unknown[]);
+            let extDiagsArr: unknown[];
+            let extTruncated = false;
+            const raw = extDiags as unknown;
+            if (
+              raw !== null &&
+              typeof raw === "object" &&
+              !Array.isArray(raw) &&
+              "diagnostics" in (raw as object)
+            ) {
+              const env = raw as {
+                diagnostics: unknown[];
+                truncated?: boolean;
+              };
+              extDiagsArr = env.diagnostics;
+              extTruncated = env.truncated ?? false;
+            } else {
+              extDiagsArr = raw as unknown[];
+            }
+            const filtered = applyFilters(extDiagsArr);
             return success({
               available: true,
               source: "extension",
               linters: ["vscode-lsp"],
               diagnostics: filtered,
               ...(severityFilter ? { severityFilter } : {}),
-              ...(filtered.length < (extDiags as unknown[]).length
+              ...(extTruncated || filtered.length < extDiagsArr.length
+                ? { truncated: true, totalBeforeFilter: extDiagsArr.length }
+                : {}),
+              ...(extTruncated
                 ? {
-                    truncated: true,
-                    totalBeforeFilter: (extDiags as unknown[]).length,
+                    note: "Capped at 500 total diagnostics — use uri filter to get complete diagnostics for a specific file",
                   }
                 : {}),
             });

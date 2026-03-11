@@ -48,7 +48,18 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
           .split("\n")
           .filter(Boolean)
           .map((f) => makeRelative(f, workspace));
-        return success({ files, total: files.length, tool: "fd" });
+        const truncated = files.length === 100;
+        return success({
+          files,
+          count: files.length,
+          tool: "fd",
+          ...(truncated
+            ? {
+                truncated: true,
+                note: "Result limit reached — narrow pattern or use directory",
+              }
+            : {}),
+        });
       }
 
       if (probes.git) {
@@ -68,11 +79,19 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
           .replace(/\0STAR\0/g, "[^/]*")
           .replace(/\0Q\0/g, "[^/]");
         const regex = new RegExp(`(^|/)${regexPattern}$`, "i");
-        const files = allFiles.filter((f) => regex.test(f)).slice(0, 100);
+        const allMatches = allFiles.filter((f) => regex.test(f));
+        const files = allMatches.slice(0, 100);
         return success({
           files,
-          total: files.length,
+          count: files.length,
+          totalMatches: allMatches.length,
           tool: "git-ls-files",
+          ...(files.length < allMatches.length
+            ? {
+                truncated: true,
+                note: "Result limit reached — narrow pattern or use directory",
+              }
+            : {}),
         });
       }
 
@@ -99,7 +118,18 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
         .filter(Boolean)
         .map((f) => makeRelative(f, workspace))
         .slice(0, 100);
-      return success({ files, total: files.length, tool: "find" });
+      const truncated = files.length === 100;
+      return success({
+        files,
+        count: files.length,
+        tool: "find",
+        ...(truncated
+          ? {
+              truncated: true,
+              note: "Result limit reached — narrow pattern or use directory",
+            }
+          : {}),
+      });
     },
   };
 }

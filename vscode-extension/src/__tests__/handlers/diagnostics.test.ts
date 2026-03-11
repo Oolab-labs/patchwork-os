@@ -127,11 +127,15 @@ describe("handleGetDiagnostics", () => {
     ];
     vi.mocked(vscode.languages.getDiagnostics).mockReturnValue(allDiags as any);
 
-    const result = (await handleGetDiagnostics({})) as any[];
-    expect(result).toHaveLength(2);
-    expect(result[0].file).toBe("/a.ts");
-    expect(result[0].diagnostics).toHaveLength(1);
-    expect(result[1].diagnostics).toHaveLength(2);
+    const result = (await handleGetDiagnostics({})) as {
+      diagnostics: any[];
+      truncated: boolean;
+    };
+    expect(result.diagnostics).toHaveLength(2);
+    expect(result.diagnostics[0].file).toBe("/a.ts");
+    expect(result.diagnostics[0].diagnostics).toHaveLength(1);
+    expect(result.diagnostics[1].diagnostics).toHaveLength(2);
+    expect(result.truncated).toBe(false);
   });
 
   it("caps all-diagnostics at 500", async () => {
@@ -143,8 +147,12 @@ describe("handleGetDiagnostics", () => {
       [uri, manyDiags],
     ] as any);
 
-    const result = (await handleGetDiagnostics({})) as any[];
-    expect(result[0].diagnostics).toHaveLength(500);
+    const result = (await handleGetDiagnostics({})) as {
+      diagnostics: any[];
+      truncated: boolean;
+    };
+    expect(result.diagnostics[0].diagnostics).toHaveLength(500);
+    expect(result.truncated).toBe(true);
   });
 
   it("skips files with zero diagnostics", async () => {
@@ -152,7 +160,11 @@ describe("handleGetDiagnostics", () => {
     vi.mocked(vscode.languages.getDiagnostics).mockReturnValue([
       [uri, []],
     ] as any);
-    const result = (await handleGetDiagnostics({})) as any[];
-    expect(result).toHaveLength(0);
+    const result = (await handleGetDiagnostics({})) as {
+      diagnostics: any[];
+      truncated: boolean;
+    };
+    expect(result.diagnostics).toHaveLength(0);
+    expect(result.truncated).toBe(false);
   });
 });

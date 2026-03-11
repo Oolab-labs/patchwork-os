@@ -380,12 +380,20 @@ export class ExtensionClient {
     }
   }
 
+  private static readonly MAX_PENDING_REQUESTS = 100;
+
   private async request(
     method: string,
     params?: unknown,
     timeoutMs?: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
+    if (this.pendingRequests.size >= ExtensionClient.MAX_PENDING_REQUESTS) {
+      throw new Error(
+        `Too many pending extension requests (${ExtensionClient.MAX_PENDING_REQUESTS})`,
+      );
+    }
+
     // Exponential backoff — fast-fail if extension is repeatedly timing out
     const now = Date.now();
     if (now < this.extensionSuspendedUntil) {

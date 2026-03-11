@@ -67,6 +67,7 @@ export function createSetWorkspaceSettingTool(
         "Write a VS Code workspace setting. Use dot notation for the key (e.g. 'editor.tabSize'). " +
         "Writes to workspace scope by default. Writes to 'security.*' are blocked. " +
         "Requires the VS Code extension.",
+      annotations: { destructiveHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

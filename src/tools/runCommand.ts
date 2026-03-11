@@ -115,7 +115,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
           cwd: {
             type: "string",
             description:
-              "Working directory relative to workspace (default: workspace root)",
+              "Working directory for the command (absolute or workspace-relative, default: workspace root)",
           },
           timeout: {
             type: "integer",
@@ -151,14 +151,23 @@ export function createRunCommandTool(workspace: string, config: Config) {
 
       const stdoutResult = truncateOutput(result.stdout, maxBytes);
       const stderrResult = truncateOutput(result.stderr, maxBytes);
+      const anyTruncated = stdoutResult.truncated || stderrResult.truncated;
 
       return success({
         exitCode: result.exitCode,
         stdout: stdoutResult.text,
         stderr: stderrResult.text,
-        truncated: stdoutResult.truncated || stderrResult.truncated,
         durationMs: result.durationMs,
         timedOut: result.timedOut,
+        ...(anyTruncated
+          ? {
+              truncated: true,
+              stdoutTruncated: stdoutResult.truncated,
+              stderrTruncated: stderrResult.truncated,
+              maxBytes,
+              note: "Output exceeded limit. Redirect to a file (command > out.txt) to capture full output.",
+            }
+          : {}),
       });
     },
   };
