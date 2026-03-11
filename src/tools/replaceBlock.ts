@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import type { FileLock } from "../fileLock.js";
 import {
   type ExtensionClient,
   ExtensionTimeoutError,
@@ -14,6 +15,7 @@ import {
 export function createReplaceBlockTool(
   workspace: string,
   extensionClient?: ExtensionClient,
+  fileLock?: FileLock,
 ) {
   return {
     schema: {
@@ -115,12 +117,18 @@ export function createReplaceBlockTool(
         newContent +
         text.slice(firstIndex + oldContent.length);
 
-      // Optimistic concurrency check — detect concurrent modification
-      const statAfter = await fs.stat(filePath);
-      if (statAfter.mtimeMs !== originalMtimeMs) {
-        return error("File was modified concurrently — retry the edit");
+      // Acquire per-file lock before write to serialize concurrent edits from multiple sessions
+      const release = fileLock ? await fileLock.acquire(filePath) : null;
+      try {
+        // Optimistic concurrency check — detect concurrent modification
+        const statAfter = await fs.stat(filePath);
+        if (statAfter.mtimeMs !== originalMtimeMs) {
+          return error("File was modified concurrently — retry the edit");
+        }
+        await fs.writeFile(filePath, newText, "utf-8");
+      } finally {
+        release?.();
       }
-      await fs.writeFile(filePath, newText, "utf-8");
 
       return success({ success: true, saved: save, source: "native-fs" });
     },

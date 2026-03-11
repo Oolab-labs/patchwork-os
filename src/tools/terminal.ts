@@ -46,7 +46,46 @@ const DANGEROUS_ENV_VARS = new Set([
   "CARGO_HOME",
 ]);
 
-export function createListTerminalsTool(extensionClient: ExtensionClient) {
+/** Apply prefix to a terminal name (no-op when prefix is empty).
+ * When prefix is set and name is undefined, generates a unique prefixed default name
+ * so the terminal remains discoverable by listTerminals for this session. */
+function prefixName(name: string | undefined, prefix: string): string | undefined {
+  if (!prefix) return name;
+  if (name === undefined) {
+    // Generate a unique default so unnamed terminals are still session-scoped
+    return `${prefix}terminal-${Date.now().toString(36)}`;
+  }
+  return `${prefix}${name}`;
+}
+
+/** Strip prefix from a terminal name (no-op when prefix is empty). */
+function stripPrefix(name: string, prefix: string): string {
+  if (!prefix) return name;
+  return name.startsWith(prefix) ? name.slice(prefix.length) : name;
+}
+
+/** In multi-session mode, index-based terminal lookup is unsafe because the
+ * global index does not correspond to the session-scoped index shown by listTerminals.
+ * Returns an error string when this case is detected, or null if the call is safe. */
+function checkIndexWithPrefix(
+  name: string | undefined,
+  index: number | undefined,
+  prefix: string,
+): string | null {
+  if (prefix && name === undefined && index !== undefined) {
+    return (
+      "Terminal index-based lookup is not supported when multiple agent sessions are active. " +
+      "Use terminal name instead (from listTerminals). " +
+      "Index 0 in your session refers to a different global index than in VS Code."
+    );
+  }
+  return null;
+}
+
+export function createListTerminalsTool(
+  extensionClient: ExtensionClient,
+  terminalPrefix = "",
+) {
   return {
     schema: {
       name: "listTerminals",
@@ -69,7 +108,23 @@ export function createListTerminalsTool(extensionClient: ExtensionClient) {
         if (result === null) {
           return success({ terminals: [] });
         }
-        return success(result);
+        if (!terminalPrefix) {
+          return success(result);
+        }
+        // Filter to this session's terminals and strip prefix from names
+        const r = result as { terminals?: Array<{ name?: string }> };
+        const filtered = {
+          ...result,
+          terminals: (r.terminals ?? [])
+            .filter((t) =>
+              typeof t.name === "string" && t.name.startsWith(terminalPrefix),
+            )
+            .map((t) => ({
+              ...t,
+              name: typeof t.name === "string" ? stripPrefix(t.name, terminalPrefix) : t.name,
+            })),
+        };
+        return success(filtered);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
@@ -82,7 +137,10 @@ export function createListTerminalsTool(extensionClient: ExtensionClient) {
   };
 }
 
-export function createGetTerminalOutputTool(extensionClient: ExtensionClient) {
+export function createGetTerminalOutputTool(
+  extensionClient: ExtensionClient,
+  terminalPrefix = "",
+) {
   return {
     schema: {
       name: "getTerminalOutput",
@@ -122,9 +180,11 @@ export function createGetTerminalOutputTool(extensionClient: ExtensionClient) {
           "At least one of 'name' or 'index' must be provided to identify the terminal",
         );
       }
+      const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
+      if (indexErr) return error(indexErr);
       try {
         const result = await extensionClient.getTerminalOutput(
-          name,
+          prefixName(name, terminalPrefix),
           index,
           lines,
         );
@@ -147,6 +207,7 @@ export function createGetTerminalOutputTool(extensionClient: ExtensionClient) {
 export function createCreateTerminalTool(
   workspace: string,
   extensionClient: ExtensionClient,
+  terminalPrefix = "",
 ) {
   return {
     schema: {
@@ -223,7 +284,7 @@ export function createCreateTerminalTool(
 
       try {
         const result = await extensionClient.createTerminal(
-          name,
+          prefixName(name, terminalPrefix),
           resolvedCwd,
           env,
           show,
@@ -231,7 +292,12 @@ export function createCreateTerminalTool(
         if (result === null) {
           return error("Failed to create terminal");
         }
-        return success(result);
+        // Strip prefix from returned name so the agent sees its logical name
+        const resultWithName = result as { name?: string };
+        const stripped = terminalPrefix && resultWithName.name
+          ? { ...result, name: stripPrefix(resultWithName.name, terminalPrefix) }
+          : result;
+        return success(stripped);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
@@ -246,6 +312,7 @@ export function createCreateTerminalTool(
 
 export function createWaitForTerminalOutputTool(
   extensionClient: ExtensionClient,
+  terminalPrefix = "",
 ) {
   return {
     schema: {
@@ -296,6 +363,8 @@ export function createWaitForTerminalOutputTool(
       const index = optionalInt(args, "index", 0, 100);
       const timeoutSec = optionalInt(args, "timeout", 1, 300) ?? 30;
       const timeoutMs = timeoutSec * 1_000;
+      const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
+      if (indexErr) return error(indexErr);
 
       // Validate the regex on the bridge side to give a fast, clear error
       try {
@@ -321,7 +390,7 @@ export function createWaitForTerminalOutputTool(
       try {
         const result = await extensionClient.waitForTerminalOutput(
           pattern,
-          name,
+          prefixName(name, terminalPrefix),
           index,
           timeoutMs,
         );
@@ -346,6 +415,7 @@ export function createWaitForTerminalOutputTool(
 export function createRunInTerminalTool(
   extensionClient: ExtensionClient,
   commandAllowlist: string[],
+  terminalPrefix = "",
 ) {
   return {
     schema: {
@@ -401,6 +471,8 @@ export function createRunInTerminalTool(
       const timeoutSec = optionalInt(args, "timeout", 1, 300) ?? 30;
       const show = optionalBool(args, "show") ?? true;
       const timeoutMs = timeoutSec * 1_000;
+      const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
+      if (indexErr) return error(indexErr);
 
       if (/[\n\r]/.test(command)) {
         return error(
@@ -426,7 +498,7 @@ export function createRunInTerminalTool(
       try {
         const result = await extensionClient.executeInTerminal(
           command,
-          name,
+          prefixName(name, terminalPrefix),
           index,
           timeoutMs,
           show,
@@ -449,7 +521,10 @@ export function createRunInTerminalTool(
   };
 }
 
-export function createDisposeTerminalTool(extensionClient: ExtensionClient) {
+export function createDisposeTerminalTool(
+  extensionClient: ExtensionClient,
+  terminalPrefix = "",
+) {
   return {
     schema: {
       name: "disposeTerminal",
@@ -483,8 +558,13 @@ export function createDisposeTerminalTool(extensionClient: ExtensionClient) {
           "At least one of 'name' or 'index' must be provided to identify the terminal",
         );
       }
+      const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
+      if (indexErr) return error(indexErr);
       try {
-        const result = await extensionClient.disposeTerminal(name, index);
+        const result = await extensionClient.disposeTerminal(
+          prefixName(name, terminalPrefix),
+          index,
+        );
         if (result === null) {
           return error("Terminal not found");
         }
@@ -504,6 +584,7 @@ export function createDisposeTerminalTool(extensionClient: ExtensionClient) {
 export function createSendTerminalCommandTool(
   extensionClient: ExtensionClient,
   commandAllowlist: string[],
+  terminalPrefix = "",
 ) {
   return {
     schema: {
@@ -552,6 +633,8 @@ export function createSendTerminalCommandTool(
           "At least one of 'name' or 'index' must be provided to identify the terminal",
         );
       }
+      const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
+      if (indexErr) return error(indexErr);
 
       // Block newlines — they would split into multiple independent commands in the terminal
       if (/[\n\r]/.test(text)) {
@@ -581,7 +664,7 @@ export function createSendTerminalCommandTool(
       try {
         const result = await extensionClient.sendTerminalCommand(
           text,
-          name,
+          prefixName(name, terminalPrefix),
           index,
           addNewline,
         );

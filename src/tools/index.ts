@@ -1,6 +1,7 @@
 import type { ActivityLog } from "../activityLog.js";
 import type { Config } from "../config.js";
 import type { ExtensionClient } from "../extensionClient.js";
+import type { FileLock } from "../fileLock.js";
 import type { ProbeResults } from "../probe.js";
 import type { McpTransport, ToolHandler } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
@@ -148,6 +149,9 @@ export function registerAllTools(
   probes: ProbeResults,
   extensionClient: ExtensionClient,
   activityLog?: ActivityLog,
+  terminalPrefix = "",
+  fileLock?: FileLock,
+  sessions?: Map<string, unknown>,
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -296,22 +300,30 @@ export function registerAllTools(
     testsTool,
     createDiffDebugTool(workspace, combinedDiagnosticsFn),
     ...(activityLog ? [createGetActivityLogTool(activityLog)] : []),
-    createBridgeStatusTool(extensionClient),
+    createBridgeStatusTool(extensionClient, sessions),
     createWatchFilesTool(extensionClient),
     createUnwatchFilesTool(extensionClient),
-    createListTerminalsTool(extensionClient),
-    createGetTerminalOutputTool(extensionClient),
-    createCreateTerminalTool(workspace, extensionClient),
-    createDisposeTerminalTool(extensionClient),
-    createSendTerminalCommandTool(extensionClient, config.commandAllowlist),
-    createRunInTerminalTool(extensionClient, config.commandAllowlist),
-    createWaitForTerminalOutputTool(extensionClient),
+    createListTerminalsTool(extensionClient, terminalPrefix),
+    createGetTerminalOutputTool(extensionClient, terminalPrefix),
+    createCreateTerminalTool(workspace, extensionClient, terminalPrefix),
+    createDisposeTerminalTool(extensionClient, terminalPrefix),
+    createSendTerminalCommandTool(
+      extensionClient,
+      config.commandAllowlist,
+      terminalPrefix,
+    ),
+    createRunInTerminalTool(
+      extensionClient,
+      config.commandAllowlist,
+      terminalPrefix,
+    ),
+    createWaitForTerminalOutputTool(extensionClient, terminalPrefix),
     createCreateFileTool(workspace, extensionClient),
     createDeleteFileTool(workspace, extensionClient),
     createRenameFileTool(workspace, extensionClient),
     createGetBufferContentTool(workspace, extensionClient),
-    createReplaceBlockTool(workspace, extensionClient),
-    createEditTextTool(workspace, extensionClient),
+    createReplaceBlockTool(workspace, extensionClient, fileLock),
+    createEditTextTool(workspace, extensionClient, fileLock),
     createFormatDocumentTool(workspace, probes, extensionClient),
     createFixAllLintErrorsTool(workspace, probes, extensionClient),
     createOrganizeImportsTool(workspace, extensionClient),

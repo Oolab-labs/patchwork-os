@@ -3,7 +3,10 @@ import { success } from "./utils.js";
 
 const startTime = Date.now();
 
-export function createBridgeStatusTool(extensionClient: ExtensionClient) {
+export function createBridgeStatusTool(
+  extensionClient: ExtensionClient,
+  sessions?: Map<string, unknown>,
+) {
   return {
     schema: {
       name: "getBridgeStatus",
@@ -25,6 +28,7 @@ export function createBridgeStatusTool(extensionClient: ExtensionClient) {
 
       return success({
         extensionConnected,
+        activeSessions: sessions?.size ?? 1,
         circuitBreaker: {
           suspended: circuitBreaker.suspended,
           consecutiveFailures: circuitBreaker.failures,

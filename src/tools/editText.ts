@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import type { FileLock } from "../fileLock.js";
 import {
   type ExtensionClient,
   ExtensionTimeoutError,
@@ -116,6 +117,7 @@ export function applyEditsToContent(
 export function createEditTextTool(
   workspace: string,
   extensionClient: ExtensionClient,
+  fileLock?: FileLock,
 ) {
   return {
     schema: {
@@ -295,21 +297,27 @@ export function createEditTextTool(
         const typedEdits = edits as TextEdit[];
         const newContent = applyEditsToContent(content, typedEdits);
 
-        // Check if file was modified between read and write
+        // Acquire per-file lock before write to serialize concurrent edits from multiple sessions
+        const release = fileLock ? await fileLock.acquire(filePath) : null;
         try {
-          const statAfter = await fs.promises.stat(filePath);
-          if (statAfter.mtimeMs !== originalMtimeMs) {
-            return error("File was modified concurrently — retry the edit");
+          // Check if file was modified between read and write
+          try {
+            const statAfter = await fs.promises.stat(filePath);
+            if (statAfter.mtimeMs !== originalMtimeMs) {
+              return error("File was modified concurrently — retry the edit");
+            }
+          } catch {
+            // File was deleted between read and write
+            return error("File was deleted concurrently — cannot apply edits");
           }
-        } catch {
-          // File was deleted between read and write
-          return error("File was deleted concurrently — cannot apply edits");
-        }
 
-        await fs.promises.writeFile(filePath, newContent, {
-          encoding: "utf-8",
-          signal,
-        });
+          await fs.promises.writeFile(filePath, newContent, {
+            encoding: "utf-8",
+            signal,
+          });
+        } finally {
+          release?.();
+        }
 
         return success({
           success: true,

@@ -46,7 +46,7 @@ function setupPongHandler(ws: AliveWebSocket): void {
   });
 }
 
-const MIN_CONNECTION_INTERVAL_MS = 1_000;
+const MIN_CONNECTION_INTERVAL_MS = 50; // Allow multiple agents to connect within same second
 
 export class Server extends EventEmitter {
   private httpServer: http.Server;
