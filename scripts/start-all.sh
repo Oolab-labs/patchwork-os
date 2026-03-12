@@ -111,7 +111,7 @@ CLAUDE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && CLAUDE_CODE_ID
 # Export for subshell access
 export NTFY_TOPIC
 
-REMOTE_CMD="cd \"$WORKSPACE\" && $caffeinate_cmd bash -c '
+REMOTE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && $caffeinate_cmd bash -c '
 delay=1; max_delay=300; failures=0
 while true; do
   start=\$(date +%s)
