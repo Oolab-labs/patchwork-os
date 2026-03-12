@@ -156,22 +156,32 @@ describe("replaceBlock: disconnected extension", () => {
 // ── clipboard ─────────────────────────────────────────────────────────────────
 
 describe("readClipboard: disconnected extension", () => {
-  it("returns isError:true with extension-required message", async () => {
+  it("attempts native fallback and returns result or informative error", async () => {
     const tool = createReadClipboardTool(mockDisconnectedExtensionClient());
     const result = (await tool.handler()) as any;
-    expect(result.isError).toBe(true);
-    const msg = JSON.parse(result.content[0].text) as string;
-    expect(msg.toLowerCase()).toContain("extension");
+    // With native fallback the tool may succeed (on macOS via pbpaste) or fail
+    // with an informative error — but must never return the old "extension required" stub.
+    if (result.isError) {
+      const msg = JSON.parse(result.content[0].text) as string;
+      expect(msg.toLowerCase()).not.toContain("vs code extension is required");
+      expect(msg.toLowerCase()).toContain("clipboard");
+    } else {
+      expect(typeof JSON.parse(result.content[0].text)).toBe("string");
+    }
   });
 });
 
 describe("writeClipboard: disconnected extension", () => {
-  it("returns isError:true with extension-required message", async () => {
+  it("attempts native fallback and returns success or informative error", async () => {
     const tool = createWriteClipboardTool(mockDisconnectedExtensionClient());
     const result = (await tool.handler({ text: "hello" })) as any;
-    expect(result.isError).toBe(true);
-    const msg = JSON.parse(result.content[0].text) as string;
-    expect(msg.toLowerCase()).toContain("extension");
+    if (result.isError) {
+      const msg = JSON.parse(result.content[0].text) as string;
+      expect(msg.toLowerCase()).not.toContain("vs code extension is required");
+      expect(msg.toLowerCase()).toContain("clipboard");
+    } else {
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ success: true });
+    }
   });
 });
 

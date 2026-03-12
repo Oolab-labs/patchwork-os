@@ -297,7 +297,7 @@ describe("Integration: pure tool call without extension", () => {
 });
 
 describe("Integration: extension proxy graceful error", () => {
-  it("readClipboard returns isError:true (not a JSON-RPC error) when extension is not connected", async () => {
+  it("readClipboard returns valid MCP result (not a JSON-RPC error) when extension is not connected", async () => {
     const bridge = await setupBridge(true);
     const ws = await bridge.connectClaude();
 
@@ -314,15 +314,20 @@ describe("Integration: extension proxy graceful error", () => {
     });
     const resp = await waitFor(ws, (m) => m.id === 2, 8000);
 
-    // Must NOT be a JSON-RPC error — MCP spec says tool errors go in content
+    // Must NOT be a JSON-RPC error — MCP spec says tool errors go in content.
+    // readClipboard now has a native fallback so it may succeed or return isError:true
+    // with a "clipboard unavailable" message (never a JSON-RPC-level error).
     expect(resp.error).toBeUndefined();
     const result = resp.result as {
       content: Array<{ type: string; text: string }>;
       isError?: boolean;
     };
-    expect(result.isError).toBe(true);
-    const text = result.content[0]?.text ?? "";
-    expect(text.toLowerCase()).toContain("extension");
+    expect(Array.isArray(result.content)).toBe(true);
+    expect(result.content[0]?.type).toBe("text");
+    if (result.isError) {
+      // When native tools unavailable, error message must mention clipboard
+      expect(result.content[0]?.text.toLowerCase()).toContain("clipboard");
+    }
   });
 });
 
@@ -341,11 +346,9 @@ const EXTENSION_REQUIRED_TOOLS = [
   "setDebugBreakpoints",
   "startDebugging",
   "stopDebugging",
-  "getNotebookCells",
+  // getNotebookCells, getNotebookOutput — now have native fs fallback, no longer extension-required
   "runNotebookCell",
-  "getNotebookOutput",
-  "readClipboard",
-  "writeClipboard",
+  // readClipboard, writeClipboard — now have native CLI fallback, no longer extension-required
   "listTasks",
   "runTask",
   "setEditorDecorations",
@@ -364,7 +367,7 @@ const EXTENSION_REQUIRED_TOOLS = [
 ];
 
 describe("Integration: extensionRequired full-registry filter", () => {
-  it("tools/list hides all 32 extensionRequired tools when extension is disconnected", async () => {
+  it("tools/list hides all extensionRequired tools when extension is disconnected", async () => {
     const bridge = await setupBridge(true);
     // Must wire the fn — setupBridge does not do this; without it the default is ?? true (all visible)
     bridge.transport.setExtensionConnectedFn(() =>

@@ -94,6 +94,42 @@ describe("FileLock", () => {
     );
   });
 
+  it("third waiter proceeds immediately after second waiter times out (cascade fix)", async () => {
+    // Regression test: before the fix, a timed-out waiter (B) left its `next`
+    // promise unsettled, forcing any subsequent waiter (C) to burn its entire
+    // timeout window instead of proceeding once B threw.
+    const lock = new FileLock(50); // 50ms timeout
+
+    // A holds the lock forever
+    await lock.acquire("/tmp/cascade.ts");
+
+    // B queues behind A and will time out (A never releases)
+    const bResult = lock.acquire("/tmp/cascade.ts").then(
+      () => "acquired",
+      () => "timed-out",
+    );
+
+    // C queues behind B
+    // With the fix: B times out AND resolves its tail promise, so C sees B's
+    // slot as free and acquires the lock shortly after B throws.
+    // Without the fix: C would have to wait another full 50ms on its own timer.
+    const cStart = Date.now();
+    const cResult = lock.acquire("/tmp/cascade.ts").then(
+      (release) => {
+        release();
+        return "acquired";
+      },
+      () => "timed-out",
+    );
+
+    expect(await bResult).toBe("timed-out");
+    expect(await cResult).toBe("acquired");
+
+    // C should have resolved very quickly after B's timeout fired — well within
+    // a second 50ms window (give generous 200ms for CI scheduling jitter).
+    expect(Date.now() - cStart).toBeLessThan(200);
+  });
+
   it("second waiter gets lock after first releases", async () => {
     const lock = new FileLock();
     let secondAcquired = false;
