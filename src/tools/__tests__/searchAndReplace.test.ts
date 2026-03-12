@@ -1,9 +1,21 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSearchAndReplaceTool } from "../searchAndReplace.js";
+
+// Detect whether a real `rg` binary is available on PATH (not via shim).
+// On macOS with the Claude extension, `rg` is a shell function — not a real
+// binary — so execFileSync will throw ENOENT. On Linux CI it's a real binary.
+function isRgAvailable(): boolean {
+  try {
+    execFileSync("rg", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function parse(result: { content: Array<{ type: string; text: string }> }) {
   return JSON.parse(result.content.at(0)?.text ?? "{}");
@@ -30,7 +42,9 @@ function installRgShim(): string {
   return binDir;
 }
 
-describe("searchAndReplace tool", () => {
+const rgAvailable = isRgAvailable();
+
+describe.skipIf(!rgAvailable)("searchAndReplace tool", () => {
   let tmpDir: string;
   let shimBinDir: string;
   let originalPath: string;
