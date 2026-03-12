@@ -56,6 +56,9 @@ function isPrivateHost(hostname: string): boolean {
   if (host === "::1") return true; // loopback
   if (host.startsWith("fe80:")) return true; // link-local
   if (host.startsWith("fc") || host.startsWith("fd")) return true; // ULA (RFC 4193)
+  // IPv6-mapped IPv4 addresses (::ffff:x.x.x.x) bypass the IPv4 block above
+  // on dual-stack systems — recurse on the embedded IPv4 part.
+  if (host.startsWith("::ffff:")) return isPrivateHost(host.slice(7));
 
   return false;
 }

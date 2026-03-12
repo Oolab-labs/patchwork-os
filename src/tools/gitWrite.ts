@@ -8,7 +8,11 @@ import {
   success,
 } from "./utils.js";
 
-const VALID_REF_RE = /^[\w.\-/]+$/;
+// `..` in a ref is interpreted as a range by git (e.g. main..HEAD) and must not
+// appear in a single ref name.
+function isValidRef(ref: string): boolean {
+  return /^[\w.\-/]+$/.test(ref) && !ref.includes("..");
+}
 
 async function runGit(
   args: string[],
@@ -311,10 +315,10 @@ export function createGitCheckoutTool(workspace: string) {
       const base = optionalString(args, "base");
 
       // Validate ref names to prevent git flag injection (e.g. --orphan, -b)
-      if (!VALID_REF_RE.test(branch)) {
+      if (!isValidRef(branch)) {
         return error(`Invalid branch name: "${branch}"`);
       }
-      if (base !== undefined && !VALID_REF_RE.test(base)) {
+      if (base !== undefined && !isValidRef(base)) {
         return error(`Invalid base ref: "${base}"`);
       }
 
@@ -540,7 +544,7 @@ export function createGitFetchTool(workspace: string) {
       const all = optionalBool(args, "all") ?? false;
       const remote = optionalString(args, "remote", 256) ?? "origin";
 
-      if (!all && !VALID_REF_RE.test(remote)) {
+      if (!all && !isValidRef(remote)) {
         return error(`Invalid remote name: "${remote}"`);
       }
 
@@ -696,10 +700,10 @@ export function createGitPullTool(workspace: string) {
       const branch = optionalString(args, "branch", 256);
       const rebase = optionalBool(args, "rebase") ?? false;
 
-      if (!VALID_REF_RE.test(remote)) {
+      if (!isValidRef(remote)) {
         return error(`Invalid remote name: "${remote}"`);
       }
-      if (branch !== undefined && !VALID_REF_RE.test(branch)) {
+      if (branch !== undefined && !isValidRef(branch)) {
         return error(`Invalid branch name: "${branch}"`);
       }
 
@@ -797,10 +801,10 @@ export function createGitPushTool(workspace: string) {
       const setUpstream = optionalBool(args, "setUpstream") ?? false;
       const force = optionalBool(args, "force") ?? false;
 
-      if (!VALID_REF_RE.test(remote)) {
+      if (!isValidRef(remote)) {
         return error(`Invalid remote name: "${remote}"`);
       }
-      if (branchArg !== undefined && !VALID_REF_RE.test(branchArg)) {
+      if (branchArg !== undefined && !isValidRef(branchArg)) {
         return error(`Invalid branch name: "${branchArg}"`);
       }
 

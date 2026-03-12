@@ -1,9 +1,19 @@
 import * as vscode from "vscode";
 
-const BLOCKED_SECTIONS = new Set([
+// Keys (or key prefixes) that must never be written by an agent.
+// Matching is done against the full key and all its prefixes, so listing
+// "extensions.autoUpdate" blocks both the exact key and any sub-key under it.
+const BLOCKED_KEY_PREFIXES = new Set([
   "security",
   "extensions.autoUpdate",
   "extensions.autoInstallDependencies",
+  // Terminal shell hijacking — writing these allows arbitrary code execution
+  // via the shell that VS Code opens for integrated terminals.
+  "terminal.integrated.shell",
+  "terminal.integrated.shellArgs",
+  "terminal.integrated.env",
+  "terminal.integrated.profiles",
+  "terminal.integrated.defaultProfile",
 ]);
 
 export async function handleGetWorkspaceSettings(
@@ -44,12 +54,14 @@ export async function handleSetWorkspaceSetting(
   const targetStr =
     typeof params.target === "string" ? params.target : "workspace";
 
-  // Block writes to sensitive sections
-  const topSection = key.split(".")[0];
-  if (topSection && BLOCKED_SECTIONS.has(topSection)) {
-    throw new Error(
-      `Writing to "${topSection}" settings is blocked for safety`,
-    );
+  // Block writes to sensitive keys and their sub-keys.
+  // Check every prefix segment so "terminal.integrated.shell.linux" is caught
+  // by the "terminal.integrated.shell" entry.
+  const isBlocked = [...BLOCKED_KEY_PREFIXES].some(
+    (prefix) => key === prefix || key.startsWith(prefix + "."),
+  );
+  if (isBlocked) {
+    throw new Error(`Writing to "${key}" settings is blocked for safety`);
   }
 
   const target =

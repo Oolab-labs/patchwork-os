@@ -5,7 +5,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { execFileSync } from "node:child_process";
-import { findEditor, ideNameFromEditor } from "../config.js";
+import { findEditor, ideNameFromEditor, parseConfig } from "../config.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -58,6 +58,32 @@ describe("findEditor", () => {
   it("returns null when no editor is found", () => {
     mockedExecFileSync.mockImplementation(() => { throw new Error("not found"); });
     expect(findEditor()).toBeNull();
+  });
+});
+
+describe("parseConfig --allow-command interpreter guard", () => {
+  it("throws when adding an interpreter command via --allow-command", () => {
+    expect(() =>
+      parseConfig(["--workspace", "/tmp", "--allow-command", "node"]),
+    ).toThrow(/interpreter/);
+  });
+
+  it("throws for all interpreter commands (bash, python, etc.)", () => {
+    for (const cmd of ["bash", "python", "python3", "sh", "ruby", "perl"]) {
+      expect(() =>
+        parseConfig(["--workspace", "/tmp", "--allow-command", cmd]),
+      ).toThrow(/interpreter/);
+    }
+  });
+
+  it("allows non-interpreter commands via --allow-command", () => {
+    const config = parseConfig([
+      "--workspace",
+      "/tmp",
+      "--allow-command",
+      "prettier",
+    ]);
+    expect(config.commandAllowlist).toContain("prettier");
   });
 });
 

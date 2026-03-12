@@ -132,9 +132,16 @@ export function parseConfig(argv: string[]): Config {
       case "--linter":
         linters.push(requireArg(args, ++i, "--linter"));
         break;
-      case "--allow-command":
-        commandAllowlist.push(requireArg(args, ++i, "--allow-command"));
+      case "--allow-command": {
+        const cmd = requireArg(args, ++i, "--allow-command");
+        if (INTERPRETER_COMMANDS.has(cmd)) {
+          throw new Error(
+            `"${cmd}" is an interpreter and cannot be added via --allow-command (arbitrary code execution risk)`,
+          );
+        }
+        commandAllowlist.push(cmd);
         break;
+      }
       case "--vscode-allow-command":
         vscodeCommandAllowlist.push(
           requireArg(args, ++i, "--vscode-allow-command"),

@@ -486,7 +486,7 @@ export function createRunInTerminalTool(
         );
       }
 
-      const firstWord = command.trim().split(/\s+/)[0];
+      const firstWord = command.trim().split(/\s+/)[0]?.toLowerCase();
       if (firstWord && !commandAllowlist.includes(firstWord)) {
         return error(
           `Command "${firstWord}" is not in the allowlist. ` +

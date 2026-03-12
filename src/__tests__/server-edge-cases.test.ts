@@ -243,22 +243,52 @@ describe("Server: graceful shutdown", () => {
     server = null;
   });
 
-  it("health endpoint returns ok", async () => {
+  it("health endpoint returns ok with valid token", async () => {
     server = new Server("test-token", logger);
     const port = await server.findAndListen(null);
 
-    const res = await fetch(`http://127.0.0.1:${port}/health`);
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      headers: { Authorization: "Bearer test-token" },
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.status).toBe("ok");
     expect(typeof body.uptimeMs).toBe("number");
   });
 
+  it("health endpoint returns 401 without token", async () => {
+    server = new Server("test-token", logger);
+    const port = await server.findAndListen(null);
+
+    const res = await fetch(`http://127.0.0.1:${port}/health`);
+    expect(res.status).toBe(401);
+  });
+
+  it("health endpoint returns 401 with wrong token", async () => {
+    server = new Server("test-token", logger);
+    const port = await server.findAndListen(null);
+
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      headers: { Authorization: "Bearer wrong-token" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("metrics endpoint returns 401 without token", async () => {
+    server = new Server("test-token", logger);
+    const port = await server.findAndListen(null);
+
+    const res = await fetch(`http://127.0.0.1:${port}/metrics`);
+    expect(res.status).toBe(401);
+  });
+
   it("404 on unknown HTTP paths", async () => {
     server = new Server("test-token", logger);
     const port = await server.findAndListen(null);
 
-    const res = await fetch(`http://127.0.0.1:${port}/unknown`);
+    const res = await fetch(`http://127.0.0.1:${port}/unknown`, {
+      headers: { Authorization: "Bearer test-token" },
+    });
     expect(res.status).toBe(404);
   });
 });

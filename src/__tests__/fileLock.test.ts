@@ -75,6 +75,19 @@ describe("FileLock", () => {
     expect((lock as unknown as { locks: Map<string, unknown> }).locks.size).toBe(0);
   });
 
+  it("throws after timeout if lock is never released", async () => {
+    // Use a 50ms timeout so the test completes quickly without fake timers
+    const lock = new FileLock(50);
+
+    // Hold the lock indefinitely (never released)
+    await lock.acquire("/tmp/stuck.ts");
+
+    // Second acquire must time out
+    await expect(lock.acquire("/tmp/stuck.ts")).rejects.toThrow(
+      /Timed out waiting for file lock/,
+    );
+  });
+
   it("second waiter gets lock after first releases", async () => {
     const lock = new FileLock();
     let secondAcquired = false;

@@ -4,7 +4,7 @@ import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { Logger } from "./logger.js";
 
-const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1"]);
+const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 interface AliveWebSocket extends WebSocket {
   isAlive: boolean;
@@ -67,6 +67,17 @@ export class Server extends EventEmitter {
   ) {
     super();
     this.httpServer = http.createServer((req, res) => {
+      // All HTTP endpoints require Bearer token authentication.
+      // This prevents any local process or network peer (if --bind 0.0.0.0 is used)
+      // from reading internal state without possessing the session auth token.
+      const authHeader = req.headers["authorization"] ?? "";
+      const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+      if (!timingSafeTokenCompare(bearer, this.authToken)) {
+        res.writeHead(401, { "Content-Type": "text/plain" });
+        res.end("Unauthorized");
+        return;
+      }
+
       if (req.url === "/metrics" && req.method === "GET") {
         try {
           const body = this.metricsFn?.() ?? "";
@@ -120,8 +131,12 @@ export class Server extends EventEmitter {
       // Prevent unhandled error events on the raw socket during upgrade
       socket.on("error", () => socket.destroy());
 
-      // Validate Host header to defend against DNS rebinding
-      const host = request.headers.host?.replace(/:\d+$/, "");
+      // Validate Host header to defend against DNS rebinding.
+      // Strip port suffix, handling both IPv4 (host:port) and IPv6 ([::1]:port).
+      const rawHost = request.headers.host ?? "";
+      const host = rawHost.startsWith("[")
+        ? rawHost.slice(0, rawHost.indexOf("]") + 1) // [::1]:port → [::1]
+        : rawHost.replace(/:\d+$/, ""); // host:port → host
       if (!host || !ALLOWED_HOSTS.has(host)) {
         this.logger.warn(
           `Rejected connection with invalid Host header: ${host}`,
