@@ -1087,14 +1087,17 @@ export class ExtensionClient {
   }
 
   /** Notify the extension about Claude Code connection state changes */
-  notifyClaudeConnectionState(connected: boolean): void {
+  notifyClaudeConnectionState(
+    connected: boolean,
+    stats?: { callCount: number; errorCount: number; durationMs: number },
+  ): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     void safeSend(
       this.ws,
       JSON.stringify({
         jsonrpc: "2.0",
         method: "bridge/claudeConnectionChanged",
-        params: { connected },
+        params: { connected, ...(stats !== undefined && { stats }) },
       }),
       this.logger,
     );

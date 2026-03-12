@@ -86,6 +86,8 @@ export class McpTransport {
   private inFlightControllers = new Map<string | number, AbortController>();
   private initialized = false;
   private activeToolCalls = 0;
+  private callCount = 0;
+  private errorCount = 0;
   private generation = 0; // incremented on each attach; stale handlers check this
   // Ring buffer for O(1) sliding-window rate limiting — avoids array scan + splice
   private rateLimitBuf = new Float64Array(RATE_LIMIT_MAX); // initialised to 0 (epoch 1970, always outside window)
@@ -137,6 +139,10 @@ export class McpTransport {
     this.clientLogLevel = "warning";
   }
 
+  getStats(): { callCount: number; errorCount: number } {
+    return { callCount: this.callCount, errorCount: this.errorCount };
+  }
+
   attach(ws: WebSocket): void {
     this.activeWs = ws;
     this.initialized = false; // Force re-initialization on every new connection
@@ -166,7 +172,13 @@ export class McpTransport {
           return;
         }
         const msg = raw as JsonRpcRequest;
-        this.logger.debug(`<-- ${msg.method} (id=${msg.id})`);
+        // Sanitize method name before logging to prevent log injection.
+        // A malicious client could embed newlines or ANSI codes in the method field.
+        const safeMethod = (s: unknown): string =>
+          typeof s === "string"
+            ? s.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 128)
+            : String(s);
+        this.logger.debug(`<-- ${safeMethod(msg.method)} (id=${msg.id})`);
 
         if (!msg.method) return;
 
@@ -275,7 +287,11 @@ export class McpTransport {
 
           case "logging/setLevel": {
             const levelParam = (msg.params as { level?: string })?.level;
-            if (levelParam && LOG_LEVELS.includes(levelParam as LogLevel)) {
+            if (
+              typeof levelParam === "string" &&
+              levelParam.length <= 16 &&
+              LOG_LEVELS.includes(levelParam as LogLevel)
+            ) {
               this.clientLogLevel = levelParam as LogLevel;
               this.logger.debug(`Client log level set to: ${levelParam}`);
             }
@@ -397,6 +413,7 @@ export class McpTransport {
                   ]);
                   const durationMs = Date.now() - startTime;
                   this.activityLog?.record(params.name, durationMs, "success");
+                  this.callCount++;
                   callLog.debug(`Tool completed in ${durationMs}ms`);
                   response = { jsonrpc: "2.0", id: msg.id, result };
                 } finally {
@@ -419,6 +436,7 @@ export class McpTransport {
                 const message =
                   err instanceof Error ? err.message : String(err);
                 callLog.error(`Tool ${params.name} failed: ${message}`);
+                this.errorCount++;
                 this.activityLog?.record(
                   params.name,
                   Date.now() - startTime,
@@ -461,16 +479,16 @@ export class McpTransport {
               id: msg.id,
               error: {
                 code: ErrorCodes.METHOD_NOT_FOUND,
-                message: `Method not found: ${msg.method}`,
+                message: `Method not found: ${safeMethod(msg.method)}`,
               },
             };
         }
 
-        this.logger.debug(`--> response for ${msg.method}`);
+        this.logger.debug(`--> response for ${safeMethod(msg.method)}`);
         const sent = await safeSend(ws, JSON.stringify(response), this.logger);
         if (!sent) {
           this.logger.warn(
-            `Response for ${msg.method} (id=${msg.id}) dropped — socket closed`,
+            `Response for ${safeMethod(msg.method)} (id=${msg.id}) dropped — socket closed`,
           );
         }
       } catch (err) {

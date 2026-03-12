@@ -233,6 +233,87 @@ describe("handleMessage", () => {
     const bridge = createBridge();
     expect(() => bridge.handleMessage("not json")).not.toThrow();
   });
+
+  it("shows VS Code notification when Claude session ends with stats", async () => {
+    const bridge = createBridge();
+
+    bridge.handleMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeConnectionChanged",
+        params: {
+          connected: false,
+          stats: { callCount: 47, errorCount: 2, durationMs: 514000 },
+        },
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining("47 tools"),
+      "Show Logs",
+    );
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining("2 errors"),
+      "Show Logs",
+    );
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining("8m 34s"),
+      "Show Logs",
+    );
+  });
+
+  it("does not show notification when connected: false has no stats", () => {
+    const bridge = createBridge();
+
+    bridge.handleMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeConnectionChanged",
+        params: { connected: false },
+      }),
+    );
+
+    expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not show notification when connected: true", () => {
+    const bridge = createBridge();
+
+    bridge.handleMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeConnectionChanged",
+        params: {
+          connected: true,
+          stats: { callCount: 0, errorCount: 0, durationMs: 0 },
+        },
+      }),
+    );
+
+    expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
+  });
+
+  it('clicking "Show Logs" reveals the output channel', async () => {
+    const bridge = createBridge();
+    vi.mocked(vscode.window.showInformationMessage).mockResolvedValue(
+      "Show Logs" as any,
+    );
+
+    bridge.handleMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeConnectionChanged",
+        params: {
+          connected: false,
+          stats: { callCount: 5, errorCount: 0, durationMs: 30000 },
+        },
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(bridge.output?.show).toHaveBeenCalled();
+  });
 });
 
 // ── startHeartbeat / stopHeartbeat ─────────────────────────────

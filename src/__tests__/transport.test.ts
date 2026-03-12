@@ -758,4 +758,82 @@ describe("McpTransport", () => {
     // Default is ?? true (fail-open), so extension tools are visible even without a connected fn
     expect(names).toContain("extensionOnlyTool");
   });
+
+  it("getStats() returns zero counters on a fresh transport", async () => {
+    await setup("stats-zero");
+    expect(transport?.getStats()).toEqual({ callCount: 0, errorCount: 0 });
+  });
+
+  it("getStats().callCount increments on a successful tool call", async () => {
+    const { ws } = await setup("stats-success", (t) => {
+      t.registerTool(
+        {
+          name: "ok",
+          description: "Succeeds",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async () => ({ content: [{ type: "text", text: "ok" }] }),
+      );
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "ok", arguments: {} },
+    });
+    await waitFor(ws, (m) => m.id === 1);
+
+    expect(transport?.getStats()).toEqual({ callCount: 1, errorCount: 0 });
+  });
+
+  it("getStats().errorCount increments when handler throws", async () => {
+    const { ws } = await setup("stats-error", (t) => {
+      t.registerTool(
+        {
+          name: "boom",
+          description: "Fails",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async () => {
+          throw new Error("fail");
+        },
+      );
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "boom", arguments: {} },
+    });
+    await waitFor(ws, (m) => m.id === 1);
+
+    expect(transport?.getStats()).toEqual({ callCount: 0, errorCount: 1 });
+  });
+
+  it("getStats() counters survive detach()", async () => {
+    const { ws } = await setup("stats-detach", (t) => {
+      t.registerTool(
+        {
+          name: "ok",
+          description: "Succeeds",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async () => ({ content: [{ type: "text", text: "ok" }] }),
+      );
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "ok", arguments: {} },
+    });
+    await waitFor(ws, (m) => m.id === 1);
+
+    transport?.detach();
+    // Counters must NOT be reset by detach()
+    expect(transport?.getStats()).toEqual({ callCount: 1, errorCount: 0 });
+  });
 });

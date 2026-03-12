@@ -18,6 +18,14 @@ const CLAUDE_RECONNECT_GRACE_MS = 30_000;
 const MAX_SESSIONS = 5;
 let globalHandlersRegistered = false;
 
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
 interface AgentSession {
   id: string;
   ws: WebSocket;
@@ -233,14 +241,32 @@ export class Bridge {
     if (session.graceTimer) {
       clearTimeout(session.graceTimer);
     }
+    // Read stats before detach() — counters survive detach
+    const { callCount, errorCount } = session.transport.getStats();
+    const durationMs = Date.now() - session.connectedAt;
     session.transport.detach();
     session.openedFiles.clear();
     this.sessions.delete(id);
+
+    const errorPart =
+      errorCount > 0
+        ? ` (${errorCount} error${errorCount === 1 ? "" : "s"})`
+        : "";
     this.logger.info(
-      `Session ${id.slice(0, 8)} cleaned up. Active sessions: ${this.sessions.size}`,
+      `Session ${id.slice(0, 8)} done — ${callCount} tool call${callCount === 1 ? "" : "s"}${errorPart}, ${formatDuration(durationMs)}`,
     );
     if (this.sessions.size === 0) {
-      this.extensionClient.notifyClaudeConnectionState(false);
+      this.logger.info("Bridge idle — waiting for next connection");
+      // Only notify for normal disconnects; stop() sends its own aggregate notification
+      if (!this.stopped) {
+        this.extensionClient.notifyClaudeConnectionState(false, {
+          callCount,
+          errorCount,
+          durationMs,
+        });
+      }
+    } else {
+      this.logger.info(`Active sessions: ${this.sessions.size}`);
     }
   }
 
@@ -359,9 +385,37 @@ export class Bridge {
       clearTimeout(this.listChangedTimer);
       this.listChangedTimer = null;
     }
-    // Clean up all active sessions
+    // Snapshot aggregate stats before cleanup removes sessions from the map
+    let totalSessions = 0;
+    let totalCalls = 0;
+    let totalErrors = 0;
+    let maxDurationMs = 0;
+    for (const session of this.sessions.values()) {
+      totalSessions++;
+      const stats = session.transport.getStats();
+      totalCalls += stats.callCount;
+      totalErrors += stats.errorCount;
+      maxDurationMs = Math.max(maxDurationMs, Date.now() - session.connectedAt);
+    }
+    // Clean up all active sessions (cleanupSession skips the extension notification
+    // during shutdown because this.stopped is already true)
     for (const id of [...this.sessions.keys()]) {
       this.cleanupSession(id);
+    }
+    const shutdownErrorPart =
+      totalErrors > 0
+        ? `, ${totalErrors} error${totalErrors === 1 ? "" : "s"}`
+        : "";
+    this.logger.info(
+      `Shutdown complete — ${totalSessions} session${totalSessions === 1 ? "" : "s"}, ${totalCalls} tool call${totalCalls === 1 ? "" : "s"}${shutdownErrorPart}`,
+    );
+    // Send aggregate session-end notification to the extension before disconnecting
+    if (totalSessions > 0) {
+      this.extensionClient.notifyClaudeConnectionState(false, {
+        callCount: totalCalls,
+        errorCount: totalErrors,
+        durationMs: maxDurationMs,
+      });
     }
     this.extensionClient.disconnect();
     await this.server.close();

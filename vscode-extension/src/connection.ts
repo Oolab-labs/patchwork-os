@@ -19,6 +19,14 @@ enum ConnectionState {
   DISCONNECTING = 3,
 }
 
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
 export class BridgeConnection {
   ws: WebSocket | null = null;
   reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -447,7 +455,16 @@ export class BridgeConnection {
       // Handle notifications (no id) from the bridge
       if (msg.method && msg.id === undefined) {
         if (msg.method === "bridge/claudeConnectionChanged") {
-          const params = msg.params as { connected?: boolean } | undefined;
+          const params = msg.params as
+            | {
+                connected?: boolean;
+                stats?: {
+                  callCount: number;
+                  errorCount: number;
+                  durationMs: number;
+                };
+              }
+            | undefined;
           this.claudeConnected = params?.connected === true;
           if (this.ws?.readyState === WebSocket.OPEN) {
             this.updateStatusBar("connected");
@@ -455,6 +472,22 @@ export class BridgeConnection {
           this.log(
             `Claude Code ${this.claudeConnected ? "connected" : "disconnected"}`,
           );
+          if (!this.claudeConnected && params?.stats !== undefined) {
+            const { callCount, errorCount, durationMs } = params.stats;
+            const errorPart =
+              errorCount > 0
+                ? `, ${errorCount} error${errorCount === 1 ? "" : "s"}`
+                : "";
+            const notification = `Claude session ended — ${callCount} tool${callCount === 1 ? "" : "s"}${errorPart}, ${formatDuration(durationMs)}`;
+            vscode.window
+              .showInformationMessage(notification, "Show Logs")
+              .then((choice) => {
+                if (choice === "Show Logs") this.output?.show();
+              })
+              .catch(() => {
+                /* best-effort */
+              });
+          }
         }
         return;
       }
