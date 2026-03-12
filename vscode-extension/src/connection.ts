@@ -321,9 +321,9 @@ export class BridgeConnection {
         /* best-effort */
       }
       try {
-        oldWs.close();
+        oldWs.terminate();
       } catch {
-        /* already closing */
+        /* best-effort */
       }
       this.ws = null;
     }

@@ -257,8 +257,10 @@ export class ExtensionClient {
           );
           return;
         }
+        let sanitized: Diagnostic[];
         if (diagnostics.length === 0) {
           this.latestDiagnostics.delete(file);
+          sanitized = [];
         } else {
           // Sanitize: extract only known-safe fields to prevent prototype pollution
           // when these objects are later spread or merged.
@@ -284,18 +286,19 @@ export class ExtensionClient {
                   : undefined,
             };
           });
-          this.latestDiagnostics.set(file, safe as Diagnostic[]);
+          sanitized = safe as Diagnostic[];
+          this.latestDiagnostics.set(file, sanitized);
           // Cap diagnostics cache at 500 entries
           if (this.latestDiagnostics.size > 500) {
             const firstKey = this.latestDiagnostics.keys().next().value;
             if (firstKey !== undefined) this.latestDiagnostics.delete(firstKey);
           }
         }
-        // Update timestamp and forward to Claude Code
+        // Update timestamp and forward sanitized data to Claude Code
         this.lastDiagnosticsUpdate = Date.now();
-        this.safeCallback(this.onDiagnosticsChanged, file, diagnostics);
+        this.safeCallback(this.onDiagnosticsChanged, file, sanitized);
         for (const fn of [...this.diagnosticsListeners])
-          this.safeCallback(fn, file, diagnostics);
+          this.safeCallback(fn, file, sanitized);
         break;
       }
       case "extension/selectionChanged": {
@@ -1145,6 +1148,9 @@ export class ExtensionClient {
 
   disconnect(): void {
     if (this.ws) {
+      // Remove listeners before closing so the async "close" event does not
+      // re-trigger handleDisconnect → onExtensionDisconnected during shutdown.
+      this.ws.removeAllListeners();
       this.ws.close(1000, "Bridge shutting down");
       this.ws = null;
     }

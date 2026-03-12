@@ -42,8 +42,10 @@ export class FileLock {
       await Promise.race([prev, timeout]);
       clearTimeout(timeoutId);
       if (timedOut) {
-        // If we timed out waiting, remove our tail promise so the queue doesn't
-        // grow unboundedly with waiter promises that will never run.
+        // Resolve next before throwing so any waiter chained behind us is not
+        // blocked for another full timeout cycle — they get the lock immediately
+        // (even though we do no work) and proceed normally.
+        release();
         if (this.locks.get(path) === next) this.locks.delete(path);
         throw new Error(
           `Timed out waiting for file lock on "${path}" after ${this.timeoutMs / 1000}s — another session may be editing the same file`,
