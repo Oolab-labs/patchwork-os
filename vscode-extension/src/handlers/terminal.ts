@@ -468,6 +468,12 @@ export async function handleCreateTerminal(
     ) {
       throw new Error("env must be an object");
     }
+    for (const [k, v] of Object.entries(
+      params.env as Record<string, unknown>,
+    )) {
+      if (typeof v !== "string")
+        throw new Error(`env["${k}"] must be a string`);
+    }
     options.env = params.env as Record<string, string>;
   }
 

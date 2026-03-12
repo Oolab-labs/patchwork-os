@@ -11,6 +11,7 @@ export async function handleGetInlayHints(
   if (typeof file !== "string") throw new Error("file is required");
   if (typeof startLine !== "number") throw new Error("startLine is required");
   if (typeof endLine !== "number") throw new Error("endLine is required");
+  if (endLine < startLine) throw new Error("endLine must be >= startLine");
 
   const uri = vscode.Uri.file(file);
 

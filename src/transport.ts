@@ -368,6 +368,18 @@ export class McpTransport {
                   };
                   break;
                 }
+                // Guard against oversized argument payloads before they reach tool handlers
+                if (JSON.stringify(toolArgs).length > 1_048_576) {
+                  response = {
+                    jsonrpc: "2.0",
+                    id: msg.id,
+                    error: {
+                      code: ErrorCodes.INVALID_PARAMS,
+                      message: "Tool arguments exceed 1 MB size limit",
+                    },
+                  };
+                  break;
+                }
                 callLog.debug(`Calling tool: ${params.name}`);
                 this.logger.event("tool_call", { tool: params.name, callId });
                 const controller = new AbortController();

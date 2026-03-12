@@ -64,6 +64,11 @@ export async function handleSetWorkspaceSetting(
     throw new Error(`Writing to "${key}" settings is blocked for safety`);
   }
 
+  // Defend against prototype pollution via keys like __proto__ or constructor
+  if (/^(__proto__|constructor|prototype)(\.|$)/.test(key)) {
+    throw new Error(`Writing to "${key}" settings is blocked for safety`);
+  }
+
   const target =
     targetStr === "global"
       ? vscode.ConfigurationTarget.Global

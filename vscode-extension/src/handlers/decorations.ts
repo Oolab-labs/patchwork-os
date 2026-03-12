@@ -77,6 +77,7 @@ export function createDecorationHandlers(): {
     if (typeof file !== "string") throw new Error("file is required");
     if (!/^[\w\-]+$/.test(id))
       throw new Error("id must be alphanumeric with hyphens/underscores only");
+    if (id.length > 256) throw new Error("id must be 256 characters or fewer");
 
     const specs = Array.isArray(params.decorations) ? params.decorations : [];
 

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { assertWithinWorkspace } from "./files";
 
 function requireFile(params: Record<string, unknown>): string {
   const file = params.file;
@@ -11,6 +12,7 @@ function requireFile(params: Record<string, unknown>): string {
 }
 
 async function openAndShowDocument(file: string): Promise<vscode.TextEditor> {
+  assertWithinWorkspace(file);
   const uri = vscode.Uri.file(file);
   const doc = await vscode.workspace.openTextDocument(uri);
   return vscode.window.showTextDocument(doc, { preview: false });

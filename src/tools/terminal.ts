@@ -663,7 +663,7 @@ export function createSendTerminalCommandTool(
       }
 
       // Validate the first word of the command against the allowlist
-      const firstWord = text.trim().split(/\s+/)[0];
+      const firstWord = text.trim().split(/\s+/)[0]?.toLowerCase();
       if (firstWord && !commandAllowlist.includes(firstWord)) {
         return error(
           `Command "${firstWord}" is not in the allowlist. ` +
