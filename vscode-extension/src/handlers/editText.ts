@@ -122,15 +122,15 @@ export async function handleReplaceBlock(
   const before = text.slice(0, firstIndex);
   const startLines = before.split("\n");
   const startLine = startLines.length - 1;
-  const startChar = startLines[startLines.length - 1]?.length;
+  const startChar = startLines[startLines.length - 1]?.length ?? 0;
 
   const matched = text.slice(firstIndex, firstIndex + oldContent.length);
   const matchedLines = matched.split("\n");
   const endLine = startLine + matchedLines.length - 1;
   const endChar =
     matchedLines.length === 1
-      ? startChar + matchedLines[0]?.length
-      : matchedLines[matchedLines.length - 1]?.length;
+      ? startChar + (matchedLines[0]?.length ?? 0)
+      : (matchedLines[matchedLines.length - 1]?.length ?? 0);
 
   const range = new vscode.Range(startLine, startChar, endLine, endChar);
   const wsEdit = new vscode.WorkspaceEdit();

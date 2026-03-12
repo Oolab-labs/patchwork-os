@@ -106,12 +106,18 @@ export function parseConfig(argv: string[]): Config {
         break;
       case "--ide-name":
         ideName = requireArg(args, ++i, "--ide-name");
+        if (ideName.length > 256)
+          throw new Error("--ide-name value too long (max 256 chars)");
         break;
       case "--editor":
         editorCommand = requireArg(args, ++i, "--editor");
+        if (editorCommand.length > 4096)
+          throw new Error("--editor value too long (max 4096 chars)");
         break;
       case "--bind":
         bindAddress = requireArg(args, ++i, "--bind");
+        if (bindAddress.length > 64)
+          throw new Error("--bind value too long (max 64 chars)");
         break;
       case "--port": {
         const portStr = requireArg(args, ++i, "--port");
@@ -129,11 +135,17 @@ export function parseConfig(argv: string[]): Config {
       case "--jsonl":
         jsonl = true;
         break;
-      case "--linter":
-        linters.push(requireArg(args, ++i, "--linter"));
+      case "--linter": {
+        const linter = requireArg(args, ++i, "--linter");
+        if (linter.length > 256)
+          throw new Error("--linter value too long (max 256 chars)");
+        linters.push(linter);
         break;
+      }
       case "--allow-command": {
         const cmd = requireArg(args, ++i, "--allow-command");
+        if (cmd.length > 256)
+          throw new Error("--allow-command value too long (max 256 chars)");
         if (INTERPRETER_COMMANDS.has(cmd)) {
           throw new Error(
             `"${cmd}" is an interpreter and cannot be added via --allow-command (arbitrary code execution risk)`,
@@ -142,11 +154,15 @@ export function parseConfig(argv: string[]): Config {
         commandAllowlist.push(cmd);
         break;
       }
-      case "--vscode-allow-command":
-        vscodeCommandAllowlist.push(
-          requireArg(args, ++i, "--vscode-allow-command"),
-        );
+      case "--vscode-allow-command": {
+        const vcmd = requireArg(args, ++i, "--vscode-allow-command");
+        if (vcmd.length > 256)
+          throw new Error(
+            "--vscode-allow-command value too long (max 256 chars)",
+          );
+        vscodeCommandAllowlist.push(vcmd);
         break;
+      }
       case "--timeout": {
         const tStr = requireArg(args, ++i, "--timeout");
         commandTimeout = Number.parseInt(tStr, 10);
