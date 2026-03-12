@@ -28,8 +28,17 @@ Claude Code connects to the bridge, which connects to your IDE extension. Claude
 ```bash
 npm install -g claude-ide-bridge
 
-# Start the bridge
+# Full setup: bridge + Claude Code + remote-control in a tmux session
+claude-ide-bridge start-all --workspace /path/to/your-project
+
+# Or run the bridge only (MCP server mode)
 claude-ide-bridge --workspace /path/to/your-project
+```
+
+No global install needed — use `npx`:
+
+```bash
+npx claude-ide-bridge start-all --workspace /path/to/your-project
 ```
 
 Or from source:
@@ -38,15 +47,17 @@ Or from source:
 git clone https://github.com/Oolab-labs/claude-ide-bridge.git
 cd claude-ide-bridge
 npm install && npm run build
-npm start -- --workspace /path/to/your-project
+npm run start-all -- --workspace /path/to/your-project
 ```
 
 Install the VS Code extension for full capabilities:
 
 ```bash
-cd vscode-extension
-npm install && npm run build && npm run package
-# Install the .vsix in your editor
+# Auto-detects your editor (VS Code, Windsurf, Cursor, Antigravity)
+claude-ide-bridge install-extension
+
+# Or specify explicitly
+claude-ide-bridge install-extension windsurf
 ```
 
 Then start Claude Code and connect:
@@ -58,11 +69,28 @@ claude
 
 ## Full Orchestrator
 
-The `start-all` script launches everything in a tmux session (bridge + Claude Code + remote control):
+The `start-all` command launches everything in a tmux session: bridge + Claude Code + remote control, with automatic health monitoring and process restart.
 
 ```bash
+# Via npm global install or npx
+claude-ide-bridge start-all --workspace /path/to/your-project
+
+# Or the dedicated alias
+claude-ide-bridge-start --workspace /path/to/your-project
+
+# From source
 npm run start-all -- --workspace /path/to/your-project
 ```
+
+Options:
+
+| Flag | Description |
+|------|-------------|
+| `--workspace <path>` | Project directory (default: `.`) |
+| `--notify <topic>` | ntfy.sh topic for push notifications |
+| `--ide <name>` | IDE name hint (e.g. `windsurf`) |
+
+Requires `tmux` and the `claude` CLI to be on `PATH`.
 
 ## Claude Code Plugin
 
@@ -185,10 +213,27 @@ claude -p "Map the project using getFileTree, getDocumentSymbols, and getCallHie
 Install the extension in any supported editor:
 
 ```bash
+# Auto-detect editor
+claude-ide-bridge install-extension
+
+# Specify editor
+claude-ide-bridge install-extension windsurf
+claude-ide-bridge install-extension cursor
+
+# Or via the install script
 bash scripts/install-extension.sh --ide <name>
 ```
 
-## CLI Options
+## CLI Reference
+
+### Subcommands
+
+```
+claude-ide-bridge start-all [options]   Full tmux orchestrator (bridge + Claude + remote)
+claude-ide-bridge install-extension [editor]   Install VS Code extension into your IDE
+```
+
+### Bridge options (default mode)
 
 ```
 --workspace <path>        Workspace folder (default: cwd)
@@ -199,6 +244,7 @@ bash scripts/install-extension.sh --ide <name>
 --allow-command <cmd>     Add command to execution allowlist (repeatable)
 --timeout <ms>            Command timeout in ms (default: 30000, max: 120000)
 --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
+--auto-tmux               Re-exec inside a tmux session automatically
 --verbose                 Enable debug logging
 --help                    Show this help
 ```
