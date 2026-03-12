@@ -21,7 +21,7 @@
     "indentWidth": 2
   },
   "files": {
-    "ignore": ["dist", "node_modules"]
+    "ignore": ["dist", "node_modules", "vscode-extension/out"]
   },
   "overrides": [
     {
@@ -34,6 +34,10 @@
           },
           "style": {
             "noNonNullAssertion": "off"
+          },
+          "complexity": {
+            "noBannedTypes": "off",
+            "noForEach": "off"
           }
         }
       }
