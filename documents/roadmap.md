@@ -4,9 +4,9 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v1.1.0)
+## Current State (v1.3.0)
 
-- ~100 MCP tools registered (60 native, 40 extension-enhanced)
+- 55+ MCP tools registered; extension-first with native fs fallback pattern established
 - VS Code extension with full handler coverage
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period)
 - Multi-linter and multi-test-runner support (auto-detected)
@@ -14,29 +14,34 @@ Development direction and exploration guidance. Living document — update as pr
 - Remote control support via start-all.sh orchestrator
 - Workspace snapshots and plan persistence
 - Activity logging with Prometheus metrics
+- Per-session stats + session-end UX (summary log + VS Code notification)
+- Claude Code Platform Integration fully shipped (skills, subagents, plugin, hooks, /ide-monitor)
+- 398 tests across 39 files; CI on Node 20 + 22
+- Deep security hardening: SSRF three-layer defense (lexical + DNS pre-resolution + IP pinning), Origin header validation, rate limit error codes, JSON parse error responses, interpreter flag blocklist, backpressure guards, slow-loris mitigations
 
 ---
 
 ## Near-Term Exploration Areas
 
-### Multi-Editor Support
+### Multi-Editor Support *(not started)*
 - Architecture is editor-agnostic in theory (bridge doesn't import vscode)
 - Companion extensions for Cursor, Windsurf, JetBrains?
 - Define minimal handler interface that other editors must implement
 - Priority: assess demand vs. effort
 
-### Native Fallback Improvements
-- Currently: extension disconnect → hide 40+ tools
-- Better: graceful degradation for some tools (e.g., file operations via fs, symbols via ctags)
-- Audit each `extensionRequired` tool for possible CLI fallback
+### Native Fallback Improvements *(partial — one item remains)*
+- Currently: extension disconnect → hide 27 tools (audited 2026-03-12)
+- `listTasks` fallback shipped — parses `.vscode/tasks.json` + Makefile targets
+- `watchDiagnostics` fallback shipped — runs detected CLI linters immediately, returns snapshot
+- Remaining viable fallback: `organizeImports` (prettier/biome) — low priority
+- All others (terminal, debugger, LSP, decorations, VS Code commands) have no viable fallback — intentionally `extensionRequired`
 
-### Test Coverage
-- Audit which tools lack unit tests
-- Add integration tests for extension ↔ bridge protocol
-- Test circuit breaker behavior under load
-- Test reconnect grace period edge cases
+### Test Coverage *(healthy — no integration gap)*
+- 408 tests, 40 files; integration tests exist (6 files, full WebSocket round-trip coverage)
+- `searchAndReplace` core logic now tested on all platforms via mocked-rg suite
+- Original rg-integration suite still gates on binary availability for CI
 
-### Performance
+### Performance *(not started)*
 - Profile tool call latency for common operations
 - WebSocket backpressure handling under sustained load
 - Large file handling (getBufferContent, searchWorkspace results exceeding maxResultSize)

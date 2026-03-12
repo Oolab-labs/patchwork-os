@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "claude-ide-bridge": "dist/index.js"
+    "claude-ide-bridge": "dist/index.js",
+    "claude-ide-bridge-start": "dist/index.js"
   },
   "license": "MIT",
   "keywords": [
@@ -34,6 +35,10 @@
     "dist",
     "!dist/__tests__",
     "!dist/**/__tests__",
+    "scripts/start-all.sh",
+    "scripts/start-remote.sh",
+    "scripts/install-extension.sh",
+    "scripts/gen-mcp-config.sh",
     "LICENSE",
     "README.md"
   ],

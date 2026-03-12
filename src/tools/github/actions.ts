@@ -132,7 +132,7 @@ export function createGithubGetRunLogsTool(workspace: string) {
         "run",
         "view",
         String(runId),
-        `--log${failedOnly ? "-failed" : ""}`,
+        failedOnly ? "--log-failed" : "--log",
       ];
 
       const result = await execSafe("gh", viewArgs, {

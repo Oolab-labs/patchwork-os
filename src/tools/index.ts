@@ -327,7 +327,12 @@ export function registerAllTools(
     createFormatDocumentTool(workspace, probes, extensionClient),
     createFixAllLintErrorsTool(workspace, probes, extensionClient),
     createOrganizeImportsTool(workspace, extensionClient),
-    createWatchDiagnosticsTool(workspace, extensionClient),
+    createWatchDiagnosticsTool(
+      workspace,
+      extensionClient,
+      probes,
+      config.linters.length > 0 ? config.linters : undefined,
+    ),
     // Phase 4: Additional features
     createReadClipboardTool(extensionClient),
     createWriteClipboardTool(extensionClient),
@@ -345,7 +350,7 @@ export function registerAllTools(
     createStopDebuggingTool(extensionClient),
     createSetEditorDecorationsTool(workspace, extensionClient),
     createClearEditorDecorationsTool(extensionClient),
-    createListTasksTool(extensionClient),
+    createListTasksTool(workspace, extensionClient),
     createRunTaskTool(extensionClient),
     createSetActiveWorkspaceFolderTool(config),
     createGetNotebookCellsTool(workspace, extensionClient),

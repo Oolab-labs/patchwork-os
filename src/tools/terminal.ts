@@ -1,3 +1,4 @@
+import { INTERPRETER_COMMANDS } from "../config.js";
 import {
   type ExtensionClient,
   ExtensionTimeoutError,
@@ -12,6 +13,44 @@ import {
   resolveFilePath,
   success,
 } from "./utils.js";
+
+/**
+ * Flags that allow interpreter commands to execute arbitrary code.
+ * Mirrors DANGEROUS_INTERPRETER_FLAGS in runCommand.ts — applied here to
+ * terminal commands where the shell is involved and quoting cannot be trusted.
+ */
+const TERMINAL_DANGEROUS_INTERPRETER_FLAGS = new Set([
+  "-e",
+  "--eval",
+  "-c",
+  "--print",
+  "-p",
+  "--input-type",
+  "--import",
+  "--loader",
+  "--experimental-loader",
+  "-m",
+  "--inspect", // Node.js debugger — opens a remote debug port
+  "--inspect-brk", // Node.js debugger (break on start)
+  "--inspect-port", // Node.js debugger port override
+]);
+
+/**
+ * Flags that redirect where commands read config/manifests from.
+ * Mirrors DANGEROUS_PATH_FLAGS in runCommand.ts.
+ */
+const TERMINAL_DANGEROUS_PATH_FLAGS = new Set([
+  "--prefix",
+  "--manifest-path",
+  "--config",
+  "--rcfile",
+  "--require",
+  "-r",
+  "--userconfig",
+  "--globalconfig",
+  "-f",
+  "--makefile",
+]);
 
 /** Environment variable names that could enable privilege escalation */
 const DANGEROUS_ENV_VARS = new Set([
@@ -45,6 +84,34 @@ const DANGEROUS_ENV_VARS = new Set([
   "NPM_CONFIG_SCRIPT_SHELL",
   "CARGO_HOME",
 ]);
+
+/**
+ * Validate terminal command tokens for dangerous flags.
+ * Returns an error string if a dangerous flag is found, undefined otherwise.
+ *
+ * Terminal commands run inside a real shell, so flag-level argument injection
+ * (e.g. `git -c core.pager=evil`) cannot be caught by the metacharacter filter.
+ * We apply the same flag blocklists used by runCommand for interpreter and
+ * config-redirect flags.
+ */
+function validateTerminalCommandFlags(command: string): string | undefined {
+  const tokens = command.trim().split(/\s+/);
+  const cmd = tokens[0]?.toLowerCase() ?? "";
+  const isInterpreter = INTERPRETER_COMMANDS.has(cmd);
+
+  for (let i = 1; i < tokens.length; i++) {
+    const tok = tokens[i] ?? "";
+    // Strip value for flags like --config=value → --config
+    const flag = tok.split("=")[0] ?? tok;
+    if (isInterpreter && TERMINAL_DANGEROUS_INTERPRETER_FLAGS.has(flag)) {
+      return `Flag "${flag}" is not allowed for interpreter command "${cmd}" (code execution risk)`;
+    }
+    if (TERMINAL_DANGEROUS_PATH_FLAGS.has(flag)) {
+      return `Flag "${flag}" is not allowed in terminal commands (config redirect risk)`;
+    }
+  }
+  return undefined;
+}
 
 /** Apply prefix to a terminal name (no-op when prefix is empty).
  * When prefix is set and name is undefined, generates a unique prefixed default name
@@ -506,6 +573,9 @@ export function createRunInTerminalTool(
         );
       }
 
+      const flagErr = validateTerminalCommandFlags(command);
+      if (flagErr) return error(flagErr);
+
       try {
         const result = await extensionClient.executeInTerminal(
           command,
@@ -671,6 +741,9 @@ export function createSendTerminalCommandTool(
             `Use --allow-command ${firstWord} to add it.`,
         );
       }
+
+      const flagErr = validateTerminalCommandFlags(text);
+      if (flagErr) return error(flagErr);
 
       try {
         const result = await extensionClient.sendTerminalCommand(

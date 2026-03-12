@@ -25,11 +25,36 @@ function parse(result: { content: Array<{ type: string; text: string }> }) {
 // the Claude binary with ARGV0=rg. Node's execFile cannot invoke shell functions,
 // so we install a shim script for that case. On Linux (CI) `rg` is a real binary
 // already on PATH, so the shim directory is empty and the system rg is used.
+function findClaudeBinary(): string | undefined {
+  // Search for the Claude Code native binary under common extension install paths.
+  // Supports both Windsurf and VS Code extension hosts, any version, any platform.
+  const home = os.homedir();
+  const searchRoots = [
+    path.join(home, ".windsurf", "extensions"),
+    path.join(home, ".vscode", "extensions"),
+    path.join(home, ".cursor", "extensions"),
+  ];
+  for (const root of searchRoots) {
+    if (!fs.existsSync(root)) continue;
+    for (const entry of fs.readdirSync(root)) {
+      if (!entry.startsWith("anthropic.claude-code")) continue;
+      const candidate = path.join(
+        root,
+        entry,
+        "resources",
+        "native-binary",
+        "claude",
+      );
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
+
 function installRgShim(): string {
   const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "rg-shim-bin-"));
-  const claudeBinary =
-    "/Users/wesh/.windsurf/extensions/anthropic.claude-code-2.1.72-darwin-arm64/resources/native-binary/claude";
-  if (fs.existsSync(claudeBinary)) {
+  const claudeBinary = findClaudeBinary();
+  if (claudeBinary) {
     const rgScript = path.join(binDir, "rg");
     // The shim sets ARGV0=rg so the Claude binary behaves as ripgrep
     fs.writeFileSync(

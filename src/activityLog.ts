@@ -7,17 +7,105 @@ export interface ActivityEntry {
   errorMessage?: string;
 }
 
+export interface LifecycleEntry {
+  id: number;
+  timestamp: string;
+  event: string;
+  metadata?: Record<string, unknown>;
+}
+
+import fs from "node:fs";
+import path from "node:path";
+
 function escapeLabelValue(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
 }
 
+export type TimelineEntry =
+  | ({ kind: "tool" } & ActivityEntry)
+  | ({ kind: "lifecycle" } & LifecycleEntry);
+
+const MAX_PERSIST_LINES = 10_000;
+const MAX_PERSIST_BYTES = 1024 * 1024; // 1MB
+
 export class ActivityLog {
   private entries: ActivityEntry[] = [];
+  private lifecycleEntries: LifecycleEntry[] = [];
   private nextId = 1;
   private maxEntries: number;
+  private persistPath: string | null;
 
   constructor(maxEntries = 500) {
     this.maxEntries = maxEntries;
+    this.persistPath = null;
+  }
+
+  setPersistPath(p: string): void {
+    this.persistPath = p;
+    this._loadFromDisk();
+  }
+
+  private _loadFromDisk(): void {
+    if (!this.persistPath) return;
+    try {
+      const raw = fs.readFileSync(this.persistPath, "utf8");
+      const lines = raw.split("\n").filter((l) => l.trim());
+      for (const line of lines.slice(-this.maxEntries)) {
+        try {
+          const obj = JSON.parse(line) as Record<string, unknown>;
+          if (obj.kind === "tool") {
+            this.entries.push(obj as unknown as ActivityEntry);
+            this.nextId = Math.max(this.nextId, (obj.id as number) + 1);
+          } else if (obj.kind === "lifecycle") {
+            this.lifecycleEntries.push(obj as unknown as LifecycleEntry);
+            this.nextId = Math.max(this.nextId, (obj.id as number) + 1);
+          }
+        } catch {
+          // skip malformed lines
+        }
+      }
+    } catch {
+      // file doesn't exist yet, that's fine
+    }
+  }
+
+  private _appendToDisk(
+    kind: string,
+    entry: ActivityEntry | LifecycleEntry,
+  ): void {
+    if (!this.persistPath) return;
+    try {
+      const dir = path.dirname(this.persistPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const line = `${JSON.stringify({ kind, ...entry })}\n`;
+      // Rotate first if file exceeds limits, then always append the current entry
+      try {
+        const stat = fs.statSync(this.persistPath);
+        if (stat.size > MAX_PERSIST_BYTES) {
+          this._rotateDisk();
+        }
+      } catch {
+        // file doesn't exist yet — nothing to rotate
+      }
+      fs.appendFileSync(this.persistPath, line);
+    } catch {
+      // Disk persistence is best-effort — never block tool execution
+    }
+  }
+
+  private _rotateDisk(): void {
+    if (!this.persistPath) return;
+    try {
+      const raw = fs.readFileSync(this.persistPath, "utf8");
+      const lines = raw.split("\n").filter((l) => l.trim());
+      // Trim by line count OR if byte size is still excessive (few very long lines)
+      if (lines.length > MAX_PERSIST_LINES || raw.length > MAX_PERSIST_BYTES) {
+        const trimmed = `${lines.slice(-MAX_PERSIST_LINES).join("\n")}\n`;
+        fs.writeFileSync(this.persistPath, trimmed);
+      }
+    } catch {
+      // ignore rotation errors
+    }
   }
 
   record(
@@ -26,18 +114,48 @@ export class ActivityLog {
     status: "success" | "error",
     errorMessage?: string,
   ): void {
-    this.entries.push({
+    const entry: ActivityEntry = {
       id: this.nextId++,
       timestamp: new Date().toISOString(),
       tool,
       durationMs,
       status,
       errorMessage,
-    });
+    };
+    this.entries.push(entry);
+    this._appendToDisk("tool", entry);
     if (this.entries.length > this.maxEntries * 1.2) {
       // Batch eviction: drop the oldest 20% instead of shift() on every insert
       this.entries = this.entries.slice(-this.maxEntries);
     }
+  }
+
+  recordEvent(event: string, metadata?: Record<string, unknown>): void {
+    const entry: LifecycleEntry = {
+      id: this.nextId++,
+      timestamp: new Date().toISOString(),
+      event,
+      metadata,
+    };
+    this.lifecycleEntries.push(entry);
+    this._appendToDisk("lifecycle", entry);
+    if (this.lifecycleEntries.length > this.maxEntries * 1.2) {
+      this.lifecycleEntries = this.lifecycleEntries.slice(-this.maxEntries);
+    }
+  }
+
+  queryTimeline(opts?: { last?: number }): TimelineEntry[] {
+    const tools: TimelineEntry[] = this.entries.map((e) => ({
+      kind: "tool" as const,
+      ...e,
+    }));
+    const lifecycle: TimelineEntry[] = this.lifecycleEntries.map((e) => ({
+      kind: "lifecycle" as const,
+      ...e,
+    }));
+    const combined = [...tools, ...lifecycle].sort((a, b) => a.id - b.id);
+    const last = Math.min(opts?.last ?? 50, 200);
+    return combined.slice(-last);
   }
 
   query(opts?: {

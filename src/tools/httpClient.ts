@@ -1,3 +1,4 @@
+import dns from "node:dns/promises";
 import fs from "node:fs/promises";
 import {
   error,
@@ -25,8 +26,9 @@ const MAX_RESPONSE_BYTES = 1024 * 1024; // 1 MB hard cap
 
 /**
  * Block requests to private/loopback addresses to prevent SSRF.
- * Checks hostname patterns — does not perform DNS resolution, so
- * DNS-rebinding attacks are not covered (acceptable for a local dev tool).
+ * Checks hostname patterns only — DNS resolution happens separately in the
+ * handler via dns.lookup() so that hostnames that resolve to private IPs are
+ * also blocked.
  */
 function isPrivateHost(hostname: string): boolean {
   // Strip IPv6 brackets: [::1] → ::1
@@ -37,6 +39,12 @@ function isPrivateHost(hostname: string): boolean {
 
   if (host === "localhost" || host.endsWith(".localhost")) return true;
   if (host === "0.0.0.0") return true;
+
+  // Reject non-decimal IPv4 notations that bypass the dotted-quad regex below:
+  //   hex:   0x7f000001  → 127.0.0.1
+  //   octal: 0177.0.0.1  → 127.0.0.1
+  // Node's URL parser may normalize these on some platforms; block unconditionally.
+  if (/^0x[0-9a-f]+$/i.test(host) || /^0[0-7]{7,}$/.test(host)) return true;
 
   // IPv4 range checks
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
@@ -145,9 +153,50 @@ export function createSendHttpRequestTool() {
         );
       }
 
+      // DNS pre-resolution SSRF guard: resolve the hostname and re-check the
+      // resulting IP against the private-range blocklist. This catches hostnames
+      // like "internal.corp.example.com" that resolve to RFC-1918 addresses and
+      // would bypass the purely-lexical isPrivateHost check above.
+      //
+      // After validation, we pin the connection to the resolved IP by rewriting
+      // the request URL's hostname. This closes the TOCTOU window between
+      // dns.lookup() and the actual fetch — without pinning, an attacker can
+      // serve a public IP on the first DNS response and a private IP on the
+      // second. We preserve the original hostname in a Host header so virtual
+      // hosting and SNI still work. DNS failures fall through to fetch naturally.
+      let resolvedIp: string | null = null;
+      try {
+        const { address } = await dns.lookup(parsedUrl.hostname);
+        if (isPrivateHost(address)) {
+          return error(
+            `Hostname "${parsedUrl.hostname}" resolves to a private address (${address}) — request blocked`,
+          );
+        }
+        resolvedIp = address;
+      } catch {
+        // DNS lookup failed — let fetch report the error with its own message
+      }
+
+      // Build the initial URL: if we successfully resolved an IP, use it as the
+      // hostname so Node's fetch does not re-resolve (closes the TOCTOU window).
+      // IPv6 addresses require bracket wrapping in URLs.
+      let initialUrl = urlStr;
+      if (resolvedIp !== null) {
+        const pinnedUrl = new URL(urlStr);
+        pinnedUrl.hostname = resolvedIp.includes(":")
+          ? `[${resolvedIp}]`
+          : resolvedIp;
+        initialUrl = pinnedUrl.toString();
+      }
+
       // Validate and collect headers
       const rawHeaders = args.headers;
       const headers: Record<string, string> = {};
+      // Set Host header to the original hostname so virtual hosting / SNI works
+      // when we've pinned the URL to a resolved IP.
+      if (resolvedIp !== null) {
+        headers.Host = parsedUrl.hostname;
+      }
       if (rawHeaders != null) {
         if (typeof rawHeaders !== "object" || Array.isArray(rawHeaders)) {
           return error("headers must be a plain object of string values");
@@ -157,6 +206,12 @@ export function createSendHttpRequestTool() {
         )) {
           if (typeof v !== "string") {
             return error(`Header value for "${k}" must be a string`);
+          }
+          // Block CRLF and null bytes — header injection prevention
+          if (/[\r\n\x00]/.test(k) || /[\r\n\x00]/.test(v)) {
+            return error(
+              `Header "${k}" contains invalid characters (CR, LF, or null byte)`,
+            );
           }
           headers[k] = v;
         }
@@ -193,7 +248,7 @@ export function createSendHttpRequestTool() {
 
       const start = Date.now();
       try {
-        let currentUrl = urlStr;
+        let currentUrl = initialUrl;
         let redirectCount = 0;
         let resp: Response;
 
@@ -237,6 +292,26 @@ export function createSendHttpRequestTool() {
             return error(
               `Redirect to private/loopback address blocked ("${nextUrl.hostname}")`,
             );
+          }
+
+          // Pin the redirect hop to its resolved IP to close the TOCTOU window.
+          // DNS failures fall through — fetch will report the error naturally.
+          try {
+            const { address: redirectIp } = await dns.lookup(nextUrl.hostname);
+            if (isPrivateHost(redirectIp)) {
+              clearTimeout(timeoutId);
+              return error(
+                `Redirect hostname "${nextUrl.hostname}" resolves to a private address (${redirectIp}) — blocked`,
+              );
+            }
+            // Mutate nextUrl in-place to pin to the resolved IP
+            nextUrl.hostname = redirectIp.includes(":")
+              ? `[${redirectIp}]`
+              : redirectIp;
+            // Preserve original Host for virtual hosting / SNI
+            headers.Host = new URL(location, currentUrl).hostname;
+          } catch {
+            // DNS failed — use un-pinned URL; fetch will fail naturally
           }
 
           currentUrl = nextUrl.toString();

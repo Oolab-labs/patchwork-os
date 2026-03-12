@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import os from "node:os";
+import path from "node:path";
 import { WebSocket } from "ws";
 import { ActivityLog } from "./activityLog.js";
 import type { Config } from "./config.js";
@@ -9,12 +11,12 @@ import { Logger } from "./logger.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
 import { Server } from "./server.js";
+import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { registerAllTools } from "./tools/index.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
 import { McpTransport } from "./transport.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
-const CLAUDE_RECONNECT_GRACE_MS = 30_000;
 const MAX_SESSIONS = 5;
 let globalHandlersRegistered = false;
 
@@ -48,6 +50,9 @@ export class Bridge {
   private probes: ProbeResults | null = null;
   private stopped = false;
   private listChangedTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastConnectAt: string | null = null;
+  private lastDisconnectAt: string | null = null;
+  private checkpoint: SessionCheckpoint | null = null;
 
   constructor(private config: Config) {
     this.logger = new Logger(config.verbose, config.jsonl);
@@ -105,6 +110,11 @@ export class Bridge {
       this.logger.info(
         `Claude Code connected (session ${sessionId.slice(0, 8)}) — ${this.sessions.size} active session${this.sessions.size === 1 ? "" : "s"}`,
       );
+      this.lastConnectAt = new Date().toISOString();
+      this.activityLog.recordEvent("claude_connected", {
+        sessionId: sessionId.slice(0, 8),
+        activeSessions: this.sessions.size,
+      });
       this.logger.event("claude_connected", {
         sessionId,
         activeSessions: this.sessions.size,
@@ -115,17 +125,25 @@ export class Bridge {
       }
 
       ws.on("close", () => {
+        this.lastDisconnectAt = new Date().toISOString();
         this.logger.info(
           `Claude Code disconnected (session ${sessionId.slice(0, 8)})`,
         );
+        this.activityLog.recordEvent("claude_disconnected", {
+          sessionId: sessionId.slice(0, 8),
+        });
         this.logger.event("claude_disconnected", { sessionId });
         const s = this.sessions.get(sessionId);
         if (s && !s.graceTimer) {
           s.graceTimer = setTimeout(() => {
             this.cleanupSession(sessionId);
-          }, CLAUDE_RECONNECT_GRACE_MS);
+          }, this.config.gracePeriodMs);
+          this.activityLog.recordEvent("grace_started", {
+            sessionId: sessionId.slice(0, 8),
+            gracePeriodMs: this.config.gracePeriodMs,
+          });
           this.logger.info(
-            `Grace period started for session ${sessionId.slice(0, 8)} (${CLAUDE_RECONNECT_GRACE_MS / 1000}s)`,
+            `Grace period started for session ${sessionId.slice(0, 8)} (${this.config.gracePeriodMs / 1000}s)`,
           );
         }
       });
@@ -138,7 +156,7 @@ export class Bridge {
         if (s && !s.graceTimer) {
           s.graceTimer = setTimeout(() => {
             this.cleanupSession(sessionId);
-          }, CLAUDE_RECONNECT_GRACE_MS);
+          }, this.config.gracePeriodMs);
         }
       });
     });
@@ -167,6 +185,7 @@ export class Bridge {
       this.logger.info(
         "VS Code extension connected — LSP, terminal, and editor tools now available",
       );
+      this.activityLog.recordEvent("extension_connected");
       this.logger.event("extension_connected");
       this.extensionClient.handleExtensionConnection(ws);
       // Refresh workspace folders from extension (multi-root workspace support)
@@ -214,6 +233,7 @@ export class Bridge {
       this.logger.info(
         "VS Code extension disconnected — falling back to file-system tools only",
       );
+      this.activityLog.recordEvent("extension_disconnected");
       this.logger.event("extension_disconnected_notify");
       sendListChanged();
     };
@@ -243,11 +263,34 @@ export class Bridge {
     };
   }
 
+  private _buildCheckpoint(port: number): CheckpointData {
+    const sessions = [];
+    for (const s of this.sessions.values()) {
+      sessions.push({
+        id: s.id.slice(0, 8),
+        connectedAt: s.connectedAt,
+        openedFiles: [...s.openedFiles],
+        terminalPrefix: s.terminalPrefix,
+        inGrace: s.graceTimer !== null,
+      });
+    }
+    return {
+      port,
+      savedAt: Date.now(),
+      sessions,
+      extensionConnected: this.extensionClient.isConnected(),
+      gracePeriodMs: this.config.gracePeriodMs,
+    };
+  }
+
   private cleanupSession(id: string): void {
     const session = this.sessions.get(id);
     if (!session) return;
     if (session.graceTimer) {
       clearTimeout(session.graceTimer);
+      this.activityLog.recordEvent("grace_expired", {
+        sessionId: id.slice(0, 8),
+      });
     }
     // Read stats before detach() — counters survive detach
     const { callCount, errorCount } = session.transport.getStats();
@@ -296,13 +339,50 @@ export class Bridge {
     );
 
     // 2. Wire up /health endpoint data and /metrics
-    this.server.healthDataFn = () => ({
-      claudeCode: this.sessions.size > 0,
-      activeSessions: this.sessions.size,
-      extension: this.extensionClient.isConnected(),
-      extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
-    });
+    this.server.healthDataFn = () => {
+      let sessionsInGrace = 0;
+      for (const s of this.sessions.values()) {
+        if (s.graceTimer) sessionsInGrace++;
+      }
+      return {
+        claudeCode: this.sessions.size > 0,
+        activeSessions: this.sessions.size,
+        sessionsInGrace,
+        gracePeriodMs: this.config.gracePeriodMs,
+        lastConnectAt: this.lastConnectAt,
+        lastDisconnectAt: this.lastDisconnectAt,
+        extension: this.extensionClient.isConnected(),
+        extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
+        recentActivity: this.activityLog.query({ last: 10 }),
+      };
+    };
     this.server.metricsFn = () => this.activityLog.toPrometheus();
+    this.server.statusFn = () => {
+      let sessionsInGrace = 0;
+      const sessionList: Record<string, unknown>[] = [];
+      for (const s of this.sessions.values()) {
+        if (s.graceTimer) sessionsInGrace++;
+        sessionList.push({
+          id: s.id.slice(0, 8),
+          connectedAt: new Date(s.connectedAt).toISOString(),
+          inGrace: s.graceTimer !== null,
+          openedFiles: s.openedFiles.size,
+          terminalPrefix: s.terminalPrefix,
+        });
+      }
+      return {
+        claudeCode: this.sessions.size > 0,
+        activeSessions: this.sessions.size,
+        sessionsInGrace,
+        gracePeriodMs: this.config.gracePeriodMs,
+        lastConnectAt: this.lastConnectAt,
+        lastDisconnectAt: this.lastDisconnectAt,
+        sessions: sessionList,
+        extension: this.extensionClient.isConnected(),
+        extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
+        timeline: this.activityLog.queryTimeline({ last: 50 }),
+      };
+    };
 
     // 3. Check for stale lock files
     this.lockFile.cleanStale();
@@ -313,13 +393,43 @@ export class Bridge {
       this.config.bindAddress,
     );
 
-    // 5. Write lock file
+    // 5. Enable activity log disk persistence
+    const configDir =
+      process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+    this.activityLog.setPersistPath(
+      path.join(configDir, "ide", `activity-${port}.jsonl`),
+    );
+
+    // 6. Check for recent checkpoint from previous run and log summary
+    const prevCheckpoint = SessionCheckpoint.loadLatest();
+    if (prevCheckpoint) {
+      const ageSec = Math.round((Date.now() - prevCheckpoint.savedAt) / 1000);
+      this.logger.info(
+        `Previous session checkpoint found (${ageSec}s ago, port ${prevCheckpoint.port}):`,
+      );
+      this.logger.info(
+        `  ${prevCheckpoint.sessions.length} session(s), ${prevCheckpoint.sessions.reduce((n, s) => n + s.openedFiles.length, 0)} tracked file(s)`,
+      );
+      if (prevCheckpoint.sessions.length > 0) {
+        for (const s of prevCheckpoint.sessions) {
+          this.logger.info(
+            `  Session ${s.id}: ${s.openedFiles.length} file(s) — prefix: ${s.terminalPrefix}`,
+          );
+        }
+      }
+    }
+
+    // 7. Write lock file
     const lockPath = this.lockFile.write(
       port,
       this.authToken,
       [this.config.workspace],
       this.config.ideName,
     );
+
+    // 8. Start session checkpoint (write every 30s)
+    this.checkpoint = new SessionCheckpoint(port);
+    this.checkpoint.start(() => this._buildCheckpoint(port));
 
     // Register shutdown handlers
     let shuttingDown = false;
@@ -360,6 +470,24 @@ export class Bridge {
     this.logger.info(`  Editor:     ${this.config.ideName || "none"}`);
     this.logger.info(`  Lock file:  ${lockPath}`);
     this.logger.info("  Connect:    run `claude` in a new terminal, then /ide");
+    if (this.config.gracePeriodMs !== 30_000) {
+      this.logger.info(
+        `  Grace:      ${this.config.gracePeriodMs / 1000}s reconnect window`,
+      );
+    }
+    if (
+      !process.env.TMUX &&
+      !process.env.STY &&
+      !process.env.ZELLIJ &&
+      !process.env.ZELLIJ_SESSION_NAME
+    ) {
+      this.logger.warn(
+        "WARNING: Not running inside tmux, screen, or zellij. SSH disconnection will kill this process.",
+      );
+      this.logger.warn(
+        "  Recommended: use 'npm run start-all' or wrap in tmux/screen.",
+      );
+    }
     this.logger.event("bridge_started", {
       port,
       workspace: this.config.workspace,
@@ -422,6 +550,7 @@ export class Bridge {
     this.extensionClient.disconnect();
     await this.server.close();
     this.lockFile.delete();
+    this.checkpoint?.stop();
     cleanupTempDirs();
   }
 }

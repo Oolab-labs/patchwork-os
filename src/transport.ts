@@ -9,6 +9,7 @@ const TOOL_TIMEOUT_MS = 60_000; // 60s — prevents tools from blocking indefini
 const MAX_CONCURRENT_TOOLS = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
 const RATE_LIMIT_MAX = 200; // max requests per window
+const NOTIFICATION_RATE_LIMIT = 500; // max notifications per minute (separate from request limit)
 // Supported MCP protocol versions, newest first.
 // Extend this array when new protocol versions are ratified; keep oldest supported version last.
 const SUPPORTED_VERSIONS = ["2025-11-25"];
@@ -92,6 +93,9 @@ export class McpTransport {
   // Ring buffer for O(1) sliding-window rate limiting — avoids array scan + splice
   private rateLimitBuf = new Float64Array(RATE_LIMIT_MAX); // initialised to 0 (epoch 1970, always outside window)
   private rateLimitHead = 0; // index of oldest entry / next write position
+  // Separate lightweight rate limit for notifications (no response sent, so can't use main ring buffer)
+  private notifCount = 0;
+  private notifWindowStart = 0;
   private clientLogLevel: LogLevel = "warning";
 
   private activityLog: ActivityLog | null = null;
@@ -136,6 +140,8 @@ export class McpTransport {
     this.activeToolCalls = 0;
     this.rateLimitBuf.fill(0);
     this.rateLimitHead = 0;
+    this.notifCount = 0;
+    this.notifWindowStart = 0;
     this.clientLogLevel = "warning";
   }
 
@@ -150,8 +156,26 @@ export class McpTransport {
     const listener = async (data: Buffer) => {
       // Ignore messages from superseded connections
       if (gen !== this.generation) return;
+      let raw: unknown;
       try {
-        const raw: unknown = JSON.parse(data.toString("utf-8"));
+        raw = JSON.parse(data.toString("utf-8"));
+      } catch {
+        // Malformed JSON — send PARSE_ERROR per JSON-RPC 2.0 spec §5.1
+        await safeSend(
+          ws,
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: ErrorCodes.PARSE_ERROR,
+              message: "Parse error: message is not valid JSON",
+            },
+          }),
+          this.logger,
+        );
+        return;
+      }
+      try {
         if (typeof raw !== "object" || raw === null) {
           this.logger.debug("Ignoring non-object JSON-RPC message");
           return;
@@ -184,6 +208,21 @@ export class McpTransport {
 
         // Notifications (no id)
         if (msg.id === undefined || msg.id === null) {
+          // Lightweight rate limit for notifications — they have no response channel
+          // so they bypass the main ring-buffer rate limiter.
+          const nowNotif = Date.now();
+          if (nowNotif - this.notifWindowStart >= RATE_LIMIT_WINDOW_MS) {
+            this.notifCount = 0;
+            this.notifWindowStart = nowNotif;
+          }
+          this.notifCount++;
+          if (this.notifCount > NOTIFICATION_RATE_LIMIT) {
+            this.logger.warn(
+              `Notification rate limit exceeded (${NOTIFICATION_RATE_LIMIT}/min) — dropping notification`,
+            );
+            return;
+          }
+
           if (msg.method === "notifications/cancelled") {
             const requestId = (msg.params as { requestId?: string | number })
               ?.requestId;
@@ -215,7 +254,7 @@ export class McpTransport {
               jsonrpc: "2.0",
               id: msg.id,
               error: {
-                code: ErrorCodes.INTERNAL_ERROR,
+                code: ErrorCodes.RATE_LIMIT_EXCEEDED,
                 message: "Rate limit exceeded — too many requests",
               },
             }),
@@ -384,8 +423,13 @@ export class McpTransport {
                 this.logger.event("tool_call", { tool: params.name, callId });
                 const controller = new AbortController();
                 this.inFlightControllers.set(msg.id, controller);
-                // Build progress callback if client provided a progressToken
-                const progressToken = params._meta?.progressToken;
+                // Build progress callback if client provided a valid progressToken.
+                // Reject non-primitive tokens to prevent object injection into notifications.
+                const rawToken = params._meta?.progressToken;
+                const progressToken =
+                  typeof rawToken === "string" || typeof rawToken === "number"
+                    ? rawToken
+                    : undefined;
                 const progressFn: ProgressFn | undefined =
                   progressToken !== undefined
                     ? (progress: number, total?: number, message?: string) =>
@@ -548,6 +592,8 @@ export class McpTransport {
     const msgIdx = LOG_LEVELS.indexOf(level);
     const clientIdx = LOG_LEVELS.indexOf(this.clientLogLevel);
     if (msgIdx < clientIdx) return;
+    // Skip under backpressure — log messages are best-effort, same as progress notifications
+    if (this.activeWs.bufferedAmount >= BACKPRESSURE_THRESHOLD) return;
     const msg: JsonRpcNotification = {
       jsonrpc: "2.0",
       method: "notifications/message",

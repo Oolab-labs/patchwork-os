@@ -370,7 +370,7 @@ describe("McpTransport", () => {
 
     expect(rateLimited.result).toBeUndefined();
     const err = rateLimited.error as { code: number; message: string };
-    expect(err.code).toBe(ErrorCodes.INTERNAL_ERROR);
+    expect(err.code).toBe(ErrorCodes.RATE_LIMIT_EXCEEDED);
     expect(err.message).toMatch(/rate limit/i);
   });
 

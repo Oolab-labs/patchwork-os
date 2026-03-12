@@ -3,7 +3,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, extensionRequired, success } from "./utils.js";
+import { error, extensionRequired, requireString, success } from "./utils.js";
 
 export function createExecuteVSCodeCommandTool(
   extensionClient: ExtensionClient,
@@ -41,10 +41,7 @@ export function createExecuteVSCodeCommandTool(
       if (!extensionClient.isConnected()) {
         return extensionRequired("executeVSCodeCommand");
       }
-      const command = args.command;
-      if (typeof command !== "string" || command.length === 0) {
-        return error("command is required");
-      }
+      const command = requireString(args, "command", 256);
 
       // Allowlist enforcement (bridge-side) — default-deny when no allowlist is configured.
       // VS Code commands are a broad attack surface; require explicit opt-in for each command.
@@ -55,7 +52,14 @@ export function createExecuteVSCodeCommandTool(
             "Run listVSCodeCommands to discover available command IDs.",
         );
       }
-      if (!config.vscodeCommandAllowlist.includes(command)) {
+      // Normalize to lowercase for case-insensitive comparison — consistent with
+      // runCommand allowlist behavior (prevents case-variation bypass).
+      const commandLower = command.toLowerCase();
+      if (
+        !config.vscodeCommandAllowlist.some(
+          (a) => a.toLowerCase() === commandLower,
+        )
+      ) {
         return error(
           `Command "${command}" is not in the vscodeCommandAllowlist. ` +
             `Allowed: ${config.vscodeCommandAllowlist.join(", ")}. ` +

@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import {
   error,
   execSafe,
@@ -145,13 +144,15 @@ export function createSearchAndReplaceTool(workspace: string) {
       const processFile = async (
         filePath: string,
       ): Promise<FileResult | null> => {
-        // Safety: only operate within workspace
+        // Safety: only operate within workspace. Use the validated real path for
+        // all subsequent fs operations — do NOT call path.resolve(filePath) again,
+        // as that would bypass the symlink resolution done inside resolveFilePath.
+        let resolved: string;
         try {
-          resolveFilePath(filePath, workspace); // throws if outside workspace
+          resolved = resolveFilePath(filePath, workspace);
         } catch {
           return null;
         }
-        const resolved = path.resolve(filePath);
 
         let content: string;
         try {

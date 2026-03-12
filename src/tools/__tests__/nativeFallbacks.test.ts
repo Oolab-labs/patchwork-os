@@ -8,6 +8,7 @@ import {
   createDeleteFileTool,
   createRenameFileTool,
 } from "../fileOperations.js";
+import { createListTasksTool } from "../tasks.js";
 
 // ── applyEditsToContent (pure function, no I/O) ──────────────────────────
 
@@ -381,5 +382,122 @@ describe("renameFile native fallback", () => {
     });
     expect((result as any).isError).toBeUndefined();
     expect(fs.readFileSync(path.join(workspace, "b.txt"), "utf-8")).toBe("aaa");
+  });
+});
+
+// ── listTasks native fallback ──────────────────────────────────────────────
+
+function mockDisconnectedForTasks(): any {
+  return { isConnected: () => false };
+}
+
+describe("listTasks native fallback", () => {
+  let workspace: string;
+
+  beforeAll(() => {
+    workspace = fs.mkdtempSync(path.join(os.tmpdir(), "test-tasks-"));
+  });
+
+  afterAll(() => {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  });
+
+  it("returns empty list when no tasks.json or Makefile", async () => {
+    const tool = createListTasksTool(workspace, mockDisconnectedForTasks());
+    const result = await tool.handler();
+    const data = JSON.parse((result as any).content[0].text);
+    expect(data.source).toBe("native");
+    expect(data.tasks).toEqual([]);
+  });
+
+  it("parses .vscode/tasks.json", async () => {
+    fs.mkdirSync(path.join(workspace, ".vscode"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".vscode", "tasks.json"),
+      JSON.stringify({
+        version: "2.0.0",
+        tasks: [
+          {
+            label: "Build",
+            type: "shell",
+            command: "npm run build",
+            group: "build",
+          },
+          {
+            label: "Test",
+            type: "shell",
+            command: "npm test",
+            group: { kind: "test" },
+          },
+        ],
+      }),
+    );
+
+    const tool = createListTasksTool(workspace, mockDisconnectedForTasks());
+    const result = await tool.handler();
+    const data = JSON.parse((result as any).content[0].text);
+
+    expect(data.source).toBe("native");
+    const labels = data.tasks.map((t: any) => t.label);
+    expect(labels).toContain("Build");
+    expect(labels).toContain("Test");
+    expect(data.tasks.find((t: any) => t.label === "Build").group).toBe(
+      "build",
+    );
+    expect(data.tasks.find((t: any) => t.label === "Test").group).toBe("test");
+  });
+
+  it("parses Makefile targets", async () => {
+    // Remove tasks.json so only Makefile is used
+    fs.rmSync(path.join(workspace, ".vscode"), {
+      recursive: true,
+      force: true,
+    });
+    fs.writeFileSync(
+      path.join(workspace, "Makefile"),
+      "build:\n\tnpm run build\n\ntest-all:\n\tnpm test\n\n.PHONY: build test-all\n",
+    );
+
+    const tool = createListTasksTool(workspace, mockDisconnectedForTasks());
+    const result = await tool.handler();
+    const data = JSON.parse((result as any).content[0].text);
+
+    expect(data.source).toBe("native");
+    const labels = data.tasks.map((t: any) => t.label);
+    expect(labels).toContain("build");
+    expect(labels).toContain("test-all");
+    // .PHONY should not be included
+    expect(labels).not.toContain(".PHONY");
+  });
+
+  it("combines both sources", async () => {
+    fs.mkdirSync(path.join(workspace, ".vscode"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".vscode", "tasks.json"),
+      JSON.stringify({
+        version: "2.0.0",
+        tasks: [{ label: "vscode-task", type: "shell" }],
+      }),
+    );
+
+    const tool = createListTasksTool(workspace, mockDisconnectedForTasks());
+    const result = await tool.handler();
+    const data = JSON.parse((result as any).content[0].text);
+
+    const labels = data.tasks.map((t: any) => t.label);
+    expect(labels).toContain("vscode-task");
+    expect(labels).toContain("build");
+  });
+
+  it("handles malformed tasks.json gracefully", async () => {
+    fs.writeFileSync(
+      path.join(workspace, ".vscode", "tasks.json"),
+      "{ this is not valid json",
+    );
+
+    const tool = createListTasksTool(workspace, mockDisconnectedForTasks());
+    const result = await tool.handler();
+    // Should not throw — falls back to Makefile only
+    expect((result as any).isError).toBeUndefined();
   });
 });

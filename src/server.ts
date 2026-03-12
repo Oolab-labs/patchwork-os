@@ -41,8 +41,13 @@ function setupPongHandler(ws: AliveWebSocket): void {
   ws.on("pong", (data: Buffer) => {
     ws.isAlive = true;
     ws.missedPongs = 0;
+    const now = Date.now();
     const sentAt = Number.parseInt(data.toString(), 10);
-    ws.lastPongTime = Number.isNaN(sentAt) ? Date.now() : sentAt;
+    // Accept the echoed timestamp only if it's within a plausible ping window
+    // (±60s from now). A spoofed pong payload with a far-future value would
+    // otherwise corrupt lastPongTime and skew diagnostics.
+    ws.lastPongTime =
+      !Number.isNaN(sentAt) && Math.abs(now - sentAt) <= 60_000 ? sentAt : now;
   });
 }
 
@@ -60,6 +65,8 @@ export class Server extends EventEmitter {
   public healthDataFn: (() => Record<string, unknown>) | null = null;
   /** Set by bridge to provide Prometheus metrics */
   public metricsFn: (() => string) | null = null;
+  /** Set by bridge to provide rich status data */
+  public statusFn: (() => Record<string, unknown>) | null = null;
 
   constructor(
     private authToken: string,
@@ -117,6 +124,24 @@ export class Server extends EventEmitter {
         }
         return;
       }
+      if (req.url === "/status" && req.method === "GET") {
+        try {
+          const data = {
+            uptimeMs: Date.now() - this.startTime,
+            ...(this.statusFn?.() ?? {}),
+          };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not found");
     });
@@ -142,6 +167,28 @@ export class Server extends EventEmitter {
       if (!host || !ALLOWED_HOSTS.has(host)) {
         this.logger.warn(
           `Rejected connection with invalid Host header: ${host}`,
+        );
+        socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      // Reject browser-originated connections — a browser tab on any origin can
+      // connect to ws://localhost:<port> but will always send an Origin header.
+      // VS Code extension and Claude Code CLI connections either omit Origin or
+      // send "vscode-file://" / "vscode-webview://". Any other origin is a browser
+      // page attempting a cross-origin WebSocket and is rejected here as defense-
+      // in-depth (the auth token is the primary guard).
+      const origin = request.headers.origin;
+      if (
+        origin !== undefined &&
+        origin !== "null" &&
+        !origin.startsWith("vscode-file://") &&
+        !origin.startsWith("vscode-webview://") &&
+        !origin.startsWith("vscode-app://")
+      ) {
+        this.logger.warn(
+          `Rejected connection with unexpected Origin header: ${origin}`,
         );
         socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
         socket.destroy();
@@ -228,6 +275,10 @@ export class Server extends EventEmitter {
         `WARNING: Bridge bound to ${bindAddress} — not a loopback address. Any host that can reach this address and obtain the auth token can connect. Use --bind 127.0.0.1 (default) for local-only access.`,
       );
     }
+    // Mitigate slow-loris attacks on the HTTP upgrade path: bound the time a
+    // client can hold a connection open during the headers phase.
+    this.httpServer.headersTimeout = 5_000;
+    this.httpServer.requestTimeout = 10_000;
     return new Promise((resolve, reject) => {
       this.httpServer
         .listen(port, bindAddress, () => {

@@ -349,14 +349,14 @@ const EXTENSION_REQUIRED_TOOLS = [
   // getNotebookCells, getNotebookOutput — now have native fs fallback, no longer extension-required
   "runNotebookCell",
   // readClipboard, writeClipboard — now have native CLI fallback, no longer extension-required
-  "listTasks",
+  // listTasks — now has native fallback (.vscode/tasks.json + Makefile), no longer extension-required
   "runTask",
   "setEditorDecorations",
   "clearEditorDecorations",
   "closeTab",
   "organizeImports",
   "getInlayHints",
-  "watchDiagnostics",
+  // watchDiagnostics — now has native CLI linter fallback, no longer extension-required
   "executeVSCodeCommand",
   "listVSCodeCommands",
   "getHover",

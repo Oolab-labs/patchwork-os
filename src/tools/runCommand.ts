@@ -25,6 +25,9 @@ const DANGEROUS_INTERPRETER_FLAGS = new Set([
   "--loader", // Custom ESM loader
   "--experimental-loader", // Custom ESM loader (legacy)
   "-m", // Python module execution
+  "--inspect", // Node.js debugger — opens a remote debug port
+  "--inspect-brk", // Node.js debugger (break on start)
+  "--inspect-port", // Node.js debugger port override
 ]);
 
 /** Flags that redirect where commands read config/manifests from */

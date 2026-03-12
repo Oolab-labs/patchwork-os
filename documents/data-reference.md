@@ -19,9 +19,9 @@ Domain data connections, state management, and protocol flows that are not expre
 │ CLI          │ WS │  (Node.js)       │ WS │  Extension       │
 │              │ MCP│                  │    │                  │
 └──────────────┘    └──────────────────┘    └──────────────────┘
-                         │          │
-                    /health    /metrics
-                    (HTTP)     (Prometheus)
+                         │          │          │
+                    /health   /status   /metrics
+                    (HTTP)    (JSON)    (Prometheus)
 ```
 
 **Two independent WebSocket connections:**
@@ -35,11 +35,22 @@ Domain data connections, state management, and protocol flows that are not expre
 ### Bridge Server (`bridge.ts`)
 | State | Type | Lifecycle |
 |-------|------|-----------|
-| `openedFiles` | `Set<string>` | Preserved during 30s reconnect grace period; cleared on new session or grace expiry |
-| `currentWs` | `WebSocket \| null` | Active Claude Code connection; replaced on reconnect |
+| `sessions` | `Map<string, AgentSession>` | One entry per connected Claude Code client (max 5); removed on disconnect+grace expiry |
 | `authToken` | `string` (UUID) | Generated once at startup; never changes |
 | `listChangedTimer` | `setTimeout` | Debounce timer for `tools/list_changed` notifications (2s) |
-| `claudeDisconnectTimer` | `setTimeout` | 30s grace period timer before full cleanup |
+| `lastConnectAt` | `string \| null` | ISO timestamp of most recent Claude Code connection |
+| `lastDisconnectAt` | `string \| null` | ISO timestamp of most recent Claude Code disconnection |
+| `checkpoint` | `SessionCheckpoint \| null` | Writes periodic snapshots to `~/.claude/ide/checkpoint-<port>.json` |
+
+### AgentSession (per-connection, inside `bridge.ts`)
+| State | Type | Lifecycle |
+|-------|------|-----------|
+| `id` | `string` | Unique 8-char hex per connection |
+| `openedFiles` | `Set<string>` | Preserved during grace period; cleared on new session or grace expiry |
+| `currentWs` | `WebSocket \| null` | Active WebSocket for this session |
+| `graceTimer` | `setTimeout \| null` | Grace period timer (config.gracePeriodMs, default 30s) before full cleanup |
+| `terminalPrefix` | `string` | Session-scoped terminal name prefix (agent teams) |
+| `connectedAt` | `number` | Unix timestamp of initial connection |
 
 ### Transport (`transport.ts`)
 | State | Type | Lifecycle |
@@ -65,6 +76,20 @@ Domain data connections, state management, and protocol flows that are not expre
 | `extensionHalfOpen` | `boolean` | Circuit breaker half-open probe state |
 | `diagnosticsListeners` | `Set<Function>` | Cleared on extension disconnect (prevents stale closures) |
 | `pendingRequests` | `Map<number, PendingRequest>` | All rejected on disconnect; use `settled` flag pattern |
+
+### ActivityLog (`activityLog.ts`)
+| State | Type | Lifecycle |
+|-------|------|-----------|
+| `entries` | `ActivityEntry[]` | Capped at `maxEntries` (default 500); batch-evicted at 120% capacity |
+| `lifecycleEntries` | `LifecycleEntry[]` | Same cap; records connection lifecycle events |
+| `nextId` | `number` | Shared monotonic counter across both entry types (enables timeline merge) |
+| `persistPath` | `string \| null` | Set via `setPersistPath()`; enables JSONL append to `~/.claude/ide/activity-<port>.jsonl` |
+
+### SessionCheckpoint (`sessionCheckpoint.ts`)
+| State | Type | Lifecycle |
+|-------|------|-----------|
+| `checkpointPath` | `string` | `~/.claude/ide/checkpoint-<port>.json` |
+| `intervalHandle` | `ReturnType<setInterval> \| null` | Writes every 30s (unref'd — doesn't block process exit) |
 
 ---
 

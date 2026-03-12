@@ -341,13 +341,34 @@ export class ExtensionClient {
           );
           return;
         }
+        // Valid severity values — defined once outside the loop.
+        const VALID_SEVERITIES = new Set([
+          "fix",
+          "todo",
+          "question",
+          "warn",
+          "task",
+        ]);
         this.latestAIComments.clear();
         for (const c of comments) {
           const entry = c as Record<string, unknown>;
           if (typeof entry.file !== "string") continue;
-          const existing = this.latestAIComments.get(entry.file) || [];
-          existing.push(entry as unknown as AIComment);
-          this.latestAIComments.set(entry.file, existing);
+          // Sanitize: extract only known-safe fields (mirrors diagnostics sanitization)
+          // to prevent prototype pollution if the extension sends unexpected properties.
+          const safe: AIComment = {
+            file: entry.file,
+            line: typeof entry.line === "number" ? entry.line : 0,
+            comment: typeof entry.comment === "string" ? entry.comment : "",
+            syntax: typeof entry.syntax === "string" ? entry.syntax : "",
+            fullLine: typeof entry.fullLine === "string" ? entry.fullLine : "",
+            ...(typeof entry.severity === "string" &&
+              VALID_SEVERITIES.has(entry.severity) && {
+                severity: entry.severity as AIComment["severity"],
+              }),
+          };
+          const existing = this.latestAIComments.get(safe.file) || [];
+          existing.push(safe);
+          this.latestAIComments.set(safe.file, existing);
         }
         // Cap at 200 files
         if (this.latestAIComments.size > 200) {

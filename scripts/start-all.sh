@@ -96,23 +96,30 @@ notify() {
 # --- Reusable command strings ---
 BRIDGE_IDE_FLAGS=""
 if [[ -n "$IDE_NAME" ]]; then
-  BRIDGE_IDE_FLAGS="--ide-name \"$IDE_NAME\" --editor \"$(echo "$IDE_NAME" | tr '[:upper:]' '[:lower:]')\""
+  _ide_lower="$(echo "$IDE_NAME" | tr '[:upper:]' '[:lower:]')"
+  BRIDGE_IDE_FLAGS="--ide-name $(printf '%q' "$IDE_NAME") --editor $(printf '%q' "$_ide_lower")"
 fi
-BRIDGE_CMD="cd \"$BRIDGE_DIR\" && npx tsx src/index.ts --workspace \"$WORKSPACE\"${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}"
-CLAUDE_CMD="cd \"$WORKSPACE\" && unset CLAUDECODE && CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude"
+# Use compiled dist when src/ is absent (npm install), tsx during local development
+if [[ -f "$BRIDGE_DIR/src/index.ts" ]]; then
+  BRIDGE_BIN="npx tsx src/index.ts"
+else
+  BRIDGE_BIN="node dist/index.js"
+fi
+BRIDGE_CMD="cd $(printf '%q' "$BRIDGE_DIR") && $BRIDGE_BIN --workspace $(printf '%q' "$WORKSPACE")${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}"
+CLAUDE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude"
 
 # Export for subshell access
 export NTFY_TOPIC
 
 REMOTE_CMD="cd \"$WORKSPACE\" && $caffeinate_cmd bash -c '
-delay=5; max_delay=300; failures=0
+delay=1; max_delay=300; failures=0
 while true; do
   start=\$(date +%s)
   claude remote-control
   code=\$?
   elapsed=\$(( \$(date +%s) - start ))
   [ \$code -eq 130 ] && { echo \"Exited by Ctrl+C.\"; exit 0; }
-  if [ \$elapsed -ge 60 ]; then failures=0; delay=5
+  if [ \$elapsed -ge 60 ]; then failures=0; delay=1
   else
     failures=\$((failures+1))
     exp=\$((failures>6?6:failures-1)); p=1; for _ in \$(seq 1 \$exp); do p=\$((p*2)); done; delay=\$((5*p))
@@ -149,8 +156,12 @@ wait_for_new_lock() {
     # Find lock files that weren't in the pre-existing set
     while IFS= read -r lock; do
       if [[ -n "$lock" ]] && ! echo "$existing_locks" | grep -qF "$lock"; then
-        new_lock="$lock"
-        break 2
+        # Validate: readable JSON with a running PID
+        lock_pid=$(python3 -c "import json,sys; d=json.load(open('$lock')); print(d.get('pid',''))" 2>/dev/null || true)
+        if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+          new_lock="$lock"
+          break 2
+        fi
       fi
     done < <(ls -t ~/.claude/ide/*.lock 2>/dev/null)
     sleep 1

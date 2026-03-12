@@ -26,6 +26,14 @@ CLAUDE.md
 *.spec.ts
 coverage/
 
+# Generated / build artifacts
+*.tgz
+coverage/
+docs/
+
+# Claude Code config (not needed in published package)
+.claude/
+
 # IDE/OS
 .vscode/
 .idea/

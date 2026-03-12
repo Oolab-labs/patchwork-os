@@ -16,6 +16,8 @@ export interface Config {
   maxResultSize: number;
   vscodeCommandAllowlist: string[];
   activeWorkspaceFolder: string;
+  gracePeriodMs: number;
+  autoTmux: boolean;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -98,6 +100,8 @@ export function parseConfig(argv: string[]): Config {
   let bindAddress = process.env.BRIDGE_BIND_ADDRESS ?? "127.0.0.1";
   let commandTimeout = 30_000;
   let maxResultSize = 512;
+  let gracePeriodMs = 30_000;
+  let autoTmux = false;
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -177,6 +181,23 @@ export function parseConfig(argv: string[]): Config {
         }
         break;
       }
+      case "--auto-tmux":
+        autoTmux = true;
+        break;
+      case "--grace-period": {
+        const gStr = requireArg(args, ++i, "--grace-period");
+        gracePeriodMs = Number.parseInt(gStr, 10);
+        if (
+          !Number.isInteger(gracePeriodMs) ||
+          gracePeriodMs < 5000 ||
+          gracePeriodMs > 600_000
+        ) {
+          throw new Error(
+            `Invalid grace-period: ${gStr}. Must be between 5000 and 600000 ms.`,
+          );
+        }
+        break;
+      }
       case "--max-result-size": {
         const mStr = requireArg(args, ++i, "--max-result-size");
         maxResultSize = Number.parseInt(mStr, 10);
@@ -207,6 +228,8 @@ Options:
   --vscode-allow-command <cmd>  Add VS Code command to invocation allowlist (repeatable)
   --timeout <ms>            Command timeout in ms (default: 30000, max: 120000)
   --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
+  --grace-period <ms>       Reconnect grace period in ms (default: 30000, max: 600000)
+  --auto-tmux               Auto-wrap in tmux session if not already inside one
   --verbose                 Enable debug logging
   --jsonl                   Emit structured JSONL events to stderr
   --help                    Show this help
@@ -216,6 +239,7 @@ Environment Variables:
   CLAUDE_IDE_BRIDGE_LINTERS          Comma-separated linter list
   CLAUDE_IDE_BRIDGE_TIMEOUT          Command timeout in ms
   CLAUDE_IDE_BRIDGE_MAX_RESULT_SIZE  Max output size in KB
+  CLAUDE_IDE_BRIDGE_GRACE_PERIOD     Reconnect grace period in ms
   CLAUDE_CONFIG_DIR                  Override ~/.claude directory`);
         return process.exit(0);
       }
@@ -276,6 +300,20 @@ Environment Variables:
     }
   }
 
+  if (process.env.CLAUDE_IDE_BRIDGE_GRACE_PERIOD) {
+    const envGrace = Number.parseInt(
+      process.env.CLAUDE_IDE_BRIDGE_GRACE_PERIOD,
+      10,
+    );
+    if (Number.isInteger(envGrace) && envGrace >= 5000 && envGrace <= 600_000) {
+      gracePeriodMs = envGrace;
+    } else {
+      console.warn(
+        `Warning: CLAUDE_IDE_BRIDGE_GRACE_PERIOD=${process.env.CLAUDE_IDE_BRIDGE_GRACE_PERIOD} is invalid (must be 5000-600000). Using default ${gracePeriodMs}.`,
+      );
+    }
+  }
+
   return {
     workspace,
     workspaceFolders: [workspace],
@@ -291,5 +329,7 @@ Environment Variables:
     maxResultSize,
     vscodeCommandAllowlist,
     activeWorkspaceFolder: workspace,
+    gracePeriodMs,
+    autoTmux,
   };
 }

@@ -2,7 +2,26 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, extensionRequired, success } from "./utils.js";
+import { error, extensionRequired, requireString, success } from "./utils.js";
+
+// Bridge-side mirror of the extension's BLOCKED_KEY_PREFIXES — defense in depth
+// so the check is enforced even if the extension is unavailable or has a bug.
+const BLOCKED_SETTING_KEY_PREFIXES = new Set([
+  "security",
+  "extensions.autoUpdate",
+  "extensions.autoInstallDependencies",
+  "terminal.integrated.shell",
+  "terminal.integrated.shellArgs",
+  "terminal.integrated.env",
+  "terminal.integrated.profiles",
+  "terminal.integrated.defaultProfile",
+]);
+
+function isBlockedSettingKey(key: string): boolean {
+  return [...BLOCKED_SETTING_KEY_PREFIXES].some(
+    (prefix) => key === prefix || key.startsWith(`${prefix}.`),
+  );
+}
 
 export function createGetWorkspaceSettingsTool(
   extensionClient: ExtensionClient,
@@ -93,9 +112,12 @@ export function createSetWorkspaceSettingTool(
       if (!extensionClient.isConnected()) {
         return extensionRequired("setWorkspaceSetting");
       }
-      const key = args.key;
-      if (typeof key !== "string" || key.length === 0)
-        return error("key is required");
+      const key = requireString(args, "key", 256);
+      if (isBlockedSettingKey(key)) {
+        return error(
+          `Writing to "${key}" is blocked — modifying this setting is not permitted`,
+        );
+      }
       const value = args.value;
       const target = typeof args.target === "string" ? args.target : undefined;
       try {

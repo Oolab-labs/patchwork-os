@@ -1,29 +1,62 @@
 import type { ExtensionClient } from "../extensionClient.js";
+import type { ProbeResults } from "../probe.js";
 import type { ToolHandler } from "../transport.js";
+import { biomeLinter } from "./linters/biome.js";
+import { cargoLinter } from "./linters/cargo.js";
+import { eslintLinter } from "./linters/eslint.js";
+import { govetLinter } from "./linters/govet.js";
+import { pyrightLinter } from "./linters/pyright.js";
+import { ruffLinter } from "./linters/ruff.js";
+import type { LintDiagnostic, LinterRunner } from "./linters/types.js";
+import { typescriptLinter } from "./linters/typescript.js";
 import {
-  extensionRequired,
   optionalInt,
   optionalString,
   resolveFilePath,
   success,
+  toFileUri,
 } from "./utils.js";
+
+const ALL_LINTERS: LinterRunner[] = [
+  typescriptLinter,
+  eslintLinter,
+  pyrightLinter,
+  ruffLinter,
+  cargoLinter,
+  govetLinter,
+  biomeLinter,
+];
 
 export function createWatchDiagnosticsTool(
   workspace: string,
   extensionClient: ExtensionClient,
+  probes?: ProbeResults,
+  linterFilter?: string[],
 ) {
+  // Detect available linters at registration time (same logic as getDiagnostics)
+  const availableLinters = probes
+    ? ALL_LINTERS.filter((l) => {
+        if (linterFilter && linterFilter.length > 0) {
+          return linterFilter.includes(l.name) && l.detect(workspace, probes);
+        }
+        return l.detect(workspace, probes);
+      })
+    : [];
+
   return {
     schema: {
       name: "watchDiagnostics",
-      extensionRequired: true,
       description:
         "Wait for diagnostic changes and return updated diagnostics. " +
         "Long-polls until diagnostics change or timeout. " +
         "Use this after making edits to wait for the language server to report new errors/warnings. " +
-        "Returns immediately if diagnostics have already changed since the given timestamp.",
+        "Returns immediately if diagnostics have already changed since the given timestamp. " +
+        "When the VS Code extension is not connected, runs CLI linters immediately and returns a snapshot.",
       annotations: { readOnlyHint: true },
       inputSchema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
+        additionalProperties: false as const,
         properties: {
           filePath: {
             type: "string" as const,
@@ -41,15 +74,10 @@ export function createWatchDiagnosticsTool(
               "Only return if diagnostics changed after this timestamp (from a previous watchDiagnostics call)",
           },
         },
-        additionalProperties: false as const,
       },
     },
     timeoutMs: 120_000,
     handler: (async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      if (!extensionClient.isConnected()) {
-        return extensionRequired("watchDiagnostics");
-      }
-
       const rawPath = optionalString(args, "filePath");
       const resolvedPath = rawPath
         ? resolveFilePath(rawPath, workspace)
@@ -65,57 +93,103 @@ export function createWatchDiagnosticsTool(
         Number.MAX_SAFE_INTEGER,
       );
 
-      // Check if already changed since requested timestamp.
-      // Use explicit undefined check — sinceTimestamp=0 is valid and must not be skipped.
-      if (
-        sinceTimestamp !== undefined &&
-        extensionClient.lastDiagnosticsUpdate > sinceTimestamp
-      ) {
-        const diagnostics = extensionClient.getCachedDiagnostics(resolvedPath);
-        return success({
-          changed: true,
-          timestamp: extensionClient.lastDiagnosticsUpdate,
-          diagnostics,
-          count: diagnostics.length,
+      // --- Extension path: real-time long-poll ---
+      if (extensionClient.isConnected()) {
+        // Check if already changed since requested timestamp.
+        // Use explicit undefined check — sinceTimestamp=0 is valid and must not be skipped.
+        if (
+          sinceTimestamp !== undefined &&
+          extensionClient.lastDiagnosticsUpdate > sinceTimestamp
+        ) {
+          const diagnostics =
+            extensionClient.getCachedDiagnostics(resolvedPath);
+          return success({
+            changed: true,
+            timestamp: extensionClient.lastDiagnosticsUpdate,
+            diagnostics,
+            count: diagnostics.length,
+          });
+        }
+
+        // Long-poll: wait for change or timeout
+        return new Promise<ReturnType<typeof success>>((resolve) => {
+          let settled = false;
+
+          const settle = (changed: boolean) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            const diagnostics =
+              extensionClient.getCachedDiagnostics(resolvedPath);
+            resolve(
+              success({
+                changed,
+                timestamp: extensionClient.lastDiagnosticsUpdate,
+                diagnostics,
+                count: diagnostics.length,
+              }),
+            );
+          };
+
+          const unsubscribe = extensionClient.addDiagnosticsListener((file) => {
+            if (!resolvedPath || file === resolvedPath) {
+              settle(true);
+            }
+          });
+
+          const timer = setTimeout(() => settle(false), timeoutMs);
+
+          const abortHandler = () => settle(false);
+          signal?.addEventListener("abort", abortHandler);
+
+          const cleanup = () => {
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", abortHandler);
+            unsubscribe();
+          };
         });
       }
 
-      // Long-poll: wait for change or timeout
-      return new Promise<ReturnType<typeof success>>((resolve) => {
-        let settled = false;
+      // --- Native fallback: run CLI linters immediately ---
+      // Cannot replicate real-time watching without the extension; return a point-in-time snapshot.
+      const now = Date.now();
 
-        const settle = (changed: boolean) => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          const diagnostics =
-            extensionClient.getCachedDiagnostics(resolvedPath);
-          resolve(
-            success({
-              changed,
-              timestamp: extensionClient.lastDiagnosticsUpdate,
-              diagnostics,
-              count: diagnostics.length,
-            }),
-          );
-        };
-
-        const unsubscribe = extensionClient.addDiagnosticsListener((file) => {
-          if (!resolvedPath || file === resolvedPath) {
-            settle(true);
-          }
+      if (availableLinters.length === 0) {
+        return success({
+          changed: false,
+          timestamp: now,
+          diagnostics: [],
+          count: 0,
+          source: "cli",
+          note: "No linters detected — install tsc, eslint, or biome to get CLI diagnostics",
         });
+      }
 
-        const timer = setTimeout(() => settle(false), timeoutMs);
+      const results = await Promise.all(
+        availableLinters.map((l) =>
+          l.run(workspace, signal).catch((): LintDiagnostic[] => []),
+        ),
+      );
+      let diagnostics = results.flat();
 
-        const abortHandler = () => settle(false);
-        signal?.addEventListener("abort", abortHandler);
+      // Filter by file path if specified
+      if (resolvedPath) {
+        const normalizedUri = toFileUri(resolvedPath);
+        diagnostics = diagnostics.filter((d) => {
+          const diagUri = d.file.startsWith("file://")
+            ? d.file
+            : toFileUri(d.file);
+          return diagUri === normalizedUri;
+        });
+      }
 
-        const cleanup = () => {
-          clearTimeout(timer);
-          signal?.removeEventListener("abort", abortHandler);
-          unsubscribe();
-        };
+      return success({
+        changed: true,
+        timestamp: now,
+        diagnostics,
+        count: diagnostics.length,
+        source: "cli",
+        linters: availableLinters.map((l) => l.name),
       });
     }) as ToolHandler,
   };
