@@ -260,7 +260,31 @@ export class ExtensionClient {
         if (diagnostics.length === 0) {
           this.latestDiagnostics.delete(file);
         } else {
-          this.latestDiagnostics.set(file, diagnostics);
+          // Sanitize: extract only known-safe fields to prevent prototype pollution
+          // when these objects are later spread or merged.
+          const safe = diagnostics.map((d: unknown) => {
+            if (typeof d !== "object" || d === null) return d;
+            const diag = d as Record<string, unknown>;
+            return {
+              file: typeof diag.file === "string" ? diag.file : undefined,
+              line: typeof diag.line === "number" ? diag.line : undefined,
+              column: typeof diag.column === "number" ? diag.column : undefined,
+              endLine:
+                typeof diag.endLine === "number" ? diag.endLine : undefined,
+              endColumn:
+                typeof diag.endColumn === "number" ? diag.endColumn : undefined,
+              severity:
+                typeof diag.severity === "string" ? diag.severity : undefined,
+              message:
+                typeof diag.message === "string" ? diag.message : undefined,
+              source: typeof diag.source === "string" ? diag.source : undefined,
+              code:
+                typeof diag.code === "string" || typeof diag.code === "number"
+                  ? diag.code
+                  : undefined,
+            };
+          });
+          this.latestDiagnostics.set(file, safe as Diagnostic[]);
           // Cap diagnostics cache at 500 entries
           if (this.latestDiagnostics.size > 500) {
             const firstKey = this.latestDiagnostics.keys().next().value;

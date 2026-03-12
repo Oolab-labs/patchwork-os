@@ -493,6 +493,10 @@ export class BridgeConnection {
       }
 
       if (msg.id !== undefined && msg.method) {
+        // Validate id type before using as Map key — malformed ids cause [object Object] collisions
+        if (typeof msg.id !== "string" && typeof msg.id !== "number") {
+          return;
+        }
         if (this.pendingHandlers.size >= 50) {
           this.sendResponse(msg.id, undefined, {
             code: -32000,

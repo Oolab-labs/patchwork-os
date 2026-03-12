@@ -104,16 +104,19 @@ export function optionalArray(
   return val;
 }
 
-// Cache for workspace realpath — workspace root never changes during a session
-const realpathCache = new Map<string, string>();
+// Cache for workspace realpath — TTL 60s to handle rare symlink re-points in monorepos
+const REALPATH_CACHE_TTL_MS = 60_000;
+const realpathCache = new Map<string, { value: string; expiresAt: number }>();
 
 function cachedRealpathSync(p: string): string {
-  let cached = realpathCache.get(p);
-  if (cached === undefined) {
-    cached = fs.realpathSync(p);
-    realpathCache.set(p, cached);
+  const now = Date.now();
+  const entry = realpathCache.get(p);
+  if (entry !== undefined && now < entry.expiresAt) {
+    return entry.value;
   }
-  return cached;
+  const value = fs.realpathSync(p);
+  realpathCache.set(p, { value, expiresAt: now + REALPATH_CACHE_TTL_MS });
+  return value;
 }
 
 export function resolveFilePath(filePath: string, workspace: string): string {

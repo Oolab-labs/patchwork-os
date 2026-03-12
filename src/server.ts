@@ -222,6 +222,12 @@ export class Server extends EventEmitter {
   }
 
   async listen(port: number, bindAddress = "127.0.0.1"): Promise<number> {
+    const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
+    if (!LOOPBACK.has(bindAddress)) {
+      this.logger.warn(
+        `WARNING: Bridge bound to ${bindAddress} — not a loopback address. Any host that can reach this address and obtain the auth token can connect. Use --bind 127.0.0.1 (default) for local-only access.`,
+      );
+    }
     return new Promise((resolve, reject) => {
       this.httpServer
         .listen(port, bindAddress, () => {
