@@ -2,8 +2,9 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "Companion extension for claude-ide-bridge — provides real-time editor state to Claude Code",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "oolab-labs",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/Oolab-labs/claude-ide-bridge"
@@ -11,9 +12,6 @@
   "engines": {
     "vscode": "^1.93.0"
   },
-  "enabledApiProposals": [
-    "terminalDataWriteEvent"
-  ],
   "categories": [
     "Other"
   ],
