@@ -282,7 +282,7 @@ export class Server extends EventEmitter {
         this.logger.warn(
           `Invalid port ${preferredPort} (must be 1-65535), falling back to OS-assigned port`,
         );
-        preferredPort = null;
+        // Fall through to OS-assigned port below
       } else {
         return this.listen(preferredPort, bindAddress);
       }
