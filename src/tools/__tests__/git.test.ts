@@ -17,7 +17,7 @@ describe("git tools", () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "git-test-"));
     // Init a git repo with a single commit
-    execSync("git init", { cwd: tmpDir, stdio: "ignore" });
+    execSync("git init -b main", { cwd: tmpDir, stdio: "ignore" });
     execSync('git config user.name "Test User"', {
       cwd: tmpDir,
       stdio: "ignore",
