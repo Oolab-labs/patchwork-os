@@ -49,7 +49,10 @@ const DANGEROUS_ENV_VARS = new Set([
 /** Apply prefix to a terminal name (no-op when prefix is empty).
  * When prefix is set and name is undefined, generates a unique prefixed default name
  * so the terminal remains discoverable by listTerminals for this session. */
-function prefixName(name: string | undefined, prefix: string): string | undefined {
+function prefixName(
+  name: string | undefined,
+  prefix: string,
+): string | undefined {
   if (!prefix) return name;
   if (name === undefined) {
     // Generate a unique default so unnamed terminals are still session-scoped
@@ -116,12 +119,16 @@ export function createListTerminalsTool(
         const filtered = {
           ...result,
           terminals: (r.terminals ?? [])
-            .filter((t) =>
-              typeof t.name === "string" && t.name.startsWith(terminalPrefix),
+            .filter(
+              (t) =>
+                typeof t.name === "string" && t.name.startsWith(terminalPrefix),
             )
             .map((t) => ({
               ...t,
-              name: typeof t.name === "string" ? stripPrefix(t.name, terminalPrefix) : t.name,
+              name:
+                typeof t.name === "string"
+                  ? stripPrefix(t.name, terminalPrefix)
+                  : t.name,
             })),
         };
         return success(filtered);
@@ -294,9 +301,13 @@ export function createCreateTerminalTool(
         }
         // Strip prefix from returned name so the agent sees its logical name
         const resultWithName = result as { name?: string };
-        const stripped = terminalPrefix && resultWithName.name
-          ? { ...result, name: stripPrefix(resultWithName.name, terminalPrefix) }
-          : result;
+        const stripped =
+          terminalPrefix && resultWithName.name
+            ? {
+                ...result,
+                name: stripPrefix(resultWithName.name, terminalPrefix),
+              }
+            : result;
         return success(stripped);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {

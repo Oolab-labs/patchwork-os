@@ -221,8 +221,14 @@ describe("Bridge connectivity: duplicate connection cleanup", () => {
 
 describe("Bridge connectivity: tools/list_changed debounce", () => {
   it("multiple sendListChanged calls within 2s produce exactly one notification", async () => {
-    const { server, transport, extensionClient, authToken, logger, graceState } =
-      buildScaffold();
+    const {
+      server,
+      transport,
+      extensionClient,
+      authToken,
+      logger,
+      graceState,
+    } = buildScaffold();
     const port = await server.findAndListen(null);
 
     // Replicate the debounced sendListChanged from bridge.ts

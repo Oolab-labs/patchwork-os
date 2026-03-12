@@ -80,7 +80,9 @@ export function activate(context: vscode.ExtensionContext): void {
   if (autoConnect) {
     bridge.tryConnect();
   } else {
-    bridge.log("Auto-connect disabled — use 'Claude IDE Bridge: Reconnect' to connect manually");
+    bridge.log(
+      "Auto-connect disabled — use 'Claude IDE Bridge: Reconnect' to connect manually",
+    );
   }
 
   context.subscriptions.push({

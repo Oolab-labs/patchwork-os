@@ -49,9 +49,9 @@ export class BridgeConnection {
   private generation = 0;
   statusBar: vscode.StatusBarItem | null = null;
   output: vscode.OutputChannel | null = null;
-  logLevel: string = "info";
+  logLevel = "info";
   /** Override the lock file directory (empty string = use default LOCK_DIR) */
-  lockDirOverride: string = "";
+  lockDirOverride = "";
 
   private handlers: Record<string, RequestHandler> = {};
   private onDispose: (() => void) | null = null;

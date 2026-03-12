@@ -5,8 +5,8 @@ import type { FileLock } from "../fileLock.js";
 import type { ProbeResults } from "../probe.js";
 import type { McpTransport, ToolHandler } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
-import { createBridgeStatusTool } from "./bridgeStatus.js";
 import { createGetAICommentsTool } from "./aiComments.js";
+import { createBridgeStatusTool } from "./bridgeStatus.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
 import {
   createReadClipboardTool,

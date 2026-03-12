@@ -317,7 +317,12 @@ describe("handler after disconnect", () => {
 
     // Send a message to start handler
     bridge.handleMessage(
-      JSON.stringify({ jsonrpc: "2.0", id: 42, method: "test/slow", params: {} }),
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 42,
+        method: "test/slow",
+        params: {},
+      }),
     );
 
     // Handler is in-flight — disconnect the bridge
@@ -418,7 +423,12 @@ describe("disconnect with pending handlers", () => {
 
     // Start handler — enters pendingHandlers
     bridge.handleMessage(
-      JSON.stringify({ jsonrpc: "2.0", id: 200, method: "test/slow", params: {} }),
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 200,
+        method: "test/slow",
+        params: {},
+      }),
     );
     await vi.advanceTimersByTimeAsync(0);
 

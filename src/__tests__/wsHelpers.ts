@@ -25,9 +25,7 @@ export function assertNoMessage(
         clearTimeout(timer);
         ws.off("message", handler);
         reject(
-          new Error(
-            `Unexpected message received: ${JSON.stringify(parsed)}`,
-          ),
+          new Error(`Unexpected message received: ${JSON.stringify(parsed)}`),
         );
       }
     };

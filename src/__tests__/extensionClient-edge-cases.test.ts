@@ -64,7 +64,11 @@ describe("ExtensionClient: MAX_PENDING_REQUESTS overflow", () => {
     // ExtensionTimeoutError by requestOrNull; other errors are swallowed to null).
     const rawRequest = (
       client as unknown as {
-        request: (method: string, params?: unknown, timeoutMs?: number) => Promise<unknown>;
+        request: (
+          method: string,
+          params?: unknown,
+          timeoutMs?: number,
+        ) => Promise<unknown>;
       }
     ).request.bind(client);
 
@@ -74,7 +78,9 @@ describe("ExtensionClient: MAX_PENDING_REQUESTS overflow", () => {
     const pending: Promise<unknown>[] = [];
     for (let i = 0; i < 100; i++) {
       pending.push(
-        rawRequest("extension/getDiagnostics", undefined, LONG_TIMEOUT).catch(() => null),
+        rawRequest("extension/getDiagnostics", undefined, LONG_TIMEOUT).catch(
+          () => null,
+        ),
       );
     }
 
@@ -178,7 +184,12 @@ describe("ExtensionClient: settled flag (double-reject prevention)", () => {
     // Use private request() directly to get raw promise (getDiagnostics -> requestOrNull -> null)
     const rawRequest = (
       client as unknown as {
-        request: (method: string, params?: unknown, timeoutMs?: number, signal?: AbortSignal) => Promise<unknown>;
+        request: (
+          method: string,
+          params?: unknown,
+          timeoutMs?: number,
+          signal?: AbortSignal,
+        ) => Promise<unknown>;
       }
     ).request.bind(client);
 
@@ -214,12 +225,22 @@ describe("ExtensionClient: settled flag (double-reject prevention)", () => {
     // Use the private request() directly to observe the raw rejection.
     const rawRequest = (
       client as unknown as {
-        request: (method: string, params?: unknown, timeoutMs?: number, signal?: AbortSignal) => Promise<unknown>;
+        request: (
+          method: string,
+          params?: unknown,
+          timeoutMs?: number,
+          signal?: AbortSignal,
+        ) => Promise<unknown>;
       }
     ).request.bind(client);
 
     await expect(
-      rawRequest("extension/getSelection", undefined, undefined, controller.signal),
+      rawRequest(
+        "extension/getSelection",
+        undefined,
+        undefined,
+        controller.signal,
+      ),
     ).rejects.toThrow(/aborted/i);
 
     clientWs.close();
@@ -245,7 +266,9 @@ describe("ExtensionClient: disconnect clears state", () => {
     const rawRequest = (
       client as unknown as { request: (method: string) => Promise<unknown> }
     ).request.bind(client);
-    await expect(rawRequest("extension/getDiagnostics")).rejects.toThrow(/not connected/i);
+    await expect(rawRequest("extension/getDiagnostics")).rejects.toThrow(
+      /not connected/i,
+    );
   });
 
   it("onExtensionDisconnected callback fires when extension closes", async () => {

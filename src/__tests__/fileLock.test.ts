@@ -60,10 +60,14 @@ describe("FileLock", () => {
     const lock = new FileLock();
     const release = await lock.acquire("/tmp/a.ts");
     // Access private field for verification
-    expect((lock as unknown as { locks: Map<string, unknown> }).locks.size).toBe(1);
+    expect(
+      (lock as unknown as { locks: Map<string, unknown> }).locks.size,
+    ).toBe(1);
     release();
     // After release with no waiters the entry is removed
-    expect((lock as unknown as { locks: Map<string, unknown> }).locks.size).toBe(0);
+    expect(
+      (lock as unknown as { locks: Map<string, unknown> }).locks.size,
+    ).toBe(0);
   });
 
   it("handles rapid serial acquires without memory leak", async () => {
@@ -72,7 +76,9 @@ describe("FileLock", () => {
       const release = await lock.acquire("/tmp/x.ts");
       release();
     }
-    expect((lock as unknown as { locks: Map<string, unknown> }).locks.size).toBe(0);
+    expect(
+      (lock as unknown as { locks: Map<string, unknown> }).locks.size,
+    ).toBe(0);
   });
 
   it("throws after timeout if lock is never released", async () => {

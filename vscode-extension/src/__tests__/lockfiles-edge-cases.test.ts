@@ -19,8 +19,8 @@ vi.mock("../constants", () => ({
   LOCK_DIR: "/mock/lock/dir",
 }));
 
-import * as vscode from "vscode";
 import * as fsp from "node:fs/promises";
+import * as vscode from "vscode";
 import { readLockFilesAsync } from "../lockfiles";
 
 const NOW = 1_700_000_000_000; // fixed "now" in ms
@@ -64,15 +64,20 @@ describe("readLockFilesAsync — mtime sort", () => {
 
     // 22222.lock has newer mtime
     vi.mocked(fsp.stat).mockImplementation(async (p) => {
-      if (String(p).includes("22222"))
-        return { mtimeMs: NOW + 1000 } as any;
+      if (String(p).includes("22222")) return { mtimeMs: NOW + 1000 } as any;
       return { mtimeMs: NOW } as any;
     });
 
     vi.mocked(fsp.readFile).mockImplementation(async (p) => {
       if (String(p).includes("22222"))
-        return makeLockContent({ authToken: "newest", workspace: "/workspace" }) as any;
-      return makeLockContent({ authToken: "oldest", workspace: "/workspace" }) as any;
+        return makeLockContent({
+          authToken: "newest",
+          workspace: "/workspace",
+        }) as any;
+      return makeLockContent({
+        authToken: "oldest",
+        workspace: "/workspace",
+      }) as any;
     });
 
     const result = await readLockFilesAsync();
@@ -88,15 +93,20 @@ describe("readLockFilesAsync — mtime sort", () => {
 
     // 11111.lock has newer mtime
     vi.mocked(fsp.stat).mockImplementation(async (p) => {
-      if (String(p).includes("11111"))
-        return { mtimeMs: NOW + 2000 } as any;
+      if (String(p).includes("11111")) return { mtimeMs: NOW + 2000 } as any;
       return { mtimeMs: NOW } as any;
     });
 
     vi.mocked(fsp.readFile).mockImplementation(async (p) => {
       if (String(p).includes("11111"))
-        return makeLockContent({ authToken: "newer-mtime", workspace: "/workspace" }) as any;
-      return makeLockContent({ authToken: "older-mtime", workspace: "/workspace" }) as any;
+        return makeLockContent({
+          authToken: "newer-mtime",
+          workspace: "/workspace",
+        }) as any;
+      return makeLockContent({
+        authToken: "older-mtime",
+        workspace: "/workspace",
+      }) as any;
     });
 
     const result = await readLockFilesAsync();
@@ -169,15 +179,16 @@ describe("readLockFilesAsync — JSON parse failure", () => {
 
     // 11111.lock has newer mtime (so it's tried first) but has bad JSON
     vi.mocked(fsp.stat).mockImplementation(async (p) => {
-      if (String(p).includes("11111"))
-        return { mtimeMs: NOW + 1000 } as any;
+      if (String(p).includes("11111")) return { mtimeMs: NOW + 1000 } as any;
       return { mtimeMs: NOW } as any;
     });
 
     vi.mocked(fsp.readFile).mockImplementation(async (p) => {
-      if (String(p).includes("11111"))
-        return "NOT VALID JSON {{{" as any;
-      return makeLockContent({ authToken: "good-token", workspace: "/workspace" }) as any;
+      if (String(p).includes("11111")) return "NOT VALID JSON {{{" as any;
+      return makeLockContent({
+        authToken: "good-token",
+        workspace: "/workspace",
+      }) as any;
     });
 
     const result = await readLockFilesAsync();
@@ -208,7 +219,9 @@ describe("readLockFilesAsync — missing lock directory", () => {
   });
 
   it("returns null when readdir throws unexpectedly", async () => {
-    vi.mocked(fsp.readdir).mockRejectedValue(new Error("EPERM: permission denied"));
+    vi.mocked(fsp.readdir).mockRejectedValue(
+      new Error("EPERM: permission denied"),
+    );
     const result = await readLockFilesAsync();
     expect(result).toBeNull();
   });
@@ -263,9 +276,7 @@ describe("readLockFilesAsync — file filtering", () => {
     expect(result?.port).toBe(12345);
 
     // stat should only have been called for .lock files
-    const statCalls = vi.mocked(fsp.stat).mock.calls.map((c) =>
-      String(c[0]),
-    );
+    const statCalls = vi.mocked(fsp.stat).mock.calls.map((c) => String(c[0]));
     expect(statCalls.every((p) => p.endsWith(".lock"))).toBe(true);
   });
 

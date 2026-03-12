@@ -18,7 +18,9 @@ import {
 function mockExtensionClient(connected = true) {
   return {
     isConnected: () => connected,
-    createTerminal: vi.fn().mockResolvedValue({ name: "s1234567-build", index: 0 }),
+    createTerminal: vi
+      .fn()
+      .mockResolvedValue({ name: "s1234567-build", index: 0 }),
     sendTerminalCommand: vi.fn().mockResolvedValue({ success: true }),
     listTerminals: vi.fn().mockResolvedValue({
       terminals: [
@@ -27,7 +29,9 @@ function mockExtensionClient(connected = true) {
       ],
     }),
     getTerminalOutput: vi.fn().mockResolvedValue({ lines: ["output"] }),
-    waitForTerminalOutput: vi.fn().mockResolvedValue({ matched: true, matchedLine: "ready" }),
+    waitForTerminalOutput: vi
+      .fn()
+      .mockResolvedValue({ matched: true, matchedLine: "ready" }),
     executeInTerminal: vi.fn().mockResolvedValue({ exitCode: 0, output: "" }),
     disposeTerminal: vi.fn().mockResolvedValue({ success: true }),
   } as any;
@@ -69,7 +73,9 @@ describe("createTerminal — unnamed terminal with prefix (Bug 7)", () => {
 
   it("does NOT generate a prefix name when prefix is empty (single-session compat)", async () => {
     const client = mockExtensionClient();
-    client.createTerminal = vi.fn().mockResolvedValue({ name: "terminal", index: 0 });
+    client.createTerminal = vi
+      .fn()
+      .mockResolvedValue({ name: "terminal", index: 0 });
     const tool = createCreateTerminalTool(WORKSPACE, client, "");
 
     await tool.handler({});
@@ -87,7 +93,7 @@ describe("getTerminalOutput — index-only lookup with prefix (Bug 6)", () => {
     const client = mockExtensionClient();
     const tool = createGetTerminalOutputTool(client, PREFIX);
 
-    const result = await tool.handler({ index: 0 }) as any;
+    const result = (await tool.handler({ index: 0 })) as any;
 
     expect(result.isError).toBe(true);
     const body = parseResult(result);
@@ -98,11 +104,15 @@ describe("getTerminalOutput — index-only lookup with prefix (Bug 6)", () => {
     const client = mockExtensionClient();
     const tool = createGetTerminalOutputTool(client, PREFIX);
 
-    const result = await tool.handler({ name: "build" }) as any;
+    const result = (await tool.handler({ name: "build" })) as any;
 
     expect(result.isError).toBeUndefined();
     // Extension should have been called with the prefixed name
-    expect(client.getTerminalOutput).toHaveBeenCalledWith(`${PREFIX}build`, undefined, undefined);
+    expect(client.getTerminalOutput).toHaveBeenCalledWith(
+      `${PREFIX}build`,
+      undefined,
+      undefined,
+    );
   });
 });
 
@@ -111,7 +121,7 @@ describe("sendTerminalCommand — index-only lookup with prefix (Bug 6)", () => 
     const client = mockExtensionClient();
     const tool = createSendTerminalCommandTool(client, ALLOWLIST, PREFIX);
 
-    const result = await tool.handler({ text: "npm test", index: 0 }) as any;
+    const result = (await tool.handler({ text: "npm test", index: 0 })) as any;
 
     expect(result.isError).toBe(true);
     const body = parseResult(result);
@@ -124,7 +134,7 @@ describe("disposeTerminal — index-only lookup with prefix (Bug 6)", () => {
     const client = mockExtensionClient();
     const tool = createDisposeTerminalTool(client, PREFIX);
 
-    const result = await tool.handler({ index: 0 }) as any;
+    const result = (await tool.handler({ index: 0 })) as any;
 
     expect(result.isError).toBe(true);
     const body = parseResult(result);
@@ -137,7 +147,10 @@ describe("runInTerminal — index-only lookup with prefix (Bug 6)", () => {
     const client = mockExtensionClient();
     const tool = createRunInTerminalTool(client, ALLOWLIST, PREFIX);
 
-    const result = await tool.handler({ command: "npm test", index: 0 }) as any;
+    const result = (await tool.handler({
+      command: "npm test",
+      index: 0,
+    })) as any;
 
     expect(result.isError).toBe(true);
     const body = parseResult(result);
@@ -150,7 +163,7 @@ describe("waitForTerminalOutput — index-only lookup with prefix (Bug 6)", () =
     const client = mockExtensionClient();
     const tool = createWaitForTerminalOutputTool(client, PREFIX);
 
-    const result = await tool.handler({ pattern: "ready", index: 0 }) as any;
+    const result = (await tool.handler({ pattern: "ready", index: 0 })) as any;
 
     expect(result.isError).toBe(true);
     const body = parseResult(result);

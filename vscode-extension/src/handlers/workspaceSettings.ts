@@ -58,7 +58,7 @@ export async function handleSetWorkspaceSetting(
   // Check every prefix segment so "terminal.integrated.shell.linux" is caught
   // by the "terminal.integrated.shell" entry.
   const isBlocked = [...BLOCKED_KEY_PREFIXES].some(
-    (prefix) => key === prefix || key.startsWith(prefix + "."),
+    (prefix) => key === prefix || key.startsWith(`${prefix}.`),
   );
   if (isBlocked) {
     throw new Error(`Writing to "${key}" settings is blocked for safety`);

@@ -31,7 +31,8 @@ describe("findEditor", () => {
   it("returns antigravity when windsurf and cursor are not found", () => {
     mockedExecFileSync.mockImplementation((_cmd, args) => {
       const target = (args as string[])[0];
-      if (target === "windsurf" || target === "cursor") throw new Error("not found");
+      if (target === "windsurf" || target === "cursor")
+        throw new Error("not found");
       return "";
     });
     expect(findEditor()).toBe("antigravity");
@@ -40,7 +41,8 @@ describe("findEditor", () => {
   it("returns ag when windsurf, cursor and antigravity are not found", () => {
     mockedExecFileSync.mockImplementation((_cmd, args) => {
       const target = (args as string[])[0];
-      if (["windsurf", "cursor", "antigravity"].includes(target)) throw new Error("not found");
+      if (["windsurf", "cursor", "antigravity"].includes(target))
+        throw new Error("not found");
       return "";
     });
     expect(findEditor()).toBe("ag");
@@ -49,14 +51,17 @@ describe("findEditor", () => {
   it("returns code as final fallback", () => {
     mockedExecFileSync.mockImplementation((_cmd, args) => {
       const target = (args as string[])[0];
-      if (["windsurf", "cursor", "antigravity", "ag"].includes(target)) throw new Error("not found");
+      if (["windsurf", "cursor", "antigravity", "ag"].includes(target))
+        throw new Error("not found");
       return "";
     });
     expect(findEditor()).toBe("code");
   });
 
   it("returns null when no editor is found", () => {
-    mockedExecFileSync.mockImplementation(() => { throw new Error("not found"); });
+    mockedExecFileSync.mockImplementation(() => {
+      throw new Error("not found");
+    });
     expect(findEditor()).toBeNull();
   });
 });

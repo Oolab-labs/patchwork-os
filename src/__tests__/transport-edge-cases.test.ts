@@ -70,9 +70,13 @@ describe("McpTransport: generation guard", () => {
       },
       async (_args, signal) =>
         new Promise<never>((_, reject) => {
-          signal?.addEventListener("abort", () => reject(new Error("aborted")), {
-            once: true,
-          });
+          signal?.addEventListener(
+            "abort",
+            () => reject(new Error("aborted")),
+            {
+              once: true,
+            },
+          );
         }),
     );
 
@@ -174,7 +178,10 @@ describe("McpTransport: zombie tool", () => {
 
     // Wait for timeout error response
     const resp = await waitFor(ws, (m) => m.id === 1, 3000);
-    const result = resp.result as { isError: boolean; content: Array<{ text: string }> };
+    const result = resp.result as {
+      isError: boolean;
+      content: Array<{ text: string }>;
+    };
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/timed out/i);
 
@@ -185,8 +192,9 @@ describe("McpTransport: zombie tool", () => {
     await new Promise((r) => setTimeout(r, 200));
 
     // The zombie's late completion should have triggered a warn log
-    const zombieWarnCalled = warnSpy.mock.calls.some(([msg]) =>
-      typeof msg === "string" && msg.toLowerCase().includes("zombie"),
+    const zombieWarnCalled = warnSpy.mock.calls.some(
+      ([msg]) =>
+        typeof msg === "string" && msg.toLowerCase().includes("zombie"),
     );
     expect(zombieWarnCalled).toBe(true);
 

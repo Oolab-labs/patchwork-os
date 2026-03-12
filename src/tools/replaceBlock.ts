@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
-import type { FileLock } from "../fileLock.js";
 import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
+import type { FileLock } from "../fileLock.js";
 import {
   error,
   optionalBool,

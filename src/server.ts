@@ -70,8 +70,10 @@ export class Server extends EventEmitter {
       // All HTTP endpoints require Bearer token authentication.
       // This prevents any local process or network peer (if --bind 0.0.0.0 is used)
       // from reading internal state without possessing the session auth token.
-      const authHeader = req.headers["authorization"] ?? "";
-      const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+      const authHeader = req.headers.authorization ?? "";
+      const bearer = authHeader.startsWith("Bearer ")
+        ? authHeader.slice(7)
+        : "";
       if (!timingSafeTokenCompare(bearer, this.authToken)) {
         res.writeHead(401, { "Content-Type": "text/plain" });
         res.end("Unauthorized");

@@ -302,7 +302,9 @@ describe("Server: ping keepalive", () => {
 
     // Verify the internal pingInterval was started (non-null after listen)
     const pingInterval = (
-      server as unknown as { pingInterval: ReturnType<typeof setInterval> | null }
+      server as unknown as {
+        pingInterval: ReturnType<typeof setInterval> | null;
+      }
     ).pingInterval;
     expect(pingInterval).not.toBeNull();
   });
