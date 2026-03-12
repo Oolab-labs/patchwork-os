@@ -2,7 +2,7 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "Companion extension for claude-ide-bridge — provides real-time editor state to Claude Code",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "oolab-labs",
   "repository": {
     "type": "git",
@@ -11,9 +11,15 @@
   "engines": {
     "vscode": "^1.93.0"
   },
-  "enabledApiProposals": ["terminalDataWriteEvent"],
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "enabledApiProposals": [
+    "terminalDataWriteEvent"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
@@ -21,7 +27,11 @@
       "properties": {
         "claudeIdeBridge.logLevel": {
           "type": "string",
-          "enum": ["info", "debug", "warn"],
+          "enum": [
+            "info",
+            "debug",
+            "warn"
+          ],
           "default": "info",
           "description": "Log verbosity level for the output channel."
         },
