@@ -102,6 +102,9 @@ export class Bridge {
 
       transport.attach(ws);
       this.sessions.set(sessionId, session);
+      this.logger.info(
+        `Claude Code connected (session ${sessionId.slice(0, 8)}) — ${this.sessions.size} active session${this.sessions.size === 1 ? "" : "s"}`,
+      );
       this.logger.event("claude_connected", {
         sessionId,
         activeSessions: this.sessions.size,
@@ -161,7 +164,9 @@ export class Bridge {
     // Handle VS Code extension connections — notify Claude immediately (no debounce)
     // so it re-queries capabilities and discovers LSP/terminal/selection are now available.
     this.server.on("extension", (ws: WebSocket) => {
-      this.logger.info("VS Code extension connected");
+      this.logger.info(
+        "VS Code extension connected — LSP, terminal, and editor tools now available",
+      );
       this.logger.event("extension_connected");
       this.extensionClient.handleExtensionConnection(ws);
       // Refresh workspace folders from extension (multi-root workspace support)
@@ -206,6 +211,9 @@ export class Bridge {
 
     // Notify Claude when extension disconnects so it knows to fall back to CLI/grep mode
     this.extensionClient.onExtensionDisconnected = () => {
+      this.logger.info(
+        "VS Code extension disconnected — falling back to file-system tools only",
+      );
       this.logger.event("extension_disconnected_notify");
       sendListChanged();
     };
@@ -346,18 +354,12 @@ export class Bridge {
     }
 
     // Startup banner to stderr (not stdout) to avoid capture by parent processes
-    this.logger.info("claude-ide-bridge running");
+    this.logger.info("claude-ide-bridge ready");
     this.logger.info(`  Port:       ${port}`);
     this.logger.info(`  Workspace:  ${this.config.workspace}`);
-    this.logger.info(`  Editor:     ${this.config.editorCommand || "none"}`);
+    this.logger.info(`  Editor:     ${this.config.ideName || "none"}`);
     this.logger.info(`  Lock file:  ${lockPath}`);
-    this.logger.info(
-      "  To connect: CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude",
-    );
-    this.logger.info(`  Then type "/ide" in the Claude Code session.`);
-    this.logger.info(
-      '  For Remote Control: run "npm run remote" from the claude-ide-bridge directory (auto-restarts on disconnect)',
-    );
+    this.logger.info("  Connect:    run `claude` in a new terminal, then /ide");
     this.logger.event("bridge_started", {
       port,
       workspace: this.config.workspace,

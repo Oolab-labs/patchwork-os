@@ -222,7 +222,9 @@ export class BridgeConnection {
     // to avoid hanging silently in CONNECTING state indefinitely.
     const openTimeout = setTimeout(() => {
       if (gen !== this.generation) return;
-      this.log("WebSocket handshake timed out after 30s, forcing reconnect");
+      this.log(
+        "WebSocket handshake timed out (30s) — bridge may still be starting up, will retry",
+      );
       this.ws?.terminate();
       this.handleDisconnect();
     }, 30_000);
@@ -269,7 +271,15 @@ export class BridgeConnection {
     this.ws.on("unexpected-response", (_req, res) => {
       clearTimeout(openTimeout);
       if (gen !== this.generation) return;
-      this.logError(`Upgrade rejected: HTTP ${res.statusCode}`);
+      const hint =
+        res.statusCode === 401
+          ? " — auth token mismatch; try reloading the window"
+          : res.statusCode === 403
+            ? " — Host header rejected; bridge may be on a different interface"
+            : res.statusCode === 429
+              ? " — too many connections; another VS Code window may already be connected"
+              : "";
+      this.logError(`Upgrade rejected: HTTP ${res.statusCode}${hint}`);
       // Use handleDisconnect() for full cleanup (heartbeat, pending handlers,
       // listener removal, status bar). Must call BEFORE setting DISCONNECTING
       // state so the re-entrancy guard doesn't skip cleanup.
