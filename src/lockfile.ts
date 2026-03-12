@@ -48,8 +48,11 @@ export class LockFileManager {
         fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL,
         0o600,
       );
-      fs.writeSync(fd, data);
-      fs.closeSync(fd);
+      try {
+        fs.writeSync(fd, data);
+      } finally {
+        fs.closeSync(fd);
+      }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "EEXIST") {
         // Verify the existing file is a regular file (not a symlink) before removing
@@ -68,8 +71,11 @@ export class LockFileManager {
             (fs.constants.O_NOFOLLOW ?? 0),
           0o600,
         );
-        fs.writeSync(fd, data);
-        fs.closeSync(fd);
+        try {
+          fs.writeSync(fd, data);
+        } finally {
+          fs.closeSync(fd);
+        }
       } else {
         throw err;
       }

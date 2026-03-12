@@ -309,6 +309,83 @@ describe("ExtensionClient", () => {
     ws.close();
   });
 
+  it("disconnect() does not fire onExtensionDisconnected (spurious-callback fix)", async () => {
+    const serverConn = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws);
+    const serverWs = await serverConn;
+    client.handleExtensionConnection(serverWs);
+    expect(client.isConnected()).toBe(true);
+
+    let callCount = 0;
+    client.onExtensionDisconnected = () => {
+      callCount++;
+    };
+
+    // Bridge-initiated shutdown: disconnect() must NOT trigger the callback
+    client.disconnect();
+    // Give the async "close" event time to fire (it would have, before the fix)
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(callCount).toBe(0);
+    ws.close();
+  });
+
+  it("diagnosticsChanged forwards sanitized data, not raw fields", async () => {
+    const serverConn = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws);
+    const serverWs = await serverConn;
+    client.handleExtensionConnection(serverWs);
+
+    let received: unknown[] = [];
+    client.addDiagnosticsListener((_file, diags) => {
+      received = diags as unknown[];
+    });
+
+    // Send a notification with a wrong-typed field (line is a string) and an
+    // extra unexpected field (__proto__) that must not appear in the output.
+    ws.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/diagnosticsChanged",
+        params: {
+          file: "/bad.ts",
+          diagnostics: [
+            {
+              file: "/bad.ts",
+              line: "not-a-number", // wrong type — should be sanitized to undefined
+              column: 5,
+              severity: "error",
+              message: "oops",
+              extra: "should be dropped", // unknown field
+            },
+          ],
+        },
+      }),
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(received).toHaveLength(1);
+    const d = received[0] as Record<string, unknown>;
+    // Wrong-typed field becomes undefined
+    expect(d.line).toBeUndefined();
+    // Valid field is preserved
+    expect(d.column).toBe(5);
+    expect(d.message).toBe("oops");
+    // Unknown field is stripped
+    expect("extra" in d).toBe(false);
+
+    ws.close();
+  });
+
   it("circuit breaker fast-fails when open", async () => {
     vi.useFakeTimers();
     const serverConn = new Promise<WebSocket>((resolve) => {
