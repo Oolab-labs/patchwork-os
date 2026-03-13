@@ -154,7 +154,7 @@ export function createPlanTools(workspace: string) {
       if (!fileName.endsWith(".md")) {
         return error("fileName must end with .md");
       }
-      const resolved = resolveFilePath(fileName, workspace);
+      const resolved = resolveFilePath(fileName, workspace, { write: true });
 
       if (
         await fsp.access(resolved).then(
@@ -269,7 +269,7 @@ export function createPlanTools(workspace: string) {
     },
     handler: async (args: Record<string, unknown>) => {
       const fileName = optionalString(args, "fileName") ?? ".claude-plan.md";
-      const resolved = resolveFilePath(fileName, workspace);
+      const resolved = resolveFilePath(fileName, workspace, { write: true });
 
       if (
         !(await fsp.access(resolved).then(
@@ -462,7 +462,7 @@ export function createPlanTools(workspace: string) {
           "fileName must be a plan file (e.g., '.claude-plan.md' or 'project.claude-plan.md')",
         );
       }
-      const resolved = resolveFilePath(fileName, workspace);
+      const resolved = resolveFilePath(fileName, workspace, { write: true });
 
       if (
         !(await fsp.access(resolved).then(

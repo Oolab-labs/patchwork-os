@@ -61,7 +61,7 @@ export function createCreateFileTool(
       const overwrite = optionalBool(args, "overwrite") ?? false;
       const openAfterCreate = optionalBool(args, "openAfterCreate") ?? true;
 
-      const filePath = resolveFilePath(rawPath, workspace);
+      const filePath = resolveFilePath(rawPath, workspace, { write: true });
 
       // Try extension first (can also open the file in editor)
       if (extensionClient.isConnected()) {
@@ -172,7 +172,7 @@ export function createDeleteFileTool(
       const recursive = optionalBool(args, "recursive") ?? false;
       const useTrash = optionalBool(args, "useTrash") ?? true;
 
-      const filePath = resolveFilePath(rawPath, workspace);
+      const filePath = resolveFilePath(rawPath, workspace, { write: true });
 
       // Try extension first (supports trash)
       if (extensionClient.isConnected()) {
@@ -260,7 +260,7 @@ export function createRenameFileTool(
       const overwrite = optionalBool(args, "overwrite") ?? false;
 
       const oldPath = resolveFilePath(rawOld, workspace);
-      const newPath = resolveFilePath(rawNew, workspace);
+      const newPath = resolveFilePath(rawNew, workspace, { write: true });
 
       // Try extension first
       if (extensionClient.isConnected()) {

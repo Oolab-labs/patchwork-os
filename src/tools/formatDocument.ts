@@ -79,7 +79,7 @@ export function createFormatDocumentTool(
     ) => {
       progress?.(0, 100);
       const rawPath = requireString(args, "filePath");
-      const resolved = resolveFilePath(rawPath, workspace);
+      const resolved = resolveFilePath(rawPath, workspace, { write: true });
 
       // Read file content before formatting
       let contentBefore: string;

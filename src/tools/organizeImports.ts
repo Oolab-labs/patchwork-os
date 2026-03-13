@@ -3,7 +3,37 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, requireString, resolveFilePath, success } from "./utils.js";
+import { error, execSafe, requireString, resolveFilePath, success } from "./utils.js";
+
+async function organizeImportsNative(
+  resolved: string,
+  workspace: string,
+): Promise<{ source: string } | null> {
+  const biome = await execSafe(
+    "npx",
+    [
+      "--no-install",
+      "biome",
+      "check",
+      "--apply",
+      "--formatter-enabled=false",
+      "--linter-enabled=false",
+      "--organize-imports-enabled=true",
+      resolved,
+    ],
+    { cwd: workspace, timeout: 30_000 },
+  );
+  if (biome.exitCode === 0) return { source: "biome" };
+
+  const prettier = await execSafe(
+    "npx",
+    ["--no-install", "prettier", "--write", resolved],
+    { cwd: workspace, timeout: 30_000 },
+  );
+  if (prettier.exitCode === 0) return { source: "prettier" };
+
+  return null;
+}
 
 export function createOrganizeImportsTool(
   workspace: string,
@@ -12,9 +42,8 @@ export function createOrganizeImportsTool(
   return {
     schema: {
       name: "organizeImports",
-      extensionRequired: true,
       description:
-        "Organize and sort imports in a file using VS Code's built-in organize imports action. Requires the VS Code extension to be connected — returns an error if disconnected (no CLI fallback available).",
+        "Organize and sort imports in a file. Uses VS Code extension when connected; falls back to Biome or Prettier CLI otherwise.",
       annotations: { destructiveHint: true, idempotentHint: true },
       inputSchema: {
         type: "object" as const,
@@ -31,7 +60,7 @@ export function createOrganizeImportsTool(
     },
     handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
-      const resolved = resolveFilePath(rawPath, workspace);
+      const resolved = resolveFilePath(rawPath, workspace, { write: true });
 
       let contentBefore: string;
       try {
@@ -41,9 +70,20 @@ export function createOrganizeImportsTool(
       }
 
       if (!extensionClient.isConnected()) {
-        return error({
-          error:
-            "Extension not connected — organize imports requires the VS Code extension",
+        const nativeResult = await organizeImportsNative(resolved, workspace);
+        if (!nativeResult) {
+          return error({
+            error:
+              "Extension not connected and no CLI formatter (biome/prettier) available — cannot organize imports",
+          });
+        }
+        const contentAfter = fs.readFileSync(resolved, "utf-8");
+        return success({
+          organized: true,
+          source: nativeResult.source,
+          changes: contentBefore === contentAfter ? "none" : "modified",
+          linesBeforeCount: contentBefore.split("\n").length,
+          linesAfterCount: contentAfter.split("\n").length,
         });
       }
 

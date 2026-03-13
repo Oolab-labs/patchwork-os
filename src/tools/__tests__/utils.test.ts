@@ -69,6 +69,26 @@ describe("resolveFilePath", () => {
       fs.rmSync(evilDir, { recursive: true, force: true });
     }
   });
+
+  it("rejects hardlink to outside file on write path", () => {
+    // Create a real file outside the workspace
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "outside-"));
+    const outsideFile = path.join(outsideDir, "secret.txt");
+    fs.writeFileSync(outsideFile, "secret");
+
+    // Create a hardlink inside the workspace pointing at the outside file
+    const linkPath = path.join(workspace, "hardlink.txt");
+    fs.linkSync(outsideFile, linkPath);
+
+    try {
+      expect(() =>
+        resolveFilePath(linkPath, workspace, { write: true }),
+      ).toThrow(/hardlink/i);
+    } finally {
+      fs.rmSync(linkPath, { force: true });
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("requireString", () => {

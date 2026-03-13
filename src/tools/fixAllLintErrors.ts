@@ -62,7 +62,7 @@ export function createFixAllLintErrorsTool(
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
-      const resolved = resolveFilePath(rawPath, workspace);
+      const resolved = resolveFilePath(rawPath, workspace, { write: true });
 
       let contentBefore: string;
       try {

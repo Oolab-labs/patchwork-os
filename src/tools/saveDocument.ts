@@ -27,7 +27,7 @@ export function createSaveDocumentTool(
 
     async handler(args: Record<string, unknown>) {
       const rawPath = requireString(args, "filePath");
-      const filePath = resolveFilePath(rawPath, workspace);
+      const filePath = resolveFilePath(rawPath, workspace, { write: true });
 
       // Use extension for real buffer flush when available
       if (extensionClient?.isConnected()) {

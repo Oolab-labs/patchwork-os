@@ -1,3 +1,4 @@
+import { Ajv, type ValidateFunction } from "ajv";
 import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
 import { ErrorCodes } from "./errors.js";
@@ -10,6 +11,7 @@ const MAX_CONCURRENT_TOOLS = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
 const RATE_LIMIT_MAX = 200; // max requests per window
 const NOTIFICATION_RATE_LIMIT = 500; // max notifications per minute (separate from request limit)
+const TOOLS_LIST_PAGE_SIZE = 50;
 // Supported MCP protocol versions, newest first.
 // Extend this array when new protocol versions are ratified; keep oldest supported version last.
 const SUPPORTED_VERSIONS = ["2025-11-25"];
@@ -88,8 +90,23 @@ export class McpTransport {
 
   private activityLog: ActivityLog | null = null;
   private isExtensionConnectedFn: (() => boolean) | null = null;
+  private readonly ajv = new Ajv({ strict: false, allErrors: true });
+  private readonly schemaValidators = new Map<string, ValidateFunction>();
 
   constructor(private logger: Logger) {}
+
+  private getValidator(toolName: string): ValidateFunction | null {
+    if (this.schemaValidators.has(toolName)) {
+      return this.schemaValidators.get(toolName)!;
+    }
+    const tool = this.tools.get(toolName);
+    if (!tool) return null;
+    const schema = tool.schema.inputSchema;
+    if (typeof schema !== "object" || schema === null) return null;
+    const fn = this.ajv.compile(schema as object);
+    this.schemaValidators.set(toolName, fn);
+    return fn;
+  }
 
   setExtensionConnectedFn(fn: () => boolean): void {
     this.isExtensionConnectedFn = fn;
@@ -305,13 +322,38 @@ export class McpTransport {
               break;
             }
             const extConnected = this.isExtensionConnectedFn?.() ?? false;
+            const allTools = Array.from(this.tools.values())
+              .filter((t) => !t.schema.extensionRequired || extConnected)
+              .map((t) => t.schema);
+
+            // Parse cursor (opaque base64-encoded decimal offset)
+            const listParams = msg.params as { cursor?: unknown } | undefined;
+            let offset = 0;
+            if (typeof listParams?.cursor === "string") {
+              try {
+                const decoded = parseInt(
+                  Buffer.from(listParams.cursor, "base64").toString("utf-8"),
+                  10,
+                );
+                if (Number.isFinite(decoded) && decoded >= 0) offset = decoded;
+              } catch {
+                // malformed cursor — start from beginning
+              }
+            }
+
+            const page = allTools.slice(offset, offset + TOOLS_LIST_PAGE_SIZE);
+            const nextOffset = offset + TOOLS_LIST_PAGE_SIZE;
+            const hasMore = nextOffset < allTools.length;
+            const nextCursor = hasMore
+              ? Buffer.from(String(nextOffset)).toString("base64")
+              : undefined;
+
             response = {
               jsonrpc: "2.0",
               id: msg.id,
               result: {
-                tools: Array.from(this.tools.values())
-                  .filter((t) => !t.schema.extensionRequired || extConnected)
-                  .map((t) => t.schema),
+                tools: page,
+                ...(nextCursor !== undefined && { nextCursor }),
               },
             };
             break;
@@ -405,6 +447,22 @@ export class McpTransport {
                     error: {
                       code: ErrorCodes.INVALID_PARAMS,
                       message: "Tool arguments exceed 1 MB size limit",
+                    },
+                  };
+                  break;
+                }
+                // AJV structural validation
+                const validate = this.getValidator(params.name);
+                if (validate && !validate(toolArgs)) {
+                  const messages = (validate.errors ?? [])
+                    .map((e) => `${e.instancePath || "."} ${e.message}`)
+                    .join("; ");
+                  response = {
+                    jsonrpc: "2.0",
+                    id: msg.id,
+                    error: {
+                      code: ErrorCodes.INVALID_PARAMS,
+                      message: `Invalid tool arguments: ${messages}`,
                     },
                   };
                   break;
