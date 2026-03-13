@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v1.4.2)
+## Current State (v1.4.2 — 2026-03-13)
 
 - 115+ MCP tools registered; extension-first with native fs fallback pattern established
 - VS Code extension with full handler coverage; installable into VS Code, Windsurf, Cursor, and Antigravity
@@ -16,7 +16,7 @@ Development direction and exploration guidance. Living document — update as pr
 - Activity logging with Prometheus metrics
 - Per-session stats + session-end UX (summary log + VS Code notification)
 - Claude Code Platform Integration fully shipped (skills, subagents, plugin, hooks, /ide-monitor)
-- 654 tests (408 bridge + 246 extension) across 56 files; CI on Node 20 + 22
+- 665 tests (419 bridge + 246 extension) across 43+10 files; CI on Node 20 + 22
 - Deep security hardening: SSRF three-layer defense (lexical + DNS pre-resolution + IP pinning), Origin header validation, rate limit error codes, JSON parse error responses, interpreter flag blocklist, backpressure guards, slow-loris mitigations
 
 ---
