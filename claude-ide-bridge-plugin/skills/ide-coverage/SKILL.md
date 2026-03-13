@@ -6,6 +6,8 @@ argument-hint: "[path to coverage file or directory]"
 
 Generate a visual test coverage heatmap and open it in the browser.
 
+This skill uses only built-in tools (Glob, Read, Write, Bash) and works in both IDE-connected and remote sessions.
+
 ## Arguments
 `$ARGUMENTS` can be:
 - A path to a specific coverage file (`coverage/lcov.info`, `coverage/coverage-summary.json`)
@@ -16,12 +18,12 @@ Generate a visual test coverage heatmap and open it in the browser.
 
 ### Phase 1 — Locate coverage data
 1. If `$ARGUMENTS` is a specific file path, use it directly.
-2. Otherwise call `findFiles` with patterns: `**/lcov.info`, `**/coverage-summary.json`, `**/coverage-final.json` (exclude `node_modules`).
+2. Otherwise use the **Glob** tool with patterns: `**/lcov.info`, `**/coverage-summary.json`, `**/coverage-final.json` (exclude `node_modules`).
 3. If multiple candidates found, prefer `lcov.info` > `coverage-summary.json` > `coverage-final.json`. If still ambiguous (multiple projects), list them and ask the user to specify.
 4. If no coverage file found: report "No coverage data found. Run `npm test -- --coverage` (or equivalent) first." and stop.
 
 ### Phase 2 — Parse coverage
-5. Call `getBufferContent` on the located file to read its contents.
+5. Use the **Read** tool to read the located coverage file.
 6. Parse based on format:
    - **lcov.info**: iterate `SF:` (source file), `LF:` (lines found), `LH:` (lines hit) records → `{ file, totalLines, hitLines, pct }`
    - **coverage-summary.json** (Istanbul/NYC): each key is a file path with `{ lines: { pct, total, covered } }`
@@ -40,8 +42,9 @@ Generate a visual test coverage heatmap and open it in the browser.
    - A legend at the top showing the color key
    - Clicking a file's name copies its relative path to clipboard (single JS event listener, ~10 lines)
    - Page title: "Coverage — <project name>"
-10. Call `openInBrowser` with the HTML string and filename `coverage-<timestamp>.html`.
-11. Report: "Opened coverage heatmap — overall N% line coverage across M files. Saved to: <path>"
+10. Write the HTML to `coverage-<timestamp>.html` in the workspace root using the **Write** tool.
+11. Open via **Bash**: `open coverage-<timestamp>.html` (macOS) or `xdg-open` (Linux). If `openInBrowser` MCP tool is available, use that instead.
+12. Report: "Opened coverage heatmap — overall N% line coverage across M files. Saved to: <path>"
 
 ## HTML constraints
 - No external URLs or CDN links

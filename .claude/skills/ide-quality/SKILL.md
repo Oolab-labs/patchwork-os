@@ -9,13 +9,13 @@ argument-hint: "[file or directory path]"
 
 ## Prerequisites
 
-Before doing anything else, call `getToolCapabilities`. Check the returned `extensionConnected` field:
-- If `false` or absent: stop immediately and tell the user: "The VS Code extension is not connected to the bridge — LSP tools are unavailable. Start the bridge (`npm run start-all`) and ensure the Claude IDE Bridge extension is installed and active, then retry."
-- If `true`: proceed with the steps below.
+1. Check if the `getToolCapabilities` MCP tool is available to you.
+   - **Available**: call it, check `extensionConnected` → use **IDE Path** below.
+   - **Not available**: use **CLI Path** below.
 
-Run a comprehensive code quality sweep using the IDE bridge's multi-language linting, formatting, and testing tools.
+## IDE Path
 
-## Workflow
+Use this path when bridge MCP tools are available and extension is connected.
 
 ### Phase 1: Assess the environment
 
@@ -63,9 +63,64 @@ Run a comprehensive code quality sweep using the IDE bridge's multi-language lin
 18. Ask whether to commit the cleanup:
     - If yes: `gitAdd` the changed files, `gitCommit` with message "chore: fix lint errors and format code"
 
+---
+
+## CLI Path
+
+Use this path when bridge MCP tools are NOT available (e.g., remote-control sessions).
+
+### Phase 1: Assess the environment
+
+1. Detect project type by checking for config files using **Glob**: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`
+2. Read `package.json` (or equivalent) with **Read** to understand frameworks and scripts
+3. Determine the scope from `$ARGUMENTS`
+
+### Phase 2: Run linters via CLI
+
+4. Detect and run available linters via **Bash**:
+   - `tsconfig.json` → `npx tsc --noEmit 2>&1`
+   - `biome.json`/`biome.jsonc` → `npx biome check . 2>&1`
+   - `.eslintrc*`/`eslint.config.*` → `npx eslint . 2>&1`
+   - `pyrightconfig.json` → `npx pyright 2>&1`
+   - `Cargo.toml` → `cargo check 2>&1`
+5. Parse output and group by severity and file
+6. Report the total count
+
+### Phase 3: Auto-fix via CLI
+
+7. Run linter auto-fix commands via **Bash**:
+   - biome: `npx biome check . --write 2>&1`
+   - eslint: `npx eslint . --fix 2>&1`
+   - ruff: `ruff check . --fix 2>&1`
+8. Run formatters via **Bash**:
+   - biome: `npx biome format . --write 2>&1`
+   - prettier: `npx prettier --write . 2>&1`
+   - black: `black . 2>&1`
+9. Re-run linters to see what remains
+10. Report: "Auto-fixed X issues. Y issues remain."
+
+### Phase 4: Manual fixes
+
+11. For remaining errors, read the affected files with **Read**
+12. Apply targeted fixes with **Edit**
+13. Re-run the specific linter to verify
+
+### Phase 5: Verify
+
+14. Run tests via **Bash**: `npm test 2>&1` (or `pytest`, `cargo test`, etc.)
+15. If tests fail and the failure was caused by our changes, revert with **Bash**: `git checkout -- <file>`
+
+### Phase 6: Report and optionally commit
+
+16. Summarize changes (same format as IDE Path)
+17. If user wants to commit: use **Bash**: `git add <files> && git commit -m "chore: fix lint errors and format code"`
+
+---
+
 ## Guidelines
 
 - Never auto-fix if it would change behavior (only style/lint fixes)
 - Preserve existing formatting choices when they don't violate linter rules
 - If a diagnostic seems like a false positive, skip it and note it in the report
 - Group related fixes into logical units
+- For a visual diagnostics overview, suggest `/ide-diagnostics-board`

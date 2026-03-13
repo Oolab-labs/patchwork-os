@@ -58,7 +58,8 @@ function parseLock(lockPath) {
 }
 
 // --- Resolve port + token ---
-let port, authToken;
+let port;
+let authToken;
 
 if (process.argv[2] && process.argv[3]) {
   port = Number(process.argv[2]);
@@ -106,7 +107,7 @@ ws.on("close", (code, reason) => {
 
 // Bridge → stdout (one JSON-RPC message per line)
 ws.on("message", (data) => {
-  process.stdout.write(data.toString() + "\n");
+  process.stdout.write(`${data.toString()}\n`);
 });
 
 // stdin → bridge (newline-delimited JSON-RPC)

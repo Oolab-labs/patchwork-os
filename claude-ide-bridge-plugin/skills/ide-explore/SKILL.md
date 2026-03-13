@@ -10,9 +10,15 @@ argument-hint: "[module, file, or question about the codebase]"
 
 ## Prerequisites
 
-Before doing anything else, call `getToolCapabilities`. Check the returned `extensionConnected` field:
-- If `false` or absent: stop immediately and tell the user: "The VS Code extension is not connected to the bridge — LSP tools are unavailable. Start the bridge (`npm run start-all`) and ensure the Claude IDE Bridge extension is installed and active, then retry."
-- If `true`: proceed with the steps below.
+1. Check if the `getToolCapabilities` MCP tool is available to you.
+   - **Not available** (no MCP tool by that name): stop and tell the user:
+     "This skill requires the Claude IDE Bridge with a connected VS Code extension. It uses LSP tools (type hierarchy, call hierarchy, references, hover, inlay hints) that have no CLI equivalent.
+
+     To use this skill:
+     1. Start the bridge: `npm run start-all` (in claude-ide-bridge/)
+     2. Ensure the Claude IDE Bridge extension is installed in your IDE
+     3. Use the `claude --ide` session (not remote-control)"
+   - **Available**: call it. If `extensionConnected` is `false`: show the same message. If `true`: proceed.
 
 
 Explore and explain a codebase using the IDE bridge's full LSP capabilities. Produces a structured architectural overview.
