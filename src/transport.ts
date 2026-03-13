@@ -97,6 +97,7 @@ export class McpTransport {
 
   private getValidator(toolName: string): ValidateFunction | null {
     if (this.schemaValidators.has(toolName)) {
+      // biome-ignore lint/style/noNonNullAssertion: has() guard above proves this is defined
       return this.schemaValidators.get(toolName)!;
     }
     const tool = this.tools.get(toolName);
@@ -249,6 +250,7 @@ export class McpTransport {
         // If the oldest timestamp is still within the window, all 200 slots are
         // occupied by recent requests → limit exceeded.
         const now = Date.now();
+        // biome-ignore lint/style/noNonNullAssertion: ring buffer is pre-filled with 0s, index always valid
         const oldest = this.rateLimitBuf[this.rateLimitHead]!;
         if (oldest > now - RATE_LIMIT_WINDOW_MS) {
           this.logger.warn(
@@ -274,6 +276,7 @@ export class McpTransport {
 
         let response: JsonRpcResponse = {
           jsonrpc: "2.0",
+          // biome-ignore lint/style/noNonNullAssertion: only reachable for requests (not notifications), which always have an id
           id: msg.id!,
           error: { code: -32603, message: "Internal error" },
         };
@@ -287,7 +290,8 @@ export class McpTransport {
             const negotiatedVersion =
               clientVersion && SUPPORTED_VERSIONS.includes(clientVersion)
                 ? clientVersion
-                : SUPPORTED_VERSIONS[0]!;
+                : // biome-ignore lint/style/noNonNullAssertion: SUPPORTED_VERSIONS is a non-empty constant array
+                  SUPPORTED_VERSIONS[0]!;
             if (clientVersion && !SUPPORTED_VERSIONS.includes(clientVersion)) {
               this.logger.warn(
                 `Client requested unsupported protocol version ${clientVersion}, responding with ${negotiatedVersion}`,

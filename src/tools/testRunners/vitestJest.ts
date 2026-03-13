@@ -33,8 +33,8 @@ function extractLineFromStack(
   const match = stack.match(/at\s+.*?[(/]([^):\s]+):(\d+):(\d+)/);
   if (match) {
     return {
-      line: Number.parseInt(match[2]!, 10),
-      column: Number.parseInt(match[3]!, 10),
+      line: Number.parseInt(match[2] ?? "0", 10),
+      column: Number.parseInt(match[3] ?? "0", 10),
     };
   }
   return null;

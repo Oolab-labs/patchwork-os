@@ -119,8 +119,8 @@ function extractLocation(
   for (const out of outputLines) {
     const match = FILE_LINE_RE.exec(out);
     if (match && !file) {
-      file = path.relative(cwd, path.resolve(cwd, match[1]!));
-      lineNum = Number.parseInt(match[2]!, 10);
+      file = path.relative(cwd, path.resolve(cwd, match[1] ?? ""));
+      lineNum = Number.parseInt(match[2] ?? "0", 10);
       if (match[3]) messages.push(match[3]);
     } else if (
       out.trim() &&

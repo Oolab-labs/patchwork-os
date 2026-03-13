@@ -2,6 +2,8 @@ export {
   createGithubCreatePRTool,
   createGithubListPRsTool,
   createGithubViewPRTool,
+  createGithubGetPRDiffTool,
+  createGithubPostPRReviewTool,
 } from "./pr.js";
 export {
   createGithubListIssuesTool,
@@ -13,7 +15,3 @@ export {
   createGithubListRunsTool,
   createGithubGetRunLogsTool,
 } from "./actions.js";
-export {
-  createGithubGetPRDiffTool,
-  createGithubPostPRReviewTool,
-} from "./review.js";

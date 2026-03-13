@@ -1,3 +1,4 @@
+import { checkGitRepo, isValidRef, runGit } from "./git-utils.js";
 import {
   error,
   execSafe,
@@ -7,42 +8,6 @@ import {
   resolveFilePath,
   success,
 } from "./utils.js";
-
-// `..` in a ref is interpreted as a range by git (e.g. main..HEAD) and must not
-// appear in a single ref name.
-function isValidRef(ref: string): boolean {
-  return /^[\w.\-/]+$/.test(ref) && !ref.includes("..");
-}
-
-async function runGit(
-  args: string[],
-  cwd: string,
-  opts: { signal?: AbortSignal; timeout?: number; maxBuffer?: number } = {},
-): Promise<{ stdout: string; stderr: string }> {
-  const result = await execSafe("git", args, {
-    cwd,
-    signal: opts.signal,
-    timeout: opts.timeout ?? 30_000,
-    maxBuffer: opts.maxBuffer,
-  });
-  if (result.timedOut) throw new Error("git command timed out");
-  if (result.exitCode !== 0)
-    throw new Error(
-      result.stderr.trim() || result.stdout.trim() || "git command failed",
-    );
-  return result;
-}
-
-async function checkGitRepo(
-  workspace: string,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  const r = await execSafe("git", ["rev-parse", "--git-dir"], {
-    cwd: workspace,
-    signal,
-  });
-  return r.exitCode === 0;
-}
 
 async function currentBranch(
   workspace: string,
@@ -460,13 +425,13 @@ export function createGitBlameTool(workspace: string) {
       let lineNum = 0;
 
       for (let i = 0; i < lines.length; i++) {
-        const l = lines[i]!;
+        const l = lines[i] ?? "";
         if (!l) continue;
 
         const headerMatch = l.match(/^([0-9a-f]{40})\s+\d+\s+(\d+)/);
         if (headerMatch) {
-          currentHash = headerMatch[1]!;
-          lineNum = Number.parseInt(headerMatch[2]!, 10);
+          currentHash = headerMatch[1] ?? "";
+          lineNum = Number.parseInt(headerMatch[2] ?? "0", 10);
           continue;
         }
 

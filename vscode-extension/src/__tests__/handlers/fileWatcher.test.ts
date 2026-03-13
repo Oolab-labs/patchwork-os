@@ -31,15 +31,18 @@ describe("watchFiles", () => {
     expect(vscode.workspace.createFileSystemWatcher).toHaveBeenCalled();
   });
 
-  it("requires both id and pattern", async () => {
+  it("throws when id missing", async () => {
     const { handlers } = setup();
-    let result = (await handlers["extension/watchFiles"]({ id: "w1" })) as any;
-    expect(result.watching).toBe(false);
+    await expect(
+      handlers["extension/watchFiles"]({ pattern: "**/*.ts" }),
+    ).rejects.toThrow("Both 'id' and 'pattern' are required");
+  });
 
-    result = (await handlers["extension/watchFiles"]({
-      pattern: "**/*.ts",
-    })) as any;
-    expect(result.watching).toBe(false);
+  it("throws when pattern missing", async () => {
+    const { handlers } = setup();
+    await expect(
+      handlers["extension/watchFiles"]({ id: "w1" }),
+    ).rejects.toThrow("Both 'id' and 'pattern' are required");
   });
 
   it("replaces existing watcher with same id", async () => {
@@ -52,44 +55,33 @@ describe("watchFiles", () => {
     expect(firstWatcher.dispose).toHaveBeenCalled();
   });
 
-  it("errors when no workspace folder", async () => {
+  it("throws when no workspace folder", async () => {
     vscode.workspace.workspaceFolders = undefined;
     const { handlers } = setup();
-    const result = (await handlers["extension/watchFiles"]({
-      id: "w1",
-      pattern: "**/*.ts",
-    })) as any;
-    expect(result.watching).toBe(false);
-    expect(result.error).toContain("workspace");
+    await expect(
+      handlers["extension/watchFiles"]({ id: "w1", pattern: "**/*.ts" }),
+    ).rejects.toThrow("No workspace folder open");
   });
 
-  it("errors when bridge not active", async () => {
+  it("throws when bridge not active", async () => {
     const { handlers, deps } = setup();
     deps.getBridge.mockReturnValue(null);
-    const result = (await handlers["extension/watchFiles"]({
-      id: "w1",
-      pattern: "**/*.ts",
-    })) as any;
-    expect(result.watching).toBe(false);
-    expect(result.error).toContain("Bridge");
+    await expect(
+      handlers["extension/watchFiles"]({ id: "w1", pattern: "**/*.ts" }),
+    ).rejects.toThrow("Bridge not active");
   });
 
-  it("respects MAX_WATCHERS limit", async () => {
+  it("throws when MAX_WATCHERS limit reached", async () => {
     const { handlers } = setup();
-    // Create 10 watchers (MAX_WATCHERS)
     for (let i = 0; i < 10; i++) {
       await handlers["extension/watchFiles"]({
         id: `w${i}`,
         pattern: `**/${i}.ts`,
       });
     }
-    // 11th should fail
-    const result = (await handlers["extension/watchFiles"]({
-      id: "w10",
-      pattern: "**/*.ts",
-    })) as any;
-    expect(result.watching).toBe(false);
-    expect(result.error).toContain("Maximum");
+    await expect(
+      handlers["extension/watchFiles"]({ id: "w10", pattern: "**/*.ts" }),
+    ).rejects.toThrow("Maximum");
   });
 
   it("sends notifications on file changes", async () => {
@@ -100,7 +92,6 @@ describe("watchFiles", () => {
       .results[0].value;
     const uri = Uri.file("/workspace/new.ts");
 
-    // Fire a create event
     watcher._fire("create", uri);
     expect(sendNotification).toHaveBeenCalledWith("extension/fileChanged", {
       id: "w1",
@@ -124,18 +115,18 @@ describe("unwatchFiles", () => {
     expect(watcher.dispose).toHaveBeenCalled();
   });
 
-  it("errors when watcher not found", async () => {
+  it("throws when watcher not found", async () => {
     const { handlers } = setup();
-    const result = (await handlers["extension/unwatchFiles"]({
-      id: "nope",
-    })) as any;
-    expect(result.unwatched).toBe(false);
+    await expect(
+      handlers["extension/unwatchFiles"]({ id: "nope" }),
+    ).rejects.toThrow("No watcher with this ID");
   });
 
-  it("errors when id missing", async () => {
+  it("throws when id missing", async () => {
     const { handlers } = setup();
-    const result = (await handlers["extension/unwatchFiles"]({})) as any;
-    expect(result.unwatched).toBe(false);
+    await expect(handlers["extension/unwatchFiles"]({})).rejects.toThrow(
+      "'id' is required",
+    );
   });
 });
 
@@ -160,7 +151,6 @@ describe("notify error handling", () => {
       .results[0].value;
     const uri = Uri.file("/workspace/file.ts");
 
-    // This should NOT throw even though sendNotification throws
     expect(() => watcher._fire("change", uri)).not.toThrow();
   });
 });
@@ -180,10 +170,9 @@ describe("disposeAll", () => {
       expect(w.dispose).toHaveBeenCalled();
     }
 
-    // After dispose, unwatching should fail (watchers cleared)
-    const result = (await handlers["extension/unwatchFiles"]({
-      id: "w1",
-    })) as any;
-    expect(result.unwatched).toBe(false);
+    // After dispose, unwatching should throw (watchers cleared)
+    await expect(
+      handlers["extension/unwatchFiles"]({ id: "w1" }),
+    ).rejects.toThrow("No watcher with this ID");
   });
 });

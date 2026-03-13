@@ -258,7 +258,7 @@ export function truncateOutput(
   // Walk back from the cut point to avoid splitting a multi-byte character.
   // UTF-8 continuation bytes have the form 10xxxxxx (0x80–0xBF); skip them.
   let end = maxBytes;
-  while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--;
+  while (end > 0 && ((buf[end] ?? 0) & 0xc0) === 0x80) end--;
   const sliced = buf.subarray(0, end).toString("utf-8");
   return { text: sliced, truncated: true };
 }
@@ -362,13 +362,13 @@ const LANGUAGE_ID_MAP: Record<string, string> = {
   ".toml": "toml",
 };
 
+export function languageIdFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  return LANGUAGE_ID_MAP[ext] || "plaintext";
+}
+
 export function makeRelative(absPath: string, workspace: string): string {
   return absPath.startsWith(workspace + path.sep)
     ? absPath.slice(workspace.length + 1)
     : absPath;
-}
-
-export function languageIdFromPath(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
-  return LANGUAGE_ID_MAP[ext] || "plaintext";
 }

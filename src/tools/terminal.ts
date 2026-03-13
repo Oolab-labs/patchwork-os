@@ -113,6 +113,34 @@ function validateTerminalCommandFlags(command: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Validate a terminal command string against security rules.
+ * Returns an error message if invalid, undefined if the command is safe.
+ */
+function validateCommand(
+  text: string,
+  commandAllowlist: string[],
+): string | undefined {
+  if (/[\n\r]/.test(text)) {
+    return "Command must not contain newlines. Send one command at a time.";
+  }
+  if (/[;&|`$()<>{}!\\~]/.test(text)) {
+    return (
+      "Command must not contain shell metacharacters (;&|`$()<>{}!\\~). " +
+      "These could chain additional commands beyond the allowlist."
+    );
+  }
+  const firstWord = text.trim().split(/\s+/)[0]?.toLowerCase();
+  if (firstWord && !commandAllowlist.includes(firstWord)) {
+    return (
+      `Command "${firstWord}" is not in the allowlist. ` +
+      `Allowed commands: ${commandAllowlist.join(", ")}. ` +
+      `Use --allow-command ${firstWord} to add it.`
+    );
+  }
+  return validateTerminalCommandFlags(text);
+}
+
 /** Apply prefix to a terminal name (no-op when prefix is empty).
  * When prefix is set and name is undefined, generates a unique prefixed default name
  * so the terminal remains discoverable by listTerminals for this session. */
@@ -552,29 +580,8 @@ export function createRunInTerminalTool(
       const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
       if (indexErr) return error(indexErr);
 
-      if (/[\n\r]/.test(command)) {
-        return error(
-          "Command must not contain newlines. Send one command at a time.",
-        );
-      }
-      if (/[;&|`$()<>{}!\\~]/.test(command)) {
-        return error(
-          "Command must not contain shell metacharacters (;&|`$()<>{}!\\~). " +
-            "These could chain additional commands beyond the allowlist.",
-        );
-      }
-
-      const firstWord = command.trim().split(/\s+/)[0]?.toLowerCase();
-      if (firstWord && !commandAllowlist.includes(firstWord)) {
-        return error(
-          `Command "${firstWord}" is not in the allowlist. ` +
-            `Allowed commands: ${commandAllowlist.join(", ")}. ` +
-            `Use --allow-command ${firstWord} to add it.`,
-        );
-      }
-
-      const flagErr = validateTerminalCommandFlags(command);
-      if (flagErr) return error(flagErr);
+      const cmdErr = validateCommand(command, commandAllowlist);
+      if (cmdErr) return error(cmdErr);
 
       try {
         const result = await extensionClient.executeInTerminal(
@@ -717,33 +724,8 @@ export function createSendTerminalCommandTool(
       const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
       if (indexErr) return error(indexErr);
 
-      // Block newlines — they would split into multiple independent commands in the terminal
-      if (/[\n\r]/.test(text)) {
-        return error(
-          "Terminal command must not contain newlines. Send one command at a time.",
-        );
-      }
-
-      // Block shell metacharacters — terminal runs in a shell, so these bypass the allowlist
-      if (/[;&|`$()<>{}!\\~]/.test(text)) {
-        return error(
-          "Terminal command must not contain shell metacharacters (;&|`$()<>{}!\\~). " +
-            "Use runCommand for safer execution without a shell.",
-        );
-      }
-
-      // Validate the first word of the command against the allowlist
-      const firstWord = text.trim().split(/\s+/)[0]?.toLowerCase();
-      if (firstWord && !commandAllowlist.includes(firstWord)) {
-        return error(
-          `Command "${firstWord}" is not in the allowlist. ` +
-            `Allowed commands: ${commandAllowlist.join(", ")}. ` +
-            `Use --allow-command ${firstWord} to add it.`,
-        );
-      }
-
-      const flagErr = validateTerminalCommandFlags(text);
-      if (flagErr) return error(flagErr);
+      const cmdErr = validateCommand(text, commandAllowlist);
+      if (cmdErr) return error(cmdErr);
 
       try {
         const result = await extensionClient.sendTerminalCommand(

@@ -75,13 +75,13 @@ function parseOutput(output: string, cwd: string): TestResult[] {
   >();
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
+    const line = lines[i] ?? "";
 
     // Match FAILED lines
     const failMatch = FAILED_RE.exec(line);
     if (failMatch) {
-      const filePath = failMatch[1]!;
-      const testName = failMatch[2]!;
+      const filePath = failMatch[1] ?? "";
+      const testName = failMatch[2] ?? "";
       const message = failMatch[3] ?? "";
       const key = `${filePath}::${testName}`;
       failures.set(key, {
@@ -96,8 +96,8 @@ function parseOutput(output: string, cwd: string): TestResult[] {
     // Look for traceback lines to extract file:line for failures
     const tbMatch = TRACEBACK_RE.exec(line);
     if (tbMatch) {
-      const tbFile = path.relative(cwd, path.resolve(cwd, tbMatch[1]!));
-      const tbLine = Number.parseInt(tbMatch[2]!, 10);
+      const tbFile = path.relative(cwd, path.resolve(cwd, tbMatch[1] ?? ""));
+      const tbLine = Number.parseInt(tbMatch[2] ?? "0", 10);
       // Associate with the most recent failure whose file matches exactly
       for (const [, failure] of failures) {
         if (failure.line === 1 && failure.file === tbFile) {
@@ -130,7 +130,7 @@ function parseOutput(output: string, cwd: string): TestResult[] {
     const counts: Record<string, number> = {};
     const re = /(\d+)\s+(failed|passed|skipped|error)/g;
     while ((match = re.exec(summaryLine)) !== null) {
-      counts[match[2]!] = Number.parseInt(match[1]!, 10);
+      counts[match[2] ?? ""] = Number.parseInt(match[1] ?? "0", 10);
     }
     // Add placeholder passed results for summary (no file:line for passed tests in -q output)
     const passedCount =

@@ -4,7 +4,7 @@ Complete feature reference for the Claude IDE Bridge MCP server and VS Code exte
 
 ## Overview
 
-Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 124+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
+Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 133+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
 
 ---
 
@@ -180,6 +180,15 @@ Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives
 | `getSecurityAdvisories` | Run security audit (npm audit / cargo audit / pip-audit) and return vulnerabilities with severity, CVE IDs, and remediation. Filter by minimum severity. |
 | `getGitHotspots` | Identify most frequently changed files in git history over a time window. Useful for prioritizing refactoring and code review focus. |
 | `getPRTemplate` | Generate a pull request body from git commit messages and diff stats. Supports bullet, prose, and conventional commit styles. Pairs with `githubCreatePR`. |
+
+### Code Analysis
+| Tool | Description |
+|------|-------------|
+| `getTypeSignature` | Extract the TypeScript/language type signature at a file position using VS Code hover. Returns the first fenced code block from hover markdown. |
+| `getImportTree` | BFS traversal of static/dynamic imports and CommonJS require() starting from a file. Returns tree with depths, cycle detection, and optional external packages. |
+| `getCodeCoverage` | Parse coverage reports (lcov, coverage-summary.json, clover.xml). Auto-detects report in workspace. Supports minCoverage filter and sorts worst-covered files first. |
+| `generateTests` | Extract exported symbols from a source file and generate a test scaffold (vitest/jest/pytest). Auto-detects framework from config files. |
+| `createIssueFromAIComment` | Create a GitHub issue from a cached `// AI:` comment. Derives title from the comment text; supports labels and assignee. Requires `gh` CLI. |
 
 ### AI Comments
 | Tool | Description |

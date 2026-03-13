@@ -4,20 +4,20 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v1.4.3 — 2026-03-13)
+## Current State (v1.5.0 — 2026-03-14)
 
-- 124+ MCP tools registered; extension-first with native fs fallback pattern established
-- New tools: `getDependencyTree`, `getSecurityAdvisories`, `getGitHotspots`, `getPRTemplate` — Phase 1 quick wins complete
+- 133+ MCP tools registered; extension-first with native fs fallback pattern established
+- Phase 1 new tools complete: `getTypeSignature`, `getImportTree`, `getCodeCoverage`, `generateTests`, `createIssueFromAIComment` (v1.5.0)
+- Earlier tools: `getDependencyTree`, `getSecurityAdvisories`, `getGitHotspots`, `getPRTemplate` (v1.4.x)
 - VS Code extension with full handler coverage; installable into VS Code, Windsurf, Cursor, and Antigravity
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period)
 - Multi-linter and multi-test-runner support (auto-detected)
 - GitHub integration (PRs, issues, actions)
 - Remote control support via start-all.sh orchestrator
-- Workspace snapshots and plan persistence
 - Activity logging with Prometheus metrics
 - Per-session stats + session-end UX (summary log + VS Code notification)
 - Claude Code Platform Integration fully shipped (skills, subagents, plugin, hooks, /ide-monitor)
-- 665 tests (419 bridge + 246 extension) across 43+10 files; CI on Node 20 + 22
+- 977 tests (712 bridge + 265 extension) across 62+16 files; CI on Node 20 + 22
 - Deep security hardening: SSRF three-layer defense (lexical + DNS pre-resolution + IP pinning), Origin header validation, rate limit error codes, JSON parse error responses, interpreter flag blocklist, backpressure guards, slow-loris mitigations
 
 ---

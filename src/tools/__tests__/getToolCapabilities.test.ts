@@ -138,7 +138,7 @@ describe("createGetToolCapabilitiesTool — extension disconnected", () => {
     const data = parse(await tool.handler());
     expect(data.extensionConnected).toBe(false);
     expect(data.features.fileOps).toContain("native fs fallback");
-    expect(data.features.lsp).toContain("grep fallback");
+    expect(data.features.lsp).toContain("unavailable");
     expect(data.features.terminalOutput).toContain("unavailable");
     expect(data.features.selection).toBe("stub-only");
     expect(data.features.dirtyCheck).toBe("mtime-heuristic");

@@ -55,8 +55,8 @@ function parseOutput(output: string, cwd: string): TestResult[] {
     const match = RESULT_RE.exec(line);
     if (!match) continue;
 
-    const name = match[1]!;
-    const outcome = match[2]!;
+    const name = match[1] ?? "";
+    const outcome = match[2] ?? "";
     let status: TestStatus = "passed";
     if (outcome === "FAILED") {
       status = "failed";
@@ -79,15 +79,15 @@ function parseOutput(output: string, cwd: string): TestResult[] {
 
   // Second pass: extract panic locations for failed tests
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
+    const line = lines[i] ?? "";
 
     // Try old-style panic format
     let panicMatch = PANIC_RE.exec(line);
     if (panicMatch) {
-      const message = panicMatch[1]!;
-      const file = path.relative(cwd, path.resolve(cwd, panicMatch[2]!));
-      const lineNum = Number.parseInt(panicMatch[3]!, 10);
-      const col = Number.parseInt(panicMatch[4]!, 10);
+      const message = panicMatch[1] ?? "";
+      const file = path.relative(cwd, path.resolve(cwd, panicMatch[2] ?? ""));
+      const lineNum = Number.parseInt(panicMatch[3] ?? "0", 10);
+      const col = Number.parseInt(panicMatch[4] ?? "0", 10);
 
       // Find the matching failed test result and update it
       const failResult = findNearestFailure(results, failedTests, file);
@@ -103,9 +103,9 @@ function parseOutput(output: string, cwd: string): TestResult[] {
     // Try new-style panic format
     panicMatch = PANIC_NEW_RE.exec(line);
     if (panicMatch) {
-      const file = path.relative(cwd, path.resolve(cwd, panicMatch[1]!));
-      const lineNum = Number.parseInt(panicMatch[2]!, 10);
-      const col = Number.parseInt(panicMatch[3]!, 10);
+      const file = path.relative(cwd, path.resolve(cwd, panicMatch[1] ?? ""));
+      const lineNum = Number.parseInt(panicMatch[2] ?? "0", 10);
+      const col = Number.parseInt(panicMatch[3] ?? "0", 10);
       // Message is on the next line
       const message = lines[i + 1]?.trim() ?? "";
 
@@ -132,7 +132,7 @@ function findNearestFailure(
   const fileStem = file.replace(/\.rs$/, "").replace(/\//g, "::");
   for (const r of results) {
     if (r.status === "failed" && r.file === "" && failedTests.has(r.name)) {
-      if (fileStem.endsWith(r.name.split("::")[0]!)) {
+      if (fileStem.endsWith(r.name.split("::")[0] ?? "")) {
         return r;
       }
     }

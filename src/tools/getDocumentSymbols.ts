@@ -107,8 +107,8 @@ export function createGetDocumentSymbolsTool(
         if (!line) continue;
         const m = line.match(/^(\d+):(.*)$/);
         if (!m) continue;
-        const lineNum = Number.parseInt(m[1]!, 10);
-        const text = m[2]!.trim();
+        const lineNum = Number.parseInt(m[1] ?? "0", 10);
+        const text = (m[2] ?? "").trim();
 
         // Extract symbol name and kind from the matched line
         const symMatch = text.match(
@@ -116,8 +116,8 @@ export function createGetDocumentSymbolsTool(
         );
         if (!symMatch) continue;
 
-        const kindRaw = symMatch[1]!;
-        const name = symMatch[2]!;
+        const kindRaw = symMatch[1] ?? "";
+        const name = symMatch[2] ?? "";
         const kind = kindToSymbolKind(kindRaw);
 
         symbols.push({ name, kind, line: lineNum, parent: null });

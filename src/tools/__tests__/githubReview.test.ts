@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createGithubGetPRDiffTool,
   createGithubPostPRReviewTool,
-} from "../github/review.js";
+} from "../github/pr.js";
 
 // Mock execSafe at the utils module level
 vi.mock("../utils.js", async (importOriginal) => {

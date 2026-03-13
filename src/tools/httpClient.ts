@@ -409,14 +409,14 @@ function parseHttpFileContent(content: string): ParsedRequest[] {
     const match = REQUEST_LINE_RE.exec(requestLine);
     if (!match) continue; // Section has no valid request line
 
-    const method = match[1]!.toUpperCase();
-    const url = match[2]!;
+    const method = (match[1] ?? "").toUpperCase();
+    const url = match[2] ?? "";
     i++;
 
     // Parse headers: non-blank lines immediately following the request line
     const headers: Record<string, string> = {};
     while (i < lines.length) {
-      const line = lines[i]!.trim();
+      const line = (lines[i] ?? "").trim();
       if (!line) break; // blank line separates headers from body
       const colonIdx = line.indexOf(":");
       if (colonIdx === -1) break; // not a header line
@@ -430,7 +430,7 @@ function parseHttpFileContent(content: string): ParsedRequest[] {
     // Everything remaining is the body
     const bodyLines: string[] = [];
     while (i < lines.length) {
-      bodyLines.push(lines[i]!);
+      bodyLines.push(lines[i] ?? "");
       i++;
     }
     const body = bodyLines.join("\n").trim() || undefined;

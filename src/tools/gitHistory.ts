@@ -1,3 +1,4 @@
+import { isValidRef } from "./git-utils.js";
 import {
   execSafe,
   optionalBool,
@@ -8,9 +9,6 @@ import {
   success,
   truncateOutput,
 } from "./utils.js";
-
-// Conservative ref/hash validation — matches the pattern in gitWrite.ts
-const VALID_REF_RE = /^[\w.\-/]+$/;
 
 const MAX_OUTPUT_BYTES = 500 * 1024;
 
@@ -49,7 +47,7 @@ export function createGetCommitDetailsTool(workspace: string) {
 
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const hash = requireString(args, "commitHash", 64);
-      if (!VALID_REF_RE.test(hash)) {
+      if (!isValidRef(hash)) {
         return success({ error: "Invalid commit hash" });
       }
 
@@ -137,8 +135,8 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
       const ref1 = requireString(args, "ref1", 256);
       const ref2 = requireString(args, "ref2", 256);
 
-      if (!VALID_REF_RE.test(ref1)) return success({ error: "Invalid ref1" });
-      if (!VALID_REF_RE.test(ref2)) return success({ error: "Invalid ref2" });
+      if (!isValidRef(ref1)) return success({ error: "Invalid ref1" });
+      if (!isValidRef(ref2)) return success({ error: "Invalid ref2" });
 
       const rawPath = optionalString(args, "filePath");
       const filterPath = rawPath

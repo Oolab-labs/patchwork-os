@@ -87,7 +87,7 @@ export function createGetToolCapabilitiesTool(
               : "no-op (edits already on disk via editText)",
           lsp: extensionClient.isConnected()
             ? "available (VS Code LSP)"
-            : "partial (lexical grep fallback for goToDefinition, findReferences, searchWorkspaceSymbols — hover, code actions, rename still require extension)",
+            : "unavailable (requires extension)",
           terminalOutput: extensionClient.isConnected()
             ? "available (runInTerminal uses VS Code shell integration; getTerminalOutput uses proposed API)"
             : "unavailable (requires extension)",
@@ -141,7 +141,6 @@ export function createGetToolCapabilitiesTool(
           ],
           diagnostics: [
             "getDiagnostics",
-            "diffDebug",
             "runTests",
             ...(extensionClient.isConnected() ? ["watchDiagnostics"] : []),
           ],
@@ -161,28 +160,13 @@ export function createGetToolCapabilitiesTool(
                 "getInlayHints",
                 "getHoverAtCursor",
               ]
-            : [
-                "getDocumentSymbols (grep fallback)",
-                "goToDefinition (grep fallback)",
-                "findReferences (grep fallback)",
-                "searchWorkspaceSymbols (grep fallback)",
-              ],
+            : [],
           planning: [
-            "checkScope",
-            "expandScope",
             "createPlan",
             "updatePlan",
             "getPlan",
             "deletePlan",
             "listPlans",
-          ],
-          snapshots: [
-            "createSnapshot",
-            "listSnapshots",
-            "restoreSnapshot",
-            "deleteSnapshot",
-            "showSnapshot",
-            "diffSnapshot",
           ],
           terminal: extensionClient.isConnected()
             ? [
@@ -205,6 +189,17 @@ export function createGetToolCapabilitiesTool(
               ]
             : [],
           http: ["sendHttpRequest", "parseHttpFile"],
+          analysis: [
+            "getTypeSignature",
+            "getImportTree",
+            "getCodeCoverage",
+            "generateTests",
+            "getDependencyTree",
+            "getGitHotspots",
+            "getSecurityAdvisories",
+            "getPRTemplate",
+            ...(probes.gh ? ["createIssueFromAIComment"] : []),
+          ],
           ...(probes.gh
             ? {
                 github: [

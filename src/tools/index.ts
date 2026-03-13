@@ -3,13 +3,8 @@ import type { Config } from "../config.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { FileLock } from "../fileLock.js";
 import type { ProbeResults } from "../probe.js";
-import type { McpTransport, ToolHandler } from "../transport.js";
+import type { McpTransport } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
-import { createGetDependencyTreeTool } from "./getDependencyTree.js";
-import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
-import { createGetGitHotspotsTool } from "./getGitHotspots.js";
-import { createGetPRTemplateTool } from "./getPRTemplate.js";
-import { createGetAICommentsTool } from "./aiComments.js";
 import { createBridgeStatusTool } from "./bridgeStatus.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
 import {
@@ -28,7 +23,6 @@ import {
   createClearEditorDecorationsTool,
   createSetEditorDecorationsTool,
 } from "./decorations.js";
-import { createDiffDebugTool } from "./diffDebugger.js";
 import { createEditTextTool } from "./editText.js";
 import {
   createCreateFileTool,
@@ -38,21 +32,26 @@ import {
 import { createUnwatchFilesTool, createWatchFilesTool } from "./fileWatcher.js";
 import { createFindFilesTool } from "./findFiles.js";
 import { createFixAllLintErrorsTool } from "./fixAllLintErrors.js";
-import { createCheckScopeTool, createExpandScopeTool } from "./flowGuardian.js";
 import { createFormatDocumentTool } from "./formatDocument.js";
 import { createGetBufferContentTool } from "./getBufferContent.js";
 import {
   createGetCurrentSelectionTool,
   createGetLatestSelectionTool,
 } from "./getCurrentSelection.js";
+import { createGenerateTestsTool } from "./generateTests.js";
+import { createGetCodeCoverageTool } from "./getCodeCoverage.js";
+import { createGetDependencyTreeTool } from "./getDependencyTree.js";
 import { createGetDiagnosticsTool } from "./getDiagnostics.js";
 import { createGetDocumentSymbolsTool } from "./getDocumentSymbols.js";
 import { createGetFileTreeTool } from "./getFileTree.js";
 import { createGetGitDiffTool } from "./getGitDiff.js";
+import { createGetGitHotspotsTool } from "./getGitHotspots.js";
 import { createGetGitLogTool } from "./getGitLog.js";
 import { createGetGitStatusTool } from "./getGitStatus.js";
 import { createGetOpenEditorsTool } from "./getOpenEditors.js";
+import { createGetPRTemplateTool } from "./getPRTemplate.js";
 import { createGetProjectInfoTool } from "./getProjectInfo.js";
+import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
 import { createGetToolCapabilitiesTool } from "./getToolCapabilities.js";
 import { createGetWorkspaceFoldersTool } from "./getWorkspaceFolders.js";
 import {
@@ -85,7 +84,10 @@ import {
   createGithubPostPRReviewTool,
   createGithubViewPRTool,
 } from "./github/index.js";
+import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
 import { createGetHoverAtCursorTool } from "./hoverAtCursor.js";
+import { createGetImportTreeTool } from "./getImportTree.js";
+import { createGetTypeSignatureTool } from "./getTypeSignature.js";
 import {
   createParseHttpFileTool,
   createSendHttpRequestTool,
@@ -138,14 +140,6 @@ import {
   createGetWorkspaceSettingsTool,
   createSetWorkspaceSettingTool,
 } from "./workspaceSettings.js";
-import {
-  createCreateSnapshotTool,
-  createDeleteSnapshotTool,
-  createDiffSnapshotTool,
-  createListSnapshotsTool,
-  createRestoreSnapshotTool,
-  createShowSnapshotTool,
-} from "./workspaceSnapshots.js";
 
 export function registerAllTools(
   transport: McpTransport,
@@ -169,78 +163,6 @@ export function registerAllTools(
   );
 
   const testsTool = createRunTestsTool(workspace, probes);
-
-  // Combined handler that merges lint diagnostics + test failures for diffDebugger.
-  // Uses allSettled so one failing doesn't lose the other's results.
-  const combinedDiagnosticsFn: ToolHandler = async (_args, signal) => {
-    const [diagSettled, testSettled] = await Promise.allSettled([
-      diagnosticsTool.handler({}, signal),
-      testsTool.handler({}, signal),
-    ]);
-
-    const warnings: string[] = [];
-    let diagnostics: unknown[] = [];
-
-    // Parse diagnostics from the lint result
-    if (diagSettled.status === "fulfilled") {
-      try {
-        const rawText = diagSettled.value.content?.[0]?.text;
-        if (rawText) {
-          const parsed = JSON.parse(rawText);
-          diagnostics = parsed.diagnostics ?? [];
-        }
-      } catch (e) {
-        warnings.push(
-          `Failed to parse lint diagnostics: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
-    } else {
-      warnings.push(
-        `Lint diagnostics failed: ${diagSettled.reason instanceof Error ? diagSettled.reason.message : String(diagSettled.reason)}`,
-      );
-    }
-
-    // Convert test failures to diagnostic shape and merge
-    if (testSettled.status === "fulfilled") {
-      try {
-        const rawText = testSettled.value.content?.[0]?.text;
-        if (rawText) {
-          const parsed = JSON.parse(rawText);
-          const failures = parsed.failures ?? [];
-          for (const f of failures) {
-            diagnostics.push({
-              file: f.file ?? "",
-              line: f.line ?? 1,
-              column: f.column ?? 1,
-              severity: "error",
-              message: `[${f.source}] ${f.name}: ${f.message}`,
-              source: f.source,
-            });
-          }
-        }
-      } catch (e) {
-        warnings.push(
-          `Failed to parse test results: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
-    } else {
-      warnings.push(
-        `Test runner failed: ${testSettled.reason instanceof Error ? testSettled.reason.message : String(testSettled.reason)}`,
-      );
-    }
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            diagnostics,
-            ...(warnings.length > 0 && { warnings }),
-          }),
-        },
-      ],
-    };
-  };
 
   const tools = [
     createOpenFileTool(
@@ -294,17 +216,7 @@ export function registerAllTools(
     createGetCallHierarchyTool(workspace, extensionClient),
     // The Chosen Five
     ...createPlanTools(workspace),
-    createGetAICommentsTool(workspace, extensionClient),
-    createCheckScopeTool(workspace),
-    createExpandScopeTool(workspace),
-    createCreateSnapshotTool(workspace),
-    createListSnapshotsTool(workspace),
-    createDiffSnapshotTool(workspace),
-    createRestoreSnapshotTool(workspace),
-    createDeleteSnapshotTool(workspace),
-    createShowSnapshotTool(workspace),
     testsTool,
-    createDiffDebugTool(workspace, combinedDiagnosticsFn),
     ...(activityLog ? [createGetActivityLogTool(activityLog)] : []),
     createBridgeStatusTool(extensionClient, sessions),
     createWatchFilesTool(extensionClient),
@@ -348,6 +260,8 @@ export function registerAllTools(
     createListVSCodeCommandsTool(extensionClient),
     createGetInlayHintsTool(workspace, extensionClient),
     createGetHoverAtCursorTool(extensionClient),
+    createGetTypeSignatureTool(extensionClient),
+    createGetImportTreeTool(workspace),
     createGetTypeHierarchyTool(workspace, extensionClient),
     createGetDebugStateTool(extensionClient),
     createEvaluateInDebuggerTool(extensionClient),
@@ -369,6 +283,8 @@ export function registerAllTools(
     createGetSecurityAdvisoriesTool(workspace, probes),
     createGetGitHotspotsTool(workspace),
     createGetPRTemplateTool(workspace),
+    createGetCodeCoverageTool(workspace),
+    createGenerateTestsTool(workspace),
     ...(probes.gh
       ? [
           createGithubCreatePRTool(workspace),
@@ -382,6 +298,10 @@ export function registerAllTools(
           createGithubGetRunLogsTool(workspace),
           createGithubGetPRDiffTool(workspace),
           createGithubPostPRReviewTool(workspace),
+          createCreateIssueFromAICommentTool(
+            workspace,
+            extensionClient.latestAIComments,
+          ),
         ]
       : []),
   ];

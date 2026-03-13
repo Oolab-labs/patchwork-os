@@ -54,6 +54,107 @@ function sendDebugNotification(deps: DebugHandlerDeps): void {
   });
 }
 
+type TimedRequest = (command: string, args?: unknown) => Promise<unknown>;
+
+async function getActiveThreadId(timedRequest: TimedRequest): Promise<number> {
+  const threads = await timedRequest("threads");
+  // biome-ignore lint/suspicious/noExplicitAny: DAP protocol response has no TS types
+  const list = (threads as any)?.threads;
+  return Array.isArray(list) && list.length > 0
+    ? ((list[0] as Record<string, unknown>).id as number)
+    : 1;
+}
+
+async function collectCallStack(
+  threadId: number,
+  timedRequest: TimedRequest,
+): Promise<{
+  callStack: unknown[];
+  pausedAt: unknown;
+  topFrame: Record<string, unknown> | null;
+}> {
+  let frames: Array<Record<string, unknown>> = [];
+  try {
+    const stackResponse = await timedRequest("stackTrace", {
+      threadId,
+      levels: 20,
+    });
+    // biome-ignore lint/suspicious/noExplicitAny: DAP protocol response has no TS types
+    const raw = stackResponse as any;
+    frames = Array.isArray(raw?.stackFrames) ? raw.stackFrames : [];
+  } catch {
+    // Stack trace unavailable — session may not be paused
+  }
+
+  const callStack = frames.map((f) => ({
+    id: f.id,
+    name: f.name,
+    file: (f.source as Record<string, unknown> | undefined)?.path ?? "",
+    line: f.line,
+    column: f.column,
+  }));
+
+  const topFrame = frames[0] ?? null;
+  const pausedAt = topFrame
+    ? {
+        file:
+          (topFrame.source as Record<string, unknown> | undefined)?.path ?? "",
+        line: topFrame.line,
+        column: topFrame.column,
+      }
+    : undefined;
+
+  return { callStack, pausedAt, topFrame };
+}
+
+async function inspectScopes(
+  topFrame: Record<string, unknown>,
+  timedRequest: TimedRequest,
+): Promise<unknown[]> {
+  const scopes: unknown[] = [];
+  try {
+    const scopesResponse = await timedRequest("scopes", {
+      frameId: topFrame.id,
+    });
+    // biome-ignore lint/suspicious/noExplicitAny: DAP protocol response has no TS types
+    const rawRes = scopesResponse as any;
+    const rawScopes: Array<Record<string, unknown>> = Array.isArray(
+      rawRes?.scopes,
+    )
+      ? rawRes.scopes
+      : [];
+
+    for (const scope of rawScopes.slice(0, 3)) {
+      try {
+        const varsResponse = await timedRequest("variables", {
+          variablesReference: scope.variablesReference,
+          count: 50,
+        });
+        // biome-ignore lint/suspicious/noExplicitAny: DAP protocol response has no TS types
+        const rawVars = varsResponse as any;
+        const vars: Array<Record<string, unknown>> = Array.isArray(
+          rawVars?.variables,
+        )
+          ? rawVars.variables
+          : [];
+        scopes.push({
+          name: scope.name,
+          variables: vars.slice(0, 50).map((v) => ({
+            name: v.name,
+            value: v.value,
+            type: v.type ?? "",
+          })),
+        });
+      } catch {
+        // Variables unavailable for this scope
+      }
+    }
+  } catch {
+    // Scopes unavailable — continue with empty scopes
+  }
+  return scopes;
+}
+
 export const handleGetDebugState: RequestHandler = async () => {
   const session = vscode.debug.activeDebugSession;
   const breakpoints = vscode.debug.breakpoints
@@ -72,92 +173,23 @@ export const handleGetDebugState: RequestHandler = async () => {
     return { hasActiveSession: false, isPaused: false, breakpoints };
   }
 
-  let callStack: unknown[] = [];
-  const scopes: unknown[] = [];
-  let pausedAt: unknown = undefined;
-
-  // Helper to call customRequest with a timeout so a hung adapter doesn't block forever.
-  const timedRequest = (command: string, args?: unknown) =>
+  const timedRequest: TimedRequest = (command, args) =>
     withTimeout(
-      session.customRequest(command, args),
+      Promise.resolve(session.customRequest(command, args)),
       CUSTOM_REQUEST_TIMEOUT_MS,
     );
 
+  let callStack: unknown[] = [];
+  let pausedAt: unknown = undefined;
+  let scopes: unknown[] = [];
+
   try {
-    const threads = await timedRequest("threads");
-    const threadId: number =
-      Array.isArray((threads as any)?.threads) &&
-      (threads as any).threads.length > 0
-        ? (((threads as any).threads[0] as Record<string, unknown>)
-            .id as number)
-        : 1;
-
-    let frames: Array<Record<string, unknown>> = [];
-    try {
-      const stackResponse = await timedRequest("stackTrace", {
-        threadId,
-        levels: 20,
-      });
-      frames = Array.isArray((stackResponse as any)?.stackFrames)
-        ? (stackResponse as any).stackFrames
-        : [];
-    } catch {
-      // Stack trace unavailable — session may not be paused
-    }
-
-    callStack = frames.map((f) => ({
-      id: f.id,
-      name: f.name,
-      file: (f.source as Record<string, unknown> | undefined)?.path ?? "",
-      line: f.line,
-      column: f.column,
-    }));
-
-    if (frames.length > 0) {
-      const topFrame = frames[0];
-      pausedAt = {
-        file:
-          (topFrame.source as Record<string, unknown> | undefined)?.path ?? "",
-        line: topFrame.line,
-        column: topFrame.column,
-      };
-
-      try {
-        const scopesResponse = await timedRequest("scopes", {
-          frameId: topFrame.id,
-        });
-        const rawScopes: Array<Record<string, unknown>> = Array.isArray(
-          (scopesResponse as any)?.scopes,
-        )
-          ? (scopesResponse as any).scopes
-          : [];
-
-        for (const scope of rawScopes.slice(0, 3)) {
-          try {
-            const varsResponse = await timedRequest("variables", {
-              variablesReference: scope.variablesReference,
-              count: 50,
-            });
-            const vars: Array<Record<string, unknown>> = Array.isArray(
-              (varsResponse as any)?.variables,
-            )
-              ? (varsResponse as any).variables
-              : [];
-            scopes.push({
-              name: scope.name,
-              variables: vars.slice(0, 50).map((v) => ({
-                name: v.name,
-                value: v.value,
-                type: v.type ?? "",
-              })),
-            });
-          } catch {
-            // Variables unavailable for this scope
-          }
-        }
-      } catch {
-        // Scopes unavailable — continue with empty scopes
-      }
+    const threadId = await getActiveThreadId(timedRequest);
+    const stack = await collectCallStack(threadId, timedRequest);
+    callStack = stack.callStack;
+    pausedAt = stack.pausedAt;
+    if (stack.topFrame) {
+      scopes = await inspectScopes(stack.topFrame, timedRequest);
     }
   } catch {
     // Session may not be paused or adapter may not support these requests

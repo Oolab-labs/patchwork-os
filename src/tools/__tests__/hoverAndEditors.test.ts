@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ExtensionTimeoutError } from "../../extensionClient.js";
 import { createGetOpenEditorsTool } from "../getOpenEditors.js";
 import { createGetHoverAtCursorTool } from "../hoverAtCursor.js";
+import { createSearchWorkspaceSymbolsTool } from "../lsp.js";
 
 // Mock node:fs so stat doesn't hit the real filesystem
 vi.mock("node:fs", async (importOriginal) => {
@@ -20,6 +21,37 @@ vi.mock("node:fs", async (importOriginal) => {
 function parse(r: { content: Array<{ text: string }> }) {
   return JSON.parse(r.content[0]?.text ?? "{}");
 }
+
+// ── searchWorkspaceSymbols ────────────────────────────────────────────────────
+
+function makeSymbolClient(opts: { connected: boolean }) {
+  return {
+    isConnected: vi.fn(() => opts.connected),
+    searchSymbols: vi.fn(async () => ({ symbols: [], count: 0 })),
+  } as any;
+}
+
+describe("createSearchWorkspaceSymbolsTool", () => {
+  it("returns error for empty query string", async () => {
+    const tool = createSearchWorkspaceSymbolsTool(
+      "/ws",
+      makeSymbolClient({ connected: true }),
+    );
+    const result = await tool.handler({ query: "   " });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("empty");
+  });
+
+  it("returns extensionRequired when extension disconnected", async () => {
+    const tool = createSearchWorkspaceSymbolsTool(
+      "/ws",
+      makeSymbolClient({ connected: false }),
+    );
+    const result = await tool.handler({ query: "MyClass" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("extension");
+  });
+});
 
 // ── hoverAtCursor ─────────────────────────────────────────────────────────────
 

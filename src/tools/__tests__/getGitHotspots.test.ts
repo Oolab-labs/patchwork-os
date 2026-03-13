@@ -5,8 +5,8 @@ vi.mock("../utils.js", async (importOriginal) => {
   return { ...actual, execSafe: vi.fn() };
 });
 
-import { execSafe } from "../utils.js";
 import { createGetGitHotspotsTool } from "../getGitHotspots.js";
+import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 
@@ -75,15 +75,13 @@ describe("getGitHotspots", () => {
   });
 
   it("returns error on git log timeout", async () => {
-    mockExecSafe
-      .mockResolvedValueOnce(ok(".git"))
-      .mockResolvedValueOnce({
-        stdout: "",
-        stderr: "",
-        exitCode: 0,
-        timedOut: true,
-        durationMs: 15000,
-      });
+    mockExecSafe.mockResolvedValueOnce(ok(".git")).mockResolvedValueOnce({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      timedOut: true,
+      durationMs: 15000,
+    });
 
     const tool = createGetGitHotspotsTool(WORKSPACE);
     const result = await tool.handler({});

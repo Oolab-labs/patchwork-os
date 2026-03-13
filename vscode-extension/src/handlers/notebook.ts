@@ -104,16 +104,28 @@ export function createNotebookHandlers(): {
         disposable.dispose();
         resolve();
       };
-      const disposable = vscode.notebooks.onDidChangeNotebookCellExecutionState(
-        (e) => {
-          if (
-            e.cell === cell &&
-            e.state === vscode.NotebookCellExecutionState.Idle
-          ) {
-            finish();
-          }
-        },
-      );
+      // onDidChangeNotebookCellExecutionState was removed in VS Code 1.88+; fall back to a no-op disposable
+      const notebooks = vscode.notebooks as unknown as {
+        onDidChangeNotebookCellExecutionState?: (
+          cb: (e: { cell: vscode.NotebookCell; state: number }) => void,
+        ) => vscode.Disposable;
+      };
+      const disposable = notebooks.onDidChangeNotebookCellExecutionState
+        ? notebooks.onDidChangeNotebookCellExecutionState((e) => {
+            const IdleState = (
+              vscode as unknown as {
+                NotebookCellExecutionState?: { Idle: number };
+              }
+            ).NotebookCellExecutionState?.Idle;
+            if (
+              e.cell === cell &&
+              IdleState !== undefined &&
+              e.state === IdleState
+            ) {
+              finish();
+            }
+          })
+        : { dispose: () => {} };
       const timer = setTimeout(finish, timeoutMs);
     });
 

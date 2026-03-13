@@ -2,6 +2,44 @@ import * as vscode from "vscode";
 import type { RequestHandler } from "../types";
 import { requireNumber, requireString } from "./validation";
 
+type FlatSymbol = {
+  name: string;
+  kind: string;
+  detail: string | null;
+  line: number;
+  column: number;
+  endLine: number;
+  endColumn: number;
+  selectionLine: number;
+  selectionColumn: number;
+  parent: string | null;
+};
+
+function flattenSymbols(
+  syms: vscode.DocumentSymbol[],
+  parent: string | null,
+): FlatSymbol[] {
+  const result: FlatSymbol[] = [];
+  for (const sym of syms) {
+    result.push({
+      name: sym.name,
+      kind: vscode.SymbolKind[sym.kind],
+      detail: sym.detail || null,
+      line: sym.range.start.line + 1,
+      column: sym.range.start.character + 1,
+      endLine: sym.range.end.line + 1,
+      endColumn: sym.range.end.character + 1,
+      selectionLine: sym.selectionRange.start.line + 1,
+      selectionColumn: sym.selectionRange.start.character + 1,
+      parent,
+    });
+    if (sym.children && sym.children.length > 0) {
+      result.push(...flattenSymbols(sym.children, sym.name));
+    }
+  }
+  return result;
+}
+
 interface LspHandlerDeps {
   log: (message: string) => void;
 }
@@ -106,7 +144,7 @@ export function createLspHandlers(
 
     return {
       contents,
-      range: hovers[0].range
+      range: hovers[0]?.range
         ? {
             startLine: hovers[0].range.start.line + 1,
             startColumn: hovers[0].range.start.character + 1,
@@ -286,44 +324,6 @@ export function createLspHandlers(
 
     if (!symbols || symbols.length === 0) return { symbols: [], count: 0 };
 
-    type FlatSymbol = {
-      name: string;
-      kind: string;
-      detail: string | null;
-      line: number;
-      column: number;
-      endLine: number;
-      endColumn: number;
-      selectionLine: number;
-      selectionColumn: number;
-      parent: string | null;
-    };
-
-    function flattenSymbols(
-      syms: vscode.DocumentSymbol[],
-      parent: string | null,
-    ): FlatSymbol[] {
-      const result: FlatSymbol[] = [];
-      for (const sym of syms) {
-        result.push({
-          name: sym.name,
-          kind: vscode.SymbolKind[sym.kind],
-          detail: sym.detail || null,
-          line: sym.range.start.line + 1,
-          column: sym.range.start.character + 1,
-          endLine: sym.range.end.line + 1,
-          endColumn: sym.range.end.character + 1,
-          selectionLine: sym.selectionRange.start.line + 1,
-          selectionColumn: sym.selectionRange.start.character + 1,
-          parent,
-        });
-        if (sym.children && sym.children.length > 0) {
-          result.push(...flattenSymbols(sym.children, sym.name));
-        }
-      }
-      return result;
-    }
-
     const flat = flattenSymbols(symbols, null);
     return { symbols: flat, count: flat.length };
   }
@@ -351,7 +351,7 @@ export function createLspHandlers(
 
     if (!items || items.length === 0) return null;
 
-    const item = items[0]!;
+    const item = items[0];
     const symbol = {
       name: item.name,
       kind: vscode.SymbolKind[item.kind],

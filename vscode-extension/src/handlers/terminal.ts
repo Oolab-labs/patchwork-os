@@ -39,7 +39,7 @@ export function readLastLines(buf: TerminalBuffer, count: number): string[] {
   let readIdx =
     (buf.writeIndex - available + buf.lines.length) % buf.lines.length;
   for (let i = 0; i < available; i++) {
-    result.push(buf.lines[readIdx]!);
+    result.push(buf.lines[readIdx] ?? "");
     readIdx = (readIdx + 1) % buf.lines.length;
   }
   return result;

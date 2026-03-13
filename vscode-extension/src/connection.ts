@@ -502,14 +502,11 @@ export class BridgeConnection {
                 ? `, ${errorCount} error${errorCount === 1 ? "" : "s"}`
                 : "";
             const notification = `Claude session ended — ${callCount} tool${callCount === 1 ? "" : "s"}${errorPart}, ${formatDuration(durationMs)}`;
-            vscode.window
-              .showInformationMessage(notification, "Show Logs")
-              .then((choice) => {
-                if (choice === "Show Logs") this.output?.show();
-              })
-              .catch(() => {
-                /* best-effort */
-              });
+            void Promise.resolve(
+              vscode.window.showInformationMessage(notification, "Show Logs"),
+            ).then((choice) => {
+              if (choice === "Show Logs") this.output?.show();
+            });
           }
         }
         return;
@@ -616,6 +613,7 @@ export class BridgeConnection {
     if (this.lockPollTimer) return;
     this.lockPollTimer = setInterval(() => {
       if (this.disposed) {
+        // biome-ignore lint/style/noNonNullAssertion: lockPollTimer is non-null inside its own interval callback
         clearInterval(this.lockPollTimer!);
         this.lockPollTimer = null;
         return;

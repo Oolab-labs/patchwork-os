@@ -14,8 +14,8 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 import { existsSync } from "node:fs";
-import { execSafe } from "../utils.js";
 import { createGetDependencyTreeTool } from "../getDependencyTree.js";
+import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 const mockExistsSync = vi.mocked(existsSync);
@@ -84,9 +84,7 @@ describe("getDependencyTree", () => {
   });
 
   it("uses cargo when Cargo.toml found", async () => {
-    mockExistsSync.mockImplementation((p) =>
-      String(p).endsWith("Cargo.toml"),
-    );
+    mockExistsSync.mockImplementation((p) => String(p).endsWith("Cargo.toml"));
     mockExecSafe.mockResolvedValueOnce({
       stdout: JSON.stringify({
         packages: [
@@ -113,7 +111,9 @@ describe("getDependencyTree", () => {
   it("respects explicit packageManager arg", async () => {
     mockExistsSync.mockReturnValue(false); // no manifest
     mockExecSafe.mockResolvedValueOnce({
-      stdout: JSON.stringify({ packages: [{ name: "x", version: "1.0.0", dependencies: [] }] }),
+      stdout: JSON.stringify({
+        packages: [{ name: "x", version: "1.0.0", dependencies: [] }],
+      }),
       stderr: "",
       exitCode: 0,
       timedOut: false,

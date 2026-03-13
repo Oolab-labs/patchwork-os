@@ -16,25 +16,22 @@ export function createFileWatcherHandlers(deps: FileWatcherDeps) {
     const id = params.id as string;
 
     if (!pattern || !id) {
-      return { watching: false, error: "Both 'id' and 'pattern' are required" };
+      throw new Error("Both 'id' and 'pattern' are required");
     }
     if (
       typeof pattern !== "string" ||
       pattern.startsWith("/") ||
       pattern.includes("..")
     ) {
-      return {
-        watching: false,
-        error:
-          "pattern must be a relative glob (e.g. '**/*.ts') — absolute paths and '..' are not allowed",
-      };
+      throw new Error(
+        "pattern must be a relative glob (e.g. '**/*.ts') — absolute paths and '..' are not allowed",
+      );
     }
 
     if (activeWatchers.size >= MAX_WATCHERS && !activeWatchers.has(id)) {
-      return {
-        watching: false,
-        error: `Maximum ${MAX_WATCHERS} concurrent watchers reached. Unwatch one first.`,
-      };
+      throw new Error(
+        `Maximum ${MAX_WATCHERS} concurrent watchers reached. Unwatch one first.`,
+      );
     }
 
     const existing = activeWatchers.get(id);
@@ -42,7 +39,7 @@ export function createFileWatcherHandlers(deps: FileWatcherDeps) {
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
-      return { watching: false, error: "No workspace folder open" };
+      throw new Error("No workspace folder open");
     }
     const relPattern = new vscode.RelativePattern(workspaceFolder, pattern);
     const watcher = vscode.workspace.createFileSystemWatcher(relPattern);
@@ -52,7 +49,7 @@ export function createFileWatcherHandlers(deps: FileWatcherDeps) {
     if (!bridge) {
       watcher.dispose();
       activeWatchers.delete(id);
-      return { watching: false, error: "Bridge not active" };
+      throw new Error("Bridge not active");
     }
 
     const notify = (type: string, uri: vscode.Uri) => {
@@ -76,15 +73,14 @@ export function createFileWatcherHandlers(deps: FileWatcherDeps) {
 
   const handleUnwatchFiles: RequestHandler = async (params) => {
     const id = params.id as string;
-    if (!id) return { unwatched: false, error: "'id' is required" };
+    if (!id) throw new Error("'id' is required");
 
     const watcher = activeWatchers.get(id);
-    if (watcher) {
-      watcher.dispose();
-      activeWatchers.delete(id);
-      return { unwatched: true, id };
-    }
-    return { unwatched: false, error: "No watcher with this ID" };
+    if (!watcher) throw new Error("No watcher with this ID");
+
+    watcher.dispose();
+    activeWatchers.delete(id);
+    return { unwatched: true, id };
   };
 
   function disposeAll(): void {

@@ -5,8 +5,8 @@ vi.mock("../utils.js", async (importOriginal) => {
   return { ...actual, execSafe: vi.fn() };
 });
 
-import { execSafe } from "../utils.js";
 import { createGetPRTemplateTool } from "../getPRTemplate.js";
+import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 
@@ -41,8 +41,14 @@ describe("getPRTemplate", () => {
     // base: "main" provided — no branch detection call
     mockExecSafe
       .mockResolvedValueOnce(ok(".git")) // rev-parse
-      .mockResolvedValueOnce(ok("abc123 feat: add getDependencyTree tool\ndef456 fix: handle timeout")) // git log
-      .mockResolvedValueOnce(ok("5 files changed, 312 insertions(+), 14 deletions(-)")); // git diff --stat
+      .mockResolvedValueOnce(
+        ok(
+          "abc123 feat: add getDependencyTree tool\ndef456 fix: handle timeout",
+        ),
+      ) // git log
+      .mockResolvedValueOnce(
+        ok("5 files changed, 312 insertions(+), 14 deletions(-)"),
+      ); // git diff --stat
 
     const tool = createGetPRTemplateTool(WORKSPACE);
     const result = parse(await tool.handler({ base: "main" }));
@@ -85,7 +91,9 @@ describe("getPRTemplate", () => {
       .mockResolvedValueOnce(ok("3 files changed, 50 insertions(+)"));
 
     const tool = createGetPRTemplateTool(WORKSPACE);
-    const result = parse(await tool.handler({ base: "main", style: "conventional" }));
+    const result = parse(
+      await tool.handler({ base: "main", style: "conventional" }),
+    );
     expect(result.body).toContain("### feat");
     expect(result.body).toContain("### fix");
     expect(result.style).toBe("conventional");

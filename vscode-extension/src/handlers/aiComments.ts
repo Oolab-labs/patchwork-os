@@ -28,7 +28,7 @@ function parseSeverity(commentText: string): {
 } {
   const match = commentText.match(/^(FIX|TODO|QUESTION|WARN|TASK)\s*:?\s*/i);
   if (match) {
-    const key = match[1]?.toLowerCase();
+    const key = match[1]?.toLowerCase() ?? "";
     return {
       severity: SEVERITY_MAP[key] ?? "task",
       text: commentText.slice(match[0].length).trim(),

@@ -1,17 +1,13 @@
+import { runGitStdout } from "./git-utils.js";
 import { error, execSafe, optionalString, success } from "./utils.js";
 
-async function runGit(
+function runGit(
   args: string[],
   cwd: string,
   signal?: AbortSignal,
   timeout = 10_000,
 ): Promise<string> {
-  const result = await execSafe("git", args, { cwd, signal, timeout });
-  if (result.timedOut) throw new Error("git command timed out");
-  if (result.exitCode !== 0) {
-    throw new Error(result.stderr.trim() || "git command failed");
-  }
-  return result.stdout;
+  return runGitStdout(args, cwd, { signal, timeout });
 }
 
 async function detectBaseBranch(

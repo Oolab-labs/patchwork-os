@@ -41,13 +41,13 @@ function parsePlanMarkdown(content: string): ParsedPlan {
   if (lines[0]?.trim() === "---") {
     i = 1;
     while (i < lines.length && lines[i]?.trim() !== "---") {
-      const line = lines[i]!;
+      const line = lines[i] ?? "";
       const match = line.match(/^(\w+):\s*(.+)/);
       if (match) {
         const [, key, val] = match;
-        if (key === "title") title = val!.trim();
-        else if (key === "created") created = val!.trim();
-        else if (key === "updated") updated = val!.trim();
+        if (key === "title") title = (val ?? "").trim();
+        else if (key === "created") created = (val ?? "").trim();
+        else if (key === "updated") updated = (val ?? "").trim();
       }
       i++;
     }
@@ -58,10 +58,10 @@ function parsePlanMarkdown(content: string): ParsedPlan {
   let currentSection: PlanSection | null = null;
 
   for (; i < lines.length; i++) {
-    const line = lines[i]!;
+    const line = lines[i] ?? "";
     const headingMatch = line.match(/^## (.+)/);
     if (headingMatch) {
-      currentSection = { name: headingMatch[1]!, tasks: [], body: [] };
+      currentSection = { name: headingMatch[1] ?? "", tasks: [], body: [] };
       sections.push(currentSection);
       continue;
     }
@@ -71,7 +71,7 @@ function parsePlanMarkdown(content: string): ParsedPlan {
     if (taskMatch) {
       currentSection.tasks.push({
         completed: taskMatch[1]?.toLowerCase() === "x",
-        text: taskMatch[2]!,
+        text: taskMatch[2] ?? "",
       });
     } else {
       currentSection.body.push(line);

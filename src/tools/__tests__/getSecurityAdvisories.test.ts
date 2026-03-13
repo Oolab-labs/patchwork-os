@@ -11,8 +11,8 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 import { existsSync } from "node:fs";
-import { execSafe } from "../utils.js";
 import { createGetSecurityAdvisoriesTool } from "../getSecurityAdvisories.js";
+import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 const mockExistsSync = vi.mocked(existsSync);
@@ -27,7 +27,9 @@ const NPM_AUDIT_RESPONSE = {
   vulnerabilities: {
     lodash: {
       severity: "high",
-      via: [{ title: "Prototype Pollution", url: "https://npmjs.com/advisories/1" }],
+      via: [
+        { title: "Prototype Pollution", url: "https://npmjs.com/advisories/1" },
+      ],
       fixAvailable: { name: "lodash", version: "4.17.21" },
     },
     moment: {

@@ -1,143 +1,16 @@
-import fs from "node:fs";
 import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
 import {
   error,
-  execSafe,
   extensionRequired,
-  languageIdFromPath,
   optionalInt,
   requireInt,
   requireString,
   resolveFilePath,
   success,
 } from "./utils.js";
-
-// --- Short-lived LSP result cache ---
-interface LspCacheEntry {
-  result: unknown;
-  mtimeMs: number;
-  expiresAt: number;
-}
-const lspCache = new Map<string, LspCacheEntry>();
-const LSP_CACHE_TTL_MS = 3_000;
-const LSP_CACHE_MAX = 100;
-
-function lspCacheGet(key: string, currentMtimeMs: number): unknown | undefined {
-  const entry = lspCache.get(key);
-  if (!entry) return undefined;
-  if (Date.now() > entry.expiresAt || entry.mtimeMs !== currentMtimeMs) {
-    lspCache.delete(key);
-    return undefined;
-  }
-  // LRU: move to end so FIFO eviction keeps most-recently-used entries
-  lspCache.delete(key);
-  lspCache.set(key, entry);
-  return entry.result;
-}
-
-function lspCacheSet(key: string, result: unknown, mtimeMs: number): void {
-  if (lspCache.size >= LSP_CACHE_MAX) {
-    // Evict oldest entry
-    const firstKey = lspCache.keys().next().value;
-    if (firstKey !== undefined) lspCache.delete(firstKey);
-  }
-  lspCache.set(key, {
-    result,
-    mtimeMs,
-    expiresAt: Date.now() + LSP_CACHE_TTL_MS,
-  });
-}
-
-// Language-specific regex patterns for symbol definitions
-const DEFINITION_PATTERNS: Record<string, string> = {
-  typescript: String.raw`(export\s+)?(class|interface|type|enum|function|const|let|var|async\s+function)\s+`,
-  typescriptreact: String.raw`(export\s+)?(class|interface|type|enum|function|const|let|var|async\s+function)\s+`,
-  javascript: String.raw`(export\s+)?(class|function|const|let|var|async\s+function)\s+`,
-  javascriptreact: String.raw`(export\s+)?(class|function|const|let|var|async\s+function)\s+`,
-  python: String.raw`(class|def|async\s+def)\s+`,
-  rust: String.raw`(pub\s+)?(fn|struct|enum|trait|impl|type|mod|const|static)\s+`,
-  go: String.raw`(func|type|var|const)\s+`,
-};
-
-const LANG_GLOBS: Record<string, string> = {
-  typescript: "*.{ts,tsx}",
-  typescriptreact: "*.{ts,tsx}",
-  javascript: "*.{js,jsx,mjs,cjs}",
-  javascriptreact: "*.{js,jsx,mjs,cjs}",
-  python: "*.py",
-  rust: "*.rs",
-  go: "*.go",
-};
-
-export function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** Extract the word (symbol name) at a given 1-based line/column from file content */
-export function wordAtPosition(
-  content: string,
-  line: number,
-  column: number,
-): string | null {
-  const lines = content.split("\n");
-  const lineText = lines[line - 1];
-  if (!lineText) return null;
-  const col = column - 1;
-  // Expand outward from column to find word boundaries
-  const wordRegex = /[\w$]/;
-  let start = col;
-  let end = col;
-  while (start > 0 && wordRegex.test(lineText[start - 1]!)) start--;
-  while (end < lineText.length && wordRegex.test(lineText[end]!)) end++;
-  const word = lineText.slice(start, end);
-  return word.length > 0 ? word : null;
-}
-
-interface GrepMatch {
-  filePath: string;
-  line: number;
-  column: number;
-  text: string;
-}
-
-async function grepForSymbol(
-  workspace: string,
-  pattern: string,
-  glob: string | undefined,
-  maxResults: number,
-): Promise<GrepMatch[]> {
-  const args = ["-n", "--column", "-H", "--no-heading"];
-  if (glob) {
-    args.push("--glob", glob);
-  }
-  args.push("-e", pattern, workspace);
-
-  const result = await execSafe("rg", args, {
-    cwd: workspace,
-    timeout: 10_000,
-    maxBuffer: 256 * 1024,
-  });
-
-  const matches: GrepMatch[] = [];
-  for (const line of result.stdout.split("\n")) {
-    if (!line) continue;
-    // Format: filepath:line:column:text
-    const m = line.match(/^(.+?):(\d+):(\d+):(.*)$/);
-    if (m) {
-      matches.push({
-        filePath: m[1]!,
-        line: Number.parseInt(m[2]!, 10),
-        column: Number.parseInt(m[3]!, 10),
-        text: m[4]!.trim(),
-      });
-    }
-    if (matches.length >= maxResults) break;
-  }
-  return matches;
-}
 
 export function createGoToDefinitionTool(
   workspace: string,
@@ -146,8 +19,9 @@ export function createGoToDefinitionTool(
   return {
     schema: {
       name: "goToDefinition",
+      extensionRequired: true,
       description:
-        "Go to the definition of a symbol at a given position. Uses VS Code LSP when connected, falls back to lexical grep search otherwise (may include false positives).",
+        "Go to the definition of a symbol at a given position using VS Code LSP. Requires the VS Code extension to be connected.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -170,90 +44,36 @@ export function createGoToDefinitionTool(
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features");
+      }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
         workspace,
       );
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
-
-      // Try extension first (semantic)
-      if (extensionClient.isConnected()) {
-        try {
-          // Check cache
-          const stat = await fs.promises.stat(filePath).catch(() => null);
-          const cacheKey = `def:${filePath}:${line}:${column}`;
-          if (stat) {
-            const cached = lspCacheGet(cacheKey, stat.mtimeMs);
-            if (cached !== undefined) return success(cached);
-          }
-          const result = await extensionClient.goToDefinition(
-            filePath,
-            line,
-            column,
-            signal,
-          );
-          if (result === null) {
-            return success({
-              found: false,
-              message: "No definition found at this position",
-            });
-          }
-          if (stat) lspCacheSet(cacheKey, result, stat.mtimeMs);
-          return success(result);
-        } catch (err) {
-          if (!(err instanceof ExtensionTimeoutError)) throw err;
-          // Timeout — fall through to grep fallback
-        }
-      }
-
-      // Grep fallback: extract symbol at position, search for definition patterns
       try {
-        const content = await fs.promises.readFile(filePath, "utf-8");
-        const symbol = wordAtPosition(content, line, column);
-        if (!symbol) {
-          return success({
-            found: false,
-            message: "No symbol found at this position",
-          });
-        }
-
-        const langId = languageIdFromPath(filePath);
-        const defPattern = DEFINITION_PATTERNS[langId];
-        const glob = LANG_GLOBS[langId];
-
-        // Search for definition-like patterns: "class Foo", "function Foo", etc.
-        const pattern = defPattern
-          ? `${defPattern}${escapeRegex(symbol)}\\b`
-          : `(class|function|def|fn|type|interface|struct|const|let|var)\\s+${escapeRegex(symbol)}\\b`;
-
-        const matches = await grepForSymbol(workspace, pattern, glob, 10);
-
-        if (matches.length === 0) {
-          return success({
-            found: false,
-            source: "lexical-grep",
-            message: `No definition-like pattern found for "${symbol}"`,
-          });
-        }
-
-        return success({
-          found: true,
-          source: "lexical-grep",
-          symbol,
-          definitions: matches.map((m) => ({
-            filePath: m.filePath,
-            line: m.line,
-            column: m.column,
-            text: m.text,
-          })),
-          warning:
-            "Results are from text search, not semantic analysis — may include false positives",
-        });
-      } catch (err) {
-        return error(
-          `Grep fallback failed: ${err instanceof Error ? err.message : String(err)}`,
+        const result = await extensionClient.goToDefinition(
+          filePath,
+          line,
+          column,
+          signal,
         );
+        if (result === null) {
+          return success({
+            found: false,
+            message: "No definition found at this position",
+          });
+        }
+        return success(result);
+      } catch (err) {
+        if (err instanceof ExtensionTimeoutError) {
+          return error(
+            "Extension timed out — the language server may be slow or unresponsive",
+          );
+        }
+        throw err;
       }
     },
   };
@@ -266,8 +86,9 @@ export function createFindReferencesTool(
   return {
     schema: {
       name: "findReferences",
+      extensionRequired: true,
       description:
-        "Find all references to a symbol at a given position. Uses VS Code LSP when connected, falls back to lexical grep search otherwise (may include false positives from identically-named symbols).",
+        "Find all references to a symbol at a given position using VS Code LSP. Requires the VS Code extension to be connected.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -290,68 +111,33 @@ export function createFindReferencesTool(
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features");
+      }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
         workspace,
       );
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
-
-      // Try extension first (semantic)
-      if (extensionClient.isConnected()) {
-        try {
-          const result = await extensionClient.findReferences(
-            filePath,
-            line,
-            column,
-            signal,
-          );
-          if (result === null) {
-            return success({ found: false, references: [] });
-          }
-          return success(result);
-        } catch (err) {
-          if (!(err instanceof ExtensionTimeoutError)) throw err;
-          // Timeout — fall through to grep fallback
-        }
-      }
-
-      // Grep fallback: find all occurrences of the word
       try {
-        const content = await fs.promises.readFile(filePath, "utf-8");
-        const symbol = wordAtPosition(content, line, column);
-        if (!symbol) {
-          return success({
-            found: false,
-            references: [],
-            message: "No symbol found at this position",
-          });
-        }
-
-        const langId = languageIdFromPath(filePath);
-        const glob = LANG_GLOBS[langId];
-        // Word-boundary search for exact symbol name
-        const pattern = `\\b${escapeRegex(symbol)}\\b`;
-        const matches = await grepForSymbol(workspace, pattern, glob, 100);
-
-        return success({
-          found: matches.length > 0,
-          source: "lexical-grep",
-          symbol,
-          references: matches.map((m) => ({
-            filePath: m.filePath,
-            line: m.line,
-            column: m.column,
-            text: m.text,
-          })),
-          count: matches.length,
-          warning:
-            "Results are from text search — may include false positives from identically-named symbols in different scopes",
-        });
-      } catch (err) {
-        return error(
-          `Grep fallback failed: ${err instanceof Error ? err.message : String(err)}`,
+        const result = await extensionClient.findReferences(
+          filePath,
+          line,
+          column,
+          signal,
         );
+        if (result === null) {
+          return success({ found: false, references: [] });
+        }
+        return success(result);
+      } catch (err) {
+        if (err instanceof ExtensionTimeoutError) {
+          return error(
+            "Extension timed out — the language server may be slow or unresponsive",
+          );
+        }
+        throw err;
       }
     },
   };
@@ -399,13 +185,6 @@ export function createGetHoverTool(
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
       try {
-        // Check cache
-        const stat = await fs.promises.stat(filePath).catch(() => null);
-        const cacheKey = `hover:${filePath}:${line}:${column}`;
-        if (stat) {
-          const cached = lspCacheGet(cacheKey, stat.mtimeMs);
-          if (cached !== undefined) return success(cached);
-        }
         const result = await extensionClient.getHover(
           filePath,
           line,
@@ -418,7 +197,6 @@ export function createGetHoverTool(
             message: "No hover information at this position",
           });
         }
-        if (stat) lspCacheSet(cacheKey, result, stat.mtimeMs);
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
@@ -767,14 +545,15 @@ export function createGetCallHierarchyTool(
 }
 
 export function createSearchWorkspaceSymbolsTool(
-  workspace: string,
+  _workspace: string,
   extensionClient: ExtensionClient,
 ) {
   return {
     schema: {
       name: "searchWorkspaceSymbols",
+      extensionRequired: true,
       description:
-        "Search for symbols (classes, functions, variables, interfaces) by name across the entire workspace. Uses VS Code LSP when connected (semantically accurate), falls back to ripgrep pattern matching otherwise.",
+        "Search for symbols (classes, functions, variables, interfaces) by name across the entire workspace using VS Code LSP. Requires the VS Code extension to be connected.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -797,55 +576,23 @@ export function createSearchWorkspaceSymbolsTool(
       if (query.trim().length === 0) {
         return error("query must not be empty");
       }
-      const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
-
-      // Try extension first (semantic)
-      if (extensionClient.isConnected()) {
-        try {
-          const result = await extensionClient.searchSymbols(query, maxResults);
-          if (result === null) {
-            return success({ symbols: [], count: 0 });
-          }
-          return success(result);
-        } catch (err) {
-          if (!(err instanceof ExtensionTimeoutError)) throw err;
-          // Timeout — fall through to grep fallback
-        }
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features");
       }
-
-      // Grep fallback: search for definition patterns matching the query
+      const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
       try {
-        const escaped = escapeRegex(query);
-        // Generic definition pattern covering common languages
-        const pattern = `(export\\s+)?(class|interface|type|enum|function|const|let|var|async\\s+function|def|async\\s+def|fn|struct|trait|impl|mod)\\s+${escaped}`;
-
-        // Scope search to common source file types to avoid scanning binaries/node_modules
-        const defaultGlob =
-          "*.{ts,tsx,js,jsx,mjs,cjs,py,rs,go,java,c,cpp,h,hpp,rb,php,swift,kt,scala}";
-        const matches = await grepForSymbol(
-          workspace,
-          pattern,
-          defaultGlob,
-          maxResults,
-        );
-
-        return success({
-          source: "lexical-grep",
-          symbols: matches.map((m) => ({
-            name: query,
-            filePath: m.filePath,
-            line: m.line,
-            column: m.column,
-            text: m.text,
-          })),
-          count: matches.length,
-          warning:
-            "Results are from text pattern matching, not semantic symbol resolution",
-        });
+        const result = await extensionClient.searchSymbols(query, maxResults);
+        if (result === null) {
+          return success({ symbols: [], count: 0 });
+        }
+        return success(result);
       } catch (err) {
-        return error(
-          `Grep fallback failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        if (err instanceof ExtensionTimeoutError) {
+          return error(
+            "Extension timed out — the language server may be slow or unresponsive",
+          );
+        }
+        throw err;
       }
     },
   };

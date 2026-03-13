@@ -102,7 +102,8 @@ export function createDecorationHandlers(): {
       entry = undefined;
     }
     if (!entry) {
-      const renderOptions = STYLE_MAP[requestedStyle] ?? STYLE_MAP.info;
+      // biome-ignore lint/style/noNonNullAssertion: STYLE_MAP.info always exists as a fallback
+      const renderOptions = (STYLE_MAP[requestedStyle] ?? STYLE_MAP.info)!;
       const type = vscode.window.createTextEditorDecorationType(renderOptions);
       entry = {
         type,

@@ -157,6 +157,7 @@ export function registerEvents(
 
   // Terminal output capture (proposed API — graceful degradation)
   try {
+    // biome-ignore lint/suspicious/noExplicitAny: proposed VS Code API not yet in type definitions
     const onDidWriteTerminalData = (vscode.window as any)
       .onDidWriteTerminalData;
     if (typeof onDidWriteTerminalData === "function") {

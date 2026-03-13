@@ -238,7 +238,9 @@ export function createGithubCreateIssueTool(workspace: string) {
 
       const url = result.stdout.trim();
       const numberMatch = url.match(/\/issues\/(\d+)/);
-      const number = numberMatch ? Number.parseInt(numberMatch[1]!, 10) : null;
+      const number = numberMatch
+        ? Number.parseInt(numberMatch[1] ?? "0", 10)
+        : null;
 
       return success({ url, number, title });
     },
