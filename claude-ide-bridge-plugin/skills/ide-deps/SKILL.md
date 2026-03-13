@@ -4,6 +4,12 @@ description: Dependency graph for a file or symbol. Calls getCallHierarchy and f
 argument-hint: "<file path> [symbol name]"
 ---
 
+## Prerequisites
+
+Before doing anything else, call `getToolCapabilities`. Check the returned `extensionConnected` field:
+- If `false` or absent: stop immediately and tell the user: "The VS Code extension is not connected to the bridge — LSP tools are unavailable. Start the bridge (`npm run start-all`) and ensure the Claude IDE Bridge extension is installed and active, then retry."
+- If `true`: proceed with the steps below.
+
 Generate an interactive dependency graph for the given file or symbol and open it in the browser.
 
 ## Arguments

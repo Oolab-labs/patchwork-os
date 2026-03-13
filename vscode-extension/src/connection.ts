@@ -312,8 +312,10 @@ export class BridgeConnection {
     }
     this.pendingDiagnosticUris.clear();
     const oldWs = this.ws;
-    // Stop heartbeat before nulling ws so pong listener is removed from the socket
-    this.stopHeartbeat();
+    this.ws = null;
+    // Pass the captured socket so stopHeartbeat() removes the pong listener
+    // regardless of the order this.ws is nulled.
+    this.stopHeartbeat(oldWs);
     if (oldWs) {
       try {
         oldWs.removeAllListeners();
@@ -325,7 +327,6 @@ export class BridgeConnection {
       } catch {
         /* best-effort */
       }
-      this.ws = null;
     }
     this.scheduleReconnect();
   }
@@ -363,19 +364,27 @@ export class BridgeConnection {
     }, 45_000);
   }
 
-  private stopHeartbeat(): void {
+  private stopHeartbeat(ws?: WebSocket | null): void {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
     if (this.pongHandler) {
-      this.ws?.removeListener("pong", this.pongHandler);
+      // Accept an explicit socket ref so callers can pass the socket before
+      // nulling this.ws, making the cleanup order-independent.
+      (ws ?? this.ws)?.removeListener("pong", this.pongHandler);
       this.pongHandler = null;
     }
   }
 
   scheduleReconnect(): void {
     if (this.disposed || this.reconnectTimer) return;
+    // No point queuing a reconnect if one is already in-flight.
+    if (
+      this.state === ConnectionState.CONNECTING ||
+      this.state === ConnectionState.CONNECTED
+    )
+      return;
     this.reconnectAttempts++;
     this.updateStatusBar("reconnecting");
     if (this.reconnectAttempts === 3) {
@@ -414,9 +423,9 @@ export class BridgeConnection {
         /* best-effort */
       }
       try {
-        this.ws.close();
+        this.ws.terminate();
       } catch {
-        /* already closing */
+        /* best-effort */
       }
       this.ws = null;
     }

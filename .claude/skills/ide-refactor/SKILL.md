@@ -7,6 +7,12 @@ argument-hint: "[description of refactoring]"
 
 # IDE Safe Refactor Workflow
 
+## Prerequisites
+
+Before doing anything else, call `getToolCapabilities`. Check the returned `extensionConnected` field:
+- If `false` or absent: stop immediately and tell the user: "The VS Code extension is not connected to the bridge — LSP tools are unavailable. Start the bridge (`npm run start-all`) and ensure the Claude IDE Bridge extension is installed and active, then retry."
+- If `true`: proceed with the steps below.
+
 Perform refactoring with a safety net. Uses snapshots for instant rollback if tests fail after the change.
 
 ## Workflow

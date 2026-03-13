@@ -8,6 +8,13 @@ argument-hint: "[module, file, or question about the codebase]"
 
 # IDE Codebase Explorer
 
+## Prerequisites
+
+Before doing anything else, call `getToolCapabilities`. Check the returned `extensionConnected` field:
+- If `false` or absent: stop immediately and tell the user: "The VS Code extension is not connected to the bridge — LSP tools are unavailable. Start the bridge (`npm run start-all`) and ensure the Claude IDE Bridge extension is installed and active, then retry."
+- If `true`: proceed with the steps below.
+
+
 Explore and explain a codebase using the IDE bridge's full LSP capabilities. Produces a structured architectural overview.
 
 ## Workflow

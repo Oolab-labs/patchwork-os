@@ -157,7 +157,7 @@ wait_for_new_lock() {
     while IFS= read -r lock; do
       if [[ -n "$lock" ]] && ! echo "$existing_locks" | grep -qF "$lock"; then
         # Validate: readable JSON with a running PID (path passed as argv to avoid injection)
-        lock_pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pid',''))" -- "$lock" 2>/dev/null || true)
+        lock_pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pid',''))" "$lock" 2>/dev/null || true)
         if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
           new_lock="$lock"
           break 2
@@ -184,7 +184,7 @@ if [[ -z "$LOCK_FILE" ]]; then
   echo "Check pane 1 for errors."
   # Don't exit — keep orchestrator running so user can debug
   echo "Press Ctrl+C to exit orchestrator."
-  sleep infinity
+  while true; do sleep 60; done
 fi
 notify "Bridge started (lock: $(basename "$LOCK_FILE"))"
 
@@ -193,7 +193,7 @@ notify "Bridge started (lock: $(basename "$LOCK_FILE"))"
 for stale in ~/.claude/ide/*.lock; do
   [[ -f "$stale" ]] || continue
   [[ "$stale" == "$LOCK_FILE" ]] && continue
-  stale_pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pid',''))" -- "$stale" 2>/dev/null || true)
+  stale_pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pid',''))" "$stale" 2>/dev/null || true)
   if [[ -z "$stale_pid" ]] || ! kill -0 "$stale_pid" 2>/dev/null; then
     rm -f "$stale"
     echo "Removed stale lock: $(basename "$stale")"
@@ -278,7 +278,7 @@ while true; do
 
     # Verify old bridge process is truly dead using the lock file PID before it disappears
     if [[ -f "$LOCK_FILE" ]]; then
-      old_pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pid',''))" -- "$LOCK_FILE" 2>/dev/null || echo "")
+      old_pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pid',''))" "$LOCK_FILE" 2>/dev/null || echo "")
       if [[ -n "$old_pid" ]]; then
         for _ in $(seq 1 10); do
           kill -0 "$old_pid" 2>/dev/null || break
