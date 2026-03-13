@@ -331,7 +331,7 @@ export class McpTransport {
             let offset = 0;
             if (typeof listParams?.cursor === "string") {
               try {
-                const decoded = parseInt(
+                const decoded = Number.parseInt(
                   Buffer.from(listParams.cursor, "base64").toString("utf-8"),
                   10,
                 );
@@ -358,7 +358,6 @@ export class McpTransport {
             };
             break;
           }
-
 
           case "tools/call": {
             if (!this.initialized) {

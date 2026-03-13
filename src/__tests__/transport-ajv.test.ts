@@ -112,7 +112,10 @@ describe("AJV structural schema validation in tools/call", () => {
     const resp = await waitFor(ws, (m) => m.id === 3);
     expect(resp.error).toBeUndefined();
     expect(resp.result).toBeDefined();
-    const result = resp.result as { content: Array<{ type: string; text: string }>; isError?: boolean };
+    const result = resp.result as {
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    };
     expect(result.isError).toBeFalsy();
     expect(result.content[0]?.text).toBe("x=42");
   });

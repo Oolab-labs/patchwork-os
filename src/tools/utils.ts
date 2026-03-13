@@ -67,7 +67,6 @@ export function optionalBool(
   return value;
 }
 
-
 /** Require args[key] to be an array. Throws on failure. */
 export function requireArray(
   args: Record<string, unknown>,

@@ -3,7 +3,13 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, execSafe, requireString, resolveFilePath, success } from "./utils.js";
+import {
+  error,
+  execSafe,
+  requireString,
+  resolveFilePath,
+  success,
+} from "./utils.js";
 
 async function organizeImportsNative(
   resolved: string,

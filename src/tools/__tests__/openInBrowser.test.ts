@@ -25,15 +25,18 @@ vi.mock("../utils.js", async (importOriginal) => {
 });
 
 import fs from "node:fs/promises";
-import { execSafe } from "../utils.js";
 import { createOpenInBrowserTool } from "../openInBrowser.js";
+import { execSafe } from "../utils.js";
 
 describe("createOpenInBrowserTool", () => {
   const tool = createOpenInBrowserTool();
 
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    Object.defineProperty(process, "platform", {
+      value: "darwin",
+      configurable: true,
+    });
   });
 
   afterEach(() => {
@@ -45,7 +48,9 @@ describe("createOpenInBrowserTool", () => {
     const result = await tool.handler({ html });
 
     expect(fs.writeFile).toHaveBeenCalledOnce();
-    const [writtenPath, writtenContent, encoding] = (fs.writeFile as ReturnType<typeof vi.fn>).mock.calls[0];
+    const [writtenPath, writtenContent, encoding] = (
+      fs.writeFile as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
     expect(writtenPath).toMatch(/^\/.*\/report-\d+\.html$/);
     expect(writtenPath.startsWith(os.tmpdir())).toBe(true);
     expect(writtenContent).toBe(html);
@@ -61,7 +66,8 @@ describe("createOpenInBrowserTool", () => {
     const html = "<html><body>Report</body></html>";
     const result = await tool.handler({ html, filename: "my-report.html" });
 
-    const [writtenPath] = (fs.writeFile as ReturnType<typeof vi.fn>).mock.calls[0];
+    const [writtenPath] = (fs.writeFile as ReturnType<typeof vi.fn>).mock
+      .calls[0];
     expect(writtenPath).toBe(path.join(os.tmpdir(), "my-report.html"));
 
     const parsed = JSON.parse(result.content[0].text);
@@ -72,7 +78,8 @@ describe("createOpenInBrowserTool", () => {
     const html = "<html><body>x</body></html>";
     await tool.handler({ html, filename: "../../etc/passwd.html" });
 
-    const [writtenPath] = (fs.writeFile as ReturnType<typeof vi.fn>).mock.calls[0];
+    const [writtenPath] = (fs.writeFile as ReturnType<typeof vi.fn>).mock
+      .calls[0];
     // Should NOT contain ".." and should be in tmpdir
     expect(writtenPath).not.toContain("..");
     expect(writtenPath.startsWith(os.tmpdir())).toBe(true);
@@ -83,23 +90,37 @@ describe("createOpenInBrowserTool", () => {
     const html = "<html><body>x</body></html>";
     await tool.handler({ html, filename: "report.txt" });
 
-    const [writtenPath] = (fs.writeFile as ReturnType<typeof vi.fn>).mock.calls[0];
+    const [writtenPath] = (fs.writeFile as ReturnType<typeof vi.fn>).mock
+      .calls[0];
     expect(path.basename(writtenPath)).toMatch(/^report-\d+\.html$/);
   });
 
   it("uses xdg-open on linux", async () => {
-    Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+    Object.defineProperty(process, "platform", {
+      value: "linux",
+      configurable: true,
+    });
     const html = "<html></html>";
     await tool.handler({ html });
 
-    expect(execSafe).toHaveBeenCalledWith("xdg-open", [expect.stringMatching(/\.html$/)]);
+    expect(execSafe).toHaveBeenCalledWith("xdg-open", [
+      expect.stringMatching(/\.html$/),
+    ]);
   });
 
   it("uses cmd /c start on win32", async () => {
-    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+    Object.defineProperty(process, "platform", {
+      value: "win32",
+      configurable: true,
+    });
     const html = "<html></html>";
     await tool.handler({ html });
 
-    expect(execSafe).toHaveBeenCalledWith("cmd", ["/c", "start", "", expect.stringMatching(/\.html$/)]);
+    expect(execSafe).toHaveBeenCalledWith("cmd", [
+      "/c",
+      "start",
+      "",
+      expect.stringMatching(/\.html$/),
+    ]);
   });
 });
