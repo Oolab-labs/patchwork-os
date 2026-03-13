@@ -256,7 +256,7 @@ export function createEditTextTool(
         }
       }
 
-      const filePath = resolveFilePath(rawPath, workspace);
+      const filePath = resolveFilePath(rawPath, workspace, { write: true });
 
       // Try extension first (supports undo, works with unsaved buffers)
       if (extensionClient.isConnected()) {

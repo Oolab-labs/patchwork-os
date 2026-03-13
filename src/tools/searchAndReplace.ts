@@ -149,7 +149,7 @@ export function createSearchAndReplaceTool(workspace: string) {
         // as that would bypass the symlink resolution done inside resolveFilePath.
         let resolved: string;
         try {
-          resolved = resolveFilePath(filePath, workspace);
+          resolved = resolveFilePath(filePath, workspace, { write: true });
         } catch {
           return null;
         }

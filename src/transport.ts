@@ -13,17 +13,6 @@ const NOTIFICATION_RATE_LIMIT = 500; // max notifications per minute (separate f
 // Supported MCP protocol versions, newest first.
 // Extend this array when new protocol versions are ratified; keep oldest supported version last.
 const SUPPORTED_VERSIONS = ["2025-11-25"];
-const LOG_LEVELS = [
-  "debug",
-  "info",
-  "notice",
-  "warning",
-  "error",
-  "critical",
-  "alert",
-  "emergency",
-] as const;
-type LogLevel = (typeof LOG_LEVELS)[number];
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -96,7 +85,6 @@ export class McpTransport {
   // Separate lightweight rate limit for notifications (no response sent, so can't use main ring buffer)
   private notifCount = 0;
   private notifWindowStart = 0;
-  private clientLogLevel: LogLevel = "warning";
 
   private activityLog: ActivityLog | null = null;
   private isExtensionConnectedFn: (() => boolean) | null = null;
@@ -142,7 +130,6 @@ export class McpTransport {
     this.rateLimitHead = 0;
     this.notifCount = 0;
     this.notifWindowStart = 0;
-    this.clientLogLevel = "warning";
   }
 
   getStats(): { callCount: number; errorCount: number } {
@@ -183,14 +170,16 @@ export class McpTransport {
         if (Array.isArray(raw)) {
           await safeSend(
             ws,
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: null,
-              error: {
-                code: ErrorCodes.INVALID_REQUEST,
-                message: "Batch requests are not supported",
+            JSON.stringify([
+              {
+                jsonrpc: "2.0",
+                id: null,
+                error: {
+                  code: ErrorCodes.INVALID_REQUEST,
+                  message: "Batch requests are not supported",
+                },
               },
-            }),
+            ]),
             this.logger,
           );
           return;
@@ -266,7 +255,11 @@ export class McpTransport {
         this.rateLimitBuf[this.rateLimitHead] = now;
         this.rateLimitHead = (this.rateLimitHead + 1) % RATE_LIMIT_MAX;
 
-        let response: JsonRpcResponse;
+        let response: JsonRpcResponse = {
+          jsonrpc: "2.0",
+          id: msg.id!,
+          error: { code: -32603, message: "Internal error" },
+        };
 
         switch (msg.method) {
           case "initialize": {
@@ -311,7 +304,7 @@ export class McpTransport {
               };
               break;
             }
-            const extConnected = this.isExtensionConnectedFn?.() ?? true;
+            const extConnected = this.isExtensionConnectedFn?.() ?? false;
             response = {
               jsonrpc: "2.0",
               id: msg.id,
@@ -324,19 +317,6 @@ export class McpTransport {
             break;
           }
 
-          case "logging/setLevel": {
-            const levelParam = (msg.params as { level?: string })?.level;
-            if (
-              typeof levelParam === "string" &&
-              levelParam.length <= 16 &&
-              LOG_LEVELS.includes(levelParam as LogLevel)
-            ) {
-              this.clientLogLevel = levelParam as LogLevel;
-              this.logger.debug(`Client log level set to: ${levelParam}`);
-            }
-            response = { jsonrpc: "2.0", id: msg.id, result: {} };
-            break;
-          }
 
           case "tools/call": {
             if (!this.initialized) {
@@ -347,6 +327,15 @@ export class McpTransport {
                   code: ErrorCodes.INVALID_REQUEST,
                   message: "Not initialized — send initialize first",
                 },
+              };
+              break;
+            }
+            // Reject duplicate request IDs — second call would overwrite the first's AbortController
+            if (msg.id !== undefined && this.inFlightControllers.has(msg.id)) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: { code: -32600, message: "Duplicate request ID" },
               };
               break;
             }
@@ -385,6 +374,7 @@ export class McpTransport {
                 },
               };
             } else {
+              this.callCount++; // Count all invocations, not just successes (BUG-10)
               const startTime = Date.now();
               const callId = Math.random().toString(36).slice(2, 10);
               const callLog = this.logger.child({ tool: params.name, callId });
@@ -469,7 +459,6 @@ export class McpTransport {
                   ]);
                   const durationMs = Date.now() - startTime;
                   this.activityLog?.record(params.name, durationMs, "success");
-                  this.callCount++;
                   callLog.debug(`Tool completed in ${durationMs}ms`);
                   response = { jsonrpc: "2.0", id: msg.id, result };
                 } finally {
@@ -582,27 +571,6 @@ export class McpTransport {
       } catch {
         /* best-effort */
       }
-    }
-  }
-
-  /** Send a log message to the MCP client (respects clientLogLevel) */
-  sendLogMessage(level: LogLevel, loggerName: string, data: string): void {
-    if (!this.activeWs || this.activeWs.readyState !== WebSocket.OPEN) return;
-    // Only send if the message level is at or above the client's requested level
-    const msgIdx = LOG_LEVELS.indexOf(level);
-    const clientIdx = LOG_LEVELS.indexOf(this.clientLogLevel);
-    if (msgIdx < clientIdx) return;
-    // Skip under backpressure — log messages are best-effort, same as progress notifications
-    if (this.activeWs.bufferedAmount >= BACKPRESSURE_THRESHOLD) return;
-    const msg: JsonRpcNotification = {
-      jsonrpc: "2.0",
-      method: "notifications/message",
-      params: { level, logger: loggerName, data },
-    };
-    try {
-      this.activeWs.send(JSON.stringify(msg));
-    } catch {
-      /* best-effort */
     }
   }
 

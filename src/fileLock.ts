@@ -1,5 +1,5 @@
 /** Maximum time to wait for a file lock before aborting the operation. */
-export const LOCK_ACQUIRE_TIMEOUT_MS = 15_000;
+const LOCK_ACQUIRE_TIMEOUT_MS = 15_000;
 
 /**
  * Promise-chain mutex keyed by absolute file path.
@@ -17,8 +17,13 @@ export class FileLock {
    * Acquire exclusive access to a file path.
    * Returns a release function — call it in a finally block.
    * Throws if the lock is not acquired within timeoutMs (default: 15s).
+   *
+   * @param signal - Optional AbortSignal. If the signal fires while the lock is
+   *   held, the lock is released automatically so downstream waiters are not
+   *   blocked for the full timeout period. Callers should still use try/finally
+   *   to guarantee release() is called in the normal path.
    */
-  async acquire(path: string): Promise<() => void> {
+  async acquire(path: string, signal?: AbortSignal): Promise<() => void> {
     const prev = this.locks.get(path) ?? Promise.resolve();
     let release!: () => void;
     const next = new Promise<void>((r) => {
@@ -57,11 +62,25 @@ export class FileLock {
       throw err;
     }
 
+    // Bail out immediately if already aborted before acquiring
+    if (signal?.aborted) {
+      release();
+      if (this.locks.get(path) === next) this.locks.delete(path);
+      throw new Error("Aborted before lock acquired");
+    }
+
     // Clean up map entry after release so it doesn't grow forever
     const wrappedRelease = () => {
+      signal?.removeEventListener("abort", onAbort);
       release();
       if (this.locks.get(path) === next) this.locks.delete(path);
     };
+
+    // If the holder is aborted while holding the lock, release automatically
+    // so downstream waiters are not blocked for the full timeout period.
+    const onAbort = () => wrappedRelease();
+    signal?.addEventListener("abort", onAbort, { once: true });
+
     return wrappedRelease;
   }
 }

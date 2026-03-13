@@ -54,6 +54,15 @@ export class ActivityLog {
         try {
           const obj = JSON.parse(line) as Record<string, unknown>;
           if (obj.kind === "tool") {
+            if (
+              typeof obj.tool !== "string" ||
+              typeof obj.durationMs !== "number"
+            ) {
+              process.stderr.write(
+                `[activityLog] Skipping invalid tool entry (missing/wrong-type fields): ${line}\n`,
+              );
+              continue;
+            }
             this.entries.push(obj as unknown as ActivityEntry);
             this.nextId = Math.max(this.nextId, (obj.id as number) + 1);
           } else if (obj.kind === "lifecycle") {
@@ -97,12 +106,21 @@ export class ActivityLog {
     if (!this.persistPath) return;
     try {
       const raw = fs.readFileSync(this.persistPath, "utf8");
-      const lines = raw.split("\n").filter((l) => l.trim());
-      // Trim by line count OR if byte size is still excessive (few very long lines)
-      if (lines.length > MAX_PERSIST_LINES || raw.length > MAX_PERSIST_BYTES) {
-        const trimmed = `${lines.slice(-MAX_PERSIST_LINES).join("\n")}\n`;
-        fs.writeFileSync(this.persistPath, trimmed);
+      let lines = raw.split("\n").filter((l) => l.trim());
+      // Step 1: trim by line count
+      if (lines.length > MAX_PERSIST_LINES) {
+        lines = lines.slice(-MAX_PERSIST_LINES);
       }
+      // Step 2: if still over byte limit (e.g. a few very long lines survived),
+      // halve the line array repeatedly until under the byte budget.
+      // This prevents O(N) disk-thrashing on every append.
+      while (
+        lines.join("\n").length + 1 > MAX_PERSIST_BYTES &&
+        lines.length > 1
+      ) {
+        lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
+      }
+      fs.writeFileSync(this.persistPath, `${lines.join("\n")}\n`);
     } catch {
       // ignore rotation errors
     }

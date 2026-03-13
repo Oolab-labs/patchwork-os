@@ -17,9 +17,19 @@ const isStartAll =
   path.basename(process.argv[1] ?? "").startsWith("claude-ide-bridge-start");
 
 if (isStartAll) {
-  const startAllArgs = process.argv[2] === "start-all" ? process.argv.slice(3) : process.argv.slice(2);
-  const scriptPath = path.resolve(__dirnameTop, "..", "scripts", "start-all.sh");
-  const result = spawnSync("bash", [scriptPath, ...startAllArgs], { stdio: "inherit" });
+  const startAllArgs =
+    process.argv[2] === "start-all"
+      ? process.argv.slice(3)
+      : process.argv.slice(2);
+  const scriptPath = path.resolve(
+    __dirnameTop,
+    "..",
+    "scripts",
+    "start-all.sh",
+  );
+  const result = spawnSync("bash", [scriptPath, ...startAllArgs], {
+    stdio: "inherit",
+  });
   process.exit(result.status ?? 1);
 }
 
@@ -36,7 +46,10 @@ if (process.argv[2] === "install-extension") {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const vsixDir = path.resolve(__dirname, "..", "vscode-extension");
   // Pick the newest .vsix dynamically — avoids hardcoding a version that goes stale
-  const vsixFiles = readdirSync(vsixDir).filter((f) => f.endsWith(".vsix")).sort().reverse();
+  const vsixFiles = readdirSync(vsixDir)
+    .filter((f) => f.endsWith(".vsix"))
+    .sort()
+    .reverse();
   if (vsixFiles.length === 0) {
     process.stderr.write(`Error: No .vsix file found in ${vsixDir}\n`);
     process.exit(1);

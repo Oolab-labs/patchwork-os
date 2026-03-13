@@ -279,7 +279,7 @@ Production-grade reliability:
 - Circuit breaker with exponential backoff for timeout cascades
 - Generation counter preventing stale handler responses
 - Extension-required tool filtering when extension disconnects
-- 601 tests across bridge and extension
+- 654 tests across bridge and extension (408 bridge + 246 extension)
 
 ## Building
 
@@ -287,13 +287,13 @@ Production-grade reliability:
 # Bridge
 npm run build        # TypeScript compilation
 npm run dev          # Development with tsx
-npm test             # Run 359 bridge tests
+npm test             # Run 408 bridge tests
 
 # Extension
 cd vscode-extension
 npm run build        # esbuild bundle
 npm run package      # Create .vsix
-npm test             # Run 242 extension tests
+npm test             # Run 246 extension tests
 ```
 
 ## Contributing

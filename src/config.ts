@@ -74,6 +74,7 @@ export function findEditor(): string | null {
   return null;
 }
 
+/** Exported for testing. Maps an editor CLI command to its human-readable IDE name. */
 export function ideNameFromEditor(editorCommand: string): string {
   return EDITOR_IDE_NAMES[editorCommand] ?? editorCommand;
 }

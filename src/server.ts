@@ -21,7 +21,7 @@ function enableTcpKeepalive(ws: WebSocket): void {
   }
 }
 
-export interface ServerEvents {
+interface ServerEvents {
   connection: [ws: WebSocket];
   extension: [ws: WebSocket];
 }
@@ -53,7 +53,7 @@ function setupPongHandler(ws: AliveWebSocket): void {
 
 const MIN_CONNECTION_INTERVAL_MS = 50; // Allow multiple agents to connect within same second
 
-export class Server extends EventEmitter {
+export class Server extends EventEmitter<ServerEvents> {
   private httpServer: http.Server;
   private wss: WsServer;
   private pingInterval: ReturnType<typeof setInterval> | null = null;

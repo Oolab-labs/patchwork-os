@@ -755,8 +755,8 @@ describe("McpTransport", () => {
     const names = (resp.result as { tools: Array<{ name: string }> }).tools.map(
       (t) => t.name,
     );
-    // Default is ?? true (fail-open), so extension tools are visible even without a connected fn
-    expect(names).toContain("extensionOnlyTool");
+    // Default is ?? false (fail-closed), so extension tools are hidden when isExtensionConnectedFn is not set
+    expect(names).not.toContain("extensionOnlyTool");
   });
 
   it("getStats() returns zero counters on a fresh transport", async () => {
@@ -809,7 +809,7 @@ describe("McpTransport", () => {
     });
     await waitFor(ws, (m) => m.id === 1);
 
-    expect(transport?.getStats()).toEqual({ callCount: 0, errorCount: 1 });
+    expect(transport?.getStats()).toEqual({ callCount: 1, errorCount: 1 });
   });
 
   it("getStats() counters survive detach()", async () => {

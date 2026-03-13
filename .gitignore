@@ -11,7 +11,6 @@ vscode-extension/node_modules/
 # Build artifacts
 *.tgz
 coverage/
-docs/
 
 # Claude Code runtime (agent-memory is auto-generated, skills/agents/commands are intentional)
 .claude/agent-memory/

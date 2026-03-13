@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v1.3.0)
+## Current State (v1.4.2)
 
-- 55+ MCP tools registered; extension-first with native fs fallback pattern established
-- VS Code extension with full handler coverage
+- 115+ MCP tools registered; extension-first with native fs fallback pattern established
+- VS Code extension with full handler coverage; installable into VS Code, Windsurf, Cursor, and Antigravity
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period)
 - Multi-linter and multi-test-runner support (auto-detected)
 - GitHub integration (PRs, issues, actions)
@@ -16,18 +16,18 @@ Development direction and exploration guidance. Living document — update as pr
 - Activity logging with Prometheus metrics
 - Per-session stats + session-end UX (summary log + VS Code notification)
 - Claude Code Platform Integration fully shipped (skills, subagents, plugin, hooks, /ide-monitor)
-- 398 tests across 39 files; CI on Node 20 + 22
+- 654 tests (408 bridge + 246 extension) across 56 files; CI on Node 20 + 22
 - Deep security hardening: SSRF three-layer defense (lexical + DNS pre-resolution + IP pinning), Origin header validation, rate limit error codes, JSON parse error responses, interpreter flag blocklist, backpressure guards, slow-loris mitigations
 
 ---
 
 ## Near-Term Exploration Areas
 
-### Multi-Editor Support *(not started)*
-- Architecture is editor-agnostic in theory (bridge doesn't import vscode)
-- Companion extensions for Cursor, Windsurf, JetBrains?
-- Define minimal handler interface that other editors must implement
-- Priority: assess demand vs. effort
+### Multi-Editor Support *(baselined)*
+- Architecture is editor-agnostic (bridge doesn't import vscode)
+- Extension installable into VS Code, Windsurf, Cursor, and Antigravity via `install-extension` command
+- Auto-detection and name mapping for all four editors tested and passing
+- JetBrains: no extension yet — would require a separate plugin (different extension API)
 
 ### Native Fallback Improvements *(partial — one item remains)*
 - Currently: extension disconnect → hide 27 tools (audited 2026-03-12)
@@ -41,11 +41,12 @@ Development direction and exploration guidance. Living document — update as pr
 - `searchAndReplace` core logic now tested on all platforms via mocked-rg suite
 - Original rg-integration suite still gates on binary availability for CI
 
-### Performance *(not started)*
-- Profile tool call latency for common operations
-- WebSocket backpressure handling under sustained load
-- Large file handling (getBufferContent, searchWorkspace results exceeding maxResultSize)
-- Batch tool call patterns
+### Performance *(baselined 2026-03-13)*
+- Benchmark script: `node scripts/benchmark.mjs`
+- Baseline (50 iterations, loopback): all representative tools measure p50=0 ms, p99=1 ms — at Node.js timer resolution floor
+- No backpressure or large-result concerns observed at current workspace size
+- Re-run after significant tool additions or when workspace grows substantially
+- Remaining open: profiling under sustained load and large file scenarios (`getBufferContent`, large `searchWorkspace` results)
 
 ---
 

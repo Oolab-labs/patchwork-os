@@ -263,7 +263,9 @@ export async function handleWaitForTerminalOutput(
       const newCount = buf.totalWritten - lastChecked;
 
       if (newCount > 0) {
-        const lines = readLastLines(buf, newCount);
+        // Use Math.max so the full ring buffer is scanned on fast-writing terminals
+        // where newCount may exceed buffer capacity and overwrite earlier lines (BUG-20)
+        const lines = readLastLines(buf, Math.max(newCount, buf.lines.length));
         lastChecked = buf.totalWritten;
 
         for (const line of lines) {
@@ -378,9 +380,12 @@ export async function handleExecuteInTerminal(
 
   // Read output concurrently with waiting for execution end
   const reader = execution.read();
+  const readerIterator = reader[Symbol.asyncIterator]();
   const readPromise = (async () => {
     try {
-      for await (const chunk of reader) {
+      for await (const chunk of {
+        [Symbol.asyncIterator]: () => readerIterator,
+      }) {
         if (!truncated) {
           outputBytes += chunk.length;
           if (outputBytes > MAX_EXECUTE_OUTPUT_BYTES) {
@@ -422,7 +427,7 @@ export async function handleExecuteInTerminal(
     readPromise,
     new Promise<void>((r) => setTimeout(r, 500)),
   ]);
-  reader.return?.();
+  await readerIterator.return?.();
 
   const output = stripAnsi(outputChunks.join(""));
 

@@ -180,7 +180,9 @@ describe("writeClipboard: disconnected extension", () => {
       expect(msg.toLowerCase()).not.toContain("vs code extension is required");
       expect(msg.toLowerCase()).toContain("clipboard");
     } else {
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ success: true });
+      expect(JSON.parse(result.content[0].text)).toMatchObject({
+        success: true,
+      });
     }
   });
 });

@@ -21,7 +21,13 @@
     "indentWidth": 2
   },
   "files": {
-    "ignore": ["dist", "node_modules", "vscode-extension/out", "coverage", "docs"]
+    "ignore": [
+      "dist",
+      "node_modules",
+      "vscode-extension/out",
+      "coverage",
+      "docs"
+    ]
   },
   "overrides": [
     {

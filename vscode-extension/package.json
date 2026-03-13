@@ -13,12 +13,8 @@
   "engines": {
     "vscode": "^1.93.0"
   },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
@@ -26,11 +22,7 @@
       "properties": {
         "claudeIdeBridge.logLevel": {
           "type": "string",
-          "enum": [
-            "info",
-            "debug",
-            "warn"
-          ],
+          "enum": ["info", "debug", "warn"],
           "default": "info",
           "description": "Log verbosity level for the output channel."
         },

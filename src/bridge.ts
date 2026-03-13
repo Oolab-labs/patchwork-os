@@ -48,6 +48,7 @@ export class Bridge {
   private sessions = new Map<string, AgentSession>();
   private fileLock = new FileLock();
   private probes: ProbeResults | null = null;
+  private ready = false;
   private stopped = false;
   private listChangedTimer: ReturnType<typeof setTimeout> | null = null;
   private lastConnectAt: string | null = null;
@@ -64,10 +65,19 @@ export class Bridge {
 
     // Handle new Claude Code connections
     this.server.on("connection", (ws: WebSocket) => {
-      // Reject connections beyond capacity
-      if (this.sessions.size >= MAX_SESSIONS) {
+      // Reject connections before probes are ready
+      if (!this.ready) {
+        this.logger.warn("Connection rejected — bridge not ready yet");
+        ws.close(1013, "Bridge not ready");
+        return;
+      }
+      // Reject connections beyond capacity (grace-period sessions don't count)
+      const activeSessionCount = [...this.sessions.values()].filter(
+        (s) => !s.graceTimer,
+      ).length;
+      if (activeSessionCount >= MAX_SESSIONS) {
         this.logger.warn(
-          `Session capacity reached (${MAX_SESSIONS}). Rejecting connection.`,
+          `Session capacity reached (${MAX_SESSIONS} active). Rejecting connection.`,
         );
         ws.close(1013, "Bridge at capacity");
         return;
@@ -90,20 +100,19 @@ export class Bridge {
         connectedAt: Date.now(),
       };
 
-      // Register tools for this session using probes stored at start() time
-      if (this.probes) {
-        registerAllTools(
-          transport,
-          this.config,
-          session.openedFiles,
-          this.probes,
-          this.extensionClient,
-          this.activityLog,
-          session.terminalPrefix,
-          this.fileLock,
-          this.sessions,
-        );
-      }
+      // Register tools for this session — probes guaranteed non-null due to ready guard above
+      const probes = this.probes ?? ({} as ProbeResults);
+      registerAllTools(
+        transport,
+        this.config,
+        session.openedFiles,
+        probes,
+        this.extensionClient,
+        this.activityLog,
+        session.terminalPrefix,
+        this.fileLock,
+        this.sessions,
+      );
 
       transport.attach(ws);
       this.sessions.set(sessionId, session);
@@ -157,12 +166,21 @@ export class Bridge {
           s.graceTimer = setTimeout(() => {
             this.cleanupSession(sessionId);
           }, this.config.gracePeriodMs);
+          this.activityLog.recordEvent("grace_started", {
+            sessionId: sessionId.slice(0, 8),
+            gracePeriodMs: this.config.gracePeriodMs,
+            reason: "ws_error",
+          });
+          this.logger.info(
+            `Grace period started for session ${sessionId.slice(0, 8)} (${this.config.gracePeriodMs / 1000}s) due to ws error`,
+          );
         }
       });
     });
 
     // Debounced tools/list_changed notification — max one per 2 seconds
     const sendListChanged = () => {
+      if (this.stopped) return; // Don't fire after stop()
       if (this.listChangedTimer) return; // Already scheduled
       this.listChangedTimer = setTimeout(() => {
         this.listChangedTimer = null;
@@ -324,6 +342,7 @@ export class Bridge {
   async start(): Promise<void> {
     // 1. Probe available CLI tools
     this.probes = await probeAll();
+    this.ready = true;
     const probes = this.probes;
     const probeList = (keys?: string[]) =>
       Object.entries(probes)
@@ -452,7 +471,7 @@ export class Bridge {
     // Guard against accumulating handlers across multiple start() calls.
     if (!globalHandlersRegistered) {
       globalHandlersRegistered = true;
-      process.once("unhandledRejection", (reason) => {
+      process.on("unhandledRejection", (reason) => {
         this.logger.error(
           `Unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
         );
@@ -548,7 +567,16 @@ export class Bridge {
       });
     }
     this.extensionClient.disconnect();
-    await this.server.close();
+    // Clear any listChanged timer that may have been set during concurrent extension disconnect
+    if (this.listChangedTimer) {
+      clearTimeout(this.listChangedTimer);
+      this.listChangedTimer = null;
+    }
+    try {
+      await this.server.close();
+    } catch {
+      // Server may already be closed
+    }
     this.lockFile.delete();
     this.checkpoint?.stop();
     cleanupTempDirs();

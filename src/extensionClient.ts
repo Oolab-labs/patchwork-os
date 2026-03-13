@@ -100,6 +100,7 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  removeAbortListener?: () => void;
 }
 
 const REQUEST_TIMEOUT = 10_000;
@@ -375,10 +376,13 @@ export class ExtensionClient {
           const firstKey = this.latestAIComments.keys().next().value;
           if (firstKey !== undefined) this.latestAIComments.delete(firstKey);
         }
-        this.safeCallback(
-          this.onAICommentsChanged,
-          comments as unknown as AIComment[],
-        );
+        // Collect the sanitized entries from latestAIComments and pass those
+        // to the callback — not the raw wire data (BUG-5 fix)
+        const sanitizedComments: AIComment[] = [];
+        for (const entries of this.latestAIComments.values()) {
+          sanitizedComments.push(...entries);
+        }
+        this.safeCallback(this.onAICommentsChanged, sanitizedComments);
         break;
       }
       case "extension/fileChanged": {
@@ -400,9 +404,16 @@ export class ExtensionClient {
             ? p.extensionVersion
             : "unknown";
         this.logger.info(`Extension hello: version=${extVer}`);
-        const [extMajor] = extVer.split(".").map(Number);
-        const [bridgeMajor] = BRIDGE_PROTOCOL_VERSION.split(".").map(Number);
-        if (extMajor !== bridgeMajor) {
+        const extMajor = Number.parseInt(extVer.split(".")[0] ?? "", 10);
+        const bridgeMajor = Number.parseInt(
+          BRIDGE_PROTOCOL_VERSION.split(".")[0] ?? "",
+          10,
+        );
+        if (Number.isNaN(extMajor)) {
+          this.logger.debug(
+            `Extension version "${extVer}" is not a recognized semver format, skipping version check`,
+          );
+        } else if (extMajor !== bridgeMajor) {
           this.logger.warn(
             `Extension major version mismatch: bridge=${BRIDGE_PROTOCOL_VERSION}, extension=${extVer}. Consider updating.`,
           );
@@ -465,9 +476,14 @@ export class ExtensionClient {
     // Wait for backpressure to clear before sending
     await waitForDrain(this.ws, this.logger, "Extension backpressure");
 
-    // Re-check after drain wait — socket may have closed
+    // Re-check after drain wait — socket may have closed or circuit breaker may have tripped
     if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error("Extension disconnected during drain wait");
+    }
+    // NOTE: This guard is the only safety net for requests that disconnect during waitForDrain.
+    // At this point the request is not yet in pendingRequests, so rejectAllPending() would not catch it.
+    if (Date.now() < this.extensionSuspendedUntil) {
+      throw new ExtensionTimeoutError(method);
     }
 
     const timeout = timeoutMs ?? REQUEST_TIMEOUT;
@@ -518,6 +534,9 @@ export class ExtensionClient {
           settle(() => reject(reason));
         },
         timer,
+        removeAbortListener: signal
+          ? () => signal.removeEventListener("abort", onAbort)
+          : undefined,
       });
 
       const data = JSON.stringify({ jsonrpc: "2.0", id, method, params });
@@ -585,6 +604,7 @@ export class ExtensionClient {
   private rejectAllPending(reason: string): void {
     for (const [_id, pending] of this.pendingRequests) {
       clearTimeout(pending.timer);
+      pending.removeAbortListener?.();
       pending.reject(new Error(reason));
     }
     this.pendingRequests.clear();

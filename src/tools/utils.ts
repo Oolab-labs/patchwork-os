@@ -67,17 +67,6 @@ export function optionalBool(
   return value;
 }
 
-/** Require args[key] to be a non-null object. Throws on failure. */
-export function requireObject(
-  args: Record<string, unknown>,
-  key: string,
-): Record<string, unknown> {
-  const val = args[key];
-  if (val === null || typeof val !== "object" || Array.isArray(val)) {
-    throw new Error(`${key} must be an object`);
-  }
-  return val as Record<string, unknown>;
-}
 
 /** Require args[key] to be an array. Throws on failure. */
 export function requireArray(
@@ -119,7 +108,11 @@ function cachedRealpathSync(p: string): string {
   return value;
 }
 
-export function resolveFilePath(filePath: string, workspace: string): string {
+export function resolveFilePath(
+  filePath: string,
+  workspace: string,
+  opts: { write?: boolean } = {},
+): string {
   if (typeof filePath !== "string") {
     throw new Error("filePath must be a string");
   }
@@ -172,6 +165,26 @@ export function resolveFilePath(filePath: string, workspace: string): string {
       `Cannot verify path "${filePath}" is within workspace: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+
+  // Hardlink bypass guard: on write paths, reject files with multiple directory
+  // entries pointing at the same inode. A hardlink from inside the workspace to
+  // an outside file shares an inode and passes the realpath check above, but
+  // writing through it would modify the outside file.
+  // Directories are excluded — their nlink reflects subdirectory count, not hardlinks.
+  if (opts.write) {
+    try {
+      const lst = fs.lstatSync(resolved);
+      if (!lst.isDirectory() && lst.nlink > 1) {
+        throw new Error(
+          `Path "${filePath}" is a hardlink (nlink=${lst.nlink}) — write denied to prevent workspace escape`,
+        );
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("hardlink")) throw err;
+      // File doesn't exist yet (ENOENT) — safe to create; other lstat errors are non-fatal
+    }
+  }
+
   return resolved;
 }
 

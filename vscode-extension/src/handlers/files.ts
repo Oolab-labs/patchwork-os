@@ -17,8 +17,17 @@ export function assertWithinWorkspace(filePath: string): void {
   try {
     realPath = fs.realpathSync(resolved);
   } catch {
-    // Path doesn't exist yet (e.g., createFile) — use resolved path
-    realPath = resolved;
+    // Path doesn't exist yet (e.g., createFile) — resolve symlinks on the parent
+    // directory instead to prevent TOCTOU symlink escape attacks (BUG-22).
+    const parent = path.dirname(resolved);
+    const filename = path.basename(resolved);
+    try {
+      const realParent = fs.realpathSync(parent);
+      realPath = path.join(realParent, filename);
+    } catch {
+      // Parent also doesn't exist — fall back to resolved path
+      realPath = resolved;
+    }
   }
   const inWorkspace = folders.some((f) => {
     const wsRoot = f.uri.fsPath;
@@ -38,10 +47,15 @@ export async function handleGetOpenFiles(): Promise<unknown> {
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {
       if (tab.input instanceof vscode.TabInputText) {
+        const tabUri = tab.input.uri;
+        const doc = vscode.workspace.textDocuments.find(
+          (d) => d.uri.toString() === tabUri.toString(),
+        );
         tabs.push({
-          filePath: tab.input.uri.fsPath,
+          filePath: tabUri.fsPath,
           isActive: tab.isActive,
           isDirty: tab.isDirty,
+          ...(doc ? { languageId: doc.languageId } : {}),
         });
       }
     }

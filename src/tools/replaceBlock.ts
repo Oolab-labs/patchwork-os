@@ -64,7 +64,7 @@ export function createReplaceBlockTool(
         return error("oldContent must not be empty");
       }
 
-      const filePath = resolveFilePath(rawPath, workspace);
+      const filePath = resolveFilePath(rawPath, workspace, { write: true });
 
       // Try extension first — operates on the live buffer including unsaved changes
       if (extensionClient?.isConnected()) {

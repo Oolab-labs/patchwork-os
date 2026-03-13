@@ -95,11 +95,14 @@ export class SessionCheckpoint {
       }
       if (!newest) return null;
 
-      // Reject stale checkpoints
-      if (Date.now() - newest.mtime > maxAgeMs) return null;
-
       const raw = fs.readFileSync(newest.file, "utf8");
-      return JSON.parse(raw) as CheckpointData;
+      const checkpoint = JSON.parse(raw) as CheckpointData;
+
+      // Use savedAt from the checkpoint JSON for staleness — filesystem mtime is
+      // unreliable when a file is copied or restored from backup.
+      if (Date.now() - checkpoint.savedAt > maxAgeMs) return null;
+
+      return checkpoint;
     } catch {
       return null;
     }
