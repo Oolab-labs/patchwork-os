@@ -14,3 +14,6 @@ coverage/
 
 # Claude Code runtime (agent-memory is auto-generated, skills/agents/commands are intentional)
 .claude/agent-memory/
+
+# macOS
+.DS_Store
