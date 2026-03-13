@@ -20,19 +20,15 @@ Prioritized list of identified-but-not-yet-addressed gaps. Update this file as i
 
 ## Low Priority / Tracking
 
-### 2. VS Code Marketplace Submission
-- **What:** VSIX has never been manually submitted to the VS Code Marketplace. The `enabledApiProposals` blocker was removed in v0.3.1.
-- **Action:** Upload VSIX at https://marketplace.visualstudio.com/manage — publisher `oolab-labs`.
-
-### 3. JetBrains Plugin
+### 2. JetBrains Plugin
 - **What:** Bridge is editor-agnostic but there is no JetBrains extension. Would require a separate Kotlin plugin using the JetBrains Platform SDK.
 - **Status:** Not started. Opens a large audience.
 
-### 4. Performance Baseline *(recorded 2026-03-13)*
+### 3. Performance Baseline *(recorded 2026-03-13)*
 - Baseline: all representative tools p50=0ms, p99=1ms on loopback. No concerns at current workspace size.
 - Re-run after significant tool additions or when workspace grows substantially. Script: `node scripts/benchmark.mjs`
 
-### 5. Pre-existing Lint Issues
+### 4. Pre-existing Lint Issues
 These are known and intentionally left alone (not our changes):
 - `SUPPORTED_VERSIONS[0]!` in `transport.ts` — noNonNullAssertion
 - `smoke-test.mjs`, `activityLog.ts`, `activityLog.test.ts`, `extensionClient.test.ts` — various formatting
@@ -42,6 +38,7 @@ These are known and intentionally left alone (not our changes):
 
 ## Resolved *(recent)*
 
+- ✅ **VS Code Marketplace submission** (2026-03-13) — VSIX published, publisher `oolab-labs`
 - ✅ **Hardlink bypass** (2026-03-13) — Added `{ write: true }` to all write-path `resolveFilePath` callers; existing nlink guard now fires correctly
 - ✅ **AJV structural validation** (2026-03-13) — Transport validates tool args against `inputSchema` before handler; returns JSON-RPC -32602 on failure
 - ✅ **`organizeImports` native fallback** (2026-03-13) — Removed `extensionRequired: true`; falls back to `npx biome` then `npx prettier` when extension disconnected
