@@ -338,7 +338,11 @@ export class BridgeConnection {
     this.pongHandler = () => {
       this.lastBridgePong = Date.now();
     };
-    this.ws?.on("pong", this.pongHandler);
+    // The bridge sends WebSocket ping frames; the ws library emits 'ping' (not
+    // 'pong') when a ping frame is received. We listen on 'ping' to refresh the
+    // liveness timestamp — listening on 'pong' would require us to send our own
+    // pings and would never fire for bridge-originated pings.
+    this.ws?.on("ping", this.pongHandler);
     this.heartbeatTimer = setInterval(() => {
       const now = Date.now();
       if (now - this.lastTickTime > 60_000) {
@@ -372,7 +376,7 @@ export class BridgeConnection {
     if (this.pongHandler) {
       // Accept an explicit socket ref so callers can pass the socket before
       // nulling this.ws, making the cleanup order-independent.
-      (ws ?? this.ws)?.removeListener("pong", this.pongHandler);
+      (ws ?? this.ws)?.removeListener("ping", this.pongHandler);
       this.pongHandler = null;
     }
   }

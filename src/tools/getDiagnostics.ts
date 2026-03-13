@@ -48,6 +48,8 @@ export function createGetDiagnosticsTool(
       })
     : [];
 
+  const linterErrors = new Map<string, string>();
+
   async function runLinter(
     linter: LinterRunner,
     signal?: AbortSignal,
@@ -75,6 +77,10 @@ export function createGetDiagnosticsTool(
           // Don't cache aborted results — they're incomplete
           if (!(err instanceof Error) || err.name !== "AbortError") {
             caches.set(linter.name, { data: [], timestamp: Date.now() });
+            linterErrors.set(
+              linter.name,
+              err instanceof Error ? err.message : String(err),
+            );
           }
           return [] as LintDiagnostic[];
         })
@@ -240,6 +246,12 @@ export function createGetDiagnosticsTool(
         warnings: filteredDiags.filter((d) => d.severity === "warning").length,
       };
 
+      const errors: Record<string, string> = {};
+      for (const l of availableLinters) {
+        const err = linterErrors.get(l.name);
+        if (err) errors[l.name] = err;
+      }
+
       return success({
         available: true,
         source: "cli",
@@ -250,6 +262,7 @@ export function createGetDiagnosticsTool(
         ...(filteredDiags.length < totalBeforeFilter
           ? { truncated: true, totalBeforeFilter }
           : {}),
+        ...(Object.keys(errors).length > 0 && { linterErrors: errors }),
       });
     },
   };

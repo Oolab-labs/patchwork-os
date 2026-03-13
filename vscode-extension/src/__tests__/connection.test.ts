@@ -319,7 +319,7 @@ describe("handleMessage", () => {
 // ── startHeartbeat / stopHeartbeat ─────────────────────────────
 
 describe("startHeartbeat", () => {
-  it("does not accumulate pong listeners on repeated calls", () => {
+  it("does not accumulate ping listeners on repeated calls", () => {
     const bridge = createBridge();
     bridge.ws = new WebSocket("ws://fake") as any;
     (bridge.ws as any).readyState = WebSocket.OPEN;
@@ -329,26 +329,69 @@ describe("startHeartbeat", () => {
     (bridge as any).startHeartbeat();
     (bridge as any).startHeartbeat();
 
-    // Should have exactly 1 pong listener, not 3
-    const pongListenerCount = bridge.ws?.listenerCount("pong");
-    expect(pongListenerCount).toBe(1);
+    // Should have exactly 1 ping listener, not 3
+    const pingListenerCount = bridge.ws?.listenerCount("ping");
+    expect(pingListenerCount).toBe(1);
   });
 
-  it("stopHeartbeat removes only the heartbeat pong handler, not other pong listeners", () => {
+  it("stopHeartbeat removes only the heartbeat ping handler, not other ping listeners", () => {
     const bridge = createBridge();
     bridge.ws = new WebSocket("ws://fake") as any;
     (bridge.ws as any).readyState = WebSocket.OPEN;
 
-    // Add a non-heartbeat pong listener
-    const otherPongHandler = () => {};
-    bridge.ws?.on("pong", otherPongHandler);
+    // Add a non-heartbeat ping listener
+    const otherPingHandler = () => {};
+    bridge.ws?.on("ping", otherPingHandler);
 
     (bridge as any).startHeartbeat();
-    expect(bridge.ws?.listenerCount("pong")).toBe(2); // other + heartbeat
+    expect(bridge.ws?.listenerCount("ping")).toBe(2); // other + heartbeat
 
     (bridge as any).stopHeartbeat();
-    // The other pong listener should still be there
-    expect(bridge.ws?.listenerCount("pong")).toBe(1);
+    // The other ping listener should still be there
+    expect(bridge.ws?.listenerCount("ping")).toBe(1);
+  });
+
+  it("updates lastBridgePong when bridge sends a ping frame (ws emits 'ping')", () => {
+    // BUG REPRO: The bridge sends ping frames to the extension. The ws library
+    // emits a 'ping' event (not 'pong') when a ping frame is received. The
+    // pongHandler must listen on 'ping' — not 'pong' — or lastBridgePong is
+    // never updated and the extension force-reconnects every ~135s.
+    const bridge = createBridge();
+    bridge.ws = new WebSocket("ws://fake") as any;
+    (bridge.ws as any).readyState = WebSocket.OPEN;
+
+    (bridge as any).startHeartbeat();
+    const initialPong = (bridge as any).lastBridgePong as number;
+
+    // Advance a little so the timestamp is meaningfully different
+    vi.advanceTimersByTime(1000);
+
+    // Bridge sends a ping frame → ws emits 'ping' on the extension side
+    bridge.ws!.emit("ping");
+
+    expect((bridge as any).lastBridgePong).toBeGreaterThan(initialPong);
+  });
+
+  it("does NOT force-reconnect when bridge pings arrive before 120s timeout", () => {
+    // Bridge pings every 30s; extension checks every 45s with a 120s threshold.
+    // If the pongHandler is on 'ping', lastBridgePong is refreshed and the
+    // connection stays alive. If it's on 'pong' (bug), lastBridgePong goes stale
+    // and the extension reconnects at the 3rd tick (3 × 45s = 135s).
+    const bridge = createBridge();
+    bridge.ws = new WebSocket("ws://fake") as any;
+    (bridge.ws as any).readyState = WebSocket.OPEN;
+    const ws = bridge.ws!; // capture before potential null-out
+
+    (bridge as any).startHeartbeat();
+
+    // Simulate bridge pings every 30s for 150s
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(30_000);
+      ws.emit("ping"); // bridge sent a ping — should refresh lastBridgePong
+    }
+
+    // After 150s of regular pings the extension should still be connected
+    expect(ws.terminate).not.toHaveBeenCalled();
   });
 });
 

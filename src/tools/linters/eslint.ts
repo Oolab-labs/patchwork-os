@@ -66,8 +66,10 @@ export const eslintLinter: LinterRunner = {
         }
       }
       return diagnostics;
-    } catch {
-      return [];
+    } catch (err) {
+      throw new Error(
+        `eslint: failed to parse output — ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   },
 };

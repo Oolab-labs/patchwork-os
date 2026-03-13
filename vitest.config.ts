@@ -9,7 +9,15 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/**/__tests__/**", "src/**/*.test.ts"],
+      exclude: [
+        "src/**/__tests__/**",
+        "src/**/*.test.ts",
+        // Pure type-definition files — no runtime code to cover
+        "src/**/types.ts",
+        // Entry-point bootstrappers — integration-tested elsewhere
+        "src/bridge.ts",
+        "src/index.ts",
+      ],
       all: true,
       thresholds: {
         lines: 70,

@@ -37,8 +37,10 @@ export const ruffLinter: LinterRunner = {
         source: "ruff",
         code: e.code,
       }));
-    } catch {
-      return [];
+    } catch (err) {
+      throw new Error(
+        `ruff: failed to parse output — ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   },
 };

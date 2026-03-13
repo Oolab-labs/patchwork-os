@@ -40,8 +40,10 @@ export const pyrightLinter: LinterRunner = {
         source: "pyright",
         code: d.rule,
       }));
-    } catch {
-      return [];
+    } catch (err) {
+      throw new Error(
+        `pyright: failed to parse output — ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   },
 };

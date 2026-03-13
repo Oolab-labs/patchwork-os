@@ -51,8 +51,10 @@ export const biomeLinter: LinterRunner = {
         source: "biome",
         code: d.category,
       }));
-    } catch {
-      return [];
+    } catch (err) {
+      throw new Error(
+        `biome: failed to parse output — ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   },
 };
