@@ -173,6 +173,14 @@ Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives
 | `watchFiles` | Watch file patterns for changes |
 | `unwatchFiles` | Stop watching a file pattern |
 
+### Dependency & Security
+| Tool | Description |
+|------|-------------|
+| `getDependencyTree` | Unified dependency graph across npm, pip, cargo, and go mod. Auto-detects from manifest files. Supports configurable depth. |
+| `getSecurityAdvisories` | Run security audit (npm audit / cargo audit / pip-audit) and return vulnerabilities with severity, CVE IDs, and remediation. Filter by minimum severity. |
+| `getGitHotspots` | Identify most frequently changed files in git history over a time window. Useful for prioritizing refactoring and code review focus. |
+| `getPRTemplate` | Generate a pull request body from git commit messages and diff stats. Supports bullet, prose, and conventional commit styles. Pairs with `githubCreatePR`. |
+
 ### AI Comments
 | Tool | Description |
 |------|-------------|

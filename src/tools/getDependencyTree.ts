@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, optionalString, success } from "./utils.js";
+import { execSafe, optionalInt, optionalString, success } from "./utils.js";
 
 const CACHE_TTL = 30_000;
 
@@ -228,10 +228,7 @@ export function createGetDependencyTreeTool(
 
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const pm = optionalString(args, "packageManager") ?? "auto";
-      const depthRaw =
-        typeof args.depth === "number"
-          ? Math.min(Math.max(args.depth, 1), 10)
-          : 2;
+      const depthRaw = optionalInt(args, "depth", 1, 10) ?? 2;
 
       const cacheKey = `${pm}:${depthRaw}`;
       const now = Date.now();

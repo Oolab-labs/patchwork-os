@@ -255,7 +255,7 @@ export function createGetSecurityAdvisoriesTool(
         | Severity
         | "all";
 
-      const cacheKey = pm;
+      const cacheKey = `${pm}:${minSeverity}`;
       const now = Date.now();
       const cached = cache.get(cacheKey);
       if (cached && now - cached.timestamp < CACHE_TTL) {

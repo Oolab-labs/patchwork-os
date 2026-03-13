@@ -67,7 +67,7 @@ export function createGetGitHotspotsTool(workspace: string) {
 
       const gitArgs = [
         "log",
-        `--since=${days} days ago`,
+        `--since=${since}`,
         "--name-only",
         "--pretty=format:",
         "--no-renames",
@@ -107,10 +107,10 @@ export function createGetGitHotspotsTool(workspace: string) {
       // actually count via a separate git command for accuracy
       const commitCountResult = await execSafe(
         "git",
-        ["rev-list", "--count", `--since=${days} days ago`, "HEAD"],
+        ["rev-list", "--count", `--since=${since}`, "HEAD"],
         { cwd: workspace, signal, timeout: 5_000 },
       );
-      if (!result.timedOut && commitCountResult.exitCode === 0) {
+      if (!commitCountResult.timedOut && commitCountResult.exitCode === 0) {
         totalCommits =
           Number.parseInt(commitCountResult.stdout.trim(), 10) || 0;
       }

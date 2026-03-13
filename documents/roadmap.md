@@ -4,9 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v1.4.2 — 2026-03-13)
+## Current State (v1.4.3 — 2026-03-13)
 
 - 124+ MCP tools registered; extension-first with native fs fallback pattern established
+- New tools: `getDependencyTree`, `getSecurityAdvisories`, `getGitHotspots`, `getPRTemplate` — Phase 1 quick wins complete
 - VS Code extension with full handler coverage; installable into VS Code, Windsurf, Cursor, and Antigravity
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period)
 - Multi-linter and multi-test-runner support (auto-detected)
