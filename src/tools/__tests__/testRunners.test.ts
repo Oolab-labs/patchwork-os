@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../utils.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../utils.js")>();
@@ -12,39 +12,60 @@ vi.mock("node:fs", async (importOriginal) => {
     default: {
       ...actual,
       existsSync: vi.fn(() => true),
-      readFileSync: vi.fn(() => '{"devDependencies":{"vitest":"^1.0.0","jest":"^29.0.0"}}'),
+      readFileSync: vi.fn(
+        () => '{"devDependencies":{"vitest":"^1.0.0","jest":"^29.0.0"}}',
+      ),
       statSync: vi.fn(() => ({ isDirectory: () => true })),
       readdirSync: vi.fn(() => ["test_example.py"]),
     },
   };
 });
 
-import { execSafe } from "../utils.js";
 import fs from "node:fs";
-import { vitestRunner, jestRunner } from "../testRunners/vitestJest.js";
-import { pytestRunner } from "../testRunners/pytest.js";
 import { cargoTestRunner } from "../testRunners/cargoTest.js";
 import { goTestRunner } from "../testRunners/goTest.js";
+import { pytestRunner } from "../testRunners/pytest.js";
+import { jestRunner, vitestRunner } from "../testRunners/vitestJest.js";
+import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 const mockExistsSync = vi.mocked(fs.existsSync);
 const mockReadFileSync = vi.mocked(fs.readFileSync);
 
 const ok = (stdout: string, stderr = "") => ({
-  stdout, stderr, exitCode: 0, timedOut: false, durationMs: 50,
+  stdout,
+  stderr,
+  exitCode: 0,
+  timedOut: false,
+  durationMs: 50,
 });
 
 const probes = {
-  biome: false, eslint: false, tsc: false, cargo: true, go: true,
-  pyright: false, ruff: false, node: true, npm: true, npx: true,
-  git: true, gh: false, python: true, codex: false,
-  vitest: true, jest: true, pytest: true,
+  biome: false,
+  eslint: false,
+  tsc: false,
+  cargo: true,
+  go: true,
+  pyright: false,
+  ruff: false,
+  node: true,
+  npm: true,
+  npx: true,
+  git: true,
+  gh: false,
+  python: true,
+  codex: false,
+  vitest: true,
+  jest: true,
+  pytest: true,
 } as any;
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockExistsSync.mockReturnValue(true);
-  mockReadFileSync.mockReturnValue('{"devDependencies":{"vitest":"^1.0.0","jest":"^29.0.0"}}' as any);
+  mockReadFileSync.mockReturnValue(
+    '{"devDependencies":{"vitest":"^1.0.0","jest":"^29.0.0"}}' as any,
+  );
 });
 
 // ── vitestRunner ──────────────────────────────────────────────────────────────
@@ -56,7 +77,9 @@ describe("vitestRunner", () => {
 
   it("detect() returns false when no vitest devDep and no probe", () => {
     mockReadFileSync.mockReturnValue('{"devDependencies":{}}' as any);
-    expect(vitestRunner.detect("/ws", { ...probes, vitest: false })).toBe(false);
+    expect(vitestRunner.detect("/ws", { ...probes, vitest: false })).toBe(
+      false,
+    );
   });
 
   it("run() parses vitest JSON reporter output", async () => {
@@ -65,8 +88,20 @@ describe("vitestRunner", () => {
         {
           testFilePath: "/ws/src/__tests__/foo.test.ts",
           testResults: [
-            { fullName: "foo passes", status: "passed", duration: 10, failureMessages: [], location: { line: 5, column: 1 } },
-            { fullName: "foo fails", status: "failed", duration: 5, failureMessages: ["Expected 1 to be 2\n  at foo.test.ts:10:3"], location: { line: 1, column: 1 } },
+            {
+              fullName: "foo passes",
+              status: "passed",
+              duration: 10,
+              failureMessages: [],
+              location: { line: 5, column: 1 },
+            },
+            {
+              fullName: "foo fails",
+              status: "failed",
+              duration: 5,
+              failureMessages: ["Expected 1 to be 2\n  at foo.test.ts:10:3"],
+              location: { line: 1, column: 1 },
+            },
           ],
         },
       ],
@@ -74,7 +109,11 @@ describe("vitestRunner", () => {
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(report)));
     const results = await vitestRunner.run("/ws");
     expect(results).toHaveLength(2);
-    expect(results[0]).toMatchObject({ name: "foo passes", status: "passed", source: "vitest" });
+    expect(results[0]).toMatchObject({
+      name: "foo passes",
+      status: "passed",
+      source: "vitest",
+    });
     expect(results[1]).toMatchObject({ name: "foo fails", status: "failed" });
     expect(results[1].message).toContain("Expected 1 to be 2");
   });
@@ -93,10 +132,19 @@ describe("vitestRunner", () => {
 
   it("run() handles skipped tests", async () => {
     const report = {
-      testResults: [{
-        testFilePath: "/ws/a.test.ts",
-        testResults: [{ fullName: "skipped", status: "pending", duration: 0, failureMessages: [] }],
-      }],
+      testResults: [
+        {
+          testFilePath: "/ws/a.test.ts",
+          testResults: [
+            {
+              fullName: "skipped",
+              status: "pending",
+              duration: 0,
+              failureMessages: [],
+            },
+          ],
+        },
+      ],
     };
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(report)));
     const results = await vitestRunner.run("/ws");
@@ -105,14 +153,22 @@ describe("vitestRunner", () => {
 
   it("run() extracts line from stack trace when location is default", async () => {
     const report = {
-      testResults: [{
-        testFilePath: "/ws/a.test.ts",
-        testResults: [{
-          fullName: "failing", status: "failed", duration: 0,
-          failureMessages: ["Error: fail\n  at Object.<anonymous> (/ws/a.test.ts:42:5)"],
-          location: { line: 1, column: 1 },
-        }],
-      }],
+      testResults: [
+        {
+          testFilePath: "/ws/a.test.ts",
+          testResults: [
+            {
+              fullName: "failing",
+              status: "failed",
+              duration: 0,
+              failureMessages: [
+                "Error: fail\n  at Object.<anonymous> (/ws/a.test.ts:42:5)",
+              ],
+              location: { line: 1, column: 1 },
+            },
+          ],
+        },
+      ],
     };
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(report)));
     const results = await vitestRunner.run("/ws");
@@ -134,14 +190,27 @@ describe("jestRunner", () => {
 
   it("run() parses jest --json output", async () => {
     const report = {
-      testResults: [{
-        testFilePath: "/ws/src/bar.test.ts",
-        testResults: [{ fullName: "bar works", status: "passed", duration: 8, failureMessages: [] }],
-      }],
+      testResults: [
+        {
+          testFilePath: "/ws/src/bar.test.ts",
+          testResults: [
+            {
+              fullName: "bar works",
+              status: "passed",
+              duration: 8,
+              failureMessages: [],
+            },
+          ],
+        },
+      ],
     };
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(report)));
     const results = await jestRunner.run("/ws");
-    expect(results[0]).toMatchObject({ name: "bar works", status: "passed", source: "jest" });
+    expect(results[0]).toMatchObject({
+      name: "bar works",
+      status: "passed",
+      source: "jest",
+    });
   });
 
   it("run() passes filter arg", async () => {
@@ -165,12 +234,16 @@ describe("pytestRunner", () => {
   });
 
   it("detect() returns false when pytest probe missing", () => {
-    expect(pytestRunner.detect("/ws", { ...probes, pytest: false })).toBe(false);
+    expect(pytestRunner.detect("/ws", { ...probes, pytest: false })).toBe(
+      false,
+    );
   });
 
   it("detect() returns false when no config files or test dir", () => {
     mockExistsSync.mockReturnValue(false);
-    vi.mocked(fs.statSync).mockImplementation(() => { throw new Error("ENOENT"); });
+    vi.mocked(fs.statSync).mockImplementation(() => {
+      throw new Error("ENOENT");
+    });
     expect(pytestRunner.detect("/ws", probes)).toBe(false);
   });
 
@@ -185,7 +258,11 @@ describe("pytestRunner", () => {
     const failed = results.filter((r) => r.status === "failed");
     const passed = results.filter((r) => r.status === "passed");
     expect(failed).toHaveLength(1);
-    expect(failed[0]).toMatchObject({ name: "TestFoo::test_bar", status: "failed", source: "pytest" });
+    expect(failed[0]).toMatchObject({
+      name: "TestFoo::test_bar",
+      status: "failed",
+      source: "pytest",
+    });
     expect(passed).toHaveLength(2);
   });
 
@@ -195,11 +272,15 @@ describe("pytestRunner", () => {
   });
 
   it("run() rejects filter starting with '-'", async () => {
-    await expect(pytestRunner.run("/ws", "-k something")).rejects.toThrow("must not start with");
+    await expect(pytestRunner.run("/ws", "-k something")).rejects.toThrow(
+      "must not start with",
+    );
   });
 
   it("run() rejects filter with path traversal", async () => {
-    await expect(pytestRunner.run("/ws", "../secret")).rejects.toThrow("path traversal");
+    await expect(pytestRunner.run("/ws", "../secret")).rejects.toThrow(
+      "path traversal",
+    );
   });
 });
 
@@ -211,7 +292,9 @@ describe("cargoTestRunner", () => {
   });
 
   it("detect() returns false when cargo probe missing", () => {
-    expect(cargoTestRunner.detect("/ws", { ...probes, cargo: false })).toBe(false);
+    expect(cargoTestRunner.detect("/ws", { ...probes, cargo: false })).toBe(
+      false,
+    );
   });
 
   it("run() parses test ... ok / FAILED output", async () => {
@@ -240,7 +323,9 @@ describe("cargoTestRunner", () => {
   });
 
   it("run() rejects filter starting with '-'", async () => {
-    await expect(cargoTestRunner.run("/ws", "--flag")).rejects.toThrow("must not start with");
+    await expect(cargoTestRunner.run("/ws", "--flag")).rejects.toThrow(
+      "must not start with",
+    );
   });
 });
 
@@ -258,13 +343,27 @@ describe("goTestRunner", () => {
   it("run() parses go test -json ndjson output", async () => {
     const events = [
       { Action: "run", Test: "TestAdd" },
-      { Action: "output", Test: "TestAdd", Output: "--- PASS: TestAdd (0.00s)\n" },
+      {
+        Action: "output",
+        Test: "TestAdd",
+        Output: "--- PASS: TestAdd (0.00s)\n",
+      },
       { Action: "pass", Test: "TestAdd", Elapsed: 0.001 },
       { Action: "run", Test: "TestSub" },
-      { Action: "output", Test: "TestSub", Output: "--- FAIL: TestSub (0.00s)\n" },
-      { Action: "output", Test: "TestSub", Output: "    sub_test.go:20: got 1 want 2\n" },
+      {
+        Action: "output",
+        Test: "TestSub",
+        Output: "--- FAIL: TestSub (0.00s)\n",
+      },
+      {
+        Action: "output",
+        Test: "TestSub",
+        Output: "    sub_test.go:20: got 1 want 2\n",
+      },
       { Action: "fail", Test: "TestSub", Elapsed: 0.002 },
-    ].map((e) => JSON.stringify(e)).join("\n");
+    ]
+      .map((e) => JSON.stringify(e))
+      .join("\n");
     mockExecSafe.mockResolvedValue(ok(events));
     const results = await goTestRunner.run("/ws");
     const passed = results.find((r) => r.name === "TestAdd");
@@ -288,6 +387,8 @@ describe("goTestRunner", () => {
   });
 
   it("run() rejects filter starting with '-'", async () => {
-    await expect(goTestRunner.run("/ws", "-bench=.")).rejects.toThrow("must not start with");
+    await expect(goTestRunner.run("/ws", "-bench=.")).rejects.toThrow(
+      "must not start with",
+    );
   });
 });

@@ -1,17 +1,23 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../utils.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../utils.js")>();
   return { ...actual, execSafe: vi.fn() };
 });
 
-import { execSafe } from "../utils.js";
 import { createFindFilesTool } from "../findFiles.js";
+import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 const ws = "/fake/workspace";
 
-const ok = (stdout: string) => ({ stdout, stderr: "", exitCode: 0, timedOut: false, durationMs: 10 });
+const ok = (stdout: string) => ({
+  stdout,
+  stderr: "",
+  exitCode: 0,
+  timedOut: false,
+  durationMs: 10,
+});
 
 function parse(r: { content: Array<{ type: string; text: string }> }) {
   return JSON.parse(r.content[0]?.text ?? "{}");
@@ -23,7 +29,9 @@ describe("createFindFilesTool — fd path", () => {
   const probes = { fd: true, git: true } as any;
 
   it("uses fd and returns file list", async () => {
-    mockExecSafe.mockResolvedValue(ok("/fake/workspace/src/index.ts\n/fake/workspace/src/app.ts\n"));
+    mockExecSafe.mockResolvedValue(
+      ok("/fake/workspace/src/index.ts\n/fake/workspace/src/app.ts\n"),
+    );
     const tool = createFindFilesTool(ws, probes);
     const result = parse(await tool.handler({ pattern: "*.ts" }));
     expect(result.tool).toBe("fd");
@@ -42,7 +50,10 @@ describe("createFindFilesTool — fd path", () => {
   });
 
   it("marks truncated when exactly 100 results returned", async () => {
-    const lines = Array.from({ length: 100 }, (_, i) => `/fake/workspace/f${i}.ts`).join("\n");
+    const lines = Array.from(
+      { length: 100 },
+      (_, i) => `/fake/workspace/f${i}.ts`,
+    ).join("\n");
     mockExecSafe.mockResolvedValue(ok(lines));
     const tool = createFindFilesTool(ws, probes);
     const result = parse(await tool.handler({ pattern: "*.ts" }));
@@ -107,7 +118,6 @@ describe("createFindFilesTool — find fallback", () => {
     expect(args).toContain("*.ts");
   });
 });
-
 
 describe("createFindFilesTool — missing pattern", () => {
   it("throws when pattern is missing", async () => {

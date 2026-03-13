@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSaveDocumentTool } from "../saveDocument.js";
 import { ExtensionTimeoutError } from "../../extensionClient.js";
+import { createSaveDocumentTool } from "../saveDocument.js";
 
 function parse(r: { content: Array<{ text: string }> }) {
   return JSON.parse(r.content[0]?.text ?? "{}");
@@ -40,7 +40,10 @@ describe("createSaveDocumentTool", () => {
   });
 
   it("returns saved:true when extension saves buffer successfully", async () => {
-    const tool = createSaveDocumentTool(ws, makeClient({ connected: true, savedResult: true }));
+    const tool = createSaveDocumentTool(
+      ws,
+      makeClient({ connected: true, savedResult: true }),
+    );
     const data = parse(await tool.handler({ filePath: `${ws}/a.ts` }));
     expect(data.success).toBe(true);
     expect(data.saved).toBe(true);
@@ -48,7 +51,10 @@ describe("createSaveDocumentTool", () => {
   });
 
   it("returns saved:false when file not open in editor (saveFile returns false)", async () => {
-    const tool = createSaveDocumentTool(ws, makeClient({ connected: true, savedResult: false }));
+    const tool = createSaveDocumentTool(
+      ws,
+      makeClient({ connected: true, savedResult: false }),
+    );
     const data = parse(await tool.handler({ filePath: `${ws}/a.ts` }));
     expect(data.success).toBe(true);
     expect(data.saved).toBe(false);
@@ -56,7 +62,10 @@ describe("createSaveDocumentTool", () => {
   });
 
   it("falls back to no-op on ExtensionTimeoutError", async () => {
-    const tool = createSaveDocumentTool(ws, makeClient({ connected: true, throwTimeout: true }));
+    const tool = createSaveDocumentTool(
+      ws,
+      makeClient({ connected: true, throwTimeout: true }),
+    );
     const data = parse(await tool.handler({ filePath: `${ws}/a.ts` }));
     expect(data.success).toBe(true);
     expect(data.saved).toBe(false);
@@ -65,10 +74,14 @@ describe("createSaveDocumentTool", () => {
   it("re-throws non-timeout errors", async () => {
     const client = {
       isConnected: vi.fn(() => true),
-      saveFile: vi.fn(async () => { throw new Error("unexpected"); }),
+      saveFile: vi.fn(async () => {
+        throw new Error("unexpected");
+      }),
     } as any;
     const tool = createSaveDocumentTool(ws, client);
-    await expect(tool.handler({ filePath: `${ws}/a.ts` })).rejects.toThrow("unexpected");
+    await expect(tool.handler({ filePath: `${ws}/a.ts` })).rejects.toThrow(
+      "unexpected",
+    );
   });
 
   it("throws when filePath is missing", async () => {

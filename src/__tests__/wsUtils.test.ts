@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
-import { waitForDrain, safeSend, BACKPRESSURE_THRESHOLD } from "../wsUtils.js";
+import { BACKPRESSURE_THRESHOLD, safeSend, waitForDrain } from "../wsUtils.js";
 
 function makeWs(readyState = WebSocket.OPEN, bufferedAmount = 0) {
   return {
@@ -41,7 +41,12 @@ describe("waitForDrain", () => {
   it("resolves when socket emits drain", async () => {
     vi.useFakeTimers();
     const ws = makeWs(WebSocket.OPEN, BACKPRESSURE_THRESHOLD + 1);
-    const mockSocket = { once: vi.fn(), removeListener: vi.fn(), getMaxListeners: vi.fn(() => 10), setMaxListeners: vi.fn() };
+    const mockSocket = {
+      once: vi.fn(),
+      removeListener: vi.fn(),
+      getMaxListeners: vi.fn(() => 10),
+      setMaxListeners: vi.fn(),
+    };
     (ws as any)._socket = mockSocket;
 
     const drainPromise = waitForDrain(ws, logger);
@@ -56,7 +61,12 @@ describe("waitForDrain", () => {
   it("resolves when socket emits close", async () => {
     vi.useFakeTimers();
     const ws = makeWs(WebSocket.OPEN, BACKPRESSURE_THRESHOLD + 1);
-    const mockSocket = { once: vi.fn(), removeListener: vi.fn(), getMaxListeners: vi.fn(() => 10), setMaxListeners: vi.fn() };
+    const mockSocket = {
+      once: vi.fn(),
+      removeListener: vi.fn(),
+      getMaxListeners: vi.fn(() => 10),
+      setMaxListeners: vi.fn(),
+    };
     (ws as any)._socket = mockSocket;
 
     const drainPromise = waitForDrain(ws, logger);
@@ -70,7 +80,12 @@ describe("waitForDrain", () => {
   it("resolves after timeout when no drain/close fires", async () => {
     vi.useFakeTimers();
     const ws = makeWs(WebSocket.OPEN, BACKPRESSURE_THRESHOLD + 1);
-    const mockSocket = { once: vi.fn(), removeListener: vi.fn(), getMaxListeners: vi.fn(() => 10), setMaxListeners: vi.fn() };
+    const mockSocket = {
+      once: vi.fn(),
+      removeListener: vi.fn(),
+      getMaxListeners: vi.fn(() => 10),
+      setMaxListeners: vi.fn(),
+    };
     (ws as any)._socket = mockSocket;
 
     const drainPromise = waitForDrain(ws, logger);
@@ -96,7 +111,9 @@ describe("safeSend", () => {
 
   it("returns false and logs error when send throws", async () => {
     const ws = makeWs(WebSocket.OPEN, 0);
-    (ws.send as ReturnType<typeof vi.fn>).mockImplementation(() => { throw new Error("boom"); });
+    (ws.send as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error("boom");
+    });
     expect(await safeSend(ws, "hello", logger)).toBe(false);
     expect(logger.error).toHaveBeenCalled();
   });
@@ -104,7 +121,12 @@ describe("safeSend", () => {
   it("returns false when socket closes during drain wait", async () => {
     vi.useFakeTimers();
     const ws = makeWs(WebSocket.OPEN, BACKPRESSURE_THRESHOLD + 1);
-    const mockSocket = { once: vi.fn(), removeListener: vi.fn(), getMaxListeners: vi.fn(() => 10), setMaxListeners: vi.fn() };
+    const mockSocket = {
+      once: vi.fn(),
+      removeListener: vi.fn(),
+      getMaxListeners: vi.fn(() => 10),
+      setMaxListeners: vi.fn(),
+    };
     (ws as any)._socket = mockSocket;
 
     const sendPromise = safeSend(ws, "msg", logger);

@@ -5,20 +5,46 @@ vi.mock("../utils.js", async (importOriginal) => {
   return { ...actual, execSafe: vi.fn() };
 });
 
+import {
+  createGithubGetRunLogsTool,
+  createGithubListRunsTool,
+} from "../github/actions.js";
+import {
+  createGithubCreateIssueTool,
+  createGithubGetIssueTool,
+  createGithubListIssuesTool,
+} from "../github/issues.js";
+import {
+  createGithubCreatePRTool,
+  createGithubListPRsTool,
+  createGithubViewPRTool,
+} from "../github/pr.js";
 import { execSafe } from "../utils.js";
-import { createGithubListRunsTool, createGithubGetRunLogsTool } from "../github/actions.js";
-import { createGithubListIssuesTool, createGithubCreateIssueTool, createGithubGetIssueTool } from "../github/issues.js";
-import { createGithubCreatePRTool, createGithubListPRsTool, createGithubViewPRTool } from "../github/pr.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 const ws = "/fake/workspace";
 
-function parse(r: { content: Array<{ type: string; text: string }>; isError?: true }) {
+function parse(r: {
+  content: Array<{ type: string; text: string }>;
+  isError?: true;
+}) {
   return JSON.parse(r.content.at(0)?.text ?? "{}");
 }
 
-const ok = (stdout: string, stderr = "") => ({ stdout, stderr, exitCode: 0, timedOut: false, durationMs: 20 });
-const fail = (stderr: string, exitCode = 1) => ({ stdout: "", stderr, exitCode, timedOut: false, durationMs: 20 });
+const ok = (stdout: string, stderr = "") => ({
+  stdout,
+  stderr,
+  exitCode: 0,
+  timedOut: false,
+  durationMs: 20,
+});
+const fail = (stderr: string, exitCode = 1) => ({
+  stdout: "",
+  stderr,
+  exitCode,
+  timedOut: false,
+  durationMs: 20,
+});
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -26,7 +52,9 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("createGithubListRunsTool", () => {
   it("returns run list on success", async () => {
-    const runs = [{ databaseId: 1, status: "completed", conclusion: "success", name: "CI" }];
+    const runs = [
+      { databaseId: 1, status: "completed", conclusion: "success", name: "CI" },
+    ];
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(runs)));
     const tool = createGithubListRunsTool(ws);
     const result = parse(await tool.handler({}));
@@ -37,7 +65,12 @@ describe("createGithubListRunsTool", () => {
   it("passes branch/workflow/status/limit args", async () => {
     mockExecSafe.mockResolvedValue(ok("[]"));
     const tool = createGithubListRunsTool(ws);
-    await tool.handler({ branch: "main", workflow: "ci.yml", status: "failure", limit: 5 });
+    await tool.handler({
+      branch: "main",
+      workflow: "ci.yml",
+      status: "failure",
+      limit: 5,
+    });
     const args = mockExecSafe.mock.calls[0]?.[1] as string[];
     expect(args).toContain("--branch");
     expect(args).toContain("main");
@@ -111,7 +144,12 @@ describe("createGithubListIssuesTool", () => {
   it("passes state/limit/assignee/label args", async () => {
     mockExecSafe.mockResolvedValue(ok("[]"));
     const tool = createGithubListIssuesTool(ws);
-    await tool.handler({ state: "closed", limit: 5, assignee: "@me", label: "bug" });
+    await tool.handler({
+      state: "closed",
+      limit: 5,
+      assignee: "@me",
+      label: "bug",
+    });
     const args = mockExecSafe.mock.calls[0]?.[1] as string[];
     expect(args).toContain("closed");
     expect(args).toContain("@me");
@@ -155,7 +193,12 @@ describe("createGithubCreateIssueTool", () => {
   it("passes body/label/assignee args", async () => {
     mockExecSafe.mockResolvedValue(ok(JSON.stringify({ url: "u", number: 1 })));
     const tool = createGithubCreateIssueTool(ws);
-    await tool.handler({ title: "T", body: "B", label: "bug", assignee: "user" });
+    await tool.handler({
+      title: "T",
+      body: "B",
+      label: "bug",
+      assignee: "user",
+    });
     const args = mockExecSafe.mock.calls[0]?.[1] as string[];
     expect(args.some((a) => a.includes("bug"))).toBe(true);
     expect(args.some((a) => a.includes("user"))).toBe(true);
@@ -173,7 +216,15 @@ describe("createGithubCreateIssueTool", () => {
 
 describe("createGithubGetIssueTool", () => {
   it("returns issue detail on success", async () => {
-    const issue = { number: 5, title: "Issue", state: "open", body: "desc", labels: [], assignees: [], comments: [] };
+    const issue = {
+      number: 5,
+      title: "Issue",
+      state: "open",
+      body: "desc",
+      labels: [],
+      assignees: [],
+      comments: [],
+    };
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(issue)));
     const tool = createGithubGetIssueTool(ws);
     const result = parse(await tool.handler({ number: 5 }));
@@ -207,7 +258,12 @@ describe("createGithubCreatePRTool", () => {
   it("passes draft/base/body args", async () => {
     mockExecSafe.mockResolvedValue(ok(JSON.stringify({ url: "u", number: 1 })));
     const tool = createGithubCreatePRTool(ws);
-    await tool.handler({ title: "T", draft: true, base: "develop", body: "desc" });
+    await tool.handler({
+      title: "T",
+      draft: true,
+      base: "develop",
+      body: "desc",
+    });
     const args = mockExecSafe.mock.calls[0]?.[1] as string[];
     expect(args).toContain("--draft");
     expect(args).toContain("--base");
@@ -245,7 +301,14 @@ describe("createGithubListPRsTool", () => {
 
 describe("createGithubViewPRTool", () => {
   it("returns PR detail on success", async () => {
-    const pr = { number: 3, title: "Fix", state: "open", body: "", author: {}, reviews: [] };
+    const pr = {
+      number: 3,
+      title: "Fix",
+      state: "open",
+      body: "",
+      author: {},
+      reviews: [],
+    };
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(pr)));
     const tool = createGithubViewPRTool(ws);
     const result = parse(await tool.handler({ number: 3 }));

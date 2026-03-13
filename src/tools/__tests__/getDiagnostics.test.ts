@@ -2,7 +2,7 @@
  * Tests that getDiagnostics surfaces linter errors rather than silently
  * returning empty diagnostics when a linter's JSON parsing fails.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../utils.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../utils.js")>();
@@ -14,20 +14,34 @@ vi.mock("node:fs", async (importOriginal) => {
   return { ...actual, default: { ...actual, existsSync: vi.fn(() => true) } };
 });
 
-import { execSafe } from "../utils.js";
 import { createGetDiagnosticsTool } from "../getDiagnostics.js";
+import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 
 const ok = (stdout: string, stderr = "") => ({
-  stdout, stderr, exitCode: 0, timedOut: false, durationMs: 10,
+  stdout,
+  stderr,
+  exitCode: 0,
+  timedOut: false,
+  durationMs: 10,
 });
 
 const probes = {
-  biome: true, eslint: false, tsc: false,
-  cargo: false, go: false, pyright: false, ruff: false,
-  node: true, npm: true, npx: true, git: true, gh: false,
-  python: false, codex: false,
+  biome: true,
+  eslint: false,
+  tsc: false,
+  cargo: false,
+  go: false,
+  pyright: false,
+  ruff: false,
+  node: true,
+  npm: true,
+  npx: true,
+  git: true,
+  gh: false,
+  python: false,
+  codex: false,
 } as any;
 
 function parse(r: { content: Array<{ text: string }> }) {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock execSafe while keeping other utils
 vi.mock("../utils.js", async (importOriginal) => {
@@ -12,28 +12,42 @@ vi.mock("node:fs", async (importOriginal) => {
   return { ...actual, default: { ...actual, existsSync: vi.fn(() => true) } };
 });
 
-import { execSafe } from "../utils.js";
 import fs from "node:fs";
 import { biomeLinter } from "../linters/biome.js";
-import { eslintLinter } from "../linters/eslint.js";
-import { typescriptLinter } from "../linters/typescript.js";
 import { cargoLinter } from "../linters/cargo.js";
+import { eslintLinter } from "../linters/eslint.js";
 import { govetLinter } from "../linters/govet.js";
 import { pyrightLinter } from "../linters/pyright.js";
 import { ruffLinter } from "../linters/ruff.js";
+import { typescriptLinter } from "../linters/typescript.js";
+import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
 const mockExistsSync = vi.mocked(fs.existsSync);
 
 const ok = (stdout: string, stderr = "") => ({
-  stdout, stderr, exitCode: 0, timedOut: false, durationMs: 10,
+  stdout,
+  stderr,
+  exitCode: 0,
+  timedOut: false,
+  durationMs: 10,
 });
 
 const probes = {
-  biome: true, eslint: true, tsc: true,
-  cargo: true, go: true, pyright: true, ruff: true,
-  node: true, npm: true, npx: true, git: true, gh: true,
-  python: true, codex: false,
+  biome: true,
+  eslint: true,
+  tsc: true,
+  cargo: true,
+  go: true,
+  pyright: true,
+  ruff: true,
+  node: true,
+  npm: true,
+  npx: true,
+  git: true,
+  gh: true,
+  python: true,
+  codex: false,
 } as any;
 
 beforeEach(() => {
@@ -60,14 +74,29 @@ describe("biomeLinter", () => {
   it("run() parses diagnostics from JSON output", async () => {
     const payload = {
       diagnostics: [
-        { path: { file: "src/a.ts" }, severity: "error", description: "Unused variable", category: "lint/correctness/noUnusedVars" },
-        { path: { file: "src/b.ts" }, severity: "warn", description: "Missing semicolon", category: "lint/style" },
+        {
+          path: { file: "src/a.ts" },
+          severity: "error",
+          description: "Unused variable",
+          category: "lint/correctness/noUnusedVars",
+        },
+        {
+          path: { file: "src/b.ts" },
+          severity: "warn",
+          description: "Missing semicolon",
+          category: "lint/style",
+        },
       ],
     };
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(payload)));
     const result = await biomeLinter.run("/ws");
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ file: "src/a.ts", severity: "error", message: "Unused variable", source: "biome" });
+    expect(result[0]).toMatchObject({
+      file: "src/a.ts",
+      severity: "error",
+      message: "Unused variable",
+      source: "biome",
+    });
     expect(result[1]).toMatchObject({ severity: "warning" });
   });
 
@@ -95,7 +124,9 @@ describe("eslintLinter", () => {
   });
 
   it("detect() returns false when eslint probe missing", () => {
-    expect(eslintLinter.detect("/ws", { ...probes, eslint: false })).toBe(false);
+    expect(eslintLinter.detect("/ws", { ...probes, eslint: false })).toBe(
+      false,
+    );
   });
 
   it("detect() returns false when config file missing", () => {
@@ -108,8 +139,20 @@ describe("eslintLinter", () => {
       {
         filePath: "/ws/src/index.ts",
         messages: [
-          { line: 10, column: 5, severity: 2, message: "no-unused-vars", ruleId: "no-unused-vars" },
-          { line: 20, column: 1, severity: 1, message: "prefer-const", ruleId: "prefer-const" },
+          {
+            line: 10,
+            column: 5,
+            severity: 2,
+            message: "no-unused-vars",
+            ruleId: "no-unused-vars",
+          },
+          {
+            line: 20,
+            column: 1,
+            severity: 1,
+            message: "prefer-const",
+            ruleId: "prefer-const",
+          },
         ],
       },
       { filePath: "/ws/src/clean.ts", messages: [] },
@@ -117,7 +160,12 @@ describe("eslintLinter", () => {
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(payload)));
     const result = await eslintLinter.run("/ws");
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ file: "/ws/src/index.ts", line: 10, severity: "error", source: "eslint" });
+    expect(result[0]).toMatchObject({
+      file: "/ws/src/index.ts",
+      line: 10,
+      severity: "error",
+      source: "eslint",
+    });
     expect(result[1]).toMatchObject({ severity: "warning" });
   });
 
@@ -132,7 +180,14 @@ describe("eslintLinter", () => {
   });
 
   it("run() handles null ruleId", async () => {
-    const payload = [{ filePath: "/ws/a.ts", messages: [{ line: 1, column: 1, severity: 2, message: "err", ruleId: null }] }];
+    const payload = [
+      {
+        filePath: "/ws/a.ts",
+        messages: [
+          { line: 1, column: 1, severity: 2, message: "err", ruleId: null },
+        ],
+      },
+    ];
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(payload)));
     const result = await eslintLinter.run("/ws");
     expect(result[0].code).toBeUndefined();
@@ -147,7 +202,9 @@ describe("typescriptLinter", () => {
   });
 
   it("detect() returns false when tsc probe missing", () => {
-    expect(typescriptLinter.detect("/ws", { ...probes, tsc: false })).toBe(false);
+    expect(typescriptLinter.detect("/ws", { ...probes, tsc: false })).toBe(
+      false,
+    );
   });
 
   it("detect() returns false when tsconfig.json missing", () => {
@@ -163,7 +220,14 @@ describe("typescriptLinter", () => {
     mockExecSafe.mockResolvedValue(ok("", tscOutput));
     const result = await typescriptLinter.run("/ws");
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ file: "src/index.ts", line: 10, column: 5, severity: "error", code: "TS2304", source: "typescript" });
+    expect(result[0]).toMatchObject({
+      file: "src/index.ts",
+      line: 10,
+      column: 5,
+      severity: "error",
+      code: "TS2304",
+      source: "typescript",
+    });
     expect(result[1]).toMatchObject({ severity: "warning", code: "TS6133" });
   });
 
@@ -203,19 +267,43 @@ describe("cargoLinter", () => {
 
   it("run() parses compiler-message JSON lines", async () => {
     const lines = [
-      JSON.stringify({ reason: "compiler-message", message: { level: "error", message: "unused variable", code: { code: "unused_variables" }, spans: [{ file_name: "src/main.rs", line_start: 5, column_start: 9 }] } }),
+      JSON.stringify({
+        reason: "compiler-message",
+        message: {
+          level: "error",
+          message: "unused variable",
+          code: { code: "unused_variables" },
+          spans: [{ file_name: "src/main.rs", line_start: 5, column_start: 9 }],
+        },
+      }),
       JSON.stringify({ reason: "compiler-artifact" }),
-      JSON.stringify({ reason: "compiler-message", message: { level: "warning", message: "dead code", code: null, spans: [{ file_name: "src/lib.rs", line_start: 12, column_start: 1 }] } }),
+      JSON.stringify({
+        reason: "compiler-message",
+        message: {
+          level: "warning",
+          message: "dead code",
+          code: null,
+          spans: [{ file_name: "src/lib.rs", line_start: 12, column_start: 1 }],
+        },
+      }),
     ].join("\n");
     mockExecSafe.mockResolvedValue(ok(lines));
     const result = await cargoLinter.run("/ws");
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ file: "src/main.rs", line: 5, severity: "error", source: "cargo" });
+    expect(result[0]).toMatchObject({
+      file: "src/main.rs",
+      line: 5,
+      severity: "error",
+      source: "cargo",
+    });
     expect(result[1]).toMatchObject({ severity: "warning" });
   });
 
   it("run() skips messages with no spans", async () => {
-    const line = JSON.stringify({ reason: "compiler-message", message: { level: "error", message: "err", spans: [] } });
+    const line = JSON.stringify({
+      reason: "compiler-message",
+      message: { level: "error", message: "err", spans: [] },
+    });
     mockExecSafe.mockResolvedValue(ok(line));
     expect(await cargoLinter.run("/ws")).toEqual([]);
   });
@@ -247,10 +335,22 @@ describe("govetLinter", () => {
       "pkg/handler.go:25:3: printf format %s has arg of wrong type",
       "cmd/main.go:10:1: unreachable code",
     ].join("\n");
-    mockExecSafe.mockResolvedValue({ stdout: "", stderr: output, exitCode: 1, timedOut: false, durationMs: 10 });
+    mockExecSafe.mockResolvedValue({
+      stdout: "",
+      stderr: output,
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 10,
+    });
     const result = await govetLinter.run("/ws");
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ file: "pkg/handler.go", line: 25, column: 3, severity: "warning", source: "govet" });
+    expect(result[0]).toMatchObject({
+      file: "pkg/handler.go",
+      line: 25,
+      column: 3,
+      severity: "warning",
+      source: "govet",
+    });
     expect(result[1]).toMatchObject({ file: "cmd/main.go", line: 10 });
   });
 
@@ -273,20 +373,40 @@ describe("pyrightLinter", () => {
   });
 
   it("detect() returns false when pyright probe missing", () => {
-    expect(pyrightLinter.detect("/ws", { ...probes, pyright: false })).toBe(false);
+    expect(pyrightLinter.detect("/ws", { ...probes, pyright: false })).toBe(
+      false,
+    );
   });
 
   it("run() parses pyright JSON output", async () => {
     const payload = {
       generalDiagnostics: [
-        { file: "/ws/app.py", range: { start: { line: 4, character: 2 } }, severity: "error", message: "Type mismatch", rule: "reportGeneralTypeIssues" },
-        { file: "/ws/utils.py", range: { start: { line: 0, character: 0 } }, severity: "warning", message: "Missing return" },
+        {
+          file: "/ws/app.py",
+          range: { start: { line: 4, character: 2 } },
+          severity: "error",
+          message: "Type mismatch",
+          rule: "reportGeneralTypeIssues",
+        },
+        {
+          file: "/ws/utils.py",
+          range: { start: { line: 0, character: 0 } },
+          severity: "warning",
+          message: "Missing return",
+        },
       ],
     };
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(payload)));
     const result = await pyrightLinter.run("/ws");
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ file: "/ws/app.py", line: 5, column: 3, severity: "error", source: "pyright", code: "reportGeneralTypeIssues" });
+    expect(result[0]).toMatchObject({
+      file: "/ws/app.py",
+      line: 5,
+      column: 3,
+      severity: "error",
+      source: "pyright",
+      code: "reportGeneralTypeIssues",
+    });
     expect(result[1]).toMatchObject({ severity: "warning" });
   });
 
@@ -314,13 +434,30 @@ describe("ruffLinter", () => {
 
   it("run() parses ruff JSON output", async () => {
     const payload = [
-      { filename: "/ws/app.py", location: { row: 3, column: 1 }, code: "E302", message: "Expected 2 blank lines" },
-      { filename: "/ws/utils.py", location: { row: 10, column: 5 }, code: "F401", message: "Unused import" },
+      {
+        filename: "/ws/app.py",
+        location: { row: 3, column: 1 },
+        code: "E302",
+        message: "Expected 2 blank lines",
+      },
+      {
+        filename: "/ws/utils.py",
+        location: { row: 10, column: 5 },
+        code: "F401",
+        message: "Unused import",
+      },
     ];
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(payload)));
     const result = await ruffLinter.run("/ws");
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ file: "/ws/app.py", line: 3, column: 1, severity: "warning", source: "ruff", code: "E302" });
+    expect(result[0]).toMatchObject({
+      file: "/ws/app.py",
+      line: 3,
+      column: 1,
+      severity: "warning",
+      source: "ruff",
+      code: "E302",
+    });
     expect(result[1]).toMatchObject({ file: "/ws/utils.py", code: "F401" });
   });
 
@@ -342,7 +479,9 @@ describe("ruffLinter", () => {
 
 describe("linter parse-error propagation", () => {
   it("biomeLinter.run() throws on malformed JSON output", async () => {
-    mockExecSafe.mockResolvedValue(ok("error: biome crashed\nwith a stack trace"));
+    mockExecSafe.mockResolvedValue(
+      ok("error: biome crashed\nwith a stack trace"),
+    );
     await expect(biomeLinter.run("/ws")).rejects.toThrow();
   });
 

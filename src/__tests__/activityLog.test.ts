@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs");
 
@@ -169,7 +169,9 @@ describe("ActivityLog — disk persistence", () => {
     log.setPersistPath("/tmp/activity.jsonl");
     log.record("read", 10, "success");
     expect(mockFs.appendFileSync).toHaveBeenCalled();
-    const written = (mockFs.appendFileSync as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as string;
+    const written = (
+      mockFs.appendFileSync as ReturnType<typeof vi.fn>
+    ).mock.calls.at(-1)?.[1] as string;
     expect(written).toContain('"kind":"tool"');
     expect(written).toContain('"tool":"read"');
   });
@@ -184,8 +186,9 @@ describe("ActivityLog — disk persistence", () => {
 
   it("rotates file when size exceeds 1 MB", () => {
     mockFs.statSync = vi.fn(() => ({ size: 1024 * 1024 + 1 }) as any);
-    mockFs.readFileSync = vi.fn(() =>
-      '{"kind":"tool","id":1,"timestamp":"t","tool":"x","durationMs":1,"status":"success"}\n',
+    mockFs.readFileSync = vi.fn(
+      () =>
+        '{"kind":"tool","id":1,"timestamp":"t","tool":"x","durationMs":1,"status":"success"}\n',
     );
     const log = new ActivityLog();
     log.setPersistPath("/tmp/big.jsonl");
@@ -219,7 +222,9 @@ describe("ActivityLog — disk persistence", () => {
     const log = new ActivityLog();
     log.setPersistPath("/tmp/lifecycle.jsonl");
     const timeline = log.queryTimeline();
-    const found = timeline.find((e) => e.kind === "lifecycle" && (e as any).event === "connected");
+    const found = timeline.find(
+      (e) => e.kind === "lifecycle" && (e as any).event === "connected",
+    );
     expect(found).toBeDefined();
   });
 
@@ -254,7 +259,9 @@ describe("ActivityLog — disk persistence", () => {
     const log = new ActivityLog();
     log.setPersistPath("/tmp/lc.jsonl");
     log.recordEvent("started", { port: 1234 });
-    const written = (mockFs.appendFileSync as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1] as string;
+    const written = (
+      mockFs.appendFileSync as ReturnType<typeof vi.fn>
+    ).mock.calls.at(-1)?.[1] as string;
     expect(written).toContain('"kind":"lifecycle"');
     expect(written).toContain('"event":"started"');
   });

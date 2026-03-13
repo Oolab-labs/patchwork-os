@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createBridgeStatusTool } from "../bridgeStatus.js";
 
-function makeClient(connected: boolean, cbState = { suspended: false, failures: 0, suspendedUntil: 0 }) {
+function makeClient(
+  connected: boolean,
+  cbState = { suspended: false, failures: 0, suspendedUntil: 0 },
+) {
   return {
     isConnected: vi.fn(() => connected),
     getCircuitBreakerState: vi.fn(() => cbState),
@@ -28,7 +31,10 @@ describe("createBridgeStatusTool", () => {
   });
 
   it("returns activeSessions from sessions map when provided", async () => {
-    const sessions = new Map([["s1", {}], ["s2", {}]]);
+    const sessions = new Map([
+      ["s1", {}],
+      ["s2", {}],
+    ]);
     const tool = createBridgeStatusTool(makeClient(true), sessions);
     const data = parse(await tool.handler());
     expect(data.activeSessions).toBe(2);
@@ -41,7 +47,9 @@ describe("createBridgeStatusTool", () => {
   });
 
   it("includes circuitBreaker state", async () => {
-    const tool = createBridgeStatusTool(makeClient(true, { suspended: false, failures: 2, suspendedUntil: 0 }));
+    const tool = createBridgeStatusTool(
+      makeClient(true, { suspended: false, failures: 2, suspendedUntil: 0 }),
+    );
     const data = parse(await tool.handler());
     expect(data.circuitBreaker.suspended).toBe(false);
     expect(data.circuitBreaker.consecutiveFailures).toBe(2);
@@ -49,7 +57,13 @@ describe("createBridgeStatusTool", () => {
 
   it("includes resumesInMs when circuit breaker is suspended", async () => {
     const future = Date.now() + 10_000;
-    const tool = createBridgeStatusTool(makeClient(false, { suspended: true, failures: 5, suspendedUntil: future }));
+    const tool = createBridgeStatusTool(
+      makeClient(false, {
+        suspended: true,
+        failures: 5,
+        suspendedUntil: future,
+      }),
+    );
     const data = parse(await tool.handler());
     expect(data.circuitBreaker.suspended).toBe(true);
     expect(data.circuitBreaker.resumesInMs).toBeGreaterThan(0);
@@ -57,7 +71,9 @@ describe("createBridgeStatusTool", () => {
 
   it("clamps resumesInMs to 0 when suspendedUntil is in the past", async () => {
     const past = Date.now() - 1000;
-    const tool = createBridgeStatusTool(makeClient(false, { suspended: true, failures: 5, suspendedUntil: past }));
+    const tool = createBridgeStatusTool(
+      makeClient(false, { suspended: true, failures: 5, suspendedUntil: past }),
+    );
     const data = parse(await tool.handler());
     expect(data.circuitBreaker.resumesInMs).toBe(0);
   });

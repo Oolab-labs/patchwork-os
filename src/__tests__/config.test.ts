@@ -162,11 +162,15 @@ describe("parseConfig flags", () => {
   });
 
   it("adds vscode command from --vscode-allow-command", () => {
-    expect(cfg("--vscode-allow-command", "myExt.cmd").vscodeCommandAllowlist).toContain("myExt.cmd");
+    expect(
+      cfg("--vscode-allow-command", "myExt.cmd").vscodeCommandAllowlist,
+    ).toContain("myExt.cmd");
   });
 
   it("throws when --vscode-allow-command value too long", () => {
-    expect(() => cfg("--vscode-allow-command", "x".repeat(257))).toThrow(/too long/);
+    expect(() => cfg("--vscode-allow-command", "x".repeat(257))).toThrow(
+      /too long/,
+    );
   });
 
   it("sets commandTimeout from --timeout", () => {
@@ -194,7 +198,9 @@ describe("parseConfig flags", () => {
   });
 
   it("throws on --grace-period above 600000", () => {
-    expect(() => cfg("--grace-period", "700000")).toThrow(/Invalid grace-period/);
+    expect(() => cfg("--grace-period", "700000")).toThrow(
+      /Invalid grace-period/,
+    );
   });
 
   it("sets maxResultSize from --max-result-size", () => {
@@ -202,11 +208,15 @@ describe("parseConfig flags", () => {
   });
 
   it("throws on --max-result-size below 1", () => {
-    expect(() => cfg("--max-result-size", "0")).toThrow(/Invalid max-result-size/);
+    expect(() => cfg("--max-result-size", "0")).toThrow(
+      /Invalid max-result-size/,
+    );
   });
 
   it("throws on --max-result-size above 4096", () => {
-    expect(() => cfg("--max-result-size", "5000")).toThrow(/Invalid max-result-size/);
+    expect(() => cfg("--max-result-size", "5000")).toThrow(
+      /Invalid max-result-size/,
+    );
   });
 
   it("throws on unknown flag", () => {

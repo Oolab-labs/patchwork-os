@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock individual test runners so runTests.ts doesn't invoke real processes
 vi.mock("../testRunners/vitestJest.js", () => ({
@@ -7,8 +7,23 @@ vi.mock("../testRunners/vitestJest.js", () => ({
     cacheTtl: 30_000,
     detect: vi.fn(() => true),
     run: vi.fn(async () => [
-      { name: "a passes", status: "passed", source: "vitest", file: "a.test.ts", line: 1, durationMs: 10 },
-      { name: "b fails", status: "failed", source: "vitest", file: "b.test.ts", line: 5, durationMs: 5, message: "Expected 1" },
+      {
+        name: "a passes",
+        status: "passed",
+        source: "vitest",
+        file: "a.test.ts",
+        line: 1,
+        durationMs: 10,
+      },
+      {
+        name: "b fails",
+        status: "failed",
+        source: "vitest",
+        file: "b.test.ts",
+        line: 5,
+        durationMs: 5,
+        message: "Expected 1",
+      },
     ]),
   },
   jestRunner: {
@@ -46,14 +61,27 @@ vi.mock("../testRunners/goTest.js", () => ({
   },
 }));
 
-import { vitestRunner } from "../testRunners/vitestJest.js";
 import { createRunTestsTool } from "../runTests.js";
+import { vitestRunner } from "../testRunners/vitestJest.js";
 
 const probes = {
-  biome: false, eslint: false, tsc: false, cargo: false, go: false,
-  pyright: false, ruff: false, node: true, npm: true, npx: true,
-  git: true, gh: false, python: false, codex: false,
-  vitest: true, jest: false, pytest: false,
+  biome: false,
+  eslint: false,
+  tsc: false,
+  cargo: false,
+  go: false,
+  pyright: false,
+  ruff: false,
+  node: true,
+  npm: true,
+  npx: true,
+  git: true,
+  gh: false,
+  python: false,
+  codex: false,
+  vitest: true,
+  jest: false,
+  pytest: false,
 } as any;
 
 const ws = "/fake/ws";
@@ -92,7 +120,11 @@ describe("createRunTestsTool", () => {
   it("passes filter arg to runner", async () => {
     const tool = createRunTestsTool(ws, probes);
     await tool.handler({ filter: "someFilter" });
-    expect(vi.mocked(vitestRunner.run)).toHaveBeenCalledWith(ws, "someFilter", undefined);
+    expect(vi.mocked(vitestRunner.run)).toHaveBeenCalledWith(
+      ws,
+      "someFilter",
+      undefined,
+    );
   });
 
   it("returns error when named runner not found", async () => {
@@ -142,7 +174,9 @@ describe("createRunTestsTool", () => {
   });
 
   it("includes runnerErrors when a runner throws", async () => {
-    vi.mocked(vitestRunner.run).mockRejectedValueOnce(new Error("runner crashed"));
+    vi.mocked(vitestRunner.run).mockRejectedValueOnce(
+      new Error("runner crashed"),
+    );
     const tool = createRunTestsTool(ws, probes);
     const result = await tool.handler({ noCache: true });
     const data = JSON.parse(result.content[0]?.text ?? "{}");

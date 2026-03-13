@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createGetHoverAtCursorTool } from "../hoverAtCursor.js";
-import { createGetOpenEditorsTool } from "../getOpenEditors.js";
 import { ExtensionTimeoutError } from "../../extensionClient.js";
+import { createGetOpenEditorsTool } from "../getOpenEditors.js";
+import { createGetHoverAtCursorTool } from "../hoverAtCursor.js";
 
 // Mock node:fs so stat doesn't hit the real filesystem
 vi.mock("node:fs", async (importOriginal) => {
@@ -43,26 +43,32 @@ function makeHoverClient(opts: {
 
 describe("createGetHoverAtCursorTool", () => {
   it("returns extensionRequired when extension disconnected", async () => {
-    const tool = createGetHoverAtCursorTool(makeHoverClient({ connected: false }));
+    const tool = createGetHoverAtCursorTool(
+      makeHoverClient({ connected: false }),
+    );
     const result = await tool.handler();
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("extension");
   });
 
   it("returns error when no active file is tracked", async () => {
-    const tool = createGetHoverAtCursorTool(makeHoverClient({ connected: true, activeFile: null }));
+    const tool = createGetHoverAtCursorTool(
+      makeHoverClient({ connected: true, activeFile: null }),
+    );
     const result = await tool.handler();
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("No active file");
   });
 
   it("returns hover result when found", async () => {
-    const tool = createGetHoverAtCursorTool(makeHoverClient({
-      connected: true,
-      activeFile: "/ws/src/index.ts",
-      selection: { startLine: 10, startColumn: 5 },
-      hoverResult: { markdown: "function foo(): void" },
-    }));
+    const tool = createGetHoverAtCursorTool(
+      makeHoverClient({
+        connected: true,
+        activeFile: "/ws/src/index.ts",
+        selection: { startLine: 10, startColumn: 5 },
+        hoverResult: { markdown: "function foo(): void" },
+      }),
+    );
     const data = parse(await tool.handler());
     expect(data.found).toBe(true);
     expect(data.file).toBe("/ws/src/index.ts");
@@ -72,12 +78,14 @@ describe("createGetHoverAtCursorTool", () => {
   });
 
   it("returns found:false when hover result is null", async () => {
-    const tool = createGetHoverAtCursorTool(makeHoverClient({
-      connected: true,
-      activeFile: "/ws/a.ts",
-      selection: null,
-      hoverResult: null,
-    }));
+    const tool = createGetHoverAtCursorTool(
+      makeHoverClient({
+        connected: true,
+        activeFile: "/ws/a.ts",
+        selection: null,
+        hoverResult: null,
+      }),
+    );
     const data = parse(await tool.handler());
     expect(data.found).toBe(false);
     expect(data.message).toContain("No hover information");
@@ -96,11 +104,13 @@ describe("createGetHoverAtCursorTool", () => {
   });
 
   it("returns error on ExtensionTimeoutError", async () => {
-    const tool = createGetHoverAtCursorTool(makeHoverClient({
-      connected: true,
-      activeFile: "/ws/a.ts",
-      throwTimeout: true,
-    }));
+    const tool = createGetHoverAtCursorTool(
+      makeHoverClient({
+        connected: true,
+        activeFile: "/ws/a.ts",
+        throwTimeout: true,
+      }),
+    );
     const result = await tool.handler();
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("timed out");
@@ -111,7 +121,9 @@ describe("createGetHoverAtCursorTool", () => {
       isConnected: vi.fn(() => true),
       latestActiveFile: "/ws/a.ts",
       latestSelection: null,
-      getHover: vi.fn(async () => { throw new Error("unexpected"); }),
+      getHover: vi.fn(async () => {
+        throw new Error("unexpected");
+      }),
     } as any;
     const tool = createGetHoverAtCursorTool(client);
     await expect(tool.handler()).rejects.toThrow("unexpected");
@@ -146,16 +158,27 @@ describe("createGetOpenEditorsTool", () => {
 
   it("returns local-tracking when extension disconnected", async () => {
     const openedFiles = new Set(["/ws/b.ts"]);
-    const tool = createGetOpenEditorsTool(openedFiles, makeEditorClient({ connected: false }));
+    const tool = createGetOpenEditorsTool(
+      openedFiles,
+      makeEditorClient({ connected: false }),
+    );
     const data = parse(await tool.handler());
     expect(data.source).toBe("local-tracking");
   });
 
   it("returns vscode tabs when extension connected and returns array", async () => {
     const tabs = [
-      { filePath: "/ws/main.ts", isActive: true, isDirty: false, languageId: "typescript" },
+      {
+        filePath: "/ws/main.ts",
+        isActive: true,
+        isDirty: false,
+        languageId: "typescript",
+      },
     ];
-    const tool = createGetOpenEditorsTool(new Set(), makeEditorClient({ connected: true, openFiles: tabs }));
+    const tool = createGetOpenEditorsTool(
+      new Set(),
+      makeEditorClient({ connected: true, openFiles: tabs }),
+    );
     const data = parse(await tool.handler());
     expect(data.source).toBe("vscode");
     expect(data.tabs).toHaveLength(1);
@@ -165,21 +188,30 @@ describe("createGetOpenEditorsTool", () => {
 
   it("uses languageIdFromPath when languageId is missing from tab", async () => {
     const tabs = [{ filePath: "/ws/app.py", isActive: false, isDirty: false }];
-    const tool = createGetOpenEditorsTool(new Set(), makeEditorClient({ connected: true, openFiles: tabs }));
+    const tool = createGetOpenEditorsTool(
+      new Set(),
+      makeEditorClient({ connected: true, openFiles: tabs }),
+    );
     const data = parse(await tool.handler());
     expect(data.tabs[0].languageId).toBe("python");
   });
 
   it("falls back to local-tracking on ExtensionTimeoutError", async () => {
     const openedFiles = new Set(["/ws/fallback.ts"]);
-    const tool = createGetOpenEditorsTool(openedFiles, makeEditorClient({ connected: true, throwTimeout: true }));
+    const tool = createGetOpenEditorsTool(
+      openedFiles,
+      makeEditorClient({ connected: true, throwTimeout: true }),
+    );
     const data = parse(await tool.handler());
     expect(data.source).toBe("local-tracking");
   });
 
   it("falls back to local-tracking when extension returns null", async () => {
     const openedFiles = new Set(["/ws/c.ts"]);
-    const tool = createGetOpenEditorsTool(openedFiles, makeEditorClient({ connected: true, openFiles: null }));
+    const tool = createGetOpenEditorsTool(
+      openedFiles,
+      makeEditorClient({ connected: true, openFiles: null }),
+    );
     const data = parse(await tool.handler());
     expect(data.source).toBe("local-tracking");
   });
