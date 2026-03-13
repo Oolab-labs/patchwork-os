@@ -106,7 +106,7 @@ else
   BRIDGE_BIN="node dist/index.js"
 fi
 BRIDGE_CMD="cd $(printf '%q' "$BRIDGE_DIR") && $BRIDGE_BIN --workspace $(printf '%q' "$WORKSPACE")${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}"
-CLAUDE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude"
+CLAUDE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide"
 
 # Export for subshell access
 export NTFY_TOPIC
@@ -156,8 +156,8 @@ wait_for_new_lock() {
     # Find lock files that weren't in the pre-existing set
     while IFS= read -r lock; do
       if [[ -n "$lock" ]] && ! echo "$existing_locks" | grep -qF "$lock"; then
-        # Validate: readable JSON with a running PID
-        lock_pid=$(python3 -c "import json,sys; d=json.load(open('$lock')); print(d.get('pid',''))" 2>/dev/null || true)
+        # Validate: readable JSON with a running PID (path passed as argv to avoid injection)
+        lock_pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pid',''))" -- "$lock" 2>/dev/null || true)
         if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
           new_lock="$lock"
           break 2
@@ -187,6 +187,18 @@ if [[ -z "$LOCK_FILE" ]]; then
   sleep infinity
 fi
 notify "Bridge started (lock: $(basename "$LOCK_FILE"))"
+
+# Prune stale lock files so --ide finds exactly one valid IDE (the one we just started).
+# A lock is stale if its PID is dead. Paths passed as argv to avoid shell injection.
+for stale in ~/.claude/ide/*.lock; do
+  [[ -f "$stale" ]] || continue
+  [[ "$stale" == "$LOCK_FILE" ]] && continue
+  stale_pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pid',''))" -- "$stale" 2>/dev/null || true)
+  if [[ -z "$stale_pid" ]] || ! kill -0 "$stale_pid" 2>/dev/null; then
+    rm -f "$stale"
+    echo "Removed stale lock: $(basename "$stale")"
+  fi
+done
 
 # Pane 2: Claude CLI with session ID for resume support
 # Workspace-specific UUID file (hash workspace path to avoid collisions)
@@ -266,7 +278,7 @@ while true; do
 
     # Verify old bridge process is truly dead using the lock file PID before it disappears
     if [[ -f "$LOCK_FILE" ]]; then
-      old_pid=$(python3 -c "import json,sys; d=json.load(open('$LOCK_FILE')); print(d.get('pid',''))" 2>/dev/null || echo "")
+      old_pid=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('pid',''))" -- "$LOCK_FILE" 2>/dev/null || echo "")
       if [[ -n "$old_pid" ]]; then
         for _ in $(seq 1 10); do
           kill -0 "$old_pid" 2>/dev/null || break
