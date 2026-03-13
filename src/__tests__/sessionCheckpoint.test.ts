@@ -1,10 +1,13 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs");
 vi.mock("node:os", () => ({ default: { homedir: () => "/home/user" } }));
 
 import fs from "node:fs";
-import { SessionCheckpoint, CheckpointData } from "../sessionCheckpoint.js";
+import {
+  type CheckpointData,
+  SessionCheckpoint,
+} from "../sessionCheckpoint.js";
 
 const mockFs = vi.mocked(fs);
 
@@ -12,7 +15,13 @@ const sampleData: CheckpointData = {
   port: 12345,
   savedAt: Date.now(),
   sessions: [
-    { id: "abc", connectedAt: Date.now(), openedFiles: ["/a.ts"], terminalPrefix: "s1", inGrace: false },
+    {
+      id: "abc",
+      connectedAt: Date.now(),
+      openedFiles: ["/a.ts"],
+      terminalPrefix: "s1",
+      inGrace: false,
+    },
   ],
   extensionConnected: true,
   gracePeriodMs: 5000,
@@ -38,7 +47,8 @@ describe("SessionCheckpoint", () => {
   it("constructor derives checkpoint path from port", () => {
     const sc = new SessionCheckpoint(9999);
     sc.write(sampleData);
-    const path = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+    const path = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as string;
     expect(path).toContain("checkpoint-9999.json");
   });
 
@@ -46,16 +56,18 @@ describe("SessionCheckpoint", () => {
     process.env.CLAUDE_CONFIG_DIR = "/custom/config";
     const sc = new SessionCheckpoint(1111);
     sc.write(sampleData);
-    const path = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+    const path = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as string;
     expect(path).toContain("/custom/config");
-    delete process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = undefined as unknown as string;
   });
 
   it("write() serializes data to JSON", () => {
     const sc = new SessionCheckpoint(1234);
     sc.write(sampleData);
     expect(mockFs.writeFileSync).toHaveBeenCalledOnce();
-    const written = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string;
+    const written = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as string;
     const parsed = JSON.parse(written);
     expect(parsed.port).toBe(12345);
     expect(parsed.sessions).toHaveLength(1);
@@ -69,7 +81,9 @@ describe("SessionCheckpoint", () => {
   });
 
   it("write() swallows errors silently", () => {
-    mockFs.writeFileSync = vi.fn(() => { throw new Error("disk full"); });
+    mockFs.writeFileSync = vi.fn(() => {
+      throw new Error("disk full");
+    });
     const sc = new SessionCheckpoint(1234);
     expect(() => sc.write(sampleData)).not.toThrow();
   });
@@ -81,7 +95,9 @@ describe("SessionCheckpoint", () => {
   });
 
   it("delete() swallows ENOENT silently", () => {
-    mockFs.unlinkSync = vi.fn(() => { throw new Error("ENOENT"); });
+    mockFs.unlinkSync = vi.fn(() => {
+      throw new Error("ENOENT");
+    });
     const sc = new SessionCheckpoint(1234);
     expect(() => sc.delete()).not.toThrow();
   });
@@ -103,9 +119,12 @@ describe("SessionCheckpoint", () => {
     const getSnapshot = vi.fn(() => sampleData);
     sc.start(getSnapshot, 500);
     sc.stop();
-    const countAfterStop = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls.length;
+    const countAfterStop = (mockFs.writeFileSync as ReturnType<typeof vi.fn>)
+      .mock.calls.length;
     vi.advanceTimersByTime(2000);
-    expect((mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls.length).toBe(countAfterStop);
+    expect(
+      (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls.length,
+    ).toBe(countAfterStop);
     expect(mockFs.unlinkSync).toHaveBeenCalled();
   });
 });
@@ -117,7 +136,9 @@ describe("SessionCheckpoint.loadLatest", () => {
   });
 
   it("returns null when readdirSync throws", () => {
-    mockFs.readdirSync = vi.fn(() => { throw new Error("ENOENT"); });
+    mockFs.readdirSync = vi.fn(() => {
+      throw new Error("ENOENT");
+    });
     expect(SessionCheckpoint.loadLatest()).toBeNull();
   });
 
@@ -147,7 +168,9 @@ describe("SessionCheckpoint.loadLatest", () => {
   it("picks the newest file when multiple checkpoints exist", () => {
     const older = { ...sampleData, port: 1111, savedAt: Date.now() };
     const newer = { ...sampleData, port: 2222, savedAt: Date.now() };
-    mockFs.readdirSync = vi.fn(() => ["checkpoint-1111.json", "checkpoint-2222.json"] as any);
+    mockFs.readdirSync = vi.fn(
+      () => ["checkpoint-1111.json", "checkpoint-2222.json"] as any,
+    );
     let callCount = 0;
     mockFs.statSync = vi.fn(() => {
       callCount++;
@@ -161,13 +184,17 @@ describe("SessionCheckpoint.loadLatest", () => {
   it("returns null when readFileSync throws for the newest file", () => {
     mockFs.readdirSync = vi.fn(() => ["checkpoint-1234.json"] as any);
     mockFs.statSync = vi.fn(() => ({ mtimeMs: Date.now() }) as any);
-    mockFs.readFileSync = vi.fn(() => { throw new Error("permission denied"); });
+    mockFs.readFileSync = vi.fn(() => {
+      throw new Error("permission denied");
+    });
     expect(SessionCheckpoint.loadLatest()).toBeNull();
   });
 
   it("skips files where statSync throws", () => {
     mockFs.readdirSync = vi.fn(() => ["checkpoint-1234.json"] as any);
-    mockFs.statSync = vi.fn(() => { throw new Error("ENOENT"); });
+    mockFs.statSync = vi.fn(() => {
+      throw new Error("ENOENT");
+    });
     expect(SessionCheckpoint.loadLatest()).toBeNull();
   });
 });
