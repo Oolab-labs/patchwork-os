@@ -104,6 +104,7 @@ import {
 } from "./notebook.js";
 import { createOpenDiffTool } from "./openDiff.js";
 import { createOpenFileTool } from "./openFile.js";
+import { createOpenInBrowserTool } from "./openInBrowser.js";
 import { createOrganizeImportsTool } from "./organizeImports.js";
 import { createPlanTools } from "./planPersistence.js";
 import { createReplaceBlockTool } from "./replaceBlock.js";
@@ -245,6 +246,7 @@ export function registerAllTools(
       extensionClient,
     ),
     createOpenDiffTool(workspace, config.editorCommand),
+    createOpenInBrowserTool(),
     createGetOpenEditorsTool(openedFiles, extensionClient),
     createGetWorkspaceFoldersTool(workspaceFolders, extensionClient),
     createGetProjectInfoTool(workspace),
