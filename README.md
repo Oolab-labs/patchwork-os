@@ -4,7 +4,7 @@
 [![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **120+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
+A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **124+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
 
 ## How It Works
 
@@ -133,7 +133,7 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 | `SessionStart` | Reports bridge status, connection, and tool count |
 | `SubagentStart` | Verifies bridge is alive before IDE subagents run |
 
-## 120+ MCP Tools
+## 124+ MCP Tools
 
 ### File Operations (7)
 `openFile` · `openDiff` · `saveDocument` · `close_tab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors`
@@ -264,7 +264,7 @@ claude-ide-bridge/
     transport.ts      MCP transport layer
     extensionClient.ts Extension WebSocket client
     config.ts         CLI args & config
-    tools/            120+ MCP tool implementations
+    tools/            124+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
     src/connection.ts WebSocket connection management

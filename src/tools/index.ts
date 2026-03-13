@@ -5,6 +5,10 @@ import type { FileLock } from "../fileLock.js";
 import type { ProbeResults } from "../probe.js";
 import type { McpTransport, ToolHandler } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
+import { createGetDependencyTreeTool } from "./getDependencyTree.js";
+import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
+import { createGetGitHotspotsTool } from "./getGitHotspots.js";
+import { createGetPRTemplateTool } from "./getPRTemplate.js";
 import { createGetAICommentsTool } from "./aiComments.js";
 import { createBridgeStatusTool } from "./bridgeStatus.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
@@ -360,6 +364,11 @@ export function registerAllTools(
     createGetNotebookOutputTool(workspace, extensionClient),
     createSendHttpRequestTool(),
     createParseHttpFileTool(workspace),
+    // Dependency & security tools
+    createGetDependencyTreeTool(workspace, probes),
+    createGetSecurityAdvisoriesTool(workspace, probes),
+    createGetGitHotspotsTool(workspace),
+    createGetPRTemplateTool(workspace),
     ...(probes.gh
       ? [
           createGithubCreatePRTool(workspace),
