@@ -231,6 +231,163 @@ notifications/message:
 
 ---
 
+## Extension Handler Protocol Reference
+
+All handler methods use the `extension/` prefix and communicate via JSON-RPC 2.0 over WebSocket. Positions use **1-based** line and column numbers in the protocol (converted to 0-based internally). **55 handler methods** total across 7 registration groups.
+
+### LSP (9 methods)
+
+| Method | Parameters | Return Shape |
+|--------|-----------|--------------|
+| `extension/goToDefinition` | `file, line, column` | `Array<{file, line, column, endLine, endColumn}>` or `null` |
+| `extension/findReferences` | `file, line, column` | `{references: Array<{file, line, column, ...}>, count}` |
+| `extension/getHover` | `file, line, column` | `{contents: string[], range}` or `null` |
+| `extension/getCodeActions` | `file, startLine, startColumn, endLine, endColumn` | `{actions: Array<{title, kind, isPreferred}>}` |
+| `extension/applyCodeAction` | `file, startLine, startColumn, endLine, endColumn, actionTitle` | `{applied, title?, error?}` |
+| `extension/renameSymbol` | `file, line, column, newName` | `{success, affectedFiles?, totalEdits?}` |
+| `extension/searchSymbols` | `query, maxResults?` (max 200) | `{symbols: Array<{name, kind, file, line, ...}>, count, truncated}` |
+| `extension/getDocumentSymbols` | `file` | `{symbols: Array<{name, kind, detail, line, ...}>, count}` |
+| `extension/getCallHierarchy` | `file, line, column, direction?, maxResults?` | `{symbol, incoming?, outgoing?}` or `null` |
+
+### Terminal (7 methods)
+
+| Method | Parameters | Return Shape |
+|--------|-----------|--------------|
+| `extension/listTerminals` | _(none)_ | `{terminals: Array<{name, index, isActive, hasOutputCapture}>, count}` |
+| `extension/getTerminalOutput` | `name?, index?, lines?` (default 100) | `{available, terminalName, lines?, lineCount?}` |
+| `extension/createTerminal` | `name?, cwd?, env?, show?` | `{success, name, index}` |
+| `extension/disposeTerminal` | `name?, index?` | `{success, terminalName?}` |
+| `extension/sendTerminalCommand` | `text, name?, index?, addNewline?` | `{success, terminalName?}` |
+| `extension/executeInTerminal` | `command, name?, index?, timeoutMs?, show?` | `{success, exitCode?, output?, truncated?}` |
+| `extension/waitForTerminalOutput` | `pattern (regex), name?, index?, timeoutMs?` | `{matched, matchedLine?, elapsed?}` |
+
+### Debug (5 methods)
+
+| Method | Parameters | Return Shape |
+|--------|-----------|--------------|
+| `extension/getDebugState` | _(none)_ | `{hasActiveSession, isPaused, callStack?, scopes?, breakpoints}` |
+| `extension/evaluateInDebugger` | `expression, frameId?, context?` | `{result, type?}` |
+| `extension/setDebugBreakpoints` | `file, breakpoints: Array<{line, condition?, hitCondition?, logMessage?}>` | `{set, file}` |
+| `extension/startDebugging` | `configName?` | `{started}` |
+| `extension/stopDebugging` | _(none)_ | `{stopped}` |
+
+### Files (10 methods)
+
+| Method | Parameters | Return Shape |
+|--------|-----------|--------------|
+| `extension/getOpenFiles` | _(none)_ | `Array<{filePath, isActive, isDirty, languageId?}>` |
+| `extension/isDirty` | `file` | `boolean` |
+| `extension/openFile` | `file, line?` | `true` |
+| `extension/saveFile` | `file` | `true` or `{success: false, error}` |
+| `extension/closeTab` | `file` | `{success, promptedToSave?}` |
+| `extension/getFileContent` | `file` | `{content, isDirty, languageId, lineCount, version, source}` |
+| `extension/createFile` | `filePath, content?, isDirectory?, overwrite?, openAfterCreate?` | `{success, filePath, created}` |
+| `extension/deleteFile` | `filePath, recursive?, useTrash?` | `{success, filePath, deleted}` |
+| `extension/renameFile` | `oldPath, newPath, overwrite?` | `{success, oldPath, newPath, renamed}` |
+| `extension/getWorkspaceFolders` | _(none)_ | `{folders: Array<{name, path, uri, index}>, count}` |
+
+### Text Editing (2 methods)
+
+| Method | Parameters | Return Shape |
+|--------|-----------|--------------|
+| `extension/editText` | `filePath, edits: Array<{type, line, column, endLine?, endColumn?, text?}>` (max 1000), `save?` | `{success, editCount, saved}` |
+| `extension/replaceBlock` | `filePath, oldContent, newContent, save?` | `{success, saved, source}` |
+
+### Code Actions (3 methods)
+
+| Method | Parameters | Return Shape |
+|--------|-----------|--------------|
+| `extension/formatDocument` | `file` | `{success, editsApplied}` |
+| `extension/fixAllLintErrors` | `file` | `{success, actionsApplied}` |
+| `extension/organizeImports` | `file` | `{success, actionsApplied}` |
+
+### Other Handlers (19 methods)
+
+| Method | Parameters | Return Shape |
+|--------|-----------|--------------|
+| `extension/getDiagnostics` | `file?` | `Array<{message, severity, line, ...}>` or `{diagnostics, truncated}` |
+| `extension/getSelection` | _(none)_ | `{file, startLine, startColumn, endLine, endColumn, selectedText}` |
+| `extension/getAIComments` | _(none)_ | `Array<{file, line, comment, severity}>` |
+| `extension/watchFiles` | `id, pattern` | `{watching, id?, pattern?}` |
+| `extension/unwatchFiles` | `id` | `{unwatched, id?}` |
+| `extension/setDecorations` | `id, file, decorations: Array<{startLine, style?, hoverMessage?, message?}>` | `{applied, editorsUpdated}` |
+| `extension/clearDecorations` | `id?` | `{cleared}` |
+| `extension/getNotebookCells` | `file` | `{file, cellCount, cells}` |
+| `extension/runNotebookCell` | `file, cellIndex, timeoutMs?` | `{cellIndex, durationMs, output}` |
+| `extension/getNotebookOutput` | `file, cellIndex` | `{cellIndex, executionCount, output}` |
+| `extension/listTasks` | _(none)_ | `{tasks: Array<{name, type, source, group, detail}>, count}` |
+| `extension/runTask` | `name, type?, timeoutMs?` | `{name, type, exitCode, durationMs, success}` |
+| `extension/readClipboard` | _(none)_ | `{text, byteLength, truncated}` |
+| `extension/writeClipboard` | `text` | `{written, byteLength}` |
+| `extension/getInlayHints` | `file, startLine, endLine` | `{hints: Array<{position, label, kind, tooltip?}>, count}` |
+| `extension/getTypeHierarchy` | `file, line, column, direction?, maxResults?` | `{found, root?, supertypes?, subtypes?}` |
+| `extension/getWorkspaceSettings` | `section?` | `{section, settings: Record<string, {value, defaultValue, ...}>}` |
+| `extension/setWorkspaceSetting` | `key, value, target?` | `{set, key, target}` |
+| `extension/executeVSCodeCommand` | `command, args?` | `{result}` |
+
+### Notifications (Extension → Bridge)
+
+| Notification | Payload | Trigger |
+|-------------|---------|---------|
+| `extension/debugSessionChanged` | `{hasActiveSession, sessionId?, isPaused, breakpoints}` | Debug session start/stop/change |
+| `extension/fileChanged` | `{id, type, file}` | File watcher event |
+| `extension/diagnosticsChanged` | _(debounced)_ | Language server diagnostics update |
+| `extension/aiCommentsChanged` | _(debounced)_ | Document content change |
+
+---
+
+## Error Codes Reference
+
+### JSON-RPC Protocol Errors
+
+Returned as `{ jsonrpc: "2.0", id, error: { code, message, data? } }`. Request was malformed or unroutable.
+
+| Code | Name | When It Occurs | Recovery |
+|------|------|----------------|----------|
+| `-32700` | Parse Error | Message is not valid JSON | Fix JSON payload |
+| `-32600` | Invalid Request | Batch request, not initialized, or duplicate request ID | Send individual requests; complete handshake; use unique IDs |
+| `-32601` | Method Not Found | Unrecognized JSON-RPC method | Use `initialize`, `tools/list`, `tools/call`, `ping`, or notifications |
+| `-32602` | Invalid Params | Args not object, exceed 1 MB, or fail AJV schema validation | Fix arguments to match tool's `inputSchema` |
+| `-32003` | Tool Not Found | Tool not registered or hidden (extensionRequired + disconnected) | Call `tools/list`; reconnect extension |
+| `-32004` | Rate Limit | >200 requests in 60s sliding window | Back off; limit is 200 req/min per connection |
+
+### HTTP/WebSocket Rejections
+
+| HTTP Code | When | Recovery |
+|-----------|------|----------|
+| `401` | Missing/invalid Bearer token | Read token from `~/.claude/ide/<port>.lock` |
+| `403` | Invalid Host header (DNS rebinding) or unexpected Origin (CSRF) | Connect from localhost |
+| `429` | Connection rate limit (<50ms between connections) | Wait and retry |
+
+### Tool Errors (`isError: true`)
+
+Tool execution errors return successful JSON-RPC responses with `result.isError: true`. Error text in `result.content[0].text`.
+
+| Category | Common Patterns | Recovery |
+|----------|----------------|----------|
+| **Concurrency** | `Too many concurrent tool calls (max 10)` | Wait for in-flight calls to finish |
+| **Timeout** | `Tool "<name>" timed out after <N>ms` | Retry; check extension connectivity |
+| **Extension** | `VS Code extension not connected`, `Extension request timed out` | Reconnect IDE; call `getBridgeStatus` |
+| **File path** | `Path escapes workspace`, `File not found`, `hardlink write denied` | Use workspace-relative paths; verify file exists |
+| **Concurrency edit** | `File was modified concurrently` | Re-read file and retry |
+| **Validation** | `<key> must be a string/integer/boolean/array` | Fix argument types |
+| **Commands** | `Command not in allowlist`, `Flag blocked` | Use `--allow-command` or remove blocked flags |
+| **GitHub** | `gh not found`, `Not authenticated`, `PR #N not found` | Install `gh`; run `gh auth login` |
+| **Linters** | `biome/eslint/pyright/ruff: failed to parse output` | Check linter installation; errors tracked in `linterErrors` map |
+| **Notifications** | Silently dropped if >500/min | Reduce frequency; no error response (logged server-side) |
+
+### Error Flow
+
+```
+Request → [JSON parse] → [rate limit] → [method dispatch]
+  ├── Protocol error → JSON-RPC error response (negative code)
+  └── Tool error → JSON-RPC success with isError: true (LLM-readable message)
+```
+
+Key distinction: **JSON-RPC errors** = request structurally invalid. **Tool errors** = request valid but operation failed — LLM can read and adapt.
+
+---
+
 ## Key Data Type Interfaces
 
 ### Diagnostic

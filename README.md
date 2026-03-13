@@ -4,7 +4,7 @@
 [![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **115+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
+A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **120+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
 
 ## How It Works
 
@@ -103,14 +103,19 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 
 ### Skills
 
-| Skill | Description |
-|-------|-------------|
-| `/ide-debug` | Full debug cycle: run tests, set breakpoints, evaluate expressions, fix, verify |
-| `/ide-review` | Deep PR review using LSP code intelligence + GitHub tools |
-| `/ide-quality` | Multi-language lint sweep + auto-fix + format + optional commit |
-| `/ide-refactor` | Safe refactoring with snapshot checkpoints and auto-rollback |
-| `/ide-explore` | Codebase exploration using LSP (runs in isolated Explore agent) |
-| `/ide-monitor` | Continuous monitoring for diagnostics, tests, or terminal output |
+| Skill | Description | Remote Session |
+|-------|-------------|:-:|
+| `/ide-diagnostics-board` | Visual diagnostics dashboard (HTML) across the workspace | CLI fallback |
+| `/ide-coverage` | Test coverage heatmap (HTML) from lcov/JSON data | CLI fallback |
+| `/ide-quality` | Multi-language lint sweep + auto-fix + format + optional commit | CLI fallback |
+| `/ide-debug` | Full debug cycle: run tests, set breakpoints, evaluate expressions, fix, verify | Requires bridge |
+| `/ide-review` | Deep PR review using LSP code intelligence + GitHub tools | Requires bridge |
+| `/ide-refactor` | Safe refactoring with snapshot checkpoints and auto-rollback | Requires bridge |
+| `/ide-explore` | Codebase exploration using LSP (runs in isolated Explore agent) | Requires bridge |
+| `/ide-deps` | Interactive dependency graph (HTML) for a file or symbol | Requires bridge |
+| `/ide-monitor` | Continuous monitoring for diagnostics, tests, or terminal output | Requires bridge |
+
+> **Remote sessions** (`claude remote-control`): Skills marked "CLI fallback" work without the bridge by using built-in Claude Code tools. Skills marked "Requires bridge" need the `claude --ide` session.
 
 ### Subagents
 
@@ -128,7 +133,7 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 | `SessionStart` | Reports bridge status, connection, and tool count |
 | `SubagentStart` | Verifies bridge is alive before IDE subagents run |
 
-## 115+ MCP Tools
+## 120+ MCP Tools
 
 ### File Operations (7)
 `openFile` · `openDiff` · `saveDocument` · `close_tab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors`
@@ -259,7 +264,7 @@ claude-ide-bridge/
     transport.ts      MCP transport layer
     extensionClient.ts Extension WebSocket client
     config.ts         CLI args & config
-    tools/            115+ MCP tool implementations
+    tools/            120+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
     src/connection.ts WebSocket connection management

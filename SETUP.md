@@ -79,21 +79,13 @@ npm run remote
 4. Claude Code can now call IDE tools (open files, get diagnostics, etc.)
 5. The lock file is automatically cleaned up when the bridge stops
 
-## Available Tools
+## Available Tools (120+)
 
-| Tool | Status | Description |
-|------|--------|-------------|
-| `openFile` | Full | Opens files in your editor with line navigation |
-| `openDiff` | Full | Opens side-by-side diff view |
-| `getWorkspaceFolders` | Full | Returns workspace path info |
-| `getDiagnostics` | Full | Runs `tsc --noEmit` and returns errors/warnings |
-| `getOpenEditors` | Partial | Tracks files opened via the bridge |
-| `checkDocumentDirty` | Stub | Cannot detect unsaved editor buffers |
-| `getCurrentSelection` | Stub | Cannot track editor selections |
-| `getLatestSelection` | Stub | Cannot track editor selections |
-| `saveDocument` | Stub | Editor handles saves directly |
-| `close_tab` | Stub | Cannot control editor tabs |
-| `closeAllDiffTabs` | Stub | Cannot control editor tabs |
+The bridge exposes 120+ MCP tools across file ops, LSP, git, GitHub, terminals, debugging, diagnostics, planning, and more. See the full reference in [documents/platform-docs.md](documents/platform-docs.md).
+
+**Without extension** (25 tools hidden): Terminal, debug, file watching, tasks, and advanced LSP tools require the VS Code extension. All other tools work with native filesystem/CLI fallbacks.
+
+**In remote sessions** (`claude remote-control`): Remote sessions don't have MCP tools. Skills with CLI fallbacks (`/ide-diagnostics-board`, `/ide-coverage`, `/ide-quality`) work by using built-in Claude Code tools (Glob, Read, Write, Bash). LSP-dependent skills (`/ide-deps`, `/ide-explore`, `/ide-debug`, `/ide-refactor`, `/ide-review`) require the `claude --ide` session.
 
 ## Remote Control with Auto-Approve
 

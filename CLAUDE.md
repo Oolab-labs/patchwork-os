@@ -4,7 +4,7 @@
 
 Read and comply with all documents in `/documents/`. Consult the relevant doc before making changes:
 
-- **[documents/platform-docs.md](documents/platform-docs.md)** — Complete feature reference (100+ tools). Consult before adding or modifying features.
+- **[documents/platform-docs.md](documents/platform-docs.md)** — Complete feature reference (120+ tools). Consult before adding or modifying features.
 - **[documents/ICPs.md](documents/ICPs.md)** — Developer personas. Consider impact on all personas when making changes.
 - **[documents/styleguide.md](documents/styleguide.md)** — Code conventions, UI patterns, output formats. Follow all patterns for new tools, handlers, and responses.
 - **[documents/roadmap.md](documents/roadmap.md)** — Development direction. Check before starting exploratory work.

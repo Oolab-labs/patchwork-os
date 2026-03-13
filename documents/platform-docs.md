@@ -4,7 +4,7 @@ Complete feature reference for the Claude IDE Bridge MCP server and VS Code exte
 
 ## Overview
 
-Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 100+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
+Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 120+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
 
 ---
 
@@ -256,6 +256,27 @@ Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket
 - 30s grace period for Claude Code reconnection (preserves state)
 - Send buffer monitoring (warns at >1MB buffered)
 - Backpressure-aware sending with drain waiting
+
+### Agent Team Support (Multi-Session)
+
+The bridge supports up to 5 concurrent Claude Code sessions sharing a single bridge instance.
+
+| Property | Details |
+|----------|---------|
+| Max concurrent sessions | 5 (active, non-grace) |
+| Session isolation | Each session gets its own `McpTransport`, `openedFiles`, `terminalPrefix` |
+| Terminal namespacing | Terminals prefixed per-session (e.g., `s1a2b3c4-build`) — each agent sees only its own |
+| File locking | `FileLock` promise-chain mutex serializes concurrent file edits across sessions |
+| Min connection interval | 50ms between connections (prevents connection-storm DoS) |
+| Grace period | 30s after disconnect — session state preserved for reconnection |
+| Activation | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude` |
+
+Session lifecycle:
+1. Claude Code connects → new `AgentSession` created with unique ID
+2. Session gets isolated transport, opened-files set, terminal prefix
+3. Tool calls routed to the session's transport
+4. On disconnect → grace period starts (30s default, configurable via `--grace-period`)
+5. If reconnected within grace → session resumes; otherwise → session cleaned up
 
 ### Health & Metrics
 - `/health` endpoint: Claude Code connected, extension connected, circuit breaker state

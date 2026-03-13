@@ -25,7 +25,7 @@ Generate an interactive dependency graph for the given file or symbol and open i
 - A file path: `src/bridge.ts`
 - A file + symbol: `src/bridge.ts:handleConnection`
 
-If no arguments provided, use the currently active file (call `getActiveFile`).
+If no arguments provided, call `getOpenEditors` and use the first active editor's file path.
 
 ## Steps
 
