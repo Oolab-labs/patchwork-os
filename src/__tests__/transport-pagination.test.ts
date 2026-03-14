@@ -14,8 +14,8 @@ async function setup(): Promise<{ ws: WebSocket }> {
   server = new Server("pagination-token", logger);
   transport = new McpTransport(logger);
 
-  // Register 55 fake tools
-  for (let i = 0; i < 55; i++) {
+  // Register 210 fake tools (PAGE_SIZE=200, so page 1 = 200, page 2 = 10)
+  for (let i = 0; i < 210; i++) {
     const name = `fake_tool_${String(i).padStart(3, "0")}`;
     transport.registerTool(
       {
@@ -62,7 +62,7 @@ afterEach(async () => {
 });
 
 describe("tools/list pagination", () => {
-  it("first page returns 50 tools and a nextCursor", async () => {
+  it("first page returns 200 tools and a nextCursor", async () => {
     const { ws } = await setup();
 
     send(ws, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
@@ -70,12 +70,12 @@ describe("tools/list pagination", () => {
 
     expect(resp.error).toBeUndefined();
     const result = resp.result as { tools: unknown[]; nextCursor?: string };
-    expect(result.tools).toHaveLength(50);
+    expect(result.tools).toHaveLength(200);
     expect(typeof result.nextCursor).toBe("string");
     expect(result.nextCursor!.length).toBeGreaterThan(0);
   });
 
-  it("second page (using nextCursor) returns remaining 5 tools and no nextCursor", async () => {
+  it("second page (using nextCursor) returns remaining 10 tools and no nextCursor", async () => {
     const { ws } = await setup();
 
     // Page 1
@@ -97,11 +97,11 @@ describe("tools/list pagination", () => {
       tools: unknown[];
       nextCursor?: string;
     };
-    expect(result.tools).toHaveLength(5);
+    expect(result.tools).toHaveLength(10);
     expect(result.nextCursor).toBeUndefined();
   });
 
-  it("malformed cursor falls back to first page (50 tools, no error)", async () => {
+  it("malformed cursor falls back to first page (200 tools, no error)", async () => {
     const { ws } = await setup();
 
     send(ws, {
@@ -114,7 +114,7 @@ describe("tools/list pagination", () => {
 
     expect(resp.error).toBeUndefined();
     const result = resp.result as { tools: unknown[]; nextCursor?: string };
-    expect(result.tools).toHaveLength(50);
+    expect(result.tools).toHaveLength(200);
     expect(typeof result.nextCursor).toBe("string");
   });
 });

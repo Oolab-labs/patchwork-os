@@ -18,6 +18,7 @@ import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
 import { McpTransport } from "./transport.js";
+import { StreamableHttpHandler } from "./streamableHttp.js";
 import { initTelemetry } from "./telemetry.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
@@ -61,6 +62,7 @@ export class Bridge {
   private orchestrator: ClaudeOrchestrator | null = null;
   private port = 0;
   private automationHooks: AutomationHooks | null = null;
+  private httpMcpHandler: StreamableHttpHandler | null = null;
 
   constructor(private config: Config) {
     this.logger = new Logger(config.verbose, config.jsonl);
@@ -491,6 +493,19 @@ export class Bridge {
       };
     };
 
+    // 3b. Set up Streamable HTTP transport handler (POST/GET/DELETE /mcp)
+    this.httpMcpHandler = new StreamableHttpHandler(
+      this.config,
+      probes,
+      this.extensionClient,
+      this.activityLog,
+      this.fileLock,
+      this.sessions as Map<string, unknown>,
+      this.orchestrator,
+      this.logger,
+    );
+    this.server.httpMcpHandler = (req, res) => this.httpMcpHandler!.handle(req, res);
+
     // 3. Check for stale lock files
     this.lockFile.cleanStale();
 
@@ -624,6 +639,7 @@ export class Bridge {
     if (this.stopped) return;
     this.stopped = true;
     this.logger.info("Shutting down...");
+    this.httpMcpHandler?.close();
     if (this.listChangedTimer) {
       clearTimeout(this.listChangedTimer);
       this.listChangedTimer = null;

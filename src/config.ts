@@ -27,6 +27,7 @@ export interface Config {
 }
 
 const DEFAULT_ALLOWLIST = [
+  "git",
   "npm",
   "cargo",
   "go",

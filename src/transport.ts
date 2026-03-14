@@ -12,7 +12,7 @@ const MAX_CONCURRENT_TOOLS = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
 const RATE_LIMIT_MAX = 200; // max requests per window
 const NOTIFICATION_RATE_LIMIT = 500; // max notifications per minute (separate from request limit)
-const TOOLS_LIST_PAGE_SIZE = 50;
+const TOOLS_LIST_PAGE_SIZE = 200; // Most MCP clients (Claude Desktop) only fetch page 1 — keep all tools visible
 // Supported MCP protocol versions, newest first.
 // Extend this array when new protocol versions are ratified; keep oldest supported version last.
 const SUPPORTED_VERSIONS = ["2025-11-25"];

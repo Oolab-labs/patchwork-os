@@ -126,6 +126,10 @@ import {
 } from "./terminal.js";
 import { createGetTypeHierarchyTool } from "./typeHierarchy.js";
 import {
+  createGetHandoffNoteTool,
+  createSetHandoffNoteTool,
+} from "./handoffNote.js";
+import {
   createExecuteVSCodeCommandTool,
   createListVSCodeCommandsTool,
 } from "./vscodeCommands.js";
@@ -256,6 +260,8 @@ export function registerAllTools(
     // Phase 4: Additional features
     createReadClipboardTool(extensionClient),
     createWriteClipboardTool(extensionClient),
+    createGetHandoffNoteTool(),
+    createSetHandoffNoteTool(sessionId),
     createGetWorkspaceSettingsTool(extensionClient),
     createSetWorkspaceSettingTool(extensionClient),
     createExecuteVSCodeCommandTool(extensionClient, config),

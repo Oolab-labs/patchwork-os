@@ -354,7 +354,7 @@ const EXTENSION_REQUIRED_TOOLS = [
   "setEditorDecorations",
   "clearEditorDecorations",
   "closeTab",
-  "organizeImports",
+  // organizeImports — has native prettier/biome fallback, no longer extension-required
   "getInlayHints",
   // watchDiagnostics — now has native CLI linter fallback, no longer extension-required
   "executeVSCodeCommand",

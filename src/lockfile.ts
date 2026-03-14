@@ -34,6 +34,7 @@ export class LockFileManager {
       workspace: workspaceFolders[0] ?? null,
       workspaceFolders,
       ideName,
+      isBridge: true,
       transport: "ws",
       runningInWindows: process.platform === "win32",
       authToken,

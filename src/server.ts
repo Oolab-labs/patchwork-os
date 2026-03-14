@@ -69,9 +69,15 @@ export class Server extends EventEmitter<ServerEvents> {
   /** Set by bridge to provide rich status data */
   public statusFn: (() => Record<string, unknown>) | null = null;
   /** Set by bridge to provide readiness data (MCP handshake complete, tool count, extension) */
-  public readyFn: (() => { ready: boolean; toolCount: number; extensionConnected: boolean }) | null = null;
+  public readyFn:
+    | (() => { ready: boolean; toolCount: number; extensionConnected: boolean })
+    | null = null;
   /** Set by bridge to provide task list data (sanitized — no raw prompts) */
   public tasksFn: (() => { tasks: Record<string, unknown>[] }) | null = null;
+  /** Set by bridge to handle MCP Streamable HTTP sessions (POST/GET/DELETE /mcp) */
+  public httpMcpHandler:
+    | ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>)
+    | null = null;
 
   constructor(
     private authToken: string,
@@ -89,6 +95,10 @@ export class Server extends EventEmitter<ServerEvents> {
       );
     }
     this.httpServer = http.createServer((req, res) => {
+      // Security headers on all responses
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "no-store");
+
       // Public discovery endpoint — no auth required
       if (
         req.url === "/.well-known/mcp/server-card.json" ||
@@ -100,8 +110,13 @@ export class Server extends EventEmitter<ServerEvents> {
           description:
             "MCP bridge providing full IDE integration for Claude Code — LSP, diagnostics, file operations, terminal, debug adapters, and AI task orchestration",
           homepage: "https://github.com/Oolab-labs/claude-ide-bridge",
-          transport: ["websocket", "stdio"],
-          capabilities: { tools: true, resources: true, prompts: true, elicitation: true },
+          transport: ["websocket", "stdio", "streamable-http"],
+          capabilities: {
+            tools: true,
+            resources: true,
+            prompts: true,
+            elicitation: true,
+          },
           author: "Oolab Labs",
           license: "MIT",
           repository: "https://github.com/Oolab-labs/claude-ide-bridge",
@@ -111,6 +126,24 @@ export class Server extends EventEmitter<ServerEvents> {
           "Access-Control-Allow-Origin": "*",
         });
         res.end(JSON.stringify(card, null, 2));
+        return;
+      }
+
+      // CORS preflight for /mcp — browsers (and Claude Desktop's web renderer) send
+      // OPTIONS before POST. Respond without requiring auth so the preflight succeeds.
+      if (req.method === "OPTIONS" && req.url === "/mcp") {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader(
+          "Access-Control-Allow-Methods",
+          "GET, POST, DELETE, OPTIONS",
+        );
+        res.setHeader(
+          "Access-Control-Allow-Headers",
+          "Content-Type, Authorization, Mcp-Session-Id",
+        );
+        res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+        res.writeHead(204);
+        res.end();
         return;
       }
 
@@ -191,10 +224,21 @@ export class Server extends EventEmitter<ServerEvents> {
           };
           if (info.ready) {
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ready: true, toolCount: info.toolCount, extensionConnected: info.extensionConnected }));
+            res.end(
+              JSON.stringify({
+                ready: true,
+                toolCount: info.toolCount,
+                extensionConnected: info.extensionConnected,
+              }),
+            );
           } else {
             res.writeHead(503, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ready: false, reason: "awaiting MCP handshake" }));
+            res.end(
+              JSON.stringify({
+                ready: false,
+                reason: "awaiting MCP handshake",
+              }),
+            );
           }
         } catch (err) {
           res.writeHead(500, { "Content-Type": "application/json" });
@@ -221,6 +265,27 @@ export class Server extends EventEmitter<ServerEvents> {
         }
         return;
       }
+      // MCP Streamable HTTP transport — POST/GET/DELETE /mcp.
+      // Bearer auth is already checked above (line ~138), so all requests here
+      // are authenticated. The Mcp-Session-Id header routes to the correct session.
+      // OPTIONS is handled before auth (line ~126) so CORS preflight works.
+      if (req.url === "/mcp" && this.httpMcpHandler) {
+        if (
+          req.method === "POST" ||
+          req.method === "GET" ||
+          req.method === "DELETE"
+        ) {
+          this.httpMcpHandler(req, res).catch((err) => {
+            this.logger.error(`HTTP MCP handler error: ${err instanceof Error ? err.message : String(err)}`);
+            if (!res.headersSent) {
+              res.writeHead(500, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: String(err) }));
+            }
+          });
+          return;
+        }
+      }
+
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not found");
     });
@@ -354,10 +419,10 @@ export class Server extends EventEmitter<ServerEvents> {
         `WARNING: Bridge bound to ${bindAddress} — not a loopback address. Any host that can reach this address and obtain the auth token can connect. Use --bind 127.0.0.1 (default) for local-only access.`,
       );
     }
-    // Mitigate slow-loris attacks on the HTTP upgrade path: bound the time a
-    // client can hold a connection open during the headers phase.
+    // Mitigate slow-loris attacks: bound the headers phase.
+    // requestTimeout is disabled (0) because SSE GET /mcp streams are long-lived.
     this.httpServer.headersTimeout = 5_000;
-    this.httpServer.requestTimeout = 10_000;
+    this.httpServer.requestTimeout = 0;
     return new Promise((resolve, reject) => {
       this.httpServer
         .listen(port, bindAddress, () => {

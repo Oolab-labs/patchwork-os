@@ -5,9 +5,10 @@
 #   bash scripts/gen-mcp-config.sh <target> [--write]
 #
 # Targets:
-#   cursor        Outputs .cursor/mcp.json content
-#   antigravity   Outputs mcp_config.json content for Google Antigravity
-#   codex         Outputs ~/.codex/config.toml section for OpenAI Codex CLI
+#   cursor           Outputs .cursor/mcp.json content
+#   antigravity      Outputs mcp_config.json content for Google Antigravity
+#   codex            Outputs ~/.codex/config.toml section for OpenAI Codex CLI
+#   claude-desktop   Outputs claude_desktop_config.json entry for Claude Desktop app
 #
 # Flags:
 #   --write       Write the config to the correct location (asks confirmation)
@@ -32,10 +33,11 @@ done
 if [[ -z "$TARGET" || "$TARGET" == "--help" || "$TARGET" == "-h" ]]; then
   echo "Usage: $0 <target> [--write]"
   echo ""
-  echo "Targets: cursor | antigravity | codex"
-  echo "  cursor        .cursor/mcp.json"
-  echo "  antigravity   mcp_config.json for Google Antigravity"
-  echo "  codex         ~/.codex/config.toml section for OpenAI Codex CLI"
+  echo "Targets: cursor | antigravity | codex | claude-desktop"
+  echo "  cursor           .cursor/mcp.json"
+  echo "  antigravity      mcp_config.json for Google Antigravity"
+  echo "  codex            ~/.codex/config.toml section for OpenAI Codex CLI"
+  echo "  claude-desktop   claude_desktop_config.json for Claude Desktop app"
   echo ""
   echo "Flags:"
   echo "  --write   Write config to the correct location"
@@ -46,7 +48,9 @@ fi
 find_lock() {
   local best_lock=""
   local best_mtime=0
-  for lock in "$LOCK_DIR"/*.lock 2>/dev/null; do
+  local locks
+  locks=$(find "$LOCK_DIR" -maxdepth 1 -name "*.lock" 2>/dev/null) || true
+  for lock in $locks; do
     [[ -f "$lock" ]] || continue
     mtime=$(stat -f "%m" "$lock" 2>/dev/null || stat -c "%Y" "$lock" 2>/dev/null || echo 0)
     if (( mtime > best_mtime )); then
@@ -57,6 +61,45 @@ find_lock() {
   echo "$best_lock"
 }
 
+# claude-desktop target does not need a running bridge -- delegate to the dedicated script
+if [[ "$TARGET" == "claude-desktop" ]]; then
+  DEDICATED="${BASH_SOURCE[0]%/*}/gen-claude-desktop-config.sh"
+  if [[ -f "$DEDICATED" ]]; then
+    exec bash "$DEDICATED" ${WRITE:+--write}
+  fi
+  # Fallback inline if dedicated script is missing
+  SHIM_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mcp-stdio-shim.cjs"
+  if [[ "$(uname)" == "Darwin" ]]; then
+    OUTPUT_PATH="${HOME}/Library/Application Support/Claude/claude_desktop_config.json"
+  else
+    OUTPUT_PATH="${APPDATA:-${HOME}/.config}/Claude/claude_desktop_config.json"
+  fi
+  CONFIG=$(SHIM_PATH="$SHIM_PATH" python3 - <<'PYEOF'
+import json, os
+shim = os.environ["SHIM_PATH"]
+print(json.dumps({"mcpServers": {"claude-ide-bridge": {"command": "node", "args": [shim]}}}, indent=2))
+PYEOF
+)
+  echo "=== Claude Desktop MCP config ==="
+  echo "Path: $OUTPUT_PATH"
+  echo ""
+  echo "$CONFIG"
+  echo ""
+  echo "The shim auto-discovers the running bridge via lock files."
+  echo "Restart Claude Desktop after writing the config."
+  if $WRITE; then
+    TMP_PATH="${OUTPUT_PATH}.tmp"
+    mkdir -p "$(dirname "$OUTPUT_PATH")"
+    if [[ -f "$OUTPUT_PATH" ]]; then
+      cp "$OUTPUT_PATH" "${OUTPUT_PATH}.$(date +%Y%m%d%H%M%S).bak"
+    fi
+    printf '%s\n' "$CONFIG" > "$TMP_PATH"
+    mv "$TMP_PATH" "$OUTPUT_PATH"
+    echo "Written: $OUTPUT_PATH"
+  fi
+  exit 0
+fi
+
 LOCK_FILE=$(find_lock)
 
 if [[ -z "$LOCK_FILE" ]]; then
@@ -66,20 +109,24 @@ if [[ -z "$LOCK_FILE" ]]; then
 fi
 
 # Parse lock file (requires python3 or jq)
+# Passes $LOCK_FILE and $field via env vars to avoid shell injection in -c string
 parse_lock() {
   local field="$1"
   if command -v python3 >/dev/null 2>&1; then
-    python3 -c "import json,sys; d=json.load(open('$LOCK_FILE')); print(d['$field'])"
+    LOCK_FILE="$LOCK_FILE" LOCK_FIELD="$field" python3 - <<'PYEOF'
+import json, os
+with open(os.environ["LOCK_FILE"]) as f:
+    d = json.load(f)
+print(d[os.environ["LOCK_FIELD"]])
+PYEOF
   elif command -v jq >/dev/null 2>&1; then
-    jq -r ".$field" "$LOCK_FILE"
+    jq -r --arg f "$field" '.[$f]' "$LOCK_FILE"
   else
     echo "Error: python3 or jq is required to parse lock file" >&2
     exit 1
   fi
 }
 
-PORT=$(parse_lock "authToken" 2>/dev/null || true)
-# Actually parse port and authToken
 PORT=$(basename "$LOCK_FILE" .lock)
 AUTH_TOKEN=$(parse_lock "authToken")
 
@@ -135,6 +182,7 @@ EOF
   codex)
     OUTPUT_PATH="${HOME}/.codex/config.toml"
     # Codex CLI supports stdio and streamable HTTP — use the bridge's HTTP endpoint
+    # Auth uses Authorization: Bearer (not x-claude-ide-extension, which is for WS extension sessions)
     CONFIG=$(cat <<EOF
 # Add this to ~/.codex/config.toml to connect to claude-ide-bridge
 # The bridge must be running before starting codex.
@@ -142,21 +190,18 @@ EOF
 [mcp_servers.claude-ide-bridge]
 # Streamable HTTP transport (bridge HTTP server)
 url = "${HTTP_URL}/mcp"
-http_headers = { "x-claude-ide-extension" = "${AUTH_TOKEN}" }
+http_headers = { "Authorization" = "Bearer ${AUTH_TOKEN}" }
 enabled = true
 EOF
 )
     echo "=== OpenAI Codex CLI MCP config (~/.codex/config.toml) ==="
     echo "$CONFIG"
     echo ""
-    echo "Note: The bridge must expose a /mcp streamable HTTP endpoint."
-    echo "If it doesn't yet, use the stdio shim instead:"
-    echo "  command = \"node\""
-    echo "  args = [\"$(cd "$(dirname "$0")/.." && pwd)/scripts/mcp-stdio-shim.js\", \"${PORT}\", \"${AUTH_TOKEN}\"]"
+    echo "Note: Retrieve the auth token from the lock file at: $LOCK_FILE"
     ;;
 
   *)
-    echo "Error: Unknown target '$TARGET'. Use: cursor | antigravity | codex" >&2
+    echo "Error: Unknown target '$TARGET'. Use: cursor | antigravity | codex | claude-desktop" >&2
     exit 1
     ;;
 esac
@@ -167,13 +212,17 @@ if $WRITE; then
   echo "Write to: $OUTPUT_PATH"
   read -r -p "Confirm? [y/N] " confirm
   if [[ "$confirm" =~ ^[Yy]$ ]]; then
-    # Back up existing file
-    if [[ -f "$OUTPUT_PATH" ]]; then
-      cp "$OUTPUT_PATH" "${OUTPUT_PATH}.bak"
-      echo "Backed up existing config to ${OUTPUT_PATH}.bak"
-    fi
     mkdir -p "$(dirname "$OUTPUT_PATH")"
-    echo "$CONFIG" > "$OUTPUT_PATH"
+    # Timestamped backup so repeated --write calls don't clobber each other
+    if [[ -f "$OUTPUT_PATH" ]]; then
+      BACKUP="${OUTPUT_PATH}.$(date +%Y%m%d%H%M%S).bak"
+      cp "$OUTPUT_PATH" "$BACKUP"
+      echo "Backed up existing config to $(basename "$BACKUP")"
+    fi
+    # Atomic write via tmp file to prevent partial writes on interrupt
+    TMP_PATH="${OUTPUT_PATH}.tmp"
+    printf '%s\n' "$CONFIG" > "$TMP_PATH"
+    mv "$TMP_PATH" "$OUTPUT_PATH"
     echo "Written: $OUTPUT_PATH"
   else
     echo "Aborted."
