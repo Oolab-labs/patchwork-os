@@ -172,6 +172,9 @@ export function parseConfig(argv: string[]): Config {
   let configFilePath: string | undefined;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--config") {
+      if (i + 1 >= args.length) {
+        throw new Error("--config requires a path argument");
+      }
       configFilePath = args[++i];
       break;
     }

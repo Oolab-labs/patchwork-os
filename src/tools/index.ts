@@ -134,6 +134,7 @@ import { createRunClaudeTaskTool } from "./runClaudeTask.js";
 import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
 import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
 import { createListClaudeTasksTool } from "./listClaudeTasks.js";
+import { createResumeClaudeTaskTool } from "./resumeClaudeTask.js";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import {
   createGetWorkspaceSettingsTool,
@@ -219,7 +220,7 @@ export function registerAllTools(
     ...createPlanTools(workspace),
     testsTool,
     ...(activityLog ? [createGetActivityLogTool(activityLog)] : []),
-    createBridgeStatusTool(extensionClient, sessions),
+    createBridgeStatusTool(extensionClient, sessions, orchestrator),
     createWatchFilesTool(extensionClient),
     createUnwatchFilesTool(extensionClient),
     createListTerminalsTool(extensionClient, terminalPrefix),
@@ -306,6 +307,7 @@ export function registerAllTools(
           createGetClaudeTaskStatusTool(orchestrator, sessionId),
           createCancelClaudeTaskTool(orchestrator, sessionId),
           createListClaudeTasksTool(orchestrator, sessionId),
+          createResumeClaudeTaskTool(orchestrator, sessionId),
         ]
       : []),
   ];

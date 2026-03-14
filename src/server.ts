@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { Logger } from "./logger.js";
+import { BRIDGE_PROTOCOL_VERSION } from "./version.js";
 
 const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -77,8 +78,43 @@ export class Server extends EventEmitter<ServerEvents> {
     private logger: Logger,
   ) {
     super();
+    // Defense-in-depth: ensure token is non-empty so timingSafeTokenCompare
+    // cannot accept a blank Authorization header against an empty token.
+    if (authToken.length === 0) {
+      throw new Error("authToken must not be empty");
+    }
+    if (authToken.length < 32) {
+      logger.warn(
+        `authToken is only ${authToken.length} chars — production tokens should be ≥ 32 chars (crypto.randomBytes(32).toString('hex'))`,
+      );
+    }
     this.httpServer = http.createServer((req, res) => {
-      // All HTTP endpoints require Bearer token authentication.
+      // Public discovery endpoint — no auth required
+      if (
+        req.url === "/.well-known/mcp/server-card.json" ||
+        req.url === "/.well-known/mcp"
+      ) {
+        const card = {
+          name: "claude-ide-bridge",
+          version: BRIDGE_PROTOCOL_VERSION,
+          description:
+            "MCP bridge providing full IDE integration for Claude Code — LSP, diagnostics, file operations, terminal, debug adapters, and AI task orchestration",
+          homepage: "https://github.com/Oolab-labs/claude-ide-bridge",
+          transport: ["websocket", "stdio"],
+          capabilities: { tools: true, resources: true, prompts: true },
+          author: "Oolab Labs",
+          license: "MIT",
+          repository: "https://github.com/Oolab-labs/claude-ide-bridge",
+        };
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.end(JSON.stringify(card, null, 2));
+        return;
+      }
+
+      // All other HTTP endpoints require Bearer token authentication.
       // This prevents any local process or network peer (if --bind 0.0.0.0 is used)
       // from reading internal state without possessing the session auth token.
       const authHeader = req.headers.authorization ?? "";

@@ -3,6 +3,7 @@ import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
 import { ErrorCodes } from "./errors.js";
 import type { Logger } from "./logger.js";
+import { withSpan } from "./telemetry.js";
 import { BRIDGE_PROTOCOL_VERSION } from "./version.js";
 import { BACKPRESSURE_THRESHOLD, safeSend } from "./wsUtils.js";
 
@@ -89,6 +90,7 @@ export class McpTransport {
   private notifCount = 0;
   private notifWindowStart = 0;
 
+  public sessionId: string | null = null;
   private activityLog: ActivityLog | null = null;
   private isExtensionConnectedFn: (() => boolean) | null = null;
   private readonly ajv = new Ajv({ strict: false, allErrors: true });
@@ -155,8 +157,9 @@ export class McpTransport {
     this.activeWs = null;
     this.initialized = false;
     this.activeToolCalls = 0;
-    this.rateLimitBuf.fill(0);
-    this.rateLimitHead = 0;
+    // Do NOT reset rateLimitBuf/rateLimitHead here — resetting on reconnect would allow
+    // a client to bypass the rate limit by rapidly cycling connections (200 req / 50ms reconnect).
+    // The sliding window continues across reconnects from the same session.
     this.notifCount = 0;
     this.notifWindowStart = 0;
   }
@@ -432,7 +435,7 @@ export class McpTransport {
                 },
               };
             } else {
-              this.callCount++; // Count all invocations, not just successes (BUG-10)
+              this.callCount++; // Count before try so failures are also reflected in stats
               const startTime = Date.now();
               const callId = Math.random().toString(36).slice(2, 10);
               const callLog = this.logger.child({ tool: params.name, callId });
@@ -508,12 +511,6 @@ export class McpTransport {
                 this.activeToolCalls++;
                 let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
                 try {
-                  handlerPromise = tool.handler(
-                    toolArgs as Record<string, unknown>,
-                    controller.signal,
-                    progressFn,
-                  );
-
                   const effectiveTimeout = tool.timeoutMs ?? TOOL_TIMEOUT_MS;
                   const timeoutPromise = new Promise<never>((_, reject) => {
                     timeoutHandle = setTimeout(() => {
@@ -526,6 +523,19 @@ export class McpTransport {
                       );
                     }, effectiveTimeout);
                   });
+
+                  handlerPromise = withSpan(
+                    'mcp.tool_call',
+                    {
+                      'mcp.tool.name': params.name,
+                      'mcp.session.id': this.sessionId ?? 'unknown',
+                    },
+                    async () => tool.handler(
+                      toolArgs as Record<string, unknown>,
+                      controller.signal,
+                      progressFn,
+                    ),
+                  );
 
                   const result = await Promise.race([
                     handlerPromise,

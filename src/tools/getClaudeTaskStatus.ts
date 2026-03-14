@@ -11,6 +11,11 @@ export function createGetClaudeTaskStatusTool(
       name: "getClaudeTaskStatus",
       description:
         "Get the status and output of a Claude task enqueued with runClaudeTask.",
+      annotations: {
+        title: "Get Claude Task Status",
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         type: "object",
         properties: {

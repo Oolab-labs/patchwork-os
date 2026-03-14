@@ -10,6 +10,12 @@ export function createCancelClaudeTaskTool(
     schema: {
       name: "cancelClaudeTask",
       description: "Cancel a pending or running Claude task.",
+      annotations: {
+        title: "Cancel Claude Task",
+        readOnlyHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         type: "object",
         properties: {

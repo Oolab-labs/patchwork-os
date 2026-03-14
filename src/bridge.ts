@@ -18,6 +18,7 @@ import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
 import { McpTransport } from "./transport.js";
+import { initTelemetry } from "./telemetry.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 const MAX_SESSIONS = 5;
@@ -58,6 +59,7 @@ export class Bridge {
   private lastDisconnectAt: string | null = null;
   private checkpoint: SessionCheckpoint | null = null;
   private orchestrator: ClaudeOrchestrator | null = null;
+  private port = 0;
   private automationHooks: AutomationHooks | null = null;
 
   constructor(private config: Config) {
@@ -91,6 +93,7 @@ export class Bridge {
       const sessionId = randomUUID();
       const transport = new McpTransport(this.logger);
       transport.workspace = this.config.workspace;
+      transport.sessionId = sessionId;
       transport.setActivityLog(this.activityLog);
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
@@ -350,6 +353,9 @@ export class Bridge {
   }
 
   async start(): Promise<void> {
+    // 0. Initialize OpenTelemetry (no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset)
+    initTelemetry();
+
     // 1. Probe available CLI tools
     this.probes = await probeAll();
     this.ready = true;
@@ -381,6 +387,17 @@ export class Bridge {
           (msg) => this.logger.info(msg),
           (taskId, chunk) => this.extensionClient.notifyTaskOutput(taskId, chunk),
           (taskId, status) => this.extensionClient.notifyTaskDone(taskId, status),
+          {
+            save: () => {
+              if (this.checkpoint) {
+                this.checkpoint.write(this._buildCheckpoint(this.port));
+              }
+              // Persist terminal tasks for cross-session resumability (best-effort)
+              if (this.port > 0 && this.orchestrator) {
+                void this.orchestrator.persistTasks(this.port).catch(() => {/* best-effort */});
+              }
+            },
+          },
         );
         this.logger.info(`[bridge] Claude driver: ${driver.name}`);
       }
@@ -482,6 +499,12 @@ export class Bridge {
       this.config.port,
       this.config.bindAddress,
     );
+    this.port = port;
+
+    // 4b. Load persisted tasks from previous sessions (best-effort)
+    if (this.orchestrator) {
+      await this.orchestrator.loadPersistedTasks(port).catch(() => {/* best-effort */});
+    }
 
     // 5. Enable activity log disk persistence
     const configDir =

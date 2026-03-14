@@ -58,8 +58,24 @@ export class BridgeConnection {
    * Used by multi-workspace mode in extension.ts.
    */
   workspaceOverride = "";
+  /**
+   * Optional fallback lock data used when no live lock file is found on disk.
+   * Populated by extension.ts from SecretStorage (VS Code 1.53+) after a
+   * successful connection, so subsequent bridge restarts can reconnect
+   * immediately instead of waiting for the lock file to appear.
+   * SecretStorage provides OS-level encrypted storage, available in all current
+   * VS Code forks including Cursor and Windsurf.
+   */
+  lockDataFallback: LockFileData | null = null;
   /** Called whenever the connection state changes (connected/disconnected/reconnecting). */
   onStateChange: (() => void) | null = null;
+  /**
+   * Optional callback fired when the WebSocket connection is successfully
+   * established. Receives the LockFileData that was used to connect. Used by
+   * extension.ts to persist the auth token to SecretStorage after a successful
+   * connection.
+   */
+  onConnected: ((lockData: LockFileData) => void) | null = null;
 
   private handlers: Record<string, RequestHandler> = {};
   private onDispose: (() => void) | null = null;
@@ -256,6 +272,9 @@ export class BridgeConnection {
         },
       });
       this.flushPendingNotifications();
+      // Notify extension.ts of successful connection so it can persist the
+      // auth token to SecretStorage for cross-session fallback.
+      this.onConnected?.(lockData);
     });
 
     this.ws.on("message", (data) => {
@@ -472,6 +491,12 @@ export class BridgeConnection {
         }
         if (lockData) {
           this.connect(lockData);
+        } else if (this.lockDataFallback) {
+          // No live lock file found — fall back to the cached token from SecretStorage.
+          // This allows reconnecting immediately after a bridge restart before the new
+          // lock file is written.
+          this.log("No lock file found — trying cached SecretStorage token as fallback");
+          this.connect(this.lockDataFallback);
         } else {
           this.state = ConnectionState.DISCONNECTING;
           this.scheduleReconnect();

@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve as resolvePath } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
 import type { IClaudeDriver } from "./claudeDriver.js";
 
 export type TaskStatus = "pending" | "running" | "done" | "error" | "cancelled";
@@ -16,6 +20,13 @@ export interface ClaudeTask {
   output?: string;
   errorMessage?: string;
   timeoutMs: number;
+  /** Estimated token count for the prompt (used for token-budget concurrency). */
+  tokenEstimate: number;
+}
+
+/** Fast heuristic: ~4 chars per token for English code. */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
 export type EnqueueOpts = {
@@ -31,6 +42,8 @@ export class ClaudeOrchestrator {
   static readonly MAX_QUEUE = 20;
   static readonly MAX_HISTORY = 100;
   static readonly DEFAULT_TIMEOUT_MS = 120_000;
+  /** Maximum total estimated tokens in-flight across all running tasks. */
+  static readonly MAX_TOKEN_BUDGET = 500_000;
 
   private tasks = new Map<string, ClaudeTask>();
   /** Per-task streaming callback (set by callers of enqueue/runAndWait). */
@@ -40,6 +53,13 @@ export class ClaudeOrchestrator {
   private queue: string[] = [];
   private running = new Set<string>();
   private controllers = new Map<string, AbortController>();
+  /** Sum of tokenEstimate for all currently-running tasks. */
+  private _activeTokens = 0;
+
+  /** Current total estimated tokens in-flight across all running tasks. */
+  get activeTokens(): number {
+    return this._activeTokens;
+  }
 
   constructor(
     private readonly driver: IClaudeDriver,
@@ -49,6 +69,8 @@ export class ClaudeOrchestrator {
     private readonly notifyChunk?: (taskId: string, chunk: string) => void,
     /** Called when a task reaches a terminal state. */
     private readonly notifyDone?: (taskId: string, status: TaskStatus) => void,
+    /** Optional checkpoint to save after each task completes or fails. */
+    private readonly checkpoint?: { save(): void | Promise<void> },
   ) {}
 
   /**
@@ -78,6 +100,7 @@ export class ClaudeOrchestrator {
       status: "pending",
       createdAt: Date.now(),
       timeoutMs: opts.timeoutMs ?? ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
+      tokenEstimate: estimateTokens(opts.prompt),
     };
 
     this.tasks.set(id, task);
@@ -89,7 +112,8 @@ export class ClaudeOrchestrator {
 
   /**
    * Enqueue a task and wait until it reaches a terminal state (done/error/cancelled).
-   * The returned Promise always settles — the task's own timeoutMs is the upper bound.
+   * The returned Promise always resolves (never rejects) — check task.status for the outcome.
+   * The task's own timeoutMs is the upper bound on how long this can take.
    */
   async runAndWait(opts: EnqueueOpts): Promise<ClaudeTask> {
     // Register the completion callback BEFORE calling _enqueueWithId() (which calls _drain()).
@@ -141,10 +165,22 @@ export class ClaudeOrchestrator {
       this.running.size < ClaudeOrchestrator.MAX_CONCURRENT &&
       this.queue.length > 0
     ) {
-      const id = this.queue.shift();
+      const id = this.queue[0];
       if (!id) break;
       const task = this.tasks.get(id);
-      if (!task || task.status !== "pending") continue;
+      if (!task || task.status !== "pending") {
+        this.queue.shift();
+        continue;
+      }
+      // Token-budget check: if adding this task would exceed the budget, stop draining.
+      // The task stays at the front of the queue and will be retried on the next _drain().
+      if (
+        this.running.size > 0 &&
+        this._activeTokens + task.tokenEstimate > ClaudeOrchestrator.MAX_TOKEN_BUDGET
+      ) {
+        break;
+      }
+      this.queue.shift();
       this._runTask(id);
     }
   }
@@ -156,9 +192,10 @@ export class ClaudeOrchestrator {
     const controller = new AbortController();
     this.controllers.set(id, controller);
     this.running.add(id);
+    this._activeTokens += task.tokenEstimate;
     task.status = "running";
     task.startedAt = Date.now();
-    this.log(`[orchestrator] starting task ${id.slice(0, 8)}`);
+    this.log(`[orchestrator] starting task ${id.slice(0, 8)} (~${task.tokenEstimate} tokens, ${this._activeTokens} in-flight)`);
 
     // Set up timeout
     const timeoutHandle = setTimeout(() => {
@@ -199,6 +236,7 @@ export class ClaudeOrchestrator {
       clearTimeout(timeoutHandle);
       task.doneAt = Date.now();
       this.running.delete(id);
+      this._activeTokens = Math.max(0, this._activeTokens - task.tokenEstimate);
       this.controllers.delete(id);
       this.taskCallbacks.delete(id);
       this.log(
@@ -207,6 +245,7 @@ export class ClaudeOrchestrator {
 
       this.notifyDone?.(id, task.status);
       this._fireCompletion(id);
+      void Promise.resolve(this.checkpoint?.save()).catch(() => {/* best-effort */});
       this._drain();
       this._pruneHistory();
     }
@@ -218,6 +257,94 @@ export class ClaudeOrchestrator {
       this.completionCallbacks.delete(id);
       const task = this.tasks.get(id);
       if (task) cb(task);
+    }
+  }
+
+  /** Persist terminal tasks to disk for cross-session resumability. Best-effort. */
+  async persistTasks(port: number): Promise<void> {
+    const filePath = join(homedir(), ".claude", "ide", `tasks-${port}.json`);
+    const toSave = [...this.tasks.values()]
+      .filter(
+        (t) =>
+          t.status === "done" ||
+          t.status === "error" ||
+          t.status === "cancelled",
+      )
+      .map((t) => ({
+        id: t.id,
+        sessionId: t.sessionId,
+        prompt: t.prompt,
+        contextFiles: t.contextFiles,
+        status: t.status,
+        output: t.output,
+        errorMessage: t.errorMessage,
+        createdAt: t.createdAt,
+        startedAt: t.startedAt,
+        doneAt: t.doneAt,
+        timeoutMs: t.timeoutMs,
+        tokenEstimate: t.tokenEstimate,
+      }));
+    await writeFile(filePath, JSON.stringify(toSave, null, 2), "utf-8");
+    // Restrict to owner-only — prompts may contain sensitive code or secrets
+    await fs.promises.chmod(filePath, 0o600);
+  }
+
+  /** Load persisted tasks from disk on startup. Best-effort. */
+  async loadPersistedTasks(port: number): Promise<void> {
+    const filePath = join(homedir(), ".claude", "ide", `tasks-${port}.json`);
+    try {
+      const raw = await readFile(filePath, "utf-8");
+      // biome-ignore lint/suspicious/noExplicitAny: raw JSON from disk — validated field-by-field below
+      const saved = JSON.parse(raw) as any[];
+      if (!Array.isArray(saved)) return;
+      for (const t of saved) {
+        if (typeof t.id !== "string") continue;
+        // Only load terminal tasks; do not resurrect in-progress ones
+        if (
+          t.status !== "done" &&
+          t.status !== "error" &&
+          t.status !== "cancelled"
+        )
+          continue;
+        if (!this.tasks.has(t.id)) {
+          const prompt: string = typeof t.prompt === "string" ? t.prompt : "";
+          // Only restore context files that are workspace-confined regular files
+          const normalizedWorkspace = resolvePath(this.workspace);
+          const contextFiles: string[] = Array.isArray(t.contextFiles)
+            ? t.contextFiles.filter((f: unknown) => {
+                if (typeof f !== "string") return false;
+                const abs = resolvePath(f);
+                if (
+                  abs !== normalizedWorkspace &&
+                  !abs.startsWith(normalizedWorkspace + "/")
+                )
+                  return false;
+                try {
+                  return fs.lstatSync(abs).isFile();
+                } catch {
+                  return false;
+                }
+              })
+            : [];
+          const task: ClaudeTask = {
+            id: t.id,
+            sessionId: typeof t.sessionId === "string" ? t.sessionId : "",
+            prompt,
+            contextFiles,
+            status: t.status as TaskStatus,
+            createdAt: typeof t.createdAt === "number" ? t.createdAt : 0,
+            startedAt: typeof t.startedAt === "number" ? t.startedAt : undefined,
+            doneAt: typeof t.doneAt === "number" ? t.doneAt : undefined,
+            output: typeof t.output === "string" ? t.output : undefined,
+            errorMessage: typeof t.errorMessage === "string" ? t.errorMessage : undefined,
+            timeoutMs: typeof t.timeoutMs === "number" ? t.timeoutMs : ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
+            tokenEstimate: typeof t.tokenEstimate === "number" ? t.tokenEstimate : estimateTokens(prompt),
+          };
+          this.tasks.set(task.id, task);
+        }
+      }
+    } catch {
+      // File may not exist on first run — silently ignore
     }
   }
 

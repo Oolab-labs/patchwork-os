@@ -21,6 +21,9 @@ NTFY_TOPIC=""
 IDE_NAME=""
 BRIDGE_READY_TIMEOUT=30
 LAST_CLAUDE_RESTART=0
+RESTART_COUNT=0
+RESTART_DELAY=5
+LAST_START_TIME=0
 
 # --- Parse args ---
 while [[ $# -gt 0 ]]; do
@@ -213,6 +216,7 @@ else
   SESSION_UUID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || date +%s%N | sha256sum | head -c 32)
 fi
 echo "$SESSION_UUID" > "$SESSION_UUID_FILE"
+chmod 600 "$SESSION_UUID_FILE"
 
 tmux send-keys -t "${SESSION}:0.2" "$CLAUDE_CMD --session-id $SESSION_UUID" Enter
 
@@ -292,6 +296,21 @@ while true; do
 
     # Snapshot locks again before restarting bridge
     EXISTING_LOCKS=$(ls ~/.claude/ide/*.lock 2>/dev/null | sort)
+
+    # Exponential backoff on rapid restarts
+    NOW=$(date +%s)
+    if [ $((NOW - LAST_START_TIME)) -lt 60 ]; then
+      echo "[health] Bridge crashed quickly, backing off ${RESTART_DELAY}s (restart #${RESTART_COUNT})"
+      sleep $RESTART_DELAY
+      RESTART_DELAY=$((RESTART_DELAY * 2))
+      [ $RESTART_DELAY -gt 300 ] && RESTART_DELAY=300
+      RESTART_COUNT=$((RESTART_COUNT + 1))
+    else
+      # Ran for a while, reset backoff
+      RESTART_DELAY=5
+      RESTART_COUNT=0
+    fi
+    LAST_START_TIME=$(date +%s)
 
     # Restart bridge in pane 1
     tmux send-keys -t "${SESSION}:0.1" "$BRIDGE_CMD" Enter

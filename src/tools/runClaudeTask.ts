@@ -19,6 +19,12 @@ export function createRunClaudeTaskTool(
       name: "runClaudeTask",
       description:
         "Enqueue a task for Claude to run as a subprocess. Returns a taskId to poll with getClaudeTaskStatus, or (if stream=true) blocks until the task completes and streams output via progress notifications.",
+      annotations: {
+        title: "Run Claude Task",
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: true,
+      },
       inputSchema: {
         type: "object",
         properties: {

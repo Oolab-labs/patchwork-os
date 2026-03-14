@@ -11,8 +11,67 @@ import { createLspHandlers } from "./handlers/lsp";
 import { clearAllTerminalBuffers } from "./handlers/terminal";
 import { readAllMatchingLockFiles } from "./lockfiles";
 
+/**
+ * SecretStorage key for a given workspace path.
+ * SecretStorage is available in VS Code 1.53+ and all current forks
+ * (Cursor, Windsurf, Google Antigravity).
+ */
+function secretKey(workspacePath: string): string {
+  return `claude-ide-bridge:${workspacePath}`;
+}
+
+/**
+ * Persist the auth token for a workspace to VS Code SecretStorage after a
+ * successful connection. This allows the extension to attempt reconnection
+ * immediately if no lock file is found on disk (e.g. during bridge restart).
+ * Requires a trusted workspace (vscode.workspace.isTrusted).
+ * Wrapped in try/catch — SecretStorage failure must never block startup.
+ */
+async function storeTokenInSecrets(
+  context: vscode.ExtensionContext,
+  workspacePath: string,
+  authToken: string,
+  port: number,
+  output: vscode.OutputChannel,
+): Promise<void> {
+  if (!vscode.workspace.isTrusted) return;
+  try {
+    const key = secretKey(workspacePath);
+    await context.secrets.store(key, JSON.stringify({ authToken, port, workspace: workspacePath }));
+  } catch (err) {
+    output.appendLine(
+      `${new Date().toISOString()} WARN: Failed to store token in SecretStorage: ${String(err)}`,
+    );
+  }
+}
+
+/**
+ * Retrieve a cached LockFileData from SecretStorage for a given workspace.
+ * Returns null if SecretStorage fails, the workspace is untrusted, or no entry exists.
+ */
+async function loadTokenFromSecrets(
+  context: vscode.ExtensionContext,
+  workspacePath: string,
+  output: vscode.OutputChannel,
+): Promise<{ authToken: string; port: number; workspace: string } | null> {
+  if (!vscode.workspace.isTrusted) return null;
+  try {
+    const key = secretKey(workspacePath);
+    const raw = await context.secrets.get(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { authToken?: string; port?: number; workspace?: string };
+    if (typeof parsed.authToken !== "string" || typeof parsed.port !== "number") return null;
+    return { authToken: parsed.authToken, port: parsed.port, workspace: parsed.workspace ?? workspacePath };
+  } catch (err) {
+    output.appendLine(
+      `${new Date().toISOString()} WARN: Failed to read token from SecretStorage: ${String(err)}`,
+    );
+    return null;
+  }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
-  const output = vscode.window.createOutputChannel("Claude IDE Bridge");
+  const output = vscode.window.createOutputChannel("Claude IDE Bridge", { log: true });
   context.subscriptions.push(output);
 
   const statusBar = vscode.window.createStatusBarItem(
@@ -67,7 +126,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   }
 
-  function makeConnection(workspacePath: string): BridgeConnection {
+  async function makeConnection(workspacePath: string): Promise<BridgeConnection> {
     const bridge = new BridgeConnection();
     bridge.output = output;
     bridge.logLevel = logLevel;
@@ -75,6 +134,40 @@ export function activate(context: vscode.ExtensionContext): void {
     bridge.onStateChange = updateStatusBar;
 
     if (lockFileDir) bridge.lockDirOverride = lockFileDir;
+
+    // Load cached token from SecretStorage as a fallback for when no live lock
+    // file is found (e.g. during bridge restart). Best-effort — does not block.
+    if (workspacePath) {
+      const cached = await loadTokenFromSecrets(context, workspacePath, output);
+      if (cached) {
+        bridge.lockDataFallback = {
+          port: cached.port,
+          authToken: cached.authToken,
+          pid: -1,
+          workspace: cached.workspace,
+        };
+        output.appendLine(
+          `${new Date().toISOString()} SecretStorage: loaded cached token for ${workspacePath} (fallback only)`,
+        );
+      }
+    }
+
+    // After a successful connection, persist the token to SecretStorage so it
+    // can be used as a fallback in future sessions.
+    if (workspacePath) {
+      bridge.onConnected = (lockData) => {
+        void storeTokenInSecrets(
+          context,
+          workspacePath,
+          lockData.authToken,
+          lockData.port,
+          output,
+        );
+        // Update the fallback with the freshly-connected lock data so subsequent
+        // reconnects use the latest port/token.
+        bridge.lockDataFallback = lockData;
+      };
+    }
 
     // Create per-connection handler factories that reference this bridge
     const lspHandlers = createLspHandlers({ log: (msg) => bridge.log(msg) });
@@ -101,6 +194,10 @@ export function activate(context: vscode.ExtensionContext): void {
     return bridge;
   }
 
+  // In-progress set prevents duplicate connections if syncConnections is called
+  // concurrently (e.g. two workspace folders added at once).
+  const syncInProgress = new Set<string>();
+
   /**
    * Sync the connections map to match the current set of workspace folders.
    * Creates connections for new folders, disposes connections for removed folders.
@@ -110,11 +207,16 @@ export function activate(context: vscode.ExtensionContext): void {
 
     if (folders.length === 0) {
       // No workspace — ensure at least one connection exists (no workspace filter)
-      if (connections.size === 0) {
-        const bridge = makeConnection("");
-        connections.set("", bridge);
-        bridge.startWatchingLockDir();
-        if (autoConnect) bridge.tryConnect();
+      if (connections.size === 0 && !syncInProgress.has("")) {
+        syncInProgress.add("");
+        try {
+          const bridge = await makeConnection("");
+          connections.set("", bridge);
+          bridge.startWatchingLockDir();
+          if (autoConnect) bridge.tryConnect();
+        } finally {
+          syncInProgress.delete("");
+        }
       }
       return;
     }
@@ -136,14 +238,24 @@ export function activate(context: vscode.ExtensionContext): void {
       connections.delete("");
     }
 
-    // Add connections for new folders
+    // Add connections for new folders — guard against concurrent calls for the same path
     for (const folder of folders) {
       const fsPath = folder.uri.fsPath;
-      if (!connections.has(fsPath)) {
-        const bridge = makeConnection(fsPath);
-        connections.set(fsPath, bridge);
-        bridge.startWatchingLockDir();
-        if (autoConnect) bridge.tryConnect();
+      if (!connections.has(fsPath) && !syncInProgress.has(fsPath)) {
+        syncInProgress.add(fsPath);
+        try {
+          const bridge = await makeConnection(fsPath);
+          // Re-check after await — a concurrent call may have beaten us
+          if (!connections.has(fsPath)) {
+            connections.set(fsPath, bridge);
+            bridge.startWatchingLockDir();
+            if (autoConnect) bridge.tryConnect();
+          } else {
+            bridge.dispose();
+          }
+        } finally {
+          syncInProgress.delete(fsPath);
+        }
       }
     }
 

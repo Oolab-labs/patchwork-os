@@ -1,3 +1,4 @@
+import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import { success } from "./utils.js";
 
@@ -6,6 +7,7 @@ const startTime = Date.now();
 export function createBridgeStatusTool(
   extensionClient: ExtensionClient,
   sessions?: Map<string, unknown>,
+  orchestrator?: ClaudeOrchestrator | null,
 ) {
   return {
     schema: {
@@ -40,6 +42,12 @@ export function createBridgeStatusTool(
           }),
         },
         uptimeSeconds: Math.round(uptimeMs / 1000),
+        ...(orchestrator !== null && orchestrator !== undefined && {
+          tokenBudget: {
+            activeTokens: orchestrator.activeTokens,
+            maxTokenBudget: ClaudeOrchestrator.MAX_TOKEN_BUDGET,
+          },
+        }),
         hint: extensionConnected
           ? "All tools available."
           : "Extension disconnected — extension-dependent tools (LSP, terminal, debugging, etc.) are temporarily unavailable. " +

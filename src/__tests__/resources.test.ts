@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { listResources, readResource } from "../resources.js";
+import { invalidateResourcesCache, listResources, readResource } from "../resources.js";
 
 let workspace: string;
 
@@ -59,6 +59,8 @@ describe("listResources", () => {
     for (let i = 0; i < 60; i++) {
       fs.writeFileSync(path.join(workspace, `file${i}.ts`), "");
     }
+    // Invalidate the walk cache so the newly created files are picked up
+    invalidateResourcesCache();
     const page1 = listResources(workspace);
     expect(page1.resources).toHaveLength(50);
     expect(page1.nextCursor).toBeDefined();
@@ -70,10 +72,11 @@ describe("listResources", () => {
     for (const r of page2.resources) {
       expect(uris1.has(r.uri)).toBe(false);
     }
-    // Clean up
+    // Clean up and invalidate cache so subsequent tests see current state
     for (let i = 0; i < 60; i++) {
       fs.rmSync(path.join(workspace, `file${i}.ts`), { force: true });
     }
+    invalidateResourcesCache();
   });
 
   it("returns no nextCursor when all files fit on one page", () => {

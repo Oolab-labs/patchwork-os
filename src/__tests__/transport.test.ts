@@ -12,11 +12,16 @@ let server: Server | null = null;
 let transport: McpTransport | null = null;
 let wsClient: WebSocket | null = null;
 
+// Pad short test tokens to meet the 32-char minimum imposed by Server
+function padToken(t: string): string {
+  return t.length >= 32 ? t : t.padEnd(32, "0");
+}
+
 async function setup(
   token: string,
   registerTools?: (t: McpTransport) => void,
 ): Promise<{ port: number; ws: WebSocket }> {
-  server = new Server(token, logger);
+  server = new Server(padToken(token), logger);
   transport = new McpTransport(logger);
   registerTools?.(transport);
 
@@ -26,7 +31,7 @@ async function setup(
 
   const port = await server.findAndListen(null);
   const ws = new WebSocket(`ws://127.0.0.1:${port}`, {
-    headers: { "x-claude-code-ide-authorization": token },
+    headers: { "x-claude-code-ide-authorization": padToken(token) },
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -681,7 +686,7 @@ describe("McpTransport", () => {
     // then reconnects. Because detach() hasn't fired yet (grace period), attach()
     // is called directly on the new WebSocket. The new client must still perform
     // the initialize handshake; tools/list without it must fail.
-    const token = "reinit-test";
+    const token = padToken("reinit-test");
     server = new Server(token, logger);
     transport = new McpTransport(logger);
 

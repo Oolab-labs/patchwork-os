@@ -21,7 +21,7 @@ const TEXT_RESOURCE_EXTS = new Set([
   ".py", ".rb", ".rs", ".go", ".java",
   ".c", ".cpp", ".h", ".hpp",
   ".sql", ".graphql", ".vue", ".svelte",
-  ".env", ".gitignore", ".editorconfig",
+  ".gitignore", ".editorconfig",
 ]);
 
 const SKIP_DIRS = new Set([
@@ -88,12 +88,35 @@ export interface ListResourcesResult {
   nextCursor?: string;
 }
 
+// Simple in-memory snapshot to avoid re-walking the filesystem on every paginated call.
+// Invalidated after 5 seconds so the list stays reasonably fresh without constant I/O.
+const WALK_CACHE_TTL_MS = 5_000;
+let walkCacheWorkspace = "";
+let walkCacheFiles: string[] = [];
+let walkCacheExpiresAt = 0;
+
+function getCachedWorkspaceFiles(workspace: string): string[] {
+  const now = Date.now();
+  if (workspace === walkCacheWorkspace && now < walkCacheExpiresAt) {
+    return walkCacheFiles;
+  }
+  walkCacheFiles = collectWorkspaceFiles(workspace);
+  walkCacheWorkspace = workspace;
+  walkCacheExpiresAt = now + WALK_CACHE_TTL_MS;
+  return walkCacheFiles;
+}
+
+/** Invalidate the walk cache (useful in tests when files are added mid-run). */
+export function invalidateResourcesCache(): void {
+  walkCacheExpiresAt = 0;
+}
+
 /**
  * List workspace files as MCP resources, with cursor-based pagination.
  * Cursor is an opaque base64-encoded decimal offset (same pattern as tools/list).
  */
 export function listResources(workspace: string, cursor?: string): ListResourcesResult {
-  const allFiles = collectWorkspaceFiles(workspace);
+  const allFiles = getCachedWorkspaceFiles(workspace);
 
   let offset = 0;
   if (typeof cursor === "string") {
@@ -147,12 +170,17 @@ export function readResource(workspace: string, uri: string): ReadResourceResult
     return { error: `URI "${uri}" is outside the workspace`, code: "workspace_escape" };
   }
 
-  // Stat to check size
+  // Stat to check size — use lstatSync so symlinks are not followed
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(absPath);
+    stat = fs.lstatSync(absPath);
   } catch {
     return { error: `Resource not found: ${uri}`, code: "file_not_found" };
+  }
+
+  // Reject symlinks — listing already skips them; read must too
+  if (stat.isSymbolicLink()) {
+    return { error: `URI "${uri}" is a symlink — not supported`, code: "invalid_args" };
   }
 
   if (!stat.isFile()) {
@@ -162,7 +190,7 @@ export function readResource(workspace: string, uri: string): ReadResourceResult
   if (stat.size > MAX_RESOURCE_BYTES) {
     return {
       error: `Resource "${uri}" is too large (${stat.size} bytes > ${MAX_RESOURCE_BYTES} byte limit)`,
-      code: "file_not_found", // closest semantic match; clients treat as "can't read"
+      code: "resource_too_large",
     };
   }
 

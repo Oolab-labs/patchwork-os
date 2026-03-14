@@ -53,6 +53,7 @@ export class LockFileManager {
       } finally {
         fs.closeSync(fd);
       }
+      fs.chmodSync(lockPath, 0o600);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "EEXIST") {
         // Verify the existing file is a regular file (not a symlink) before removing
@@ -76,6 +77,7 @@ export class LockFileManager {
         } finally {
           fs.closeSync(fd);
         }
+        fs.chmodSync(lockPath, 0o600);
       } else {
         throw err;
       }
@@ -107,8 +109,14 @@ export class LockFileManager {
         if (!file.endsWith(".lock")) continue;
         const filePath = path.join(dir, file);
         try {
-          // Skip suspiciously large files to prevent OOM
-          const stat = fs.statSync(filePath);
+          // Use lstatSync so symlinks to large files don't fool the size check
+          const stat = fs.lstatSync(filePath);
+          // Skip symlinks — they shouldn't exist here; remove them defensively
+          if (stat.isSymbolicLink()) {
+            this.logger.warn(`Removing symlink in lock dir: ${file}`);
+            fs.unlinkSync(filePath);
+            continue;
+          }
           if (stat.size > 4096) {
             this.logger.warn(
               `Removing oversized lock file: ${file} (${stat.size} bytes)`,

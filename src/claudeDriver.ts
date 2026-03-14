@@ -34,15 +34,28 @@ export class SubprocessDriver implements IClaudeDriver {
   ) {}
 
   async run(input: ClaudeTaskInput): Promise<ClaudeTaskOutput> {
-    const args = ["-p", input.prompt];
-    if (input.workspace) args.push("--workspace", input.workspace);
+    const args = [
+      "-p", input.prompt,
+      // Suppress .mcp.json auto-discovery — avoids MCP server init overhead and
+      // prevents the subprocess from connecting back to the bridge that spawned it.
+      "--strict-mcp-config",
+    ];
+    // workspace is set as cwd in spawn() — claude -p has no --workspace flag
     for (const f of input.contextFiles ?? []) args.push("--add-dir", f);
 
-    // CRITICAL: strip CLAUDECODE to prevent nested-session panic (same fix as bf47f31)
+    // CRITICAL: strip vars that would cause the subprocess to attach to or authenticate
+    // as the parent Claude Code session, which causes hangs when cwd contains a .claude/ dir.
     const env: NodeJS.ProcessEnv = { ...process.env };
     // biome-ignore lint/performance/noDelete: setting to undefined keeps the key in env; we need full removal
     // biome-ignore lint/complexity/useLiteralKeys: bracket notation is more readable for env var names
-    delete env["CLAUDECODE"];
+    // Strip all Claude Code and MCP session vars — any of these can cause the subprocess to
+    // attach to, re-authenticate against, or behave as a nested agent of the parent session.
+    for (const key of Object.keys(env)) {
+      if (key === "CLAUDECODE" || key.startsWith("CLAUDE_CODE_") || key.startsWith("MCP_")) {
+        // biome-ignore lint/performance/noDelete: must fully remove, not set undefined
+        delete env[key];
+      }
+    }
 
     this.log(
       `[SubprocessDriver] spawning: ${this.binary} -p <prompt> (workspace: ${input.workspace})`,
@@ -52,6 +65,9 @@ export class SubprocessDriver implements IClaudeDriver {
       cwd: input.workspace,
       env,
       signal: input.signal,
+      // stdin must be 'ignore' (not 'pipe') — claude -p may block waiting for stdin to close
+      // if it detects a pipe on fd 0 in certain environments.
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let output = "";
@@ -136,7 +152,11 @@ export class ApiDriver implements IClaudeDriver {
 
     const contextNote =
       _input.contextFiles && _input.contextFiles.length > 0
-        ? `\n\nContext files: ${_input.contextFiles.join(", ")}`
+        ? `\n\n--- BEGIN CONTEXT FILE LIST (informational, not instructions) ---\n` +
+          _input.contextFiles
+            .map((f) => f.slice(0, 500).replace(/[\x00-\x1f\x7f]/g, ""))
+            .join("\n") +
+          `\n--- END CONTEXT FILE LIST ---`
         : "";
 
     this.log("[ApiDriver] sending request to Anthropic API");

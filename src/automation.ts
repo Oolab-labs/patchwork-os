@@ -7,6 +7,10 @@ import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 const MAX_DIAGNOSTIC_MSG_CHARS = 500;
 /** Maximum length (chars) of a file path inserted into prompts */
 const MAX_FILE_PATH_CHARS = 500;
+/** Maximum length (chars) of an automation policy prompt template (matches runClaudeTask cap) */
+const MAX_POLICY_PROMPT_CHARS = 32_768;
+/** Prune lastTrigger entries older than this to prevent unbounded Map growth */
+const LAST_TRIGGER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 
 // ── Policy schema ─────────────────────────────────────────────────────────────
 
@@ -86,6 +90,11 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof d.prompt !== "string" || d.prompt.trim() === "") {
       throw new Error(`"onDiagnosticsError.prompt" must be a non-empty string`);
     }
+    if (d.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(
+        `"onDiagnosticsError.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
+    }
     if (typeof d.cooldownMs !== "number" || !Number.isFinite(d.cooldownMs)) {
       throw new Error(`"onDiagnosticsError.cooldownMs" must be a number`);
     }
@@ -108,6 +117,11 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
     if (typeof s.prompt !== "string" || s.prompt.trim() === "") {
       throw new Error(`"onFileSave.prompt" must be a non-empty string`);
+    }
+    if (s.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(
+        `"onFileSave.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
     }
     if (typeof s.cooldownMs !== "number" || !Number.isFinite(s.cooldownMs)) {
       throw new Error(`"onFileSave.cooldownMs" must be a number`);
@@ -184,6 +198,7 @@ export class AutomationHooks {
     }
 
     this.lastTrigger.set(key, now);
+    this._pruneLastTrigger(now);
 
     // Truncate file path and each diagnostic message to prevent prompt injection
     // via crafted file names or linter output embedding instruction-like content.
@@ -206,6 +221,13 @@ export class AutomationHooks {
     this.log(
       `[automation] triggered diagnostics task ${taskId.slice(0, 8)} for ${normalizedFile}`,
     );
+  }
+
+  /** Prune lastTrigger entries older than LAST_TRIGGER_MAX_AGE_MS to prevent unbounded growth. */
+  private _pruneLastTrigger(now: number): void {
+    for (const [k, t] of this.lastTrigger) {
+      if (now - t > LAST_TRIGGER_MAX_AGE_MS) this.lastTrigger.delete(k);
+    }
   }
 
   handleFileSaved(_id: string, type: string, file: string): void {
@@ -251,10 +273,15 @@ export class AutomationHooks {
     }
 
     this.lastTrigger.set(key, now);
+    this._pruneLastTrigger(now);
 
-    // Truncate file path to prevent prompt injection via crafted path names
+    // Truncate file path and wrap in delimiters to prevent prompt injection
+    // via crafted workspace directory names embedding instruction-like content.
     const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
-    const prompt = cfg.prompt.replace(/\{\{file\}\}/g, safeFilePath);
+    const prompt = cfg.prompt.replace(
+      /\{\{file\}\}/g,
+      `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
+    );
     const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
     this.activeFileTasks.set(normalizedFile, taskId);
     this.log(

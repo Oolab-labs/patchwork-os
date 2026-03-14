@@ -8,6 +8,7 @@ import {
   createGitBlameTool,
   createGitCommitTool,
   createGitListBranchesTool,
+  createGitPushTool,
 } from "../gitWrite.js";
 
 function parse(result: { content: Array<{ type: string; text: string }> }) {
@@ -83,6 +84,49 @@ describe("gitWrite tools", () => {
       expect(data.local).toBeDefined();
       expect(data.local.length).toBeGreaterThanOrEqual(1);
       expect(data.current).toBeDefined();
+    });
+  });
+
+  describe("gitPush", () => {
+    it("blocks force push to main", async () => {
+      // Rename default branch to 'main' for this check
+      try {
+        execSync("git branch -m main", { cwd: tmpDir, stdio: "ignore" });
+      } catch {
+        // branch may already be main
+      }
+      const tool = createGitPushTool(tmpDir);
+      const result = await tool.handler({ branch: "main", force: true });
+      expect(result.isError).toBe(true);
+      expect(parse(result).error).toMatch(/Force push to 'main' is blocked/);
+    });
+
+    it("blocks force push to master", async () => {
+      const tool = createGitPushTool(tmpDir);
+      const result = await tool.handler({ branch: "master", force: true });
+      expect(result.isError).toBe(true);
+      expect(parse(result).error).toMatch(/blocked/i);
+    });
+
+    it("returns error for invalid remote name", async () => {
+      const tool = createGitPushTool(tmpDir);
+      const result = await tool.handler({ remote: "bad remote!" });
+      expect(result.isError).toBe(true);
+      expect(parse(result).error).toMatch(/Invalid remote name/);
+    });
+
+    it("returns error for invalid branch name", async () => {
+      const tool = createGitPushTool(tmpDir);
+      const result = await tool.handler({ branch: "bad branch!" });
+      expect(result.isError).toBe(true);
+      expect(parse(result).error).toMatch(/Invalid branch name/);
+    });
+
+    it("returns error when no upstream is set and remote doesn't exist", async () => {
+      const tool = createGitPushTool(tmpDir);
+      // tmpDir has no remotes configured — push should fail
+      const result = await tool.handler({ remote: "origin" });
+      expect(result.isError).toBe(true);
     });
   });
 

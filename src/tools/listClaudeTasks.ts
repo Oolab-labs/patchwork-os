@@ -18,6 +18,11 @@ export function createListClaudeTasksTool(
     schema: {
       name: "listClaudeTasks",
       description: "List your Claude tasks, optionally filtered by status.",
+      annotations: {
+        title: "List Claude Tasks",
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         type: "object",
         properties: {

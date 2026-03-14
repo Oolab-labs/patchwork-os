@@ -1,6 +1,6 @@
 {
   "name": "claude-ide-bridge",
-  "version": "1.6.0",
+  "version": "1.8.0",
   "description": "Standalone MCP bridge for Claude Code IDE integration with any editor — 120+ tools for LSP, debugging, terminals, Git, GitHub, and more",
   "type": "module",
   "main": "dist/index.js",
@@ -60,7 +60,12 @@
     "start-all": "bash scripts/start-all.sh"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
+    "@opentelemetry/sdk-node": "^0.213.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0",
     "ajv": "^8.18.0",
+    "minimatch": "^10.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

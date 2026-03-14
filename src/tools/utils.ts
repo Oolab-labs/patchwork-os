@@ -92,8 +92,9 @@ export function optionalArray(
   return val;
 }
 
-// Cache for workspace realpath — TTL 60s to handle rare symlink re-points in monorepos
-const REALPATH_CACHE_TTL_MS = 60_000;
+// Cache for workspace realpath — short TTL to limit the TOCTOU window if the workspace
+// directory itself is replaced with a symlink while the bridge is running.
+const REALPATH_CACHE_TTL_MS = 5_000;
 const realpathCache = new Map<string, { value: string; expiresAt: number }>();
 
 function cachedRealpathSync(p: string): string {
