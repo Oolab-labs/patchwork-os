@@ -69,3 +69,50 @@ describe("getDiagnostics — linter error surfacing", () => {
     expect(data.linterErrors).toBeUndefined();
   });
 });
+
+describe("getDiagnostics — message sanitization", () => {
+  it("strips control characters from diagnostic messages", async () => {
+    // biome linter uses `description` field in its JSON output
+    const malicious = "Real error\x00\x01\x1f injected text";
+    mockExecSafe.mockResolvedValue(
+      ok(
+        JSON.stringify({
+          diagnostics: [
+            {
+              path: { file: "/ws/foo.ts" },
+              severity: "error",
+              description: malicious,
+              category: "lint",
+            },
+          ],
+        }),
+      ),
+    );
+    const tool = createGetDiagnosticsTool("/ws", probes);
+    const data = parse(await tool.handler({}));
+    const msg = data.diagnostics[0].message as string;
+    expect(msg).not.toMatch(/[\x00-\x1f\x7f]/);
+    expect(msg).toContain("Real error");
+  });
+
+  it("truncates messages longer than 500 characters", async () => {
+    const longMsg = "x".repeat(600);
+    mockExecSafe.mockResolvedValue(
+      ok(
+        JSON.stringify({
+          diagnostics: [
+            {
+              path: { file: "/ws/foo.ts" },
+              severity: "error",
+              description: longMsg,
+              category: "lint",
+            },
+          ],
+        }),
+      ),
+    );
+    const tool = createGetDiagnosticsTool("/ws", probes);
+    const data = parse(await tool.handler({}));
+    expect((data.diagnostics[0].message as string).length).toBe(500);
+  });
+});

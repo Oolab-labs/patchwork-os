@@ -115,6 +115,40 @@ Domain data connections, state management, and protocol flows that are not expre
 
 ---
 
+## Prompts Protocol (MCP)
+
+The bridge implements the MCP `prompts` capability alongside `tools`. Prompt registration happens at startup via `registerPrompts()` in `src/prompts.ts`.
+
+```
+Discovery:
+  Claude sends prompts/list → transport returns all registered prompts
+  └─ Response: { prompts: Array<{ name, description, arguments? }>, nextCursor? }
+  └─ Cursor-paginated (same page-size-50 mechanism as tools/list)
+
+Resolution:
+  Claude sends prompts/get { name, arguments } → transport looks up prompt
+  └─ Handler receives validated args → returns { description?, messages: Array<PromptMessage> }
+  └─ PromptMessage: { role: "user" | "assistant", content: { type: "text", text } }
+  └─ Returns JSON-RPC error -32602 if required argument missing
+  └─ Returns JSON-RPC error -32601 if prompt name not found
+```
+
+**Registered prompts:**
+
+| Name | Required Args | Optional Args |
+|------|--------------|---------------|
+| `review-file` | `file` | — |
+| `explain-diagnostics` | `file` | — |
+| `generate-tests` | `file` | — |
+| `debug-context` | — | — |
+| `git-review` | — | `base` (default: `main`) |
+
+**Transport state additions:**
+- `prompts` registry (`Map<string, RegisteredPrompt>`) stored on the transport alongside `tools`
+- `prompts/list_changed` notification fired when prompts registry changes (currently static — fires once on init)
+
+---
+
 ## Tool Lifecycle
 
 ```
@@ -189,6 +223,7 @@ WITH extension:
   → extensionClient.latestDiagnostics cache (Map<file, Diagnostic[]>)
   → bridge sends notifications/tools/list_changed to Claude (debounced 2s)
   → Claude queries getDiagnostics tool → returns cached + fresh from extension
+  → message text sanitized: control chars stripped, capped at 500 chars
 
 WITHOUT extension (fallback):
   getDiagnostics tool → runs CLI linters directly:
@@ -199,6 +234,7 @@ WITHOUT extension (fallback):
   → go vet (Go)
   → biome check (JS/TS)
   Auto-detected via probeAll() at startup
+  → message text sanitized: control chars stripped, capped at 500 chars (same path)
 
 watchDiagnostics (long-poll):
   → registers listener in diagnosticsListeners Set
@@ -333,6 +369,94 @@ All handler methods use the `extension/` prefix and communicate via JSON-RPC 2.0
 | `extension/fileChanged` | `{id, type, file}` | File watcher event |
 | `extension/diagnosticsChanged` | _(debounced)_ | Language server diagnostics update |
 | `extension/aiCommentsChanged` | _(debounced)_ | Document content change |
+
+---
+
+## ClaudeOrchestrator Data Flow
+
+### Overview
+
+```
+VS Code event / MCP tool call
+        │
+        ▼
+AutomationHooks (src/automation.ts)        runClaudeTask MCP tool
+   onDiagnosticsError / onFileSave  ──────►  ClaudeOrchestrator.enqueue()
+                                                    │
+                                              Task queued (pending)
+                                                    │
+                                     MAX_CONCURRENT=10 slots available?
+                                            ├─ yes → run immediately
+                                            └─ no  → wait in queue (MAX_QUEUE=20)
+                                                    │
+                                              SubprocessDriver
+                                              spawns: claude -p <prompt>
+                                              (CLAUDECODE stripped from env)
+                                                    │
+                                          ┌─────────┴──────────┐
+                                     Track 1                Track 2
+                               MCP progress              bridge/claudeTaskOutput
+                               notifications             WS push notification
+                               (Claude Code)             (VS Code extension output
+                                                          channel: "Claude IDE Bridge")
+                                                    │
+                                              Task complete → status: done | error | cancelled
+```
+
+### ClaudeTask State Machine
+
+```
+pending ──► running ──► done
+                   └──► error
+                   └──► cancelled  (via cancelClaudeTask or AbortController)
+```
+
+| State | Description |
+|-------|-------------|
+| `pending` | Enqueued, waiting for a concurrency slot |
+| `running` | Subprocess spawned; output streaming via both tracks |
+| `done` | Subprocess exited with code 0; `output` contains full stdout |
+| `error` | Subprocess exited non-zero, timed out, or threw; `error` field contains message |
+| `cancelled` | Cancelled before or during execution |
+
+### Orchestrator Limits
+
+| Setting | Value |
+|---------|-------|
+| Max concurrent tasks | 10 (`MAX_CONCURRENT`) |
+| Max queue depth | 20 (`MAX_QUEUE`) — enqueue() rejects beyond this |
+| Max task history | 100 (`MAX_HISTORY`) — oldest completed tasks evicted |
+| Default task timeout | 60 000 ms |
+| Min task timeout | 5 000 ms |
+| Max task timeout | 600 000 ms |
+| Max prompt size | 32 KB |
+| Max context files | 20 (workspace-confined) |
+
+### Session Scoping
+
+Each MCP session gets isolated task visibility. `getClaudeTaskStatus`, `cancelClaudeTask`, and `listClaudeTasks` only surface tasks belonging to the calling session. Cross-session task access is rejected with a tool error.
+
+### AutomationHooks Policy
+
+Loaded from `--automation-policy <path>` at startup. Two hook types:
+
+| Hook | Trigger | Template placeholders |
+|------|---------|----------------------|
+| `onDiagnosticsError` | Extension `diagnosticsChanged` notification with severity ≥ `minSeverity` | `{{file}}`, `{{diagnostics}}` |
+| `onFileSave` | Extension `fileSaved` notification matching `patterns` glob list | `{{file}}` |
+
+Cooldown enforcement: each hook tracks `lastFiredAt` per file. A cooldown of at minimum 5 000 ms must elapse before the same file re-triggers. `{{diagnostics}}` is rendered as a severity-filtered list with each message capped at 500 chars and delimited by `--- BEGIN/END DIAGNOSTIC DATA ---` to prevent prompt injection.
+
+### Output Delivery (Two Tracks)
+
+**Track 1 — MCP progress notifications** (Claude Code terminal)
+- Sent via `transport.sendProgress()` while task is `running`
+- Best-effort; skipped if bufferedAmount exceeds backpressure threshold
+
+**Track 2 — `bridge/claudeTaskOutput` push notification** (VS Code)
+- Sent via `extensionClient.notify()` on each stdout chunk
+- Extension appends to the "Claude IDE Bridge" output channel in real time
+- Delivered regardless of whether Claude Code is connected
 
 ---
 

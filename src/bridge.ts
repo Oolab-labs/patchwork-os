@@ -13,6 +13,9 @@ import { probeAll } from "./probe.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { registerAllTools } from "./tools/index.js";
+import { createDriver } from "./claudeDriver.js";
+import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
+import { AutomationHooks, loadPolicy } from "./automation.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
 import { McpTransport } from "./transport.js";
 
@@ -54,6 +57,8 @@ export class Bridge {
   private lastConnectAt: string | null = null;
   private lastDisconnectAt: string | null = null;
   private checkpoint: SessionCheckpoint | null = null;
+  private orchestrator: ClaudeOrchestrator | null = null;
+  private automationHooks: AutomationHooks | null = null;
 
   constructor(private config: Config) {
     this.logger = new Logger(config.verbose, config.jsonl);
@@ -85,6 +90,7 @@ export class Bridge {
 
       const sessionId = randomUUID();
       const transport = new McpTransport(this.logger);
+      transport.workspace = this.config.workspace;
       transport.setActivityLog(this.activityLog);
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
@@ -112,6 +118,8 @@ export class Bridge {
         session.terminalPrefix,
         this.fileLock,
         this.sessions,
+        this.orchestrator,
+        sessionId,
       );
 
       transport.attach(ws);
@@ -257,9 +265,10 @@ export class Bridge {
     };
 
     // Forward diagnostics changes from extension to Claude Code
-    this.extensionClient.onDiagnosticsChanged = (_file) => {
+    this.extensionClient.onDiagnosticsChanged = (_file, _diagnostics) => {
       this.logger.event("diagnostics_changed", { file: _file });
       sendListChanged();
+      this.automationHooks?.handleDiagnosticsChanged(_file, _diagnostics ?? []);
     };
 
     // Forward AI comment changes from extension to Claude Code
@@ -272,6 +281,7 @@ export class Bridge {
     this.extensionClient.onFileChanged = (id, type, file) => {
       this.logger.event("file_changed", { id, type, file });
       sendListChanged();
+      this.automationHooks?.handleFileSaved(id, type, file);
     };
 
     // Forward debug session changes from extension to Claude Code
@@ -357,7 +367,44 @@ export class Bridge {
       `Available test runners: ${probeList(["vitest", "jest", "pytest", "cargo", "go"])}`,
     );
 
-    // 2. Wire up /health endpoint data and /metrics
+    // 2. Initialize Claude driver and orchestrator (if configured)
+    if (this.config.claudeDriver !== "none") {
+      const driver = createDriver(
+        this.config.claudeDriver,
+        this.config.claudeBinary,
+        (msg) => this.logger.info(msg),
+      );
+      if (driver) {
+        this.orchestrator = new ClaudeOrchestrator(
+          driver,
+          this.config.workspace,
+          (msg) => this.logger.info(msg),
+          (taskId, chunk) => this.extensionClient.notifyTaskOutput(taskId, chunk),
+          (taskId, status) => this.extensionClient.notifyTaskDone(taskId, status),
+        );
+        this.logger.info(`[bridge] Claude driver: ${driver.name}`);
+      }
+    }
+
+    if (this.config.automationEnabled) {
+      if (!this.orchestrator) {
+        throw new Error("--automation requires --claude-driver != none");
+      }
+      if (!this.config.automationPolicyPath) {
+        throw new Error("--automation requires --automation-policy <path>");
+      }
+      const policy = loadPolicy(this.config.automationPolicyPath);
+      this.automationHooks = new AutomationHooks(
+        policy,
+        this.orchestrator,
+        (msg) => this.logger.info(msg),
+      );
+      this.logger.info(
+        `[bridge] Automation enabled (policy: ${this.config.automationPolicyPath})`,
+      );
+    }
+
+    // 3. Wire up /health endpoint data and /metrics
     this.server.healthDataFn = () => {
       let sessionsInGrace = 0;
       for (const s of this.sessions.values()) {
@@ -376,6 +423,30 @@ export class Bridge {
       };
     };
     this.server.metricsFn = () => this.activityLog.toPrometheus();
+    this.server.tasksFn = () => ({
+      tasks: (this.orchestrator?.list() ?? []).map((t) => ({
+        taskId: t.id,
+        sessionId: t.sessionId.slice(0, 8),
+        status: t.status,
+        createdAt: t.createdAt,
+        startedAt: t.startedAt,
+        doneAt: t.doneAt,
+        // Omit prompt (may contain sensitive content) and cap output
+        output: t.output ? t.output.slice(0, 200) : undefined,
+        errorMessage: t.errorMessage,
+        timeoutMs: t.timeoutMs,
+      })),
+    });
+    this.server.readyFn = () => {
+      // Count tools from the first active session (all sessions share the same tool set)
+      const anySession = [...this.sessions.values()][0];
+      const toolCount = anySession?.transport.toolCount ?? 0;
+      return {
+        ready: this.ready,
+        toolCount,
+        extensionConnected: this.extensionClient.isConnected(),
+      };
+    };
     this.server.statusFn = () => {
       let sessionsInGrace = 0;
       const sessionList: Record<string, unknown>[] = [];
@@ -579,6 +650,15 @@ export class Bridge {
     }
     this.lockFile.delete();
     this.checkpoint?.stop();
+    // Cancel any pending/running Claude tasks
+    if (this.orchestrator) {
+      for (const task of [
+        ...this.orchestrator.list("pending"),
+        ...this.orchestrator.list("running"),
+      ]) {
+        this.orchestrator.cancel(task.id);
+      }
+    }
     cleanupTempDirs();
   }
 }

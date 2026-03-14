@@ -190,6 +190,25 @@ Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives
 | `generateTests` | Extract exported symbols from a source file and generate a test scaffold (vitest/jest/pytest). Auto-detects framework from config files. |
 | `createIssueFromAIComment` | Create a GitHub issue from a cached `// AI:` comment. Derives title from the comment text; supports labels and assignee. Requires `gh` CLI. |
 
+### Claude Orchestration (requires `--claude-driver != none`)
+
+These tools are only registered when the bridge is started with `--claude-driver subprocess` (or `api`). They are hidden from `tools/list` otherwise.
+
+| Tool | Description |
+|------|-------------|
+| `runClaudeTask` | Enqueue a Claude task. Params: `prompt` (required, max 32 KB), `contextFiles` (optional, max 20, workspace-confined), `timeoutMs` (5000–600000, default 60000), `stream` (bool, default false). Returns `{ taskId, status }` immediately, or blocks and streams output if `stream: true`. |
+| `getClaudeTaskStatus` | Poll a task by ID. Returns `{ taskId, status, output (truncated 500 chars), startedAt?, completedAt?, durationMs? }`. Session-scoped — callers can only see their own tasks. |
+| `cancelClaudeTask` | Cancel a pending or running task by ID. Returns `{ taskId, cancelled }`. No-op if task already completed. |
+| `listClaudeTasks` | List session-scoped tasks. Optional `status` filter: `pending` \| `running` \| `done` \| `error` \| `cancelled`. Returns array of task summaries (no prompt text, output capped at 200 chars). |
+
+Task status lifecycle: `pending → running → done | error | cancelled`.
+
+**Security hardening:**
+- Prompt injection: diagnostic messages sanitized (control character stripping + 500-char cap) on both extension LSP and CLI linter paths; file paths at 500 chars; delimited with `--- BEGIN/END DIAGNOSTIC DATA ---`
+- `CLAUDECODE` env var stripped from subprocess to prevent nested-session panic
+- 32 KB prompt cap on `runClaudeTask`
+- `contextFiles` confined to workspace path
+
 ### AI Comments
 | Tool | Description |
 |------|-------------|
@@ -231,6 +250,22 @@ Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives
 
 ---
 
+## MCP Prompts
+
+The bridge serves 5 built-in prompts via `prompts/list` + `prompts/get`. These appear as `/mcp__bridge__<name>` in any MCP client that supports the MCP prompts protocol. No extension required.
+
+| Prompt | Argument | Description |
+|--------|----------|-------------|
+| `review-file` | `file` (required) | Code review for a specific file using current diagnostics |
+| `explain-diagnostics` | `file` (required) | Explain all diagnostics in a file and suggest fixes |
+| `generate-tests` | `file` (required) | Generate a test scaffold for exported symbols in a file |
+| `debug-context` | _(none)_ | Snapshot current debug state, open editors, and diagnostics |
+| `git-review` | `base` (optional, default: `main`) | Review all changes since a git base branch |
+
+Implementation: `src/prompts.ts`. Tests: `src/__tests__/prompts.test.ts`, `src/__tests__/transport-prompts.test.ts`.
+
+---
+
 ## Architecture
 
 ### Connection Model
@@ -241,7 +276,7 @@ Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket
 ### Protocol
 - JSON-RPC 2.0 over WebSocket
 - MCP protocol version: `2025-11-25`
-- Server capabilities: `tools` (with `listChanged`), `logging`
+- Server capabilities: `tools` (with `listChanged`), `logging`, `prompts` (with `listChanged`)
 
 ### Auth
 - Bridge generates random UUID auth token on startup
@@ -297,7 +332,10 @@ Session lifecycle:
 
 ### Health & Metrics
 - `/health` endpoint: Claude Code connected, extension connected, circuit breaker state
+- `/status` endpoint: full session and activity summary (JSON)
+- `/ready` endpoint: 200 when bridge is initialized and ready to accept connections
 - `/metrics` endpoint: Prometheus-format session metrics (tool calls, durations, errors)
+- `/tasks` endpoint: sanitized task list (Bearer-auth required; no prompt text, output capped at 200 chars). Only present when `--claude-driver != none`.
 
 ---
 
@@ -324,6 +362,10 @@ Launches tmux session with 4 panes: orchestrator, bridge, Claude CLI, remote con
 --allow-command <cmd>     Add to command allowlist (repeatable)
 --timeout <ms>            Command timeout (default: 30000)
 --max-result-size <KB>    Max output size (default: 512)
+--claude-driver <mode>    Claude subprocess driver: subprocess | api | none (default: none)
+--claude-binary <path>    Path to claude binary (default: claude)
+--automation              Enable event-driven automation hooks
+--automation-policy <path> Path to JSON automation policy file
 --verbose                 Debug logging
 --jsonl                   Structured JSONL events to stderr
 ```

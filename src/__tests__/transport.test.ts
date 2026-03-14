@@ -66,6 +66,8 @@ describe("McpTransport", () => {
     expect(result.protocolVersion).toBe("2025-11-25");
     expect(result.capabilities).toEqual({
       tools: { listChanged: true },
+      resources: { listChanged: false },
+      prompts: { listChanged: false },
       logging: {},
     });
 
@@ -170,7 +172,8 @@ describe("McpTransport", () => {
       isError: boolean;
     };
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toBe("something broke");
+    const errPayload = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+    expect(errPayload.error).toBe("something broke");
   });
 
   it("tools/call returns JSON-RPC error for unknown tool", async () => {

@@ -74,6 +74,7 @@ export class McpTransport {
     version: BRIDGE_PROTOCOL_VERSION,
   };
   private activeWs: WebSocket | null = null;
+  public workspace = "";
   private activeListener: ((data: Buffer) => void) | null = null;
   private inFlightControllers = new Map<string | number, AbortController>();
   private initialized = false;
@@ -107,6 +108,16 @@ export class McpTransport {
     const fn = this.ajv.compile(schema as object);
     this.schemaValidators.set(toolName, fn);
     return fn;
+  }
+
+  /** Returns true once the MCP handshake is complete (notifications/initialized received). */
+  get isReady(): boolean {
+    return this.initialized;
+  }
+
+  /** Number of tools currently registered (useful for /ready endpoint). */
+  get toolCount(): number {
+    return this.tools.size;
   }
 
   setExtensionConnectedFn(fn: () => boolean): void {
@@ -305,6 +316,8 @@ export class McpTransport {
                 protocolVersion: negotiatedVersion,
                 capabilities: {
                   tools: { listChanged: true },
+                  resources: { listChanged: false },
+                  prompts: { listChanged: false },
                   logging: {},
                 },
                 serverInfo: this.serverInfo,
@@ -541,6 +554,11 @@ export class McpTransport {
                 // potentially recover from tool failures.
                 const message =
                   err instanceof Error ? err.message : String(err);
+                const errCode =
+                  err instanceof Error &&
+                  typeof (err as Error & { code?: unknown }).code === "string"
+                    ? (err as Error & { code: string }).code
+                    : undefined;
                 callLog.error(`Tool ${params.name} failed: ${message}`);
                 this.errorCount++;
                 this.activityLog?.record(
@@ -549,11 +567,15 @@ export class McpTransport {
                   "error",
                   message,
                 );
+                const errPayload: Record<string, string> = { error: message };
+                if (errCode !== undefined) errPayload.code = errCode;
                 response = {
                   jsonrpc: "2.0",
                   id: msg.id,
                   result: {
-                    content: [{ type: "text", text: message }],
+                    content: [
+                      { type: "text", text: JSON.stringify(errPayload) },
+                    ],
                     isError: true,
                   },
                 };
@@ -572,6 +594,155 @@ export class McpTransport {
                 }
               }
             }
+            break;
+          }
+
+          case "resources/list": {
+            if (!this.initialized) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_REQUEST,
+                  message: "Not initialized — send initialize first",
+                },
+              };
+              break;
+            }
+            const resListParams = msg.params as
+              | { cursor?: unknown }
+              | undefined;
+            const resCursor =
+              typeof resListParams?.cursor === "string"
+                ? resListParams.cursor
+                : undefined;
+            const { listResources } = await import("./resources.js");
+            const listResult = listResources(this.workspace, resCursor);
+            response = {
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: listResult,
+            };
+            break;
+          }
+
+          case "resources/read": {
+            if (!this.initialized) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_REQUEST,
+                  message: "Not initialized — send initialize first",
+                },
+              };
+              break;
+            }
+            const resReadParams = msg.params as { uri?: unknown } | undefined;
+            if (typeof resReadParams?.uri !== "string") {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_PARAMS,
+                  message: "resources/read requires a string uri parameter",
+                },
+              };
+              break;
+            }
+            const { readResource } = await import("./resources.js");
+            const readResult = readResource(this.workspace, resReadParams.uri);
+            if ("error" in readResult) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_PARAMS,
+                  message: readResult.error,
+                  data: { code: readResult.code },
+                },
+              };
+            } else {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                result: readResult,
+              };
+            }
+            break;
+          }
+
+          case "prompts/list": {
+            if (!this.initialized) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_REQUEST,
+                  message: "Not initialized — send initialize first",
+                },
+              };
+              break;
+            }
+            const { PROMPTS } = await import("./prompts.js");
+            response = {
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: { prompts: PROMPTS },
+            };
+            break;
+          }
+
+          case "prompts/get": {
+            if (!this.initialized) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_REQUEST,
+                  message: "Not initialized — send initialize first",
+                },
+              };
+              break;
+            }
+            const promptParams = msg.params as
+              | { name?: unknown; arguments?: unknown }
+              | undefined;
+            if (typeof promptParams?.name !== "string") {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_PARAMS,
+                  message: "prompts/get requires a string name parameter",
+                },
+              };
+              break;
+            }
+            const promptArgs =
+              typeof promptParams.arguments === "object" &&
+              promptParams.arguments !== null &&
+              !Array.isArray(promptParams.arguments)
+                ? (promptParams.arguments as Record<string, string>)
+                : {};
+            const { getPrompt } = await import("./prompts.js");
+            const promptResult = getPrompt(promptParams.name, promptArgs);
+            if (!promptResult) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_PARAMS,
+                  message: `Unknown prompt or missing required argument: "${promptParams.name}"`,
+                },
+              };
+              break;
+            }
+            response = {
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: promptResult,
+            };
             break;
           }
 

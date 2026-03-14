@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export interface Config {
@@ -18,6 +20,10 @@ export interface Config {
   activeWorkspaceFolder: string;
   gracePeriodMs: number;
   autoTmux: boolean;
+  claudeDriver: "subprocess" | "api" | "none";
+  claudeBinary: string;
+  automationEnabled: boolean;
+  automationPolicyPath: string | null;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -79,6 +85,78 @@ export function ideNameFromEditor(editorCommand: string): string {
   return EDITOR_IDE_NAMES[editorCommand] ?? editorCommand;
 }
 
+/** Keys in the config file that mirror CLI flags (camelCase). */
+interface ConfigFile {
+  workspace?: string;
+  port?: number;
+  logLevel?: string;
+  linters?: string[];
+  commandAllowlist?: string[];
+  vscodeCommandAllowlist?: string[];
+  commandTimeout?: number;
+  maxResultSize?: number;
+  gracePeriodMs?: number;
+  bindAddress?: string;
+  editorCommand?: string;
+  ideName?: string;
+  autoTmux?: boolean;
+  claudeDriver?: "subprocess" | "api" | "none";
+  claudeBinary?: string;
+  automationEnabled?: boolean;
+  automationPolicyPath?: string;
+}
+
+const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
+  "workspace", "port", "logLevel", "linters", "commandAllowlist",
+  "vscodeCommandAllowlist", "commandTimeout", "maxResultSize",
+  "gracePeriodMs", "bindAddress", "editorCommand", "ideName", "autoTmux",
+  "claudeDriver", "claudeBinary", "automationEnabled", "automationPolicyPath",
+]);
+
+/**
+ * Load a config file and return its contents as a partial Config.
+ * Discovery order: $CLAUDE_IDE_BRIDGE_CONFIG → ./claude-ide-bridge.config.json → ~/.claude/ide/config.json
+ * On any error (file not found, parse failure) logs a warning and returns {}.
+ */
+export function loadConfigFile(configPath?: string): Partial<ConfigFile> {
+  const candidates: string[] = [];
+  if (configPath) {
+    candidates.push(configPath);
+  } else {
+    if (process.env.CLAUDE_IDE_BRIDGE_CONFIG) {
+      candidates.push(process.env.CLAUDE_IDE_BRIDGE_CONFIG);
+    }
+    candidates.push(path.join(process.cwd(), "claude-ide-bridge.config.json"));
+    const claudeDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+    candidates.push(path.join(claudeDir, "ide", "config.json"));
+  }
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      const raw = fs.readFileSync(candidate, "utf-8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        console.warn(`Warning: Config file ${candidate} is not a JSON object — ignored`);
+        return {};
+      }
+      const obj = parsed as Record<string, unknown>;
+      for (const key of Object.keys(obj)) {
+        if (!KNOWN_CONFIG_FILE_KEYS.has(key)) {
+          console.warn(`Warning: Unknown config file key "${key}" in ${candidate} — ignored`);
+        }
+      }
+      return obj as Partial<ConfigFile>;
+    } catch (err) {
+      console.warn(
+        `Warning: Failed to parse config file ${candidate}: ${err instanceof Error ? err.message : String(err)} — ignored`,
+      );
+      return {};
+    }
+  }
+  return {};
+}
+
 function requireArg(args: string[], i: number, flag: string): string {
   const value = args[i];
   if (value === undefined || value.startsWith("--")) {
@@ -89,20 +167,39 @@ function requireArg(args: string[], i: number, flag: string): string {
 
 export function parseConfig(argv: string[]): Config {
   const args = argv.slice(2);
-  let workspace = process.cwd();
-  let ideName = "External";
-  let editorCommand: string | null = null;
-  let port: number | null = null;
+
+  // Find --config path before the main arg parse (lowest priority: loaded first)
+  let configFilePath: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--config") {
+      configFilePath = args[++i];
+      break;
+    }
+  }
+  const fileConfig = loadConfigFile(configFilePath);
+
+  // Defaults — config file values fill in where CLI/env don't override
+  let workspace = fileConfig.workspace ? path.resolve(fileConfig.workspace) : process.cwd();
+  let ideName = fileConfig.ideName ?? "External";
+  let editorCommand: string | null = fileConfig.editorCommand ?? null;
+  let port: number | null = fileConfig.port ?? null;
   let verbose = false;
   let jsonl = false;
-  let linters: string[] = [];
-  const commandAllowlist: string[] = [...DEFAULT_ALLOWLIST];
-  const vscodeCommandAllowlist: string[] = [];
-  let bindAddress = process.env.BRIDGE_BIND_ADDRESS ?? "127.0.0.1";
-  let commandTimeout = 30_000;
-  let maxResultSize = 512;
-  let gracePeriodMs = 30_000;
-  let autoTmux = false;
+  let linters: string[] = fileConfig.linters ?? [];
+  const commandAllowlist: string[] = [
+    ...DEFAULT_ALLOWLIST,
+    ...(fileConfig.commandAllowlist ?? []),
+  ];
+  const vscodeCommandAllowlist: string[] = fileConfig.vscodeCommandAllowlist ?? [];
+  let bindAddress = process.env.BRIDGE_BIND_ADDRESS ?? fileConfig.bindAddress ?? "127.0.0.1";
+  let commandTimeout = fileConfig.commandTimeout ?? 30_000;
+  let maxResultSize = fileConfig.maxResultSize ?? 512;
+  let gracePeriodMs = fileConfig.gracePeriodMs ?? 30_000;
+  let autoTmux = fileConfig.autoTmux ?? false;
+  let claudeDriver: "subprocess" | "api" | "none" = fileConfig.claudeDriver ?? "none";
+  let claudeBinary = fileConfig.claudeBinary ?? "claude";
+  let automationEnabled = fileConfig.automationEnabled ?? false;
+  let automationPolicyPath: string | null = fileConfig.automationPolicyPath ?? null;
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -182,8 +279,31 @@ export function parseConfig(argv: string[]): Config {
         }
         break;
       }
+      case "--config":
+        // Already consumed above to load config file; skip the value
+        i++;
+        break;
       case "--auto-tmux":
         autoTmux = true;
+        break;
+      case "--claude-driver": {
+        const driverVal = requireArg(args, ++i, "--claude-driver");
+        if (driverVal !== "subprocess" && driverVal !== "api" && driverVal !== "none") {
+          throw new Error(`Invalid --claude-driver value: "${driverVal}". Must be "subprocess", "api", or "none".`);
+        }
+        claudeDriver = driverVal;
+        break;
+      }
+      case "--claude-binary":
+        claudeBinary = requireArg(args, ++i, "--claude-binary");
+        if (claudeBinary.length > 4096)
+          throw new Error("--claude-binary value too long (max 4096 chars)");
+        break;
+      case "--automation":
+        automationEnabled = true;
+        break;
+      case "--automation-policy":
+        automationPolicyPath = path.resolve(requireArg(args, ++i, "--automation-policy"));
         break;
       case "--grace-period": {
         const gStr = requireArg(args, ++i, "--grace-period");
@@ -231,9 +351,16 @@ Options:
   --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
   --grace-period <ms>       Reconnect grace period in ms (default: 30000, max: 600000)
   --auto-tmux               Auto-wrap in tmux session if not already inside one
+  --config <path>           Load config file (default: ./claude-ide-bridge.config.json)
   --verbose                 Enable debug logging
   --jsonl                   Emit structured JSONL events to stderr
   --help                    Show this help
+
+Automation:
+  --claude-driver <mode>    Enable Claude subprocess driver: "subprocess" | "api" | "none" (default: "none")
+  --claude-binary <path>    Path to claude binary (default: "claude")
+  --automation              Enable event-driven automation hooks (requires --claude-driver != none and --automation-policy)
+  --automation-policy <path>  Path to JSON automation policy file
 
 Environment Variables:
   CLAUDE_IDE_BRIDGE_EDITOR           Editor command override
@@ -241,7 +368,8 @@ Environment Variables:
   CLAUDE_IDE_BRIDGE_TIMEOUT          Command timeout in ms
   CLAUDE_IDE_BRIDGE_MAX_RESULT_SIZE  Max output size in KB
   CLAUDE_IDE_BRIDGE_GRACE_PERIOD     Reconnect grace period in ms
-  CLAUDE_CONFIG_DIR                  Override ~/.claude directory`);
+  CLAUDE_CONFIG_DIR                  Override ~/.claude directory
+  CLAUDE_IDE_BRIDGE_CONFIG           Path to config file (overrides auto-discovery)`);
         return process.exit(0);
       }
       default: {
@@ -332,5 +460,9 @@ Environment Variables:
     activeWorkspaceFolder: workspace,
     gracePeriodMs,
     autoTmux,
+    claudeDriver,
+    claudeBinary,
+    automationEnabled,
+    automationPolicyPath,
   };
 }

@@ -9,7 +9,7 @@ import {
   RECONNECT_BASE_DELAY,
   RECONNECT_MAX_DELAY,
 } from "./constants";
-import { readLockFilesAsync } from "./lockfiles";
+import { readLockFileForWorkspace, readLockFilesAsync } from "./lockfiles";
 import type { LockFileData, RequestHandler } from "./types";
 
 enum ConnectionState {
@@ -52,6 +52,14 @@ export class BridgeConnection {
   logLevel = "info";
   /** Override the lock file directory (empty string = use default LOCK_DIR) */
   lockDirOverride = "";
+  /**
+   * If set, tryConnect() searches for a lock file matching this specific
+   * workspace path instead of the first VS Code workspace folder.
+   * Used by multi-workspace mode in extension.ts.
+   */
+  workspaceOverride = "";
+  /** Called whenever the connection state changes (connected/disconnected/reconnecting). */
+  onStateChange: (() => void) | null = null;
 
   private handlers: Record<string, RequestHandler> = {};
   private onDispose: (() => void) | null = null;
@@ -108,6 +116,7 @@ export class BridgeConnection {
   private updateStatusBar(
     state: "connected" | "disconnected" | "reconnecting",
   ): void {
+    this.onStateChange?.();
     if (!this.statusBar) return;
     switch (state) {
       case "connected":
@@ -448,7 +457,13 @@ export class BridgeConnection {
     if (this.connecting) return;
     this.connecting = true;
     this.state = ConnectionState.CONNECTING;
-    readLockFilesAsync(this.lockDirOverride || undefined)
+    const readFn = this.workspaceOverride
+      ? readLockFileForWorkspace(
+          this.workspaceOverride,
+          this.lockDirOverride || undefined,
+        )
+      : readLockFilesAsync(this.lockDirOverride || undefined);
+    readFn
       .then((lockData) => {
         this.connecting = false;
         if (this.disposed) {
@@ -508,6 +523,27 @@ export class BridgeConnection {
               if (choice === "Show Logs") this.output?.show();
             });
           }
+        }
+        if (msg.method === "bridge/claudeTaskOutput") {
+          const params =
+            msg.params !== null && typeof msg.params === "object"
+              ? (msg.params as {
+                  taskId?: string;
+                  chunk?: string;
+                  done?: boolean;
+                  status?: string;
+                })
+              : {};
+          const { taskId, chunk, done, status } = params;
+          const short = typeof taskId === "string" ? taskId.slice(0, 8) : "?";
+          if (done) {
+            this.output?.appendLine(
+              `${new Date().toISOString()} Claude task ${short}: ${status === "done" ? "✓ done" : `✗ ${status ?? "unknown"}`}`,
+            );
+          } else if (chunk) {
+            this.output?.append(chunk);
+          }
+          return;
         }
         return;
       }

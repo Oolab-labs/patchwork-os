@@ -1171,6 +1171,34 @@ export class ExtensionClient {
     );
   }
 
+  /** Push a Claude task output chunk to the VS Code output channel. Best-effort. */
+  notifyTaskOutput(taskId: string, chunk: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    void safeSend(
+      this.ws,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeTaskOutput",
+        params: { taskId, chunk },
+      }),
+      this.logger,
+    );
+  }
+
+  /** Push a Claude task completion status to the VS Code output channel. Best-effort. */
+  notifyTaskDone(taskId: string, status: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    void safeSend(
+      this.ws,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeTaskOutput",
+        params: { taskId, done: true, status },
+      }),
+      this.logger,
+    );
+  }
+
   getCircuitBreakerState(): {
     suspended: boolean;
     suspendedUntil: number;

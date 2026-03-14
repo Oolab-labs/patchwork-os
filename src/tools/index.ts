@@ -103,11 +103,6 @@ import {
   createRenameSymbolTool,
   createSearchWorkspaceSymbolsTool,
 } from "./lsp.js";
-import {
-  createGetNotebookCellsTool,
-  createGetNotebookOutputTool,
-  createRunNotebookCellTool,
-} from "./notebook.js";
 import { createOpenDiffTool } from "./openDiff.js";
 import { createOpenFileTool } from "./openFile.js";
 import { createOpenInBrowserTool } from "./openInBrowser.js";
@@ -120,7 +115,6 @@ import { createSaveDocumentTool } from "./saveDocument.js";
 import { createSearchAndReplaceTool } from "./searchAndReplace.js";
 import { createSearchWorkspaceTool } from "./searchWorkspace.js";
 import { createSetActiveWorkspaceFolderTool } from "./setActiveWorkspaceFolder.js";
-import { createListTasksTool, createRunTaskTool } from "./tasks.js";
 import {
   createCreateTerminalTool,
   createDisposeTerminalTool,
@@ -136,6 +130,11 @@ import {
   createListVSCodeCommandsTool,
 } from "./vscodeCommands.js";
 import { createWatchDiagnosticsTool } from "./watchDiagnostics.js";
+import { createRunClaudeTaskTool } from "./runClaudeTask.js";
+import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
+import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
+import { createListClaudeTasksTool } from "./listClaudeTasks.js";
+import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import {
   createGetWorkspaceSettingsTool,
   createSetWorkspaceSettingTool,
@@ -151,6 +150,8 @@ export function registerAllTools(
   terminalPrefix = "",
   fileLock?: FileLock,
   sessions?: Map<string, unknown>,
+  orchestrator: ClaudeOrchestrator | null = null,
+  sessionId = "",
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -270,12 +271,7 @@ export function registerAllTools(
     createStopDebuggingTool(extensionClient),
     createSetEditorDecorationsTool(workspace, extensionClient),
     createClearEditorDecorationsTool(extensionClient),
-    createListTasksTool(workspace, extensionClient),
-    createRunTaskTool(extensionClient),
     createSetActiveWorkspaceFolderTool(config),
-    createGetNotebookCellsTool(workspace, extensionClient),
-    createRunNotebookCellTool(workspace, extensionClient),
-    createGetNotebookOutputTool(workspace, extensionClient),
     createSendHttpRequestTool(),
     createParseHttpFileTool(workspace),
     // Dependency & security tools
@@ -302,6 +298,14 @@ export function registerAllTools(
             workspace,
             extensionClient.latestAIComments,
           ),
+        ]
+      : []),
+    ...(orchestrator !== null
+      ? [
+          createRunClaudeTaskTool(orchestrator, sessionId, workspace),
+          createGetClaudeTaskStatusTool(orchestrator, sessionId),
+          createCancelClaudeTaskTool(orchestrator, sessionId),
+          createListClaudeTasksTool(orchestrator, sessionId),
         ]
       : []),
   ];

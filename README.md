@@ -188,6 +188,79 @@ Text editing · Workspace management · HTTP requests · File watchers · Notebo
 | Notebooks | 3 | Yes |
 | **Total** | **~115** | |
 
+## MCP Prompts (Slash Commands)
+
+The bridge exposes 5 built-in slash commands via the MCP `prompts/list` + `prompts/get` protocol. These appear as `/mcp__bridge__<name>` in any MCP client that supports prompts.
+
+| Prompt | Argument | Description |
+|--------|----------|-------------|
+| `/mcp__bridge__review-file` | `file` (required) | Code review for a specific file using current diagnostics |
+| `/mcp__bridge__explain-diagnostics` | `file` (required) | Explain and suggest fixes for all diagnostics in a file |
+| `/mcp__bridge__generate-tests` | `file` (required) | Generate a test scaffold for the exported symbols in a file |
+| `/mcp__bridge__debug-context` | _(none)_ | Snapshot current debug state, open editors, and diagnostics |
+| `/mcp__bridge__git-review` | `base` (optional, default: `main`) | Review all changes since a git base branch |
+
+Prompts are served directly from the bridge — no extension required. Implemented in `src/prompts.ts`.
+
+---
+
+## Claude Orchestration & Automation
+
+The bridge can spawn Claude subprocesses, queue tasks, and drive event-driven automation directly from VS Code events.
+
+### Starting with automation enabled
+
+```bash
+# Enable subprocess driver + event-driven automation with a policy file
+claude-ide-bridge --workspace /path/to/project \
+  --claude-driver subprocess \
+  --automation \
+  --automation-policy ./automation-policy.json
+```
+
+### Automation policy file
+
+```json
+{
+  "onDiagnosticsError": {
+    "enabled": true,
+    "minSeverity": "error",
+    "prompt": "Fix the errors in {{file}}:\n{{diagnostics}}",
+    "cooldownMs": 30000
+  },
+  "onFileSave": {
+    "enabled": true,
+    "patterns": ["**/*.ts", "!node_modules/**"],
+    "prompt": "Review the saved file: {{file}}",
+    "cooldownMs": 10000
+  }
+}
+```
+
+When automation is active, VS Code save events and diagnostic errors automatically enqueue Claude tasks. Output streams to the "Claude IDE Bridge" output channel in real time.
+
+### CLI flags
+
+| Flag | Description |
+|------|-------------|
+| `--claude-driver <mode>` | `subprocess` \| `api` \| `none` (default: `none`) |
+| `--claude-binary <path>` | Path to the `claude` binary (default: `claude`) |
+| `--automation` | Enable event-driven automation |
+| `--automation-policy <path>` | Path to JSON automation policy file |
+
+### Task management tools (registered when `--claude-driver != none`)
+
+| Tool | Description |
+|------|-------------|
+| `runClaudeTask` | Enqueue a Claude task with optional context files and streaming |
+| `getClaudeTaskStatus` | Poll task status and output by task ID |
+| `cancelClaudeTask` | Cancel a pending or running task |
+| `listClaudeTasks` | List session-scoped tasks with optional status filter |
+
+A `GET /tasks` HTTP endpoint (Bearer-auth required) provides a sanitized task list for external monitoring.
+
+---
+
 ## Headless / CI Usage
 
 Use with `claude -p` for automation:
@@ -250,6 +323,10 @@ claude-ide-bridge install-extension [editor]   Install VS Code extension into yo
 --timeout <ms>            Command timeout in ms (default: 30000, max: 120000)
 --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
 --auto-tmux               Re-exec inside a tmux session automatically
+--claude-driver <mode>    Claude subprocess driver: subprocess | api | none (default: none)
+--claude-binary <path>    Path to claude binary (default: claude)
+--automation              Enable event-driven automation
+--automation-policy <path> Path to JSON automation policy file
 --verbose                 Enable debug logging
 --help                    Show this help
 ```
@@ -264,6 +341,9 @@ claude-ide-bridge/
     transport.ts      MCP transport layer
     extensionClient.ts Extension WebSocket client
     config.ts         CLI args & config
+    claudeDriver.ts   IClaudeDriver interface + SubprocessDriver
+    claudeOrchestrator.ts Task queue (MAX_CONCURRENT=10, MAX_QUEUE=20)
+    automation.ts     AutomationHooks — onDiagnosticsError / onFileSave policies
     tools/            124+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
@@ -284,7 +364,7 @@ Production-grade reliability:
 - Circuit breaker with exponential backoff for timeout cascades
 - Generation counter preventing stale handler responses
 - Extension-required tool filtering when extension disconnects
-- 654 tests across bridge and extension (408 bridge + 246 extension)
+- 1028 tests across bridge and extension (782 bridge + 246 extension)
 
 ## Building
 
@@ -292,7 +372,7 @@ Production-grade reliability:
 # Bridge
 npm run build        # TypeScript compilation
 npm run dev          # Development with tsx
-npm test             # Run 408 bridge tests
+npm test             # Run 782 bridge tests
 
 # Extension
 cd vscode-extension

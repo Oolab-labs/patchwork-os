@@ -4,9 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v1.5.0 — 2026-03-14)
+## Current State (v1.6.0 — 2026-03-14)
 
-- 133+ MCP tools registered; extension-first with native fs fallback pattern established
+- 137+ MCP tools registered; extension-first with native fs fallback pattern established
+- **Claude Code Server Mode Integration shipped (v1.6.0)**: `claudeDriver.ts`, `claudeOrchestrator.ts`, `automation.ts`; 4 new MCP tools (`runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`); `GET /tasks` endpoint; event-driven automation via policy file
 - Phase 1 new tools complete: `getTypeSignature`, `getImportTree`, `getCodeCoverage`, `generateTests`, `createIssueFromAIComment` (v1.5.0)
 - Earlier tools: `getDependencyTree`, `getSecurityAdvisories`, `getGitHotspots`, `getPRTemplate` (v1.4.x)
 - VS Code extension with full handler coverage; installable into VS Code, Windsurf, Cursor, and Antigravity
@@ -17,8 +18,39 @@ Development direction and exploration guidance. Living document — update as pr
 - Activity logging with Prometheus metrics
 - Per-session stats + session-end UX (summary log + VS Code notification)
 - Claude Code Platform Integration fully shipped (skills, subagents, plugin, hooks, /ide-monitor)
-- 977 tests (712 bridge + 265 extension) across 62+16 files; CI on Node 20 + 22
+- 1028 tests (782 bridge + 246 extension) across 62+16 files; CI on Node 20 + 22
+- **MCP Prompts shipped (v1.6.0)**: 5 slash commands via `prompts/list` + `prompts/get` (`review-file`, `explain-diagnostics`, `generate-tests`, `debug-context`, `git-review`); `src/prompts.ts`
+- **getDiagnostics hardening (v1.6.0)**: diagnostic message text sanitized (control char stripping + 500-char cap) on both extension LSP and CLI linter paths
 - Deep security hardening: SSRF three-layer defense (lexical + DNS pre-resolution + IP pinning), Origin header validation, rate limit error codes, JSON parse error responses, interpreter flag blocklist, backpressure guards, slow-loris mitigations
+
+---
+
+## Claude Code Server Mode Integration *(Shipped — v1.6.0)*
+
+The bridge can now spawn Claude subprocesses, queue tasks, and drive event-driven automation.
+
+- `src/claudeDriver.ts`: `IClaudeDriver` interface + `SubprocessDriver` (spawns `claude -p`) + `ApiDriver` stub
+- `src/claudeOrchestrator.ts`: Task queue with `MAX_CONCURRENT=10`, `MAX_QUEUE=20`, `MAX_HISTORY=100`. Exposes `enqueue()`, `runAndWait()`, `cancel()`, `list()`, `getTask()`
+- `src/automation.ts`: `AutomationHooks` + `loadPolicy()` — handles `onDiagnosticsError` and `onFileSave` with cooldown and loop guard
+- 4 new MCP tools: `runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks` (session-scoped; only visible when `--claude-driver != none`)
+- `GET /tasks` HTTP endpoint (Bearer-auth) for external monitoring
+- VS Code output channel receives streamed Claude output in real time (`bridge/claudeTaskOutput` push notification)
+- New CLI flags: `--claude-driver`, `--claude-binary`, `--automation`, `--automation-policy`
+- Security: 32 KB prompt cap, `CLAUDECODE` env stripped from subprocess, workspace path confinement on context files, diagnostic message sanitization with delimiters
+
+---
+
+## MCP Prompts *(Shipped — v1.6.0)*
+
+5 built-in slash commands surfaced via the MCP `prompts` capability:
+
+- `review-file` — code review using current diagnostics for a file
+- `explain-diagnostics` — plain-English explanation + fix suggestions for all errors in a file
+- `generate-tests` — test scaffold for exported symbols in a file
+- `debug-context` — snapshot current debug state, editors, and diagnostics
+- `git-review` — review all changes since a base branch (default: `main`)
+
+Implemented in `src/prompts.ts`. No extension required. Transport handles `prompts/list` and `prompts/get` with the same cursor-pagination and validation as `tools`.
 
 ---
 
@@ -42,12 +74,21 @@ Development direction and exploration guidance. Living document — update as pr
 - `searchAndReplace` core logic now tested on all platforms via mocked-rg suite
 - Original rg-integration suite still gates on binary availability for CI
 
-### Performance *(baselined 2026-03-13)*
-- Benchmark script: `node scripts/benchmark.mjs`
+### Performance *(CI-gated 2026-03-14)*
+- Benchmark script: `node scripts/benchmark.mjs [--json] [--threshold <ms>]`
+- CI runs benchmark on every push to main: 100 iterations, p99 > 100ms = build failure
 - Baseline (50 iterations, loopback): all representative tools measure p50=0 ms, p99=1 ms — at Node.js timer resolution floor
-- No backpressure or large-result concerns observed at current workspace size
-- Re-run after significant tool additions or when workspace grows substantially
+- Benchmark results archived as GitHub Actions artifacts (30-day retention) for trend analysis
 - Remaining open: profiling under sustained load and large file scenarios (`getBufferContent`, large `searchWorkspace` results)
+
+### Multi-Workspace Support *(shipped 2026-03-14)*
+- Extension now connects to one bridge per VS Code workspace folder in multi-root workspaces
+- `readAllMatchingLockFiles()` returns all valid lock files matching open workspace folders
+- `BridgeConnection.workspaceOverride` scopes each connection to its workspace
+- `registerEvents` broadcasts all VS Code events to all connected bridges
+- Status bar shows aggregate state: "N/M connected"
+- Workspace folder changes (add/remove) automatically create/dispose connections
+- Non-VS Code editors (JetBrains, Neovim): not yet supported; WebSocket protocol documented in data-reference.md for community adapters
 
 ---
 

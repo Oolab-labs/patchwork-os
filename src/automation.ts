@@ -1,0 +1,264 @@
+import fs from "node:fs";
+import path from "node:path";
+import { minimatch } from "minimatch";
+import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
+
+/** Maximum length (chars) of a single diagnostic message before truncation */
+const MAX_DIAGNOSTIC_MSG_CHARS = 500;
+/** Maximum length (chars) of a file path inserted into prompts */
+const MAX_FILE_PATH_CHARS = 500;
+
+// ── Policy schema ─────────────────────────────────────────────────────────────
+
+export interface OnDiagnosticsErrorPolicy {
+  enabled: boolean;
+  minSeverity: "error" | "warning";
+  /** Placeholders: {{file}}, {{diagnostics}} */
+  prompt: string;
+  /** Minimum ms between triggers for the same file. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+export interface OnFileSavePolicy {
+  enabled: boolean;
+  /** Minimatch glob patterns, e.g. ["**\/*.ts", "!node_modules/**"] */
+  patterns: string[];
+  /** Placeholders: {{file}} */
+  prompt: string;
+  cooldownMs: number;
+}
+
+export interface AutomationPolicy {
+  onDiagnosticsError?: OnDiagnosticsErrorPolicy;
+  onFileSave?: OnFileSavePolicy;
+}
+
+export interface Diagnostic {
+  message: string;
+  severity: "error" | "warning" | "info" | "information" | "hint";
+  source?: string;
+}
+
+const MIN_COOLDOWN_MS = 5_000;
+
+// ── Policy loading ────────────────────────────────────────────────────────────
+
+/** Load and validate a JSON automation policy file. Throws on any failure. */
+export function loadPolicy(filePath: string): AutomationPolicy {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, "utf-8");
+  } catch (err) {
+    throw new Error(
+      `Failed to read automation policy file "${filePath}": ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `Failed to parse automation policy file "${filePath}": ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`Automation policy must be a JSON object in "${filePath}"`);
+  }
+
+  const policy = parsed as AutomationPolicy;
+
+  // Validate onDiagnosticsError
+  if (policy.onDiagnosticsError !== undefined) {
+    const d = policy.onDiagnosticsError;
+    if (typeof d !== "object" || d === null) {
+      throw new Error(`"onDiagnosticsError" must be an object`);
+    }
+    if (typeof d.enabled !== "boolean") {
+      throw new Error(`"onDiagnosticsError.enabled" must be a boolean`);
+    }
+    if (d.minSeverity !== "error" && d.minSeverity !== "warning") {
+      throw new Error(
+        `"onDiagnosticsError.minSeverity" must be "error" or "warning"`,
+      );
+    }
+    if (typeof d.prompt !== "string" || d.prompt.trim() === "") {
+      throw new Error(`"onDiagnosticsError.prompt" must be a non-empty string`);
+    }
+    if (typeof d.cooldownMs !== "number" || !Number.isFinite(d.cooldownMs)) {
+      throw new Error(`"onDiagnosticsError.cooldownMs" must be a number`);
+    }
+    if (d.cooldownMs < MIN_COOLDOWN_MS) {
+      d.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
+  // Validate onFileSave
+  if (policy.onFileSave !== undefined) {
+    const s = policy.onFileSave;
+    if (typeof s !== "object" || s === null) {
+      throw new Error(`"onFileSave" must be an object`);
+    }
+    if (typeof s.enabled !== "boolean") {
+      throw new Error(`"onFileSave.enabled" must be a boolean`);
+    }
+    if (!Array.isArray(s.patterns)) {
+      throw new Error(`"onFileSave.patterns" must be an array`);
+    }
+    if (typeof s.prompt !== "string" || s.prompt.trim() === "") {
+      throw new Error(`"onFileSave.prompt" must be a non-empty string`);
+    }
+    if (typeof s.cooldownMs !== "number" || !Number.isFinite(s.cooldownMs)) {
+      throw new Error(`"onFileSave.cooldownMs" must be a number`);
+    }
+    if (s.cooldownMs < MIN_COOLDOWN_MS) {
+      s.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
+  return policy;
+}
+
+// ── AutomationHooks ───────────────────────────────────────────────────────────
+
+export class AutomationHooks {
+  /** Last trigger time per "trigger key" (e.g. "diagnostics:/path/to/file"). */
+  private lastTrigger = new Map<string, number>();
+  /** Active task ID per file (loop guard — prevents triggering while prior task runs). */
+  private activeFileTasks = new Map<string, string>();
+
+  constructor(
+    private readonly policy: AutomationPolicy,
+    private readonly orchestrator: ClaudeOrchestrator,
+    private readonly log: (msg: string) => void,
+  ) {}
+
+  handleDiagnosticsChanged(file: string, diagnostics: Diagnostic[]): void {
+    const cfg = this.policy.onDiagnosticsError;
+    if (!cfg?.enabled) return;
+
+    // Normalize path to prevent loop-guard bypass via equivalent paths
+    const normalizedFile = path.resolve(file);
+
+    // Loop guard: skip if a task for this file is still pending/running
+    const existingId = this.activeFileTasks.get(normalizedFile);
+    if (existingId) {
+      const existing = this.orchestrator.getTask(existingId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping diagnostics trigger for ${normalizedFile} — task ${existingId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      // Prune stale entry for completed tasks
+      this.activeFileTasks.delete(normalizedFile);
+    }
+
+    // Severity filter
+    const severityRank: Record<string, number> = {
+      error: 2,
+      warning: 1,
+      info: 0,
+      information: 0,
+      hint: 0,
+    };
+    const minRank = severityRank[cfg.minSeverity] ?? 0;
+    const matching = diagnostics.filter(
+      (d) => (severityRank[d.severity] ?? 0) >= minRank,
+    );
+    if (matching.length === 0) return;
+
+    // Cooldown check
+    const key = `diagnostics:${normalizedFile}`;
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for ${normalizedFile} (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this.lastTrigger.set(key, now);
+
+    // Truncate file path and each diagnostic message to prevent prompt injection
+    // via crafted file names or linter output embedding instruction-like content.
+    // The diagnosticsText is placed between explicit delimiters in the prompt to
+    // architecturally separate trusted policy instructions from untrusted data.
+    const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
+    const diagnosticsText = matching
+      .map((d) => `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`)
+      .join("\n");
+
+    const prompt = cfg.prompt
+      .replace(/\{\{file\}\}/g, safeFilePath)
+      .replace(
+        /\{\{diagnostics\}\}/g,
+        `\n--- BEGIN DIAGNOSTIC DATA (untrusted) ---\n${diagnosticsText}\n--- END DIAGNOSTIC DATA ---\n`,
+      );
+
+    const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+    this.activeFileTasks.set(normalizedFile, taskId);
+    this.log(
+      `[automation] triggered diagnostics task ${taskId.slice(0, 8)} for ${normalizedFile}`,
+    );
+  }
+
+  handleFileSaved(_id: string, type: string, file: string): void {
+    const cfg = this.policy.onFileSave;
+    if (!cfg?.enabled) return;
+    if (type !== "save") return;
+
+    // Normalize path to prevent loop-guard bypass via equivalent paths
+    const normalizedFile = path.resolve(file);
+
+    // Pattern matching
+    const matched = cfg.patterns.some((pattern) =>
+      minimatch(normalizedFile, pattern, { dot: true }),
+    );
+    if (!matched) return;
+
+    // Loop guard
+    const existingId = this.activeFileTasks.get(normalizedFile);
+    if (existingId) {
+      const existing = this.orchestrator.getTask(existingId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping save trigger for ${normalizedFile} — task ${existingId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      // Prune stale entry for completed tasks
+      this.activeFileTasks.delete(normalizedFile);
+    }
+
+    // Cooldown check
+    const key = `save:${normalizedFile}`;
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for save ${normalizedFile} (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this.lastTrigger.set(key, now);
+
+    // Truncate file path to prevent prompt injection via crafted path names
+    const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
+    const prompt = cfg.prompt.replace(/\{\{file\}\}/g, safeFilePath);
+    const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+    this.activeFileTasks.set(normalizedFile, taskId);
+    this.log(
+      `[automation] triggered save task ${taskId.slice(0, 8)} for ${normalizedFile}`,
+    );
+  }
+}

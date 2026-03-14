@@ -67,6 +67,10 @@ export class Server extends EventEmitter<ServerEvents> {
   public metricsFn: (() => string) | null = null;
   /** Set by bridge to provide rich status data */
   public statusFn: (() => Record<string, unknown>) | null = null;
+  /** Set by bridge to provide readiness data (MCP handshake complete, tool count, extension) */
+  public readyFn: (() => { ready: boolean; toolCount: number; extensionConnected: boolean }) | null = null;
+  /** Set by bridge to provide task list data (sanitized — no raw prompts) */
+  public tasksFn: (() => { tasks: Record<string, unknown>[] }) | null = null;
 
   constructor(
     private authToken: string,
@@ -130,6 +134,45 @@ export class Server extends EventEmitter<ServerEvents> {
             uptimeMs: Date.now() - this.startTime,
             ...(this.statusFn?.() ?? {}),
           };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      if (req.url === "/ready" && req.method === "GET") {
+        try {
+          const info = this.readyFn?.() ?? {
+            ready: false,
+            toolCount: 0,
+            extensionConnected: false,
+          };
+          if (info.ready) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ready: true, toolCount: info.toolCount, extensionConnected: info.extensionConnected }));
+          } else {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ready: false, reason: "awaiting MCP handshake" }));
+          }
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      if (req.url === "/tasks" && req.method === "GET") {
+        try {
+          const data = this.tasksFn?.() ?? { tasks: [] };
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {

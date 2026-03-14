@@ -11,3 +11,24 @@ export const ErrorCodes = {
   TOOL_NOT_FOUND: -32003,
   RATE_LIMIT_EXCEEDED: -32004,
 } as const;
+
+/**
+ * Machine-readable error codes for tool-level errors (isError: true responses).
+ * These appear in the `code` field of the JSON error object inside `content[0].text`.
+ * JSON-RPC protocol errors use ErrorCodes above; these are for semantic tool errors.
+ */
+export const ToolErrorCodes = {
+  FILE_NOT_FOUND: "file_not_found",
+  PERMISSION_DENIED: "permission_denied",
+  WORKSPACE_ESCAPE: "workspace_escape",
+  EXTENSION_REQUIRED: "extension_required",
+  TIMEOUT: "timeout",
+  INVALID_ARGS: "invalid_args",
+  GIT_ERROR: "git_error",
+  EXTERNAL_COMMAND_FAILED: "external_command_failed",
+  TASK_NOT_FOUND: "task_not_found",
+  DRIVER_NOT_CONFIGURED: "driver_not_configured",
+} as const;
+
+export type ToolErrorCode =
+  (typeof ToolErrorCodes)[keyof typeof ToolErrorCodes];

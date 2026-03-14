@@ -13,6 +13,14 @@ import type { LintDiagnostic, LinterRunner } from "./linters/types.js";
 import { typescriptLinter } from "./linters/typescript.js";
 import { optionalString, success, toFileUri } from "./utils.js";
 
+// Cap diagnostic message length and strip control characters to prevent
+// prompt injection from malicious LSP servers or linters.
+const MAX_MESSAGE_LEN = 500;
+function sanitizeMessage(msg: unknown): string {
+  const s = typeof msg === "string" ? msg : String(msg ?? "");
+  return s.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, MAX_MESSAGE_LEN);
+}
+
 const ALL_LINTERS: LinterRunner[] = [
   typescriptLinter,
   eslintLinter,
@@ -185,7 +193,22 @@ export function createGetDiagnosticsTool(
             } else {
               extDiagsArr = raw as unknown[];
             }
-            const filtered = applyFilters(extDiagsArr);
+            const sanitized = extDiagsArr.map((d) => {
+              if (
+                d !== null &&
+                typeof d === "object" &&
+                "message" in (d as object)
+              ) {
+                return {
+                  ...(d as object),
+                  message: sanitizeMessage(
+                    (d as Record<string, unknown>).message,
+                  ),
+                };
+              }
+              return d;
+            });
+            const filtered = applyFilters(sanitized);
             return success({
               available: true,
               source: "extension",
@@ -234,6 +257,12 @@ export function createGetDiagnosticsTool(
           return diagUri === normalizedUri;
         });
       }
+
+      // Sanitize message fields before filtering/returning
+      diagnostics = diagnostics.map((d) => ({
+        ...d,
+        message: sanitizeMessage(d.message),
+      }));
 
       const totalBeforeFilter = diagnostics.length;
       const filteredDiags = applyFilters(

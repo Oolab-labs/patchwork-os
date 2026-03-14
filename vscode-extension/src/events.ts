@@ -24,52 +24,69 @@ import {
 
 export function registerEvents(
   context: vscode.ExtensionContext,
-  bridge: BridgeConnection,
+  getBridges: () => BridgeConnection[],
+  output: vscode.OutputChannel,
 ): void {
-  // Diagnostics changes (debounced, batched into single message)
+  function notifyAll(
+    method: string,
+    params: Record<string, unknown>,
+  ): void {
+    for (const bridge of getBridges()) {
+      bridge.sendNotification(method, params);
+    }
+  }
+
+  function isAnyConnected(): boolean {
+    return getBridges().some((b) => b.ws !== null);
+  }
+
+  // Local debounce state (shared across all connections — one flush per event window)
+  let diagnosticsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const pendingDiagnosticUris = new Set<string>();
+  let selectionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let aiCommentsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Diagnostics changes (debounced, batched, broadcast to all connected bridges)
   context.subscriptions.push(
     vscode.languages.onDidChangeDiagnostics((e) => {
-      if (!bridge.ws) return; // Skip work when disconnected
+      if (!isAnyConnected()) return;
       for (const uri of e.uris) {
-        bridge.pendingDiagnosticUris.add(uri.toString());
+        pendingDiagnosticUris.add(uri.toString());
       }
-      if (bridge.diagnosticsDebounceTimer)
-        clearTimeout(bridge.diagnosticsDebounceTimer);
-      bridge.diagnosticsDebounceTimer = setTimeout(() => {
-        for (const uriStr of bridge.pendingDiagnosticUris) {
+      if (diagnosticsDebounceTimer) clearTimeout(diagnosticsDebounceTimer);
+      diagnosticsDebounceTimer = setTimeout(() => {
+        for (const uriStr of pendingDiagnosticUris) {
           const uri = vscode.Uri.parse(uriStr);
           const diags = vscode.languages.getDiagnostics(uri);
-          bridge.sendNotification("extension/diagnosticsChanged", {
+          notifyAll("extension/diagnosticsChanged", {
             file: uri.fsPath,
             diagnostics: diags
               .slice(0, MAX_DIAGNOSTICS_PER_FILE)
               .map(diagnosticToJson),
           });
         }
-        bridge.pendingDiagnosticUris.clear();
+        pendingDiagnosticUris.clear();
       }, DIAGNOSTICS_DEBOUNCE);
     }),
   );
 
-  // Selection changes (debounced)
+  // Selection changes (debounced, broadcast)
   context.subscriptions.push(
     vscode.window.onDidChangeTextEditorSelection((e) => {
-      if (!bridge.ws) return; // Skip work when disconnected
-      if (bridge.selectionDebounceTimer)
-        clearTimeout(bridge.selectionDebounceTimer);
-      bridge.selectionDebounceTimer = setTimeout(() => {
+      if (!isAnyConnected()) return;
+      if (selectionDebounceTimer) clearTimeout(selectionDebounceTimer);
+      selectionDebounceTimer = setTimeout(() => {
         const sel = e.selections[0];
         if (!sel) return;
         let selectedText = e.textEditor.document.getText(sel);
         if (
           Buffer.byteLength(selectedText, "utf-8") > MAX_SELECTED_TEXT_BYTES
         ) {
-          // Truncate by bytes, not characters, to respect the byte limit for multi-byte text
           selectedText = Buffer.from(selectedText, "utf-8")
             .subarray(0, MAX_SELECTED_TEXT_BYTES)
             .toString("utf-8");
         }
-        bridge.sendNotification("extension/selectionChanged", {
+        notifyAll("extension/selectionChanged", {
           file: e.textEditor.document.uri.fsPath,
           startLine: sel.start.line + 1,
           startColumn: sel.start.character + 1,
@@ -85,33 +102,29 @@ export function registerEvents(
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) {
-        bridge.sendNotification("extension/activeFileChanged", {
+        notifyAll("extension/activeFileChanged", {
           file: editor.document.uri.fsPath,
         });
       }
     }),
   );
 
-  // AI comment scanning (debounced, tracks all changed docs in the debounce window)
+  // AI comment scanning (debounced)
   const pendingAICommentDocs = new Map<string, vscode.TextDocument>();
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((e) => {
-      if (!bridge.ws) return; // Skip work when disconnected
+      if (!isAnyConnected()) return;
       if (e.document.uri.scheme !== "file") return;
       pendingAICommentDocs.set(e.document.uri.toString(), e.document);
-      if (bridge.aiCommentsDebounceTimer)
-        clearTimeout(bridge.aiCommentsDebounceTimer);
-      bridge.aiCommentsDebounceTimer = setTimeout(() => {
-        // Invalidate and re-scan all docs that changed during the debounce window
+      if (aiCommentsDebounceTimer) clearTimeout(aiCommentsDebounceTimer);
+      aiCommentsDebounceTimer = setTimeout(() => {
         for (const [uriStr, doc] of pendingAICommentDocs) {
           invalidateDocumentCache(uriStr);
           scanDocumentForAIComments(doc);
         }
         pendingAICommentDocs.clear();
         const allComments = scanAllOpenDocuments();
-        bridge.sendNotification("extension/aiCommentsChanged", {
-          comments: allComments,
-        });
+        notifyAll("extension/aiCommentsChanged", { comments: allComments });
       }, AI_COMMENTS_DEBOUNCE);
     }),
   );
@@ -121,13 +134,10 @@ export function registerEvents(
       if (doc.uri.scheme !== "file") return;
       const comments = scanDocumentForAIComments(doc);
       if (comments.length > 0) {
-        if (bridge.aiCommentsDebounceTimer)
-          clearTimeout(bridge.aiCommentsDebounceTimer);
-        bridge.aiCommentsDebounceTimer = setTimeout(() => {
+        if (aiCommentsDebounceTimer) clearTimeout(aiCommentsDebounceTimer);
+        aiCommentsDebounceTimer = setTimeout(() => {
           const allComments = scanAllOpenDocuments();
-          bridge.sendNotification("extension/aiCommentsChanged", {
-            comments: allComments,
-          });
+          notifyAll("extension/aiCommentsChanged", { comments: allComments });
         }, AI_COMMENTS_DEBOUNCE);
       }
     }),
@@ -136,9 +146,7 @@ export function registerEvents(
   // File saved
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((doc) => {
-      bridge.sendNotification("extension/fileSaved", {
-        file: doc.uri.fsPath,
-      });
+      notifyAll("extension/fileSaved", { file: doc.uri.fsPath });
     }),
   );
 
@@ -172,11 +180,13 @@ export function registerEvents(
       );
       context.subscriptions.push(disposable);
       setOutputCaptureEnabled(true);
-      bridge.log("Terminal output capture enabled");
+      output.appendLine(
+        `${new Date().toISOString()} Terminal output capture enabled`,
+      );
     }
   } catch {
-    bridge.log(
-      "Terminal output capture unavailable (proposed API not supported)",
+    output.appendLine(
+      `${new Date().toISOString()} Terminal output capture unavailable (proposed API not supported)`,
     );
   }
 
@@ -188,7 +198,7 @@ export function registerEvents(
   // Manual reconnect command
   context.subscriptions.push(
     vscode.commands.registerCommand("claudeIdeBridge.reconnect", () => {
-      bridge.forceReconnect();
+      for (const bridge of getBridges()) bridge.forceReconnect();
       vscode.window.showInformationMessage(
         "Claude IDE Bridge: Attempting to reconnect...",
       );
@@ -198,7 +208,7 @@ export function registerEvents(
   // Show Logs command
   context.subscriptions.push(
     vscode.commands.registerCommand("claudeIdeBridge.showLogs", () => {
-      bridge.output?.show();
+      output.show();
     }),
   );
 
@@ -209,8 +219,12 @@ export function registerEvents(
       () => {
         const version =
           (context.extension?.packageJSON?.version as string) ?? "unknown";
+        const bridges = getBridges();
+        const connectedCount = bridges.filter(
+          (b) => b.ws?.readyState === WebSocket.OPEN,
+        ).length;
         const info = [
-          `State: ${bridge.ws?.readyState === WebSocket.OPEN ? "Connected" : "Disconnected"}`,
+          `State: ${connectedCount}/${bridges.length} bridge(s) connected`,
           `Extension version: ${version}`,
           `VS Code: ${vscode.version}`,
         ].join("\n");
