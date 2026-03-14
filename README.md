@@ -331,6 +331,58 @@ claude-ide-bridge install-extension cursor
 bash scripts/install-extension.sh --ide <name>
 ```
 
+## Use with Claude Desktop
+
+Connect the Claude Desktop app to your running bridge — chat with your IDE using natural language.
+
+```bash
+# Generate the config (prints to stdout)
+bash scripts/gen-claude-desktop-config.sh
+
+# Write it to the config file (backs up existing config)
+bash scripts/gen-claude-desktop-config.sh --write
+```
+
+Then restart Claude Desktop. The bridge's stdio shim auto-discovers the running bridge via lock files — no port or token needs to be hard-coded.
+
+**Try it:** Open Claude Desktop and ask *"What diagnostics are in my workspace?"* or *"What files are open in my IDE?"*
+
+You can also use the general config generator:
+
+```bash
+bash scripts/gen-mcp-config.sh claude-desktop --write
+```
+
+Config location:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+## Streamable HTTP (Remote MCP)
+
+The bridge also exposes an MCP-compliant **Streamable HTTP** transport at `POST/GET/DELETE /mcp`. This lets any MCP client that speaks HTTP (including Claude Desktop via Custom Connectors, or curl) connect without a WebSocket.
+
+```bash
+# Start the bridge (listens on localhost by default)
+claude-ide-bridge --workspace /path/to/your-project
+
+# Connect remotely by binding to all interfaces (add a reverse proxy + TLS for production)
+claude-ide-bridge --workspace /path/to/your-project --bind 0.0.0.0
+```
+
+The bridge token (from the lock file at `~/.claude/ide/<port>.lock`) is required as a Bearer header:
+
+```bash
+TOKEN=$(cat ~/.claude/ide/*.lock | python3 -c "import sys,json; print(json.load(sys.stdin)['authToken'])")
+
+# Initialize a session
+curl -X POST http://localhost:PORT/mcp \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"my-client","version":"1.0"}}}'
+```
+
+For remote access over the internet, see [docs/remote-access.md](docs/remote-access.md) for Caddy/nginx reverse proxy setup with TLS.
+
 ## CLI Reference
 
 ### Subcommands
