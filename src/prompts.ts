@@ -83,6 +83,18 @@ export const PROMPTS: McpPrompt[] = [
       },
     ],
   },
+  {
+    name: "set-effort",
+    description:
+      "Prepend a model-effort instruction to the next task. Use 'low' for quick answers, 'medium' for normal work, 'high' for complex refactors or deep analysis.",
+    arguments: [
+      {
+        name: "level",
+        description: "Effort level: low | medium | high (default: medium).",
+        required: false,
+      },
+    ],
+  },
 ];
 
 // ── Prompt template strings ───────────────────────────────────────────────────
@@ -181,6 +193,29 @@ const TEMPLATES: Record<
       },
     ],
   }),
+
+  "set-effort": ({ level = "medium" }) => {
+    const validLevels = ["low", "medium", "high"] as const;
+    type EffortLevel = typeof validLevels[number];
+    const eff: EffortLevel = (validLevels as readonly string[]).includes(level) ? (level as EffortLevel) : "medium";
+    const guidance: Record<EffortLevel, string> = {
+      low: "Respond concisely. Prefer quick, direct answers without extensive analysis or exhaustive edge-case coverage.",
+      medium: "Balance thoroughness with speed. Cover the main cases and explain your reasoning briefly.",
+      high: "Apply maximum effort. Think step by step, explore edge cases, and produce the most complete and correct result possible.",
+    };
+    return {
+      description: `Effort level set to: ${eff}`,
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text" as const,
+            text: `[Effort instruction for this task]\n${guidance[eff]}\n\nPlease acknowledge this effort level and apply it to all subsequent work in this conversation.`,
+          },
+        },
+      ],
+    };
+  },
 
   "git-review": ({ base = "main" }) => ({
     description: `Review changes vs ${base}`,

@@ -101,7 +101,7 @@ export class Server extends EventEmitter<ServerEvents> {
             "MCP bridge providing full IDE integration for Claude Code — LSP, diagnostics, file operations, terminal, debug adapters, and AI task orchestration",
           homepage: "https://github.com/Oolab-labs/claude-ide-bridge",
           transport: ["websocket", "stdio"],
-          capabilities: { tools: true, resources: true, prompts: true },
+          capabilities: { tools: true, resources: true, prompts: true, elicitation: true },
           author: "Oolab Labs",
           license: "MIT",
           repository: "https://github.com/Oolab-labs/claude-ide-bridge",

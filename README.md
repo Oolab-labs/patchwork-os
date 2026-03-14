@@ -12,16 +12,23 @@ A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full ID
 Your Phone / Laptop                    Your Computer
 ┌──────────────┐                      ┌─────────────────────────────┐
 │  Claude Code  │───── SSH/local ─────│  Bridge Server              │
-│  (CLI)        │                     │    ↕ WebSocket              │
+│  (CLI)        │◄── remote control ──│    ↕ WebSocket              │
 └──────────────┘                      │  IDE Extension (VS Code)    │
                                       │    ↕ Real-time state        │
-                                      │  Your Code & Editor         │
-                                      └─────────────────────────────┘
+       ┌──────────────────────────────│  Your Code & Editor         │
+       │   runClaudeTask              └─────────────────────────────┘
+       ▼
+┌──────────────┐
+│  claude -p   │  Autonomous subprocess — full tools, no approval loop
+│  subprocess  │  Output streams back to VS Code output channel
+└──────────────┘
 ```
 
 Claude Code connects to the bridge, which connects to your IDE extension. Claude can then open files, run tests, set breakpoints, check diagnostics, commit to Git, create PRs — everything a developer at the keyboard can do.
 
-**Use it from your phone**: SSH into your dev machine, run Claude Code, and control your full IDE from the couch. Watch files change in real-time on your monitor.
+**Use it from your phone**: SSH into your dev machine, send a message via remote control, and delegate autonomous work to a `claude -p` subprocess running on your home machine. Watch it fix bugs, run tests, and commit — then go back to sleep.
+
+**Autonomous task mode**: With `--claude-driver subprocess`, the bridge can spawn Claude subprocesses on demand via the `runClaudeTask` MCP tool. Tasks run in parallel (up to 10 concurrent), stream output to VS Code in real time, and can be triggered automatically by diagnostics or file saves via an automation policy.
 
 ## Quick Start
 
@@ -356,6 +363,22 @@ claude-ide-bridge/
     .mcp.json         MCP server config
 ```
 
+## Tips
+
+### Reduce duplicate git instructions
+
+Claude Code ships with its own built-in commit/PR guidance. When using the bridge's dedicated git tools (`gitCommit`, `gitPush`, `gitCreatePR`, etc.), you can suppress the duplicate Claude Code instructions by adding to `~/.claude/settings.json`:
+
+```json
+{
+  "includeGitInstructions": false
+}
+```
+
+This keeps the prompt clean and ensures Claude uses the bridge's structured git tools rather than raw shell commands.
+
+---
+
 ## Connection Hardening
 
 Production-grade reliability:
@@ -364,7 +387,7 @@ Production-grade reliability:
 - Circuit breaker with exponential backoff for timeout cascades
 - Generation counter preventing stale handler responses
 - Extension-required tool filtering when extension disconnects
-- 1028 tests across bridge and extension (782 bridge + 246 extension)
+- 1058 tests across bridge and extension (782 bridge + 276 extension)
 
 ## Building
 

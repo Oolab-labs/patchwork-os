@@ -109,7 +109,13 @@ else
   BRIDGE_BIN="node dist/index.js"
 fi
 BRIDGE_CMD="cd $(printf '%q' "$BRIDGE_DIR") && $BRIDGE_BIN --workspace $(printf '%q' "$WORKSPACE")${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}"
-CLAUDE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide"
+# Derive a short display name for the Claude session from the workspace directory name.
+# This appears in Claude Code's session list, making multi-workspace tmux setups identifiable.
+WS_BASENAME=$(basename "$WORKSPACE")
+SESSION_DISPLAY_NAME="bridge:${WS_BASENAME}"
+# Give SessionEnd hooks up to 10 seconds to complete before the bridge exits.
+# Ensures PostToolUse/SessionEnd hook payloads are delivered even during graceful shutdown.
+CLAUDE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=10000 claude --ide --name $(printf '%q' "$SESSION_DISPLAY_NAME")"
 
 # Export for subshell access
 export NTFY_TOPIC

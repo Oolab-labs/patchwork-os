@@ -451,6 +451,87 @@ Real-world workflows that showcase what the bridge makes possible. Each workflow
 
 ---
 
+## Workflow 9: The 2 AM Deploy — Remote Control + Autonomous Task Delegation
+
+**Persona**: Remote Developer / Team Lead
+**Shows**: Remote control as the door in, Claude server mode as the engine — full autonomous fix from a phone with no approval loop
+
+### The scenario
+
+It's 2 AM. Staging pipeline failed. Client demo at 9. You're on your phone.
+
+Your Mac at home has been running headlessly all night: Windsurf open, VS Code extension connected, `start-all.sh` keeping the bridge + Claude CLI alive in a tmux session.
+
+You send a message via remote control:
+
+> `fix the failing tests in src/__tests__/transport.test.ts and push a fix`
+
+---
+
+### Step 1: Remote control delivers the message
+
+The `claude remote-control` pane in tmux receives your message and relays it to the Claude CLI session.
+
+**Before Claude server mode**, this is where the bottleneck began — Claude would investigate and propose fixes, but every tool call (file read, diagnostic check, edit) required your approval over slow mobile back-and-forth. 20+ minutes of active attention, phone in hand.
+
+---
+
+### Step 2: Claude hands off to a subprocess
+
+With Claude server mode enabled (`--claude-driver subprocess`), Claude does one thing:
+
+**Tool**: `runClaudeTask`
+```json
+→ {
+    "prompt": "The transport tests are failing after the v1.6.0 refactor. Investigate src/__tests__/transport.test.ts, find the root cause, fix it, run npm test to confirm all 782 tests pass, then commit with a clear message.",
+    "stream": true
+  }
+← { "taskId": "d552bb76-...", "status": "pending" }
+```
+
+A full `claude -p` subprocess spins up with the workspace as context — its own isolated session, no nested-session conflict, stdin closed, all parent session vars stripped. It has every tool available: Read, Edit, Bash, Glob.
+
+---
+
+### Step 3: Watch it work from your phone
+
+The orchestrator streams every chunk back through the bridge into the VS Code output channel on your home Mac. You watch via ntfy:
+
+```
+[02:14] Reading transport.test.ts...
+[02:14] Found issue: session generation counter not reset on detach()
+[02:15] Editing src/transport.ts line 284...
+[02:15] Running npm test...
+[02:16] 782/782 passing
+[02:16] Committing: "fix: reset generation counter on transport detach"
+```
+
+**Tool**: `getClaudeTaskStatus`
+```json
+← {
+    "taskId": "d552bb76-...",
+    "status": "done",
+    "output": "Fixed generation counter reset bug in McpTransport.detach()...",
+    "durationMs": 94200
+  }
+```
+
+---
+
+### Step 4: One message to ship it
+
+You send from your phone:
+
+> `git push`
+
+Back to sleep by 2:19.
+
+---
+
+> **What's unique**: Remote control gets you *in the door* from anywhere. Claude server mode means you don't have to stay — you delegate real autonomous work to a subprocess running at full capability on your home machine, with your IDE watching in real time. No approval loop. No mobile back-and-forth. No other AI coding tool pairs remote access with autonomous task delegation like this.
+
+---
+
 ## Quick Reference: Tool Count by Category
 
 | Category | Count | Extension Required |

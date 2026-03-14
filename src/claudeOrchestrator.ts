@@ -22,6 +22,8 @@ export interface ClaudeTask {
   timeoutMs: number;
   /** Estimated token count for the prompt (used for token-budget concurrency). */
   tokenEstimate: number;
+  /** Optional model override passed to the driver (e.g. "claude-haiku-4-5-20251001"). */
+  model?: string;
 }
 
 /** Fast heuristic: ~4 chars per token for English code. */
@@ -35,6 +37,8 @@ export type EnqueueOpts = {
   timeoutMs?: number;
   sessionId?: string;
   onChunk?: (chunk: string) => void;
+  /** Optional model override, e.g. "claude-haiku-4-5-20251001". */
+  model?: string;
 };
 
 export class ClaudeOrchestrator {
@@ -101,6 +105,7 @@ export class ClaudeOrchestrator {
       createdAt: Date.now(),
       timeoutMs: opts.timeoutMs ?? ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
       tokenEstimate: estimateTokens(opts.prompt),
+      ...(opts.model !== undefined && { model: opts.model }),
     };
 
     this.tasks.set(id, task);
@@ -209,6 +214,7 @@ export class ClaudeOrchestrator {
         workspace: this.workspace,
         timeoutMs: task.timeoutMs,
         signal: controller.signal,
+        model: task.model,
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
           this.taskCallbacks.get(id)?.(chunk);

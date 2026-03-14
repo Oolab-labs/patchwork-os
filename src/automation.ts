@@ -32,9 +32,35 @@ export interface OnFileSavePolicy {
   cooldownMs: number;
 }
 
+export interface OnPostCompactPolicy {
+  enabled: boolean;
+  /**
+   * Prompt to enqueue after Claude compacts its context.
+   * Use this to re-snapshot IDE state so Claude recovers context.
+   * No placeholders — fired unconditionally when compaction occurs.
+   */
+  prompt: string;
+  /** Minimum ms between triggers (prevents repeated compaction storms). Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+export interface OnInstructionsLoadedPolicy {
+  enabled: boolean;
+  /**
+   * Prompt to enqueue when Claude loads its system instructions (first turn of a session).
+   * Useful for injecting a tool-capability summary at session start.
+   * No placeholders.
+   */
+  prompt: string;
+}
+
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
+  /** Fired by Claude Code 2.1.76+ PostCompact hook — re-injects IDE context after compaction. */
+  onPostCompact?: OnPostCompactPolicy;
+  /** Fired by Claude Code 2.1.76+ InstructionsLoaded hook — injects bridge status at session start. */
+  onInstructionsLoaded?: OnInstructionsLoadedPolicy;
 }
 
 export interface Diagnostic {
@@ -128,6 +154,46 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
     if (s.cooldownMs < MIN_COOLDOWN_MS) {
       s.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
+  // Validate onPostCompact
+  if (policy.onPostCompact !== undefined) {
+    const p = policy.onPostCompact;
+    if (typeof p !== "object" || p === null) {
+      throw new Error(`"onPostCompact" must be an object`);
+    }
+    if (typeof p.enabled !== "boolean") {
+      throw new Error(`"onPostCompact.enabled" must be a boolean`);
+    }
+    if (typeof p.prompt !== "string" || p.prompt.trim() === "") {
+      throw new Error(`"onPostCompact.prompt" must be a non-empty string`);
+    }
+    if (p.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(`"onPostCompact.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`);
+    }
+    if (typeof p.cooldownMs !== "number" || !Number.isFinite(p.cooldownMs)) {
+      throw new Error(`"onPostCompact.cooldownMs" must be a number`);
+    }
+    if (p.cooldownMs < MIN_COOLDOWN_MS) {
+      p.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
+  // Validate onInstructionsLoaded
+  if (policy.onInstructionsLoaded !== undefined) {
+    const il = policy.onInstructionsLoaded;
+    if (typeof il !== "object" || il === null) {
+      throw new Error(`"onInstructionsLoaded" must be an object`);
+    }
+    if (typeof il.enabled !== "boolean") {
+      throw new Error(`"onInstructionsLoaded.enabled" must be a boolean`);
+    }
+    if (typeof il.prompt !== "string" || il.prompt.trim() === "") {
+      throw new Error(`"onInstructionsLoaded.prompt" must be a non-empty string`);
+    }
+    if (il.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(`"onInstructionsLoaded.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`);
     }
   }
 
@@ -228,6 +294,43 @@ export class AutomationHooks {
     for (const [k, t] of this.lastTrigger) {
       if (now - t > LAST_TRIGGER_MAX_AGE_MS) this.lastTrigger.delete(k);
     }
+  }
+
+  /**
+   * Called when Claude Code fires a PostCompact hook (Claude Code 2.1.76+).
+   * Re-enqueues the configured prompt so Claude can re-snapshot IDE state after losing context.
+   */
+  handlePostCompact(): void {
+    const cfg = this.policy.onPostCompact;
+    if (!cfg?.enabled) return;
+
+    const key = "post-compact";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for PostCompact (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this.lastTrigger.set(key, now);
+    this._pruneLastTrigger(now);
+
+    const taskId = this.orchestrator.enqueue({ prompt: cfg.prompt, sessionId: "" });
+    this.log(`[automation] triggered PostCompact task ${taskId.slice(0, 8)}`);
+  }
+
+  /**
+   * Called when Claude Code fires an InstructionsLoaded hook (Claude Code 2.1.76+).
+   * Fires once per session; injects bridge status / tool capability summary at start.
+   */
+  handleInstructionsLoaded(): void {
+    const cfg = this.policy.onInstructionsLoaded;
+    if (!cfg?.enabled) return;
+
+    const taskId = this.orchestrator.enqueue({ prompt: cfg.prompt, sessionId: "" });
+    this.log(`[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`);
   }
 
   handleFileSaved(_id: string, type: string, file: string): void {

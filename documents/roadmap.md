@@ -37,6 +37,7 @@ The bridge can now spawn Claude subprocesses, queue tasks, and drive event-drive
 - VS Code output channel receives streamed Claude output in real time (`bridge/claudeTaskOutput` push notification)
 - New CLI flags: `--claude-driver`, `--claude-binary`, `--automation`, `--automation-policy`
 - Security: 32 KB prompt cap, `CLAUDECODE` env stripped from subprocess, workspace path confinement on context files, diagnostic message sanitization with delimiters
+- **Bug fixes (2026-03-14 live test)**: Removed bogus `--workspace` flag from `claude -p` spawn args (flag doesn't exist in the CLI); added `stdio: ['ignore', 'pipe', 'pipe']` to prevent subprocess blocking on open stdin pipe; stripped all `CLAUDE_CODE_*` + `MCP_*` env vars from subprocess to prevent attaching to parent session ingress; added `--strict-mcp-config` to suppress `.mcp.json` auto-discovery in the workspace
 
 ---
 

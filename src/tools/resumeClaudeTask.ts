@@ -58,6 +58,7 @@ export function createResumeClaudeTaskTool(
           contextFiles: original.contextFiles,
           timeoutMs: original.timeoutMs,
           sessionId,
+          model: original.model,
         });
         return success({
           newTaskId,

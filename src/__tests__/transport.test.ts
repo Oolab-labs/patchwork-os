@@ -74,6 +74,7 @@ describe("McpTransport", () => {
       resources: { listChanged: false },
       prompts: { listChanged: false },
       logging: {},
+      elicitation: {},
     });
 
     const info = result.serverInfo as Record<string, unknown>;

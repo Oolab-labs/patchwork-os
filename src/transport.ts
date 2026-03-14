@@ -78,6 +78,11 @@ export class McpTransport {
   public workspace = "";
   private activeListener: ((data: Buffer) => void) | null = null;
   private inFlightControllers = new Map<string | number, AbortController>();
+  /** Pending elicitation/create requests waiting for a client response. */
+  private pendingElicitations = new Map<
+    string | number,
+    { resolve: (result: unknown) => void; reject: (err: Error) => void }
+  >();
   private initialized = false;
   private activeToolCalls = 0;
   private callCount = 0;
@@ -130,6 +135,57 @@ export class McpTransport {
     this.activityLog = log;
   }
 
+  /**
+   * Send an `elicitation/create` request to the MCP client (Claude Code 2.1.76+) and
+   * wait for the user's response. Resolves with the client's result object, or rejects
+   * if the client declines, disconnects, or does not support elicitation.
+   *
+   * @param message Human-readable question shown to the user.
+   * @param requestedSchema JSON Schema describing the shape of the expected response.
+   * @param timeoutMs Maximum time to wait for a response (default: 5 minutes).
+   */
+  async elicit(
+    message: string,
+    requestedSchema: Record<string, unknown>,
+    timeoutMs = 300_000,
+  ): Promise<unknown> {
+    if (!this.activeWs || this.activeWs.readyState !== WebSocket.OPEN) {
+      throw new Error("No active MCP client connected");
+    }
+    if (!this.initialized) {
+      throw new Error("MCP client not yet initialized");
+    }
+
+    const id = `elicit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const request: JsonRpcRequest = {
+      jsonrpc: "2.0",
+      id,
+      method: "elicitation/create",
+      params: { message, requestedSchema },
+    };
+
+    return new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (this.pendingElicitations.delete(id)) {
+          reject(new Error(`Elicitation timed out after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+
+      this.pendingElicitations.set(id, {
+        resolve: (result) => { clearTimeout(timer); resolve(result); },
+        reject: (err) => { clearTimeout(timer); reject(err); },
+      });
+
+      safeSend(this.activeWs!, JSON.stringify(request), this.logger).then((sent) => {
+        if (!sent) {
+          this.pendingElicitations.delete(id);
+          clearTimeout(timer);
+          reject(new Error("Failed to send elicitation/create — socket closed"));
+        }
+      });
+    });
+  }
+
   registerTool(
     schema: ToolSchema,
     handler: ToolHandler,
@@ -154,12 +210,19 @@ export class McpTransport {
       controller.abort();
     }
     this.inFlightControllers.clear();
+    // Reject all pending elicitation requests so callers don't hang after disconnect
+    for (const [, pending] of this.pendingElicitations) {
+      pending.reject(new Error("Client disconnected before responding to elicitation"));
+    }
+    this.pendingElicitations.clear();
     this.activeWs = null;
     this.initialized = false;
     this.activeToolCalls = 0;
     // Do NOT reset rateLimitBuf/rateLimitHead here — resetting on reconnect would allow
     // a client to bypass the rate limit by rapidly cycling connections (200 req / 50ms reconnect).
     // The sliding window continues across reconnects from the same session.
+    // notifCount IS reset because it is a per-connection counter (counts outbound notifications
+    // since the current client connected), not a cross-session security gate.
     this.notifCount = 0;
     this.notifWindowStart = 0;
   }
@@ -223,6 +286,25 @@ export class McpTransport {
           typeof s === "string"
             ? s.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 128)
             : String(s);
+
+        // Detect client-to-server responses (elicitation/create results, etc.)
+        // JSON-RPC responses have no "method" but have an "id" and "result" or "error".
+        if (!msg.method && msg.id !== undefined && msg.id !== null) {
+          const pending = this.pendingElicitations.get(msg.id);
+          if (pending) {
+            this.pendingElicitations.delete(msg.id);
+            const resp = raw as JsonRpcResponse;
+            if (resp.error) {
+              pending.reject(new Error(resp.error.message ?? "Elicitation declined"));
+            } else {
+              pending.resolve(resp.result);
+            }
+          } else {
+            this.logger.debug(`Received unexpected response for id=${msg.id} — ignored`);
+          }
+          return;
+        }
+
         this.logger.debug(`<-- ${safeMethod(msg.method)} (id=${msg.id})`);
 
         if (!msg.method) return;
@@ -322,6 +404,10 @@ export class McpTransport {
                   resources: { listChanged: false },
                   prompts: { listChanged: false },
                   logging: {},
+                  // Advertise elicitation support (MCP 2025-11-25 / Claude Code 2.1.76+).
+                  // Enables the bridge to send elicitation/create requests to the client
+                  // so tools can ask the user for input mid-task.
+                  elicitation: {},
                 },
                 serverInfo: this.serverInfo,
               },

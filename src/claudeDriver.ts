@@ -7,6 +7,8 @@ export interface ClaudeTaskInput {
   timeoutMs: number;
   signal: AbortSignal;
   onChunk?: (chunk: string) => void;
+  /** Optional model override, e.g. "claude-haiku-4-5-20251001". Passed as --model to the subprocess. */
+  model?: string;
 }
 
 export interface ClaudeTaskOutput {
@@ -40,6 +42,7 @@ export class SubprocessDriver implements IClaudeDriver {
       // prevents the subprocess from connecting back to the bridge that spawned it.
       "--strict-mcp-config",
     ];
+    if (input.model) args.push("--model", input.model);
     // workspace is set as cwd in spawn() — claude -p has no --workspace flag
     for (const f of input.contextFiles ?? []) args.push("--add-dir", f);
 

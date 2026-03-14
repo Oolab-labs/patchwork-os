@@ -46,6 +46,11 @@ export function createRunClaudeTaskTool(
             description:
               "If true, block and stream output via progress notifications. If false (default), return immediately with taskId.",
           },
+          model: {
+            type: "string",
+            description:
+              "Optional model override for this task, e.g. \"claude-haiku-4-5-20251001\". Defaults to the Claude CLI default.",
+          },
         },
         required: ["prompt"],
       },
@@ -124,6 +129,7 @@ export function createRunClaudeTaskTool(
       }
 
       const stream = args.stream === true;
+      const model = typeof args.model === "string" && args.model.trim() !== "" ? args.model.trim() : undefined;
 
       if (!stream) {
         // Non-streaming: enqueue and return taskId immediately
@@ -133,6 +139,7 @@ export function createRunClaudeTaskTool(
             contextFiles,
             timeoutMs,
             sessionId,
+            model,
           });
           return success({ taskId, status: "pending" });
         } catch (e) {
@@ -150,6 +157,7 @@ export function createRunClaudeTaskTool(
           contextFiles,
           timeoutMs,
           sessionId,
+          model,
           onChunk: (chunk: string) => {
             progressFn?.(++chunkIndex, -1, chunk);
           },

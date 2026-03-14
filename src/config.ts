@@ -175,7 +175,10 @@ export function parseConfig(argv: string[]): Config {
       if (i + 1 >= args.length) {
         throw new Error("--config requires a path argument");
       }
-      configFilePath = args[++i];
+      configFilePath = args[++i] as string;
+      if (configFilePath.length > 4096) {
+        throw new Error("--config path is too long (max 4096 chars)");
+      }
       break;
     }
   }
