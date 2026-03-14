@@ -265,7 +265,7 @@ export function createEditTextTool(
           if (result !== null) {
             const parsed = result as Record<string, unknown>;
             if (parsed.success === false) {
-              return error(parsed.error ?? "Failed to apply edits");
+              return error(String(parsed.error ?? "Failed to apply edits"));
             }
             // Pass through extension result with source annotation
             return success({ ...parsed, source: "vscode", filePath });

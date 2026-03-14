@@ -224,6 +224,10 @@ export const workspace = {
     delete: vi.fn(async () => {}),
   },
   createFileSystemWatcher: vi.fn(() => createMockWatcher()),
+  onDidChangeTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+  onDidOpenTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+  onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+  onDidChangeWorkspaceFolders: vi.fn(() => ({ dispose: vi.fn() })),
 };
 
 export const window = {
@@ -400,6 +404,10 @@ export function __reset() {
   workspace.createFileSystemWatcher
     .mockReset()
     .mockImplementation(() => createMockWatcher());
+  workspace.onDidChangeTextDocument.mockReset().mockReturnValue({ dispose: vi.fn() });
+  workspace.onDidOpenTextDocument.mockReset().mockReturnValue({ dispose: vi.fn() });
+  workspace.onDidSaveTextDocument.mockReset().mockReturnValue({ dispose: vi.fn() });
+  workspace.onDidChangeWorkspaceFolders.mockReset().mockReturnValue({ dispose: vi.fn() });
 
   window.tabGroups.all = [];
   window.tabGroups.close.mockReset().mockResolvedValue(true);

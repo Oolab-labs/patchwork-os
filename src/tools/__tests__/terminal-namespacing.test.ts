@@ -37,8 +37,8 @@ function mockExtensionClient(connected = true) {
   } as any;
 }
 
-function parseResult(result: any) {
-  return JSON.parse(result.content?.at(0)?.text ?? "{}");
+function parseResult(result: any): string {
+  return result.content?.at(0)?.text ?? "";
 }
 
 const PREFIX = "s1234567-";

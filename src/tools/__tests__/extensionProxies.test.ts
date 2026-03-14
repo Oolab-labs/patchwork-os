@@ -148,7 +148,7 @@ describe("replaceBlock: disconnected extension", () => {
     })) as any;
 
     expect(result.isError).toBe(true);
-    const msg = JSON.parse(result.content[0].text) as string;
+    const msg = result.content[0].text;
     expect(msg).toContain("not found");
   });
 });
@@ -162,7 +162,7 @@ describe("readClipboard: disconnected extension", () => {
     // With native fallback the tool may succeed (on macOS via pbpaste) or fail
     // with an informative error — but must never return the old "extension required" stub.
     if (result.isError) {
-      const msg = JSON.parse(result.content[0].text) as string;
+      const msg = result.content[0].text;
       expect(msg.toLowerCase()).not.toContain("vs code extension is required");
       expect(msg.toLowerCase()).toContain("clipboard");
     } else {
@@ -176,7 +176,7 @@ describe("writeClipboard: disconnected extension", () => {
     const tool = createWriteClipboardTool(mockDisconnectedExtensionClient());
     const result = (await tool.handler({ text: "hello" })) as any;
     if (result.isError) {
-      const msg = JSON.parse(result.content[0].text) as string;
+      const msg = result.content[0].text;
       expect(msg.toLowerCase()).not.toContain("vs code extension is required");
       expect(msg.toLowerCase()).toContain("clipboard");
     } else {
@@ -210,7 +210,7 @@ describe("executeVSCodeCommand: allowlist enforcement", () => {
       command: "editor.action.formatDocument",
     })) as any;
     expect(result.isError).toBe(true);
-    const msg = JSON.parse(result.content[0].text) as string;
+    const msg = result.content[0].text;
     expect(msg).toContain("not in the vscodeCommandAllowlist");
   });
 
@@ -224,7 +224,7 @@ describe("executeVSCodeCommand: allowlist enforcement", () => {
       command: "editor.action.formatDocument",
     })) as any;
     expect(result.isError).toBe(true);
-    const msg = JSON.parse(result.content[0].text) as string;
+    const msg = result.content[0].text;
     expect(msg).toContain("allowlist");
   });
 
@@ -240,7 +240,7 @@ describe("executeVSCodeCommand: allowlist enforcement", () => {
       command: "editor.action.formatDocument",
     })) as any;
     expect(result.isError).toBe(true);
-    const msg = JSON.parse(result.content[0].text) as string;
+    const msg = result.content[0].text;
     expect(msg.toLowerCase()).toContain("extension");
   });
 });
@@ -252,7 +252,7 @@ describe("listVSCodeCommands: disconnected extension", () => {
     );
     const result = (await tool.handler({})) as any;
     expect(result.isError).toBe(true);
-    const msg = JSON.parse(result.content[0].text) as string;
+    const msg = result.content[0].text;
     expect(msg.toLowerCase()).toContain("extension");
   });
 });

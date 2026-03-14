@@ -2,10 +2,13 @@
  * Bridge Benchmark — measures p50/p95/p99/max RTT for representative tool calls.
  *
  * Usage:
- *   node scripts/benchmark.mjs [port] [--iterations N]
+ *   node scripts/benchmark.mjs [port] [--iterations N] [--json] [--threshold <ms>]
  *
  * Requires a running bridge instance. Discovers it via lockfile (same as smoke-test.mjs).
  * Output is a table of latency percentiles in milliseconds.
+ *
+ * --json        Emit structured JSON to stdout instead of the human table.
+ * --threshold N Fail (exit 1) if any tool's p99 RTT exceeds N ms. Useful in CI.
  *
  * Results are point-in-time. Run against a cold and a warm bridge for comparison.
  */
@@ -20,11 +23,18 @@ import WebSocket from "ws";
 const args = process.argv.slice(2);
 let targetPort = null;
 let iterations = 50;
+let jsonMode = false;
+let thresholdMs = null; // p99 failure threshold (ms); null = no gate
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--iterations" && args[i + 1]) {
     iterations = Number.parseInt(args[i + 1], 10);
     i++;
+  } else if (args[i] === "--threshold" && args[i + 1]) {
+    thresholdMs = Number.parseInt(args[i + 1], 10);
+    i++;
+  } else if (args[i] === "--json") {
+    jsonMode = true;
   } else if (/^\d+$/.test(args[i])) {
     targetPort = Number.parseInt(args[i], 10);
   }
@@ -138,9 +148,11 @@ function toolCall(name, args) {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 ws.on("open", async () => {
-  console.log(
-    `\nBridge benchmark — port ${port}, ${iterations} iterations (+${WARMUP} warmup each)\n`,
-  );
+  if (!jsonMode) {
+    console.log(
+      `\nBridge benchmark — port ${port}, ${iterations} iterations (+${WARMUP} warmup each)\n`,
+    );
+  }
 
   // Initialize MCP session
   await send("initialize", {
@@ -165,34 +177,59 @@ ws.on("open", async () => {
 
   const results = [];
   for (const [label, method, params] of benches) {
-    process.stdout.write(`  Measuring ${label.trim()}...`);
+    if (!jsonMode) process.stdout.write(`  Measuring ${label.trim()}...`);
     try {
       const r = await measure(label, method, params, iterations);
       results.push(r);
-      process.stdout.write(" done\n");
+      if (!jsonMode) process.stdout.write(" done\n");
     } catch (err) {
-      process.stdout.write(` ERROR: ${err.message}\n`);
-      results.push({ label, p50: "—", p95: "—", p99: "—", max: "—", min: "—" });
+      if (!jsonMode) process.stdout.write(` ERROR: ${err.message}\n`);
+      results.push({ label, p50: null, p95: null, p99: null, max: null, min: null, error: err.message });
     }
   }
 
-  // ── Print table ─────────────────────────────────────────────────────────────
-
-  const col = (v, w) => String(v).padStart(w);
-  const hdr = `\n${"Tool".padEnd(22)}  ${col("min", 6)}  ${col("p50", 6)}  ${col("p95", 6)}  ${col("p99", 6)}  ${col("max", 6)}  (ms)`;
-  const sep = "─".repeat(hdr.length - 6);
-
-  console.log(hdr);
-  console.log(sep);
-  for (const r of results) {
-    console.log(
-      `${r.label.padEnd(22)}  ${col(r.min, 6)}  ${col(r.p50, 6)}  ${col(r.p95, 6)}  ${col(r.p99, 6)}  ${col(r.max, 6)}`,
-    );
+  if (jsonMode) {
+    // ── JSON output ───────────────────────────────────────────────────────────
+    const output = {
+      timestamp: new Date().toISOString(),
+      port,
+      iterations,
+      threshold: thresholdMs,
+      results: results.map((r) => ({ ...r, label: r.label.trim() })),
+    };
+    process.stdout.write(JSON.stringify(output, null, 2) + "\n");
+  } else {
+    // ── Print table ─────────────────────────────────────────────────────────
+    const col = (v, w) => String(v ?? "—").padStart(w);
+    const hdr = `\n${"Tool".padEnd(22)}  ${col("min", 6)}  ${col("p50", 6)}  ${col("p95", 6)}  ${col("p99", 6)}  ${col("max", 6)}  (ms)`;
+    const sep = "─".repeat(hdr.length - 6);
+    console.log(hdr);
+    console.log(sep);
+    for (const r of results) {
+      console.log(
+        `${r.label.padEnd(22)}  ${col(r.min, 6)}  ${col(r.p50, 6)}  ${col(r.p95, 6)}  ${col(r.p99, 6)}  ${col(r.max, 6)}`,
+      );
+    }
+    console.log(sep);
+    console.log("\nTip: run with --json --threshold <ms> to gate on p99.\n");
   }
-  console.log(sep);
-  console.log(
-    "\nRecord these numbers in project_remaining_todos.md as your baseline.\n",
-  );
+
+  // ── Threshold gate ───────────────────────────────────────────────────────────
+  if (thresholdMs !== null) {
+    const violations = results.filter(
+      (r) => typeof r.p99 === "number" && r.p99 > thresholdMs,
+    );
+    if (violations.length > 0) {
+      const lines = violations.map(
+        (r) => `  ${r.label.trim()}: p99=${r.p99}ms > ${thresholdMs}ms`,
+      );
+      console.error(
+        `\nBenchmark threshold exceeded (p99 > ${thresholdMs}ms):\n${lines.join("\n")}\n`,
+      );
+      ws.close();
+      process.exit(1);
+    }
+  }
 
   ws.close();
   process.exit(0);

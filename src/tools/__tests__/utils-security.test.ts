@@ -21,14 +21,32 @@ describe("success() and error() format", () => {
   it("error returns compact JSON with isError: true", () => {
     const result = error("something failed");
     expect(result.isError).toBe(true);
-    expect(result.content.at(0)?.text).toBe('"something failed"');
+    const parsed = JSON.parse(result.content.at(0)?.text ?? "{}");
+    expect(parsed.error).toBe("something failed");
+    expect(parsed.code).toBeUndefined();
   });
 
-  it("error with object data", () => {
-    const result = error({ code: 404, message: "not found" });
+  it("error with optional code field (string message)", () => {
+    const result = error("not found", "file_not_found");
     expect(result.isError).toBe(true);
     const parsed = JSON.parse(result.content.at(0)?.text ?? "{}");
-    expect(parsed.code).toBe(404);
+    expect(parsed.error).toBe("not found");
+    expect(parsed.code).toBe("file_not_found");
+  });
+
+  it("error with object payload (legacy structured errors)", () => {
+    const result = error({ fixed: false, source: "cli", error: "lint failed" });
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content.at(0)?.text ?? "{}");
+    expect(parsed.fixed).toBe(false);
+    expect(parsed.error).toBe("lint failed");
+    expect(parsed.code).toBeUndefined();
+  });
+
+  it("error with object payload plus code", () => {
+    const result = error({ fixed: false, error: "lint failed" }, "external_command_failed");
+    const parsed = JSON.parse(result.content.at(0)?.text ?? "{}");
+    expect(parsed.code).toBe("external_command_failed");
   });
 
   it("success with null", () => {

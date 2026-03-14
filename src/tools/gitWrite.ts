@@ -64,7 +64,7 @@ export function createGitAddTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const rawFiles = args.files;
@@ -141,7 +141,7 @@ export function createGitCommitTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const message = requireString(args, "message", 4096);
@@ -272,7 +272,7 @@ export function createGitCheckoutTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const branch = requireString(args, "branch");
@@ -365,7 +365,7 @@ export function createGitBlameTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const rawPath = requireString(args, "filePath");
@@ -503,7 +503,7 @@ export function createGitFetchTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const all = optionalBool(args, "all") ?? false;
@@ -574,7 +574,7 @@ export function createGitListBranchesTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const includeRemote = optionalBool(args, "includeRemote") ?? false;
@@ -658,7 +658,7 @@ export function createGitPullTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const remote = optionalString(args, "remote", 256) ?? "origin";
@@ -758,7 +758,7 @@ export function createGitPushTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const remote = optionalString(args, "remote", 256) ?? "origin";
@@ -874,7 +874,7 @@ export function createGitStashTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const message = optionalString(args, "message", 256);
@@ -938,7 +938,7 @@ export function createGitStashPopTool(workspace: string) {
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       const index =
@@ -994,7 +994,7 @@ export function createGitStashListTool(workspace: string) {
     },
     handler: async (_args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
-        return error("Not a git repository");
+        return error("Not a git repository", "git_error");
       }
 
       let listOutput: string;

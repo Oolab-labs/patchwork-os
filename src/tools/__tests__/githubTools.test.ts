@@ -28,7 +28,17 @@ function parse(r: {
   content: Array<{ type: string; text: string }>;
   isError?: true;
 }) {
-  return JSON.parse(r.content.at(0)?.text ?? "{}");
+  const raw = JSON.parse(r.content.at(0)?.text ?? "{}") as unknown;
+  if (
+    r.isError &&
+    typeof raw === "object" &&
+    raw !== null &&
+    "error" in (raw as object) &&
+    typeof (raw as Record<string, unknown>).error === "string"
+  ) {
+    return (raw as Record<string, unknown>).error as string;
+  }
+  return raw;
 }
 
 const ok = (stdout: string, stderr = "") => ({

@@ -48,7 +48,7 @@ export function createCloseTabTool(
         if (result !== null && typeof result === "object") {
           const r = result as Record<string, unknown>;
           if (r.success === false) {
-            return error(r.error ?? "Failed to close tab");
+            return error(String(r.error ?? "Failed to close tab"));
           }
           return success(result);
         }

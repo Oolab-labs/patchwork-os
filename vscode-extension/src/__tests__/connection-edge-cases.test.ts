@@ -61,6 +61,66 @@ function createBridge(): BridgeConnection {
   return bridge;
 }
 
+// ── bridge/claudeTaskOutput notification ──────────────────────
+
+describe("bridge/claudeTaskOutput notifications", () => {
+  it("chunk notification appends to output channel", () => {
+    const bridge = createBridge();
+    const appendSpy = vi.spyOn(bridge.output as any, "append");
+
+    bridge.handleMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeTaskOutput",
+        params: { taskId: "abc12345-0000-0000-0000-000000000000", chunk: "hello world\n" },
+      }),
+    );
+
+    expect(appendSpy).toHaveBeenCalledWith("hello world\n");
+  });
+
+  it("done=true notification appends status line to output channel", () => {
+    const bridge = createBridge();
+    const appendLineSpy = vi.spyOn(bridge.output as any, "appendLine");
+
+    bridge.handleMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeTaskOutput",
+        params: {
+          taskId: "abc12345-0000-0000-0000-000000000000",
+          done: true,
+          status: "done",
+        },
+      }),
+    );
+
+    expect(appendLineSpy).toHaveBeenCalledWith(
+      expect.stringContaining("abc12345"),
+    );
+    expect(appendLineSpy).toHaveBeenCalledWith(expect.stringContaining("✓ done"));
+  });
+
+  it("done=true with error status shows failure marker", () => {
+    const bridge = createBridge();
+    const appendLineSpy = vi.spyOn(bridge.output as any, "appendLine");
+
+    bridge.handleMessage(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "bridge/claudeTaskOutput",
+        params: {
+          taskId: "abc12345-0000-0000-0000-000000000000",
+          done: true,
+          status: "error",
+        },
+      }),
+    );
+
+    expect(appendLineSpy).toHaveBeenCalledWith(expect.stringContaining("✗ error"));
+  });
+});
+
 // ── Rapid forceReconnect() ────────────────────────────────────
 
 describe("forceReconnect edge cases", () => {

@@ -5,8 +5,18 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createReplaceBlockTool } from "../replaceBlock.js";
 
-function parse(result: { content: Array<{ type: string; text: string }> }) {
-  return JSON.parse(result.content.at(0)?.text ?? "{}");
+function parse(result: { content: Array<{ type: string; text: string }>; isError?: boolean }) {
+  const raw = JSON.parse(result.content.at(0)?.text ?? "{}") as unknown;
+  if (
+    result.isError &&
+    typeof raw === "object" &&
+    raw !== null &&
+    "error" in (raw as object) &&
+    typeof (raw as Record<string, unknown>).error === "string"
+  ) {
+    return (raw as Record<string, unknown>).error as string;
+  }
+  return raw;
 }
 
 describe("replaceBlock TOCTOU bug", () => {

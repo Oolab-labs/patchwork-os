@@ -126,9 +126,11 @@ export function resolveFilePath(
     resolved !== normalizedWorkspace &&
     !resolved.startsWith(normalizedWorkspace + path.sep)
   ) {
-    throw new Error(
+    const err = new Error(
       `Path "${filePath}" escapes workspace "${workspace}". All paths must be within the workspace.`,
-    );
+    ) as Error & { code: string };
+    err.code = "workspace_escape";
+    throw err;
   }
   try {
     const realWorkspace = cachedRealpathSync(normalizedWorkspace);
@@ -174,9 +176,11 @@ export function resolveFilePath(
     try {
       const lst = fs.lstatSync(resolved);
       if (!lst.isDirectory() && lst.nlink > 1) {
-        throw new Error(
+        const hlErr = new Error(
           `Path "${filePath}" is a hardlink (nlink=${lst.nlink}) — write denied to prevent workspace escape`,
-        );
+        ) as Error & { code: string };
+        hlErr.code = "workspace_escape";
+        throw hlErr;
       }
     } catch (err) {
       if (err instanceof Error && err.message.includes("hardlink")) throw err;
@@ -209,12 +213,22 @@ export function success(data: unknown): {
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
-export function error(data: unknown): {
+export function error(
+  data: string | Record<string, unknown>,
+  code?: string,
+): {
   content: Array<{ type: string; text: string }>;
   isError: true;
 } {
+  let payload: Record<string, unknown>;
+  if (typeof data === "string") {
+    payload = { error: data };
+  } else {
+    payload = { ...data };
+  }
+  if (code !== undefined) payload.code = code;
   return {
-    content: [{ type: "text", text: JSON.stringify(data) }],
+    content: [{ type: "text", text: JSON.stringify(payload) }],
     isError: true,
   };
 }
@@ -222,6 +236,7 @@ export function error(data: unknown): {
 export function extensionRequired(feature: string) {
   return error(
     `VS Code extension not connected — ${feature} requires the extension`,
+    "extension_required",
   );
 }
 
@@ -324,7 +339,7 @@ export async function execSafe(
   }
 }
 
-const LANGUAGE_ID_MAP: Record<string, string> = {
+export const LANGUAGE_ID_MAP: Record<string, string> = {
   ".ts": "typescript",
   ".tsx": "typescriptreact",
   ".js": "javascript",
@@ -365,6 +380,48 @@ const LANGUAGE_ID_MAP: Record<string, string> = {
 export function languageIdFromPath(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   return LANGUAGE_ID_MAP[ext] || "plaintext";
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  ".ts": "text/plain",
+  ".tsx": "text/plain",
+  ".js": "text/javascript",
+  ".jsx": "text/javascript",
+  ".json": "application/json",
+  ".yaml": "text/yaml",
+  ".yml": "text/yaml",
+  ".xml": "text/xml",
+  ".html": "text/html",
+  ".htm": "text/html",
+  ".css": "text/css",
+  ".scss": "text/plain",
+  ".less": "text/plain",
+  ".md": "text/markdown",
+  ".txt": "text/plain",
+  ".sh": "text/x-shellscript",
+  ".bash": "text/x-shellscript",
+  ".py": "text/x-python",
+  ".rb": "text/x-ruby",
+  ".rs": "text/x-rust",
+  ".go": "text/x-go",
+  ".java": "text/x-java",
+  ".c": "text/x-c",
+  ".cpp": "text/x-c++",
+  ".h": "text/x-c",
+  ".hpp": "text/x-c++",
+  ".sql": "text/x-sql",
+  ".toml": "text/x-toml",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".pdf": "application/pdf",
+};
+
+export function mimeTypeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  return MIME_BY_EXT[ext] ?? "text/plain";
 }
 
 export function makeRelative(absPath: string, workspace: string): string {
