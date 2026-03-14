@@ -32,47 +32,49 @@ Claude Code connects to the bridge, which connects to your IDE extension. Claude
 
 ## Quick Start
 
+**Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20, tmux (`brew install tmux`)
+
+**Step 1 — Install the VS Code extension**
+
+Search `oolab-labs.claude-ide-bridge-extension` in the VS Code / Windsurf / Cursor extension marketplace, or install from the command line:
+
+```bash
+code --install-extension oolab-labs.claude-ide-bridge-extension
+# Windsurf: windsurf --install-extension oolab-labs.claude-ide-bridge-extension
+# Cursor:   cursor --install-extension oolab-labs.claude-ide-bridge-extension
+```
+
+**Step 2 — Install and start the bridge**
+
 ```bash
 npm install -g claude-ide-bridge
-
-# Full setup: bridge + Claude Code + remote-control in a tmux session
-claude-ide-bridge start-all --workspace /path/to/your-project
-
-# Or run the bridge only (MCP server mode)
-claude-ide-bridge --workspace /path/to/your-project
+cd /your/project
+claude-ide-bridge
 ```
 
-No global install needed — use `npx`:
+The bridge starts, writes a lock file to `~/.claude/ide/`, and waits for connections. Your editor extension connects automatically.
 
-```bash
-npx claude-ide-bridge start-all --workspace /path/to/your-project
-```
+**Step 3 — Connect Claude Code**
 
-Or from source:
-
-```bash
-git clone https://github.com/Oolab-labs/claude-ide-bridge.git
-cd claude-ide-bridge
-npm install && npm run build
-npm run start-all -- --workspace /path/to/your-project
-```
-
-Install the VS Code extension for full capabilities:
-
-```bash
-# Auto-detects your editor (VS Code, Windsurf, Cursor, Antigravity)
-claude-ide-bridge install-extension
-
-# Or specify explicitly
-claude-ide-bridge install-extension windsurf
-```
-
-Then start Claude Code and connect:
+In a new terminal in your project directory:
 
 ```bash
 claude
-# The bridge MCP server will be available
 ```
+
+Claude Code auto-discovers the bridge. Type `/ide` to confirm the connection — you'll see your open files, diagnostics, and editor state.
+
+**That's it.** Claude can now read your diagnostics, navigate your code, run tests, commit to Git, and more.
+
+---
+
+**Optional — full orchestrator with health monitoring:**
+
+```bash
+claude-ide-bridge start-all --workspace /your/project
+```
+
+Launches bridge + Claude Code + remote control in a tmux session with automatic restart on failure. Requires `tmux`.
 
 ## Full Orchestrator
 

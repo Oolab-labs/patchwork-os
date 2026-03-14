@@ -4,7 +4,9 @@ Complete feature reference for the Claude IDE Bridge MCP server and VS Code exte
 
 ## Overview
 
-Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 133+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
+Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 137+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
+
+The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code CLI** via WebSocket — both sessions share the same running bridge, enabling seamless context handoff between the two clients.
 
 ---
 
@@ -108,6 +110,8 @@ Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives
 | `checkScope` | Verify current work stays within defined scope |
 | `expandScope` | Request scope expansion with justification |
 | `getActivityLog` | Session metrics — tool call counts, durations, errors |
+| `setHandoffNote` | Persist a free-text context summary to `~/.claude/ide/handoff-note.json`. Shared across all MCP sessions (Desktop, CLI, HTTP). Use when switching clients mid-task. |
+| `getHandoffNote` | Read the handoff note left by a previous session. Returns `note`, `updatedAt`, `updatedBy` (session ID), and human-readable `age`. Returns `null` note if none saved. |
 
 ---
 
@@ -299,7 +303,8 @@ Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket
 ### Auth
 - Bridge generates random UUID auth token on startup
 - Token written to lock file: `~/.claude/ide/<port>.lock`
-- Lock file contains: `{ authToken, pid, workspace, ideName }`
+- Lock file contains: `{ authToken, pid, workspace, ideName, isBridge: true }`
+- `isBridge: true` lets the stdio shim distinguish bridge lock files from IDE-owned lock files (e.g. Windsurf writes its own lock); shim always prefers a bridge lock over a non-bridge lock when auto-discovering
 - Claude Code reads lock file and connects with token in WebSocket upgrade headers
 - Extension authenticates via `x-claude-ide-extension` header
 
@@ -354,6 +359,55 @@ Session lifecycle:
 - `/ready` endpoint: 200 when bridge is initialized and ready to accept connections
 - `/metrics` endpoint: Prometheus-format session metrics (tool calls, durations, errors)
 - `/tasks` endpoint: sanitized task list (Bearer-auth required; no prompt text, output capped at 200 chars). Only present when `--claude-driver != none`.
+
+---
+
+## Claude Desktop & Cowork Integration
+
+### Claude Desktop
+
+The bridge connects to Claude Desktop via the stdio shim (`scripts/mcp-stdio-shim.cjs`). All bridge tools are available inside Claude Desktop chat alongside any other Desktop integrations. Set up with:
+
+```bash
+bash scripts/gen-claude-desktop-config.sh
+```
+
+The shim auto-discovers the bridge lock file (`~/.claude/ide/<port>.lock`) by preferring files with `isBridge: true`. This prevents the shim from accidentally connecting to an IDE-owned lock file (e.g. Windsurf writes its own lock in the same directory).
+
+The shim also watches `~/.claude/ide/` via `fs.watch` (500 ms debounce) and auto-reconnects when a new bridge lock file appears. **Claude Desktop no longer needs a full quit and relaunch when the bridge restarts on a new port** — the shim detects the new lock and reconnects within ~500 ms.
+
+### Cowork (Computer Use)
+
+Cowork is Claude Desktop's ability to control the OS, browser, and desktop apps. When used alongside the bridge, the two capabilities compose:
+
+| Bridge | Cowork |
+|--------|--------|
+| Reads IDE state (diagnostics, open files, git, terminals) | Acts on the world (clicks, types, navigates apps) |
+| Understands *why* something is broken | Can fix it in tools outside the editor |
+
+**Example workflows:**
+
+- **End-to-end deploy**: Bridge runs tests and checks git status → Cowork opens CI dashboard in Chrome, monitors the run, approves the deploy gate
+- **Bug report to ticket**: Bridge reads the failing stack trace → Claude writes the fix → Cowork opens Linear/Jira, creates the ticket with the diff
+- **Live API testing**: Bridge watches terminal output → Cowork fires requests in the browser, reads responses
+- **Code review**: Bridge reads diagnostics and call hierarchy → Cowork navigates GitHub PR in Chrome, leaves inline comments
+- **Config sync**: Bridge reads environment variables → Cowork opens the cloud console, updates the service config
+
+### Session Context Handoff
+
+Claude Desktop and Claude Code CLI are separate MCP sessions on the same bridge. Use `setHandoffNote` / `getHandoffNote` to pass context between them:
+
+```
+# In Claude Desktop (finishing a debug session):
+setHandoffNote("auth bug in login.ts:42 — token expiry off by 1s in verifyJWT(). Next: fix the ±1s skew.")
+
+# In Claude Code CLI (picking up the work):
+getHandoffNote()  →  { note: "auth bug in login.ts:42 ...", age: "4m ago" }
+```
+
+### "Browse Plugins" Compatibility
+
+The bridge is not yet listed in Claude's plugin marketplace ("Browse plugins" — Anthropic-curated). It works via **manual MCP config** (the stdio shim), which is equivalent in capability. The `/.well-known/mcp/server-card.json` endpoint (SEP-1649) is in place for future registry discovery. When Anthropic opens plugin submission to third parties, the bridge will need: an updated manifest with icon/category fields, and submission through Anthropic's partner portal.
 
 ---
 

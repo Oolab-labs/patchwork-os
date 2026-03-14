@@ -97,7 +97,7 @@ Domain data connections, state management, and protocol flows that are not expre
 
 ```
 1. Bridge starts → generates random UUID → writes to ~/.claude/ide/<port>.lock
-   Lock file: { authToken, pid, workspace, ideName }
+   Lock file: { authToken, pid, workspace, ideName, isBridge: true }
 
 2. Claude Code CLI → scans ~/.claude/ide/*.lock → finds matching workspace
    → connects WebSocket with auth token in upgrade headers
@@ -105,13 +105,18 @@ Domain data connections, state management, and protocol flows that are not expre
 3. VS Code Extension → scans same lock files → connects with x-claude-ide-extension header
    → sends extension/hello notification with version
 
-4. Bridge validates token → accepts or rejects upgrade
+4. Claude Desktop shim → scans ~/.claude/ide/*.lock → prefers files with isBridge: true
+   → connects via stdio relay (mcp-stdio-shim.cjs)
+   → watches ~/.claude/ide/ via fs.watch (500 ms debounce) — auto-reconnects on bridge restart
+
+5. Bridge validates token → accepts or rejects upgrade
 ```
 
 **Key constraints:**
 - One bridge per workspace (start with `--workspace`)
 - Lock files cleaned on startup (`cleanStale()` removes dead PIDs)
 - Lock file deleted on graceful shutdown
+- `isBridge: true` in the lock file distinguishes the bridge from IDE-owned lock files (e.g. Windsurf writes its own lock in `~/.claude/ide/`); the stdio shim filters on this field to avoid connecting to the wrong process
 
 ---
 

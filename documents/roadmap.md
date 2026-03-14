@@ -4,9 +4,9 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.0.0 — 2026-03-14)
+## Current State (v2.0.1 — 2026-03-14)
 
-- 137+ MCP tools; 828 bridge tests, 0 failures; CI on Node 20 + 22
+- 139+ MCP tools; 832 bridge tests, 0 failures; CI on Node 20 + 22
 - Extension installable into VS Code, Windsurf, Cursor, and Antigravity (v0.9.0 on Open VSX)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
@@ -18,6 +18,13 @@ Development direction and exploration guidance. Living document — update as pr
 - MCP resources (`resources/list` + `resources/read`): workspace-confined, 1 MB cap, cursor-paginated
 - MCP elicitation (`elicitation: {}` capability): `McpTransport.elicit()` sends `elicitation/create` to Claude Code 2.1.76+
 - Deep security hardening: SSRF three-layer defense, Origin validation, rate limiting, lstatSync everywhere, TOCTOU mitigations, structured error codes
+- Claude Desktop + Cowork integration documented; `setHandoffNote`/`getHandoffNote` for cross-session context
+
+**v2.0.1 shipped (2026-03-14) — Desktop reliability + cross-session handoff:**
+- Lock file now includes `isBridge: true`; stdio shim `findLockFile()` prefers bridge locks over IDE-owned locks — fixes auto-discovery collision when Windsurf (or any other IDE) writes its own lock file to `~/.claude/ide/`
+- New tools: `setHandoffNote` / `getHandoffNote` — file-backed (`~/.claude/ide/handoff-note.json`), shared across all MCP sessions; enables context handoff between Claude Desktop and Claude Code CLI
+- **Shim lock-file watcher**: `fs.watch(~/.claude/ide/)` in auto-discover mode — shim reconnects automatically when bridge restarts on a new port; Claude Desktop no longer needs a full quit+relaunch on bridge restart
+- 4 new tests in `src/tools/__tests__/handoffNote.test.ts`
 
 **v2.0.0 shipped (2026-03-14) — Streamable HTTP + Claude Desktop:**
 - New transport: `src/streamableHttp.ts` — MCP Streamable HTTP spec (POST/GET/DELETE /mcp), SSE server push, session management (30min TTL, max 5)
@@ -210,7 +217,7 @@ These cannot change without breaking compatibility:
 | Constraint | Value | Why |
 |-----------|-------|-----|
 | Lock file location | `~/.claude/ide/<port>.lock` | Claude Code CLI reads this path |
-| Lock file format | `{ authToken, pid, workspace, ideName }` | Contract with Claude Code |
+| Lock file format | `{ authToken, pid, workspace, ideName, isBridge: true }` | Contract with Claude Code; `isBridge` added for shim auto-discovery |
 | MCP protocol version | `2025-11-25` | Must stay compatible with Claude Code's MCP client |
 | Extension API | VS Code `^1.93.0` | Minimum supported VS Code version |
 | Node.js | `>=20` | Uses modern APIs (crypto.randomUUID, etc.) |
