@@ -2,6 +2,13 @@
 # Full orchestrator for bridge + claude + remote-control.
 # Manages all three in tmux panes with health monitoring.
 #
+# Pane layout:
+#   0 — health monitor (orchestrator)
+#   1 — bridge (claude-ide-bridge MCP server)
+#   2 — claude --ide (Claude Code CLI, connects to bridge for IDE tools)
+#   3 — claude remote-control --spawn=session (exposes the workspace to claude.ai;
+#         spawned sessions auto-discover the bridge via ~/.claude/ide/*.lock)
+#
 # Usage:
 #   ./scripts/start-all.sh [--workspace <path>] [--notify <ntfy-topic>]
 #   npm run start-all -- --workspace /path/to/project
@@ -124,7 +131,7 @@ REMOTE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && $caffeinate_cm
 delay=1; max_delay=300; failures=0
 while true; do
   start=\$(date +%s)
-  claude remote-control
+  claude remote-control --spawn=session
   code=\$?
   elapsed=\$(( \$(date +%s) - start ))
   [ \$code -eq 130 ] && { echo \"Exited by Ctrl+C.\"; exit 0; }
@@ -150,10 +157,10 @@ while true; do
   sleep \$delay
 done'"
 
-# --- Create 3 additional panes (pane 0 = orchestrator, 1 = bridge, 2 = claude, 3 = remote) ---
+# --- Create 3 additional panes (pane 0 = orchestrator, 1 = bridge, 2 = claude, 3 = remote-control) ---
 tmux split-window -v -t "$SESSION"    # pane 1 for bridge
-tmux split-window -v -t "$SESSION"    # pane 2 for claude
-tmux split-window -v -t "$SESSION"    # pane 3 for remote-control
+tmux split-window -v -t "$SESSION"    # pane 2 for claude --ide
+tmux split-window -v -t "$SESSION"    # pane 3 for claude remote-control
 tmux select-layout -t "$SESSION" even-vertical
 
 # --- Helper: wait for a NEW lock file (ignores pre-existing ones) ---
