@@ -4,10 +4,11 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v1.9.0 — 2026-03-14)
+## Current State (v2.0.0 — 2026-03-14)
 
-- 137+ MCP tools; 806 bridge tests, 0 failures; CI on Node 20 + 22
-- Extension installable into VS Code, Windsurf, Cursor, and Antigravity
+- 137+ MCP tools; 828 bridge tests, 0 failures; CI on Node 20 + 22
+- Extension installable into VS Code, Windsurf, Cursor, and Antigravity (v0.9.0 on Open VSX)
+- **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
 - GitHub integration (PRs, issues, actions, releases)
@@ -17,6 +18,15 @@ Development direction and exploration guidance. Living document — update as pr
 - MCP resources (`resources/list` + `resources/read`): workspace-confined, 1 MB cap, cursor-paginated
 - MCP elicitation (`elicitation: {}` capability): `McpTransport.elicit()` sends `elicitation/create` to Claude Code 2.1.76+
 - Deep security hardening: SSRF three-layer defense, Origin validation, rate limiting, lstatSync everywhere, TOCTOU mitigations, structured error codes
+
+**v2.0.0 shipped (2026-03-14) — Streamable HTTP + Claude Desktop:**
+- New transport: `src/streamableHttp.ts` — MCP Streamable HTTP spec (POST/GET/DELETE /mcp), SSE server push, session management (30min TTL, max 5)
+- `HttpAdapter` class bridges HTTP request/response into WebSocket-like interface so `McpTransport.attach()` works unchanged
+- Claude Desktop integration: `scripts/gen-claude-desktop-config.sh` writes stdio shim config; verified end-to-end
+- `docs/remote-access.md`: Caddy/nginx reverse proxy setup, TLS, endpoint reference
+- Security headers: `X-Content-Type-Options: nosniff` + `Cache-Control: no-store` on all responses
+- 22 new tests in `src/__tests__/streamableHttp.test.ts` (828 total)
+- Published: npm `claude-ide-bridge@2.0.0` ✅; Open VSX extension v0.9.0 ✅; tagged v2.0.0 on GitHub ✅
 
 **v1.9.0 shipped (2026-03-14) — Claude Code 2.1.76+ compatibility:**
 - Elicitation: `McpTransport.elicit()`, `elicitation: {}` in `initialize` capabilities and server card
