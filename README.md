@@ -197,7 +197,7 @@ Text editing · Workspace management · HTTP requests · File watchers · Notebo
 
 ## MCP Prompts (Slash Commands)
 
-The bridge exposes 5 built-in slash commands via the MCP `prompts/list` + `prompts/get` protocol. These appear as `/mcp__bridge__<name>` in any MCP client that supports prompts.
+The bridge exposes 6 built-in slash commands via the MCP `prompts/list` + `prompts/get` protocol. These appear as `/mcp__bridge__<name>` in any MCP client that supports prompts.
 
 | Prompt | Argument | Description |
 |--------|----------|-------------|
@@ -206,6 +206,7 @@ The bridge exposes 5 built-in slash commands via the MCP `prompts/list` + `promp
 | `/mcp__bridge__generate-tests` | `file` (required) | Generate a test scaffold for the exported symbols in a file |
 | `/mcp__bridge__debug-context` | _(none)_ | Snapshot current debug state, open editors, and diagnostics |
 | `/mcp__bridge__git-review` | `base` (optional, default: `main`) | Review all changes since a git base branch |
+| `/mcp__bridge__set-effort` | `level` (optional: `low`/`medium`/`high`, default: `medium`) | Prepend an effort-level instruction to tune Claude's thoroughness for the next task |
 
 Prompts are served directly from the bridge — no extension required. Implemented in `src/prompts.ts`.
 
@@ -240,11 +241,31 @@ claude-ide-bridge --workspace /path/to/project \
     "patterns": ["**/*.ts", "!node_modules/**"],
     "prompt": "Review the saved file: {{file}}",
     "cooldownMs": 10000
+  },
+  "onPostCompact": {
+    "enabled": true,
+    "prompt": "Context was compacted. Call getOpenEditors and getDiagnostics to rebuild your understanding of the current state.",
+    "cooldownMs": 60000
+  },
+  "onInstructionsLoaded": {
+    "enabled": true,
+    "prompt": "Call getToolCapabilities to confirm the bridge is connected and note which tools are available for this session."
   }
 }
 ```
 
 When automation is active, VS Code save events and diagnostic errors automatically enqueue Claude tasks. Output streams to the "Claude IDE Bridge" output channel in real time.
+
+**Policy triggers:**
+
+| Trigger | When it fires | Key fields |
+|---------|--------------|------------|
+| `onDiagnosticsError` | VS Code reports new errors/warnings for a file | `enabled`, `minSeverity` (`error`/`warning`), `prompt` (supports `{{file}}` and `{{diagnostics}}`), `cooldownMs` |
+| `onFileSave` | A file matching `patterns` is saved | `enabled`, `patterns` (minimatch globs), `prompt` (supports `{{file}}`), `cooldownMs` |
+| `onPostCompact` | Claude compacts its context (Claude Code 2.1.76+) | `enabled`, `prompt`, `cooldownMs` |
+| `onInstructionsLoaded` | Claude loads CLAUDE.md at session start (Claude Code 2.1.76+) | `enabled`, `prompt` |
+
+> **Cloud sessions**: If `CLAUDE_CODE_REMOTE=true` (Claude Code on the web), automation tasks will still enqueue but the bridge itself runs locally — those tasks will not execute. Guard policy prompts or the `onInstructionsLoaded` hook with an environment check if needed.
 
 ### CLI flags
 
@@ -259,10 +280,11 @@ When automation is active, VS Code save events and diagnostic errors automatical
 
 | Tool | Description |
 |------|-------------|
-| `runClaudeTask` | Enqueue a Claude task with optional context files and streaming |
+| `runClaudeTask` | Enqueue a Claude task with optional context files, streaming, and model override (`model` param, e.g. `"claude-haiku-4-5-20251001"`) |
 | `getClaudeTaskStatus` | Poll task status and output by task ID |
 | `cancelClaudeTask` | Cancel a pending or running task |
 | `listClaudeTasks` | List session-scoped tasks with optional status filter |
+| `resumeClaudeTask` | Re-enqueue a completed or failed task by ID, preserving its original prompt, context files, and model |
 
 A `GET /tasks` HTTP endpoint (Bearer-auth required) provides a sanitized task list for external monitoring.
 
@@ -350,7 +372,7 @@ claude-ide-bridge/
     config.ts         CLI args & config
     claudeDriver.ts   IClaudeDriver interface + SubprocessDriver
     claudeOrchestrator.ts Task queue (MAX_CONCURRENT=10, MAX_QUEUE=20)
-    automation.ts     AutomationHooks — onDiagnosticsError / onFileSave policies
+    automation.ts     AutomationHooks — onDiagnosticsError / onFileSave / onPostCompact / onInstructionsLoaded policies
     tools/            124+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
@@ -387,7 +409,8 @@ Production-grade reliability:
 - Circuit breaker with exponential backoff for timeout cascades
 - Generation counter preventing stale handler responses
 - Extension-required tool filtering when extension disconnects
-- 1058 tests across bridge and extension (782 bridge + 276 extension)
+- 806 tests (bridge); full WebSocket round-trip integration coverage
+- MCP elicitation support (`elicitation: {}` capability) — bridge can send `elicitation/create` mid-task to request structured user input via Claude Code's interactive dialog (Claude Code 2.1.76+)
 
 ## Building
 

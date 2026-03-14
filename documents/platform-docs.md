@@ -196,10 +196,11 @@ These tools are only registered when the bridge is started with `--claude-driver
 
 | Tool | Description |
 |------|-------------|
-| `runClaudeTask` | Enqueue a Claude task. Params: `prompt` (required, max 32 KB), `contextFiles` (optional, max 20, workspace-confined), `timeoutMs` (5000–600000, default 60000), `stream` (bool, default false). Returns `{ taskId, status }` immediately, or blocks and streams output if `stream: true`. |
+| `runClaudeTask` | Enqueue a Claude task. Params: `prompt` (required, max 32 KB), `contextFiles` (optional, max 20, workspace-confined), `timeoutMs` (5000–600000, default 120000), `stream` (bool, default false), `model` (optional, e.g. `"claude-haiku-4-5-20251001"` — passed as `--model` to subprocess). Returns `{ taskId, status }` immediately, or blocks and streams output if `stream: true`. |
 | `getClaudeTaskStatus` | Poll a task by ID. Returns `{ taskId, status, output (truncated 500 chars), startedAt?, completedAt?, durationMs? }`. Session-scoped — callers can only see their own tasks. |
 | `cancelClaudeTask` | Cancel a pending or running task by ID. Returns `{ taskId, cancelled }`. No-op if task already completed. |
 | `listClaudeTasks` | List session-scoped tasks. Optional `status` filter: `pending` \| `running` \| `done` \| `error` \| `cancelled`. Returns array of task summaries (no prompt text, output capped at 200 chars). |
+| `resumeClaudeTask` | Re-enqueue a previously completed or failed task by ID. Preserves original `prompt`, `contextFiles`, `timeoutMs`, and `model`. Session-scoped — can only resume own tasks. |
 
 Task status lifecycle: `pending → running → done | error | cancelled`.
 
@@ -208,6 +209,21 @@ Task status lifecycle: `pending → running → done | error | cancelled`.
 - `CLAUDECODE` env var stripped from subprocess to prevent nested-session panic
 - 32 KB prompt cap on `runClaudeTask`
 - `contextFiles` confined to workspace path
+
+### Automation Policy
+
+When started with `--automation --automation-policy <file>`, the bridge enqueues Claude tasks in response to IDE events. Policy is a JSON file with any of these keys:
+
+| Trigger | Required fields | Optional fields | Notes |
+|---------|----------------|-----------------|-------|
+| `onDiagnosticsError` | `enabled`, `prompt`, `cooldownMs` | `minSeverity` (`error`/`warning`) | Placeholders: `{{file}}`, `{{diagnostics}}` (wrapped in delimiters) |
+| `onFileSave` | `enabled`, `prompt`, `cooldownMs`, `patterns` | — | `patterns`: minimatch globs. Placeholder: `{{file}}` |
+| `onPostCompact` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude compacts context (Claude Code 2.1.76+). Use to re-snapshot IDE state. |
+| `onInstructionsLoaded` | `enabled`, `prompt` | — | Fires once at session start when CLAUDE.md loads (Claude Code 2.1.76+). No cooldown. |
+
+Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering while a prior task for the same file is still pending/running.
+
+> **Cloud sessions**: `CLAUDE_CODE_REMOTE=true` is set in Anthropic cloud VMs (Claude Code on the web). Automation events will enqueue tasks, but the bridge runs locally and those tasks won't execute remotely. Add a guard in hook scripts if needed: `if [ "$CLAUDE_CODE_REMOTE" = "true" ]; then exit 0; fi`.
 
 ### AI Comments
 | Tool | Description |
@@ -252,7 +268,7 @@ Task status lifecycle: `pending → running → done | error | cancelled`.
 
 ## MCP Prompts
 
-The bridge serves 5 built-in prompts via `prompts/list` + `prompts/get`. These appear as `/mcp__bridge__<name>` in any MCP client that supports the MCP prompts protocol. No extension required.
+The bridge serves 6 built-in prompts via `prompts/list` + `prompts/get`. These appear as `/mcp__bridge__<name>` in any MCP client that supports the MCP prompts protocol. No extension required.
 
 | Prompt | Argument | Description |
 |--------|----------|-------------|
@@ -261,6 +277,7 @@ The bridge serves 5 built-in prompts via `prompts/list` + `prompts/get`. These a
 | `generate-tests` | `file` (required) | Generate a test scaffold for exported symbols in a file |
 | `debug-context` | _(none)_ | Snapshot current debug state, open editors, and diagnostics |
 | `git-review` | `base` (optional, default: `main`) | Review all changes since a git base branch |
+| `set-effort` | `level` (optional: `low`/`medium`/`high`, default: `medium`) | Prepend an effort-level instruction to tune Claude's thoroughness for the next task |
 
 Implementation: `src/prompts.ts`. Tests: `src/__tests__/prompts.test.ts`, `src/__tests__/transport-prompts.test.ts`.
 
@@ -276,7 +293,8 @@ Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket
 ### Protocol
 - JSON-RPC 2.0 over WebSocket
 - MCP protocol version: `2025-11-25`
-- Server capabilities: `tools` (with `listChanged`), `logging`, `prompts` (with `listChanged`)
+- Server capabilities: `tools` (with `listChanged`), `logging`, `prompts`, `resources`, `elicitation: {}`
+- `elicitation: {}` capability enables the bridge to send `elicitation/create` mid-task to request structured user input via Claude Code's interactive dialog (Claude Code 2.1.76+). Pending elicitations are rejected on disconnect. API: `McpTransport.elicit(message, requestedSchema, timeoutMs?)` → resolves with the client's response object.
 
 ### Auth
 - Bridge generates random UUID auth token on startup

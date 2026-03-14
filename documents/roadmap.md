@@ -4,24 +4,50 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v1.6.0 — 2026-03-14)
+## Current State (v1.9.0 — 2026-03-14)
 
-- 137+ MCP tools registered; extension-first with native fs fallback pattern established
-- **Claude Code Server Mode Integration shipped (v1.6.0)**: `claudeDriver.ts`, `claudeOrchestrator.ts`, `automation.ts`; 4 new MCP tools (`runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`); `GET /tasks` endpoint; event-driven automation via policy file
-- Phase 1 new tools complete: `getTypeSignature`, `getImportTree`, `getCodeCoverage`, `generateTests`, `createIssueFromAIComment` (v1.5.0)
-- Earlier tools: `getDependencyTree`, `getSecurityAdvisories`, `getGitHotspots`, `getPRTemplate` (v1.4.x)
-- VS Code extension with full handler coverage; installable into VS Code, Windsurf, Cursor, and Antigravity
-- Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period)
+- 137+ MCP tools; 806 bridge tests, 0 failures; CI on Node 20 + 22
+- Extension installable into VS Code, Windsurf, Cursor, and Antigravity
+- Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
-- GitHub integration (PRs, issues, actions)
-- Remote control support via start-all.sh orchestrator
-- Activity logging with Prometheus metrics
-- Per-session stats + session-end UX (summary log + VS Code notification)
-- Claude Code Platform Integration fully shipped (skills, subagents, plugin, hooks, /ide-monitor)
-- 1028 tests (782 bridge + 246 extension) across 62+16 files; CI on Node 20 + 22
-- **MCP Prompts shipped (v1.6.0)**: 5 slash commands via `prompts/list` + `prompts/get` (`review-file`, `explain-diagnostics`, `generate-tests`, `debug-context`, `git-review`); `src/prompts.ts`
-- **getDiagnostics hardening (v1.6.0)**: diagnostic message text sanitized (control char stripping + 500-char cap) on both extension LSP and CLI linter paths
-- Deep security hardening: SSRF three-layer defense (lexical + DNS pre-resolution + IP pinning), Origin header validation, rate limit error codes, JSON parse error responses, interpreter flag blocklist, backpressure guards, slow-loris mitigations
+- GitHub integration (PRs, issues, actions, releases)
+- Remote control support via `start-all.sh` orchestrator (tmux, health monitor, exponential backoff)
+- Activity logging with Prometheus metrics; session checkpoint every 30s
+- Claude Code Platform Integration fully shipped (6 skills, 3 subagents, plugin, hooks, `/ide-monitor`)
+- MCP resources (`resources/list` + `resources/read`): workspace-confined, 1 MB cap, cursor-paginated
+- MCP elicitation (`elicitation: {}` capability): `McpTransport.elicit()` sends `elicitation/create` to Claude Code 2.1.76+
+- Deep security hardening: SSRF three-layer defense, Origin validation, rate limiting, lstatSync everywhere, TOCTOU mitigations, structured error codes
+
+**v1.9.0 shipped (2026-03-14) — Claude Code 2.1.76+ compatibility:**
+- Elicitation: `McpTransport.elicit()`, `elicitation: {}` in `initialize` capabilities and server card
+- Automation: `OnPostCompactPolicy` (re-snapshot IDE state after compaction) + `OnInstructionsLoadedPolicy` (inject tool summary at session start) — both fire via Claude Code 2.1.76+ hooks
+- `model` param on `runClaudeTask` + `resumeClaudeTask` (passed as `--model` to SubprocessDriver)
+- `set-effort` MCP prompt: 6th slash command (low/medium/high effort instruction)
+- `start-all.sh`: `--name bridge:<workspace>` session display; `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=10000`
+- `--config` path length bound (4096 chars); `notifCount` reset comment; `CLAUDE_CODE_REMOTE` guard documented
+
+**v1.8.0 shipped (2026-03-14) — Security hardening:**
+- 13 security findings resolved across 3 High / 6 Medium / 3 Low / 1 Info
+- `lstatSync` everywhere (symlink bypass prevention); walk cache TTL (5s) for resources
+- Rate-limit-on-reconnect fix (no reset on `detach()`); hardlink guard via `{ write: true }` path
+- `resumeClaudeTask` tool: re-enqueue completed/failed tasks preserving prompt + context
+- httpClient SSRF guard (RFC 1918, link-local, CGNAT, hex IP); gitPush force-push blocked on main/master
+- Structured `ToolErrorCodes` in `src/errors.ts`
+- Extension: `syncInProgress` guard against concurrent `makeConnection` calls
+
+**v1.7.0 shipped (2026-03-14) — Best Practices Hardening:**
+- Tool annotations: `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` on all tools
+- Lock file `chmod 600`; health monitor exponential backoff (5s→300s)
+- `/.well-known/mcp/server-card.json` + `/.well-known/mcp` (MCP registry discovery, SEP-1649)
+- OpenTelemetry: `src/telemetry.ts` wraps every tool call; activate via `OTEL_EXPORTER_OTLP_ENDPOINT`
+- Token-aware concurrency: `MAX_TOKEN_BUDGET=500K` alongside `MAX_CONCURRENT=10`
+- Task persistence to `~/.claude/ide/tasks-<port>.json`; `resumeClaudeTask` re-enqueues by ID
+- Extension: `LogOutputChannel` (structured log levels); SecretStorage fallback for auth token
+
+**v1.6.0 shipped (2026-03-14):**
+- Claude Code Server Mode Integration: `claudeDriver.ts`, `claudeOrchestrator.ts`, `automation.ts`; 4 MCP tools; `GET /tasks`; `onDiagnosticsError` + `onFileSave` automation policies
+- MCP Prompts: 5 slash commands (`review-file`, `explain-diagnostics`, `generate-tests`, `debug-context`, `git-review`)
+- getDiagnostics hardening: control char stripping + 500-char cap on message text
 
 ---
 
