@@ -359,7 +359,11 @@ bash scripts/gen-claude-desktop-config.sh
 bash scripts/gen-claude-desktop-config.sh --write
 ```
 
-Then restart Claude Desktop. The bridge's stdio shim auto-discovers the running bridge via lock files — no port or token needs to be hard-coded.
+Then restart Claude Desktop once to load the new config. After that, the bridge's **stdio shim** handles everything automatically — it discovers the running bridge via lock files, buffers requests until connected, and reconnects transparently when the bridge restarts. No port or token needs to be hard-coded, and no further Desktop restarts are needed when the bridge restarts.
+
+> **Tool availability:** Without the VS Code extension connected, ~25 tools (terminal, debug, LSP intelligence, editor state, file watchers) are unavailable. Claude Desktop works best alongside the running extension. You can verify connectivity by asking *"What tools do you have available?"* — the response will list what's active.
+
+> **Debugging the shim:** If the connection seems stuck, the shim logs to stderr. In Claude Desktop, check **Settings → Developer → MCP Logs** to see shim output. Common cause: bridge not running — start it with `claude-ide-bridge --watch` first.
 
 **Try it:** Open Claude Desktop and ask *"What diagnostics are in my workspace?"* or *"What files are open in my IDE?"*
 
@@ -464,7 +468,7 @@ claude-ide-bridge/
 When you restart the bridge (e.g. after an update or crash), existing sessions need to reconnect:
 
 - **Claude Code (remote):** Start a **new Claude Code conversation** — the old session's MCP connection is tied to the previous bridge process.
-- **Claude Desktop:** **Restart the Claude Desktop app** — it will re-connect via the stdio shim on next launch.
+- **Claude Desktop:** The stdio shim reconnects automatically — no app restart needed. Only restart Claude Desktop if the shim process itself died (check MCP Logs in Settings → Developer).
 - **VS Code extension:** The extension reconnects automatically. If the bridge was updated, **reload the VS Code window** (`Developer: Reload Window`) so the extension picks up the new version.
 
 ### Reduce duplicate git instructions

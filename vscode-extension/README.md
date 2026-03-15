@@ -77,7 +77,7 @@ Repeated disconnects usually mean multiple old versions of the extension are ins
 | Bridge restarted | The extension reconnects automatically — no action needed |
 | Bridge updated | **Reload the VS Code window** (`Developer: Reload Window`) so the extension picks up the new version |
 | Claude Code (remote) session | **Start a new Claude Code conversation** — the old session's MCP connection doesn't survive a bridge restart |
-| Claude Desktop | **Restart the Claude Desktop app** — it reconnects via the stdio shim on next launch |
+| Claude Desktop | The stdio shim reconnects automatically — no app restart needed. Only restart if the shim process died (check Settings → Developer → MCP Logs) |
 
 ## Links
 
