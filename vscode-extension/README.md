@@ -53,6 +53,32 @@ claude-ide-bridge --workspace /your/project
 | `claudeIdeBridge.autoInstallBridge` | `true` | Auto-install/upgrade the bridge via npm if not found or outdated |
 | `claudeIdeBridge.lockFileDir` | `` | Override lock file directory (default: `~/.claude/ide/`) |
 
+## Troubleshooting
+
+### Tool count seems low or Claude can't find IDE tools
+
+When the extension loses its connection to the bridge, tools that require extension access (~50 tools: terminal, LSP, debug, editor state, etc.) are automatically hidden from Claude. Open the **Output** panel and select **Claude IDE Bridge** to check connection status. Use `Claude IDE Bridge: Reconnect` from the command palette to reconnect, or reload the window.
+
+### Bridge and extension version mismatch
+
+This extension auto-installs and manages the `claude-ide-bridge` npm package. If you also installed the bridge manually, the versions may diverge. To sync them:
+
+1. Open the command palette and run **Claude IDE Bridge: Install / Upgrade Bridge**
+2. Reload the VS Code window after the upgrade completes
+
+### Extension keeps reconnecting
+
+Repeated disconnects usually mean multiple old versions of the extension are installed across VS Code forks (e.g. both VS Code and Cursor). Install the latest extension in every editor and reload each window.
+
+## After restarting or updating the bridge
+
+| Scenario | What to do |
+|---|---|
+| Bridge restarted | The extension reconnects automatically — no action needed |
+| Bridge updated | **Reload the VS Code window** (`Developer: Reload Window`) so the extension picks up the new version |
+| Claude Code (remote) session | **Start a new Claude Code conversation** — the old session's MCP connection doesn't survive a bridge restart |
+| Claude Desktop | **Restart the Claude Desktop app** — it reconnects via the stdio shim on next launch |
+
 ## Links
 
 - [GitHub](https://github.com/Oolab-labs/claude-ide-bridge)

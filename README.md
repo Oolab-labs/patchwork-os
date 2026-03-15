@@ -54,6 +54,14 @@ claude-ide-bridge
 
 The bridge starts, writes a lock file to `~/.claude/ide/`, and waits for connections. Your editor extension connects automatically.
 
+> **One bridge per workspace.** Each project directory needs its own bridge instance. If you work across multiple repos, start a separate `claude-ide-bridge` in each workspace.
+
+> **For long-running use**, add `--watch` to auto-restart the bridge if it crashes:
+> ```bash
+> claude-ide-bridge --watch
+> ```
+> The supervisor uses exponential backoff (2s → 30s) and is safe to leave running indefinitely.
+
 **Step 3 — Connect Claude Code**
 
 In a new terminal in your project directory:
@@ -214,6 +222,8 @@ The bridge exposes 7 built-in slash commands via the MCP `prompts/list` + `promp
 | `/mcp__bridge__cowork` | `task` (optional) | Gather full IDE context and propose a Cowork action plan — run this **before** opening a Cowork session |
 | `/mcp__bridge__set-effort` | `level` (optional: `low`/`medium`/`high`, default: `medium`) | Prepend an effort-level instruction to tune Claude's thoroughness for the next task |
 
+> **Cowork sessions and MCP tools:** MCP tools (including all bridge tools) are **not available inside a Cowork session**. Use a two-step workflow: run `/mcp__bridge__cowork` in a regular Claude Code chat first — it gathers full IDE context and produces an action plan — then open a Cowork session armed with that context.
+
 Prompts are served directly from the bridge — no extension required. Implemented in `src/prompts.ts`.
 
 ---
@@ -371,9 +381,11 @@ The bridge also exposes an MCP-compliant **Streamable HTTP** transport at `POST/
 # Start the bridge (listens on localhost by default)
 claude-ide-bridge --workspace /path/to/your-project
 
-# Connect remotely by binding to all interfaces (add a reverse proxy + TLS for production)
+# Connect remotely by binding to all interfaces
 claude-ide-bridge --workspace /path/to/your-project --bind 0.0.0.0
 ```
+
+> **Security warning:** `--bind 0.0.0.0` exposes the bridge to your entire network. Always put it behind a reverse proxy with TLS and authentication before exposing it to the internet. See [docs/remote-access.md](docs/remote-access.md) for a production-ready Caddy/nginx setup.
 
 The bridge token (from the lock file at `~/.claude/ide/<port>.lock`) is required as a Bearer header:
 
@@ -447,6 +459,14 @@ claude-ide-bridge/
 
 ## Tips
 
+### After restarting the bridge
+
+When you restart the bridge (e.g. after an update or crash), existing sessions need to reconnect:
+
+- **Claude Code (remote):** Start a **new Claude Code conversation** — the old session's MCP connection is tied to the previous bridge process.
+- **Claude Desktop:** **Restart the Claude Desktop app** — it will re-connect via the stdio shim on next launch.
+- **VS Code extension:** The extension reconnects automatically. If the bridge was updated, **reload the VS Code window** (`Developer: Reload Window`) so the extension picks up the new version.
+
 ### Reduce duplicate git instructions
 
 Claude Code ships with its own built-in commit/PR guidance. When using the bridge's dedicated git tools (`gitCommit`, `gitPush`, `gitCreatePR`, etc.), you can suppress the duplicate Claude Code instructions by adding to `~/.claude/settings.json`:
@@ -485,6 +505,45 @@ cd vscode-extension
 npm run build        # esbuild bundle
 npm run package      # Create .vsix
 npm test             # Run 306 extension tests
+```
+
+## Troubleshooting
+
+### Claude says a tool doesn't exist or tool count seems low
+
+When the VS Code extension is disconnected, tools that require extension access are automatically hidden from Claude's tool list. About 50 tools become unavailable (terminal, LSP, debug, editor state, etc.). Check the "Claude IDE Bridge" output channel in VS Code — if you see a disconnection event, use `Claude IDE Bridge: Reconnect` from the command palette, or reload the window.
+
+### Bridge and extension version mismatch
+
+The extension auto-installs the bridge via npm on first use. If you also have a manually installed version, they may diverge. To check:
+
+```bash
+claude-ide-bridge --version          # bridge version
+# Compare with the version shown in the extension's output channel on startup
+```
+
+To force the extension's managed version:
+
+```bash
+# Run the Install / Upgrade command from VS Code's command palette:
+# "Claude IDE Bridge: Install / Upgrade Bridge"
+# Or manually:
+npm install -g claude-ide-bridge@latest
+```
+
+Then reload the VS Code window.
+
+### Extension keeps reconnecting (oscillation)
+
+Repeated disconnects / `tools/list` changes usually mean multiple old VSIX versions are installed across VS Code forks (e.g. both VS Code and Cursor). Install the latest extension in every editor and reload each window.
+
+### `start-all` launched from inside a Claude Code session
+
+Launching `start-all` from within an active Claude Code session can cause tmux conflicts. Kill the existing tmux server first:
+
+```bash
+tmux kill-server
+env -u CLAUDECODE claude-ide-bridge start-all --workspace /your/project
 ```
 
 ## Contributing
