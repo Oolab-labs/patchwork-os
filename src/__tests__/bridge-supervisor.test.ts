@@ -184,18 +184,31 @@ child.on('exit', () => {
       stdio: ["ignore", "ignore", "pipe"],
     });
 
-    // Wait for supervisor to report it started the child
-    await new Promise<void>((resolve) => {
-      proc.stderr?.on("data", (chunk: Buffer) => {
-        if (chunk.toString().includes("starting bridge")) resolve();
-      });
+    // Buffer ALL stderr from spawn so we don't miss output emitted
+    // between the "starting bridge" resolve and collectStderr registering.
+    const allLines: string[] = [];
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      chunk
+        .toString()
+        .split("\n")
+        .filter(Boolean)
+        .forEach((l) => allLines.push(l));
     });
 
-    // Send SIGTERM
-    proc.kill("SIGTERM");
+    // Wait for supervisor to report it started the child
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        if (allLines.some((l) => l.includes("starting bridge"))) resolve();
+      };
+      proc.stderr?.on("data", check);
+      check(); // in case it already arrived
+    });
 
-    const lines = await collectStderr(proc, 5000);
-    const allOutput = lines.join("\n");
+    // Send SIGTERM and wait for process to exit
+    proc.kill("SIGTERM");
+    await new Promise<void>((resolve) => proc.on("exit", resolve));
+
+    const allOutput = allLines.join("\n");
 
     expect(allOutput).toContain("[supervisor] bridge stopped");
     expect(allOutput).not.toContain("unexpected restart");
