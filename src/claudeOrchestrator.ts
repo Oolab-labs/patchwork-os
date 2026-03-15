@@ -272,7 +272,15 @@ export class ClaudeOrchestrator {
     if (cb) {
       this.completionCallbacks.delete(id);
       const task = this.tasks.get(id);
-      if (task) cb(task);
+      if (task) {
+        try {
+          cb(task);
+        } catch (err) {
+          this.log(
+            `[orchestrator] completion callback for task ${id.slice(0, 8)} threw: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
     }
   }
 

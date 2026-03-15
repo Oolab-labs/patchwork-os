@@ -297,11 +297,17 @@ export class AutomationHooks {
         `\n--- BEGIN DIAGNOSTIC DATA (untrusted) ---\n${diagnosticsText}\n--- END DIAGNOSTIC DATA ---\n`,
       );
 
-    const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
-    this.activeDiagnosticsTasks.set(normalizedFile, taskId);
-    this.log(
-      `[automation] triggered diagnostics task ${taskId.slice(0, 8)} for ${normalizedFile}`,
-    );
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.activeDiagnosticsTasks.set(normalizedFile, taskId);
+      this.log(
+        `[automation] triggered diagnostics task ${taskId.slice(0, 8)} for ${normalizedFile}`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue diagnostics task for ${normalizedFile}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** Prune lastTrigger entries older than LAST_TRIGGER_MAX_AGE_MS to prevent unbounded growth. */
@@ -332,11 +338,17 @@ export class AutomationHooks {
     this.lastTrigger.set(key, now);
     this._pruneLastTrigger(now);
 
-    const taskId = this.orchestrator.enqueue({
-      prompt: cfg.prompt,
-      sessionId: "",
-    });
-    this.log(`[automation] triggered PostCompact task ${taskId.slice(0, 8)}`);
+    try {
+      const taskId = this.orchestrator.enqueue({
+        prompt: cfg.prompt,
+        sessionId: "",
+      });
+      this.log(`[automation] triggered PostCompact task ${taskId.slice(0, 8)}`);
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue PostCompact task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**
@@ -347,13 +359,19 @@ export class AutomationHooks {
     const cfg = this.policy.onInstructionsLoaded;
     if (!cfg?.enabled) return;
 
-    const taskId = this.orchestrator.enqueue({
-      prompt: cfg.prompt,
-      sessionId: "",
-    });
-    this.log(
-      `[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`,
-    );
+    try {
+      const taskId = this.orchestrator.enqueue({
+        prompt: cfg.prompt,
+        sessionId: "",
+      });
+      this.log(
+        `[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue InstructionsLoaded task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   handleFileSaved(_id: string, type: string, file: string): void {
@@ -408,10 +426,16 @@ export class AutomationHooks {
       /\{\{file\}\}/g,
       `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
     );
-    const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
-    this.activeSaveTasks.set(normalizedFile, taskId);
-    this.log(
-      `[automation] triggered save task ${taskId.slice(0, 8)} for ${normalizedFile}`,
-    );
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.activeSaveTasks.set(normalizedFile, taskId);
+      this.log(
+        `[automation] triggered save task ${taskId.slice(0, 8)} for ${normalizedFile}`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue save task for ${normalizedFile}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }
