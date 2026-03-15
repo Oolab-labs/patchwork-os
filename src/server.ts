@@ -7,6 +7,11 @@ import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 
 const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
+// ActivityEntry|LifecycleEntry live in activityLog.ts — importing them here creates a
+// circular dependency, so we use `any` and suppress the rule with a named alias.
+// biome-ignore lint/suspicious/noExplicitAny: circular dep — see comment above
+type ActivityListener = (kind: string, entry: any) => void;
+
 interface AliveWebSocket extends WebSocket {
   isAlive: boolean;
   missedPongs: number;
@@ -103,10 +108,7 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>)
     | null = null;
   /** Set by bridge to subscribe a caller to real-time activity events. Returns unsubscribe fn. */
-  // biome-ignore lint/suspicious/noExplicitAny: ActivityEntry|LifecycleEntry not importable here without a circular dep
-  public streamFn:
-    | ((listener: (kind: string, entry: any) => void) => () => void)
-    | null = null;
+  public streamFn: ((listener: ActivityListener) => () => void) | null = null;
 
   constructor(
     private authToken: string,

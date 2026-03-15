@@ -240,9 +240,7 @@ describe("getSecurityAdvisories", () => {
   // ── cargo audit ─────────────────────────────────────────────────────────────
 
   it("auto-detects cargo from Cargo.toml", async () => {
-    mockExistsSync.mockImplementation((p) =>
-      String(p).endsWith("Cargo.toml"),
-    );
+    mockExistsSync.mockImplementation((p) => String(p).endsWith("Cargo.toml"));
     mockExecSafe.mockResolvedValueOnce({
       stdout: JSON.stringify({
         vulnerabilities: {
@@ -281,9 +279,7 @@ describe("getSecurityAdvisories", () => {
   });
 
   it("cargo: returns zero vulnerabilities when list is empty", async () => {
-    mockExistsSync.mockImplementation((p) =>
-      String(p).endsWith("Cargo.toml"),
-    );
+    mockExistsSync.mockImplementation((p) => String(p).endsWith("Cargo.toml"));
     mockExecSafe.mockResolvedValueOnce({
       stdout: JSON.stringify({ vulnerabilities: { list: [] } }),
       stderr: "",
@@ -300,9 +296,7 @@ describe("getSecurityAdvisories", () => {
   });
 
   it("cargo: returns available:false and install hint when binary not found", async () => {
-    mockExistsSync.mockImplementation((p) =>
-      String(p).endsWith("Cargo.toml"),
-    );
+    mockExistsSync.mockImplementation((p) => String(p).endsWith("Cargo.toml"));
     mockExecSafe.mockResolvedValueOnce({
       stdout: "",
       stderr: "ENOENT: cargo not found",

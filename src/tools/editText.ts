@@ -86,11 +86,15 @@ export function applyEditsToContent(
         lines.splice(lineIdx, 1, ...newLines);
       }
     } else if (edit.type === "delete" || edit.type === "replace") {
-      const endLineIdx = Math.min(
-        (edit.endLine ?? edit.line) - 1,
-        lines.length - 1,
-      );
-      const endColIdx = (edit.endColumn ?? edit.column) - 1;
+      const originalEndLineIdx = (edit.endLine ?? edit.line) - 1;
+      const endLineIdx = Math.min(originalEndLineIdx, lines.length - 1);
+      // When endLine is clamped to EOF, use end-of-last-line so the range
+      // correctly covers "to end of file" rather than referencing a column on
+      // the wrong (clamped) line.
+      const endColIdx =
+        originalEndLineIdx > lines.length - 1
+          ? (lines[endLineIdx] ?? "").length
+          : (edit.endColumn ?? edit.column) - 1;
       const beforeText = (lines[lineIdx] ?? "").slice(0, colIdx);
       const afterText = (lines[endLineIdx] ?? "").slice(endColIdx);
 

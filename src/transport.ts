@@ -109,31 +109,51 @@ export class McpTransport {
   private readonly schemaValidators = new Map<string, ValidateFunction>();
   /** Per-session tool-call rate limit (calls/minute). 0 = disabled. */
   private toolRateLimit = 60;
-  private toolBucketTokens = 60;
-  private toolBucketLastRefill = Date.now();
+  /**
+   * Token bucket for tool-call rate limiting. Stored as a mutable object so it
+   * can be shared across multiple transport instances (e.g. HTTP session cycling
+   * bypass prevention — see StreamableHttpHandler.sharedHttpRateLimitBucket).
+   */
+  private toolBucket: { tokens: number; lastRefill: number } = {
+    tokens: 60,
+    lastRefill: Date.now(),
+  };
 
   constructor(private logger: Logger) {}
 
   /** Configure per-session tool call rate limiting (calls/minute, 0 = disabled). */
   setToolRateLimit(limit: number): void {
     this.toolRateLimit = limit;
-    this.toolBucketTokens = limit;
-    this.toolBucketLastRefill = Date.now();
+    this.toolBucket.tokens = limit;
+    this.toolBucket.lastRefill = Date.now();
+  }
+
+  /**
+   * Replace the token bucket with a shared object.
+   * All transports using the same bucket share one rate-limit pool — prevents
+   * bypassing the limit by cycling HTTP sessions (each new session would otherwise
+   * start with a full bucket).
+   */
+  setSharedToolRateLimitBucket(bucket: {
+    tokens: number;
+    lastRefill: number;
+  }): void {
+    this.toolBucket = bucket;
   }
 
   /** Token-bucket check. Returns true if the call is allowed. */
   private checkToolRateLimit(): boolean {
     if (this.toolRateLimit <= 0) return true;
     const now = Date.now();
-    const elapsed = now - this.toolBucketLastRefill;
+    const elapsed = now - this.toolBucket.lastRefill;
     const refill = (elapsed / 60_000) * this.toolRateLimit;
-    this.toolBucketTokens = Math.min(
+    this.toolBucket.tokens = Math.min(
       this.toolRateLimit,
-      this.toolBucketTokens + refill,
+      this.toolBucket.tokens + refill,
     );
-    this.toolBucketLastRefill = now;
-    if (this.toolBucketTokens < 1) return false;
-    this.toolBucketTokens -= 1;
+    this.toolBucket.lastRefill = now;
+    if (this.toolBucket.tokens < 1) return false;
+    this.toolBucket.tokens -= 1;
     return true;
   }
 

@@ -170,6 +170,11 @@ export class ExtensionClient {
       if (this.ws.readyState === WebSocket.OPEN) {
         this.ws.terminate();
       }
+      // Clear stale diagnostics listeners — the old socket's close event will
+      // never fire (listeners removed above), so handleDisconnect won't run for
+      // it. Without this, stale watchDiagnostics closures accumulate unboundedly
+      // across reconnects and fire on every diagnostic update.
+      this.diagnosticsListeners.clear();
     }
 
     this.ws = ws;

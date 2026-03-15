@@ -37,6 +37,10 @@ const SSE_HEARTBEAT_MS = 20_000; // keep SSE streams alive through proxies/firew
 class HttpAdapter extends EventEmitter {
   /** WebSocket.OPEN = 1; WebSocket.CLOSED = 3 */
   readyState: number = WebSocket.OPEN;
+
+  constructor(private readonly warn: (msg: string) => void = () => {}) {
+    super();
+  }
   /** Always 0 — no send buffer for HTTP (bypasses backpressure drain). */
   readonly bufferedAmount = 0;
 
@@ -83,9 +87,16 @@ class HttpAdapter extends EventEmitter {
 
     if (this.sseRes && !this.sseRes.writableEnded) {
       this.sseRes.write(`data: ${str}\n\n`);
+      cb?.();
+      return;
     }
-    // If neither path matches (no SSE, response ID unknown), the message is dropped.
-    // This matches WebSocket behavior where the client may not be listening.
+    // Neither pending POST waiter nor SSE stream — message is silently dropped.
+    // Log a warning so operators can detect stale or missing SSE connections.
+    if (responseId !== null) {
+      this.warn(
+        `HTTP: dropped response id=${responseId} — no pending waiter or active SSE stream`,
+      );
+    }
     cb?.();
   }
 
@@ -111,7 +122,7 @@ class HttpAdapter extends EventEmitter {
 
   /** Returns a promise that resolves with the response for the given request ID.
    *  Rejects if the session is closed or the timeout fires. */
-  waitForSend(requestId: string | number, timeoutMs = 30_000): Promise<string> {
+  waitForSend(requestId: string | number, timeoutMs = 65_000): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       if (this.pendingSends.size >= MAX_PENDING_SENDS) {
         reject(new Error("HTTP session send queue full"));
@@ -169,6 +180,16 @@ interface HttpSession {
 export class StreamableHttpHandler {
   private sessions = new Map<string, HttpSession>();
   private cleanupTimer: ReturnType<typeof setInterval>;
+  /**
+   * Shared token-bucket for all HTTP sessions.
+   * Prevents rate-limit bypass via session cycling: a client that repeatedly
+   * creates new sessions would otherwise get a fresh full bucket each time.
+   * Initialised lazily on first session creation using the configured limit.
+   */
+  private sharedHttpRateLimitBucket: {
+    tokens: number;
+    lastRefill: number;
+  } | null = null;
 
   constructor(
     private config: Config,
@@ -256,6 +277,7 @@ export class StreamableHttpHandler {
     // Resolve session
     const sessionId = req.headers["mcp-session-id"];
     let session: HttpSession | null = null;
+    let sessionIsNew = false;
 
     if (msg.method === "initialize") {
       // Capacity guard
@@ -271,6 +293,7 @@ export class StreamableHttpHandler {
         return;
       }
       session = this.createSession();
+      sessionIsNew = true;
       res.setHeader("Mcp-Session-Id", session.id);
     } else {
       if (typeof sessionId !== "string") {
@@ -323,6 +346,10 @@ export class StreamableHttpHandler {
     try {
       responseData = await responsePromise;
     } catch {
+      // Destroy newly-created sessions that timed out: the client never received
+      // the session ID (504 replaces the 200 that would carry the header), so the
+      // session is unreachable and would occupy a slot until the 30-min idle pruner.
+      if (sessionIsNew) this.destroySession(session.id);
       res.writeHead(504, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -392,12 +419,22 @@ export class StreamableHttpHandler {
 
   private createSession(): HttpSession {
     const id = crypto.randomUUID();
-    const adapter = new HttpAdapter();
+    const adapter = new HttpAdapter((msg) => this.logger.warn(msg));
     const transport = new McpTransport(this.logger);
     transport.workspace = this.config.workspace;
     transport.sessionId = id;
     transport.setActivityLog(this.activityLog);
     transport.setToolRateLimit(this.config.toolRateLimit);
+    // Share one rate-limit bucket across all HTTP sessions to prevent bypass via cycling.
+    if (this.config.toolRateLimit > 0) {
+      if (!this.sharedHttpRateLimitBucket) {
+        this.sharedHttpRateLimitBucket = {
+          tokens: this.config.toolRateLimit,
+          lastRefill: Date.now(),
+        };
+      }
+      transport.setSharedToolRateLimitBucket(this.sharedHttpRateLimitBucket);
+    }
     transport.setExtensionConnectedFn(() => this.extensionClient.isConnected());
 
     const openedFiles = new Set<string>();

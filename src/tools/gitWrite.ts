@@ -183,7 +183,8 @@ export function createGitCommitTool(workspace: string) {
         signal,
       });
       if (diffCheck.exitCode === 0) {
-        // exit 0 = nothing staged
+        // exit 0 = nothing staged (exit 1 = something staged; exit 128 = no HEAD
+        // yet on initial repo — fall through and let `git commit` surface the error)
         const status = await execSafe("git", ["status", "--short"], {
           cwd: workspace,
           signal,

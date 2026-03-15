@@ -154,6 +154,12 @@ async function runYarnAudit(
     throw new Error(errText);
   }
 
+  // Guard against non-ENOENT failures (network error, registry unreachable, etc.)
+  // that leave stdout empty. Without this guard, the JSONL loop below silently
+  // returns zero advisories — a false-clean result on a failed audit.
+  const raw = result.stdout.trim();
+  if (!raw) throw new Error(errText || "yarn audit returned no output");
+
   const output = `${result.stdout}\n${result.stderr}`.trim();
   const advisories: Advisory[] = [];
 
