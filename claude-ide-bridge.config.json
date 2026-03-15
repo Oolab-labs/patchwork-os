@@ -1,5 +1,0 @@
-{
-  "claudeDriver": "subprocess",
-  "automationEnabled": true,
-  "automationPolicyPath": "/Users/wesh/Documents/Anthropic Workspace/Playground/Remote IDE test/demo/automation-policy.json"
-}
