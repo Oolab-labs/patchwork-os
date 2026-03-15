@@ -26,7 +26,8 @@ export function createDetectUnusedCodeTool(
           includePatterns: {
             type: "array",
             items: { type: "string" },
-            description: "File patterns to include, e.g. ['src/**/*.ts']",
+            description:
+              "Reserved for future use — not yet applied to filter results. Pass any value; it is accepted but ignored.",
           },
           maxResults: {
             type: "number",

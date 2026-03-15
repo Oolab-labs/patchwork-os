@@ -113,7 +113,13 @@ class HttpAdapter extends EventEmitter {
           clearInterval(this.sseHeartbeatTimer!);
           this.sseHeartbeatTimer = null;
         } else {
-          res.write(": heartbeat\n\n");
+          try {
+            res.write(": heartbeat\n\n");
+          } catch {
+            // Client disconnected between the writableEnded check and the write
+            // (TOCTOU). Swallow the error — the req "close" listener will call
+            // attachSSE(null) which clears this timer on its next tick.
+          }
         }
       }, SSE_HEARTBEAT_MS);
       this.sseHeartbeatTimer.unref();
@@ -122,7 +128,7 @@ class HttpAdapter extends EventEmitter {
 
   /** Returns a promise that resolves with the response for the given request ID.
    *  Rejects if the session is closed or the timeout fires. */
-  waitForSend(requestId: string | number, timeoutMs = 65_000): Promise<string> {
+  waitForSend(requestId: string | number, timeoutMs = 90_000): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       if (this.pendingSends.size >= MAX_PENDING_SENDS) {
         reject(new Error("HTTP session send queue full"));
@@ -487,8 +493,10 @@ export class StreamableHttpHandler {
   private destroySession(id: string): void {
     const session = this.sessions.get(id);
     if (!session) return;
-    session.adapter.close();
+    // Abort in-flight tool calls before closing the response channel so handlers
+    // receive their cancellation signal while they can still observe it.
     session.transport.detach();
+    session.adapter.close();
     this.sessions.delete(id);
     this.logger.info(
       `HTTP session closed (${id.slice(0, 8)}) — ${this.sessions.size} HTTP sessions`,

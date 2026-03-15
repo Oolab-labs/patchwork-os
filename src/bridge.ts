@@ -111,7 +111,14 @@ export class Bridge {
             undefined,
             this.logger,
           );
-          this.pendingListChanged = false;
+          // Delay clearing the flag so that if the socket errors immediately after
+          // the send (before the client processes the notification), a reconnecting
+          // session still receives the list_changed on its own onInitialized.
+          setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              this.pendingListChanged = false;
+            }
+          }, 200);
         }
       };
 
@@ -185,23 +192,13 @@ export class Bridge {
       });
 
       ws.on("error", (err) => {
+        // Log the error; the "close" event always follows an "error" in the ws
+        // library and is the single authoritative place to start the grace timer.
+        // Starting it here too creates a dual-handler race where both handlers
+        // could observe !s.graceTimer before either setTimeout returns its handle.
         this.logger.error(
           `WebSocket error (session ${sessionId.slice(0, 8)}): ${err.message}`,
         );
-        const s = this.sessions.get(sessionId);
-        if (s && !s.graceTimer) {
-          s.graceTimer = setTimeout(() => {
-            this.cleanupSession(sessionId);
-          }, this.config.gracePeriodMs);
-          this.activityLog.recordEvent("grace_started", {
-            sessionId: sessionId.slice(0, 8),
-            gracePeriodMs: this.config.gracePeriodMs,
-            reason: "ws_error",
-          });
-          this.logger.info(
-            `Grace period started for session ${sessionId.slice(0, 8)} (${this.config.gracePeriodMs / 1000}s) due to ws error`,
-          );
-        }
       });
     });
 
@@ -616,14 +613,14 @@ export class Bridge {
       await shutdownTelemetry();
       process.exit(exitCode);
     };
-    process.once("SIGINT", () => shutdown("SIGINT", 130));
-    process.once("SIGTERM", () => shutdown("SIGTERM", 143));
-    process.once("SIGHUP", () => shutdown("SIGHUP", 143));
-
-    // Catch unhandled rejections and exceptions to prevent silent crashes
-    // Guard against accumulating handlers across multiple start() calls.
+    // All process-level signal handlers are guarded by globalHandlersRegistered so
+    // that repeated start() calls (e.g. in tests or --watch restarts) don't
+    // accumulate process.once listeners and trigger MaxListenersExceededWarning.
     if (!globalHandlersRegistered) {
       globalHandlersRegistered = true;
+      process.once("SIGINT", () => shutdown("SIGINT", 130));
+      process.once("SIGTERM", () => shutdown("SIGTERM", 143));
+      process.once("SIGHUP", () => shutdown("SIGHUP", 143));
       process.on("unhandledRejection", (reason) => {
         this.logger.error(
           `Unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,

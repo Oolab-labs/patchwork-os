@@ -776,9 +776,33 @@ export function createGitPushTool(workspace: string) {
 
       const branch = branchArg ?? (await currentBranch(workspace, signal));
 
+      // Check force-push protection before anything else — this is a local safety
+      // guard that must fire regardless of whether the remote exists.
       if (force && (branch === "main" || branch === "master")) {
         return error(
           `Force push to '${branch}' is blocked. This would rewrite shared history on the main branch.`,
+        );
+      }
+
+      // Pre-flight: verify the remote exists before attempting the push so we
+      // surface a clear message instead of a raw git error.
+      const remoteCheck = await execSafe("git", ["remote", "get-url", remote], {
+        cwd: workspace,
+        signal,
+      });
+      if (remoteCheck.exitCode !== 0) {
+        const knownRemotes = (
+          await execSafe("git", ["remote"], { cwd: workspace, signal })
+        ).stdout
+          .trim()
+          .split("\n")
+          .filter(Boolean);
+        const hint =
+          knownRemotes.length > 0
+            ? ` Known remotes: ${knownRemotes.join(", ")}.`
+            : " No remotes are configured.";
+        return error(
+          `Remote "${remote}" does not exist in this repository.${hint}`,
         );
       }
 

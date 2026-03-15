@@ -239,7 +239,9 @@ export class McpTransport {
 
       safeSend(this.activeWs!, JSON.stringify(request), this.logger).then(
         (sent) => {
-          if (!sent) {
+          // Guard: only reject if the entry hasn't already been resolved (e.g. fast loopback
+          // where a response arrives before safeSend's .then() fires under backpressure).
+          if (!sent && this.pendingElicitations.has(id)) {
             this.pendingElicitations.delete(id);
             clearTimeout(timer);
             reject(
@@ -763,10 +765,12 @@ export class McpTransport {
                   response = { jsonrpc: "2.0", id: msg.id, result };
                 } finally {
                   if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-                  this.inFlightControllers.delete(msg.id);
-                  // Only decrement if we're still on the same generation;
-                  // detach() already reset activeToolCalls for new connections.
+                  // Only touch shared state if we're still on the same generation.
+                  // detach() clears inFlightControllers and resets activeToolCalls for
+                  // new connections; an orphaned finally from a previous generation must
+                  // not delete the new session's controller or skew its counter.
                   if (gen === this.generation) {
+                    this.inFlightControllers.delete(msg.id);
                     this.activeToolCalls = Math.max(
                       0,
                       this.activeToolCalls - 1,

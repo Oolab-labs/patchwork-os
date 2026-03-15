@@ -627,15 +627,17 @@ export class ExtensionClient {
         return;
       }
 
-      // Wire AbortSignal to cancel the pending request
+      // Wire AbortSignal to cancel the pending request.
+      // IMPORTANT: pendingRequests.set must happen before addEventListener so that
+      // if the signal fires synchronously during addEventListener (or in the tiny
+      // window between the two calls), onAbort finds the entry and deletes it
+      // cleanly.  Without this ordering the entry would be inserted after onAbort
+      // ran, leaving an orphaned entry with no timeout and no resolution path.
       const onAbort = () => {
         this.pendingRequests.delete(id);
         clearTimeout(timer);
         settle(() => reject(new Error("Request aborted")));
       };
-      if (signal) {
-        signal.addEventListener("abort", onAbort, { once: true });
-      }
 
       this.pendingRequests.set(id, {
         resolve: (value: unknown) => {
@@ -651,6 +653,10 @@ export class ExtensionClient {
           ? () => signal.removeEventListener("abort", onAbort)
           : undefined,
       });
+
+      if (signal) {
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
 
       const data = JSON.stringify({ jsonrpc: "2.0", id, method, params });
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {

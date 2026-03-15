@@ -73,9 +73,17 @@ function parseNpmAuditJson(raw: string, packageManager: string): AuditResult {
     advisories.push({ id: pkg, package: pkg, severity: sev, title, fix, url });
   }
 
-  const bySeverity: Partial<Record<Severity, number>> = {};
+  // Include all severity levels with zero-counts so callers can always check
+  // bySeverity["low"] without a key-existence guard.
+  const bySeverity: Record<Severity, number> = {
+    info: 0,
+    low: 0,
+    moderate: 0,
+    high: 0,
+    critical: 0,
+  };
   for (const adv of advisories) {
-    bySeverity[adv.severity] = (bySeverity[adv.severity] ?? 0) + 1;
+    bySeverity[adv.severity]++;
   }
 
   return {
@@ -207,9 +215,17 @@ async function runYarnAudit(
     }
   }
 
-  const bySeverity: Partial<Record<Severity, number>> = {};
+  // Include all severity levels with zero-counts so callers can always check
+  // bySeverity["low"] without a key-existence guard.
+  const bySeverity: Record<Severity, number> = {
+    info: 0,
+    low: 0,
+    moderate: 0,
+    high: 0,
+    critical: 0,
+  };
   for (const adv of advisories) {
-    bySeverity[adv.severity] = (bySeverity[adv.severity] ?? 0) + 1;
+    bySeverity[adv.severity]++;
   }
 
   return {
@@ -267,9 +283,17 @@ async function runCargoAudit(
     }),
   );
 
-  const bySeverity: Partial<Record<Severity, number>> = {};
+  // Include all severity levels with zero-counts so callers can always check
+  // bySeverity["low"] without a key-existence guard.
+  const bySeverity: Record<Severity, number> = {
+    info: 0,
+    low: 0,
+    moderate: 0,
+    high: 0,
+    critical: 0,
+  };
   for (const adv of advisories) {
-    bySeverity[adv.severity] = (bySeverity[adv.severity] ?? 0) + 1;
+    bySeverity[adv.severity]++;
   }
 
   return {
@@ -330,9 +354,17 @@ async function runPipAudit(
     }
   }
 
-  const bySeverity: Partial<Record<Severity, number>> = {};
+  // Include all severity levels with zero-counts so callers can always check
+  // bySeverity["low"] without a key-existence guard.
+  const bySeverity: Record<Severity, number> = {
+    info: 0,
+    low: 0,
+    moderate: 0,
+    high: 0,
+    critical: 0,
+  };
   for (const adv of advisories) {
-    bySeverity[adv.severity] = (bySeverity[adv.severity] ?? 0) + 1;
+    bySeverity[adv.severity]++;
   }
 
   return {
@@ -480,9 +512,17 @@ function filterBySeverity(
   const advisories = result.advisories.filter((a) =>
     severityGte(a.severity, minSeverity),
   );
-  const bySeverity: Partial<Record<Severity, number>> = {};
+  // Include all severity levels with zero-counts so callers can always check
+  // bySeverity["low"] without a key-existence guard.
+  const bySeverity: Record<Severity, number> = {
+    info: 0,
+    low: 0,
+    moderate: 0,
+    high: 0,
+    critical: 0,
+  };
   for (const adv of advisories) {
-    bySeverity[adv.severity] = (bySeverity[adv.severity] ?? 0) + 1;
+    bySeverity[adv.severity]++;
   }
   return {
     ...result,
