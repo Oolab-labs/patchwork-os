@@ -4,7 +4,7 @@
 [![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **133+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
+A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **120+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
 
 ## How It Works
 
@@ -103,7 +103,7 @@ Requires `tmux` and the `claude` CLI to be on `PATH`.
 
 ## Claude Code Plugin
 
-The bridge ships as a **Claude Code plugin** with 6 skills, 3 subagents, and 3 hooks:
+The bridge ships as a **Claude Code plugin** with 9 skills, 3 subagents, and 3 hooks:
 
 ```bash
 # Load the plugin
@@ -142,7 +142,7 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 | `SessionStart` | Reports bridge status, connection, and tool count |
 | `SubagentStart` | Verifies bridge is alive before IDE subagents run |
 
-## 124+ MCP Tools
+## 120+ MCP Tools
 
 ### File Operations (7)
 `openFile` · `openDiff` · `saveDocument` · `close_tab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors`
@@ -199,7 +199,7 @@ Text editing · Workspace management · HTTP requests · File watchers · Notebo
 
 ## MCP Prompts (Slash Commands)
 
-The bridge exposes 6 built-in slash commands via the MCP `prompts/list` + `prompts/get` protocol. These appear as `/mcp__bridge__<name>` in any MCP client that supports prompts.
+The bridge exposes 7 built-in slash commands via the MCP `prompts/list` + `prompts/get` protocol. These appear as `/mcp__bridge__<name>` in any MCP client that supports prompts.
 
 | Prompt | Argument | Description |
 |--------|----------|-------------|
@@ -208,6 +208,7 @@ The bridge exposes 6 built-in slash commands via the MCP `prompts/list` + `promp
 | `/mcp__bridge__generate-tests` | `file` (required) | Generate a test scaffold for the exported symbols in a file |
 | `/mcp__bridge__debug-context` | _(none)_ | Snapshot current debug state, open editors, and diagnostics |
 | `/mcp__bridge__git-review` | `base` (optional, default: `main`) | Review all changes since a git base branch |
+| `/mcp__bridge__cowork` | `task` (optional) | Gather full IDE context and propose a Cowork action plan — run this **before** opening a Cowork session |
 | `/mcp__bridge__set-effort` | `level` (optional: `low`/`medium`/`high`, default: `medium`) | Prepend an effort-level instruction to tune Claude's thoroughness for the next task |
 
 Prompts are served directly from the bridge — no extension required. Implemented in `src/prompts.ts`.
@@ -405,7 +406,9 @@ claude-ide-bridge install-extension [editor]   Install VS Code extension into yo
 --allow-command <cmd>     Add command to execution allowlist (repeatable)
 --timeout <ms>            Command timeout in ms (default: 30000, max: 120000)
 --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
+--watch                   Supervisor mode: auto-restart on crash (exponential backoff, max 30s)
 --auto-tmux               Re-exec inside a tmux session automatically
+--tool-rate-limit <n>     Max tool calls per minute per session (default: 60)
 --claude-driver <mode>    Claude subprocess driver: subprocess | api | none (default: none)
 --claude-binary <path>    Path to claude binary (default: claude)
 --automation              Enable event-driven automation
@@ -427,13 +430,13 @@ claude-ide-bridge/
     claudeDriver.ts   IClaudeDriver interface + SubprocessDriver
     claudeOrchestrator.ts Task queue (MAX_CONCURRENT=10, MAX_QUEUE=20)
     automation.ts     AutomationHooks — onDiagnosticsError / onFileSave / onPostCompact / onInstructionsLoaded policies
-    tools/            124+ MCP tool implementations
+    tools/            120+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
     src/connection.ts WebSocket connection management
     src/handlers/     Request handlers (terminal, lsp, debug, ...)
   claude-ide-bridge-plugin/
-    skills/           6 slash commands
+    skills/           9 slash commands
     agents/           3 specialized subagents
     hooks/            3 lifecycle automations
     .mcp.json         MCP server config
@@ -463,7 +466,7 @@ Production-grade reliability:
 - Circuit breaker with exponential backoff for timeout cascades
 - Generation counter preventing stale handler responses
 - Extension-required tool filtering when extension disconnects
-- 806 tests (bridge); full WebSocket round-trip integration coverage
+- 873 tests (bridge); full WebSocket round-trip integration coverage
 - MCP elicitation support (`elicitation: {}` capability) — bridge can send `elicitation/create` mid-task to request structured user input via Claude Code's interactive dialog (Claude Code 2.1.76+)
 
 ## Building
@@ -472,13 +475,13 @@ Production-grade reliability:
 # Bridge
 npm run build        # TypeScript compilation
 npm run dev          # Development with tsx
-npm test             # Run 782 bridge tests
+npm test             # Run 873 bridge tests
 
 # Extension
 cd vscode-extension
 npm run build        # esbuild bundle
 npm run package      # Create .vsix
-npm test             # Run 246 extension tests
+npm test             # Run 306 extension tests
 ```
 
 ## Contributing
