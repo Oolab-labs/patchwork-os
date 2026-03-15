@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.1.1 — 2026-03-15)
+## Current State (v2.1.10 — 2026-03-15)
 
-- 137+ MCP tools; 909 bridge tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
-- Extension v1.0.0 installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.1`, Open VSX `1.0.0`)
+- 137+ MCP tools; 926 bridge tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
+- Extension v1.0.1 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.10`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
@@ -19,6 +19,41 @@ Development direction and exploration guidance. Living document — update as pr
 - MCP elicitation (`elicitation: {}` capability): `McpTransport.elicit()` sends `elicitation/create` to Claude Code 2.1.76+
 - Deep security hardening: SSRF three-layer defense, Origin validation, rate limiting, lstatSync everywhere, TOCTOU mitigations, structured error codes
 - Claude Desktop + Cowork integration documented; `setHandoffNote`/`getHandoffNote` for cross-session context
+
+**v2.1.10 shipped (2026-03-15) — B2 dedup fix + A7 isCommand flag:**
+- `getDiagnostics`: `runningPromises` stores `{promise, originSignal}`; aborted-origin entries cleared before dedup; `.finally()` uses reference equality to avoid evicting newer runs
+- `sendTerminalCommand`: `isCommand?: boolean` (default `true`) — set `false` for REPL input to bypass shell-command validation
+
+**v2.1.9 shipped (2026-03-15) — debug AbortSignal + watchDiagnostics pre-abort + gen-claude-md:**
+- `debug.ts`: `signal?: AbortSignal` threaded through all four tool handlers to extensionClient
+- `watchDiagnostics`: synchronous pre-abort check before Promise executor allocates resources
+- `gen-claude-md` subcommand + MCP prompt: generates `CLAUDE.md` bridge workflow section; `templates/CLAUDE.bridge.md` ships with npm package
+
+**v2.1.8 shipped (2026-03-15) — persistent task queue:**
+- Task queue persists across bridge restarts via `~/.claude/ide/tasks-<port>.json` (v1 envelope)
+- `flushTasksToDisk()` synchronous pre-shutdown flush; pending tasks re-enqueued on startup with stable IDs
+- Running tasks saved as `"interrupted"` status; `loadPersistedTasks()` handles v0/v1 format + overflow demotion
+- 10 new persistence tests; `flushTasksToDisk` called before `cancel()` in shutdown sequence
+
+**v2.1.7 shipped (2026-03-15) — 8 tools-layer bug fixes:**
+- `searchAndReplace`: per-file `new RegExp(regex.source, regex.flags)` — eliminates `lastIndex` race in `Promise.all`
+- `getDiagnostics`: `linterErrors.delete(linter.name)` on success; `linterErrors: {}` on all response paths
+- `runTests`: `runningPromises.delete(key)` in `noCache` block alongside `caches.delete`
+- `watchDiagnostics`: re-check timestamp after `addDiagnosticsListener` to close TOCTOU window
+- `gitWrite`: post-commit `git diff-tree --no-commit-id -r --name-only HEAD` for accurate file list; blame parser `!currentHash` guard
+- `fileOperations`: hardlink cleanup on `unlink` failure in native rename fallback
+- `terminal.ts`: `timeoutMs` raised to 310 000 ms on `waitForTerminalOutput` + `runInTerminal`
+
+**v2.1.6 shipped (2026-03-15) — schema/description QoL fixes:**
+- `getDiagnostics`: `linterErrors` always present (empty `{}` when clean); removed conditional spread
+- `getFileTree`: schema description documents skipped dirs (node_modules, .git, dist, etc.)
+
+**v2.1.2–v2.1.5 shipped (2026-03-15) — getSecurityAdvisories cargo + pip-audit:**
+- `runCargoAudit()`: `cargo audit --json` parser; RUSTSEC advisory format; patched versions as fix hint
+- `runPipAudit()`: `pip-audit --format=json` parser; per-dep multi-vuln expansion; PYSEC IDs
+- `detectAuditor()`: Cargo.toml → cargo; requirements.txt / pyproject.toml → pip
+- Schema enum: `auto/npm/yarn/pnpm/cargo/pip`; ENOENT install hints for both tools
+- 8 new tests (cargo: 3, pip: 4, no-manifest: covered); 926 bridge tests total
 
 **v2.1.1 shipped (2026-03-15) — getSecurityAdvisories yarn/pnpm parity:**
 - `runYarnAudit()`: JSONL `auditAdvisory` event parsing for `yarn audit --json`
@@ -151,7 +186,7 @@ Implemented in `src/prompts.ts`. No extension required. Transport handles `promp
 - All others (terminal, debugger, LSP, decorations, VS Code commands) have no viable fallback — intentionally `extensionRequired`
 
 ### Test Coverage *(healthy — no integration gap)*
-- 408 tests, 40 files; integration tests exist (6 files, full WebSocket round-trip coverage)
+- 926 tests, 85 files; integration tests exist (6 files, full WebSocket round-trip coverage)
 - `searchAndReplace` core logic now tested on all platforms via mocked-rg suite
 - Original rg-integration suite still gates on binary availability for CI
 
