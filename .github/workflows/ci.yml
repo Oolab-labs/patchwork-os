@@ -60,10 +60,10 @@ jobs:
           # Extract port from lock filename and wait for /health to respond
           BRIDGE_PORT=$(basename "$LOCK_FILE" .lock)
           for i in $(seq 1 20); do
-            curl -sf "http://127.0.0.1:${BRIDGE_PORT}/health" && break
+            curl -sf "http://127.0.0.1:${BRIDGE_PORT}/ping" && break
             sleep 0.5
           done
-          curl -sf "http://127.0.0.1:${BRIDGE_PORT}/health" || (echo "Bridge /health did not respond" && cat /tmp/bridge.log && exit 1)
+          curl -sf "http://127.0.0.1:${BRIDGE_PORT}/ping" || (echo "Bridge /health did not respond" && cat /tmp/bridge.log && exit 1)
       - name: Run benchmark
         # --threshold only enforced on main; PRs upload results for comparison only
         run: |
