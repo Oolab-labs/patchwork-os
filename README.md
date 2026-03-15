@@ -76,6 +76,16 @@ Claude Code auto-discovers the bridge. Type `/ide` to confirm the connection —
 
 ---
 
+**Optional — add bridge workflow guidance to your project's CLAUDE.md:**
+
+```bash
+claude-ide-bridge gen-claude-md --write
+```
+
+This appends a `## Claude IDE Bridge` section to your project's `CLAUDE.md` (creating it if absent) with workflow rules and a quick-reference tool table. Helps Claude default to bridge tools instead of falling back to shell commands. Idempotent — safe to run multiple times.
+
+---
+
 **Optional — full orchestrator with health monitoring:**
 
 ```bash
@@ -410,8 +420,10 @@ For remote access over the internet, see [docs/remote-access.md](docs/remote-acc
 ### Subcommands
 
 ```
-claude-ide-bridge start-all [options]   Full tmux orchestrator (bridge + Claude + remote)
+claude-ide-bridge start-all [options]          Full tmux orchestrator (bridge + Claude + remote)
 claude-ide-bridge install-extension [editor]   Install VS Code extension into your IDE
+claude-ide-bridge gen-claude-md [--write] [--workspace <path>]
+                                               Print bridge workflow guidance (or write to CLAUDE.md)
 ```
 
 ### Bridge options (default mode)

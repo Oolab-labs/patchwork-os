@@ -97,6 +97,12 @@ export const PROMPTS: McpPrompt[] = [
     ],
   },
   {
+    name: "gen-claude-md",
+    description:
+      "Generate a CLAUDE.md bridge workflow section for this project. Outputs the standard bridge workflow rules and quick-reference table, then writes it into the project's CLAUDE.md.",
+    arguments: [],
+  },
+  {
     name: "set-effort",
     description:
       "Prepend a model-effort instruction to the next task. Use 'low' for quick answers, 'medium' for normal work, 'high' for complex refactors or deep analysis.",
@@ -281,6 +287,60 @@ const TEMPLATES: Record<
       ],
     };
   },
+
+  "gen-claude-md": (_args) => ({
+    description: "Generate bridge workflow section for CLAUDE.md",
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            "Add the Claude IDE Bridge workflow section to this project's `CLAUDE.md`.",
+            "",
+            "Steps:",
+            "1. Check if `CLAUDE.md` already exists in the workspace root using `findFiles`",
+            "2. If it exists, read it with `getBufferContent` to check for an existing `## Claude IDE Bridge` section",
+            "3. If the section already exists, report that no changes are needed",
+            "4. Otherwise, append the following content to `CLAUDE.md` (or create it if absent):",
+            "",
+            "---",
+            "## Claude IDE Bridge",
+            "",
+            "The bridge is connected via MCP. Call `getToolCapabilities` at the start of each session to confirm which tools are available and note any that require the VS Code extension.",
+            "",
+            "### Workflow rules",
+            "",
+            "- **After editing any file** — call `getDiagnostics` to catch errors introduced by the change",
+            "- **Running tests** — use `runTests` instead of shell commands; output streams in real time",
+            "- **Git operations** — use bridge git tools (`gitStatus`, `gitAdd`, `gitCommit`, `gitPush`) for structured, auditable operations",
+            "- **Debugging** — use `setDebugBreakpoints` → `startDebugging` → `evaluateInDebugger` for interactive debugging",
+            "- **Navigating code** — prefer `goToDefinition`, `findReferences`, and `getCallHierarchy` over grep",
+            "",
+            "### Quick reference",
+            "",
+            "| Task | Tool |",
+            "|---|---|",
+            "| Check errors / warnings | `getDiagnostics` |",
+            "| Run tests | `runTests` |",
+            "| Git status / diff | `gitStatus`, `gitDiff` |",
+            "| Stage, commit, push | `gitAdd`, `gitCommit`, `gitPush` |",
+            "| Open a pull request | `githubCreatePR` |",
+            "| Navigate to definition | `goToDefinition` |",
+            "| Find all references | `findReferences` |",
+            "| Call hierarchy | `getCallHierarchy` |",
+            "| File tree / symbols | `getFileTree`, `getDocumentSymbols` |",
+            "| Run a shell command | `runInTerminal`, `getTerminalOutput` |",
+            "| Interactive debug | `setDebugBreakpoints`, `startDebugging`, `evaluateInDebugger` |",
+            "| Lint / format | `fixAllLintErrors`, `formatDocument` |",
+            "| Security audit | `getSecurityAdvisories`, `auditDependencies` |",
+            "| Unused code | `detectUnusedCode` |",
+            "---",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
 
   "git-review": ({ base = "main" }) => ({
     description: `Review changes vs ${base}`,

@@ -2,7 +2,14 @@
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
-import { readdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Bridge } from "./bridge.js";
@@ -31,6 +38,65 @@ if (isStartAll) {
     stdio: "inherit",
   });
   process.exit(result.status ?? 1);
+}
+
+// Handle gen-claude-md subcommand — generates a CLAUDE.md bridge workflow section
+if (process.argv[2] === "gen-claude-md") {
+  const argv = process.argv.slice(3);
+  const writeToDisk = argv.includes("--write");
+  const workspaceIdx = argv.indexOf("--workspace");
+  const workspace =
+    workspaceIdx !== -1 && argv[workspaceIdx + 1]
+      ? (argv[workspaceIdx + 1] as string)
+      : process.cwd();
+
+  const templatePath = path.resolve(
+    __dirnameTop,
+    "..",
+    "templates",
+    "CLAUDE.bridge.md",
+  );
+
+  let content: string;
+  try {
+    content = readFileSync(templatePath, "utf-8");
+  } catch {
+    process.stderr.write(`Error: template not found at ${templatePath}\n`);
+    process.exit(1);
+  }
+
+  if (!writeToDisk) {
+    process.stdout.write(`${content}\n`);
+    process.exit(0);
+  }
+
+  const targetPath = path.join(workspace, "CLAUDE.md");
+  const marker = "## Claude IDE Bridge";
+
+  // Idempotent: skip if the section already exists
+  if (existsSync(targetPath)) {
+    const existing = readFileSync(targetPath, "utf-8");
+    if (existing.includes(marker)) {
+      process.stderr.write(
+        `CLAUDE.md already contains a '${marker}' section — no changes made.\n`,
+      );
+      process.exit(0);
+    }
+    // Backup existing file before modifying
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = `${targetPath}.${ts}.bak`;
+    renameSync(targetPath, backupPath);
+    process.stderr.write(`Backed up existing CLAUDE.md to ${backupPath}\n`);
+    const updated = `${existing.trimEnd()}\n\n${content.trimEnd()}\n`;
+    writeFileSync(`${targetPath}.tmp`, updated, "utf-8");
+  } else {
+    mkdirSync(workspace, { recursive: true });
+    writeFileSync(`${targetPath}.tmp`, content, "utf-8");
+  }
+
+  renameSync(`${targetPath}.tmp`, targetPath);
+  process.stderr.write(`✓ Bridge workflow section written to ${targetPath}\n`);
+  process.exit(0);
 }
 
 // Handle install-extension subcommand before parseConfig (avoids unknown-flag error)

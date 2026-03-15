@@ -39,6 +39,7 @@
     "scripts/start-remote.sh",
     "scripts/install-extension.sh",
     "scripts/gen-mcp-config.sh",
+    "templates",
     "LICENSE",
     "README.md"
   ],
