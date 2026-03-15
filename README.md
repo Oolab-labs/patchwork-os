@@ -4,7 +4,7 @@
 [![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **137+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, code analysis, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
+A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **120+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, code analysis, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
 
 ## How It Works
 
@@ -67,10 +67,12 @@ The bridge starts, writes a lock file to `~/.claude/ide/`, and waits for connect
 In a new terminal in your project directory:
 
 ```bash
-claude
+CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide
 ```
 
-Claude Code auto-discovers the bridge. Type `/ide` to confirm the connection — you'll see your open files, diagnostics, and editor state.
+> **Tip:** Add `export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true` to your `~/.zshrc` or `~/.bashrc` to make it permanent — after that, `claude --ide` is all you need.
+
+Claude Code connects to the bridge. Type `/ide` to confirm — you'll see your open files, diagnostics, and editor state.
 
 **That's it.** Claude can now read your diagnostics, navigate your code, run tests, commit to Git, and more.
 
@@ -82,7 +84,7 @@ Claude Code auto-discovers the bridge. Type `/ide` to confirm the connection —
 claude-ide-bridge gen-claude-md --write
 ```
 
-This appends a `## Claude IDE Bridge` section to your project's `CLAUDE.md` (creating it if absent) with workflow rules and a quick-reference tool table. Helps Claude default to bridge tools instead of falling back to shell commands. Idempotent — safe to run multiple times.
+This appends a `## Claude IDE Bridge` section to your project's `CLAUDE.md` (creating it if absent) with workflow rules and a quick-reference tool table. Helps Claude default to bridge tools instead of falling back to shell commands. Idempotent — if the section already exists, no changes are made. When appending to an existing file, a timestamped `.bak` backup is created alongside `CLAUDE.md`.
 
 ---
 
@@ -92,7 +94,7 @@ This appends a `## Claude IDE Bridge` section to your project's `CLAUDE.md` (cre
 claude-ide-bridge start-all --workspace /your/project
 ```
 
-Launches bridge + Claude Code + remote control in a tmux session with automatic restart on failure. Requires `tmux`.
+Launches four tmux panes: health monitor, bridge, Claude Code, and remote control — with automatic restart on failure. Requires `tmux`.
 
 ## Full Orchestrator
 
@@ -160,28 +162,28 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 | `SessionStart` | Reports bridge status, connection, and tool count |
 | `SubagentStart` | Verifies bridge is alive before IDE subagents run |
 
-## 137+ MCP Tools
+## 120+ MCP Tools
 
 ### File Operations (7)
-`openFile` · `openDiff` · `saveDocument` · `close_tab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors`
+`openFile` · `openDiff` · `saveDocument` · `closeTab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors`
 
 ### LSP / Code Intelligence (12)
-`goToDefinition` · `findReferences` · `getHover` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchSymbols` · `getDocumentSymbols` · `getCallHierarchy` · `getTypeHierarchy` · `getImplementations` · `getInlayHints`
+`goToDefinition` · `findReferences` · `getHover` · `getHoverAtCursor` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchWorkspaceSymbols` · `getDocumentSymbols` · `getCallHierarchy` · `getTypeHierarchy` · `getInlayHints`
 
 ### Debugging (5)
 `setDebugBreakpoints` · `startDebugging` · `evaluateInDebugger` · `getDebugState` · `stopDebugging`
 
-### Terminal (7)
-`createTerminal` · `runInTerminal` · `waitForTerminalOutput` · `getTerminalOutput` · `listTerminals` · `sendTerminalInput` · `closeTerminal`
+### Terminal (8)
+`createTerminal` · `runInTerminal` · `sendTerminalCommand` · `waitForTerminalOutput` · `getTerminalOutput` · `listTerminals` · `disposeTerminal` · `runCommand`
 
-### Git (15)
-`gitStatus` · `gitDiff` · `gitLog` · `gitAdd` · `gitCommit` · `gitPush` · `gitPull` · `gitBranch` · `gitCheckout` · `gitStash` · `gitBlame` · `gitMerge` · `gitRebase` · `gitTag` · `gitRemote`
+### Git (16)
+`getGitStatus` · `getGitDiff` · `getGitLog` · `gitAdd` · `gitCommit` · `gitPush` · `gitPull` · `gitFetch` · `gitListBranches` · `gitCheckout` · `gitStash` · `gitStashList` · `gitStashPop` · `gitBlame` · `getCommitDetails` · `getDiffBetweenRefs`
 
 ### GitHub (11)
-`githubCreatePR` · `githubViewPR` · `githubGetPRDiff` · `githubPostPRReview` · `githubListPRs` · `githubMergePR` · `githubCreateIssue` · `githubListIssues` · `githubViewIssue` · `githubListReleases` · `githubCreateRelease`
+`githubCreatePR` · `githubViewPR` · `githubGetPRDiff` · `githubPostPRReview` · `githubListPRs` · `githubCreateIssue` · `githubListIssues` · `githubGetIssue` · `githubCommentIssue` · `githubListRuns` · `githubGetRunLogs`
 
-### Diagnostics & Testing (3)
-`getDiagnostics` · `runTests` · `diffDebug`
+### Diagnostics & Testing (4)
+`getDiagnostics` · `watchDiagnostics` · `runTests` · `getCodeCoverage`
 
 ### Code Quality (3)
 `fixAllLintErrors` · `formatDocument` · `organizeImports`
@@ -189,8 +191,8 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 ### Snapshots & Plans (10)
 `createSnapshot` · `restoreSnapshot` · `diffSnapshot` · `listSnapshots` · `deleteSnapshot` · `createPlan` · `updatePlan` · `getPlan` · `listPlans` · `deletePlan`
 
-### Editor State (7)
-`getCurrentSelection` · `getLatestSelection` · `getOpenEditors` · `getActiveEditor` · `getVisibleRange` · `revealRange` · `showMessage`
+### Editor State (6)
+`getCurrentSelection` · `getLatestSelection` · `getOpenEditors` · `getBufferContent` · `setEditorDecorations` · `clearEditorDecorations`
 
 ### Code Analysis & Security (7)
 `auditDependencies` · `getSecurityAdvisories` · `detectUnusedCode` · `refactorExtractFunction` · `generateAPIDocumentation` · `getDependencyTree` · `getGitHotspots`

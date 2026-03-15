@@ -111,20 +111,28 @@ if (process.argv[2] === "install-extension") {
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const vsixDir = path.resolve(__dirname, "..", "vscode-extension");
-  // Pick the newest .vsix dynamically — avoids hardcoding a version that goes stale
-  const vsixFiles = readdirSync(vsixDir)
-    .filter((f) => f.endsWith(".vsix"))
-    .sort()
-    .reverse();
-  if (vsixFiles.length === 0) {
-    process.stderr.write(`Error: No .vsix file found in ${vsixDir}\n`);
-    process.exit(1);
+
+  // Prefer a local .vsix (source checkout / dev build). Fall back to the
+  // marketplace extension ID when installed via `npm install -g` (no vscode-extension/ dir).
+  let extensionArg: string;
+  const MARKETPLACE_ID = "oolab-labs.claude-ide-bridge-extension";
+  if (existsSync(vsixDir)) {
+    // Pick the newest .vsix dynamically — avoids hardcoding a version that goes stale
+    const vsixFiles = readdirSync(vsixDir)
+      .filter((f) => f.endsWith(".vsix"))
+      .sort()
+      .reverse();
+    extensionArg =
+      vsixFiles.length > 0
+        ? path.join(vsixDir, vsixFiles[0] as string)
+        : MARKETPLACE_ID;
+  } else {
+    extensionArg = MARKETPLACE_ID;
   }
-  const vsixPath = path.join(vsixDir, vsixFiles[0] as string);
 
   try {
     process.stderr.write(`Installing extension via ${editor}...\n`);
-    execFileSync(editor, ["--install-extension", vsixPath], {
+    execFileSync(editor, ["--install-extension", extensionArg], {
       stdio: "inherit",
       timeout: 30000,
     });

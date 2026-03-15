@@ -1,4 +1,7 @@
-# claude-ide-bridge Setup Guide
+# claude-ide-bridge Setup Guide — Development Mode
+
+> **This guide is for running the bridge from source** (contributors and local development).
+> For the standard installation using `npm install -g`, see the [README Quick Start](README.md#quick-start).
 
 A standalone MCP bridge that gives Claude Code full IDE integration with Windsurf (or any editor). Opens files, shows diffs, gets diagnostics — without needing the VS Code extension.
 
