@@ -77,6 +77,8 @@ export interface McpResource {
   size?: number;
 }
 
+const MAX_WALK_DEPTH = 20; // prevent blocking on pathologically deep directory trees
+
 /**
  * Recursively enumerate workspace files, skipping common non-source directories.
  * Returns absolute paths sorted lexicographically.
@@ -84,7 +86,8 @@ export interface McpResource {
 function collectWorkspaceFiles(workspace: string): string[] {
   const results: string[] = [];
 
-  function walk(dir: string): void {
+  function walk(dir: string, depth: number): void {
+    if (depth > MAX_WALK_DEPTH) return;
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -96,14 +99,14 @@ function collectWorkspaceFiles(workspace: string): string[] {
       const full = path.join(dir, entry.name);
       if (entry.isSymbolicLink()) continue; // skip symlinks for security
       if (entry.isDirectory()) {
-        walk(full);
+        walk(full, depth + 1);
       } else if (entry.isFile()) {
         results.push(full);
       }
     }
   }
 
-  walk(workspace);
+  walk(workspace, 0);
   results.sort();
   return results;
 }

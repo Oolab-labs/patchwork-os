@@ -1,6 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("node:fs");
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      existsSync: vi.fn(() => true),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+      writeFileSync: vi.fn(),
+      readFileSync: vi.fn(() => ""),
+      statSync: vi.fn(() => ({ size: 0 })),
+      promises: {
+        ...actual.promises,
+        appendFile: vi.fn(() => Promise.resolve()),
+        stat: vi.fn(() => Promise.resolve({ size: 0 })),
+      },
+    },
+  };
+});
 
 import fs from "node:fs";
 import { ActivityLog } from "../activityLog.js";
@@ -15,6 +34,12 @@ beforeEach(() => {
   mockFs.writeFileSync = vi.fn();
   mockFs.readFileSync = vi.fn(() => "");
   mockFs.statSync = vi.fn(() => ({ size: 0 }) as any);
+  (mockFs.promises as unknown as Record<string, unknown>).appendFile = vi.fn(
+    () => Promise.resolve(),
+  );
+  (mockFs.promises as unknown as Record<string, unknown>).stat = vi.fn(() =>
+    Promise.resolve({ size: 0 }),
+  );
 });
 
 describe("ActivityLog", () => {
@@ -164,28 +189,33 @@ describe("ActivityLog", () => {
 });
 
 describe("ActivityLog — disk persistence", () => {
-  it("appends entry to disk when persistPath is set", () => {
+  it("appends entry to disk when persistPath is set", async () => {
     const log = new ActivityLog();
     log.setPersistPath("/tmp/activity.jsonl");
     log.record("read", 10, "success");
-    expect(mockFs.appendFileSync).toHaveBeenCalled();
+    // Wait for the fire-and-forget async append to complete
+    await vi.waitFor(() =>
+      expect(mockFs.promises.appendFile).toHaveBeenCalled(),
+    );
     const written = (
-      mockFs.appendFileSync as ReturnType<typeof vi.fn>
+      mockFs.promises.appendFile as ReturnType<typeof vi.fn>
     ).mock.calls.at(-1)?.[1] as string;
     expect(written).toContain('"kind":"tool"');
     expect(written).toContain('"tool":"read"');
   });
 
-  it("creates directory when it does not exist", () => {
+  it("creates directory when it does not exist", async () => {
     mockFs.existsSync = vi.fn(() => false);
     const log = new ActivityLog();
     log.setPersistPath("/tmp/newdir/activity.jsonl");
     log.record("t", 5, "success");
-    expect(mockFs.mkdirSync).toHaveBeenCalled();
+    await vi.waitFor(() => expect(mockFs.mkdirSync).toHaveBeenCalled());
   });
 
-  it("rotates file when size exceeds 1 MB", () => {
-    mockFs.statSync = vi.fn(() => ({ size: 1024 * 1024 + 1 }) as any);
+  it("rotates file when size exceeds 1 MB", async () => {
+    (mockFs.promises as unknown as Record<string, unknown>).stat = vi.fn(() =>
+      Promise.resolve({ size: 1024 * 1024 + 1 }),
+    );
     mockFs.readFileSync = vi.fn(
       () =>
         '{"kind":"tool","id":1,"timestamp":"t","tool":"x","durationMs":1,"status":"success"}\n',
@@ -193,7 +223,7 @@ describe("ActivityLog — disk persistence", () => {
     const log = new ActivityLog();
     log.setPersistPath("/tmp/big.jsonl");
     log.record("y", 5, "success");
-    expect(mockFs.writeFileSync).toHaveBeenCalled();
+    await vi.waitFor(() => expect(mockFs.writeFileSync).toHaveBeenCalled());
   });
 
   it("loads existing tool entries from disk on setPersistPath", () => {
@@ -246,21 +276,26 @@ describe("ActivityLog — disk persistence", () => {
     expect(log.query()).toHaveLength(0);
   });
 
-  it("swallows appendFileSync errors silently", () => {
-    mockFs.appendFileSync = vi.fn(() => {
-      throw new Error("disk full");
-    });
+  it("swallows appendFile errors silently", async () => {
+    (mockFs.promises as unknown as Record<string, unknown>).appendFile = vi.fn(
+      () => Promise.reject(new Error("disk full")),
+    );
     const log = new ActivityLog();
     log.setPersistPath("/tmp/fail.jsonl");
     expect(() => log.record("t", 10, "success")).not.toThrow();
+    // Give the async rejection a chance to surface (it should be swallowed)
+    await new Promise((r) => setTimeout(r, 20));
   });
 
-  it("appends lifecycle events to disk", () => {
+  it("appends lifecycle events to disk", async () => {
     const log = new ActivityLog();
     log.setPersistPath("/tmp/lc.jsonl");
     log.recordEvent("started", { port: 1234 });
+    await vi.waitFor(() =>
+      expect(mockFs.promises.appendFile).toHaveBeenCalled(),
+    );
     const written = (
-      mockFs.appendFileSync as ReturnType<typeof vi.fn>
+      mockFs.promises.appendFile as ReturnType<typeof vi.fn>
     ).mock.calls.at(-1)?.[1] as string;
     expect(written).toContain('"kind":"lifecycle"');
     expect(written).toContain('"event":"started"');

@@ -87,23 +87,27 @@ export class ActivityLog {
     entry: ActivityEntry | LifecycleEntry,
   ): void {
     if (!this.persistPath) return;
-    try {
-      const dir = path.dirname(this.persistPath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const line = `${JSON.stringify({ kind, ...entry })}\n`;
-      // Rotate first if file exceeds limits, then always append the current entry
+    const persistPath = this.persistPath;
+    // Fire-and-forget async — never block the event loop on disk I/O
+    void (async () => {
       try {
-        const stat = fs.statSync(this.persistPath);
-        if (stat.size > MAX_PERSIST_BYTES) {
-          this._rotateDisk();
+        const dir = path.dirname(persistPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const line = `${JSON.stringify({ kind, ...entry })}\n`;
+        // Rotate first if file exceeds limits, then always append the current entry
+        try {
+          const stat = await fs.promises.stat(persistPath);
+          if (stat.size > MAX_PERSIST_BYTES) {
+            this._rotateDisk();
+          }
+        } catch {
+          // file doesn't exist yet — nothing to rotate
         }
+        await fs.promises.appendFile(persistPath, line);
       } catch {
-        // file doesn't exist yet — nothing to rotate
+        // Disk persistence is best-effort — never block tool execution
       }
-      fs.appendFileSync(this.persistPath, line);
-    } catch {
-      // Disk persistence is best-effort — never block tool execution
-    }
+    })();
   }
 
   private _rotateDisk(): void {

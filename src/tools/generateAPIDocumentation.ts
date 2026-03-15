@@ -119,12 +119,17 @@ export function createGenerateAPIDocumentationTool(workspace: string) {
 }
 
 function extractJsDoc(content: string, pos: number): string | undefined {
-  // Look backwards from pos for a JSDoc comment
-  const before = content.slice(0, pos);
-  const match = before.match(/\/\*\*([\s\S]*?)\*\/\s*$/);
-  if (!match) return undefined;
+  // Scan backwards from pos for a JSDoc comment using lastIndexOf —
+  // avoids O(N²) string allocation from content.slice(0, pos) on each call.
+  const closeIdx = content.lastIndexOf("*/", pos);
+  if (closeIdx === -1) return undefined;
+  const openIdx = content.lastIndexOf("/**", closeIdx);
+  if (openIdx === -1) return undefined;
+  // Ensure only whitespace exists between */ and pos (no code in between)
+  if (content.slice(closeIdx + 2, pos).trim() !== "") return undefined;
+  const docBody = content.slice(openIdx + 3, closeIdx);
   // Clean up the JSDoc text
-  return (match[1] ?? "")
+  return docBody
     .split("\n")
     .map((l) => l.replace(/^\s*\*\s?/, "").trim())
     .filter(Boolean)
@@ -138,8 +143,10 @@ function extractSymbols(content: string, includePrivate: boolean): DocSymbol[] {
   const exportPrefix = includePrivate ? "(?:export\\s+)?" : "export\\s+";
 
   // Functions: export function name(...): ReturnType
+  // Note: parameter content is capped at 200 chars to prevent catastrophic backtracking
+  // on adversarial input with deeply nested parentheses.
   const funcRe = new RegExp(
-    `${exportPrefix}(?:async\\s+)?function\\s+(\\w+)\\s*(\\([^)]*(?:\\([^)]*\\)[^)]*)*\\))(?:\\s*:\\s*([^{;\\n]+))?`,
+    `${exportPrefix}(?:async\\s+)?function\\s+(\\w+)\\s*(\\([^)]{0,200}\\))(?:\\s*:\\s*([^{;\\n]{0,100}))?`,
     "g",
   );
   let m: RegExpExecArray | null;
@@ -238,13 +245,13 @@ function extractClassMembers(content: string, classPos: number): string[] {
   const body = after.slice(braceIdx + 1, braceIdx + 2000);
 
   const members: string[] = [];
-  // constructor
-  const ctorMatch = body.match(/constructor\s*(\([^)]*(?:\([^)]*\)[^)]*)*\))/);
+  // constructor (param content capped at 200 chars to prevent catastrophic backtracking)
+  const ctorMatch = body.match(/constructor\s*(\([^)]{0,200}\))/);
   if (ctorMatch) members.push(`constructor${ctorMatch[1] ?? "()"}`);
 
   // public/protected methods (not private)
   const methodRe =
-    /(?:public|protected|static|async|override|\s)+(\w+)\s*(\([^)]*(?:\([^)]*\)[^)]*)*\))(?:\s*:\s*([^{;\n]+))?/g;
+    /(?:public|protected|static|async|override|\s)+(\w+)\s*(\([^)]{0,200}\))(?:\s*:\s*([^{;\n]{0,80}))?/g;
   let m: RegExpExecArray | null;
   while ((m = methodRe.exec(body)) !== null) {
     const name = m[1] ?? "";

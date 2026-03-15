@@ -38,7 +38,7 @@ export function corsOrigin(requestOrigin: string | undefined): string | null {
   try {
     const { hostname, protocol } = new URL(requestOrigin);
     if (
-      (protocol === "http:" || protocol === "https:") &&
+      protocol === "http:" &&
       (hostname === "localhost" ||
         hostname === "127.0.0.1" ||
         hostname === "[::1]")

@@ -624,7 +624,6 @@ export class McpTransport {
                 },
               };
             } else {
-              this.callCount++; // Count before try so failures are also reflected in stats
               const startTime = Date.now();
               const callId = Math.random().toString(36).slice(2, 10);
               const callLog = this.logger.child({ tool: params.name, callId });
@@ -637,6 +636,8 @@ export class McpTransport {
                   toolArgs === null ||
                   Array.isArray(toolArgs)
                 ) {
+                  this.callCount++;
+                  this.errorCount++;
                   response = {
                     jsonrpc: "2.0",
                     id: msg.id,
@@ -649,6 +650,8 @@ export class McpTransport {
                 }
                 // Guard against oversized argument payloads before they reach tool handlers
                 if (JSON.stringify(toolArgs).length > 1_048_576) {
+                  this.callCount++;
+                  this.errorCount++;
                   response = {
                     jsonrpc: "2.0",
                     id: msg.id,
@@ -662,6 +665,8 @@ export class McpTransport {
                 // AJV structural validation
                 const validate = this.getValidator(params.name);
                 if (validate && !validate(toolArgs)) {
+                  this.callCount++;
+                  this.errorCount++;
                   const messages = (validate.errors ?? [])
                     .map((e) => `${e.instancePath || "."} ${e.message}`)
                     .join("; ");
@@ -675,6 +680,7 @@ export class McpTransport {
                   };
                   break;
                 }
+                this.callCount++; // Count after validation — only real execution attempts
                 callLog.debug(`Calling tool: ${params.name}`);
                 this.logger.event("tool_call", { tool: params.name, callId });
                 const controller = new AbortController();

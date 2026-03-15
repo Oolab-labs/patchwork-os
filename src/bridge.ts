@@ -239,34 +239,8 @@ export class Bridge {
       this.activityLog.recordEvent("extension_connected");
       this.logger.event("extension_connected");
       this.extensionClient.handleExtensionConnection(ws);
-      // Refresh workspace folders from extension (multi-root workspace support)
-      this.extensionClient
-        .getWorkspaceFolders()
-        .then((folders) => {
-          if (folders && folders.length > 0) {
-            this.config.workspaceFolders = folders.map((f) => f.path);
-            this.logger.info(
-              `Workspace folders: ${this.config.workspaceFolders.join(", ")}`,
-            );
-            // Broadcast to all active sessions
-            for (const session of this.sessions.values()) {
-              if (session.ws.readyState === WebSocket.OPEN) {
-                McpTransport.sendNotification(
-                  session.ws,
-                  "notifications/tools/list_changed",
-                  undefined,
-                  this.logger,
-                );
-              }
-            }
-          }
-        })
-        .catch((err: unknown) => {
-          this.logger.warn(
-            `getWorkspaceFolders failed: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
-      // Immediate list_changed to all active sessions
+
+      // Immediate list_changed — tell Claude Code that extension tools are now available
       for (const session of this.sessions.values()) {
         if (session.ws.readyState === WebSocket.OPEN) {
           McpTransport.sendNotification(
@@ -277,6 +251,39 @@ export class Bridge {
           );
         }
       }
+
+      // Refresh workspace folders from extension (multi-root workspace support).
+      // Only broadcast a second list_changed if the folders actually changed,
+      // to avoid a spurious double-notification on every extension connect.
+      const prevFolders = (this.config.workspaceFolders ?? []).join(",");
+      this.extensionClient
+        .getWorkspaceFolders()
+        .then((folders) => {
+          if (folders && folders.length > 0) {
+            this.config.workspaceFolders = folders.map((f) => f.path);
+            this.logger.info(
+              `Workspace folders: ${this.config.workspaceFolders.join(", ")}`,
+            );
+            // Only re-broadcast if the folder list changed
+            if (this.config.workspaceFolders.join(",") !== prevFolders) {
+              for (const session of this.sessions.values()) {
+                if (session.ws.readyState === WebSocket.OPEN) {
+                  McpTransport.sendNotification(
+                    session.ws,
+                    "notifications/tools/list_changed",
+                    undefined,
+                    this.logger,
+                  );
+                }
+              }
+            }
+          }
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `getWorkspaceFolders failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
     });
 
     // Notify Claude when extension disconnects so it knows to fall back to CLI/grep mode
