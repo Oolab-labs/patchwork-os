@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import { readdirSync } from "node:fs";
 import path from "node:path";
@@ -120,10 +120,54 @@ if (
   }
 }
 
-const bridge = new Bridge(config);
+// --watch: supervisor mode — spawn this binary as a child (without --watch) and restart on crash
+if (config.watch) {
+  const childArgv = process.argv.filter((a) => a !== "--watch");
+  const STABLE_THRESHOLD_MS = 60_000;
+  const BASE_DELAY_MS = 2_000;
+  const MAX_DELAY_MS = 30_000;
+  let delay = BASE_DELAY_MS;
+  let stopping = false;
 
-bridge.start().catch((err: unknown) => {
-  const message = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`Error: ${message}\n`);
-  process.exit(1);
-});
+  function runChild(): void {
+    if (stopping) return;
+    const startAt = Date.now();
+    process.stderr.write(`[supervisor] starting bridge\n`);
+    const child = spawn(childArgv[0]!, childArgv.slice(1), { stdio: "inherit" });
+
+    for (const sig of ["SIGTERM", "SIGINT"] as const) {
+      process.once(sig, () => {
+        stopping = true;
+        child.kill(sig);
+      });
+    }
+
+    child.on("exit", (code, signal) => {
+      if (stopping) {
+        process.stderr.write(`[supervisor] bridge stopped\n`);
+        process.exit(0);
+      }
+      const uptime = Date.now() - startAt;
+      if (uptime >= STABLE_THRESHOLD_MS) {
+        delay = BASE_DELAY_MS; // reset backoff after a stable run
+      }
+      process.stderr.write(
+        `[supervisor] bridge exited (code=${code ?? signal}), restarting in ${delay / 1000}s\n`,
+      );
+      setTimeout(() => {
+        delay = Math.min(delay * 2, MAX_DELAY_MS);
+        runChild();
+      }, delay);
+    });
+  }
+
+  runChild();
+} else {
+  const bridge = new Bridge(config);
+
+  bridge.start().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`Error: ${message}\n`);
+    process.exit(1);
+  });
+}

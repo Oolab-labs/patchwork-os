@@ -415,6 +415,9 @@ getHandoffNote()  →  { note: "auth bug in login.ts:42 ...", age: "4m ago" }
 
 ### Cowork Workflow — One Prompt to Start
 
+> **Why Cowork sessions can't use MCP bridge tools**
+> Cowork (computer-use) sessions connect to Claude Desktop as a separate process with no VS Code extension attached. Because the bridge only exposes tools to authenticated MCP clients that have an active extension connection, tools marked `extensionRequired: true` are filtered out — and without a real editor session, even unrestricted tools can't do useful IDE work. This is an architectural constraint of how Cowork sessions are isolated; it is not a bug. The two-step workflow below (gather context first, then hand off) is the correct workaround.
+
 The `/mcp__bridge__cowork` prompt is the recommended entry point for any Cowork session. It eliminates the need to manually invoke context tools before describing a task.
 
 **Minimal usage** — just type in Claude Desktop chat:

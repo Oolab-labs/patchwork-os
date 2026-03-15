@@ -25,6 +25,7 @@ export interface Config {
   automationEnabled: boolean;
   automationPolicyPath: string | null;
   toolRateLimit: number;
+  watch: boolean;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -204,6 +205,7 @@ export function parseConfig(argv: string[]): Config {
   let maxResultSize = fileConfig.maxResultSize ?? 512;
   let gracePeriodMs = fileConfig.gracePeriodMs ?? 30_000;
   let autoTmux = fileConfig.autoTmux ?? false;
+  let watch = false;
   let claudeDriver: "subprocess" | "api" | "none" = fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
   let automationEnabled = fileConfig.automationEnabled ?? false;
@@ -292,6 +294,9 @@ export function parseConfig(argv: string[]): Config {
         // Already consumed above to load config file; skip the value
         i++;
         break;
+      case "--watch":
+        watch = true;
+        break;
       case "--auto-tmux":
         autoTmux = true;
         break;
@@ -369,6 +374,7 @@ Options:
   --timeout <ms>            Command timeout in ms (default: 30000, max: 120000)
   --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
   --grace-period <ms>       Reconnect grace period in ms (default: 30000, max: 600000)
+  --watch                   Supervisor mode: auto-restart bridge on crash (exponential backoff, max 30s)
   --auto-tmux               Auto-wrap in tmux session if not already inside one
   --config <path>           Load config file (default: ./claude-ide-bridge.config.json)
   --verbose                 Enable debug logging
@@ -484,5 +490,6 @@ Environment Variables:
     automationEnabled,
     automationPolicyPath,
     toolRateLimit,
+    watch,
   };
 }

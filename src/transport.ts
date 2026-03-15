@@ -4,7 +4,7 @@ import type { ActivityLog } from "./activityLog.js";
 import { ErrorCodes } from "./errors.js";
 import type { Logger } from "./logger.js";
 import { withSpan } from "./telemetry.js";
-import { BRIDGE_PROTOCOL_VERSION } from "./version.js";
+import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 import { BACKPRESSURE_THRESHOLD, safeSend } from "./wsUtils.js";
 
 const TOOL_TIMEOUT_MS = 60_000; // 60s — prevents tools from blocking indefinitely
@@ -73,6 +73,7 @@ export class McpTransport {
   private readonly serverInfo = {
     name: "claude-ide-bridge",
     version: BRIDGE_PROTOCOL_VERSION,
+    _meta: { packageVersion: PACKAGE_VERSION },
   };
   private activeWs: WebSocket | null = null;
   public workspace = "";

@@ -33,7 +33,6 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     needs: ci
-    # Only gate on main; PRs still upload results for comparison
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,15 +48,27 @@ jobs:
           mkdir -p /tmp/bench-workspace
           node dist/index.js --workspace /tmp/bench-workspace > /tmp/bridge.log 2>&1 &
           echo $! > /tmp/bridge.pid
-          # Wait up to 10s for the lockfile to appear
+          # Wait up to 10s for the lock file to appear
           for i in $(seq 1 20); do
-            ls "$HOME/.claude/ide/"*.lock 2>/dev/null | head -1 && break
+            LOCK_FILE=$(ls "$HOME/.claude/ide/"*.lock 2>/dev/null | head -1)
+            [ -n "$LOCK_FILE" ] && break
             sleep 0.5
           done
-          ls "$HOME/.claude/ide/"*.lock 2>/dev/null || (echo "Bridge did not write lock file" && cat /tmp/bridge.log && exit 1)
+          if [ -z "$LOCK_FILE" ]; then
+            echo "Bridge did not write lock file" && cat /tmp/bridge.log && exit 1
+          fi
+          # Extract port from lock filename and wait for /health to respond
+          BRIDGE_PORT=$(basename "$LOCK_FILE" .lock)
+          for i in $(seq 1 20); do
+            curl -sf "http://127.0.0.1:${BRIDGE_PORT}/health" && break
+            sleep 0.5
+          done
+          curl -sf "http://127.0.0.1:${BRIDGE_PORT}/health" || (echo "Bridge /health did not respond" && cat /tmp/bridge.log && exit 1)
       - name: Run benchmark
+        # --threshold only enforced on main; PRs upload results for comparison only
         run: |
-          node scripts/benchmark.mjs --iterations 100 --json --threshold 100 \
+          node scripts/benchmark.mjs --iterations 100 --json \
+            ${{ github.ref == 'refs/heads/main' && '--threshold 100' || '' }} \
             | tee /tmp/benchmark-results.json
       - name: Stop bridge
         if: always()
@@ -72,6 +83,7 @@ jobs:
 
   extension:
     runs-on: ubuntu-latest
+    needs: ci
     strategy:
       matrix:
         node-version: [20, 22]
@@ -84,6 +96,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+          cache-dependency-path: vscode-extension/package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Test
