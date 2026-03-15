@@ -89,7 +89,7 @@ export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
       },
     },
     timeoutMs: 30_000,
-    async handler(args: Record<string, unknown>) {
+    async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
         return extensionRequired("evaluateInDebugger");
       }
@@ -101,6 +101,7 @@ export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
           expression,
           frameId,
           context,
+          signal,
         );
         if (result === null)
           return error("No active debug session or evaluation failed");
@@ -169,7 +170,7 @@ export function createSetDebugBreakpointsTool(
         additionalProperties: false as const,
       },
     },
-    async handler(args: Record<string, unknown>) {
+    async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
         return extensionRequired("setDebugBreakpoints");
       }
@@ -185,7 +186,11 @@ export function createSetDebugBreakpointsTool(
       });
       const bps = breakpoints;
       try {
-        const result = await extensionClient.setDebugBreakpoints(file, bps);
+        const result = await extensionClient.setDebugBreakpoints(
+          file,
+          bps,
+          signal,
+        );
         if (result === null) return error("Failed to set breakpoints");
         return success(result);
       } catch (err) {
@@ -219,13 +224,13 @@ export function createStartDebuggingTool(extensionClient: ExtensionClient) {
         additionalProperties: false as const,
       },
     },
-    async handler(args: Record<string, unknown>) {
+    async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
         return extensionRequired("startDebugging");
       }
       const configName = optionalString(args, "configName");
       try {
-        const result = await extensionClient.startDebugging(configName);
+        const result = await extensionClient.startDebugging(configName, signal);
         if (result === null) return error("Failed to start debug session");
         return success(result);
       } catch (err) {
@@ -252,12 +257,12 @@ export function createStopDebuggingTool(extensionClient: ExtensionClient) {
         additionalProperties: false as const,
       },
     },
-    async handler() {
+    async handler(_args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
         return extensionRequired("stopDebugging");
       }
       try {
-        const result = await extensionClient.stopDebugging();
+        const result = await extensionClient.stopDebugging(signal);
         if (result === null) return error("Failed to stop debug session");
         return success(result);
       } catch (err) {

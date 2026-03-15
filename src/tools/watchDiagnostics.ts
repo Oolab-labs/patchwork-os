@@ -113,6 +113,23 @@ export function createWatchDiagnosticsTool(
 
         // Long-poll: wait for change or timeout
         return new Promise<ReturnType<typeof success>>((resolve) => {
+          // Fast-path: if the signal is already aborted before we enter the
+          // executor, settle immediately without allocating the timer or
+          // registering the diagnostics listener.
+          if (signal?.aborted) {
+            const diagnostics =
+              extensionClient.getCachedDiagnostics(resolvedPath);
+            resolve(
+              success({
+                changed: false,
+                timestamp: extensionClient.lastDiagnosticsUpdate,
+                diagnostics,
+                count: diagnostics.length,
+              }),
+            );
+            return;
+          }
+
           let settled = false;
 
           const settle = (changed: boolean) => {

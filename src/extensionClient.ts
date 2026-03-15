@@ -1086,34 +1086,48 @@ export class ExtensionClient {
     expression: string,
     frameId?: number,
     context?: string,
+    signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/evaluateInDebugger", {
-      expression,
-      frameId,
-      context,
-    });
+    return this.requestOrNull(
+      "extension/evaluateInDebugger",
+      { expression, frameId, context },
+      undefined,
+      signal,
+    );
   }
 
   async setDebugBreakpoints(
     file: string,
     breakpoints: BreakpointSpec[],
+    signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/setDebugBreakpoints", {
-      file,
-      breakpoints,
-    });
+    return this.requestOrNull(
+      "extension/setDebugBreakpoints",
+      { file, breakpoints },
+      undefined,
+      signal,
+    );
   }
 
-  async startDebugging(configName?: string): Promise<unknown> {
+  async startDebugging(
+    configName?: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     return this.requestOrNull(
       "extension/startDebugging",
       { configName },
       15_000,
+      signal,
     );
   }
 
-  async stopDebugging(): Promise<unknown> {
-    return this.requestOrNull("extension/stopDebugging");
+  async stopDebugging(signal?: AbortSignal): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/stopDebugging",
+      undefined,
+      undefined,
+      signal,
+    );
   }
 
   // --- Decorations ---
