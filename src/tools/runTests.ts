@@ -30,6 +30,10 @@ export function createRunTestsTool(workspace: string, probes?: ProbeResults) {
   const caches = new Map<string, RunnerCache>();
   const runningPromises = new Map<string, Promise<TestResult[]>>();
   const runnerErrors = new Map<string, string>();
+  // Tracks noCache eviction generation per key. When noCache bumps a key's
+  // generation, any in-flight run for that key will see a mismatch and skip
+  // the cache write, preventing stale results from overwriting fresh ones.
+  const cacheGenerations = new Map<string, number>();
 
   async function runRunner(
     runner: TestRunner,
@@ -45,26 +49,34 @@ export function createRunTestsTool(workspace: string, probes?: ProbeResults) {
 
     let running = runningPromises.get(cacheKey);
     if (!running) {
+      const myGeneration = cacheGenerations.get(cacheKey) ?? 0;
       running = runner
         .run(workspace, filter, signal)
         .then((data) => {
-          // Evict oldest entry if cache is full
-          if (caches.size >= MAX_CACHE_ENTRIES) {
-            const oldestKey = caches.keys().next().value;
-            if (oldestKey) caches.delete(oldestKey);
+          // Only write to cache if we are still the current generation.
+          // noCache eviction bumps the generation so a stale in-flight run
+          // does not overwrite the fresh run's results.
+          if ((cacheGenerations.get(cacheKey) ?? 0) === myGeneration) {
+            // Evict oldest entry if cache is full
+            if (caches.size >= MAX_CACHE_ENTRIES) {
+              const oldestKey = caches.keys().next().value;
+              if (oldestKey) caches.delete(oldestKey);
+            }
+            caches.set(cacheKey, { data, timestamp: Date.now() });
+            // Clear any previous error for this runner on success
+            runnerErrors.delete(runner.name);
           }
-          caches.set(cacheKey, { data, timestamp: Date.now() });
-          // Clear any previous error for this runner on success
-          runnerErrors.delete(runner.name);
           return data;
         })
         .catch((err: unknown) => {
           if (!(err instanceof Error) || err.name !== "AbortError") {
-            caches.set(cacheKey, { data: [], timestamp: Date.now() });
-            runnerErrors.set(
-              runner.name,
-              err instanceof Error ? err.message : String(err),
-            );
+            if ((cacheGenerations.get(cacheKey) ?? 0) === myGeneration) {
+              caches.set(cacheKey, { data: [], timestamp: Date.now() });
+              runnerErrors.set(
+                runner.name,
+                err instanceof Error ? err.message : String(err),
+              );
+            }
           }
           return [] as TestResult[];
         })
@@ -162,9 +174,11 @@ export function createRunTestsTool(workspace: string, probes?: ProbeResults) {
         for (const r of runners) {
           const key = `${r.name}:${filter ?? ""}`;
           caches.delete(key);
-          // Also evict any in-flight run so a fresh subprocess is started,
-          // not the stale one that was already running when noCache was requested.
+          // Evict in-flight run so a fresh subprocess is started.
           runningPromises.delete(key);
+          // Bump generation so any still-running evicted promise will not
+          // write its stale result to cache when it eventually resolves.
+          cacheGenerations.set(key, (cacheGenerations.get(key) ?? 0) + 1);
         }
       }
 

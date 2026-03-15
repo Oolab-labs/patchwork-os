@@ -170,6 +170,31 @@ describe("runCommand", () => {
     });
   });
 
+  describe("dangerous flag blocklist", () => {
+    it("rejects --eval (bare) for interpreter commands", async () => {
+      const cfg: Config = { ...config, commandAllowlist: ["node"] };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      await expect(
+        tool.handler({ command: "node", args: ["--eval", "process.exit(0)"] }),
+      ).rejects.toThrow("blocked");
+    });
+
+    it("rejects --eval=code (equals-sign form) for interpreter commands", async () => {
+      const cfg: Config = { ...config, commandAllowlist: ["node"] };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      await expect(
+        tool.handler({ command: "node", args: ["--eval=process.exit(0)"] }),
+      ).rejects.toThrow("blocked");
+    });
+
+    it("rejects --config=path (equals-sign form) for all commands", async () => {
+      const tool = createRunCommandTool(tmpDir, config);
+      await expect(
+        tool.handler({ command: "echo", args: ["--config=/etc/evil"] }),
+      ).rejects.toThrow("blocked");
+    });
+  });
+
   it("runs command in a subdirectory cwd", async () => {
     const subDir = path.join(tmpDir, "subdir");
     fs.mkdirSync(subDir);

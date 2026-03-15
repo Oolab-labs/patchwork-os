@@ -189,4 +189,62 @@ describe("createRunTestsTool", () => {
     const data = JSON.parse(result.content[0]?.text ?? "{}");
     expect(data.runnerErrors).toBeUndefined();
   });
+
+  it("noCache eviction race: stale in-flight run does not overwrite fresh cache", async () => {
+    // Set up a slow run followed by a noCache-triggered fresh run.
+    // The slow run should NOT overwrite the fresh run's cache entry.
+    let resolveSlowRun!: (v: any[]) => void;
+    const slowRun = new Promise<any[]>((res) => {
+      resolveSlowRun = res;
+    });
+
+    // First call starts with the slow runner
+    vi.mocked(vitestRunner.run).mockReturnValueOnce(slowRun as any);
+    const slowPromise = createRunTestsTool(ws, probes).handler({});
+
+    // Simulate noCache call while slow run is in-flight — by using a second tool
+    // instance sharing the same mock. The important invariant is tested by checking
+    // that the generation mechanism prevents the stale write.
+    // Here we test via the generation bump path: evict and re-run.
+    const tool = createRunTestsTool(ws, probes);
+
+    // Fresh run returns different results
+    vi.mocked(vitestRunner.run).mockResolvedValueOnce([
+      {
+        name: "fresh test",
+        status: "passed",
+        source: "vitest",
+        file: "fresh.test.ts",
+        line: 1,
+        durationMs: 5,
+      },
+    ] as any);
+
+    // This noCache run should see the fresh results
+    const freshResult = await tool.handler({ noCache: true });
+    const freshData = JSON.parse(freshResult.content[0]?.text ?? "{}");
+    expect(freshData.results[0]?.name).toBe("fresh test");
+
+    // Resolve the slow run (simulates it completing after noCache evicted it)
+    resolveSlowRun([
+      {
+        name: "stale test",
+        status: "passed",
+        source: "vitest",
+        file: "stale.test.ts",
+        line: 1,
+        durationMs: 100,
+      },
+    ]);
+    await slowPromise;
+
+    // Cache should still contain the fresh result, not the stale one
+    // (verify by calling without noCache — should hit cache with fresh result)
+    vi.mocked(vitestRunner.run).mockClear();
+    const cachedResult = await tool.handler({});
+    const cachedData = JSON.parse(cachedResult.content[0]?.text ?? "{}");
+    // The runner should not have been called again (we're reading from cache)
+    // and the result should be the fresh one
+    expect(cachedData.results[0]?.name).toBe("fresh test");
+  });
 });

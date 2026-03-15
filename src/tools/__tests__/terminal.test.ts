@@ -245,6 +245,24 @@ describe("runInTerminal - metacharacter blocking", () => {
     expect(result.isError).toBe(true);
   });
 
+  it("blocks Unicode line separator \\u2028", async () => {
+    const tool = createRunInTerminalTool(mockRunInTerminalClient(), ["echo"]);
+    const result = (await tool.handler({
+      command: "echo hi\u2028malicious",
+    })) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("newline");
+  });
+
+  it("blocks Unicode paragraph separator \\u2029", async () => {
+    const tool = createRunInTerminalTool(mockRunInTerminalClient(), ["echo"]);
+    const result = (await tool.handler({
+      command: "echo hi\u2029malicious",
+    })) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("newline");
+  });
+
   it("blocks semicolon (existing)", async () => {
     const tool = createRunInTerminalTool(mockRunInTerminalClient(), ["echo"]);
     const result = (await tool.handler({

@@ -327,6 +327,41 @@ describe("cargoTestRunner", () => {
       "must not start with",
     );
   });
+
+  it("PANIC_NEW_RE does not incorrectly match old-style panic lines when message contains a colon+digit", async () => {
+    // Old-style: panicked at 'expected 42:0 == 43:1', src/lib.rs:10:5
+    // PANIC_RE fails to match because the message contains `'` (non-greedy stops early).
+    // PANIC_NEW_RE must NOT mis-extract "'expected 42" as the file path.
+    const output = [
+      "test module::test_ratio ... FAILED",
+      "",
+      "failures:",
+      "thread 'module::test_ratio' panicked at 'expected 42:0 == 43:1', src/lib.rs:10:5",
+    ].join("\n");
+    mockExecSafe.mockResolvedValue(ok(output));
+    const results = await cargoTestRunner.run("/ws");
+    const failed = results.filter((r) => r.status === "failed");
+    expect(failed.length).toBe(1);
+    // File path must not start with a quote character (would indicate PANIC_NEW_RE mis-matched)
+    if (failed[0]?.file) {
+      expect(failed[0].file).not.toMatch(/^'/);
+    }
+  });
+
+  it("run() parses new-style panic format (Rust 1.73+)", async () => {
+    const output = [
+      "test module::test_new ... FAILED",
+      "",
+      "failures:",
+      "thread 'module::test_new' panicked at src/lib.rs:15:3:",
+      "explicit panic message here",
+    ].join("\n");
+    mockExecSafe.mockResolvedValue(ok(output));
+    const results = await cargoTestRunner.run("/ws");
+    const failed = results.filter((r) => r.status === "failed");
+    expect(failed.length).toBe(1);
+    expect(failed[0]?.line).toBe(15);
+  });
 });
 
 // ── goTestRunner ──────────────────────────────────────────────────────────────

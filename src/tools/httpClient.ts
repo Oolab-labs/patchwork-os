@@ -192,11 +192,6 @@ export function createSendHttpRequestTool() {
       // Validate and collect headers
       const rawHeaders = args.headers;
       const headers: Record<string, string> = {};
-      // Set Host header to the original hostname so virtual hosting / SNI works
-      // when we've pinned the URL to a resolved IP.
-      if (resolvedIp !== null) {
-        headers.Host = parsedUrl.hostname;
-      }
       if (rawHeaders != null) {
         if (typeof rawHeaders !== "object" || Array.isArray(rawHeaders)) {
           return error("headers must be a plain object of string values");
@@ -215,6 +210,12 @@ export function createSendHttpRequestTool() {
           }
           headers[k] = v;
         }
+      }
+      // Override Host AFTER user headers so a caller-supplied Host cannot
+      // bypass IP-pinning SSRF protection. Virtual hosting / SNI still works
+      // because we use the original hostname (before IP substitution).
+      if (resolvedIp !== null) {
+        headers.Host = parsedUrl.hostname;
       }
 
       const body = optionalString(args, "body", 1024 * 1024);

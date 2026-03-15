@@ -199,6 +199,38 @@ describe("watchDiagnostics: disconnected — no-linter path", () => {
   });
 });
 
+// ── TDZ crash regression: cleanup used before initialization ─────────────────
+
+describe("watchDiagnostics: TDZ regression — settle called before cleanup is initialized", () => {
+  it("does not throw ReferenceError when update arrives between outer and inner timestamp checks", async () => {
+    // Simulate: lastDiagnosticsUpdate is below sinceTimestamp initially (outer check passes),
+    // but addDiagnosticsListener bumps it above sinceTimestamp so the inner re-check fires
+    // settle(true) while cleanup is not yet initialized (the TDZ window).
+    let lastUpdate = 900;
+    const client = {
+      isConnected: () => true,
+      get lastDiagnosticsUpdate() {
+        return lastUpdate;
+      },
+      getCachedDiagnostics: () => [],
+      addDiagnosticsListener: (cb: (file: string) => void) => {
+        // Simulate diagnostic update arriving right as we register the listener
+        lastUpdate = 1100;
+        const unsub = () => {};
+        return unsub;
+      },
+    };
+
+    const tool = createWatchDiagnosticsTool(WORKSPACE, client as any);
+
+    // sinceTimestamp=1000: outer check sees 900 < 1000 (no early return),
+    // inner re-check sees 1100 > 1000 → settle(true) fires → TDZ crash if unfixed
+    await expect(
+      tool.handler({ sinceTimestamp: 1000, timeoutMs: 1000 }),
+    ).resolves.toBeDefined();
+  });
+});
+
 // ── Schema ────────────────────────────────────────────────────────────────────
 
 describe("watchDiagnostics: schema", () => {

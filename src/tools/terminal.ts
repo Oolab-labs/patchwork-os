@@ -121,7 +121,9 @@ function validateCommand(
   text: string,
   commandAllowlist: string[],
 ): string | undefined {
-  if (/[\n\r]/.test(text)) {
+  // Also block Unicode line/paragraph separators (\u2028, \u2029) which act
+  // as line terminators in JavaScript and some shell contexts.
+  if (/[\n\r\u2028\u2029]/.test(text)) {
     return "Command must not contain newlines. Send one command at a time.";
   }
   if (/[;&|`$()<>{}!\\~]/.test(text)) {

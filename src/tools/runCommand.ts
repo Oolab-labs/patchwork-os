@@ -79,16 +79,19 @@ function validateArgs(args: unknown, command: string): string[] {
     if (arg.length > MAX_ARG_LENGTH) {
       throw new Error(`args[${i}] exceeds maximum length of ${MAX_ARG_LENGTH}`);
     }
+    // Strip --flag=value → --flag so equals-sign form is caught by the blocklist.
+    // e.g. "--eval=code" → "--eval", "--config=path" → "--config"
+    const flag = arg.split("=")[0] ?? arg;
     // Block code-execution flags for interpreter commands
-    if (isInterpreter && DANGEROUS_INTERPRETER_FLAGS.has(arg)) {
+    if (isInterpreter && DANGEROUS_INTERPRETER_FLAGS.has(flag)) {
       throw new Error(
-        `Flag "${arg}" is blocked for interpreter command "${command}" — it allows arbitrary code execution`,
+        `Flag "${flag}" is blocked for interpreter command "${command}" — it allows arbitrary code execution`,
       );
     }
     // Block config/path-override flags for all commands
-    if (DANGEROUS_PATH_FLAGS.has(arg)) {
+    if (DANGEROUS_PATH_FLAGS.has(flag)) {
       throw new Error(
-        `Flag "${arg}" is blocked — it can redirect command execution outside the workspace`,
+        `Flag "${flag}" is blocked — it can redirect command execution outside the workspace`,
       );
     }
   }

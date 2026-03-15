@@ -427,7 +427,11 @@ export function createGetSecurityAdvisoriesTool(
         | Severity
         | "all";
 
-      const cacheKey = `${pm}:${minSeverity}`;
+      // Cache key uses only the package manager, not the severity filter.
+      // We always cache the full (all-severity) result and filter at presentation
+      // time. This prevents redundant audit runs when the same tool is called
+      // with different severity thresholds (e.g. "high" then "all").
+      const cacheKey = pm;
       const now = Date.now();
       const cached = cache.get(cacheKey);
       if (cached && now - cached.timestamp < CACHE_TTL) {

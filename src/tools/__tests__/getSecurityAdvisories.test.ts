@@ -416,6 +416,33 @@ describe("getSecurityAdvisories", () => {
     expect(result.advisories[1].id).toBe("PYSEC-2023-2");
   });
 
+  it("cache key uses pm only — different severity calls do not trigger redundant audit runs", async () => {
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("package.json"),
+    );
+    mockExecSafe.mockResolvedValue({
+      stdout: JSON.stringify(NPM_AUDIT_RESPONSE),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 50,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+
+    // First call with severity=high populates the cache
+    await tool.handler({ severity: "high" });
+    expect(mockExecSafe).toHaveBeenCalledTimes(1);
+
+    mockExecSafe.mockClear();
+
+    // Second call with severity=all should hit the cache — no second audit run
+    const result = parse(await tool.handler({ severity: "all" }));
+    expect(mockExecSafe).not.toHaveBeenCalled();
+    // Both advisories should be visible with severity=all
+    expect(result.totalVulnerabilities).toBe(2);
+  });
+
   it("pip: returns available:false and install hint when binary not found", async () => {
     mockExistsSync.mockImplementation((p) =>
       String(p).endsWith("requirements.txt"),

@@ -131,6 +131,24 @@ export function createWatchDiagnosticsTool(
           }
 
           let settled = false;
+          // Declare mutable refs before cleanup/settle so cleanup is always
+          // initialized before settle can call it — avoids TDZ ReferenceError
+          // when the inner re-check triggers settle() before timer/abortHandler
+          // are assigned. `let` is required: each var is assigned after its
+          // declaration (in a later statement), not at declaration time.
+          // biome-ignore lint/style/useConst: assigned after cleanup is defined to avoid TDZ
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          // biome-ignore lint/style/useConst: assigned after cleanup is defined to avoid TDZ
+          let abortHandler: (() => void) | undefined;
+          // biome-ignore lint/style/useConst: assigned after cleanup is defined to avoid TDZ
+          let unsubscribe: (() => void) | undefined;
+
+          const cleanup = () => {
+            if (timer !== undefined) clearTimeout(timer);
+            if (abortHandler !== undefined)
+              signal?.removeEventListener("abort", abortHandler);
+            unsubscribe?.();
+          };
 
           const settle = (changed: boolean) => {
             if (settled) return;
@@ -148,7 +166,7 @@ export function createWatchDiagnosticsTool(
             );
           };
 
-          const unsubscribe = extensionClient.addDiagnosticsListener((file) => {
+          unsubscribe = extensionClient.addDiagnosticsListener((file) => {
             if (!resolvedPath || file === resolvedPath) {
               settle(true);
             }
@@ -166,16 +184,10 @@ export function createWatchDiagnosticsTool(
             return;
           }
 
-          const timer = setTimeout(() => settle(false), timeoutMs);
+          timer = setTimeout(() => settle(false), timeoutMs);
 
-          const abortHandler = () => settle(false);
+          abortHandler = () => settle(false);
           signal?.addEventListener("abort", abortHandler);
-
-          const cleanup = () => {
-            clearTimeout(timer);
-            signal?.removeEventListener("abort", abortHandler);
-            unsubscribe();
-          };
         });
       }
 

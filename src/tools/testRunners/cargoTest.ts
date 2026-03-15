@@ -11,8 +11,10 @@ const MAX_BUFFER = 2 * 1024 * 1024;
 const RESULT_RE = /^test\s+(.+?)\s+\.\.\.\s+(ok|FAILED|ignored)/;
 // Match: thread 'test_name' panicked at 'message', src/file.rs:42:5
 const PANIC_RE = /panicked at\s+'(.+?)',\s*(.+?):(\d+):(\d+)/;
-// Also handle newer Rust format: panicked at src/file.rs:42:5:\nmessage
-const PANIC_NEW_RE = /panicked at\s+(.+?):(\d+):(\d+)/;
+// Also handle newer Rust format (1.73+): panicked at src/file.rs:42:5:\nmessage
+// The negative lookahead (?!') prevents this from matching old-style lines that
+// start with a quoted message (e.g. when PANIC_RE fails due to a quote in the message).
+const PANIC_NEW_RE = /panicked at\s+(?!')([^\s']\S*):(\d+):(\d+)/;
 
 export const cargoTestRunner: TestRunner = {
   name: "cargo-test",
