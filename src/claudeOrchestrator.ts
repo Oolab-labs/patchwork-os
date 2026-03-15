@@ -177,14 +177,19 @@ export class ClaudeOrchestrator {
         this.queue.shift();
         continue;
       }
-      // Token-budget check: if adding this task would exceed the budget, stop draining.
-      // The task stays at the front of the queue and will be retried on the next _drain().
+      // Token-budget check: if adding this task would exceed the budget, skip it
+      // for now so smaller tasks behind it can still run (if concurrency slots exist).
+      // Only break if we've already hit MAX_CONCURRENT (no slots to fill anyway).
       if (
         this.running.size > 0 &&
         this._activeTokens + task.tokenEstimate >
           ClaudeOrchestrator.MAX_TOKEN_BUDGET
       ) {
-        break;
+        if (this.running.size >= ClaudeOrchestrator.MAX_CONCURRENT) break;
+        // Concurrency slots available — skip this oversized task and try the next one.
+        this.queue.shift();
+        this.queue.push(id); // move to back of queue
+        continue;
       }
       this.queue.shift();
       this._runTask(id);

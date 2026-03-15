@@ -90,9 +90,16 @@ describe("refactorExtractFunction", () => {
 
     expect(result.refactored).toBe(true);
     expect(result.method).toBe("textManipulation");
-    // File should have been modified
+    // File should have been modified: new function inserted, extracted block replaced by call
     const newContent = fs.readFileSync(file, "utf-8");
     expect(newContent).toContain("function extracted");
+    expect(newContent).toContain("extracted();");
+    // The extracted lines should no longer appear as bare statements
+    // (they are now inside the new function body)
+    expect(newContent).not.toMatch(/^const x = 1;$/m);
+    expect(newContent).not.toMatch(/^const y = 2;$/m);
+    // The third line (not extracted) must be preserved
+    expect(newContent).toContain("const z = 3;");
   });
 
   it("falls back to text manipulation when getCodeActions throws", async () => {

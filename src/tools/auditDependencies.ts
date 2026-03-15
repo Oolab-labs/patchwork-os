@@ -61,10 +61,20 @@ async function runNpmOutdated(
   const raw = result.stdout.trim();
   if (!raw) return [];
 
-  const parsed = JSON.parse(raw) as Record<
+  let parsed: Record<
     string,
     { current?: string; wanted?: string; latest?: string }
   >;
+  try {
+    parsed = JSON.parse(raw) as Record<
+      string,
+      { current?: string; wanted?: string; latest?: string }
+    >;
+  } catch {
+    throw new Error(
+      `npm outdated returned non-JSON output: ${raw.slice(0, 200)}`,
+    );
+  }
 
   return Object.entries(parsed).map(([name, info]) => ({
     name,
@@ -121,11 +131,16 @@ async function runPipOutdated(
   const raw = result.stdout.trim();
   if (!raw) return [];
 
-  const parsed = JSON.parse(raw) as Array<{
-    name: string;
-    version: string;
-    latest_version: string;
-  }>;
+  let parsed: Array<{ name: string; version: string; latest_version: string }>;
+  try {
+    parsed = JSON.parse(raw) as Array<{
+      name: string;
+      version: string;
+      latest_version: string;
+    }>;
+  } catch {
+    throw new Error(`pip list returned non-JSON output: ${raw.slice(0, 200)}`);
+  }
 
   return parsed.map((p) => ({
     name: p.name,

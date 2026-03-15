@@ -169,7 +169,7 @@ export class ApiDriver implements IClaudeDriver {
 
     const message = await client.messages.create(
       {
-        model: "claude-opus-4-6",
+        model: _input.model ?? "claude-opus-4-6",
         max_tokens: 4096,
         messages: [{ role: "user", content: _input.prompt + contextNote }],
       },

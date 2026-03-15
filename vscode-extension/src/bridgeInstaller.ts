@@ -9,6 +9,33 @@ const execFileAsync = promisify(execFile);
 declare const BRIDGE_VERSION: string;
 
 /**
+ * Compare two semver strings. Returns true if `a >= b`.
+ * Supports the standard `MAJOR.MINOR.PATCH` format; pre-release suffixes are
+ * compared lexicographically as a last resort.
+ */
+function semverGte(a: string, b: string): boolean {
+  const parseParts = (v: string): [number, number, number, string] => {
+    const m = v.match(/^(\d+)\.(\d+)\.(\d+)(.*)$/);
+    if (!m) return [0, 0, 0, v];
+    return [
+      Number(m[1]),
+      Number(m[2]),
+      Number(m[3]),
+      (m[4] ?? "").replace(/^[-+]/, ""),
+    ];
+  };
+  const [aMaj, aMin, aPat, aPre] = parseParts(a);
+  const [bMaj, bMin, bPat, bPre] = parseParts(b);
+  if (aMaj !== bMaj) return aMaj > bMaj;
+  if (aMin !== bMin) return aMin > bMin;
+  if (aPat !== bPat) return aPat > bPat;
+  // Both identical numerics — a release (no pre-release) is >= any pre-release
+  if (aPre === "" && bPre !== "") return true;
+  if (aPre !== "" && bPre === "") return false;
+  return aPre >= bPre;
+}
+
+/**
  * Handles detection and silent global install/upgrade of `claude-ide-bridge`.
  * Compares the installed semver against BRIDGE_VERSION (bundled at build time)
  * and runs `npm install -g claude-ide-bridge@<version>` when needed.
@@ -95,9 +122,9 @@ export class BridgeInstaller {
     const required = this.getRequiredVersion();
     const installed = await this.getInstalledVersion();
 
-    if (installed === required) {
+    if (installed !== null && semverGte(installed, required)) {
       this.log(
-        `claude-ide-bridge@${installed} already installed — no action needed.`,
+        `claude-ide-bridge@${installed} already installed (>= required ${required}) — no action needed.`,
       );
       return;
     }

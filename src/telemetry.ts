@@ -13,16 +13,21 @@ import {
 } from "@opentelemetry/api";
 
 let _initialized = false;
+/** Resolves once the SDK has been started (or immediately if no endpoint configured). */
+let _initPromise: Promise<void> | null = null;
 
 export function initTelemetry(): void {
   if (_initialized) return;
   _initialized = true;
 
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-  if (!endpoint) return; // no-op mode
+  if (!endpoint) {
+    _initPromise = Promise.resolve();
+    return; // no-op mode
+  }
 
   // Dynamic import to avoid loading SDK when not needed
-  Promise.all([
+  _initPromise = Promise.all([
     import("@opentelemetry/sdk-node"),
     import("@opentelemetry/exporter-trace-otlp-http"),
   ])
@@ -59,6 +64,12 @@ export function initTelemetry(): void {
  * are exported. No-ops if telemetry was not initialized.
  */
 export async function shutdownTelemetry(): Promise<void> {
+  // Wait for initTelemetry()'s dynamic import to finish before attempting shutdown.
+  // Without this, if SIGTERM arrives before the import resolves, __otelSdk is
+  // not yet set and we silently skip flushing in-flight spans.
+  if (_initPromise) {
+    await _initPromise.catch(() => {});
+  }
   const sdk = (globalThis as Record<string, unknown>).__otelSdk as
     | { shutdown(): Promise<void> }
     | undefined;

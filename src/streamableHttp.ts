@@ -303,8 +303,10 @@ export class StreamableHttpHandler {
 
     session.lastActivity = Date.now();
 
-    // Notifications have no `id` field at all per JSON-RPC 2.0 — id:null is a malformed request
-    const isNotification = !Object.hasOwn(msg, "id");
+    // Notifications have no `id` field at all per JSON-RPC 2.0.
+    // id:null is technically a malformed request but treat it as a notification
+    // to prevent two null-id requests from colliding in the pendingSends Map.
+    const isNotification = !Object.hasOwn(msg, "id") || msg.id === null;
     if (isNotification) {
       session.adapter.receive(body);
       res.writeHead(202);

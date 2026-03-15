@@ -122,12 +122,12 @@ export function createRefactorExtractFunctionTool(
         const body = extracted.map((l) => `${indent}${l}`).join("\n");
         const newFunction = `function ${functionName}() {\n${body}\n}\n`;
 
-        // Find insertion point: line before startLine (insert before the block)
-        const insertAt = startLine - 1;
+        // Find insertion point: insert new function before the extracted block,
+        // then replace the extracted block with a call expression.
+        const insertAt = startLine - 1; // index of first extracted line (0-based)
         const newLines = [
           ...lines.slice(0, insertAt),
           newFunction,
-          ...lines.slice(insertAt, startLine - 1),
           `${functionName}();`,
           ...lines.slice(endLine),
         ];

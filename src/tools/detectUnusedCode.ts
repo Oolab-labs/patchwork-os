@@ -46,10 +46,11 @@ export function createDetectUnusedCodeTool(
       // includePatterns stored for future filtering — currently unused
       optionalArray(args, "includePatterns");
 
-      // Try ts-prune first
+      // Try ts-prune first — invoke the local binary directly to avoid npx
+      // spawning an extra process and potentially picking up a different version.
       const tsPruneBin = join(workspace, "node_modules", ".bin", "ts-prune");
       if (existsSync(tsPruneBin)) {
-        const result = await execSafe("npx", ["ts-prune", "--error"], {
+        const result = await execSafe(tsPruneBin, ["--error"], {
           cwd: workspace,
           signal,
           timeout: 55_000,

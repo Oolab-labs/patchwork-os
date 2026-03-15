@@ -38,7 +38,7 @@ export class BridgeProcess {
   private restartCount = 0;
   private spawnedAt = 0;
   private lockPollTimer: ReturnType<typeof setInterval> | null = null;
-  private lockPollTimeout: ReturnType<typeof setTimeout> | null = null;
+  private lockPollTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private sentinelPath: string;
 
@@ -175,7 +175,16 @@ export class BridgeProcess {
   /** Poll the lock directory until a lock file for this workspace appears. */
   private waitForLockFile(): Promise<BridgeStartedEvent> {
     return new Promise((resolve, reject) => {
-      const start = Date.now();
+      // Independent deadline — guarantees the promise settles within
+      // lockPollTimeoutMs even if readdir stalls indefinitely.
+      this.lockPollTimeoutTimer = setTimeout(() => {
+        this.clearLockPoll();
+        reject(
+          new Error(
+            `Bridge did not write a lock file within ${LOCK_POLL_TIMEOUT_MS / 1000}s`,
+          ),
+        );
+      }, this.lockPollTimeoutMs);
 
       this.lockPollTimer = setInterval(async () => {
         try {
@@ -216,15 +225,6 @@ export class BridgeProcess {
               /* skip unreadable lock files */
             }
           }
-
-          if (Date.now() - start > this.lockPollTimeoutMs) {
-            this.clearLockPoll();
-            reject(
-              new Error(
-                `Bridge did not write a lock file within ${LOCK_POLL_TIMEOUT_MS / 1000}s`,
-              ),
-            );
-          }
         } catch (err) {
           this.clearLockPoll();
           reject(err);
@@ -238,9 +238,9 @@ export class BridgeProcess {
       clearInterval(this.lockPollTimer);
       this.lockPollTimer = null;
     }
-    if (this.lockPollTimeout) {
-      clearTimeout(this.lockPollTimeout);
-      this.lockPollTimeout = null;
+    if (this.lockPollTimeoutTimer) {
+      clearTimeout(this.lockPollTimeoutTimer);
+      this.lockPollTimeoutTimer = null;
     }
   }
 
