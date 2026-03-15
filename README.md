@@ -4,7 +4,7 @@
 [![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **120+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
+A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **137+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, code analysis, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
 
 ## How It Works
 
@@ -142,7 +142,7 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 | `SessionStart` | Reports bridge status, connection, and tool count |
 | `SubagentStart` | Verifies bridge is alive before IDE subagents run |
 
-## 120+ MCP Tools
+## 137+ MCP Tools
 
 ### File Operations (7)
 `openFile` · `openDiff` · `saveDocument` · `close_tab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors`
@@ -174,8 +174,11 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 ### Editor State (7)
 `getCurrentSelection` · `getLatestSelection` · `getOpenEditors` · `getActiveEditor` · `getVisibleRange` · `revealRange` · `showMessage`
 
+### Code Analysis & Security (7)
+`auditDependencies` · `getSecurityAdvisories` · `detectUnusedCode` · `refactorExtractFunction` · `generateAPIDocumentation` · `getDependencyTree` · `getGitHotspots`
+
 ### And More
-Text editing · Workspace management · HTTP requests · File watchers · Notebooks · Decorations · VS Code commands
+Text editing · Workspace management · HTTP requests · File watchers · Decorations · VS Code commands
 
 | Category | Count | Extension Required |
 |----------|------:|:-:|
@@ -187,6 +190,7 @@ Text editing · Workspace management · HTTP requests · File watchers · Notebo
 | Text Editing | 5 | Yes |
 | Terminal | 7 | Yes |
 | Diagnostics & Testing | 3 | Mixed |
+| Code Analysis & Security | 7 | No |
 | Code Quality | 3 | Yes |
 | Debug | 5 | Yes |
 | Decorations | 2 | Yes |
@@ -194,8 +198,7 @@ Text editing · Workspace management · HTTP requests · File watchers · Notebo
 | Snapshots & Plans | 10 | No |
 | HTTP | 2 | No |
 | VS Code Integration | 8 | Yes |
-| Notebooks | 3 | Yes |
-| **Total** | **~115** | |
+| **Total** | **~107** | |
 
 ## MCP Prompts (Slash Commands)
 
@@ -466,7 +469,7 @@ Production-grade reliability:
 - Circuit breaker with exponential backoff for timeout cascades
 - Generation counter preventing stale handler responses
 - Extension-required tool filtering when extension disconnects
-- 873 tests (bridge); full WebSocket round-trip integration coverage
+- 909 tests (bridge); full WebSocket round-trip integration coverage
 - MCP elicitation support (`elicitation: {}` capability) — bridge can send `elicitation/create` mid-task to request structured user input via Claude Code's interactive dialog (Claude Code 2.1.76+)
 
 ## Building
@@ -475,7 +478,7 @@ Production-grade reliability:
 # Bridge
 npm run build        # TypeScript compilation
 npm run dev          # Development with tsx
-npm test             # Run 873 bridge tests
+npm test             # Run 909 bridge tests
 
 # Extension
 cd vscode-extension

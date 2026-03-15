@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.0.1 — 2026-03-14)
+## Current State (v2.1.1 — 2026-03-15)
 
-- 139+ MCP tools; 832 bridge tests, 0 failures; CI on Node 20 + 22
-- Extension installable into VS Code, Windsurf, Cursor, and Antigravity (v0.9.0 on Open VSX)
+- 137+ MCP tools; 909 bridge tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
+- Extension v1.0.0 installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.1`, Open VSX `1.0.0`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
@@ -19,6 +19,43 @@ Development direction and exploration guidance. Living document — update as pr
 - MCP elicitation (`elicitation: {}` capability): `McpTransport.elicit()` sends `elicitation/create` to Claude Code 2.1.76+
 - Deep security hardening: SSRF three-layer defense, Origin validation, rate limiting, lstatSync everywhere, TOCTOU mitigations, structured error codes
 - Claude Desktop + Cowork integration documented; `setHandoffNote`/`getHandoffNote` for cross-session context
+
+**v2.1.1 shipped (2026-03-15) — getSecurityAdvisories yarn/pnpm parity:**
+- `runYarnAudit()`: JSONL `auditAdvisory` event parsing for `yarn audit --json`
+- `runPnpmAudit()`: same npm v7 JSON shape via `pnpm audit --json`
+- `detectAuditor()`: lock-file priority pnpm > yarn > npm (parity with `auditDependencies`)
+- Shared `parseNpmAuditJson()` helper; schema enum updated to `auto/npm/yarn/pnpm/cargo/pip`
+- 4 new tests; 909 bridge tests total
+
+**v2.1.0 shipped (2026-03-15) — Phase 3: /stream SSE + yarn/pnpm audit + CI hardening:**
+- `GET /stream`: SSE endpoint for real-time activity log push (Bearer auth, keep-alive pings, per-connection unsubscribe)
+- `activityLog.subscribe()`: listener/unsubscribe pattern; disk I/O converted to async fire-and-forget
+- `auditDependencies`: yarn 1.x (JSONL table-event) + pnpm support; lock-file detection order
+- CI: loose 500ms PR threshold; strict 100ms on main only; `publish-extension.yml` workflow fixed
+- Extension v0.9.9 / v1.0.0 (VS Code Marketplace); bridge v2.1.0; 905 tests
+
+**v2.0.9 shipped (2026-03-15) — P2/P3 code review fixes:**
+- Double `list_changed` broadcast eliminated; `callCount`/`errorCount` stat skew fixed
+- `activityLog` async disk I/O; `generateAPIDocumentation` O(N²) + regex backtracking fixes
+- `resources.ts` MAX_WALK_DEPTH=20; CORS `corsOrigin()` http-only; 897 tests
+
+**v2.0.8 shipped (2026-03-15) — Supervisor mode + serverInfo meta + Cowork UX:**
+- `--watch` flag: self-supervising wrapper with exponential backoff (2s→30s, SIGTERM-safe)
+- `serverInfo._meta.packageVersion` in MCP `initialize` response (disambiguates protocol vs package version)
+- `/cowork` prompt: two-step handoff framing, `setHandoffNote` template, Cowork MCP gap warning
+- CI matrix expanded to Ubuntu + Windows × Node 20 + 22; 873 tests
+
+**v2.0.7 shipped (2026-03-15) — Security hardening + critical/major/minor bug fixes:**
+- CORS lockdown, lockfile TOCTOU fix, concurrent tool call routing, atomic checkpoints
+- Elicitation validation, OTel coordination, DebugState safe extraction, resources URI decoding
+- Extension fixes: terminal handler, events readyState, clearAllTerminalBuffers guard; 864 tests
+
+**v2.0.6 shipped (2026-03-15) — 8-gap remediation:**
+- E2E integration tests, per-session rate limiting, `/ping` endpoint, untrusted workspace gate
+- Windows CI matrix, `claudeDriver.ts` unit tests, `extension.ts` unit tests; 864 tests
+
+**v2.0.5 shipped (2026-03-15) — Extension auto-installs and auto-starts bridge:**
+- `BridgeInstaller`, `BridgeProcess`, `connectDirect()` — install extension → done
 
 **v2.0.1 shipped (2026-03-14) — Desktop reliability + cross-session handoff:**
 - Lock file now includes `isBridge: true`; stdio shim `findLockFile()` prefers bridge locks over IDE-owned locks — fixes auto-discovery collision when Windsurf (or any other IDE) writes its own lock file to `~/.claude/ide/`

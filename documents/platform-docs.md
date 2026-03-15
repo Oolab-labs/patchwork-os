@@ -181,7 +181,8 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | Tool | Description |
 |------|-------------|
 | `getDependencyTree` | Unified dependency graph across npm, pip, cargo, and go mod. Auto-detects from manifest files. Supports configurable depth. |
-| `getSecurityAdvisories` | Run security audit (npm audit / cargo audit / pip-audit) and return vulnerabilities with severity, CVE IDs, and remediation. Filter by minimum severity. |
+| `auditDependencies` | Detect outdated packages and report current vs. latest versions. Supports npm, yarn, pnpm, cargo, and pip. Auto-detects package manager from lock files (pnpm-lock.yaml → yarn.lock → package.json) and manifests. |
+| `getSecurityAdvisories` | Run a security audit and return known vulnerabilities with severity, CVE IDs, and remediation steps. Supports npm, yarn, pnpm, cargo audit, and pip-audit. Auto-detects from lock files and manifests. Filter by minimum severity. |
 | `getGitHotspots` | Identify most frequently changed files in git history over a time window. Useful for prioritizing refactoring and code review focus. |
 | `getPRTemplate` | Generate a pull request body from git commit messages and diff stats. Supports bullet, prose, and conventional commit styles. Pairs with `githubCreatePR`. |
 
@@ -192,6 +193,9 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `getImportTree` | BFS traversal of static/dynamic imports and CommonJS require() starting from a file. Returns tree with depths, cycle detection, and optional external packages. |
 | `getCodeCoverage` | Parse coverage reports (lcov, coverage-summary.json, clover.xml). Auto-detects report in workspace. Supports minCoverage filter and sorts worst-covered files first. |
 | `generateTests` | Extract exported symbols from a source file and generate a test scaffold (vitest/jest/pytest). Auto-detects framework from config files. |
+| `detectUnusedCode` | Scan for unused exports, functions, and variables by combining LSP references with static analysis. Reports file, line, and kind for each unused symbol. |
+| `refactorExtractFunction` | Extract a code range into a new function with signature inference. Returns the refactored source and a unified diff patch. |
+| `generateAPIDocumentation` | Generate API documentation from JSDoc/docstring comments in a file or directory. Outputs Markdown with function signatures, descriptions, and parameters. |
 | `createIssueFromAIComment` | Create a GitHub issue from a cached `// AI:` comment. Derives title from the comment text; supports labels and assignee. Requires `gh` CLI. |
 
 ### Claude Orchestration (requires `--claude-driver != none`)
@@ -359,7 +363,8 @@ Session lifecycle:
 - `/ping` endpoint: unauthenticated liveness check — returns `{"ok":true,"v":"<version>"}`. Safe for uptime monitors, Docker health checks, and CI wait scripts.
 - `/health` endpoint: Claude Code connected, extension connected, circuit breaker state (Bearer auth required)
 - `/status` endpoint: full session and activity summary (JSON)
-- `/ready` endpoint: 200 when bridge is initialized and ready to accept connections
+- `/ready` endpoint: 200 when bridge is initialized and ready to accept connections; 503 while still starting
+- `/stream` endpoint: `GET /stream` — SSE stream of real-time tool + lifecycle events from the activity log (Bearer auth required). Each event is a `data:` line containing JSON with `kind`, `tool`/`event`, `durationMs`, `outcome`, and timestamp. Keep-alive `: ping` comment sent every 15 seconds.
 - `/metrics` endpoint: Prometheus-format session metrics (tool calls, durations, errors)
 - `/tasks` endpoint: sanitized task list (Bearer-auth required; no prompt text, output capped at 200 chars). Only present when `--claude-driver != none`.
 
