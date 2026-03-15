@@ -559,6 +559,13 @@ export class Bridge {
       await this.orchestrator.loadPersistedTasks(port).catch(() => {
         /* best-effort */
       });
+      const reenqueued = this.orchestrator.list("pending").length;
+      const interrupted = this.orchestrator.list("interrupted").length;
+      if (reenqueued > 0 || interrupted > 0) {
+        this.logger.info(
+          `Restored from previous run: ${reenqueued} task(s) re-enqueued, ${interrupted} task(s) interrupted`,
+        );
+      }
     }
 
     // 5. Enable activity log disk persistence
@@ -723,8 +730,13 @@ export class Bridge {
       clearTimeout(this.listChangedTimer);
       this.listChangedTimer = null;
     }
-    // Cancel Claude tasks before closing the server so in-flight task handlers
-    // receive their cancellation signal while the transport is still reachable.
+    // Flush tasks to disk BEFORE cancelling them so the file captures the true
+    // pre-shutdown state (pending = still pending, running = interrupted).
+    // Cancel AFTER flush so in-flight handlers receive their signal while the
+    // transport is still reachable.
+    if (this.orchestrator && this.port > 0) {
+      this.orchestrator.flushTasksToDisk(this.port);
+    }
     if (this.orchestrator) {
       for (const task of [
         ...this.orchestrator.list("pending"),

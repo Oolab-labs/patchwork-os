@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  type MockInstance,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { IClaudeDriver } from "../claudeDriver.js";
 import type { ClaudeTaskInput } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
@@ -255,5 +263,322 @@ describe("ClaudeOrchestrator", () => {
     await orch.runAndWait({ prompt: "test" });
     expect(notifiedChunks).toContain("hello");
     expect(notifiedDone).toContain("done");
+  });
+});
+
+// ── Persistence tests ─────────────────────────────────────────────────────────
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    readFile: vi.fn(),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      writeFileSync: vi.fn(),
+      chmodSync: vi.fn(),
+      promises: {
+        ...(actual.promises ?? {}),
+        chmod: vi.fn().mockResolvedValue(undefined),
+      },
+      lstatSync: vi.fn().mockReturnValue({ isFile: () => true }),
+    },
+    writeFileSync: vi.fn(),
+    chmodSync: vi.fn(),
+    lstatSync: vi.fn().mockReturnValue({ isFile: () => true }),
+  };
+});
+
+describe("ClaudeOrchestrator — persistence", () => {
+  // biome-ignore lint/suspicious/noExplicitAny: mocked fs modules
+  let mockWriteFile: any;
+  // biome-ignore lint/suspicious/noExplicitAny: mocked fs modules
+  let mockReadFile: any;
+  // biome-ignore lint/suspicious/noExplicitAny: mocked fs modules
+  let mockWriteFileSync: any;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const fsp = await import("node:fs/promises");
+    const fsm = await import("node:fs");
+    mockWriteFile = fsp.writeFile as unknown as MockInstance;
+    mockReadFile = fsp.readFile as unknown as MockInstance;
+    mockWriteFileSync = (fsm.default as unknown as Record<string, MockInstance>)
+      .writeFileSync;
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ── flushTasksToDisk ──────────────────────────────────────────────────────
+
+  it("flushTasksToDisk — pending tasks saved with status 'pending'", async () => {
+    const blocking = makeBlockingDriver();
+    // Fill all running slots with slow tasks so queued tasks stay pending
+    const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+    for (let i = 0; i < ClaudeOrchestrator.MAX_CONCURRENT; i++) {
+      orch.enqueue({ prompt: `fill${i}` });
+    }
+    orch.enqueue({ prompt: "stays-pending" });
+
+    orch.flushTasksToDisk(9999);
+
+    expect(mockWriteFileSync).toHaveBeenCalledOnce();
+    const [, jsonStr] = mockWriteFileSync.mock.calls[0] as [string, string];
+    const payload = JSON.parse(jsonStr);
+    expect(payload.version).toBe(1);
+    expect(payload.savedAt).toBeTypeOf("number");
+    const pending = payload.tasks.filter(
+      (t: { status: string }) => t.status === "pending",
+    );
+    expect(pending.length).toBeGreaterThanOrEqual(1);
+    expect(pending[0].prompt).toBe("stays-pending");
+    void blocking;
+  });
+
+  it("flushTasksToDisk — running tasks saved with status 'interrupted'", async () => {
+    const blocking = makeBlockingDriver();
+    const orch = new ClaudeOrchestrator(blocking.driver, "/tmp", noop);
+    orch.enqueue({ prompt: "running-task" });
+    await new Promise((r) => setImmediate(r)); // let _runTask start
+
+    expect(orch.getTask(orch.list("running")[0]?.id ?? "")?.status).toBe(
+      "running",
+    );
+
+    orch.flushTasksToDisk(9999);
+
+    const [, jsonStr] = mockWriteFileSync.mock.calls[0] as [string, string];
+    const payload = JSON.parse(jsonStr);
+    const interrupted = payload.tasks.filter(
+      (t: { status: string }) => t.status === "interrupted",
+    );
+    expect(interrupted.length).toBe(1);
+    expect(interrupted[0].prompt).toBe("running-task");
+
+    // cleanup
+    orch.cancel(orch.list("running")[0]?.id ?? "");
+  });
+
+  it("flushTasksToDisk — terminal tasks saved with their own status", async () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", noop);
+    await orch.runAndWait({ prompt: "completed" });
+
+    orch.flushTasksToDisk(9999);
+
+    const [, jsonStr] = mockWriteFileSync.mock.calls[0] as [string, string];
+    const payload = JSON.parse(jsonStr);
+    const done = payload.tasks.filter(
+      (t: { status: string }) => t.status === "done",
+    );
+    expect(done.length).toBe(1);
+    expect(done[0].prompt).toBe("completed");
+  });
+
+  // ── loadPersistedTasks ────────────────────────────────────────────────────
+
+  it("loadPersistedTasks — pending tasks are re-enqueued with stable ID", async () => {
+    const stableId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const v1Payload = {
+      version: 1,
+      savedAt: Date.now(),
+      tasks: [
+        {
+          id: stableId,
+          sessionId: "",
+          prompt: "persisted-pending",
+          contextFiles: [],
+          status: "pending",
+          createdAt: Date.now() - 5000,
+          timeoutMs: 120_000,
+          tokenEstimate: 10,
+        },
+      ],
+    };
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(v1Payload));
+
+    const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    // Task should have been re-enqueued with the original ID
+    const task = orch.getTask(stableId);
+    expect(task).toBeDefined();
+    expect(task?.status === "pending" || task?.status === "running").toBe(true);
+    expect(task?.prompt).toBe("persisted-pending");
+  });
+
+  it("loadPersistedTasks — interrupted tasks become history (not re-enqueued)", async () => {
+    const id = "ffffffff-0000-0000-0000-000000000001";
+    const v1Payload = {
+      version: 1,
+      savedAt: Date.now(),
+      tasks: [
+        {
+          id,
+          sessionId: "",
+          prompt: "was-running",
+          contextFiles: [],
+          status: "interrupted",
+          createdAt: Date.now() - 60_000,
+          doneAt: Date.now() - 1000,
+          timeoutMs: 120_000,
+          tokenEstimate: 5,
+        },
+      ],
+    };
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(v1Payload));
+
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    expect(orch.list("interrupted").length).toBe(1);
+    expect(orch.list("pending").length).toBe(0);
+    expect(orch.getTask(id)?.prompt).toBe("was-running");
+  });
+
+  it("loadPersistedTasks — v0 format (array at root) loads terminal tasks only", async () => {
+    const id = "ffffffff-0000-0000-0000-000000000002";
+    const v0Payload = [
+      {
+        id,
+        sessionId: "",
+        prompt: "old-done",
+        contextFiles: [],
+        status: "done",
+        createdAt: Date.now() - 10_000,
+        doneAt: Date.now() - 5_000,
+        timeoutMs: 120_000,
+        tokenEstimate: 4,
+        output: "result",
+      },
+    ];
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(v0Payload));
+
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    expect(orch.list("done").length).toBe(1);
+    expect(orch.list("pending").length).toBe(0);
+    expect(orch.getTask(id)?.output).toBe("result");
+  });
+
+  it("loadPersistedTasks — unknown version falls back to terminal tasks only", async () => {
+    const id = "ffffffff-0000-0000-0000-000000000003";
+    const futurePendingId = "ffffffff-0000-0000-0000-000000000004";
+    const futurePayload = {
+      version: 99,
+      savedAt: Date.now(),
+      tasks: [
+        {
+          id,
+          sessionId: "",
+          prompt: "done-task",
+          contextFiles: [],
+          status: "done",
+          createdAt: Date.now() - 5_000,
+          doneAt: Date.now(),
+          timeoutMs: 120_000,
+          tokenEstimate: 4,
+        },
+        {
+          id: futurePendingId,
+          sessionId: "",
+          prompt: "pending-task",
+          contextFiles: [],
+          status: "pending",
+          createdAt: Date.now() - 1_000,
+          timeoutMs: 120_000,
+          tokenEstimate: 4,
+        },
+      ],
+    };
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(futurePayload));
+
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    // Done tasks loaded, pending tasks not re-enqueued
+    expect(orch.list("done").length).toBe(1);
+    expect(orch.list("pending").length).toBe(0);
+    expect(orch.getTask(futurePendingId)).toBeUndefined();
+  });
+
+  it("loadPersistedTasks — queue overflow: excess pending tasks become interrupted", async () => {
+    const tasks = Array.from({ length: 25 }, (_, i) => ({
+      id: `ffffffff-0000-0000-0000-${String(i).padStart(12, "0")}`,
+      sessionId: "",
+      prompt: `pending-${i}`,
+      contextFiles: [],
+      status: "pending",
+      createdAt: Date.now(),
+      timeoutMs: 120_000,
+      tokenEstimate: 4,
+    }));
+    const v1Payload = { version: 1, savedAt: Date.now(), tasks };
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(v1Payload));
+
+    // Use slow driver so tasks accumulate rather than completing immediately
+    const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    const pendingCount =
+      orch.list("pending").length + orch.list("running").length;
+    const interruptedCount = orch.list("interrupted").length;
+    expect(pendingCount).toBeLessThanOrEqual(ClaudeOrchestrator.MAX_QUEUE);
+    expect(interruptedCount).toBe(25 - pendingCount);
+    expect(pendingCount + interruptedCount).toBe(25);
+  });
+
+  it("loadPersistedTasks — v1 pending task preserves original createdAt", async () => {
+    const originalCreatedAt = Date.now() - 120_000;
+    const id = "ffffffff-0000-0000-0000-000000000010";
+    const v1Payload = {
+      version: 1,
+      savedAt: Date.now(),
+      tasks: [
+        {
+          id,
+          sessionId: "",
+          prompt: "timed-task",
+          contextFiles: [],
+          status: "pending",
+          createdAt: originalCreatedAt,
+          timeoutMs: 120_000,
+          tokenEstimate: 10,
+        },
+      ],
+    };
+    mockReadFile.mockResolvedValueOnce(JSON.stringify(v1Payload));
+
+    const orch = new ClaudeOrchestrator(makeSlowDriver(60_000), "/tmp", noop);
+    await orch.loadPersistedTasks(9999);
+
+    const task = orch.getTask(id);
+    expect(task?.createdAt).toBe(originalCreatedAt);
+  });
+
+  // ── persistTasks ─────────────────────────────────────────────────────────
+
+  it("persistTasks — uses v1 envelope and includes all task statuses", async () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", noop);
+    await orch.runAndWait({ prompt: "done-task" });
+
+    await orch.persistTasks(9999);
+
+    expect(mockWriteFile).toHaveBeenCalledOnce();
+    const [, jsonStr] = mockWriteFile.mock.calls[0] as [string, string];
+    const payload = JSON.parse(jsonStr);
+    expect(payload.version).toBe(1);
+    expect(Array.isArray(payload.tasks)).toBe(true);
+    expect(payload.tasks[0].status).toBe("done");
   });
 });

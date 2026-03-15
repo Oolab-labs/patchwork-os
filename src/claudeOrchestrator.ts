@@ -5,7 +5,13 @@ import { homedir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 import type { IClaudeDriver } from "./claudeDriver.js";
 
-export type TaskStatus = "pending" | "running" | "done" | "error" | "cancelled";
+export type TaskStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "error"
+  | "cancelled"
+  | "interrupted";
 
 export interface ClaudeTask {
   id: string;
@@ -39,7 +45,26 @@ export type EnqueueOpts = {
   onChunk?: (chunk: string) => void;
   /** Optional model override, e.g. "claude-haiku-4-5-20251001". */
   model?: string;
+  /** Original creation timestamp — used when re-enqueuing persisted tasks. */
+  createdAt?: number;
 };
+
+/** Shape of a task entry in the v1 tasks file. */
+interface PersistedTask {
+  id: string;
+  sessionId: string;
+  prompt: string;
+  contextFiles: string[];
+  status: string;
+  output?: string;
+  errorMessage?: string;
+  createdAt: number;
+  startedAt?: number;
+  doneAt?: number;
+  timeoutMs: number;
+  tokenEstimate: number;
+  model?: string;
+}
 
 export class ClaudeOrchestrator {
   static readonly MAX_CONCURRENT = 10;
@@ -102,7 +127,7 @@ export class ClaudeOrchestrator {
       prompt: opts.prompt,
       contextFiles: opts.contextFiles ?? [],
       status: "pending",
-      createdAt: Date.now(),
+      createdAt: opts.createdAt ?? Date.now(),
       timeoutMs: opts.timeoutMs ?? ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
       tokenEstimate: estimateTokens(opts.prompt),
       ...(opts.model !== undefined && { model: opts.model }),
@@ -284,100 +309,223 @@ export class ClaudeOrchestrator {
     }
   }
 
-  /** Persist terminal tasks to disk for cross-session resumability. Best-effort. */
+  /** Build the serialisable task list for disk persistence.
+   * running tasks are saved as "interrupted" so on reload they appear as a
+   * known-terminal state rather than a stale "running" entry. */
+  private _buildTasksPayload(): PersistedTask[] {
+    return [...this.tasks.values()].map((t) => ({
+      id: t.id,
+      sessionId: t.sessionId,
+      prompt: t.prompt,
+      contextFiles: t.contextFiles,
+      status: (t.status === "running" ? "interrupted" : t.status) as string,
+      output: t.output,
+      errorMessage: t.errorMessage,
+      createdAt: t.createdAt,
+      startedAt: t.startedAt,
+      doneAt: t.doneAt,
+      timeoutMs: t.timeoutMs,
+      tokenEstimate: t.tokenEstimate,
+      ...(t.model !== undefined && { model: t.model }),
+    }));
+  }
+
+  /** Persist all tasks to disk for cross-session resumability. Best-effort. */
   async persistTasks(port: number): Promise<void> {
     const filePath = join(homedir(), ".claude", "ide", `tasks-${port}.json`);
-    const toSave = [...this.tasks.values()]
-      .filter(
-        (t) =>
-          t.status === "done" ||
-          t.status === "error" ||
-          t.status === "cancelled",
-      )
-      .map((t) => ({
-        id: t.id,
-        sessionId: t.sessionId,
-        prompt: t.prompt,
-        contextFiles: t.contextFiles,
-        status: t.status,
-        output: t.output,
-        errorMessage: t.errorMessage,
-        createdAt: t.createdAt,
-        startedAt: t.startedAt,
-        doneAt: t.doneAt,
-        timeoutMs: t.timeoutMs,
-        tokenEstimate: t.tokenEstimate,
-      }));
-    await writeFile(filePath, JSON.stringify(toSave, null, 2), "utf-8");
+    const payload = {
+      version: 1,
+      savedAt: Date.now(),
+      tasks: this._buildTasksPayload(),
+    };
+    await writeFile(filePath, JSON.stringify(payload, null, 2), "utf-8");
     // Restrict to owner-only — prompts may contain sensitive code or secrets
     await fs.promises.chmod(filePath, 0o600);
   }
 
-  /** Load persisted tasks from disk on startup. Best-effort. */
+  /** Synchronous flush called during shutdown — captures tasks at their true
+   * pre-cancellation state (pending = still pending, running = interrupted).
+   * Must be called BEFORE cancel() so the status snapshot is accurate. */
+  flushTasksToDisk(port: number): void {
+    const filePath = join(homedir(), ".claude", "ide", `tasks-${port}.json`);
+    try {
+      const payload = {
+        version: 1,
+        savedAt: Date.now(),
+        tasks: this._buildTasksPayload(),
+      };
+      fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf-8");
+      fs.chmodSync(filePath, 0o600);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /** Load persisted tasks from disk on startup. Best-effort.
+   *
+   * File format:
+   * - v0 (array at root): terminal tasks only — loaded as history, no re-enqueue
+   * - v1 ({version:1, tasks:[]}): pending tasks are re-enqueued; interrupted/terminal
+   *   tasks are restored as history; unknown future versions fall back to terminal-only
+   */
   async loadPersistedTasks(port: number): Promise<void> {
     const filePath = join(homedir(), ".claude", "ide", `tasks-${port}.json`);
     try {
       const raw = await readFile(filePath, "utf-8");
       // biome-ignore lint/suspicious/noExplicitAny: raw JSON from disk — validated field-by-field below
-      const saved = JSON.parse(raw) as any[];
-      if (!Array.isArray(saved)) return;
+      const parsed = JSON.parse(raw) as any;
+
+      let saved: PersistedTask[];
+      let reenqueuePending = false;
+
+      if (Array.isArray(parsed)) {
+        // v0: raw array — terminal tasks only (existing behaviour)
+        saved = parsed as PersistedTask[];
+        reenqueuePending = false;
+      } else if (
+        parsed !== null &&
+        typeof parsed === "object" &&
+        typeof parsed.version === "number"
+      ) {
+        const tasks = Array.isArray(parsed.tasks)
+          ? (parsed.tasks as PersistedTask[])
+          : [];
+        if (parsed.version === 1) {
+          saved = tasks;
+          reenqueuePending = true;
+        } else {
+          // Unknown future version — conservative fallback: terminal tasks only
+          this.log(
+            `[orchestrator] tasks file version ${parsed.version} unknown — restoring terminal tasks only`,
+          );
+          saved = tasks.filter(
+            (t) =>
+              t.status === "done" ||
+              t.status === "error" ||
+              t.status === "cancelled" ||
+              t.status === "interrupted",
+          );
+          reenqueuePending = false;
+        }
+      } else {
+        return;
+      }
+
+      const normalizedWorkspace = resolvePath(this.workspace);
+      let reenqueued = 0;
+      let overflow = 0;
+
       for (const t of saved) {
         if (typeof t.id !== "string") continue;
-        // Only load terminal tasks; do not resurrect in-progress ones
-        if (
-          t.status !== "done" &&
-          t.status !== "error" &&
-          t.status !== "cancelled"
-        )
+        if (this.tasks.has(t.id)) continue;
+
+        const prompt: string = typeof t.prompt === "string" ? t.prompt : "";
+        // Only restore context files that are workspace-confined regular files
+        const contextFiles: string[] = Array.isArray(t.contextFiles)
+          ? t.contextFiles.filter((f: unknown) => {
+              if (typeof f !== "string") return false;
+              const abs = resolvePath(f);
+              if (
+                abs !== normalizedWorkspace &&
+                !abs.startsWith(`${normalizedWorkspace}/`)
+              )
+                return false;
+              try {
+                return fs.lstatSync(abs).isFile();
+              } catch {
+                return false;
+              }
+            })
+          : [];
+
+        if (reenqueuePending && t.status === "pending") {
+          if (
+            this.queue.length + this.running.size <
+            ClaudeOrchestrator.MAX_QUEUE
+          ) {
+            // Re-enqueue with original ID and creation timestamp
+            this._enqueueWithId(t.id, {
+              prompt,
+              contextFiles,
+              timeoutMs:
+                typeof t.timeoutMs === "number"
+                  ? t.timeoutMs
+                  : ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
+              sessionId: typeof t.sessionId === "string" ? t.sessionId : "",
+              createdAt:
+                typeof t.createdAt === "number" ? t.createdAt : undefined,
+              ...(t.model !== undefined && { model: t.model }),
+            });
+            reenqueued++;
+          } else {
+            // Queue full — demote to interrupted history
+            this._restoreTerminalTask(t, prompt, contextFiles, "interrupted");
+            overflow++;
+          }
           continue;
-        if (!this.tasks.has(t.id)) {
-          const prompt: string = typeof t.prompt === "string" ? t.prompt : "";
-          // Only restore context files that are workspace-confined regular files
-          const normalizedWorkspace = resolvePath(this.workspace);
-          const contextFiles: string[] = Array.isArray(t.contextFiles)
-            ? t.contextFiles.filter((f: unknown) => {
-                if (typeof f !== "string") return false;
-                const abs = resolvePath(f);
-                if (
-                  abs !== normalizedWorkspace &&
-                  !abs.startsWith(`${normalizedWorkspace}/`)
-                )
-                  return false;
-                try {
-                  return fs.lstatSync(abs).isFile();
-                } catch {
-                  return false;
-                }
-              })
-            : [];
-          const task: ClaudeTask = {
-            id: t.id,
-            sessionId: typeof t.sessionId === "string" ? t.sessionId : "",
+        }
+
+        // Terminal statuses (done/error/cancelled/interrupted) — restore as history
+        if (
+          t.status === "done" ||
+          t.status === "error" ||
+          t.status === "cancelled" ||
+          t.status === "interrupted"
+        ) {
+          this._restoreTerminalTask(
+            t,
             prompt,
             contextFiles,
-            status: t.status as TaskStatus,
-            createdAt: typeof t.createdAt === "number" ? t.createdAt : 0,
-            startedAt:
-              typeof t.startedAt === "number" ? t.startedAt : undefined,
-            doneAt: typeof t.doneAt === "number" ? t.doneAt : undefined,
-            output: typeof t.output === "string" ? t.output : undefined,
-            errorMessage:
-              typeof t.errorMessage === "string" ? t.errorMessage : undefined,
-            timeoutMs:
-              typeof t.timeoutMs === "number"
-                ? t.timeoutMs
-                : ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
-            tokenEstimate:
-              typeof t.tokenEstimate === "number"
-                ? t.tokenEstimate
-                : estimateTokens(prompt),
-          };
-          this.tasks.set(task.id, task);
+            t.status as TaskStatus,
+          );
         }
+        // "running" entries in the file should have been saved as "interrupted" by
+        // flushTasksToDisk — skip any that somehow slipped through.
+      }
+
+      if (reenqueued > 0 || overflow > 0) {
+        const parts: string[] = [];
+        if (reenqueued > 0) parts.push(`${reenqueued} task(s) re-enqueued`);
+        if (overflow > 0)
+          parts.push(`${overflow} task(s) demoted to interrupted (queue full)`);
+        this.log(
+          `[orchestrator] restored from previous run: ${parts.join(", ")}`,
+        );
       }
     } catch {
       // File may not exist on first run — silently ignore
     }
+  }
+
+  private _restoreTerminalTask(
+    t: PersistedTask,
+    prompt: string,
+    contextFiles: string[],
+    status: TaskStatus,
+  ): void {
+    const task: ClaudeTask = {
+      id: t.id,
+      sessionId: typeof t.sessionId === "string" ? t.sessionId : "",
+      prompt,
+      contextFiles,
+      status,
+      createdAt: typeof t.createdAt === "number" ? t.createdAt : 0,
+      startedAt: typeof t.startedAt === "number" ? t.startedAt : undefined,
+      doneAt: typeof t.doneAt === "number" ? t.doneAt : Date.now(),
+      output: typeof t.output === "string" ? t.output : undefined,
+      errorMessage:
+        typeof t.errorMessage === "string" ? t.errorMessage : undefined,
+      timeoutMs:
+        typeof t.timeoutMs === "number"
+          ? t.timeoutMs
+          : ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
+      tokenEstimate:
+        typeof t.tokenEstimate === "number"
+          ? t.tokenEstimate
+          : estimateTokens(prompt),
+      ...(t.model !== undefined && { model: t.model }),
+    };
+    this.tasks.set(task.id, task);
   }
 
   private _pruneHistory(): void {
@@ -388,7 +536,8 @@ export class ClaudeOrchestrator {
         (t) =>
           t.status === "done" ||
           t.status === "error" ||
-          t.status === "cancelled",
+          t.status === "cancelled" ||
+          t.status === "interrupted",
       )
       .sort((a, b) => (a.doneAt ?? 0) - (b.doneAt ?? 0));
 
