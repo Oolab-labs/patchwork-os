@@ -529,7 +529,7 @@ export class Bridge {
       this.logger,
     );
     this.server.httpMcpHandler = (req, res) =>
-      this.httpMcpHandler?.handle(req, res);
+      this.httpMcpHandler?.handle(req, res) ?? Promise.resolve();
 
     // 3. Check for stale lock files
     this.lockFile.cleanStale();
