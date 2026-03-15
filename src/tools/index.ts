@@ -57,6 +57,10 @@ import { createGetOpenEditorsTool } from "./getOpenEditors.js";
 import { createGetPRTemplateTool } from "./getPRTemplate.js";
 import { createGetProjectInfoTool } from "./getProjectInfo.js";
 import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
+import { createAuditDependenciesTool } from "./auditDependencies.js";
+import { createDetectUnusedCodeTool } from "./detectUnusedCode.js";
+import { createGenerateAPIDocumentationTool } from "./generateAPIDocumentation.js";
+import { createRefactorExtractFunctionTool } from "./refactorExtractFunction.js";
 import { createGetToolCapabilitiesTool } from "./getToolCapabilities.js";
 import { createGetTypeSignatureTool } from "./getTypeSignature.js";
 import { createGetWorkspaceFoldersTool } from "./getWorkspaceFolders.js";
@@ -284,6 +288,10 @@ export function registerAllTools(
     // Dependency & security tools
     createGetDependencyTreeTool(workspace, probes),
     createGetSecurityAdvisoriesTool(workspace, probes),
+    createAuditDependenciesTool(workspace, probes),
+    createDetectUnusedCodeTool(workspace, probes),
+    createGenerateAPIDocumentationTool(workspace),
+    createRefactorExtractFunctionTool(workspace, extensionClient),
     createGetGitHotspotsTool(workspace),
     createGetPRTemplateTool(workspace),
     createGetCodeCoverageTool(workspace),
