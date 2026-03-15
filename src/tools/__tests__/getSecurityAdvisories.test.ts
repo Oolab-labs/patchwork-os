@@ -127,4 +127,113 @@ describe("getSecurityAdvisories", () => {
     const result = parse(await tool.handler({}));
     expect(result.available).toBe(false);
   });
+
+  it("auto-detects pnpm from pnpm-lock.yaml (prefers over package.json)", async () => {
+    mockExistsSync.mockImplementation(
+      (p) =>
+        String(p).endsWith("pnpm-lock.yaml") ||
+        String(p).endsWith("package.json"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        vulnerabilities: {
+          axios: {
+            severity: "high",
+            via: [{ title: "SSRF", url: "https://npmjs.com/advisories/123" }],
+            fixAvailable: { name: "axios", version: "1.6.8" },
+          },
+        },
+        metadata: { vulnerabilities: { high: 1 } },
+      }),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 200,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("pnpm");
+    expect(result.totalVulnerabilities).toBe(1);
+    expect(result.advisories[0].package).toBe("axios");
+    expect(result.advisories[0].fix).toContain("axios@1.6.8");
+    const callArgs = mockExecSafe.mock.calls[0];
+    expect(callArgs?.[0]).toBe("pnpm");
+  });
+
+  it("auto-detects yarn from yarn.lock and parses auditAdvisory JSONL", async () => {
+    mockExistsSync.mockImplementation(
+      (p) =>
+        String(p).endsWith("yarn.lock") || String(p).endsWith("package.json"),
+    );
+    const advisoryEvent = JSON.stringify({
+      type: "auditAdvisory",
+      data: {
+        advisory: {
+          id: 1654,
+          module_name: "lodash",
+          severity: "high",
+          title: "Prototype Pollution",
+          url: "https://npmjs.com/advisories/1654",
+          patched_versions: ">=4.17.21",
+        },
+      },
+    });
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: `{"type":"info","data":"Colours"}\n${advisoryEvent}\n{"type":"auditSummary","data":{"vulnerabilities":{"high":1}}}`,
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 400,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("yarn");
+    expect(result.totalVulnerabilities).toBe(1);
+    expect(result.advisories[0].id).toBe("1654");
+    expect(result.advisories[0].package).toBe("lodash");
+    expect(result.advisories[0].severity).toBe("high");
+    expect(result.advisories[0].fix).toContain(">=4.17.21");
+    const callArgs = mockExecSafe.mock.calls[0];
+    expect(callArgs?.[0]).toBe("yarn");
+  });
+
+  it("yarn: returns zero advisories when no auditAdvisory events in output", async () => {
+    mockExistsSync.mockImplementation((p) => String(p).endsWith("yarn.lock"));
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: '{"type":"auditSummary","data":{"vulnerabilities":{}}}\n',
+      stderr: "",
+      exitCode: 0,
+      timedOut: false,
+      durationMs: 100,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("yarn");
+    expect(result.totalVulnerabilities).toBe(0);
+  });
+
+  it("pnpm: returns available:false when binary not found", async () => {
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("pnpm-lock.yaml"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: "",
+      stderr: "ENOENT: pnpm not found",
+      exitCode: 127,
+      timedOut: false,
+      durationMs: 10,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(false);
+    expect(result.packageManager).toBe("pnpm");
+    expect(result.error).toContain("pnpm not found");
+  });
 });
