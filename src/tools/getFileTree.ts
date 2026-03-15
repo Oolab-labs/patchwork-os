@@ -28,7 +28,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
     schema: {
       name: "getFileTree",
       description:
-        "List files and directories in the workspace tree. Respects .gitignore when available.",
+        "List files and directories in the workspace tree. Respects .gitignore when available. The fallback fs walker always skips: node_modules, .git, dist, __pycache__, .next, .nuxt, build, coverage, .cache.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

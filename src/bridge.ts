@@ -723,14 +723,8 @@ export class Bridge {
       clearTimeout(this.listChangedTimer);
       this.listChangedTimer = null;
     }
-    try {
-      await this.server.close();
-    } catch {
-      // Server may already be closed
-    }
-    this.lockFile.delete();
-    this.checkpoint?.stop();
-    // Cancel any pending/running Claude tasks
+    // Cancel Claude tasks before closing the server so in-flight task handlers
+    // receive their cancellation signal while the transport is still reachable.
     if (this.orchestrator) {
       for (const task of [
         ...this.orchestrator.list("pending"),
@@ -739,6 +733,13 @@ export class Bridge {
         this.orchestrator.cancel(task.id);
       }
     }
+    try {
+      await this.server.close();
+    } catch {
+      // Server may already be closed
+    }
+    this.lockFile.delete();
+    this.checkpoint?.stop();
     cleanupTempDirs();
   }
 }

@@ -64,7 +64,17 @@ function timingSafeTokenCompare(a: string, b: string): boolean {
   const padB = Buffer.alloc(len);
   bA.copy(padA);
   bB.copy(padB);
-  return crypto.timingSafeEqual(padA, padB) && bA.length === bB.length;
+  // Use timingSafeEqual for the length comparison too so an attacker on a
+  // remote deployment cannot distinguish "wrong length" from "right length,
+  // wrong bytes" via timing.  Encode each length as a fixed-width 4-byte BE
+  // integer before comparing.
+  const lenA = Buffer.allocUnsafe(4);
+  const lenB = Buffer.allocUnsafe(4);
+  lenA.writeUInt32BE(bA.length, 0);
+  lenB.writeUInt32BE(bB.length, 0);
+  return (
+    crypto.timingSafeEqual(padA, padB) && crypto.timingSafeEqual(lenA, lenB)
+  );
 }
 
 function setupPongHandler(ws: AliveWebSocket): void {

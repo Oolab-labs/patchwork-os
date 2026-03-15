@@ -165,10 +165,16 @@ export class ExtensionClient {
     // Replace existing connection
     if (this.ws) {
       this.logger.info("Replacing existing extension connection");
+      // Null out this.ws *before* rejectAllPending so that any synchronous retry
+      // triggered from a reject handler sees "not connected" and backs off,
+      // rather than accidentally sending on the old (about-to-be-terminated) socket.
+      const oldWs = this.ws;
+      this.ws = null;
+      this.connected = false;
       this.rejectAllPending("Extension reconnected");
-      this.ws.removeAllListeners();
-      if (this.ws.readyState === WebSocket.OPEN) {
-        this.ws.terminate();
+      oldWs.removeAllListeners();
+      if (oldWs.readyState === WebSocket.OPEN) {
+        oldWs.terminate();
       }
       // Clear stale diagnostics listeners — the old socket's close event will
       // never fire (listeners removed above), so handleDisconnect won't run for

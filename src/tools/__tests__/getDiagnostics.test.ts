@@ -62,11 +62,11 @@ describe("getDiagnostics — linter error surfacing", () => {
     expect(data.linterErrors.biome).toBeDefined();
   });
 
-  it("does not include linterErrors when linters run cleanly", async () => {
+  it("includes empty linterErrors when linters run cleanly", async () => {
     mockExecSafe.mockResolvedValue(ok(JSON.stringify({ diagnostics: [] })));
     const tool = createGetDiagnosticsTool("/ws", probes);
     const data = parse(await tool.handler({}));
-    expect(data.linterErrors).toBeUndefined();
+    expect(data.linterErrors).toEqual({});
   });
 });
 

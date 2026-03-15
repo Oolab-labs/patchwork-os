@@ -213,6 +213,7 @@ export function createGetDiagnosticsTool(
               available: true,
               source: "extension",
               linters: ["vscode-lsp"],
+              linterErrors: {},
               diagnostics: filtered,
               ...(severityFilter ? { severityFilter } : {}),
               ...(extTruncated || filtered.length < extDiagsArr.length
@@ -237,6 +238,7 @@ export function createGetDiagnosticsTool(
           available: false,
           source: "cli",
           linters: [],
+          linterErrors: {},
           diagnostics: [],
           error: "No linters detected in workspace",
         });
@@ -285,13 +287,13 @@ export function createGetDiagnosticsTool(
         available: true,
         source: "cli",
         linters: availableLinters.map((l) => l.name),
+        linterErrors: errors,
         summary,
         diagnostics: filteredDiags,
         ...(severityFilter ? { severityFilter } : {}),
         ...(filteredDiags.length < totalBeforeFilter
           ? { truncated: true, totalBeforeFilter }
           : {}),
-        ...(Object.keys(errors).length > 0 && { linterErrors: errors }),
       });
     },
   };
