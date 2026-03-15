@@ -21,33 +21,44 @@ afterEach(() => {
 });
 
 describe("LockFileManager", () => {
-  it("creates lock file with correct permissions", () => {
-    const mgr = new LockFileManager(logger);
-    const lockPath = mgr.write(12345, "test-token", ["/workspace"], "TestIDE");
+  it.skipIf(process.platform === "win32")(
+    "creates lock file with correct permissions",
+    () => {
+      const mgr = new LockFileManager(logger);
+      const lockPath = mgr.write(
+        12345,
+        "test-token",
+        ["/workspace"],
+        "TestIDE",
+      );
 
-    expect(fs.existsSync(lockPath)).toBe(true);
-    const stat = fs.statSync(lockPath);
-    // 0o600 = owner read/write only
-    expect(stat.mode & 0o777).toBe(0o600);
+      expect(fs.existsSync(lockPath)).toBe(true);
+      const stat = fs.statSync(lockPath);
+      // 0o600 = owner read/write only
+      expect(stat.mode & 0o777).toBe(0o600);
 
-    const content = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
-    expect(content.authToken).toBe("test-token");
-    expect(content.pid).toBe(process.pid);
-    expect(content.ideName).toBe("TestIDE");
-  });
+      const content = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
+      expect(content.authToken).toBe("test-token");
+      expect(content.pid).toBe(process.pid);
+      expect(content.ideName).toBe("TestIDE");
+    },
+  );
 
-  it("enforces directory permissions on existing dirs", () => {
-    // Create the ide dir with permissive mode
-    const ideDir = path.join(tmpDir, "ide");
-    fs.mkdirSync(ideDir, { recursive: true, mode: 0o755 });
+  it.skipIf(process.platform === "win32")(
+    "enforces directory permissions on existing dirs",
+    () => {
+      // Create the ide dir with permissive mode
+      const ideDir = path.join(tmpDir, "ide");
+      fs.mkdirSync(ideDir, { recursive: true, mode: 0o755 });
 
-    const mgr = new LockFileManager(logger);
-    mgr.write(12345, "test-token", ["/workspace"], "TestIDE");
+      const mgr = new LockFileManager(logger);
+      mgr.write(12345, "test-token", ["/workspace"], "TestIDE");
 
-    // Should have been tightened to 0o700
-    const stat = fs.statSync(ideDir);
-    expect(stat.mode & 0o777).toBe(0o700);
-  });
+      // Should have been tightened to 0o700
+      const stat = fs.statSync(ideDir);
+      expect(stat.mode & 0o777).toBe(0o700);
+    },
+  );
 
   it("force-removes a symlink at the lock path and writes a new regular file", () => {
     const ideDir = path.join(tmpDir, "ide");

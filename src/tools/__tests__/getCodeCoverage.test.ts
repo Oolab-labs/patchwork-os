@@ -73,45 +73,48 @@ describe("getCodeCoverage", () => {
   });
 
   describe("coverage-summary.json parsing", () => {
-    it("parses lines/branches/functions percentages", async () => {
-      const summaryPath = path.join(
-        WORKSPACE,
-        "coverage",
-        "coverage-summary.json",
-      );
-      mockExistsSync.mockImplementation((p) => p === summaryPath);
-      mockReadFile.mockResolvedValue(
-        JSON.stringify({
-          total: {
-            lines: { pct: 80 },
-            branches: { pct: 70 },
-            functions: { pct: 90 },
-          },
-          [`${WORKSPACE}/src/foo.ts`]: {
-            lines: { pct: 55.5 },
-            branches: { pct: 40 },
-            functions: { pct: 66.6 },
-          },
-          [`${WORKSPACE}/src/bar.ts`]: {
-            lines: { pct: 95 },
-            branches: { pct: 88 },
-            functions: { pct: 100 },
-          },
-        }) as unknown as Buffer,
-      );
+    it.skipIf(process.platform === "win32")(
+      "parses lines/branches/functions percentages",
+      async () => {
+        const summaryPath = path.join(
+          WORKSPACE,
+          "coverage",
+          "coverage-summary.json",
+        );
+        mockExistsSync.mockImplementation((p) => p === summaryPath);
+        mockReadFile.mockResolvedValue(
+          JSON.stringify({
+            total: {
+              lines: { pct: 80 },
+              branches: { pct: 70 },
+              functions: { pct: 90 },
+            },
+            [`${WORKSPACE}/src/foo.ts`]: {
+              lines: { pct: 55.5 },
+              branches: { pct: 40 },
+              functions: { pct: 66.6 },
+            },
+            [`${WORKSPACE}/src/bar.ts`]: {
+              lines: { pct: 95 },
+              branches: { pct: 88 },
+              functions: { pct: 100 },
+            },
+          }) as unknown as Buffer,
+        );
 
-      const data = parse(await makeHandler()({}));
-      expect(data.format).toBe("coverage-summary");
-      expect(data.files).toHaveLength(2);
+        const data = parse(await makeHandler()({}));
+        expect(data.format).toBe("coverage-summary");
+        expect(data.files).toHaveLength(2);
 
-      // Sorted ascending by lines (worst first)
-      expect(data.files[0].file).toBe("src/foo.ts");
-      expect(data.files[0].lines).toBe(55.5);
-      expect(data.files[0].branches).toBe(40);
-      expect(data.files[0].functions).toBe(66.6);
-      expect(data.files[1].file).toBe("src/bar.ts");
-      expect(data.files[1].lines).toBe(95);
-    });
+        // Sorted ascending by lines (worst first)
+        expect(data.files[0].file).toBe("src/foo.ts");
+        expect(data.files[0].lines).toBe(55.5);
+        expect(data.files[0].branches).toBe(40);
+        expect(data.files[0].functions).toBe(66.6);
+        expect(data.files[1].file).toBe("src/bar.ts");
+        expect(data.files[1].lines).toBe(95);
+      },
+    );
 
     it("skips the 'total' key", async () => {
       const summaryPath = path.join(

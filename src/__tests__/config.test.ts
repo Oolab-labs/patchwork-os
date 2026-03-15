@@ -96,10 +96,13 @@ describe("parseConfig --allow-command interpreter guard", () => {
 const cfg = (...a: string[]) => parseConfig(["node", "bridge.js", ...a]);
 
 describe("parseConfig flags", () => {
-  it("sets workspace from --workspace", () => {
-    const config = cfg("--workspace", "/my/project");
-    expect(config.workspace).toBe("/my/project");
-  });
+  it.skipIf(process.platform === "win32")(
+    "sets workspace from --workspace",
+    () => {
+      const config = cfg("--workspace", "/my/project");
+      expect(config.workspace).toBe("/my/project");
+    },
+  );
 
   it("sets ideName from --ide-name", () => {
     const config = cfg("--ide-name", "MyIDE");

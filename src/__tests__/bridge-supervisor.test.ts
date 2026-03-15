@@ -145,18 +145,20 @@ runChild();
     expect(startLines.length).toBeGreaterThanOrEqual(2);
   }, 10_000);
 
-  it("SIGTERM stops the supervisor without restarting", async () => {
-    const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-sup-"));
-    tmpDirs.push(scriptDir);
+  it.skipIf(process.platform === "win32")(
+    "SIGTERM stops the supervisor without restarting",
+    async () => {
+      const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-sup-"));
+      tmpDirs.push(scriptDir);
 
-    // Child that hangs until killed
-    const helperPath = path.join(scriptDir, "helper.mjs");
-    fs.writeFileSync(helperPath, "setTimeout(() => {}, 60_000);\n", "utf-8");
+      // Child that hangs until killed
+      const helperPath = path.join(scriptDir, "helper.mjs");
+      fs.writeFileSync(helperPath, "setTimeout(() => {}, 60_000);\n", "utf-8");
 
-    const supervisorPath = path.join(scriptDir, "supervisor.mjs");
-    fs.writeFileSync(
-      supervisorPath,
-      `
+      const supervisorPath = path.join(scriptDir, "supervisor.mjs");
+      fs.writeFileSync(
+        supervisorPath,
+        `
 import { spawn } from 'node:child_process';
 let stopping = false;
 const child = spawn(process.execPath, [${JSON.stringify(helperPath)}], { stdio: 'inherit' });
@@ -177,40 +179,42 @@ child.on('exit', () => {
   process.exit(1);
 });
 `,
-      "utf-8",
-    );
+        "utf-8",
+      );
 
-    const proc = spawn(process.execPath, [supervisorPath], {
-      stdio: ["ignore", "ignore", "pipe"],
-    });
+      const proc = spawn(process.execPath, [supervisorPath], {
+        stdio: ["ignore", "ignore", "pipe"],
+      });
 
-    // Buffer ALL stderr from spawn so we don't miss output emitted
-    // between the "starting bridge" resolve and collectStderr registering.
-    const allLines: string[] = [];
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      chunk
-        .toString()
-        .split("\n")
-        .filter(Boolean)
-        .forEach((l) => allLines.push(l));
-    });
+      // Buffer ALL stderr from spawn so we don't miss output emitted
+      // between the "starting bridge" resolve and collectStderr registering.
+      const allLines: string[] = [];
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        chunk
+          .toString()
+          .split("\n")
+          .filter(Boolean)
+          .forEach((l) => allLines.push(l));
+      });
 
-    // Wait for supervisor to report it started the child
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (allLines.some((l) => l.includes("starting bridge"))) resolve();
-      };
-      proc.stderr?.on("data", check);
-      check(); // in case it already arrived
-    });
+      // Wait for supervisor to report it started the child
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (allLines.some((l) => l.includes("starting bridge"))) resolve();
+        };
+        proc.stderr?.on("data", check);
+        check(); // in case it already arrived
+      });
 
-    // Send SIGTERM and wait for process to exit
-    proc.kill("SIGTERM");
-    await new Promise<void>((resolve) => proc.on("exit", resolve));
+      // Send SIGTERM and wait for process to exit
+      proc.kill("SIGTERM");
+      await new Promise<void>((resolve) => proc.on("exit", resolve));
 
-    const allOutput = allLines.join("\n");
+      const allOutput = allLines.join("\n");
 
-    expect(allOutput).toContain("[supervisor] bridge stopped");
-    expect(allOutput).not.toContain("unexpected restart");
-  }, 10_000);
+      expect(allOutput).toContain("[supervisor] bridge stopped");
+      expect(allOutput).not.toContain("unexpected restart");
+    },
+    10_000,
+  );
 });

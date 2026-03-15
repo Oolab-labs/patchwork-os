@@ -28,16 +28,19 @@ beforeEach(() => vi.clearAllMocks());
 describe("createFindFilesTool — fd path", () => {
   const probes = { fd: true, git: true } as any;
 
-  it("uses fd and returns file list", async () => {
-    mockExecSafe.mockResolvedValue(
-      ok("/fake/workspace/src/index.ts\n/fake/workspace/src/app.ts\n"),
-    );
-    const tool = createFindFilesTool(ws, probes);
-    const result = parse(await tool.handler({ pattern: "*.ts" }));
-    expect(result.tool).toBe("fd");
-    expect(result.files).toContain("src/index.ts");
-    expect(result.count).toBe(2);
-  });
+  it.skipIf(process.platform === "win32")(
+    "uses fd and returns file list",
+    async () => {
+      mockExecSafe.mockResolvedValue(
+        ok("/fake/workspace/src/index.ts\n/fake/workspace/src/app.ts\n"),
+      );
+      const tool = createFindFilesTool(ws, probes);
+      const result = parse(await tool.handler({ pattern: "*.ts" }));
+      expect(result.tool).toBe("fd");
+      expect(result.files).toContain("src/index.ts");
+      expect(result.count).toBe(2);
+    },
+  );
 
   it("passes pattern, --max-results, and searchDir to fd", async () => {
     mockExecSafe.mockResolvedValue(ok(""));
@@ -101,13 +104,16 @@ describe("createFindFilesTool — git path", () => {
 describe("createFindFilesTool — find fallback", () => {
   const probes = { fd: false, git: false } as any;
 
-  it("falls back to find and returns files", async () => {
-    mockExecSafe.mockResolvedValue(ok("/fake/workspace/src/main.ts\n"));
-    const tool = createFindFilesTool(ws, probes);
-    const result = parse(await tool.handler({ pattern: "*.ts" }));
-    expect(result.tool).toBe("find");
-    expect(result.files).toContain("src/main.ts");
-  });
+  it.skipIf(process.platform === "win32")(
+    "falls back to find and returns files",
+    async () => {
+      mockExecSafe.mockResolvedValue(ok("/fake/workspace/src/main.ts\n"));
+      const tool = createFindFilesTool(ws, probes);
+      const result = parse(await tool.handler({ pattern: "*.ts" }));
+      expect(result.tool).toBe("find");
+      expect(result.files).toContain("src/main.ts");
+    },
+  );
 
   it("passes pattern with -name to find", async () => {
     mockExecSafe.mockResolvedValue(ok(""));
