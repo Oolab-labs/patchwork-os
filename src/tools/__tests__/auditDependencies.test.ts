@@ -163,6 +163,86 @@ describe("auditDependencies", () => {
     expect(result.error).toContain("npm not found");
   });
 
+  it("auto-detects pnpm from pnpm-lock.yaml (prefers over package.json)", async () => {
+    mockExistsSync.mockImplementation(
+      (p) =>
+        String(p).endsWith("pnpm-lock.yaml") ||
+        String(p).endsWith("package.json"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        "fast-glob": {
+          current: "3.2.0",
+          wanted: "3.3.0",
+          latest: "3.3.0",
+        },
+      }),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 150,
+    });
+
+    const tool = createAuditDependenciesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("pnpm");
+    expect(result.total).toBe(1);
+    expect(result.packages[0].name).toBe("fast-glob");
+    const callArgs = mockExecSafe.mock.calls[0];
+    expect(callArgs?.[0]).toBe("pnpm");
+  });
+
+  it("auto-detects yarn from yarn.lock (prefers over package.json)", async () => {
+    mockExistsSync.mockImplementation(
+      (p) =>
+        String(p).endsWith("yarn.lock") || String(p).endsWith("package.json"),
+    );
+    // yarn outdated --json emits multiple JSON lines; the "table" event has the data
+    const tableEvent = JSON.stringify({
+      type: "table",
+      data: {
+        head: ["Package", "Current", "Wanted", "Latest", "Package Type", "URL"],
+        body: [["lodash", "4.17.19", "4.17.21", "4.17.21", "dependencies", ""]],
+      },
+    });
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: `{"type":"info","data":"Colours"}\n${tableEvent}\n`,
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 300,
+    });
+
+    const tool = createAuditDependenciesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("yarn");
+    expect(result.total).toBe(1);
+    expect(result.packages[0].name).toBe("lodash");
+    expect(result.packages[0].current).toBe("4.17.19");
+    expect(result.packages[0].latest).toBe("4.17.21");
+    const callArgs = mockExecSafe.mock.calls[0];
+    expect(callArgs?.[0]).toBe("yarn");
+  });
+
+  it("yarn: returns empty packages when no table event in output", async () => {
+    mockExistsSync.mockImplementation((p) => String(p).endsWith("yarn.lock"));
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: '{"type":"info","data":"Done"}\n',
+      stderr: "",
+      exitCode: 0,
+      timedOut: false,
+      durationMs: 100,
+    });
+
+    const tool = createAuditDependenciesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("yarn");
+    expect(result.total).toBe(0);
+  });
+
   it("respects explicit packageManager override", async () => {
     // package.json exists but we explicitly ask for cargo
     mockExistsSync.mockImplementation((p) =>

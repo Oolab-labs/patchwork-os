@@ -65,10 +65,10 @@ jobs:
           done
           curl -sf "http://127.0.0.1:${BRIDGE_PORT}/ping" || (echo "Bridge /health did not respond" && cat /tmp/bridge.log && exit 1)
       - name: Run benchmark
-        # --threshold only enforced on main; PRs upload results for comparison only
+        # main: strict 100ms threshold; PRs: loose 500ms threshold catches only extreme regressions
         run: |
           node scripts/benchmark.mjs --iterations 100 --json \
-            ${{ github.ref == 'refs/heads/main' && '--threshold 100' || '' }} \
+            ${{ github.ref == 'refs/heads/main' && '--threshold 100' || '--threshold 500' }} \
             | tee /tmp/benchmark-results.json
       - name: Stop bridge
         if: always()

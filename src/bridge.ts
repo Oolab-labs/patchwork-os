@@ -473,6 +473,7 @@ export class Bridge {
       };
     };
     this.server.metricsFn = () => this.activityLog.toPrometheus();
+    this.server.streamFn = (listener) => this.activityLog.subscribe(listener);
     this.server.tasksFn = () => ({
       tasks: (this.orchestrator?.list() ?? []).map((t) => ({
         taskId: t.id,

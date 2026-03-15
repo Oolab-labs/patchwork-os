@@ -102,6 +102,11 @@ export class Server extends EventEmitter<ServerEvents> {
   public httpMcpHandler:
     | ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>)
     | null = null;
+  /** Set by bridge to subscribe a caller to real-time activity events. Returns unsubscribe fn. */
+  // biome-ignore lint/suspicious/noExplicitAny: ActivityEntry|LifecycleEntry not importable here without a circular dep
+  public streamFn:
+    | ((listener: (kind: string, entry: any) => void) => () => void)
+    | null = null;
 
   constructor(
     private authToken: string,
@@ -280,6 +285,43 @@ export class Server extends EventEmitter<ServerEvents> {
             }),
           );
         }
+        return;
+      }
+      if (req.url === "/stream" && req.method === "GET") {
+        // Disable socket timeout — SSE connections are long-lived by design
+        res.socket?.setTimeout(0);
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        });
+        res.flushHeaders();
+
+        const unsub =
+          this.streamFn?.((kind, entry) => {
+            try {
+              res.write(`data: ${JSON.stringify({ kind, ...entry })}\n\n`);
+            } catch {
+              // Client disconnected — unsubscribe on next tick
+              unsub?.();
+            }
+          }) ?? (() => {});
+
+        // Keep-alive comment ping every 15s so proxies don't close idle connections
+        const ping = setInterval(() => {
+          try {
+            res.write(": ping\n\n");
+          } catch {
+            clearInterval(ping);
+            unsub();
+          }
+        }, 15_000);
+        ping.unref();
+
+        req.on("close", () => {
+          clearInterval(ping);
+          unsub();
+        });
         return;
       }
       if (req.url === "/tasks" && req.method === "GET") {

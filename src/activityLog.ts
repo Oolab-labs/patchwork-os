@@ -28,16 +28,31 @@ export type TimelineEntry =
 const MAX_PERSIST_LINES = 10_000;
 const MAX_PERSIST_BYTES = 1024 * 1024; // 1MB
 
+type ActivityListener = (
+  kind: string,
+  entry: ActivityEntry | LifecycleEntry,
+) => void;
+
 export class ActivityLog {
   private entries: ActivityEntry[] = [];
   private lifecycleEntries: LifecycleEntry[] = [];
   private nextId = 1;
   private maxEntries: number;
   private persistPath: string | null;
+  private readonly listeners = new Set<ActivityListener>();
 
   constructor(maxEntries = 500) {
     this.maxEntries = maxEntries;
     this.persistPath = null;
+  }
+
+  /**
+   * Subscribe to real-time activity events.
+   * @returns An unsubscribe function — call it to stop receiving events.
+   */
+  subscribe(listener: ActivityListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   setPersistPath(p: string): void {
@@ -150,6 +165,13 @@ export class ActivityLog {
     };
     this.entries.push(entry);
     this._appendToDisk("tool", entry);
+    for (const listener of this.listeners) {
+      try {
+        listener("tool", entry);
+      } catch {
+        /* listeners must not crash the log */
+      }
+    }
     if (this.entries.length > this.maxEntries * 1.2) {
       // Batch eviction: drop the oldest 20% instead of shift() on every insert
       this.entries = this.entries.slice(-this.maxEntries);
@@ -165,6 +187,13 @@ export class ActivityLog {
     };
     this.lifecycleEntries.push(entry);
     this._appendToDisk("lifecycle", entry);
+    for (const listener of this.listeners) {
+      try {
+        listener("lifecycle", entry);
+      } catch {
+        /* listeners must not crash the log */
+      }
+    }
     if (this.lifecycleEntries.length > this.maxEntries * 1.2) {
       this.lifecycleEntries = this.lifecycleEntries.slice(-this.maxEntries);
     }

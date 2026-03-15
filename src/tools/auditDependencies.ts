@@ -26,6 +26,9 @@ interface CacheEntry {
 
 function detectManager(workspace: string, hint?: string): string | null {
   if (hint && hint !== "auto") return hint;
+  // Check lock files before package.json — pnpm/yarn projects always have package.json too
+  if (existsSync(join(workspace, "pnpm-lock.yaml"))) return "pnpm";
+  if (existsSync(join(workspace, "yarn.lock"))) return "yarn";
   if (existsSync(join(workspace, "package.json"))) return "npm";
   if (existsSync(join(workspace, "Cargo.toml"))) return "cargo";
   if (
@@ -150,6 +153,98 @@ async function runPipOutdated(
   }));
 }
 
+async function runYarnOutdated(
+  workspace: string,
+  signal?: AbortSignal,
+): Promise<OutdatedPackage[]> {
+  const result = await execSafe("yarn", ["outdated", "--json"], {
+    cwd: workspace,
+    signal,
+    timeout: 60_000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+
+  // yarn outdated --json emits one JSON object per line (not a single JSON array).
+  // The "table" event contains the outdated package data:
+  //   {"type":"table","data":{"head":["Package","Current","Wanted","Latest",...],"body":[[...]]}}
+  // yarn exits 1 when packages are outdated — that's expected.
+  const output = `${result.stdout}\n${result.stderr}`.trim();
+  if (!output) return [];
+
+  const packages: OutdatedPackage[] = [];
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let obj: unknown;
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (
+      typeof obj === "object" &&
+      obj !== null &&
+      (obj as Record<string, unknown>).type === "table"
+    ) {
+      const data = (obj as { data: { head: string[]; body: string[][] } }).data;
+      const head = data.head ?? [];
+      const pkgIdx = head.findIndex((h) => /package/i.test(h));
+      const curIdx = head.findIndex((h) => /current/i.test(h));
+      const wantedIdx = head.findIndex((h) => /wanted/i.test(h));
+      const latestIdx = head.findIndex((h) => /latest/i.test(h));
+      for (const row of data.body ?? []) {
+        packages.push({
+          name: row[pkgIdx >= 0 ? pkgIdx : 0] ?? "",
+          current: row[curIdx >= 0 ? curIdx : 1] ?? "unknown",
+          wanted: row[wantedIdx >= 0 ? wantedIdx : 2] ?? "unknown",
+          latest: row[latestIdx >= 0 ? latestIdx : 3] ?? "unknown",
+        });
+      }
+      break; // only one table event expected
+    }
+  }
+  return packages;
+}
+
+async function runPnpmOutdated(
+  workspace: string,
+  signal?: AbortSignal,
+): Promise<OutdatedPackage[]> {
+  const result = await execSafe("pnpm", ["outdated", "--format=json"], {
+    cwd: workspace,
+    signal,
+    timeout: 60_000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+
+  // pnpm outdated exits 1 when packages are outdated — normal behavior.
+  // Output is a JSON object similar to `npm outdated --json`.
+  const raw = result.stdout.trim();
+  if (!raw) return [];
+
+  let parsed: Record<
+    string,
+    { current?: string; wanted?: string; latest?: string }
+  >;
+  try {
+    parsed = JSON.parse(raw) as Record<
+      string,
+      { current?: string; wanted?: string; latest?: string }
+    >;
+  } catch {
+    throw new Error(
+      `pnpm outdated returned non-JSON output: ${raw.slice(0, 200)}`,
+    );
+  }
+
+  return Object.entries(parsed).map(([name, info]) => ({
+    name,
+    current: info.current ?? "unknown",
+    wanted: info.wanted ?? info.latest ?? "unknown",
+    latest: info.latest ?? "unknown",
+  }));
+}
+
 export function createAuditDependenciesTool(
   workspace: string,
   _probes?: ProbeResults,
@@ -160,14 +255,14 @@ export function createAuditDependenciesTool(
     schema: {
       name: "auditDependencies",
       description:
-        "Detect outdated packages (complement to getSecurityAdvisories which finds vulnerabilities). Reports current vs. latest versions. Supports npm, cargo, and pip. Auto-detects package manager from manifest files.",
+        "Detect outdated packages (complement to getSecurityAdvisories which finds vulnerabilities). Reports current vs. latest versions. Supports npm, yarn, pnpm, cargo, and pip. Auto-detects package manager from lock files and manifest files.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
         properties: {
           packageManager: {
             type: "string",
-            enum: ["auto", "npm", "cargo", "pip"],
+            enum: ["auto", "npm", "yarn", "pnpm", "cargo", "pip"],
             description: "Package manager to use. Defaults to 'auto'.",
           },
           maxAge: {
@@ -199,7 +294,7 @@ export function createAuditDependenciesTool(
           available: false,
           packageManager: null,
           error:
-            "No supported package manifest found (package.json, Cargo.toml, requirements.txt, pyproject.toml)",
+            "No supported package manifest found (pnpm-lock.yaml, yarn.lock, package.json, Cargo.toml, requirements.txt, pyproject.toml)",
         });
       }
 
@@ -208,6 +303,12 @@ export function createAuditDependenciesTool(
         switch (detected) {
           case "npm":
             packages = await runNpmOutdated(workspace, signal);
+            break;
+          case "yarn":
+            packages = await runYarnOutdated(workspace, signal);
+            break;
+          case "pnpm":
+            packages = await runPnpmOutdated(workspace, signal);
             break;
           case "cargo":
             packages = await runCargoOutdated(workspace, signal);

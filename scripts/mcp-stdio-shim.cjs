@@ -8,6 +8,8 @@
  *
  * Usage (explicit port + token):
  *   node scripts/mcp-stdio-shim.js <port> <authToken>
+ *   WARNING: authToken passed as argv is visible in `ps aux` / process listings.
+ *   Prefer the lock-file discovery mode (no args) which reads the token from disk.
  *
  * This shim is used by .mcp.json so Claude Code connects to the ALREADY-RUNNING
  * bridge instead of spawning a new one. This prevents extension oscillation when
