@@ -17,12 +17,10 @@ function makeOrchestrator(driver?: IClaudeDriver) {
   return new ClaudeOrchestrator(d, os.tmpdir(), () => {});
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test helper
 function resultText(result: any): string {
   return result.content[0]?.text ?? "";
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test helper
 function resultData(result: any): unknown {
   return JSON.parse(resultText(result));
 }

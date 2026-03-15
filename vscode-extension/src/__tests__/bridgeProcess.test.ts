@@ -262,22 +262,17 @@ describe("BridgeProcess — restart loop", () => {
 
     // Directly drive handleUnexpectedExit (private) to test the logic without
     // real timers or the full spawn/lock-file dance.
-    // biome-ignore lint/suspicious/noExplicitAny: testing private method
     const handleExit = (proc as any).handleUnexpectedExit.bind(proc);
 
     // Set spawnedAt to now so ranFor < STABLE_RUN_MS and restartCount is NOT reset
-    // biome-ignore lint/suspicious/noExplicitAny: accessing private for test
     (proc as any).spawnedAt = Date.now();
 
     // Exhaust all restarts (5 × exit) — each increments restartCount and
     // schedules a setTimeout that we immediately clear so the test is synchronous.
     for (let i = 0; i < 5; i++) {
       await handleExit(1);
-      // biome-ignore lint/suspicious/noExplicitAny: accessing private for test
       if ((proc as any).restartTimer) {
-        // biome-ignore lint/suspicious/noExplicitAny: accessing private for test
         clearTimeout((proc as any).restartTimer);
-        // biome-ignore lint/suspicious/noExplicitAny: accessing private for test
         (proc as any).restartTimer = null;
       }
     }
@@ -295,22 +290,16 @@ describe("BridgeProcess — restart loop", () => {
     const proc = makeProc(ws, 200);
 
     // Set restart count near limit and simulate a stable run
-    // biome-ignore lint/suspicious/noExplicitAny: accessing private for test
     (proc as any).restartCount = 4;
-    // biome-ignore lint/suspicious/noExplicitAny: accessing private for test
     (proc as any).spawnedAt = Date.now() - 70_000; // ran for 70s > STABLE_RUN_MS (60s)
 
-    // biome-ignore lint/suspicious/noExplicitAny: testing private method
     await (proc as any).handleUnexpectedExit(1);
 
     // restartCount was reset to 0, then incremented to 1 — should NOT hit MAX_RESTARTS
-    // biome-ignore lint/suspicious/noExplicitAny: accessing private for test
     expect((proc as any).restartCount).toBe(1);
 
     // Clean up the scheduled restart timer
-    // biome-ignore lint/suspicious/noExplicitAny: accessing private for test
     if ((proc as any).restartTimer) {
-      // biome-ignore lint/suspicious/noExplicitAny: accessing private for test
       clearTimeout((proc as any).restartTimer);
     }
   });

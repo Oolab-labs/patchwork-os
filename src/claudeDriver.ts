@@ -50,8 +50,6 @@ export class SubprocessDriver implements IClaudeDriver {
     // CRITICAL: strip vars that would cause the subprocess to attach to or authenticate
     // as the parent Claude Code session, which causes hangs when cwd contains a .claude/ dir.
     const env: NodeJS.ProcessEnv = { ...process.env };
-    // biome-ignore lint/performance/noDelete: setting to undefined keeps the key in env; we need full removal
-    // biome-ignore lint/complexity/useLiteralKeys: bracket notation is more readable for env var names
     // Strip all Claude Code and MCP session vars — any of these can cause the subprocess to
     // attach to, re-authenticate against, or behave as a nested agent of the parent session.
     for (const key of Object.keys(env)) {
@@ -60,7 +58,6 @@ export class SubprocessDriver implements IClaudeDriver {
         key.startsWith("CLAUDE_CODE_") ||
         key.startsWith("MCP_")
       ) {
-        // biome-ignore lint/performance/noDelete: must fully remove, not set undefined
         delete env[key];
       }
     }
