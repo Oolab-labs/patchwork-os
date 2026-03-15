@@ -120,6 +120,32 @@ describe("searchAndReplace — core replacement logic (mock rg)", () => {
     expect((result as any).isError).toBe(true);
   });
 
+  it("rejects glob starting with '-' to prevent rg flag injection", async () => {
+    // Regression: '--no-ignore-vcs' passed as glob would be interpreted as a
+    // flag by rg, silently disabling VCS ignore rules.
+    const tool = createSearchAndReplaceTool(tmpDir);
+    const result = await tool.handler({
+      pattern: "hello",
+      replacement: "hi",
+      glob: "--no-ignore-vcs",
+    });
+    expect((result as any).isError).toBe(true);
+    expect(parse(result).error).toMatch(/glob.*must not start with/i);
+    // execSafe (rg) should not have been called
+    expect(mockedExecSafe).not.toHaveBeenCalled();
+  });
+
+  it("rejects glob starting with '-' single dash form", async () => {
+    const tool = createSearchAndReplaceTool(tmpDir);
+    const result = await tool.handler({
+      pattern: "hello",
+      replacement: "hi",
+      glob: "-e",
+    });
+    expect((result as any).isError).toBe(true);
+    expect(parse(result).error).toMatch(/must not start with/i);
+  });
+
   it("replaces across multiple matched files", async () => {
     mockedExecSafe.mockResolvedValue({
       stdout: `${alphaPath}\n${betaPath}\n`,

@@ -243,6 +243,32 @@ describe("auditDependencies", () => {
     expect(result.total).toBe(0);
   });
 
+  it("'auto' and explicit manager name share a single cache entry (no duplicate audit run)", async () => {
+    // Regression: cacheKey was `pm` (the raw "auto" string) instead of the
+    // resolved manager name. Calling with "auto" then "npm" ran two subprocess audits.
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("package.json"),
+    );
+    mockExecSafe.mockResolvedValue({
+      stdout: JSON.stringify({
+        lodash: { current: "4.0.0", wanted: "4.17.21", latest: "4.17.21" },
+      }),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 100,
+    });
+
+    const tool = createAuditDependenciesTool(WORKSPACE);
+    // First call with "auto" — runs the audit
+    await tool.handler({ packageManager: "auto" });
+    // Second call with explicit "npm" — should hit the same cache entry
+    await tool.handler({ packageManager: "npm" });
+
+    // Only one subprocess should have been spawned
+    expect(mockExecSafe).toHaveBeenCalledTimes(1);
+  });
+
   it("respects explicit packageManager override", async () => {
     // package.json exists but we explicitly ask for cargo
     mockExistsSync.mockImplementation((p) =>

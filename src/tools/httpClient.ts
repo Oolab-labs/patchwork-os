@@ -231,16 +231,21 @@ export function createSendHttpRequestTool() {
       const followRedirects = optionalBool(args, "followRedirects") ?? true;
       const MAX_REDIRECTS = 10;
 
-      // Compose AbortSignal: merge caller signal with our own timeout
+      // Compose AbortSignal: merge caller signal with our own timeout.
+      // Capture the forwarder so we can remove it once the request settles —
+      // without cleanup the listener would accumulate on long-lived signals.
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      let abortForwarder: (() => void) | undefined;
       if (signal) {
-        signal.addEventListener(
-          "abort",
-          () => controller.abort(signal.reason),
-          { once: true },
-        );
+        abortForwarder = () => controller.abort(signal.reason);
+        signal.addEventListener("abort", abortForwarder, { once: true });
       }
+      const cleanup = () => {
+        clearTimeout(timeoutId);
+        if (abortForwarder !== undefined)
+          signal?.removeEventListener("abort", abortForwarder);
+      };
 
       const requestBody =
         body !== undefined && method !== "GET" && method !== "HEAD"
@@ -270,7 +275,7 @@ export function createSendHttpRequestTool() {
           if (!location) break;
 
           if (redirectCount >= MAX_REDIRECTS) {
-            clearTimeout(timeoutId);
+            cleanup();
             return error(`Too many redirects (>${MAX_REDIRECTS})`);
           }
 
@@ -279,17 +284,17 @@ export function createSendHttpRequestTool() {
           try {
             nextUrl = new URL(location, currentUrl);
           } catch {
-            clearTimeout(timeoutId);
+            cleanup();
             return error(`Invalid redirect location: "${location}"`);
           }
           if (!["http:", "https:"].includes(nextUrl.protocol)) {
-            clearTimeout(timeoutId);
+            cleanup();
             return error(
               `Redirect to non-http(s) protocol blocked: "${nextUrl.protocol}"`,
             );
           }
           if (isPrivateHost(nextUrl.hostname)) {
-            clearTimeout(timeoutId);
+            cleanup();
             return error(
               `Redirect to private/loopback address blocked ("${nextUrl.hostname}")`,
             );
@@ -300,7 +305,7 @@ export function createSendHttpRequestTool() {
           try {
             const { address: redirectIp } = await dns.lookup(nextUrl.hostname);
             if (isPrivateHost(redirectIp)) {
-              clearTimeout(timeoutId);
+              cleanup();
               return error(
                 `Redirect hostname "${nextUrl.hostname}" resolves to a private address (${redirectIp}) — blocked`,
               );
@@ -319,7 +324,7 @@ export function createSendHttpRequestTool() {
           redirectCount++;
         }
 
-        clearTimeout(timeoutId);
+        cleanup();
 
         // Collect response headers
         const respHeaders: Record<string, string> = {};
@@ -357,7 +362,7 @@ export function createSendHttpRequestTool() {
           ...(truncated ? { truncated: true, fullBytes } : {}),
         });
       } catch (err: unknown) {
-        clearTimeout(timeoutId);
+        cleanup();
         if (err instanceof Error && err.name === "AbortError") {
           return error(`Request timed out after ${timeoutMs}ms`);
         }

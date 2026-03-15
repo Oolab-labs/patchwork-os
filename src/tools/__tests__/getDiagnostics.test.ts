@@ -70,6 +70,21 @@ describe("getDiagnostics — linter error surfacing", () => {
   });
 });
 
+describe("getDiagnostics — aborted-caller dedup", () => {
+  it("returns empty diagnostics immediately when caller signal is pre-aborted (no new linter run)", async () => {
+    // Regression: before fix, a pre-aborted signal with no in-flight run still
+    // triggered a new execSafe subprocess that would be immediately killed.
+    const controller = new AbortController();
+    controller.abort();
+    const tool = createGetDiagnosticsTool("/ws", probes);
+    const data = parse(await tool.handler({}, controller.signal));
+    expect(data.available).toBe(true);
+    expect(data.diagnostics).toHaveLength(0);
+    // No linter subprocess should have been spawned
+    expect(mockExecSafe).not.toHaveBeenCalled();
+  });
+});
+
 describe("getDiagnostics — message sanitization", () => {
   it("strips control characters from diagnostic messages", async () => {
     // biome linter uses `description` field in its JSON output

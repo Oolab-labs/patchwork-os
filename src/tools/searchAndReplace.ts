@@ -99,6 +99,13 @@ export function createSearchAndReplaceTool(workspace: string) {
         rgArgs.push("-F", "-e", pattern);
       }
       if (glob) {
+        // Reject glob values starting with '-' — rg may interpret them as flags
+        // (e.g. '--no-ignore-vcs' would disable VCS ignore rules silently).
+        if (glob.startsWith("-")) {
+          return error(
+            `Invalid glob pattern "${glob}": must not start with '-'`,
+          );
+        }
         rgArgs.push("--glob", glob);
       }
       rgArgs.push(workspace);

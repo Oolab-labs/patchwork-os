@@ -88,6 +88,11 @@ export function createGetDiagnosticsTool(
     if (entry && signal?.aborted) {
       return entry.promise; // caller is aborted anyway — dedup is fine
     }
+    if (!entry && signal?.aborted) {
+      // No in-flight run and caller is already cancelled — return immediately
+      // rather than starting a new linter process that will be immediately killed.
+      return [];
+    }
     if (!entry) {
       // Capture a stable reference to this run so the .finally() cleanup
       // only removes the entry it created (not a newer run that started

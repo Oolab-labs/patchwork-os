@@ -281,13 +281,10 @@ export function createAuditDependenciesTool(
       signal?: AbortSignal,
     ): Promise<ReturnType<typeof success>> {
       const pm = optionalString(args, "packageManager") ?? "auto";
-      const cacheKey = pm;
-      const now = Date.now();
-      const cached = cache.get(cacheKey);
-      if (cached && now - cached.timestamp < CACHE_TTL) {
-        return success(cached.data);
-      }
 
+      // Resolve the package manager before the cache check so that "auto" and
+      // the explicit name (e.g. "npm") share the same cache entry and don't
+      // trigger redundant audit subprocess runs.
       const detected = detectManager(workspace, pm);
       if (!detected) {
         return success({
@@ -296,6 +293,13 @@ export function createAuditDependenciesTool(
           error:
             "No supported package manifest found (pnpm-lock.yaml, yarn.lock, package.json, Cargo.toml, requirements.txt, pyproject.toml)",
         });
+      }
+
+      const cacheKey = detected;
+      const now = Date.now();
+      const cached = cache.get(cacheKey);
+      if (cached && now - cached.timestamp < CACHE_TTL) {
+        return success(cached.data);
       }
 
       try {

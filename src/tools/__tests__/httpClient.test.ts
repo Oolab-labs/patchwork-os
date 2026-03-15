@@ -2,7 +2,8 @@
  * Tests for sendHttpRequest — input validation and SSRF guard (isPrivateHost).
  * No real network calls are made; the SSRF guard fires before any I/O.
  */
-import { describe, expect, it } from "vitest";
+import dns from "node:dns/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSendHttpRequestTool } from "../httpClient.js";
 
 const tool = createSendHttpRequestTool();
@@ -60,6 +61,48 @@ describe("sendHttpRequest — SSRF guard (isPrivateHost)", () => {
     expectBlocked("http://0x7f000001/"));
   it("blocks 100.64.0.1 (CGNAT / RFC 6598)", () =>
     expectBlocked("http://100.64.0.1/"));
+});
+
+describe("sendHttpRequest — AbortSignal listener cleanup", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("removes abort listener from caller signal when request fails with network error", async () => {
+    // Regression: before fix, clearTimeout was called but the abort forwarder
+    // was never removed from the caller's signal, causing listener accumulation
+    // over many requests on a long-lived AbortController.
+
+    // Mock DNS to return a public IP (avoids real DNS + passes SSRF guard)
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as any);
+
+    // Mock fetch to fail with a network error (no real I/O)
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new TypeError("fetch failed: network error"));
+
+    const controller = new AbortController();
+    let removeCalled = 0;
+    const origRemove = controller.signal.removeEventListener.bind(
+      controller.signal,
+    );
+    vi.spyOn(controller.signal, "removeEventListener").mockImplementation(
+      (type, fn, opts) => {
+        if (type === "abort") removeCalled++;
+        return origRemove(type, fn, opts);
+      },
+    );
+
+    await tool.handler(
+      { method: "GET", url: "https://example.com" },
+      controller.signal,
+    );
+
+    // cleanup() must have been called — abort listener removed from caller signal
+    expect(removeCalled).toBe(1);
+    fetchSpy.mockRestore();
+  });
 });
 
 describe("sendHttpRequest — Host header SSRF bypass prevention", () => {
