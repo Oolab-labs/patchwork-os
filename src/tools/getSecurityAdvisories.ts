@@ -224,7 +224,16 @@ async function runCargoAudit(
     timeout: 60_000,
   });
 
-  // cargo audit exits non-zero when vulnerabilities found
+  // cargo audit exits non-zero when vulnerabilities found.
+  // Propagate stderr so the ENOENT handler in the caller fires correctly.
+  const errText = result.stderr.trim();
+  if (
+    errText &&
+    (errText.includes("ENOENT") || errText.includes("not found")) &&
+    !result.stdout.trim()
+  ) {
+    throw new Error(errText);
+  }
   const raw = result.stdout.trim();
   if (!raw) throw new Error("cargo audit returned no output");
 
@@ -279,6 +288,15 @@ async function runPipAudit(
     },
   );
 
+  // Propagate stderr so the ENOENT handler in the caller fires correctly.
+  const errText = result.stderr.trim();
+  if (
+    errText &&
+    (errText.includes("ENOENT") || errText.includes("not found")) &&
+    !result.stdout.trim()
+  ) {
+    throw new Error(errText);
+  }
   const raw = result.stdout.trim();
   if (!raw) throw new Error("pip-audit returned no output");
 

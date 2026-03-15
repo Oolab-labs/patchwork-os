@@ -236,4 +236,209 @@ describe("getSecurityAdvisories", () => {
     expect(result.packageManager).toBe("pnpm");
     expect(result.error).toContain("pnpm not found");
   });
+
+  // ── cargo audit ─────────────────────────────────────────────────────────────
+
+  it("auto-detects cargo from Cargo.toml", async () => {
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("Cargo.toml"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        vulnerabilities: {
+          list: [
+            {
+              advisory: {
+                id: "RUSTSEC-2021-0001",
+                title: "Segfault in time crate",
+                url: "https://rustsec.org/advisories/RUSTSEC-2021-0001",
+              },
+              package: { name: "time" },
+              versions: { patched: ["^0.2.23"] },
+            },
+          ],
+        },
+      }),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 500,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("cargo");
+    expect(result.totalVulnerabilities).toBe(1);
+    expect(result.advisories[0].id).toBe("RUSTSEC-2021-0001");
+    expect(result.advisories[0].package).toBe("time");
+    expect(result.advisories[0].severity).toBe("high");
+    expect(result.advisories[0].fix).toContain("^0.2.23");
+    expect(result.advisories[0].url).toContain("rustsec.org");
+    const callArgs = mockExecSafe.mock.calls[0];
+    expect(callArgs?.[0]).toBe("cargo");
+    expect(callArgs?.[1]).toContain("--json");
+  });
+
+  it("cargo: returns zero vulnerabilities when list is empty", async () => {
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("Cargo.toml"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify({ vulnerabilities: { list: [] } }),
+      stderr: "",
+      exitCode: 0,
+      timedOut: false,
+      durationMs: 300,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("cargo");
+    expect(result.totalVulnerabilities).toBe(0);
+  });
+
+  it("cargo: returns available:false and install hint when binary not found", async () => {
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("Cargo.toml"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: "",
+      stderr: "ENOENT: cargo not found",
+      exitCode: 127,
+      timedOut: false,
+      durationMs: 10,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(false);
+    expect(result.packageManager).toBe("cargo");
+    expect(result.error).toContain("cargo-audit");
+    expect(result.error).toContain("cargo install cargo-audit");
+  });
+
+  // ── pip-audit ────────────────────────────────────────────────────────────────
+
+  it("auto-detects pip from requirements.txt", async () => {
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("requirements.txt"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        dependencies: [
+          {
+            name: "requests",
+            version: "2.25.0",
+            vulns: [
+              {
+                id: "PYSEC-2023-74",
+                description: "Requests forwards proxy-authorization headers",
+                fix_versions: ["2.31.0"],
+              },
+            ],
+          },
+        ],
+      }),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 400,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("pip");
+    expect(result.totalVulnerabilities).toBe(1);
+    expect(result.advisories[0].id).toBe("PYSEC-2023-74");
+    expect(result.advisories[0].package).toBe("requests");
+    expect(result.advisories[0].severity).toBe("high");
+    expect(result.advisories[0].fix).toContain("2.31.0");
+    const callArgs = mockExecSafe.mock.calls[0];
+    expect(callArgs?.[0]).toBe("pip-audit");
+  });
+
+  it("auto-detects pip from pyproject.toml when requirements.txt absent", async () => {
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("pyproject.toml"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify({ dependencies: [] }),
+      stderr: "",
+      exitCode: 0,
+      timedOut: false,
+      durationMs: 200,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.packageManager).toBe("pip");
+    expect(result.totalVulnerabilities).toBe(0);
+    const callArgs = mockExecSafe.mock.calls[0];
+    expect(callArgs?.[0]).toBe("pip-audit");
+  });
+
+  it("pip: multiple vulns on a single package expand into separate advisories", async () => {
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("requirements.txt"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        dependencies: [
+          {
+            name: "pillow",
+            version: "9.0.0",
+            vulns: [
+              {
+                id: "PYSEC-2023-1",
+                description: "Uncontrolled resource consumption",
+                fix_versions: ["9.3.0"],
+              },
+              {
+                id: "PYSEC-2023-2",
+                description: "Buffer overflow in TIFF decoder",
+                fix_versions: ["9.3.0"],
+              },
+            ],
+          },
+        ],
+      }),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 300,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(true);
+    expect(result.totalVulnerabilities).toBe(2);
+    expect(result.advisories[0].package).toBe("pillow");
+    expect(result.advisories[1].package).toBe("pillow");
+    expect(result.advisories[0].id).toBe("PYSEC-2023-1");
+    expect(result.advisories[1].id).toBe("PYSEC-2023-2");
+  });
+
+  it("pip: returns available:false and install hint when binary not found", async () => {
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("requirements.txt"),
+    );
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: "",
+      stderr: "ENOENT: pip-audit not found",
+      exitCode: 127,
+      timedOut: false,
+      durationMs: 10,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.available).toBe(false);
+    expect(result.packageManager).toBe("pip");
+    expect(result.error).toContain("pip-audit");
+    expect(result.error).toContain("pip install pip-audit");
+  });
 });
