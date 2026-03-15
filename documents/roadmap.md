@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.1.10 — 2026-03-15)
+## Current State (v2.1.11 — 2026-03-15)
 
-- 137+ MCP tools; 926 bridge tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
-- Extension v1.0.1 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.10`)
+- 120+ MCP tools; 926 bridge tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
+- Extension v1.0.1 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.11`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
@@ -19,6 +19,12 @@ Development direction and exploration guidance. Living document — update as pr
 - MCP elicitation (`elicitation: {}` capability): `McpTransport.elicit()` sends `elicitation/create` to Claude Code 2.1.76+
 - Deep security hardening: SSRF three-layer defense, Origin validation, rate limiting, lstatSync everywhere, TOCTOU mitigations, structured error codes
 - Claude Desktop + Cowork integration documented; `setHandoffNote`/`getHandoffNote` for cross-session context
+
+**v2.1.11 shipped (2026-03-15) — Quick Start accuracy + install-extension npm-global fix:**
+- README Step 3: `CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide` — env var required for bridge discovery; omitting it silently broke all new users
+- `install-extension` subcommand: falls back to marketplace ID when `vscode-extension/` absent (npm-global install); previously crashed with ENOENT
+- README tool table: 12 wrong names corrected, 8 phantom tools removed, 8 missing tools added, header 137+→120+
+- SETUP.md: labelled as development-mode guide
 
 **v2.1.10 shipped (2026-03-15) — B2 dedup fix + A7 isCommand flag:**
 - `getDiagnostics`: `runningPromises` stores `{promise, originSignal}`; aborted-origin entries cleared before dedup; `.finally()` uses reference equality to avoid evicting newer runs
