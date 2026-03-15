@@ -272,7 +272,7 @@ Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering whil
 
 ## MCP Prompts
 
-The bridge serves 6 built-in prompts via `prompts/list` + `prompts/get`. These appear as `/mcp__bridge__<name>` in any MCP client that supports the MCP prompts protocol. No extension required.
+The bridge serves 7 built-in prompts via `prompts/list` + `prompts/get`. These appear as `/mcp__bridge__<name>` in any MCP client that supports the MCP prompts protocol. No extension required.
 
 | Prompt | Argument | Description |
 |--------|----------|-------------|
@@ -282,6 +282,7 @@ The bridge serves 6 built-in prompts via `prompts/list` + `prompts/get`. These a
 | `debug-context` | _(none)_ | Snapshot current debug state, open editors, and diagnostics |
 | `git-review` | `base` (optional, default: `main`) | Review all changes since a git base branch |
 | `set-effort` | `level` (optional: `low`/`medium`/`high`, default: `medium`) | Prepend an effort-level instruction to tune Claude's thoroughness for the next task |
+| `cowork` | `task` (optional) | **Load full IDE context and propose a Cowork action plan.** Calls `getHandoffNote`, `getOpenEditors`, `getDiagnostics`, `getGitStatus`, `getProjectInfo` automatically — user only needs to describe the goal. |
 
 Implementation: `src/prompts.ts`. Tests: `src/__tests__/prompts.test.ts`, `src/__tests__/transport-prompts.test.ts`.
 
@@ -319,6 +320,7 @@ Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket
 | Command timeout | 30s | 120s |
 | Max result size | 512 KB | 4096 KB |
 | Rate limit | 200 req/min | — |
+| Tool call rate limit | 60 calls/min per session | configurable via `--tool-rate-limit` |
 | Concurrent tools | 10 | — |
 | Extension request timeout | 10s | — |
 
@@ -328,7 +330,7 @@ Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket
 - All `ws.send()` calls wrapped in readyState check + try-catch
 - Extension circuit breaker with exponential backoff (AWS full jitter)
 - Generation counter prevents stale handlers from responding
-- 30s grace period for Claude Code reconnection (preserves state)
+- 30s grace period on disconnect (all session types — preserves in-flight state during brief interruptions)
 - Send buffer monitoring (warns at >1MB buffered)
 - Backpressure-aware sending with drain waiting
 
@@ -343,18 +345,19 @@ The bridge supports up to 5 concurrent Claude Code sessions sharing a single bri
 | Terminal namespacing | Terminals prefixed per-session (e.g., `s1a2b3c4-build`) — each agent sees only its own |
 | File locking | `FileLock` promise-chain mutex serializes concurrent file edits across sessions |
 | Min connection interval | 50ms between connections (prevents connection-storm DoS) |
-| Grace period | 30s after disconnect — session state preserved for reconnection |
+| Grace period | 30s after disconnect — delays session cleanup; applies to all session types (CLI and Desktop shim) |
 | Activation | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude` |
 
 Session lifecycle:
 1. Claude Code connects → new `AgentSession` created with unique ID
 2. Session gets isolated transport, opened-files set, terminal prefix
 3. Tool calls routed to the session's transport
-4. On disconnect → grace period starts (30s default, configurable via `--grace-period`)
-5. If reconnected within grace → session resumes; otherwise → session cleaned up
+4. On disconnect → grace period starts (30s default, configurable via `--grace-period`); applies to all session types
+5. Reconnect always creates a new session — grace period delays cleanup of the old one (preserving in-flight tool call state); otherwise → old session cleaned up
 
 ### Health & Metrics
-- `/health` endpoint: Claude Code connected, extension connected, circuit breaker state
+- `/ping` endpoint: unauthenticated liveness check — returns `{"ok":true,"v":"<version>"}`. Safe for uptime monitors, Docker health checks, and CI wait scripts.
+- `/health` endpoint: Claude Code connected, extension connected, circuit breaker state (Bearer auth required)
 - `/status` endpoint: full session and activity summary (JSON)
 - `/ready` endpoint: 200 when bridge is initialized and ready to accept connections
 - `/metrics` endpoint: Prometheus-format session metrics (tool calls, durations, errors)
@@ -374,7 +377,12 @@ bash scripts/gen-claude-desktop-config.sh
 
 The shim auto-discovers the bridge lock file (`~/.claude/ide/<port>.lock`) by preferring files with `isBridge: true`. This prevents the shim from accidentally connecting to an IDE-owned lock file (e.g. Windsurf writes its own lock in the same directory).
 
-The shim also watches `~/.claude/ide/` via `fs.watch` (500 ms debounce) and auto-reconnects when a new bridge lock file appears. **Claude Desktop no longer needs a full quit and relaunch when the bridge restarts on a new port** — the shim detects the new lock and reconnects within ~500 ms.
+The shim handles bridge restarts fully automatically — **Claude Desktop never needs a quit and relaunch**:
+
+- **Startup wait**: if no lock file exists when the shim starts (e.g. Claude Desktop launches before the bridge), the shim polls every 3 s instead of exiting. It connects as soon as the bridge writes its lock file.
+- **`fs.watch` reconnect**: the shim watches `~/.claude/ide/` with a 500 ms debounce and reconnects immediately when a new lock appears.
+- **Polling fallback**: after any WebSocket disconnect, a 3 s interval poll runs in parallel with `fs.watch`. This recovers the connection even if macOS FSEvents misses a watch event.
+- **Pending list-changed**: if `notifications/tools/list_changed` fires while no sessions have an open WebSocket (e.g. during the grace period), the bridge sets a `pendingListChanged` flag. The next session to complete the MCP handshake (`notifications/initialized`) immediately receives the notification so it re-queries the tool list with the current extension state.
 
 ### Cowork (Computer Use)
 
@@ -404,6 +412,89 @@ setHandoffNote("auth bug in login.ts:42 — token expiry off by 1s in verifyJWT(
 # In Claude Code CLI (picking up the work):
 getHandoffNote()  →  { note: "auth bug in login.ts:42 ...", age: "4m ago" }
 ```
+
+### Cowork Workflow — One Prompt to Start
+
+The `/mcp__bridge__cowork` prompt is the recommended entry point for any Cowork session. It eliminates the need to manually invoke context tools before describing a task.
+
+**Minimal usage** — just type in Claude Desktop chat:
+```
+/mcp__bridge__cowork
+```
+Claude auto-calls `getHandoffNote`, `getOpenEditors`, `getDiagnostics`, `getGitStatus`, and `getProjectInfo`, then summarises the workspace state and proposes a Cowork action plan.
+
+**With a task description:**
+```
+/mcp__bridge__cowork fix all TypeScript errors in src/
+```
+Same context gathering, but the summary and action plan are focused on the stated goal.
+
+**What Claude does automatically (no user action required):**
+1. Checks `getHandoffNote` for prior session context or an in-progress task
+2. Lists open files and unsaved changes via `getOpenEditors`
+3. Surfaces all errors and warnings via `getDiagnostics`
+4. Shows uncommitted work via `getGitStatus`
+5. Detects project type, scripts, and key dependencies via `getProjectInfo`
+6. Produces a 3–5 bullet workspace summary and a step-by-step Cowork plan
+7. Asks for confirmation before taking any action outside the editor
+
+**End of session — save context for next time:**
+```
+setHandoffNote("Finished fixing TS errors in auth/. 3 files changed. Remaining: update tests.")
+```
+The next `/mcp__bridge__cowork` invocation (in any session — CLI or Desktop) will pick this up via `getHandoffNote`.
+
+### Remote-Controlling Claude Desktop from the CLI — Assessment
+
+It is tempting to drive Claude Desktop programmatically from a CLI bridge session (e.g. to trigger a Cowork task without touching the keyboard). Three approaches were researched and assessed:
+
+**Approach 1 — AppleScript via `osascript`**
+
+```applescript
+tell application "Claude" to activate
+delay 0.5
+tell application "System Events"
+  keystroke "n" using command down   -- new conversation
+  delay 0.3
+  keystroke "Start a Cowork task: fix all TypeScript errors"
+  key code 36  -- Enter
+end tell
+```
+
+Executed via `runCommand` with `osascript` on the allowlist. **Not recommended:**
+
+- Fragile — breaks whenever Claude Desktop changes a keyboard shortcut
+- Requires Accessibility permissions granted to the Terminal / IDE running the bridge
+- Screen must be unlocked and Claude Desktop must be in the foreground
+- No way to read the result back programmatically (fire-and-forget only)
+- `osascript` is intentionally absent from the `runCommand` allowlist; adding it opens a broad UI-automation attack surface
+
+**Approach 2 — Claude Desktop local HTTP API**
+
+Use `sendHttpRequest` to call a hypothetical `http://localhost:<port>/api/...` endpoint that Claude Desktop might expose. **Blocked:**
+
+- `sendHttpRequest` rejects all private/loopback addresses (SSRF protection — by design)
+- Whether Claude Desktop exposes a local HTTP API is unverified; would require reverse engineering with a proxy (Charles, mitmproxy). A significant research project with no guaranteed payoff.
+
+**Approach 3 — Electron IPC reverse engineering**
+
+Find the Cowork IPC trigger in Claude Desktop's Electron internals and call it directly from Node. Possible in theory but a multi-day research project with high fragility on every Desktop update.
+
+**Recommended pattern instead — `setHandoffNote` + `runClaudeTask`**
+
+`runClaudeTask` spawns an autonomous Claude subprocess directly on the machine — the same capability Cowork provides, without any UI fragility:
+
+```
+# From Claude Code CLI:
+setHandoffNote("Trigger point: fix all TS errors in src/. Use strict mode. Report back.")
+
+runClaudeTask(
+  prompt: "Read the handoff note and fix all TypeScript errors in the workspace.",
+  stream: true
+)
+```
+
+The subprocess runs at full capability with access to all bridge tools, streams output in real time to the VS Code output channel, and completes without requiring screen access or Accessibility permissions. **This is the right answer for 90% of the "trigger autonomous work from CLI" use cases.**
 
 ### "Browse Plugins" Compatibility
 
@@ -457,3 +548,6 @@ Launches tmux session with 4 panes: orchestrator, bridge, Claude CLI, remote con
 - Commands: Reconnect, Show Logs, Copy Connection Info
 - Auto-reconnect: exponential backoff with jitter, sleep detection, escalating notifications
 - Real-time push: diagnostics, selections, active file, AI comments, file saves, debug state
+- **Auto-install** (`autoInstallBridge: true`): extension installs `claude-ide-bridge` npm package globally on first activation; version-pinned to the bundled `BRIDGE_VERSION`
+- **Auto-start** (`autoStartBridge: true`): extension spawns a bridge process per workspace folder; polls lock dir (250ms) to detect readiness; uses exponential restart backoff (max 5 restarts, 30s cap)
+- **Untrusted workspace**: bridge install and auto-start are skipped in untrusted workspaces (VS Code workspace trust). The extension still watches for a manually-started bridge via lock file discovery.

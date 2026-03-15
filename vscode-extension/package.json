@@ -2,7 +2,7 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "Companion extension for claude-ide-bridge — provides real-time editor state to Claude Code",
-  "version": "0.9.0",
+  "version": "0.9.7",
   "publisher": "oolab-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -19,7 +19,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Terminal command execution and file writes are disabled in untrusted workspaces."
+      "description": "Watches for a manually-started bridge via lock file. Bridge auto-install and auto-start are disabled in untrusted workspaces."
     }
   },
   "activationEvents": [
@@ -49,6 +49,16 @@
           "type": "string",
           "default": "",
           "description": "Override the lock file directory (default: ~/.claude/ide/). Useful for multi-bridge setups."
+        },
+        "claudeIdeBridge.autoStartBridge": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start the claude-ide-bridge process on VS Code startup. Disable to manage the bridge process manually."
+        },
+        "claudeIdeBridge.autoInstallBridge": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically install or upgrade claude-ide-bridge via npm when a newer version is bundled with the extension."
         }
       }
     },
@@ -64,6 +74,14 @@
       {
         "command": "claudeIdeBridge.copyConnectionInfo",
         "title": "Claude IDE Bridge: Copy Connection Info"
+      },
+      {
+        "command": "claudeIdeBridge.startBridge",
+        "title": "Claude IDE Bridge: Start Bridge"
+      },
+      {
+        "command": "claudeIdeBridge.installBridge",
+        "title": "Claude IDE Bridge: Install / Upgrade Bridge"
       }
     ]
   },

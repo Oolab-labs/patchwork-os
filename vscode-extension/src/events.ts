@@ -37,7 +37,9 @@ export function registerEvents(
   }
 
   function isAnyConnected(): boolean {
-    return getBridges().some((b) => b.ws !== null);
+    // Check readyState === OPEN rather than ws !== null — a CLOSING socket is
+    // non-null but can no longer send; broadcasting to it causes silent drops.
+    return getBridges().some((b) => b.ws?.readyState === WebSocket.OPEN);
   }
 
   // Local debounce state (shared across all connections — one flush per event window)

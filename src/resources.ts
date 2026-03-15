@@ -90,25 +90,28 @@ export interface ListResourcesResult {
 
 // Simple in-memory snapshot to avoid re-walking the filesystem on every paginated call.
 // Invalidated after 5 seconds so the list stays reasonably fresh without constant I/O.
+// Keyed by workspace path so multi-root sessions don't share or evict each other's cache.
 const WALK_CACHE_TTL_MS = 5_000;
-let walkCacheWorkspace = "";
-let walkCacheFiles: string[] = [];
-let walkCacheExpiresAt = 0;
+const walkCache = new Map<string, { files: string[]; expiresAt: number }>();
 
 function getCachedWorkspaceFiles(workspace: string): string[] {
   const now = Date.now();
-  if (workspace === walkCacheWorkspace && now < walkCacheExpiresAt) {
-    return walkCacheFiles;
+  const cached = walkCache.get(workspace);
+  if (cached && now < cached.expiresAt) {
+    return cached.files;
   }
-  walkCacheFiles = collectWorkspaceFiles(workspace);
-  walkCacheWorkspace = workspace;
-  walkCacheExpiresAt = now + WALK_CACHE_TTL_MS;
-  return walkCacheFiles;
+  const files = collectWorkspaceFiles(workspace);
+  walkCache.set(workspace, { files, expiresAt: now + WALK_CACHE_TTL_MS });
+  return files;
 }
 
 /** Invalidate the walk cache (useful in tests when files are added mid-run). */
-export function invalidateResourcesCache(): void {
-  walkCacheExpiresAt = 0;
+export function invalidateResourcesCache(workspace?: string): void {
+  if (workspace) {
+    walkCache.delete(workspace);
+  } else {
+    walkCache.clear();
+  }
 }
 
 /**
@@ -158,7 +161,14 @@ export function readResource(workspace: string, uri: string): ReadResourceResult
     return { error: "Only file:// URIs are supported", code: "invalid_args" };
   }
 
-  const rawPath = uri.slice(7); // strip "file://"
+  // Decode percent-encoding before resolving — paths with spaces are encoded
+  // as "file:///my%20dir/file.ts" and must be decoded or the workspace check fails.
+  let rawPath: string;
+  try {
+    rawPath = decodeURIComponent(uri.slice(7)); // strip "file://" then decode
+  } catch {
+    return { error: `URI "${uri}" contains invalid percent-encoding`, code: "invalid_args" };
+  }
   const absPath = path.resolve(rawPath);
   const normalizedWorkspace = path.resolve(workspace);
 

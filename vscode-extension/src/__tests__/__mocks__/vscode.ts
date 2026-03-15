@@ -211,6 +211,7 @@ function createMockWatcher() {
 
 export const workspace = {
   workspaceFolders: undefined as any[] | undefined,
+  isTrusted: true,
   textDocuments: [] as any[],
   openTextDocument: vi.fn(async () => _mockTextDocument()),
   openNotebookDocument: vi.fn(async () => ({
@@ -228,6 +229,9 @@ export const workspace = {
   onDidOpenTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
   onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
   onDidChangeWorkspaceFolders: vi.fn(() => ({ dispose: vi.fn() })),
+  getConfiguration: vi.fn((_section?: string) => ({
+    get: <T>(key: string, defaultValue: T): T => defaultValue,
+  })),
 };
 
 export const window = {
@@ -255,6 +259,7 @@ export const window = {
   })),
   showInformationMessage: vi.fn(async () => undefined),
   showWarningMessage: vi.fn(async () => undefined),
+  showErrorMessage: vi.fn(async () => undefined),
   showNotebookDocument: vi.fn(async () => undefined),
   onDidChangeTextEditorSelection: vi.fn(() => ({ dispose: vi.fn() })),
   onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
@@ -390,6 +395,7 @@ export function _mockTerminal(
 
 /** Reset all mocks to defaults. Call in beforeEach(). */
 export function __reset() {
+  workspace.isTrusted = true;
   workspace.workspaceFolders = [
     { uri: { fsPath: "/workspace" } },
     { uri: { fsPath: "/test-root" } },
@@ -408,6 +414,9 @@ export function __reset() {
   workspace.onDidOpenTextDocument.mockReset().mockReturnValue({ dispose: vi.fn() });
   workspace.onDidSaveTextDocument.mockReset().mockReturnValue({ dispose: vi.fn() });
   workspace.onDidChangeWorkspaceFolders.mockReset().mockReturnValue({ dispose: vi.fn() });
+  workspace.getConfiguration.mockReset().mockImplementation((_section?: string) => ({
+    get: <T>(_key: string, defaultValue: T): T => defaultValue,
+  }));
 
   window.tabGroups.all = [];
   window.tabGroups.close.mockReset().mockResolvedValue(true);
@@ -420,6 +429,7 @@ export function __reset() {
   window.createTerminal.mockReset().mockImplementation(() => _mockTerminal());
   window.showInformationMessage.mockReset();
   window.showWarningMessage.mockReset();
+  window.showErrorMessage.mockReset();
   window.onDidEndTerminalShellExecution
     .mockReset()
     .mockReturnValue({ dispose: vi.fn() });

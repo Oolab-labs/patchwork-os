@@ -84,7 +84,9 @@ let currentPort = null;
 let buffer = "";
 const pendingLines = [];
 let reconnectTimer = null;
+let pollTimer = null;
 const RECONNECT_DEBOUNCE_MS = 500;
+const POLL_INTERVAL_MS = 3000; // fallback poll when disconnected
 const MAX_PENDING_LINES = 1000;
 
 // --- Explicit args (bypass auto-discover and watcher) ---
@@ -126,7 +128,8 @@ function connect(port, authToken) {
       `mcp-stdio-shim: Connection closed (${code} ${reason})\n`,
     );
     if (explicitPort !== null) process.exit(0);
-    // Auto-discover mode: the lock-file watcher will reconnect when a new bridge appears
+    // Auto-discover mode: start polling as fallback in case fs.watch misses the event
+    startPoll();
   });
 
   // Bridge → stdout (one JSON-RPC message per line)
@@ -136,8 +139,38 @@ function connect(port, authToken) {
 
   ws.on("open", () => {
     process.stderr.write("mcp-stdio-shim: Connected.\n");
+    stopPoll();
     flushPending();
   });
+}
+
+function stopPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function startPoll() {
+  if (pollTimer) return; // already polling
+  pollTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      stopPoll();
+      return;
+    }
+    const lockFile = findLockFile();
+    if (!lockFile) return;
+    let parsed;
+    try {
+      parsed = parseLock(lockFile);
+    } catch {
+      return;
+    }
+    process.stderr.write(
+      `mcp-stdio-shim: Poll found bridge on port ${parsed.port} — reconnecting.\n`,
+    );
+    connect(parsed.port, parsed.authToken);
+  }, POLL_INTERVAL_MS);
 }
 
 // --- Initial connection ---
@@ -147,20 +180,22 @@ if (explicitPort !== null) {
   const lockFile = findLockFile();
   if (!lockFile) {
     process.stderr.write(
-      "mcp-stdio-shim: No bridge lock file found. Start the bridge first (npm run start-all).\n",
+      "mcp-stdio-shim: No bridge lock file found — waiting for bridge to start.\n",
     );
-    process.exit(1);
+    // Poll until a lock file appears (bridge may still be starting up)
+    startPoll();
+  } else {
+    let parsed;
+    try {
+      parsed = parseLock(lockFile);
+    } catch (err) {
+      process.stderr.write(
+        `mcp-stdio-shim: Failed to parse lock file: ${err.message}\n`,
+      );
+      process.exit(1);
+    }
+    connect(parsed.port, parsed.authToken);
   }
-  let parsed;
-  try {
-    parsed = parseLock(lockFile);
-  } catch (err) {
-    process.stderr.write(
-      `mcp-stdio-shim: Failed to parse lock file: ${err.message}\n`,
-    );
-    process.exit(1);
-  }
-  connect(parsed.port, parsed.authToken);
 }
 
 // --- Lock-file watcher (auto-discover mode only) ---
@@ -220,6 +255,10 @@ process.stdin.on("data", (chunk) => {
       ws.send(trimmed);
     } else if (pendingLines.length < MAX_PENDING_LINES) {
       pendingLines.push(trimmed);
+    } else {
+      process.stderr.write(
+        `mcp-stdio-shim: pendingLines overflow (${MAX_PENDING_LINES}) — dropping message (bridge not connected)\n`,
+      );
     }
   }
 });

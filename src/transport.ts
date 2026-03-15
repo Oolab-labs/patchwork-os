@@ -81,9 +81,15 @@ export class McpTransport {
   /** Pending elicitation/create requests waiting for a client response. */
   private pendingElicitations = new Map<
     string | number,
-    { resolve: (result: unknown) => void; reject: (err: Error) => void }
+    {
+      resolve: (result: unknown) => void;
+      reject: (err: Error) => void;
+      requestedSchema: Record<string, unknown>;
+    }
   >();
   private initialized = false;
+  /** Called once after the MCP handshake completes (notifications/initialized received). */
+  onInitialized?: () => void;
   private activeToolCalls = 0;
   private callCount = 0;
   private errorCount = 0;
@@ -100,8 +106,32 @@ export class McpTransport {
   private isExtensionConnectedFn: (() => boolean) | null = null;
   private readonly ajv = new Ajv({ strict: false, allErrors: true });
   private readonly schemaValidators = new Map<string, ValidateFunction>();
+  /** Per-session tool-call rate limit (calls/minute). 0 = disabled. */
+  private toolRateLimit = 60;
+  private toolBucketTokens = 60;
+  private toolBucketLastRefill = Date.now();
 
   constructor(private logger: Logger) {}
+
+  /** Configure per-session tool call rate limiting (calls/minute, 0 = disabled). */
+  setToolRateLimit(limit: number): void {
+    this.toolRateLimit = limit;
+    this.toolBucketTokens = limit;
+    this.toolBucketLastRefill = Date.now();
+  }
+
+  /** Token-bucket check. Returns true if the call is allowed. */
+  private checkToolRateLimit(): boolean {
+    if (this.toolRateLimit <= 0) return true;
+    const now = Date.now();
+    const elapsed = now - this.toolBucketLastRefill;
+    const refill = (elapsed / 60_000) * this.toolRateLimit;
+    this.toolBucketTokens = Math.min(this.toolRateLimit, this.toolBucketTokens + refill);
+    this.toolBucketLastRefill = now;
+    if (this.toolBucketTokens < 1) return false;
+    this.toolBucketTokens -= 1;
+    return true;
+  }
 
   private getValidator(toolName: string): ValidateFunction | null {
     if (this.schemaValidators.has(toolName)) {
@@ -174,6 +204,7 @@ export class McpTransport {
       this.pendingElicitations.set(id, {
         resolve: (result) => { clearTimeout(timer); resolve(result); },
         reject: (err) => { clearTimeout(timer); reject(err); },
+        requestedSchema,
       });
 
       safeSend(this.activeWs!, JSON.stringify(request), this.logger).then((sent) => {
@@ -297,7 +328,32 @@ export class McpTransport {
             if (resp.error) {
               pending.reject(new Error(resp.error.message ?? "Elicitation declined"));
             } else {
-              pending.resolve(resp.result);
+              // Validate that the result conforms to the schema type before resolving.
+              // Full AJV validation is deferred to callers; here we guard against
+              // obviously malformed payloads regardless of whether the schema has a
+              // top-level `type` field — null is never a valid elicitation result.
+              const result = resp.result;
+              const schemaType = pending.requestedSchema.type;
+              const jsType = result === null ? "null" : Array.isArray(result) ? "array" : typeof result;
+              let typeError: string | null = null;
+              if (result === null || result === undefined) {
+                typeError = `Elicitation result must not be null/undefined`;
+              } else if (schemaType === "object" && (typeof result !== "object" || Array.isArray(result))) {
+                typeError = `Elicitation result type mismatch: expected object, got ${jsType}`;
+              } else if (schemaType === "string" && typeof result !== "string") {
+                typeError = `Elicitation result type mismatch: expected string, got ${jsType}`;
+              } else if (schemaType === "number" && typeof result !== "number") {
+                typeError = `Elicitation result type mismatch: expected number, got ${jsType}`;
+              } else if (schemaType === "boolean" && typeof result !== "boolean") {
+                typeError = `Elicitation result type mismatch: expected boolean, got ${jsType}`;
+              } else if (schemaType === "array" && !Array.isArray(result)) {
+                typeError = `Elicitation result type mismatch: expected array, got ${jsType}`;
+              }
+              if (typeError) {
+                pending.reject(new Error(typeError));
+              } else {
+                pending.resolve(result);
+              }
             }
           } else {
             this.logger.debug(`Received unexpected response for id=${msg.id} — ignored`);
@@ -336,6 +392,7 @@ export class McpTransport {
           } else if (msg.method === "notifications/initialized") {
             this.initialized = true;
             this.logger.debug("Client initialized");
+            this.onInitialized?.();
           }
           return;
         }
@@ -483,6 +540,15 @@ export class McpTransport {
                 jsonrpc: "2.0",
                 id: msg.id,
                 error: { code: -32600, message: "Duplicate request ID" },
+              };
+              break;
+            }
+            // Per-session token-bucket rate limit
+            if (!this.checkToolRateLimit()) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: { code: -32029, message: "Tool rate limit exceeded" },
               };
               break;
             }

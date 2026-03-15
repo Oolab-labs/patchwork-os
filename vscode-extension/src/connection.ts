@@ -466,6 +466,21 @@ export class BridgeConnection {
     this.tryConnect();
   }
 
+  /**
+   * Connect directly using a known port, auth token, and PID — bypasses lock
+   * file discovery. Used by extension.ts when the bridge was just spawned by
+   * BridgeProcess and its credentials are already known.
+   */
+  connectDirect(port: number, authToken: string, pid = -1): void {
+    if (this.disposed) return;
+    if (
+      this.state === ConnectionState.CONNECTING ||
+      this.state === ConnectionState.CONNECTED
+    )
+      return;
+    this.connect({ port, authToken, pid, workspace: this.workspaceOverride });
+  }
+
   tryConnect(): void {
     if (
       this.disposed ||

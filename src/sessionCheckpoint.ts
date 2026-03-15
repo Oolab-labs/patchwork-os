@@ -54,7 +54,13 @@ export class SessionCheckpoint {
     try {
       const dir = path.dirname(this.checkpointPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(this.checkpointPath, JSON.stringify(data, null, 2));
+      // Write atomically: write to a temp file then rename so a crash mid-write
+      // never leaves a truncated or partially-written checkpoint file.
+      const tmpPath = `${this.checkpointPath}.tmp`;
+      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+      fs.renameSync(tmpPath, this.checkpointPath);
+      // Ensure restrictive permissions even if the file pre-existed with a wider mode.
+      fs.chmodSync(this.checkpointPath, 0o600);
     } catch {
       // Best-effort — never block bridge operation
     }

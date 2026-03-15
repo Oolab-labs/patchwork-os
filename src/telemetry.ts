@@ -26,11 +26,34 @@ export function initTelemetry(): void {
       serviceName: process.env.OTEL_SERVICE_NAME ?? 'claude-ide-bridge',
     });
     sdk.start();
-    process.on('SIGTERM', () => sdk.shutdown());
-    process.on('SIGINT', () => sdk.shutdown());
+    // Flush spans on process exit. We hook `beforeExit` / `exit` rather than
+    // SIGTERM/SIGINT to avoid racing with the bridge.ts signal handlers that
+    // also call process.exit(). Using `exit` (synchronous) is not ideal for async
+    // flush, but `beforeExit` fires before the bridge's signal handler calls
+    // process.exit(0), giving the SDK a chance to flush in-flight spans.
+    // If OTEL_EXPORTER_OTLP_ENDPOINT is set, the bridge's own SIGTERM handler
+    // should await sdk.shutdown() via the exported `shutdownTelemetry` function.
+    let _sdk: typeof sdk | null = sdk;
+    (globalThis as Record<string, unknown>).__otelSdk = sdk;
+    process.once('beforeExit', () => {
+      if (_sdk) { _sdk.shutdown().catch(() => {}); _sdk = null; }
+    });
   }).catch(() => {
     // OTEL init failure is non-fatal
   });
+}
+
+/**
+ * Flush and shut down the OTEL SDK. Call this from the bridge shutdown path
+ * (SIGTERM/SIGINT handler) before calling process.exit() so in-flight spans
+ * are exported. No-ops if telemetry was not initialized.
+ */
+export async function shutdownTelemetry(): Promise<void> {
+  const sdk = (globalThis as Record<string, unknown>).__otelSdk as { shutdown(): Promise<void> } | undefined;
+  if (sdk) {
+    (globalThis as Record<string, unknown>).__otelSdk = undefined;
+    await sdk.shutdown().catch(() => {});
+  }
 }
 
 export function getTracer(): Tracer {

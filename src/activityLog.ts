@@ -64,10 +64,14 @@ export class ActivityLog {
               continue;
             }
             this.entries.push(obj as unknown as ActivityEntry);
-            this.nextId = Math.max(this.nextId, (obj.id as number) + 1);
+            if (typeof obj.id === "number" && Number.isFinite(obj.id)) {
+              this.nextId = Math.max(this.nextId, obj.id + 1);
+            }
           } else if (obj.kind === "lifecycle") {
             this.lifecycleEntries.push(obj as unknown as LifecycleEntry);
-            this.nextId = Math.max(this.nextId, (obj.id as number) + 1);
+            if (typeof obj.id === "number" && Number.isFinite(obj.id)) {
+              this.nextId = Math.max(this.nextId, obj.id + 1);
+            }
           }
         } catch {
           // skip malformed lines

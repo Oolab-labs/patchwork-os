@@ -372,10 +372,10 @@ describe("handleSendTerminalCommand", () => {
     expect(t.sendText).toHaveBeenCalledWith("x", false);
   });
 
-  it("throws on non-string text", async () => {
-    await expect(handleSendTerminalCommand({ text: 42 })).rejects.toThrow(
-      "text must be a string",
-    );
+  it("returns error object on non-string text (consistent with other handlers)", async () => {
+    const result = await handleSendTerminalCommand({ text: 42 }) as { success: boolean; error: string };
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/text must be a string/i);
   });
 });
 

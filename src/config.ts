@@ -24,6 +24,7 @@ export interface Config {
   claudeBinary: string;
   automationEnabled: boolean;
   automationPolicyPath: string | null;
+  toolRateLimit: number;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -207,6 +208,7 @@ export function parseConfig(argv: string[]): Config {
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
   let automationEnabled = fileConfig.automationEnabled ?? false;
   let automationPolicyPath: string | null = fileConfig.automationPolicyPath ?? null;
+  let toolRateLimit = 60;
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -312,6 +314,16 @@ export function parseConfig(argv: string[]): Config {
       case "--automation-policy":
         automationPolicyPath = path.resolve(requireArg(args, ++i, "--automation-policy"));
         break;
+      case "--tool-rate-limit": {
+        const tlStr = requireArg(args, ++i, "--tool-rate-limit");
+        toolRateLimit = Number.parseInt(tlStr, 10);
+        if (!Number.isInteger(toolRateLimit) || toolRateLimit < 1 || toolRateLimit > 10_000) {
+          throw new Error(
+            `Invalid --tool-rate-limit: ${tlStr}. Must be between 1 and 10000.`,
+          );
+        }
+        break;
+      }
       case "--grace-period": {
         const gStr = requireArg(args, ++i, "--grace-period");
         gracePeriodMs = Number.parseInt(gStr, 10);
@@ -471,5 +483,6 @@ Environment Variables:
     claudeBinary,
     automationEnabled,
     automationPolicyPath,
+    toolRateLimit,
   };
 }

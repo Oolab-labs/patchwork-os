@@ -72,7 +72,14 @@ async function readValidLockFiles(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/** Return the best lock file matching the first VS Code workspace folder (existing behaviour). */
+/**
+ * Return the best lock file matching the first VS Code workspace folder (existing behaviour).
+ *
+ * Note: intentionally more permissive than `readLockFileForWorkspace` — if either side
+ * has no workspace field (legacy bridge or no open folder), the candidate is returned
+ * anyway. This preserves backwards-compatibility for single-window setups where the
+ * bridge may have been started without a workspace argument.
+ */
 export async function readLockFilesAsync(
   lockDir?: string,
 ): Promise<LockFileData | null> {
@@ -99,8 +106,10 @@ export async function readLockFileForWorkspace(
   const candidates = await readValidLockFiles(lockDir);
   const resolved = path.resolve(workspace);
   for (const candidate of candidates) {
-    if (candidate.workspace && path.resolve(candidate.workspace) !== resolved)
-      continue;
+    // Skip candidates with no workspace field — they must not match a specific
+    // workspace query or they could connect to the wrong bridge in multi-root setups.
+    if (!candidate.workspace) continue;
+    if (path.resolve(candidate.workspace) !== resolved) continue;
     return candidate;
   }
   return null;

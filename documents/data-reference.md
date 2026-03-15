@@ -38,6 +38,7 @@ Domain data connections, state management, and protocol flows that are not expre
 | `sessions` | `Map<string, AgentSession>` | One entry per connected Claude Code client (max 5); removed on disconnect+grace expiry |
 | `authToken` | `string` (UUID) | Generated once at startup; never changes |
 | `listChangedTimer` | `setTimeout` | Debounce timer for `tools/list_changed` notifications (2s) |
+| `pendingListChanged` | `boolean` | Set when `sendListChanged` fires but no session has an open WS; cleared when the next session completes the MCP handshake and receives the notification |
 | `lastConnectAt` | `string \| null` | ISO timestamp of most recent Claude Code connection |
 | `lastDisconnectAt` | `string \| null` | ISO timestamp of most recent Claude Code disconnection |
 | `checkpoint` | `SessionCheckpoint \| null` | Writes periodic snapshots to `~/.claude/ide/checkpoint-<port>.json` |
@@ -107,7 +108,9 @@ Domain data connections, state management, and protocol flows that are not expre
 
 4. Claude Desktop shim → scans ~/.claude/ide/*.lock → prefers files with isBridge: true
    → connects via stdio relay (mcp-stdio-shim.cjs)
-   → watches ~/.claude/ide/ via fs.watch (500 ms debounce) — auto-reconnects on bridge restart
+   → if no lock found at startup: polls every 3 s until one appears (no exit)
+   → watches ~/.claude/ide/ via fs.watch (500 ms debounce) — reconnects on bridge restart
+   → polling fallback (3 s interval) runs after any disconnect as guard against missed FSEvents
 
 5. Bridge validates token → accepts or rejects upgrade
 ```
@@ -258,6 +261,9 @@ notifications/tools/list_changed:
                 AI comments change, file change, debug session change
   Debounced: 2s (except extension connect — immediate)
   Effect: Claude re-queries tools/list to discover new/removed tools
+  Pending flag: if no session WS is open when the notification fires, bridge sets
+    pendingListChanged=true; the next session to receive notifications/initialized
+    gets the notification immediately (onInitialized hook on McpTransport)
 
 notifications/progress:
   Triggered by: tools calling progressFn(progress, total?, message?)

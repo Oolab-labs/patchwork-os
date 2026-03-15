@@ -23,6 +23,7 @@ import type { ExtensionClient } from "./extensionClient.js";
 import type { FileLock } from "./fileLock.js";
 import type { Logger } from "./logger.js";
 import type { ProbeResults } from "./probe.js";
+import { corsOrigin } from "./server.js";
 import { registerAllTools } from "./tools/index.js";
 import { McpTransport } from "./transport.js";
 
@@ -39,37 +40,50 @@ class HttpAdapter extends EventEmitter {
   /** Always 0 — no send buffer for HTTP (bypasses backpressure drain). */
   readonly bufferedAmount = 0;
 
-  private pendingSends: Array<(data: string | null) => void> = [];
+  /**
+   * Pending POST resolvers keyed by JSON-RPC request `id`.
+   * Keying by ID fixes the FIFO ordering race: if two concurrent tool calls arrive
+   * on the same HTTP session, each POST waits for *its own* response rather than
+   * the first response that arrives.
+   */
+  private pendingSends: Map<string | number, (data: string | null) => void> = new Map();
   private sseRes: http.ServerResponse | null = null;
   private sseHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Called by safeSend() / McpTransport to deliver a message.
-   * Responses (JSON-RPC messages with `id`) go to the pending POST resolver.
+   * Responses (JSON-RPC messages with `id`) go to the matching pending POST resolver.
    * Notifications (no `id` — e.g. progress, list_changed) go to the SSE stream.
-   * This prevents notifications from consuming the response slot.
+   * This prevents notifications from consuming a response slot.
    */
   send(data: string | Buffer, cb?: (err?: Error) => void): void {
     const str = typeof data === "string" ? data : data.toString("utf-8");
 
-    // Determine if this is a response (has `id`) or a notification (no `id`).
-    let isResponse = false;
+    // Parse response `id` to route it to the correct waiting POST handler.
+    let responseId: string | number | null = null;
     try {
       const parsed = JSON.parse(str);
-      isResponse = parsed.id !== undefined && parsed.id !== null;
+      if (parsed.id !== undefined && parsed.id !== null) {
+        responseId = parsed.id as string | number;
+      }
     } catch {
-      // If we can't parse, treat as response to avoid dropping data.
-      isResponse = true;
+      // Unparseable — fall through to SSE path
     }
 
-    if (isResponse && this.pendingSends.length > 0) {
-      // biome-ignore lint/style/noNonNullAssertion: length guard above
-      const resolve = this.pendingSends.shift()!;
-      resolve(str);
-    } else if (this.sseRes && !this.sseRes.writableEnded) {
+    if (responseId !== null) {
+      const resolve = this.pendingSends.get(responseId);
+      if (resolve) {
+        this.pendingSends.delete(responseId);
+        resolve(str);
+        cb?.();
+        return;
+      }
+    }
+
+    if (this.sseRes && !this.sseRes.writableEnded) {
       this.sseRes.write(`data: ${str}\n\n`);
     }
-    // If neither path matches (no SSE, not a response), the message is dropped.
+    // If neither path matches (no SSE, response ID unknown), the message is dropped.
     // This matches WebSocket behavior where the client may not be listening.
     cb?.();
   }
@@ -94,20 +108,19 @@ class HttpAdapter extends EventEmitter {
     }
   }
 
-  /** Returns a promise that resolves with the next message McpTransport sends.
+  /** Returns a promise that resolves with the response for the given request ID.
    *  Rejects if the session is closed or the timeout fires. */
-  waitForSend(timeoutMs = 30_000): Promise<string> {
+  waitForSend(requestId: string | number, timeoutMs = 30_000): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error("HTTP session send timeout")),
-        timeoutMs,
-      );
-      if (this.pendingSends.length >= MAX_PENDING_SENDS) {
-        clearTimeout(timer);
+      if (this.pendingSends.size >= MAX_PENDING_SENDS) {
         reject(new Error("HTTP session send queue full"));
         return;
       }
-      this.pendingSends.push((data) => {
+      const timer = setTimeout(() => {
+        this.pendingSends.delete(requestId);
+        reject(new Error("HTTP session send timeout"));
+      }, timeoutMs);
+      this.pendingSends.set(requestId, (data) => {
         clearTimeout(timer);
         if (data === null) {
           reject(new Error("Session closed"));
@@ -135,10 +148,10 @@ class HttpAdapter extends EventEmitter {
     }
     this.sseRes = null;
     // Reject any pending sends so callers get a 504, not a 200 with error body
-    for (const resolve of this.pendingSends) {
+    for (const resolve of this.pendingSends.values()) {
       resolve(null);
     }
-    this.pendingSends = [];
+    this.pendingSends.clear();
   }
 }
 
@@ -166,8 +179,10 @@ export class StreamableHttpHandler {
     private orchestrator: unknown,
     private logger: Logger,
   ) {
-    // Prune idle sessions every 5 minutes
-    this.cleanupTimer = setInterval(() => this.pruneIdle(), 5 * 60 * 1000);
+    // Prune idle sessions every 5 minutes.
+    // .unref() prevents this timer from keeping the Node process alive when
+    // all other work is done — avoids test hangs and clean process exit.
+    this.cleanupTimer = setInterval(() => this.pruneIdle(), 5 * 60 * 1000).unref();
   }
 
   /** Handle an incoming HTTP request to /mcp */
@@ -175,14 +190,18 @@ export class StreamableHttpHandler {
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ): Promise<void> {
-    // CORS preflight
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, Mcp-Session-Id",
-    );
-    res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+    // CORS — only reflect localhost/127.0.0.1 origins; wildcard would let any
+    // page that obtains the Bearer token call the API cross-origin.
+    const origin = corsOrigin(req.headers.origin);
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, Mcp-Session-Id",
+      );
+      res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+    }
 
     // OPTIONS is handled by server.ts before auth — this handler only sees POST/GET/DELETE.
     if (req.method === "POST") {
@@ -286,8 +305,9 @@ export class StreamableHttpHandler {
       return;
     }
 
-    // Request → feed to adapter, wait for transport's response
-    const responsePromise = session.adapter.waitForSend();
+    // Request → feed to adapter, wait for transport's response keyed by request ID
+    const requestId = (msg.id as string | number) ?? 0;
+    const responsePromise = session.adapter.waitForSend(requestId);
     session.adapter.receive(body);
 
     let responseData: string;
@@ -323,7 +343,9 @@ export class StreamableHttpHandler {
       return;
     }
 
-    // Establish SSE stream for server→client notifications
+    // Establish SSE stream for server→client notifications.
+    // Disable the per-request timeout for this long-lived stream only.
+    res.socket?.setTimeout(0);
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -366,6 +388,7 @@ export class StreamableHttpHandler {
     transport.workspace = this.config.workspace;
     transport.sessionId = id;
     transport.setActivityLog(this.activityLog);
+    transport.setToolRateLimit(this.config.toolRateLimit);
     transport.setExtensionConnectedFn(() => this.extensionClient.isConnected());
 
     const openedFiles = new Set<string>();

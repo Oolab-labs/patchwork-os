@@ -357,7 +357,7 @@ describe("Streamable HTTP: error handling", () => {
 // ── CORS ───────────────────────────────────────────────────────────────────────
 
 describe("Streamable HTTP: CORS", () => {
-  it("OPTIONS preflight returns 204 without auth", async () => {
+  it("OPTIONS preflight returns 204 without auth and reflects localhost origin", async () => {
     const res = await new Promise<{
       status: number;
       headers: http.IncomingHttpHeaders;
@@ -368,6 +368,7 @@ describe("Streamable HTTP: CORS", () => {
           port,
           path: "/mcp",
           method: "OPTIONS",
+          headers: { Origin: "http://localhost:3000" },
           // No auth header — preflight must work without it
         },
         (res) => {
@@ -382,7 +383,7 @@ describe("Streamable HTTP: CORS", () => {
     });
 
     expect(res.status).toBe(204);
-    expect(res.headers["access-control-allow-origin"]).toBe("*");
+    expect(res.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
     expect(res.headers["access-control-allow-methods"]).toContain("POST");
     expect(res.headers["access-control-allow-headers"]).toContain(
       "Mcp-Session-Id",
@@ -392,19 +393,74 @@ describe("Streamable HTTP: CORS", () => {
     );
   });
 
-  it("POST responses include CORS headers", async () => {
-    const res = await post(port, {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-11-25",
-        capabilities: {},
-        clientInfo: { name: "test", version: "1.0" },
-      },
+  it("OPTIONS preflight omits CORS headers when Origin is not localhost", async () => {
+    const res = await new Promise<{
+      status: number;
+      headers: http.IncomingHttpHeaders;
+    }>((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/mcp",
+          method: "OPTIONS",
+          headers: { Origin: "https://evil.example.com" },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () =>
+            resolve({ status: res.statusCode!, headers: res.headers }),
+          );
+        },
+      );
+      req.on("error", reject);
+      req.end();
     });
 
-    expect(res.headers["access-control-allow-origin"]).toBe("*");
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("POST responses reflect localhost origin in CORS headers", async () => {
+    const res = await new Promise<{
+      status: number;
+      headers: http.IncomingHttpHeaders;
+    }>((resolve, reject) => {
+      const payload = JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          clientInfo: { name: "test", version: "1.0" },
+        },
+      });
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/mcp",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(payload),
+            Authorization: `Bearer ${TOKEN}`,
+            Origin: "http://127.0.0.1:8080",
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () =>
+            resolve({ status: res.statusCode!, headers: res.headers }),
+          );
+        },
+      );
+      req.on("error", reject);
+      req.write(payload);
+      req.end();
+    });
+
+    expect(res.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:8080");
   });
 });
 

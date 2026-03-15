@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import WebSocket from "ws";
 
 import { BridgeConnection } from "./connection";
+import { BridgeInstaller } from "./bridgeInstaller";
+import { BridgeProcess } from "./bridgeProcess";
 import { registerEvents } from "./events";
 import { createDebugHandlers } from "./handlers/debug";
 import { createDecorationHandlers } from "./handlers/decorations";
@@ -9,7 +11,7 @@ import { createFileWatcherHandlers } from "./handlers/fileWatcher";
 import { baseHandlers } from "./handlers/index";
 import { createLspHandlers } from "./handlers/lsp";
 import { clearAllTerminalBuffers } from "./handlers/terminal";
-import { readAllMatchingLockFiles } from "./lockfiles";
+import { readAllMatchingLockFiles, readLockFileForWorkspace } from "./lockfiles";
 
 /**
  * SecretStorage key for a given workspace path.
@@ -89,6 +91,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const logLevel = config.get<string>("logLevel", "info");
   const autoConnect = config.get<boolean>("autoConnect", true);
   const lockFileDir = config.get<string>("lockFileDir", "");
+  const autoInstallBridge = config.get<boolean>("autoInstallBridge", true);
+  const autoStartBridge = config.get<boolean>("autoStartBridge", true);
 
   // ── Handler factories (shared across all connections) ──────────────────────
   // Handlers use the VS Code API which is process-global; they don't need to
@@ -98,6 +102,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // ── Connection registry ───────────────────────────────────────────────────
   /** Live connections keyed by workspace path (or "" for no-workspace mode). */
   const connections = new Map<string, BridgeConnection>();
+
+  /** Bridge processes spawned by this extension instance, keyed by workspace path. */
+  const processes = new Map<string, BridgeProcess>();
 
   function getBridges(): BridgeConnection[] {
     return [...connections.values()];
@@ -224,13 +231,17 @@ export function activate(context: vscode.ExtensionContext): void {
     const activePaths = new Set(folders.map((f) => f.uri.fsPath));
 
     // Remove connections for folders that are no longer open
+    let removedAny = false;
     for (const [ws, bridge] of connections) {
       if (ws !== "" && !activePaths.has(ws)) {
         bridge.dispose();
-        clearAllTerminalBuffers();
         connections.delete(ws);
+        removedAny = true;
       }
     }
+    // Clear terminal buffers once after all stale connections are removed —
+    // not once per removed folder to avoid redundant work on multi-root reloads.
+    if (removedAny) clearAllTerminalBuffers();
 
     // Remove the no-workspace fallback if we now have real folders
     if (connections.has("") && folders.length > 0) {
@@ -249,7 +260,45 @@ export function activate(context: vscode.ExtensionContext): void {
           if (!connections.has(fsPath)) {
             connections.set(fsPath, bridge);
             bridge.startWatchingLockDir();
-            if (autoConnect) bridge.tryConnect();
+
+            if (autoConnect) {
+              if (autoStartBridge && !processes.has(fsPath) && vscode.workspace.isTrusted) {
+                // Check if a bridge is already running for this workspace
+                const existingLock = await readLockFileForWorkspace(
+                  fsPath,
+                  lockFileDir || undefined,
+                );
+                if (existingLock) {
+                  bridge.tryConnect();
+                } else {
+                  // No running bridge — spawn one
+                  const proc = new BridgeProcess(output, fsPath, lockFileDir || undefined);
+                  processes.set(fsPath, proc);
+                  proc.onStarted = ({ port, authToken, pid }) => {
+                    bridge.connectDirect(port, authToken, pid);
+                  };
+                  proc.onStartupFailed = (err) => {
+                    output.appendLine(
+                      `${new Date().toISOString()} Bridge startup failed for ${fsPath}: ${err}`,
+                    );
+                    void vscode.window
+                      .showErrorMessage(
+                        `Claude IDE Bridge failed to start: ${err}`,
+                        "Show Logs",
+                      )
+                      .then((choice) => {
+                        if (choice === "Show Logs") output.show();
+                      });
+                    // Fall through to normal tryConnect so the extension keeps
+                    // watching for a manually-started bridge.
+                    bridge.tryConnect();
+                  };
+                  void proc.spawn();
+                }
+              } else {
+                bridge.tryConnect();
+              }
+            }
           } else {
             bridge.dispose();
           }
@@ -279,10 +328,32 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // Initial sync
-  syncConnections().catch((err: unknown) =>
+  // Ensure the bridge binary is installed, then start connections
+  const startupSequence = async () => {
+    if (!vscode.workspace.isTrusted) {
+      output.appendLine(
+        `${new Date().toISOString()} Untrusted workspace — skipping bridge install and auto-start.`,
+      );
+      await syncConnections();
+      return;
+    }
+    if (autoInstallBridge) {
+      const installer = new BridgeInstaller(output);
+      try {
+        await installer.ensureInstalled();
+      } catch (err: unknown) {
+        // Install failure is non-fatal — log and continue; an older version may work
+        output.appendLine(
+          `${new Date().toISOString()} WARN: bridge install failed: ${String(err)}`,
+        );
+      }
+    }
+    await syncConnections();
+  };
+
+  startupSequence().catch((err: unknown) =>
     output.appendLine(
-      `${new Date().toISOString()} ERROR: initial syncConnections failed: ${String(err)}`,
+      `${new Date().toISOString()} ERROR: startup sequence failed: ${String(err)}`,
     ),
   );
 
@@ -290,6 +361,8 @@ export function activate(context: vscode.ExtensionContext): void {
     dispose() {
       for (const bridge of connections.values()) bridge.dispose();
       connections.clear();
+      for (const proc of processes.values()) void proc.stop();
+      processes.clear();
       clearAllTerminalBuffers();
     },
   });

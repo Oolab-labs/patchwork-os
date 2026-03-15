@@ -172,4 +172,49 @@ describe("prompts/get", () => {
     const result = resp.result as { messages: unknown[] };
     expect(result.messages.length).toBeGreaterThan(0);
   });
+
+  it("cowork: appears in prompts/list", async () => {
+    const { ws } = await setup();
+    send(ws, { jsonrpc: "2.0", id: 10, method: "prompts/list", params: {} });
+    const resp = await waitFor(ws, (m) => m.id === 10);
+    const result = resp.result as { prompts: Array<{ name: string }> };
+    const names = result.prompts.map((p) => p.name);
+    expect(names).toContain("cowork");
+  });
+
+  it("cowork: returns tool-calling instructions with no arguments", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 11,
+      method: "prompts/get",
+      params: { name: "cowork", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 11);
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as { description: string; messages: Array<{ content: { text: string } }> };
+    expect(result.messages.length).toBeGreaterThan(0);
+    const text = result.messages[0].content.text;
+    expect(text).toContain("getHandoffNote");
+    expect(text).toContain("getOpenEditors");
+    expect(text).toContain("getDiagnostics");
+    expect(text).toContain("getGitStatus");
+    expect(text).toContain("getProjectInfo");
+  });
+
+  it("cowork: injects task description when provided", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 12,
+      method: "prompts/get",
+      params: { name: "cowork", arguments: { task: "fix all TypeScript errors" } },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 12);
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as { description: string; messages: Array<{ content: { text: string } }> };
+    const text = result.messages[0].content.text;
+    expect(text).toContain("fix all TypeScript errors");
+    expect(result.description).toContain("fix all TypeScript errors");
+  });
 });

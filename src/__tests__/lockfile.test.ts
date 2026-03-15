@@ -49,20 +49,28 @@ describe("LockFileManager", () => {
     expect(stat.mode & 0o777).toBe(0o700);
   });
 
-  it("rejects symlinks during retry", () => {
+  it("force-removes a symlink at the lock path and writes a new regular file", () => {
     const ideDir = path.join(tmpDir, "ide");
     fs.mkdirSync(ideDir, { recursive: true, mode: 0o700 });
 
-    // Create a symlink at the expected lock file path
+    // Attacker places a symlink at the lock path before the bridge writes it.
     const lockPath = path.join(ideDir, "12345.lock");
     const targetPath = path.join(tmpDir, "evil-target");
     fs.writeFileSync(targetPath, "");
     fs.symlinkSync(targetPath, lockPath);
 
     const mgr = new LockFileManager(logger);
-    expect(() =>
-      mgr.write(12345, "test-token", ["/workspace"], "TestIDE"),
-    ).toThrow("not a regular file");
+    // The symlink is force-removed and a new regular file is written via O_EXCL|O_NOFOLLOW.
+    const result = mgr.write(12345, "test-token", ["/workspace"], "TestIDE");
+    expect(result).toBe(lockPath);
+
+    // The written path is a regular file, not a symlink.
+    const stat = fs.lstatSync(lockPath);
+    expect(stat.isFile()).toBe(true);
+    expect(stat.isSymbolicLink()).toBe(false);
+
+    // The original symlink target is untouched (we only removed the symlink, not its target).
+    expect(fs.existsSync(targetPath)).toBe(true);
   });
 
   it("overwrites existing regular lock file on retry", () => {

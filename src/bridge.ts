@@ -19,7 +19,7 @@ import { AutomationHooks, loadPolicy } from "./automation.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
 import { McpTransport } from "./transport.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
-import { initTelemetry } from "./telemetry.js";
+import { initTelemetry, shutdownTelemetry } from "./telemetry.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 const MAX_SESSIONS = 5;
@@ -56,6 +56,8 @@ export class Bridge {
   private ready = false;
   private stopped = false;
   private listChangedTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True when sendListChanged fired but no session had an open WS to receive it. */
+  private pendingListChanged = false;
   private lastConnectAt: string | null = null;
   private lastDisconnectAt: string | null = null;
   private checkpoint: SessionCheckpoint | null = null;
@@ -97,9 +99,21 @@ export class Bridge {
       transport.workspace = this.config.workspace;
       transport.sessionId = sessionId;
       transport.setActivityLog(this.activityLog);
+      transport.setToolRateLimit(this.config.toolRateLimit);
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
       );
+      transport.onInitialized = () => {
+        if (this.pendingListChanged && ws.readyState === WebSocket.OPEN) {
+          McpTransport.sendNotification(
+            ws,
+            "notifications/tools/list_changed",
+            undefined,
+            this.logger,
+          );
+          this.pendingListChanged = false;
+        }
+      };
 
       const session: AgentSession = {
         id: sessionId,
@@ -197,6 +211,7 @@ export class Bridge {
       if (this.listChangedTimer) return; // Already scheduled
       this.listChangedTimer = setTimeout(() => {
         this.listChangedTimer = null;
+        let notifiedAny = false;
         for (const session of this.sessions.values()) {
           if (session.ws.readyState === WebSocket.OPEN) {
             McpTransport.sendNotification(
@@ -205,7 +220,12 @@ export class Bridge {
               undefined,
               this.logger,
             );
+            notifiedAny = true;
           }
+        }
+        // No open sessions — mark pending so the next session gets it on initialize
+        if (!notifiedAny) {
+          this.pendingListChanged = true;
         }
       }, 2000);
     };
@@ -509,11 +529,19 @@ export class Bridge {
     // 3. Check for stale lock files
     this.lockFile.cleanStale();
 
-    // 4. Find port and start server
-    const port = await this.server.findAndListen(
-      this.config.port,
-      this.config.bindAddress,
-    );
+    // 4. Find port and start server — if this throws, clean up the HTTP handler
+    //    so its cleanupTimer interval does not leak.
+    let port: number;
+    try {
+      port = await this.server.findAndListen(
+        this.config.port,
+        this.config.bindAddress,
+      );
+    } catch (err) {
+      this.httpMcpHandler.close();
+      this.httpMcpHandler = null;
+      throw err;
+    }
     this.port = port;
 
     // 4b. Load persisted tasks from previous sessions (best-effort)
@@ -570,6 +598,7 @@ export class Bridge {
       }, SHUTDOWN_TIMEOUT_MS);
       forceTimer.unref();
       await this.stop();
+      await shutdownTelemetry();
       process.exit(exitCode);
     };
     process.once("SIGINT", () => shutdown("SIGINT", 130));

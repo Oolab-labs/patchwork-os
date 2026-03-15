@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { Logger } from "./logger.js";
-import { BRIDGE_PROTOCOL_VERSION } from "./version.js";
+import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 
 const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -25,6 +25,28 @@ function enableTcpKeepalive(ws: WebSocket): void {
 interface ServerEvents {
   connection: [ws: WebSocket];
   extension: [ws: WebSocket];
+}
+
+/**
+ * Return the CORS origin to reflect, or null if the origin is untrusted.
+ * Only loopback origins are allowed — the bridge binds locally and does not
+ * need to serve cross-origin requests from arbitrary sites.
+ * Covers: localhost, 127.0.0.1, and [::1] (IPv6 loopback for --bind ::1 users).
+ */
+export function corsOrigin(requestOrigin: string | undefined): string | null {
+  if (!requestOrigin) return null;
+  try {
+    const { hostname, protocol } = new URL(requestOrigin);
+    if (
+      (protocol === "http:" || protocol === "https:") &&
+      (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]")
+    ) {
+      return requestOrigin;
+    }
+  } catch {
+    // malformed origin — deny
+  }
+  return null;
 }
 
 function timingSafeTokenCompare(a: string, b: string): boolean {
@@ -132,7 +154,8 @@ export class Server extends EventEmitter<ServerEvents> {
       // CORS preflight for /mcp — browsers (and Claude Desktop's web renderer) send
       // OPTIONS before POST. Respond without requiring auth so the preflight succeeds.
       if (req.method === "OPTIONS" && req.url === "/mcp") {
-        res.setHeader("Access-Control-Allow-Origin", "*");
+        const origin = corsOrigin(req.headers.origin);
+        if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
         res.setHeader(
           "Access-Control-Allow-Methods",
           "GET, POST, DELETE, OPTIONS",
@@ -144,6 +167,13 @@ export class Server extends EventEmitter<ServerEvents> {
         res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
         res.writeHead(204);
         res.end();
+        return;
+      }
+
+      // Unauthenticated liveness probe — safe to expose; contains no sensitive data.
+      if (req.url === "/ping" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, v: PACKAGE_VERSION }));
         return;
       }
 
@@ -399,7 +429,7 @@ export class Server extends EventEmitter<ServerEvents> {
 
     this.wss.on("connection", (raw) => {
       const ws = raw as AliveWebSocket;
-      this.logger.info("Claude Code connected");
+      this.logger.debug("Claude Code connected");
       ws.isAlive = true;
       ws.missedPongs = 0;
       ws.lastPongTime = Date.now();
@@ -420,9 +450,10 @@ export class Server extends EventEmitter<ServerEvents> {
       );
     }
     // Mitigate slow-loris attacks: bound the headers phase.
-    // requestTimeout is disabled (0) because SSE GET /mcp streams are long-lived.
+    // requestTimeout is NOT disabled globally — SSE handlers must disable it
+    // per-response via `res.socket?.setTimeout(0)` for their own long-lived stream.
     this.httpServer.headersTimeout = 5_000;
-    this.httpServer.requestTimeout = 0;
+    this.httpServer.requestTimeout = 30_000;
     return new Promise((resolve, reject) => {
       this.httpServer
         .listen(port, bindAddress, () => {

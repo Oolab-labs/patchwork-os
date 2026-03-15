@@ -205,8 +205,14 @@ export function loadPolicy(filePath: string): AutomationPolicy {
 export class AutomationHooks {
   /** Last trigger time per "trigger key" (e.g. "diagnostics:/path/to/file"). */
   private lastTrigger = new Map<string, number>();
-  /** Active task ID per file (loop guard — prevents triggering while prior task runs). */
-  private activeFileTasks = new Map<string, string>();
+  /**
+   * Active task IDs per file for the diagnostics handler.
+   * Kept separate from activeSaveTasks so a running save task does not suppress
+   * the diagnostics trigger (and vice-versa) for the same file.
+   */
+  private activeDiagnosticsTasks = new Map<string, string>();
+  /** Active task IDs per file for the file-saved handler. */
+  private activeSaveTasks = new Map<string, string>();
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -222,7 +228,7 @@ export class AutomationHooks {
     const normalizedFile = path.resolve(file);
 
     // Loop guard: skip if a task for this file is still pending/running
-    const existingId = this.activeFileTasks.get(normalizedFile);
+    const existingId = this.activeDiagnosticsTasks.get(normalizedFile);
     if (existingId) {
       const existing = this.orchestrator.getTask(existingId);
       if (
@@ -235,7 +241,7 @@ export class AutomationHooks {
         return;
       }
       // Prune stale entry for completed tasks
-      this.activeFileTasks.delete(normalizedFile);
+      this.activeDiagnosticsTasks.delete(normalizedFile);
     }
 
     // Severity filter
@@ -283,7 +289,7 @@ export class AutomationHooks {
       );
 
     const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
-    this.activeFileTasks.set(normalizedFile, taskId);
+    this.activeDiagnosticsTasks.set(normalizedFile, taskId);
     this.log(
       `[automation] triggered diagnostics task ${taskId.slice(0, 8)} for ${normalizedFile}`,
     );
@@ -348,7 +354,7 @@ export class AutomationHooks {
     if (!matched) return;
 
     // Loop guard
-    const existingId = this.activeFileTasks.get(normalizedFile);
+    const existingId = this.activeSaveTasks.get(normalizedFile);
     if (existingId) {
       const existing = this.orchestrator.getTask(existingId);
       if (
@@ -361,7 +367,7 @@ export class AutomationHooks {
         return;
       }
       // Prune stale entry for completed tasks
-      this.activeFileTasks.delete(normalizedFile);
+      this.activeSaveTasks.delete(normalizedFile);
     }
 
     // Cooldown check
@@ -386,7 +392,7 @@ export class AutomationHooks {
       `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
     );
     const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
-    this.activeFileTasks.set(normalizedFile, taskId);
+    this.activeSaveTasks.set(normalizedFile, taskId);
     this.log(
       `[automation] triggered save task ${taskId.slice(0, 8)} for ${normalizedFile}`,
     );

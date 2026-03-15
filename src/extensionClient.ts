@@ -432,7 +432,75 @@ export class ExtensionClient {
           );
           return;
         }
-        const state = p as unknown as DebugState;
+        // Extract only known-safe fields rather than casting the raw wire object.
+        const raw = p as Record<string, unknown>;
+        const state: DebugState = {
+          hasActiveSession: typeof raw.hasActiveSession === "boolean" ? raw.hasActiveSession : false,
+          isPaused: typeof raw.isPaused === "boolean" ? raw.isPaused : false,
+          sessionId: typeof raw.sessionId === "string" ? raw.sessionId : undefined,
+          sessionName: typeof raw.sessionName === "string" ? raw.sessionName : undefined,
+          sessionType: typeof raw.sessionType === "string" ? raw.sessionType : undefined,
+          pausedAt: (raw.pausedAt && typeof raw.pausedAt === "object" && !Array.isArray(raw.pausedAt))
+            ? {
+                file: typeof (raw.pausedAt as Record<string,unknown>).file === "string" ? (raw.pausedAt as Record<string,unknown>).file as string : "",
+                line: typeof (raw.pausedAt as Record<string,unknown>).line === "number" ? (raw.pausedAt as Record<string,unknown>).line as number : 0,
+                column: typeof (raw.pausedAt as Record<string,unknown>).column === "number" ? (raw.pausedAt as Record<string,unknown>).column as number : 0,
+              }
+            : undefined,
+          callStack: Array.isArray(raw.callStack)
+            ? (raw.callStack as unknown[]).reduce<NonNullable<DebugState["callStack"]>>((acc, f) => {
+                if (typeof f === "object" && f !== null && !Array.isArray(f)) {
+                  const frame = f as Record<string, unknown>;
+                  acc.push({
+                    id: typeof frame.id === "number" ? frame.id : 0,
+                    name: typeof frame.name === "string" ? frame.name : "",
+                    file: typeof frame.file === "string" ? frame.file : "",
+                    line: typeof frame.line === "number" ? frame.line : 0,
+                    column: typeof frame.column === "number" ? frame.column : 0,
+                  });
+                }
+                return acc;
+              }, [])
+            : undefined,
+          scopes: Array.isArray(raw.scopes)
+            ? (raw.scopes as unknown[]).reduce<NonNullable<DebugState["scopes"]>>((acc, s) => {
+                if (typeof s === "object" && s !== null && !Array.isArray(s)) {
+                  const scope = s as Record<string, unknown>;
+                  acc.push({
+                    name: typeof scope.name === "string" ? scope.name : "",
+                    variables: Array.isArray(scope.variables)
+                      ? (scope.variables as unknown[]).reduce<Array<{ name: string; value: string; type: string }>>((vacc, v) => {
+                          if (typeof v === "object" && v !== null) {
+                            const vv = v as Record<string, unknown>;
+                            vacc.push({
+                              name: typeof vv.name === "string" ? vv.name : "",
+                              value: typeof vv.value === "string" ? vv.value : "",
+                              type: typeof vv.type === "string" ? vv.type : "",
+                            });
+                          }
+                          return vacc;
+                        }, [])
+                      : [],
+                  });
+                }
+                return acc;
+              }, [])
+            : undefined,
+          breakpoints: Array.isArray(raw.breakpoints)
+            ? (raw.breakpoints as unknown[]).reduce<NonNullable<DebugState["breakpoints"]>>((acc, b) => {
+                if (typeof b === "object" && b !== null) {
+                  const bp = b as Record<string, unknown>;
+                  acc.push({
+                    file: typeof bp.file === "string" ? bp.file : "",
+                    line: typeof bp.line === "number" ? bp.line : 0,
+                    condition: typeof bp.condition === "string" ? bp.condition : undefined,
+                    enabled: typeof bp.enabled === "boolean" ? bp.enabled : true,
+                  });
+                }
+                return acc;
+              }, [])
+            : [],
+        };
         this.latestDebugState = state;
         this.safeCallback(this.onDebugSessionChanged, state);
         break;

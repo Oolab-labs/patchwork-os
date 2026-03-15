@@ -84,6 +84,19 @@ export const PROMPTS: McpPrompt[] = [
     ],
   },
   {
+    name: "cowork",
+    description:
+      "Load full IDE context (open files, diagnostics, git status, project info, handoff note) and propose a concrete Cowork action plan. Invoke this before any computer-use task so Claude arrives informed.",
+    arguments: [
+      {
+        name: "task",
+        description:
+          "Optional task description to focus context gathering (e.g. 'fix all TypeScript errors').",
+        required: false,
+      },
+    ],
+  },
+  {
     name: "set-effort",
     description:
       "Prepend a model-effort instruction to the next task. Use 'low' for quick answers, 'medium' for normal work, 'high' for complex refactors or deep analysis.",
@@ -193,6 +206,38 @@ const TEMPLATES: Record<
       },
     ],
   }),
+
+  "cowork": ({ task = "" }) => {
+    const taskLine = task
+      ? `\nFocus: **${task}**\n`
+      : "";
+    return {
+      description: task ? `Cowork context — ${task}` : "Cowork context — full IDE snapshot",
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: [
+              "Collect full IDE context to prepare for a Cowork (computer-use) session:",
+              taskLine,
+              "1. Call `getHandoffNote` — check for prior session context or an in-progress task",
+              "2. Call `getOpenEditors` — list open files and any unsaved changes",
+              "3. Call `getDiagnostics` — surface errors and warnings across the workspace",
+              "4. Call `getGitStatus` — show staged, unstaged, and untracked changes",
+              "5. Call `getProjectInfo` — detect project type, key scripts, and dependencies",
+              "",
+              "After collecting context:",
+              "- Summarise the current workspace state in 3–5 bullet points",
+              "- Propose a concrete, step-by-step Cowork action plan",
+              "- Call out anything that needs clarification before starting",
+              "- Ask me to confirm before taking any action outside the editor",
+            ].join("\n"),
+          },
+        },
+      ],
+    };
+  },
 
   "set-effort": ({ level = "medium" }) => {
     const validLevels = ["low", "medium", "high"] as const;

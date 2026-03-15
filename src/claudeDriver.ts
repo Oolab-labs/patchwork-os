@@ -77,17 +77,17 @@ export class SubprocessDriver implements IClaudeDriver {
     child.stdout.setEncoding("utf-8");
     child.stdout.on("data", (chunk: string) => {
       const prevLen = output.length;
+      if (prevLen >= OUTPUT_CAP) return; // already at cap — discard to prevent unbounded growth
       output += chunk;
       // Only forward chunks until we hit the cap — avoids flooding callers on large output
-      if (prevLen < OUTPUT_CAP) {
-        if (output.length <= OUTPUT_CAP) {
-          // Entire chunk fits within cap
-          input.onChunk?.(chunk);
-        } else {
-          // Partial chunk: send only the portion up to the cap
-          const remaining = chunk.slice(0, OUTPUT_CAP - prevLen);
-          if (remaining.length > 0) input.onChunk?.(remaining);
-        }
+      if (output.length <= OUTPUT_CAP) {
+        // Entire chunk fits within cap
+        input.onChunk?.(chunk);
+      } else {
+        // Partial chunk: send only the portion up to the cap; truncate accumulator
+        const remaining = chunk.slice(0, OUTPUT_CAP - prevLen);
+        if (remaining.length > 0) input.onChunk?.(remaining);
+        output = output.slice(0, OUTPUT_CAP);
       }
     });
 
@@ -164,11 +164,14 @@ export class ApiDriver implements IClaudeDriver {
 
     this.log("[ApiDriver] sending request to Anthropic API");
 
-    const message = await client.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: _input.prompt + contextNote }],
-    });
+    const message = await client.messages.create(
+      {
+        model: "claude-opus-4-6",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: _input.prompt + contextNote }],
+      },
+      { signal: _input.signal },
+    );
 
     // biome-ignore lint/suspicious/noExplicitAny: message is from dynamically imported optional dep — no static types
     const content = (message as any).content as Array<{

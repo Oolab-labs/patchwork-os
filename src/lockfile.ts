@@ -57,14 +57,11 @@ export class LockFileManager {
       fs.chmodSync(lockPath, 0o600);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "EEXIST") {
-        // Verify the existing file is a regular file (not a symlink) before removing
-        const stat = fs.lstatSync(lockPath);
-        if (!stat.isFile()) {
-          throw new Error(
-            `Lock path ${lockPath} is not a regular file — refusing to overwrite (possible symlink attack)`,
-          );
-        }
-        fs.unlinkSync(lockPath);
+        // Force-remove whatever is at lockPath (regular file or stale symlink).
+        // We do NOT lstat+check first — that introduces a TOCTOU race.
+        // The subsequent O_EXCL|O_NOFOLLOW open guarantees we create a new regular
+        // file and refuse to follow any symlink an attacker may have placed after rm.
+        fs.rmSync(lockPath, { force: true });
         const fd = fs.openSync(
           lockPath,
           fs.constants.O_WRONLY |
