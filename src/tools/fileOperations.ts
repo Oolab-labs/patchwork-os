@@ -291,7 +291,19 @@ export function createRenameFileTool(
           // atomically, eliminating the TOCTOU window of a separate access() check.
           try {
             await fs.promises.link(oldPath, newPath);
-            await fs.promises.unlink(oldPath);
+            try {
+              await fs.promises.unlink(oldPath);
+            } catch (unlinkErr) {
+              // link() succeeded but unlink() failed — both paths now point to the
+              // same inode. Clean up the newly created hardlink so the file stays
+              // only at its original location, then surface the error to the caller.
+              try {
+                await fs.promises.unlink(newPath);
+              } catch {
+                /* best-effort */
+              }
+              throw unlinkErr;
+            }
           } catch (linkErr) {
             const code = (linkErr as NodeJS.ErrnoException).code;
             if (code === "EEXIST") {

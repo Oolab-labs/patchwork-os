@@ -198,17 +198,6 @@ export function createGitCommitTool(workspace: string) {
         );
       }
 
-      // List staged files before committing (for return value)
-      const stagedResult = await execSafe(
-        "git",
-        ["diff", "--name-only", "--cached"],
-        { cwd: workspace, signal },
-      );
-      const stagedFiles = stagedResult.stdout
-        .split("\n")
-        .map((f) => f.trim())
-        .filter(Boolean);
-
       // Commit
       try {
         await runGit(["commit", "-m", message], workspace, {
@@ -229,12 +218,24 @@ export function createGitCommitTool(workspace: string) {
       const hash = hashResult.stdout.trim().slice(0, 12);
       const branch = await currentBranch(workspace, signal);
 
+      // List files that actually landed in the commit (post-commit, so pre-commit
+      // hooks that stage additional files are included in the reported list).
+      const diffTreeResult = await execSafe(
+        "git",
+        ["diff-tree", "--no-commit-id", "-r", "--name-only", "HEAD"],
+        { cwd: workspace, signal },
+      );
+      const committedFiles = diffTreeResult.stdout
+        .split("\n")
+        .map((f) => f.trim())
+        .filter(Boolean);
+
       return success({
         hash,
         branch,
         message,
-        files: stagedFiles,
-        count: stagedFiles.length,
+        files: committedFiles,
+        count: committedFiles.length,
       });
     },
   };
@@ -435,6 +436,8 @@ export function createGitBlameTool(workspace: string) {
           lineNum = Number.parseInt(headerMatch[2] ?? "0", 10);
           continue;
         }
+
+        if (!currentHash) continue;
 
         if (l.startsWith("author ") && !l.startsWith("author-")) {
           const existing = commits.get(currentHash);

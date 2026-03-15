@@ -137,6 +137,18 @@ export function createWatchDiagnosticsTool(
             }
           });
 
+          // Re-check after registering the listener to close the TOCTOU window:
+          // a `diagnosticsChanged` notification could have fired between the
+          // initial timestamp check (above) and `addDiagnosticsListener` (just
+          // above). If so, settle immediately rather than waiting for timeout.
+          if (
+            sinceTimestamp !== undefined &&
+            extensionClient.lastDiagnosticsUpdate > sinceTimestamp
+          ) {
+            settle(true);
+            return;
+          }
+
           const timer = setTimeout(() => settle(false), timeoutMs);
 
           const abortHandler = () => settle(false);

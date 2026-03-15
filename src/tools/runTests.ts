@@ -162,6 +162,9 @@ export function createRunTestsTool(workspace: string, probes?: ProbeResults) {
         for (const r of runners) {
           const key = `${r.name}:${filter ?? ""}`;
           caches.delete(key);
+          // Also evict any in-flight run so a fresh subprocess is started,
+          // not the stale one that was already running when noCache was requested.
+          runningPromises.delete(key);
         }
       }
 

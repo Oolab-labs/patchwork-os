@@ -173,11 +173,14 @@ export function createSearchAndReplaceTool(workspace: string) {
         let count = 0;
 
         if (regex) {
-          regex.lastIndex = 0;
-          const matches = content.match(regex);
+          // Create a fresh RegExp per file — the shared `regex` object has the `g`
+          // flag, and `.lastIndex` is mutable state. Concurrent `processFile` calls
+          // inside `Promise.all` would race on that single object across `await`
+          // boundaries, producing incorrect match counts or wrong replacements.
+          const localRegex = new RegExp(regex.source, regex.flags);
+          const matches = content.match(localRegex);
           count = matches ? matches.length : 0;
-          newContent = content.replace(regex, replacement);
-          regex.lastIndex = 0;
+          newContent = content.replace(localRegex, replacement);
         } else {
           const parts = content.split(pattern);
           count = parts.length - 1;

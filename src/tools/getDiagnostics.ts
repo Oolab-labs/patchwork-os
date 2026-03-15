@@ -79,6 +79,7 @@ export function createGetDiagnosticsTool(
         .run(workspace, signal)
         .then((data) => {
           caches.set(linter.name, { data, timestamp: Date.now() });
+          linterErrors.delete(linter.name);
           return data;
         })
         .catch((err: unknown) => {

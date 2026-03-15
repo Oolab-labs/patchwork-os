@@ -459,7 +459,10 @@ export function createWaitForTerminalOutputTool(
         additionalProperties: false as const,
       },
     },
-    timeoutMs: 300_000,
+    // Extension adds a 5 s internal buffer on top of the user timeout — raise
+    // the tool ceiling by 10 s so the extension response always arrives before
+    // the MCP transport cancels the request.
+    timeoutMs: 310_000,
     handler: async (args: Record<string, unknown>) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("waitForTerminalOutput");
@@ -566,7 +569,10 @@ export function createRunInTerminalTool(
         additionalProperties: false as const,
       },
     },
-    timeoutMs: 300_000,
+    // Extension adds a 5 s internal buffer on top of the user timeout — raise
+    // the tool ceiling by 10 s so the extension response always arrives before
+    // the MCP transport cancels the request.
+    timeoutMs: 310_000,
     handler: async (args: Record<string, unknown>) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("runInTerminal");
