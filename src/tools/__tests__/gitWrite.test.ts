@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createGitAddTool,
   createGitBlameTool,
+  createGitCheckoutTool,
   createGitCommitTool,
   createGitListBranchesTool,
   createGitPushTool,
@@ -127,6 +128,51 @@ describe("gitWrite tools", () => {
       // tmpDir has no remotes configured — push should fail
       const result = await tool.handler({ remote: "origin" });
       expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("gitCheckout", () => {
+    it("reports previousBranch: null and wasDetached: true when switching away from detached HEAD", async () => {
+      // Regression: previousBranch was set to the literal string "HEAD" when in
+      // detached HEAD state. "HEAD" is not a valid branch name for gitCheckout, so
+      // callers couldn't use it to navigate back. The fix returns null + a commit hash.
+      const hash = execSync("git rev-parse HEAD", { cwd: tmpDir })
+        .toString()
+        .trim();
+      execSync(`git checkout --detach ${hash}`, {
+        cwd: tmpDir,
+        stdio: "ignore",
+      });
+      execSync("git branch feature", { cwd: tmpDir, stdio: "ignore" });
+
+      const tool = createGitCheckoutTool(tmpDir);
+      const result = await tool.handler({ branch: "feature" });
+      const data = parse(result);
+
+      expect(result.isError).toBeFalsy();
+      expect(data.branch).toBe("feature");
+      expect(data.previousBranch).toBeNull();
+      expect(data.wasDetached).toBe(true);
+      expect(data.previousCommit).toMatch(/^[0-9a-f]{12}$/);
+    });
+
+    it("reports previousBranch name (not null) when switching from a normal branch", async () => {
+      const initialBranch = execSync("git rev-parse --abbrev-ref HEAD", {
+        cwd: tmpDir,
+      })
+        .toString()
+        .trim();
+      execSync("git branch feature", { cwd: tmpDir, stdio: "ignore" });
+
+      const tool = createGitCheckoutTool(tmpDir);
+      const result = await tool.handler({ branch: "feature" });
+      const data = parse(result);
+
+      expect(result.isError).toBeFalsy();
+      expect(data.branch).toBe("feature");
+      expect(data.previousBranch).toBe(initialBranch);
+      expect(data.wasDetached).toBeUndefined();
+      expect(data.previousCommit).toBeUndefined();
     });
   });
 

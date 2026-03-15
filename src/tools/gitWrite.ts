@@ -326,7 +326,22 @@ export function createGitCheckoutTool(workspace: string) {
       const newBranch = await currentBranch(workspace, signal);
       return success({
         branch: newBranch,
-        previousBranch: prevBranch,
+        // If HEAD was detached, prevBranch is the literal string "HEAD" which
+        // cannot be passed back to gitCheckout to restore position. Annotate it
+        // so callers know to use the commit hash instead.
+        previousBranch: prevBranch === "HEAD" ? null : prevBranch,
+        previousCommit:
+          prevBranch === "HEAD"
+            ? (
+                await execSafe("git", ["rev-parse", "HEAD"], {
+                  cwd: workspace,
+                  signal,
+                })
+              ).stdout
+                .trim()
+                .slice(0, 12)
+            : undefined,
+        wasDetached: prevBranch === "HEAD" || undefined,
         created: create,
       });
     },

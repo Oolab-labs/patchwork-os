@@ -389,6 +389,84 @@ describe("McpTransport", () => {
     expect(err.message).toMatch(/rate limit/i);
   });
 
+  it("notification rate limit: exactly the 500th notification is dropped (>= off-by-one fix)", async () => {
+    // NOTIFICATION_RATE_LIMIT = 500. After setup, notifCount = 1
+    // (notifications/initialized). We send 498 dummy notifications/cancelled
+    // (requestId=9999) to reach notifCount=499, then send the 500th targeting
+    // the live tool (requestId=1).
+    //
+    // With the >= fix: 500 >= 500 → dropped → tool NOT cancelled → returns "done".
+    // With the old >:  500 > 500  → false   → processed → tool IS cancelled → "cancelled".
+    let resolveGate!: () => void;
+    const gate = new Promise<void>((r) => {
+      resolveGate = r;
+    });
+
+    const { ws } = await setup("notif-rate-limit-offbyone", (t) => {
+      t.registerTool(
+        {
+          name: "gateTool",
+          description: "Waits for gate or abort signal",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async (_args, signal) => {
+          await new Promise<void>((resolve) => {
+            gate.then(resolve);
+            signal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+          return {
+            content: [
+              { type: "text", text: signal?.aborted ? "cancelled" : "done" },
+            ],
+          };
+        },
+      );
+    });
+
+    // Start the in-flight tool call (id=1)
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "gateTool", arguments: {} },
+    });
+
+    // Give the server a moment to register the in-flight controller
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Send 498 dummy notifications/cancelled (requestId=9999) — no effect since
+    // there is no in-flight request with that id. After these, notifCount=499.
+    for (let i = 0; i < 498; i++) {
+      send(ws, {
+        jsonrpc: "2.0",
+        method: "notifications/cancelled",
+        params: { requestId: 9999 },
+      });
+    }
+
+    // Sync point: wait for server to drain the 498 notifications
+    send(ws, { jsonrpc: "2.0", id: 2, method: "ping" });
+    await waitFor(ws, (m) => m.id === 2, 10000);
+
+    // 500th notification: targets the live tool. With >= fix it is dropped.
+    send(ws, {
+      jsonrpc: "2.0",
+      method: "notifications/cancelled",
+      params: { requestId: 1 },
+    });
+
+    // Sync point: confirm the boundary notification was received (and dropped)
+    send(ws, { jsonrpc: "2.0", id: 3, method: "ping" });
+    await waitFor(ws, (m) => m.id === 3, 5000);
+
+    // Open the gate — if the cancel was dropped the tool returns "done"
+    resolveGate();
+
+    const resp = await waitFor(ws, (m) => m.id === 1, 5000);
+    const result = resp.result as { content: Array<{ text: string }> };
+    expect(result.content[0]?.text).toBe("done");
+  }, 30000);
+
   it("concurrent tool call limit returns busy error when MAX_CONCURRENT_TOOLS is reached", async () => {
     // MAX_CONCURRENT_TOOLS = 10; register a slow tool and saturate it
     let resolveAll: () => void;

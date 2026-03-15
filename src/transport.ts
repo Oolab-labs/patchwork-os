@@ -434,7 +434,7 @@ export class McpTransport {
             this.notifWindowStart = nowNotif;
           }
           this.notifCount++;
-          if (this.notifCount > NOTIFICATION_RATE_LIMIT) {
+          if (this.notifCount >= NOTIFICATION_RATE_LIMIT) {
             this.logger.warn(
               `Notification rate limit exceeded (${NOTIFICATION_RATE_LIMIT}/min) — dropping notification`,
             );
