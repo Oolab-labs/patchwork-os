@@ -6,6 +6,7 @@ import type { FileLock } from "../fileLock.js";
 import type { ProbeResults } from "../probe.js";
 import type { McpTransport } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
+import { createAuditDependenciesTool } from "./auditDependencies.js";
 import { createBridgeStatusTool } from "./bridgeStatus.js";
 import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
@@ -26,6 +27,7 @@ import {
   createClearEditorDecorationsTool,
   createSetEditorDecorationsTool,
 } from "./decorations.js";
+import { createDetectUnusedCodeTool } from "./detectUnusedCode.js";
 import { createEditTextTool } from "./editText.js";
 import {
   createCreateFileTool,
@@ -36,6 +38,7 @@ import { createUnwatchFilesTool, createWatchFilesTool } from "./fileWatcher.js";
 import { createFindFilesTool } from "./findFiles.js";
 import { createFixAllLintErrorsTool } from "./fixAllLintErrors.js";
 import { createFormatDocumentTool } from "./formatDocument.js";
+import { createGenerateAPIDocumentationTool } from "./generateAPIDocumentation.js";
 import { createGenerateTestsTool } from "./generateTests.js";
 import { createGetBufferContentTool } from "./getBufferContent.js";
 import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
@@ -57,10 +60,6 @@ import { createGetOpenEditorsTool } from "./getOpenEditors.js";
 import { createGetPRTemplateTool } from "./getPRTemplate.js";
 import { createGetProjectInfoTool } from "./getProjectInfo.js";
 import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
-import { createAuditDependenciesTool } from "./auditDependencies.js";
-import { createDetectUnusedCodeTool } from "./detectUnusedCode.js";
-import { createGenerateAPIDocumentationTool } from "./generateAPIDocumentation.js";
-import { createRefactorExtractFunctionTool } from "./refactorExtractFunction.js";
 import { createGetToolCapabilitiesTool } from "./getToolCapabilities.js";
 import { createGetTypeSignatureTool } from "./getTypeSignature.js";
 import { createGetWorkspaceFoldersTool } from "./getWorkspaceFolders.js";
@@ -120,6 +119,7 @@ import { createOpenFileTool } from "./openFile.js";
 import { createOpenInBrowserTool } from "./openInBrowser.js";
 import { createOrganizeImportsTool } from "./organizeImports.js";
 import { createPlanTools } from "./planPersistence.js";
+import { createRefactorExtractFunctionTool } from "./refactorExtractFunction.js";
 import { createReplaceBlockTool } from "./replaceBlock.js";
 import { createResumeClaudeTaskTool } from "./resumeClaudeTask.js";
 import { createRunClaudeTaskTool } from "./runClaudeTask.js";
