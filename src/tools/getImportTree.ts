@@ -20,10 +20,7 @@ const EXTENSIONS_TO_TRY = [
   "/index.js",
 ];
 
-function resolveLocalImport(
-  specifier: string,
-  fromDir: string,
-): string | null {
+function resolveLocalImport(specifier: string, fromDir: string): string | null {
   const base = path.resolve(fromDir, specifier);
   for (const ext of EXTENSIONS_TO_TRY) {
     const candidate = base + ext;
@@ -39,8 +36,7 @@ function parseImports(source: string): { local: string[]; external: string[] } {
   const specifiers = new Set<string>();
 
   // ES module static imports
-  const esImportRe =
-    /\bimport\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/g;
+  const esImportRe = /\bimport\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/g;
   for (const m of source.matchAll(esImportRe)) {
     if (m[1]) specifiers.add(m[1]);
   }
@@ -89,7 +85,8 @@ export function createGetImportTreeTool(workspace: string) {
           },
           includeExternal: {
             type: "boolean",
-            description: "Include external package imports in output (default: false)",
+            description:
+              "Include external package imports in output (default: false)",
           },
         },
         additionalProperties: false as const,
@@ -120,7 +117,14 @@ export function createGetImportTreeTool(workspace: string) {
       try {
         source = await fs.promises.readFile(absFile, "utf-8");
       } catch {
-        return success({ file: absFile, tree: null, error: `Cannot read file: ${absFile}`, cycles: [], totalFiles: 0, maxDepth });
+        return success({
+          file: absFile,
+          tree: null,
+          error: `Cannot read file: ${absFile}`,
+          cycles: [],
+          totalFiles: 0,
+          maxDepth,
+        });
       }
 
       const relPath = absFile.startsWith(workspace + path.sep)
@@ -137,7 +141,9 @@ export function createGetImportTreeTool(workspace: string) {
       visited.add(absFile);
       totalFiles++;
 
-      const queue: QueueItem[] = [{ absPath: absFile, depth: 1, nodeRef: rootNode }];
+      const queue: QueueItem[] = [
+        { absPath: absFile, depth: 1, nodeRef: rootNode },
+      ];
 
       while (queue.length > 0) {
         const item = queue.shift()!;
@@ -198,7 +204,11 @@ export function createGetImportTreeTool(workspace: string) {
           totalFiles++;
 
           if (depth < maxDepth) {
-            queue.push({ absPath: resolvedPath, depth: depth + 1, nodeRef: childNode });
+            queue.push({
+              absPath: resolvedPath,
+              depth: depth + 1,
+              nodeRef: childNode,
+            });
           }
         }
       }

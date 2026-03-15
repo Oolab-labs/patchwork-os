@@ -5,7 +5,12 @@
  *
  * GenAI semantic conventions: https://opentelemetry.io/docs/specs/semconv/gen-ai/
  */
-import { trace, type Tracer, type Span, SpanStatusCode } from '@opentelemetry/api';
+import {
+  type Span,
+  SpanStatusCode,
+  type Tracer,
+  trace,
+} from "@opentelemetry/api";
 
 let _initialized = false;
 
@@ -18,29 +23,34 @@ export function initTelemetry(): void {
 
   // Dynamic import to avoid loading SDK when not needed
   Promise.all([
-    import('@opentelemetry/sdk-node'),
-    import('@opentelemetry/exporter-trace-otlp-http'),
-  ]).then(([{ NodeSDK }, { OTLPTraceExporter }]) => {
-    const sdk = new NodeSDK({
-      traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
-      serviceName: process.env.OTEL_SERVICE_NAME ?? 'claude-ide-bridge',
+    import("@opentelemetry/sdk-node"),
+    import("@opentelemetry/exporter-trace-otlp-http"),
+  ])
+    .then(([{ NodeSDK }, { OTLPTraceExporter }]) => {
+      const sdk = new NodeSDK({
+        traceExporter: new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }),
+        serviceName: process.env.OTEL_SERVICE_NAME ?? "claude-ide-bridge",
+      });
+      sdk.start();
+      // Flush spans on process exit. We hook `beforeExit` / `exit` rather than
+      // SIGTERM/SIGINT to avoid racing with the bridge.ts signal handlers that
+      // also call process.exit(). Using `exit` (synchronous) is not ideal for async
+      // flush, but `beforeExit` fires before the bridge's signal handler calls
+      // process.exit(0), giving the SDK a chance to flush in-flight spans.
+      // If OTEL_EXPORTER_OTLP_ENDPOINT is set, the bridge's own SIGTERM handler
+      // should await sdk.shutdown() via the exported `shutdownTelemetry` function.
+      let _sdk: typeof sdk | null = sdk;
+      (globalThis as Record<string, unknown>).__otelSdk = sdk;
+      process.once("beforeExit", () => {
+        if (_sdk) {
+          _sdk.shutdown().catch(() => {});
+          _sdk = null;
+        }
+      });
+    })
+    .catch(() => {
+      // OTEL init failure is non-fatal
     });
-    sdk.start();
-    // Flush spans on process exit. We hook `beforeExit` / `exit` rather than
-    // SIGTERM/SIGINT to avoid racing with the bridge.ts signal handlers that
-    // also call process.exit(). Using `exit` (synchronous) is not ideal for async
-    // flush, but `beforeExit` fires before the bridge's signal handler calls
-    // process.exit(0), giving the SDK a chance to flush in-flight spans.
-    // If OTEL_EXPORTER_OTLP_ENDPOINT is set, the bridge's own SIGTERM handler
-    // should await sdk.shutdown() via the exported `shutdownTelemetry` function.
-    let _sdk: typeof sdk | null = sdk;
-    (globalThis as Record<string, unknown>).__otelSdk = sdk;
-    process.once('beforeExit', () => {
-      if (_sdk) { _sdk.shutdown().catch(() => {}); _sdk = null; }
-    });
-  }).catch(() => {
-    // OTEL init failure is non-fatal
-  });
 }
 
 /**
@@ -49,7 +59,9 @@ export function initTelemetry(): void {
  * are exported. No-ops if telemetry was not initialized.
  */
 export async function shutdownTelemetry(): Promise<void> {
-  const sdk = (globalThis as Record<string, unknown>).__otelSdk as { shutdown(): Promise<void> } | undefined;
+  const sdk = (globalThis as Record<string, unknown>).__otelSdk as
+    | { shutdown(): Promise<void> }
+    | undefined;
   if (sdk) {
     (globalThis as Record<string, unknown>).__otelSdk = undefined;
     await sdk.shutdown().catch(() => {});
@@ -57,14 +69,14 @@ export async function shutdownTelemetry(): Promise<void> {
 }
 
 export function getTracer(): Tracer {
-  return trace.getTracer('claude-ide-bridge');
+  return trace.getTracer("claude-ide-bridge");
 }
 
 /** Wrap an async function in an OTEL span. No-ops when tracing is disabled. */
 export async function withSpan<T>(
   name: string,
   attrs: Record<string, string | number | boolean>,
-  fn: (span: Span) => Promise<T>
+  fn: (span: Span) => Promise<T>,
 ): Promise<T> {
   const tracer = getTracer();
   return tracer.startActiveSpan(name, async (span) => {

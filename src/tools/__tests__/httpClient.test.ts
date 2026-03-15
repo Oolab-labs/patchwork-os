@@ -13,7 +13,10 @@ function parse(result: { content: Array<{ type: string; text: string }> }) {
 
 describe("sendHttpRequest — input validation", () => {
   it("rejects unsupported HTTP method", async () => {
-    const result = await tool.handler({ method: "CONNECT", url: "https://example.com" });
+    const result = await tool.handler({
+      method: "CONNECT",
+      url: "https://example.com",
+    });
     expect(result.isError).toBe(true);
     expect(parse(result).error).toMatch(/Unsupported method/);
   });
@@ -25,7 +28,10 @@ describe("sendHttpRequest — input validation", () => {
   });
 
   it("rejects non-http/https protocol", async () => {
-    const result = await tool.handler({ method: "GET", url: "ftp://example.com/file" });
+    const result = await tool.handler({
+      method: "GET",
+      url: "ftp://example.com/file",
+    });
     expect(result.isError).toBe(true);
     expect(parse(result).error).toMatch(/http/i);
   });
@@ -42,11 +48,16 @@ describe("sendHttpRequest — SSRF guard (isPrivateHost)", () => {
   it("blocks 127.0.0.1", () => expectBlocked("http://127.0.0.1/"));
   it("blocks 10.0.0.1 (RFC 1918)", () => expectBlocked("http://10.0.0.1/"));
   it("blocks 172.16.0.1 (RFC 1918)", () => expectBlocked("http://172.16.0.1/"));
-  it("blocks 192.168.1.1 (RFC 1918)", () => expectBlocked("http://192.168.1.1/"));
-  it("blocks 169.254.1.1 (link-local)", () => expectBlocked("http://169.254.1.1/"));
+  it("blocks 192.168.1.1 (RFC 1918)", () =>
+    expectBlocked("http://192.168.1.1/"));
+  it("blocks 169.254.1.1 (link-local)", () =>
+    expectBlocked("http://169.254.1.1/"));
   it("blocks ::1 (IPv6 loopback)", () => expectBlocked("http://[::1]/"));
-  it("blocks fe80:: (IPv6 link-local)", () => expectBlocked("http://[fe80::1]/"));
+  it("blocks fe80:: (IPv6 link-local)", () =>
+    expectBlocked("http://[fe80::1]/"));
   it("blocks 0.0.0.0", () => expectBlocked("http://0.0.0.0/"));
-  it("blocks hex-encoded IP (0x7f000001)", () => expectBlocked("http://0x7f000001/"));
-  it("blocks 100.64.0.1 (CGNAT / RFC 6598)", () => expectBlocked("http://100.64.0.1/"));
+  it("blocks hex-encoded IP (0x7f000001)", () =>
+    expectBlocked("http://0x7f000001/"));
+  it("blocks 100.64.0.1 (CGNAT / RFC 6598)", () =>
+    expectBlocked("http://100.64.0.1/"));
 });

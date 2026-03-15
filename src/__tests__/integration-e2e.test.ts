@@ -7,9 +7,9 @@
  * 5. Streamable HTTP tool call (POST /mcp initialize → tools/call)
  */
 
-import http from "node:http";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -84,11 +84,29 @@ async function setupBridge(registerTools = false): Promise<TestBridge> {
   if (registerTools) {
     const config = makeConfig(workspace);
     const probes = {
-      git: false, rg: false, fd: false, tsc: false, eslint: false,
-      pyright: false, ruff: false, cargo: false, go: false, biome: false,
-      vitest: false, jest: false, pytest: false, gh: false,
+      git: false,
+      rg: false,
+      fd: false,
+      tsc: false,
+      eslint: false,
+      pyright: false,
+      ruff: false,
+      cargo: false,
+      go: false,
+      biome: false,
+      vitest: false,
+      jest: false,
+      pytest: false,
+      gh: false,
     };
-    registerAllTools(transport, config, new Set(), probes, extensionClient, activityLog);
+    registerAllTools(
+      transport,
+      config,
+      new Set(),
+      probes,
+      extensionClient,
+      activityLog,
+    );
   }
 
   const port = await server.findAndListen(null);
@@ -130,7 +148,9 @@ function httpPost(
     };
     const req = http.request(reqOpts, (res) => {
       let data = "";
-      res.on("data", (c: Buffer) => { data += c.toString(); });
+      res.on("data", (c: Buffer) => {
+        data += c.toString();
+      });
       res.on("end", () =>
         resolve({
           status: res.statusCode ?? 0,
@@ -259,23 +279,42 @@ describe("Streamable HTTP — session lifecycle", () => {
     const activityLog = new ActivityLog();
     const config = makeConfig(workspace);
     const probes = {
-      git: false, rg: false, fd: false, tsc: false, eslint: false,
-      pyright: false, ruff: false, cargo: false, go: false, biome: false,
-      vitest: false, jest: false, pytest: false, gh: false,
+      git: false,
+      rg: false,
+      fd: false,
+      tsc: false,
+      eslint: false,
+      pyright: false,
+      ruff: false,
+      cargo: false,
+      go: false,
+      biome: false,
+      vitest: false,
+      jest: false,
+      pytest: false,
+      gh: false,
     };
     const httpHandler = new StreamableHttpHandler(
-      config, probes, extensionClient, activityLog,
+      config,
+      probes,
+      extensionClient,
+      activityLog,
       { acquireLock: async () => true, releaseLock: async () => {} } as any,
-      new Map(), null, logger,
+      new Map(),
+      null,
+      logger,
     );
     server.httpMcpHandler = (req, res) => httpHandler.handle(req, res);
 
-    const initBody = { jsonrpc: "2.0", id: 1, method: "initialize", params: {} };
-    const res = await httpPost(
-      `http://127.0.0.1:${port}/mcp`,
-      initBody,
-      { Authorization: `Bearer ${authToken}` },
-    );
+    const initBody = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {},
+    };
+    const res = await httpPost(`http://127.0.0.1:${port}/mcp`, initBody, {
+      Authorization: `Bearer ${authToken}`,
+    });
 
     expect(res.status).toBe(200);
     const sessionId = res.headers["mcp-session-id"];
@@ -298,28 +337,55 @@ describe("Streamable HTTP — session lifecycle", () => {
     const activityLog = new ActivityLog();
     const config = makeConfig(workspace);
     const probes = {
-      git: false, rg: false, fd: false, tsc: false, eslint: false,
-      pyright: false, ruff: false, cargo: false, go: false, biome: false,
-      vitest: false, jest: false, pytest: false, gh: false,
+      git: false,
+      rg: false,
+      fd: false,
+      tsc: false,
+      eslint: false,
+      pyright: false,
+      ruff: false,
+      cargo: false,
+      go: false,
+      biome: false,
+      vitest: false,
+      jest: false,
+      pytest: false,
+      gh: false,
     };
     const httpHandler = new StreamableHttpHandler(
-      config, probes, extensionClient, activityLog,
+      config,
+      probes,
+      extensionClient,
+      activityLog,
       { acquireLock: async () => true, releaseLock: async () => {} } as any,
-      new Map(), null, logger,
+      new Map(),
+      null,
+      logger,
     );
     server.httpMcpHandler = (req, res) => httpHandler.handle(req, res);
 
-    const initBody = { jsonrpc: "2.0", id: 1, method: "initialize", params: {} };
+    const initBody = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {},
+    };
     const authHeader = { Authorization: `Bearer ${authToken}` };
 
     // Open 5 sessions (MAX_HTTP_SESSIONS)
     const responses = await Promise.all(
-      Array.from({ length: 5 }, () => httpPost(`http://127.0.0.1:${port}/mcp`, initBody, authHeader)),
+      Array.from({ length: 5 }, () =>
+        httpPost(`http://127.0.0.1:${port}/mcp`, initBody, authHeader),
+      ),
     );
     expect(responses.every((r) => r.status === 200)).toBe(true);
 
     // 6th session should be rejected
-    const overflow = await httpPost(`http://127.0.0.1:${port}/mcp`, initBody, authHeader);
+    const overflow = await httpPost(
+      `http://127.0.0.1:${port}/mcp`,
+      initBody,
+      authHeader,
+    );
     expect(overflow.status).toBe(503);
 
     httpHandler.close();

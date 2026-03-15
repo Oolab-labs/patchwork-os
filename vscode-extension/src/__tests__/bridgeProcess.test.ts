@@ -1,14 +1,16 @@
+import { EventEmitter } from "node:events";
 import * as fsp from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EventEmitter } from "node:events";
 
 // Mock vscode
 vi.mock("vscode", () => ({
   window: {
     showErrorMessage: vi.fn(async () => undefined),
-    withProgress: vi.fn(async (_opts: unknown, task: () => Promise<void>) => task()),
+    withProgress: vi.fn(async (_opts: unknown, task: () => Promise<void>) =>
+      task(),
+    ),
   },
   ProgressLocation: { Window: 10 },
 }));
@@ -32,17 +34,23 @@ vi.mock("node:child_process", async (importOriginal) => {
   return {
     ...mod,
     spawn: vi.fn(() => mockChildProcess),
-    execFile: vi.fn((_bin: string, _args: string[], _opts: unknown, cb: Function) => {
-      cb(null, { stdout: "/usr/local/bin/claude-ide-bridge\n", stderr: "" });
-    }),
+    execFile: vi.fn(
+      (_bin: string, _args: string[], _opts: unknown, cb: Function) => {
+        cb(null, { stdout: "/usr/local/bin/claude-ide-bridge\n", stderr: "" });
+      },
+    ),
   };
 });
 
-import { BridgeProcess } from "../bridgeProcess";
 import * as vscode from "vscode";
+import { BridgeProcess } from "../bridgeProcess";
 
 let tmpDir: string;
-let output: { appendLine: ReturnType<typeof vi.fn>; append: ReturnType<typeof vi.fn>; show: ReturnType<typeof vi.fn> };
+let output: {
+  appendLine: ReturnType<typeof vi.fn>;
+  append: ReturnType<typeof vi.fn>;
+  show: ReturnType<typeof vi.fn>;
+};
 
 beforeEach(async () => {
   tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "bridge-test-"));

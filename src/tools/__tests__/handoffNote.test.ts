@@ -20,7 +20,7 @@ describe("handoffNote tools", () => {
 
   afterEach(() => {
     if (origEnv === undefined) {
-      delete process.env.CLAUDE_CONFIG_DIR;
+      process.env.CLAUDE_CONFIG_DIR = undefined;
     } else {
       process.env.CLAUDE_CONFIG_DIR = origEnv;
     }

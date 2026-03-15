@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import type {
+  ClaudeOrchestrator,
+  ClaudeTask,
+} from "../../claudeOrchestrator.js";
 import { createResumeClaudeTaskTool } from "../resumeClaudeTask.js";
-import type { ClaudeOrchestrator, ClaudeTask } from "../../claudeOrchestrator.js";
 
 function makeTask(overrides: Partial<ClaudeTask> = {}): ClaudeTask {
   return {
@@ -83,7 +86,10 @@ describe("resumeClaudeTask", () => {
     expect(data.originalTaskId).toBe("task-abc");
     expect(data.status).toBe("pending");
     expect(orch.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ prompt: "fix the bug", sessionId: "session-1" }),
+      expect.objectContaining({
+        prompt: "fix the bug",
+        sessionId: "session-1",
+      }),
     );
   });
 

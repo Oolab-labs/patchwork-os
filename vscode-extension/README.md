@@ -11,24 +11,27 @@ When the bridge server is running, this extension streams live editor state to C
 - **Terminal output** — Claude can run commands and read results in your IDE terminal
 - **File system events** — Claude is notified when files change
 
+## Setup
+
+**Install this extension** — the bridge is automatically installed and started for you.
+
+The extension detects whether `claude-ide-bridge` is installed globally (via npm), installs or upgrades it if needed, then starts it in the background for your workspace. No manual steps required.
+
+To verify it's running, open the output channel: `Claude IDE Bridge: Show Logs`.
+
+### Manual setup (optional)
+
+If auto-start is disabled, you can manage the bridge manually:
+
+```bash
+npm install -g claude-ide-bridge
+claude-ide-bridge --workspace /your/project
+```
+
 ## Requirements
 
 - VS Code 1.93+ (or a compatible fork: Cursor, Windsurf)
-- [claude-ide-bridge](https://www.npmjs.com/package/claude-ide-bridge) running locally or on a remote machine
-
-## Setup
-
-**1. Install the bridge:**
-```bash
-npm install -g claude-ide-bridge
-```
-
-**2. Start the bridge:**
-```bash
-npx claude-ide-bridge --workspace /your/project
-```
-
-**3. The extension connects automatically** on startup. Check the output channel (`Claude IDE Bridge: Show Logs`) to confirm.
+- Node.js 20+ on `PATH` (for auto-install)
 
 ## Commands
 
@@ -37,6 +40,8 @@ npx claude-ide-bridge --workspace /your/project
 | `Claude IDE Bridge: Reconnect` | Manually reconnect to the bridge |
 | `Claude IDE Bridge: Show Logs` | Open the output channel |
 | `Claude IDE Bridge: Copy Connection Info` | Copy bridge URL and token to clipboard |
+| `Claude IDE Bridge: Start Bridge` | Manually start the bridge for this workspace |
+| `Claude IDE Bridge: Install / Upgrade Bridge` | Install or upgrade the bridge via npm |
 
 ## Configuration
 
@@ -44,6 +49,8 @@ npx claude-ide-bridge --workspace /your/project
 |---|---|---|
 | `claudeIdeBridge.logLevel` | `info` | Log verbosity: `info`, `debug`, or `warn` |
 | `claudeIdeBridge.autoConnect` | `true` | Connect automatically on startup |
+| `claudeIdeBridge.autoStartBridge` | `true` | Auto-start the bridge process on extension activation |
+| `claudeIdeBridge.autoInstallBridge` | `true` | Auto-install/upgrade the bridge via npm if not found or outdated |
 | `claudeIdeBridge.lockFileDir` | `` | Override lock file directory (default: `~/.claude/ide/`) |
 
 ## Links

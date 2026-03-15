@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
 import type { IClaudeDriver } from "./claudeDriver.js";
 
 export type TaskStatus = "pending" | "running" | "done" | "error" | "cancelled";
@@ -181,7 +181,8 @@ export class ClaudeOrchestrator {
       // The task stays at the front of the queue and will be retried on the next _drain().
       if (
         this.running.size > 0 &&
-        this._activeTokens + task.tokenEstimate > ClaudeOrchestrator.MAX_TOKEN_BUDGET
+        this._activeTokens + task.tokenEstimate >
+          ClaudeOrchestrator.MAX_TOKEN_BUDGET
       ) {
         break;
       }
@@ -200,7 +201,9 @@ export class ClaudeOrchestrator {
     this._activeTokens += task.tokenEstimate;
     task.status = "running";
     task.startedAt = Date.now();
-    this.log(`[orchestrator] starting task ${id.slice(0, 8)} (~${task.tokenEstimate} tokens, ${this._activeTokens} in-flight)`);
+    this.log(
+      `[orchestrator] starting task ${id.slice(0, 8)} (~${task.tokenEstimate} tokens, ${this._activeTokens} in-flight)`,
+    );
 
     // Set up timeout
     const timeoutHandle = setTimeout(() => {
@@ -251,7 +254,9 @@ export class ClaudeOrchestrator {
 
       this.notifyDone?.(id, task.status);
       this._fireCompletion(id);
-      void Promise.resolve(this.checkpoint?.save()).catch(() => {/* best-effort */});
+      void Promise.resolve(this.checkpoint?.save()).catch(() => {
+        /* best-effort */
+      });
       this._drain();
       this._pruneHistory();
     }
@@ -322,7 +327,7 @@ export class ClaudeOrchestrator {
                 const abs = resolvePath(f);
                 if (
                   abs !== normalizedWorkspace &&
-                  !abs.startsWith(normalizedWorkspace + "/")
+                  !abs.startsWith(`${normalizedWorkspace}/`)
                 )
                   return false;
                 try {
@@ -339,12 +344,20 @@ export class ClaudeOrchestrator {
             contextFiles,
             status: t.status as TaskStatus,
             createdAt: typeof t.createdAt === "number" ? t.createdAt : 0,
-            startedAt: typeof t.startedAt === "number" ? t.startedAt : undefined,
+            startedAt:
+              typeof t.startedAt === "number" ? t.startedAt : undefined,
             doneAt: typeof t.doneAt === "number" ? t.doneAt : undefined,
             output: typeof t.output === "string" ? t.output : undefined,
-            errorMessage: typeof t.errorMessage === "string" ? t.errorMessage : undefined,
-            timeoutMs: typeof t.timeoutMs === "number" ? t.timeoutMs : ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
-            tokenEstimate: typeof t.tokenEstimate === "number" ? t.tokenEstimate : estimateTokens(prompt),
+            errorMessage:
+              typeof t.errorMessage === "string" ? t.errorMessage : undefined,
+            timeoutMs:
+              typeof t.timeoutMs === "number"
+                ? t.timeoutMs
+                : ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
+            tokenEstimate:
+              typeof t.tokenEstimate === "number"
+                ? t.tokenEstimate
+                : estimateTokens(prompt),
           };
           this.tasks.set(task.id, task);
         }

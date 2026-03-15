@@ -10,9 +10,9 @@ vi.mock("vscode", async () => {
 });
 
 import * as vscode from "vscode";
-import { __reset } from "./__mocks__/vscode";
 import WebSocket from "ws";
 import { registerEvents } from "../events";
+import { __reset } from "./__mocks__/vscode";
 
 // Minimal fake BridgeConnection
 function makeBridge(connected: boolean) {
@@ -106,7 +106,10 @@ describe("registerEvents — multi-bridge broadcasting", () => {
 
     const handler = vi.mocked(vscode.window.onDidChangeActiveTextEditor).mock
       .calls[0]?.[0];
-    const doc = { uri: vscode.Uri.file("/ws/index.ts"), getText: () => "" } as any;
+    const doc = {
+      uri: vscode.Uri.file("/ws/index.ts"),
+      getText: () => "",
+    } as any;
     handler({ document: doc } as any);
 
     expect(b1.sendNotification).toHaveBeenCalledWith(
@@ -131,10 +134,9 @@ describe("registerEvents — multi-bridge broadcasting", () => {
     handler(doc);
 
     for (const b of [b1, b2]) {
-      expect(b.sendNotification).toHaveBeenCalledWith(
-        "extension/fileSaved",
-        { file: "/ws/main.ts" },
-      );
+      expect(b.sendNotification).toHaveBeenCalledWith("extension/fileSaved", {
+        file: "/ws/main.ts",
+      });
     }
   });
 
@@ -144,9 +146,9 @@ describe("registerEvents — multi-bridge broadcasting", () => {
     const ctx = makeContext();
     registerEvents(ctx, () => [b1, b2], makeOutput());
 
-    const handler = vi.mocked(vscode.commands.registerCommand).mock.calls.find(
-      (c) => c[0] === "claudeIdeBridge.reconnect",
-    )?.[1];
+    const handler = vi
+      .mocked(vscode.commands.registerCommand)
+      .mock.calls.find((c) => c[0] === "claudeIdeBridge.reconnect")?.[1];
     handler?.();
 
     expect(b1.forceReconnect).toHaveBeenCalledOnce();

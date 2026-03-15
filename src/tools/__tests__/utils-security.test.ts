@@ -44,7 +44,10 @@ describe("success() and error() format", () => {
   });
 
   it("error with object payload plus code", () => {
-    const result = error({ fixed: false, error: "lint failed" }, "external_command_failed");
+    const result = error(
+      { fixed: false, error: "lint failed" },
+      "external_command_failed",
+    );
     const parsed = JSON.parse(result.content.at(0)?.text ?? "{}");
     expect(parsed.code).toBe("external_command_failed");
   });

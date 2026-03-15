@@ -383,4 +383,3 @@ describe("renameFile native fallback", () => {
     expect(fs.readFileSync(path.join(workspace, "b.txt"), "utf-8")).toBe("aaa");
   });
 });
-

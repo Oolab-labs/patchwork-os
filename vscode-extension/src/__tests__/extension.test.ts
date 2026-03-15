@@ -62,7 +62,8 @@ vi.mock("../bridgeInstaller", () => ({
 // Mock lockfiles
 const mockReadLockFileForWorkspace = vi.fn(async () => null as any);
 vi.mock("../lockfiles", () => ({
-  readLockFileForWorkspace: (...args: any[]) => mockReadLockFileForWorkspace(...args),
+  readLockFileForWorkspace: (...args: any[]) =>
+    mockReadLockFileForWorkspace(...args),
   readAllMatchingLockFiles: vi.fn(async () => []),
 }));
 
@@ -71,13 +72,19 @@ vi.mock("../events", () => ({ registerEvents: vi.fn() }));
 vi.mock("../handlers/index", () => ({ baseHandlers: {} }));
 vi.mock("../handlers/lsp", () => ({ createLspHandlers: vi.fn(() => ({})) }));
 vi.mock("../handlers/fileWatcher", () => ({
-  createFileWatcherHandlers: vi.fn(() => ({ handlers: {}, disposeAll: vi.fn() })),
+  createFileWatcherHandlers: vi.fn(() => ({
+    handlers: {},
+    disposeAll: vi.fn(),
+  })),
 }));
 vi.mock("../handlers/debug", () => ({
   createDebugHandlers: vi.fn(() => ({ handlers: {}, disposeAll: vi.fn() })),
 }));
 vi.mock("../handlers/decorations", () => ({
-  createDecorationHandlers: vi.fn(() => ({ handlers: {}, disposeAll: vi.fn() })),
+  createDecorationHandlers: vi.fn(() => ({
+    handlers: {},
+    disposeAll: vi.fn(),
+  })),
 }));
 vi.mock("../handlers/terminal", () => ({
   clearAllTerminalBuffers: vi.fn(),
@@ -167,13 +174,21 @@ describe("activate() — single workspace folder", () => {
   it("calls connectDirect via onStarted after successful spawn", async () => {
     mockReadLockFileForWorkspace.mockResolvedValue(null);
     mockSpawn.mockImplementation(async () => {
-      lastCreatedProcess?.onStarted?.({ port: 9999, authToken: "abc", pid: 42 });
+      lastCreatedProcess?.onStarted?.({
+        port: 9999,
+        authToken: "abc",
+        pid: 42,
+      });
     });
 
     activate(makeMockContext());
     await flushAsync();
 
-    expect(lastCreatedBridge.connectDirect).toHaveBeenCalledWith(9999, "abc", 42);
+    expect(lastCreatedBridge.connectDirect).toHaveBeenCalledWith(
+      9999,
+      "abc",
+      42,
+    );
   });
 
   it("calls tryConnect as fallback on onStartupFailed", async () => {
@@ -210,7 +225,8 @@ describe("activate() — config flags", () => {
 
   it("skips ensureInstalled when autoInstallBridge is false", async () => {
     (vscode.workspace as any).getConfiguration = vi.fn(() => ({
-      get: (key: string, def: any) => (key === "autoInstallBridge" ? false : def),
+      get: (key: string, def: any) =>
+        key === "autoInstallBridge" ? false : def,
     }));
 
     activate(makeMockContext());

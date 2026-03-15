@@ -39,7 +39,9 @@ export function corsOrigin(requestOrigin: string | undefined): string | null {
     const { hostname, protocol } = new URL(requestOrigin);
     if (
       (protocol === "http:" || protocol === "https:") &&
-      (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]")
+      (hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname === "[::1]")
     ) {
       return requestOrigin;
     }
@@ -306,7 +308,9 @@ export class Server extends EventEmitter<ServerEvents> {
           req.method === "DELETE"
         ) {
           this.httpMcpHandler(req, res).catch((err) => {
-            this.logger.error(`HTTP MCP handler error: ${err instanceof Error ? err.message : String(err)}`);
+            this.logger.error(
+              `HTTP MCP handler error: ${err instanceof Error ? err.message : String(err)}`,
+            );
             if (!res.headersSent) {
               res.writeHead(500, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ error: String(err) }));

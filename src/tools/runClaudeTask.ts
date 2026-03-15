@@ -1,7 +1,7 @@
-import { ToolErrorCodes } from "../errors.js";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import { ToolErrorCodes } from "../errors.js";
 import type { ProgressFn } from "../transport.js";
-import { resolveFilePath, error, success } from "./utils.js";
+import { error, resolveFilePath, success } from "./utils.js";
 
 const MAX_CONTEXT_FILES = 20;
 const MIN_TIMEOUT_MS = 5_000;
@@ -49,7 +49,7 @@ export function createRunClaudeTaskTool(
           model: {
             type: "string",
             description:
-              "Optional model override for this task, e.g. \"claude-haiku-4-5-20251001\". Defaults to the Claude CLI default.",
+              'Optional model override for this task, e.g. "claude-haiku-4-5-20251001". Defaults to the Claude CLI default.',
           },
         },
         required: ["prompt"],
@@ -129,7 +129,10 @@ export function createRunClaudeTaskTool(
       }
 
       const stream = args.stream === true;
-      const model = typeof args.model === "string" && args.model.trim() !== "" ? args.model.trim() : undefined;
+      const model =
+        typeof args.model === "string" && args.model.trim() !== ""
+          ? args.model.trim()
+          : undefined;
 
       if (!stream) {
         // Non-streaming: enqueue and return taskId immediately

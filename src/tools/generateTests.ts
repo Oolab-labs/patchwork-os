@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, promises as fsPromises } from "node:fs";
+import { existsSync, promises as fsPromises, readFileSync } from "node:fs";
 import path from "node:path";
 import { error, optionalString, requireString, success } from "./utils.js";
 
@@ -56,7 +56,10 @@ function detectFramework(
     const pkg = JSON.parse(
       readFileSync(path.join(workspace, "package.json"), "utf-8"),
     ) as Record<string, unknown>;
-    if (pkg.jest !== undefined || (pkg.devDependencies as Record<string, unknown>)?.jest) {
+    if (
+      pkg.jest !== undefined ||
+      (pkg.devDependencies as Record<string, unknown>)?.jest
+    ) {
       return "jest";
     }
   } catch {
@@ -79,7 +82,12 @@ function deriveOutputFile(filePath: string, framework: string): string {
   if (srcIndex !== -1) {
     const beforeSrc = filePath.slice(0, srcIndex);
     const afterSrc = filePath.slice(srcIndex + 1 + "src".length + 1); // skip /src/
-    return path.join(beforeSrc, "src", "__tests__", afterSrc.replace(ext, ".test.ts"));
+    return path.join(
+      beforeSrc,
+      "src",
+      "__tests__",
+      afterSrc.replace(ext, ".test.ts"),
+    );
   }
 
   return filePath.replace(ext, ".test.ts");
@@ -95,7 +103,8 @@ function generateVitestScaffold(
   const hasDefault = exports.includes("default");
 
   const importParts: string[] = [];
-  if (namedExports.length > 0) importParts.push(`{ ${namedExports.join(", ")} }`);
+  if (namedExports.length > 0)
+    importParts.push(`{ ${namedExports.join(", ")} }`);
   if (hasDefault) importParts.push("defaultExport");
 
   const importLine =
@@ -135,14 +144,9 @@ function generatePytestScaffold(filePath: string, exports: string[]): string {
     return `def test_${name}():\n    # TODO: implement test\n    pass`;
   });
 
-  return [
-    "import pytest",
-    importLine,
-    "",
-    "",
-    testFns.join("\n\n"),
-    "",
-  ].join("\n");
+  return ["import pytest", importLine, "", "", testFns.join("\n\n"), ""].join(
+    "\n",
+  );
 }
 
 export function createGenerateTestsTool(workspace: string) {
@@ -199,15 +203,17 @@ export function createGenerateTestsTool(workspace: string) {
 
       const framework = detectFramework(frameworkArg, filePath, workspace);
 
-      const outputFile =
-        outputFileArg ??
-        deriveOutputFile(filePath, framework);
+      const outputFile = outputFileArg ?? deriveOutputFile(filePath, framework);
 
       let scaffold: string;
       if (framework === "pytest") {
         scaffold = generatePytestScaffold(filePath, exports);
       } else {
-        scaffold = generateVitestScaffold(filePath, exports, framework === "jest");
+        scaffold = generateVitestScaffold(
+          filePath,
+          exports,
+          framework === "jest",
+        );
       }
 
       return success({

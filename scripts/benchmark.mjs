@@ -184,7 +184,15 @@ ws.on("open", async () => {
       if (!jsonMode) process.stdout.write(" done\n");
     } catch (err) {
       if (!jsonMode) process.stdout.write(` ERROR: ${err.message}\n`);
-      results.push({ label, p50: null, p95: null, p99: null, max: null, min: null, error: err.message });
+      results.push({
+        label,
+        p50: null,
+        p95: null,
+        p99: null,
+        max: null,
+        min: null,
+        error: err.message,
+      });
     }
   }
 
@@ -197,7 +205,7 @@ ws.on("open", async () => {
       threshold: thresholdMs,
       results: results.map((r) => ({ ...r, label: r.label.trim() })),
     };
-    process.stdout.write(JSON.stringify(output, null, 2) + "\n");
+    process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
   } else {
     // ── Print table ─────────────────────────────────────────────────────────
     const col = (v, w) => String(v ?? "—").padStart(w);

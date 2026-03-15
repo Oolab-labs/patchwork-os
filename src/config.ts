@@ -110,10 +110,23 @@ interface ConfigFile {
 }
 
 const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
-  "workspace", "port", "logLevel", "linters", "commandAllowlist",
-  "vscodeCommandAllowlist", "commandTimeout", "maxResultSize",
-  "gracePeriodMs", "bindAddress", "editorCommand", "ideName", "autoTmux",
-  "claudeDriver", "claudeBinary", "automationEnabled", "automationPolicyPath",
+  "workspace",
+  "port",
+  "logLevel",
+  "linters",
+  "commandAllowlist",
+  "vscodeCommandAllowlist",
+  "commandTimeout",
+  "maxResultSize",
+  "gracePeriodMs",
+  "bindAddress",
+  "editorCommand",
+  "ideName",
+  "autoTmux",
+  "claudeDriver",
+  "claudeBinary",
+  "automationEnabled",
+  "automationPolicyPath",
 ]);
 
 /**
@@ -130,7 +143,8 @@ export function loadConfigFile(configPath?: string): Partial<ConfigFile> {
       candidates.push(process.env.CLAUDE_IDE_BRIDGE_CONFIG);
     }
     candidates.push(path.join(process.cwd(), "claude-ide-bridge.config.json"));
-    const claudeDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+    const claudeDir =
+      process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
     candidates.push(path.join(claudeDir, "ide", "config.json"));
   }
 
@@ -139,14 +153,22 @@ export function loadConfigFile(configPath?: string): Partial<ConfigFile> {
     try {
       const raw = fs.readFileSync(candidate, "utf-8");
       const parsed = JSON.parse(raw) as unknown;
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        console.warn(`Warning: Config file ${candidate} is not a JSON object — ignored`);
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        console.warn(
+          `Warning: Config file ${candidate} is not a JSON object — ignored`,
+        );
         return {};
       }
       const obj = parsed as Record<string, unknown>;
       for (const key of Object.keys(obj)) {
         if (!KNOWN_CONFIG_FILE_KEYS.has(key)) {
-          console.warn(`Warning: Unknown config file key "${key}" in ${candidate} — ignored`);
+          console.warn(
+            `Warning: Unknown config file key "${key}" in ${candidate} — ignored`,
+          );
         }
       }
       return obj as Partial<ConfigFile>;
@@ -188,7 +210,9 @@ export function parseConfig(argv: string[]): Config {
   const fileConfig = loadConfigFile(configFilePath);
 
   // Defaults — config file values fill in where CLI/env don't override
-  let workspace = fileConfig.workspace ? path.resolve(fileConfig.workspace) : process.cwd();
+  let workspace = fileConfig.workspace
+    ? path.resolve(fileConfig.workspace)
+    : process.cwd();
   let ideName = fileConfig.ideName ?? "External";
   let editorCommand: string | null = fileConfig.editorCommand ?? null;
   let port: number | null = fileConfig.port ?? null;
@@ -199,17 +223,21 @@ export function parseConfig(argv: string[]): Config {
     ...DEFAULT_ALLOWLIST,
     ...(fileConfig.commandAllowlist ?? []),
   ];
-  const vscodeCommandAllowlist: string[] = fileConfig.vscodeCommandAllowlist ?? [];
-  let bindAddress = process.env.BRIDGE_BIND_ADDRESS ?? fileConfig.bindAddress ?? "127.0.0.1";
+  const vscodeCommandAllowlist: string[] =
+    fileConfig.vscodeCommandAllowlist ?? [];
+  let bindAddress =
+    process.env.BRIDGE_BIND_ADDRESS ?? fileConfig.bindAddress ?? "127.0.0.1";
   let commandTimeout = fileConfig.commandTimeout ?? 30_000;
   let maxResultSize = fileConfig.maxResultSize ?? 512;
   let gracePeriodMs = fileConfig.gracePeriodMs ?? 30_000;
   let autoTmux = fileConfig.autoTmux ?? false;
   let watch = false;
-  let claudeDriver: "subprocess" | "api" | "none" = fileConfig.claudeDriver ?? "none";
+  let claudeDriver: "subprocess" | "api" | "none" =
+    fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
   let automationEnabled = fileConfig.automationEnabled ?? false;
-  let automationPolicyPath: string | null = fileConfig.automationPolicyPath ?? null;
+  let automationPolicyPath: string | null =
+    fileConfig.automationPolicyPath ?? null;
   let toolRateLimit = 60;
 
   for (let i = 0; i < args.length; i++) {
@@ -302,8 +330,14 @@ export function parseConfig(argv: string[]): Config {
         break;
       case "--claude-driver": {
         const driverVal = requireArg(args, ++i, "--claude-driver");
-        if (driverVal !== "subprocess" && driverVal !== "api" && driverVal !== "none") {
-          throw new Error(`Invalid --claude-driver value: "${driverVal}". Must be "subprocess", "api", or "none".`);
+        if (
+          driverVal !== "subprocess" &&
+          driverVal !== "api" &&
+          driverVal !== "none"
+        ) {
+          throw new Error(
+            `Invalid --claude-driver value: "${driverVal}". Must be "subprocess", "api", or "none".`,
+          );
         }
         claudeDriver = driverVal;
         break;
@@ -317,12 +351,18 @@ export function parseConfig(argv: string[]): Config {
         automationEnabled = true;
         break;
       case "--automation-policy":
-        automationPolicyPath = path.resolve(requireArg(args, ++i, "--automation-policy"));
+        automationPolicyPath = path.resolve(
+          requireArg(args, ++i, "--automation-policy"),
+        );
         break;
       case "--tool-rate-limit": {
         const tlStr = requireArg(args, ++i, "--tool-rate-limit");
         toolRateLimit = Number.parseInt(tlStr, 10);
-        if (!Number.isInteger(toolRateLimit) || toolRateLimit < 1 || toolRateLimit > 10_000) {
+        if (
+          !Number.isInteger(toolRateLimit) ||
+          toolRateLimit < 1 ||
+          toolRateLimit > 10_000
+        ) {
           throw new Error(
             `Invalid --tool-rate-limit: ${tlStr}. Must be between 1 and 10000.`,
           );

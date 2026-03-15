@@ -84,7 +84,8 @@ class NotExported {}
     });
 
     it("extracts export const", async () => {
-      const src = `export const MY_CONST = 42;\nexport const helper = () => {};`;
+      const src =
+        "export const MY_CONST = 42;\nexport const helper = () => {};";
       mockReadFile.mockResolvedValue(src as unknown as Buffer);
       const data = parse(
         await makeHandler()({
@@ -96,7 +97,7 @@ class NotExported {}
     });
 
     it("detects export default", async () => {
-      const src = `export default function main() {}`;
+      const src = "export default function main() {}";
       mockReadFile.mockResolvedValue(src as unknown as Buffer);
       const data = parse(
         await makeHandler()({ file: path.join(WORKSPACE, "src/main.ts") }),
@@ -107,7 +108,8 @@ class NotExported {}
 
   describe("vitest scaffold generation", () => {
     it("generates correct vitest scaffold with import statement", async () => {
-      const src = `export function add(a: number, b: number): number { return a + b; }`;
+      const src =
+        "export function add(a: number, b: number): number { return a + b; }";
       mockReadFile.mockResolvedValue(src as unknown as Buffer);
       mockExistsSync.mockImplementation(
         (p) => typeof p === "string" && p.endsWith("vitest.config.ts"),
@@ -120,12 +122,12 @@ class NotExported {}
       expect(data.content).toContain(
         `import { describe, it, expect, vi } from "vitest";`,
       );
-      expect(data.content).toContain(`import { add }`);
+      expect(data.content).toContain("import { add }");
       expect(data.content).toContain(`describe("add"`);
     });
 
     it("generates jest scaffold when framework=jest", async () => {
-      const src = `export function add() {}`;
+      const src = "export function add() {}";
       mockReadFile.mockResolvedValue(src as unknown as Buffer);
 
       const data = parse(
@@ -169,7 +171,7 @@ class MyService:
 
   describe("auto-detection", () => {
     it("auto-detects vitest from vitest.config.ts presence", async () => {
-      const src = `export function x() {}`;
+      const src = "export function x() {}";
       mockReadFile.mockResolvedValue(src as unknown as Buffer);
       mockExistsSync.mockImplementation(
         (p) => typeof p === "string" && p.endsWith("vitest.config.ts"),
@@ -185,7 +187,7 @@ class MyService:
     });
 
     it("auto-detects pytest for .py files", async () => {
-      const src = `def foo(): pass`;
+      const src = "def foo(): pass";
       mockReadFile.mockResolvedValue(src as unknown as Buffer);
 
       const data = parse(
@@ -200,7 +202,7 @@ class MyService:
 
   describe("output file derivation", () => {
     it("derives output file path (src/ → src/__tests__/)", async () => {
-      const src = `export function foo() {}`;
+      const src = "export function foo() {}";
       mockReadFile.mockResolvedValue(src as unknown as Buffer);
       mockExistsSync.mockImplementation(
         (p) => typeof p === "string" && p.endsWith("vitest.config.ts"),
@@ -214,7 +216,7 @@ class MyService:
     });
 
     it("uses provided outputFile", async () => {
-      const src = `export function foo() {}`;
+      const src = "export function foo() {}";
       mockReadFile.mockResolvedValue(src as unknown as Buffer);
       const customOutput = path.join(WORKSPACE, "tests", "foo.test.ts");
 

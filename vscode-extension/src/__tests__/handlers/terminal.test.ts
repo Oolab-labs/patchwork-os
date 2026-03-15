@@ -373,7 +373,10 @@ describe("handleSendTerminalCommand", () => {
   });
 
   it("returns error object on non-string text (consistent with other handlers)", async () => {
-    const result = await handleSendTerminalCommand({ text: 42 }) as { success: boolean; error: string };
+    const result = (await handleSendTerminalCommand({ text: 42 })) as {
+      success: boolean;
+      error: string;
+    };
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/text must be a string/i);
   });

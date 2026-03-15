@@ -35,13 +35,15 @@ vi.mock("node:child_process", async (importOriginal) => {
   };
 });
 
-import { SubprocessDriver, ApiDriver } from "../claudeDriver.js";
+import { ApiDriver, SubprocessDriver } from "../claudeDriver.js";
 
 function makeSignal(): AbortSignal {
   return new AbortController().signal;
 }
 
-function makeInput(overrides: Partial<Parameters<SubprocessDriver["run"]>[0]> = {}) {
+function makeInput(
+  overrides: Partial<Parameters<SubprocessDriver["run"]>[0]> = {},
+) {
   return {
     prompt: "hello",
     workspace: "/tmp/test",
@@ -64,7 +66,9 @@ describe("SubprocessDriver", () => {
 
   it("assembles stdout chunks into result text", async () => {
     const chunks: string[] = [];
-    const runPromise = driver.run(makeInput({ onChunk: (c) => chunks.push(c) }));
+    const runPromise = driver.run(
+      makeInput({ onChunk: (c) => chunks.push(c) }),
+    );
 
     await new Promise<void>((r) => setTimeout(r, 0));
     mockChild.stdout.emit("data", "Hello ");
@@ -99,7 +103,9 @@ describe("SubprocessDriver", () => {
 
   it("caps output at OUTPUT_CAP (50KB)", async () => {
     const chunks: string[] = [];
-    const runPromise = driver.run(makeInput({ onChunk: (c) => chunks.push(c) }));
+    const runPromise = driver.run(
+      makeInput({ onChunk: (c) => chunks.push(c) }),
+    );
 
     await new Promise<void>((r) => setTimeout(r, 0));
     // Emit 60KB in one chunk
@@ -139,6 +145,7 @@ describe("ApiDriver", () => {
 
   afterEach(() => {
     if (origKey === undefined) {
+      // biome-ignore lint/performance/noDelete: must fully remove key, setting to undefined leaves it as the string "undefined"
       delete process.env.ANTHROPIC_API_KEY;
     } else {
       process.env.ANTHROPIC_API_KEY = origKey;
@@ -146,6 +153,7 @@ describe("ApiDriver", () => {
   });
 
   it("throws if ANTHROPIC_API_KEY is missing", () => {
+    // biome-ignore lint/performance/noDelete: must fully remove key, setting to undefined leaves it as the string "undefined"
     delete process.env.ANTHROPIC_API_KEY;
     expect(() => new ApiDriver(log)).toThrow("ANTHROPIC_API_KEY");
   });
@@ -171,7 +179,11 @@ describe("ApiDriver", () => {
     // and document that the happy path is covered by integration tests.
     // For a pure unit test we spy on the dynamic import resolution:
     const importSpy = vi.spyOn(driver as any, "run");
-    importSpy.mockResolvedValueOnce({ text: "Hello world", exitCode: 0, durationMs: 10 });
+    importSpy.mockResolvedValueOnce({
+      text: "Hello world",
+      exitCode: 0,
+      durationMs: 10,
+    });
 
     const result = await driver.run(makeInput());
     expect(result.text).toBe("Hello world");

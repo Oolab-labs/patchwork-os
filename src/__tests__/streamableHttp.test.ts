@@ -383,7 +383,9 @@ describe("Streamable HTTP: CORS", () => {
     });
 
     expect(res.status).toBe(204);
-    expect(res.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
+    expect(res.headers["access-control-allow-origin"]).toBe(
+      "http://localhost:3000",
+    );
     expect(res.headers["access-control-allow-methods"]).toContain("POST");
     expect(res.headers["access-control-allow-headers"]).toContain(
       "Mcp-Session-Id",
@@ -460,7 +462,9 @@ describe("Streamable HTTP: CORS", () => {
       req.end();
     });
 
-    expect(res.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:8080");
+    expect(res.headers["access-control-allow-origin"]).toBe(
+      "http://127.0.0.1:8080",
+    );
   });
 });
 

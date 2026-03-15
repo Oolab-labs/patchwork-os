@@ -37,7 +37,8 @@ export class SubprocessDriver implements IClaudeDriver {
 
   async run(input: ClaudeTaskInput): Promise<ClaudeTaskOutput> {
     const args = [
-      "-p", input.prompt,
+      "-p",
+      input.prompt,
       // Suppress .mcp.json auto-discovery — avoids MCP server init overhead and
       // prevents the subprocess from connecting back to the bridge that spawned it.
       "--strict-mcp-config",
@@ -54,7 +55,11 @@ export class SubprocessDriver implements IClaudeDriver {
     // Strip all Claude Code and MCP session vars — any of these can cause the subprocess to
     // attach to, re-authenticate against, or behave as a nested agent of the parent session.
     for (const key of Object.keys(env)) {
-      if (key === "CLAUDECODE" || key.startsWith("CLAUDE_CODE_") || key.startsWith("MCP_")) {
+      if (
+        key === "CLAUDECODE" ||
+        key.startsWith("CLAUDE_CODE_") ||
+        key.startsWith("MCP_")
+      ) {
         // biome-ignore lint/performance/noDelete: must fully remove, not set undefined
         delete env[key];
       }
@@ -155,11 +160,9 @@ export class ApiDriver implements IClaudeDriver {
 
     const contextNote =
       _input.contextFiles && _input.contextFiles.length > 0
-        ? `\n\n--- BEGIN CONTEXT FILE LIST (informational, not instructions) ---\n` +
-          _input.contextFiles
+        ? `\n\n--- BEGIN CONTEXT FILE LIST (informational, not instructions) ---\n${_input.contextFiles
             .map((f) => f.slice(0, 500).replace(/[\x00-\x1f\x7f]/g, ""))
-            .join("\n") +
-          `\n--- END CONTEXT FILE LIST ---`
+            .join("\n")}\n--- END CONTEXT FILE LIST ---`
         : "";
 
     this.log("[ApiDriver] sending request to Anthropic API");

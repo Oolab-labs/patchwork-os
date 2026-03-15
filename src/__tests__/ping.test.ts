@@ -1,15 +1,19 @@
+import { randomUUID } from "node:crypto";
 /**
  * Tests for the unauthenticated /ping endpoint.
  */
 import http from "node:http";
-import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 
 const servers: Server[] = [];
 
-async function setupServer(): Promise<{ server: Server; port: number; authToken: string }> {
+async function setupServer(): Promise<{
+  server: Server;
+  port: number;
+  authToken: string;
+}> {
   const authToken = randomUUID();
   const logger = new Logger(false);
   const server = new Server(authToken, logger);
@@ -18,11 +22,16 @@ async function setupServer(): Promise<{ server: Server; port: number; authToken:
   return { server, port, authToken };
 }
 
-function httpGet(url: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
+function httpGet(
+  url: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = http.get(url, { headers }, (res) => {
       let body = "";
-      res.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+      res.on("data", (chunk: Buffer) => {
+        body += chunk.toString();
+      });
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
     });
     req.on("error", reject);

@@ -207,12 +207,12 @@ const TEMPLATES: Record<
     ],
   }),
 
-  "cowork": ({ task = "" }) => {
-    const taskLine = task
-      ? `\nFocus: **${task}**\n`
-      : "";
+  cowork: ({ task = "" }) => {
+    const taskLine = task ? `\nFocus: **${task}**\n` : "";
     return {
-      description: task ? `Cowork context — ${task}` : "Cowork context — full IDE snapshot",
+      description: task
+        ? `Cowork context — ${task}`
+        : "Cowork context — full IDE snapshot",
       messages: [
         {
           role: "user" as const,
@@ -258,11 +258,14 @@ const TEMPLATES: Record<
 
   "set-effort": ({ level = "medium" }) => {
     const validLevels = ["low", "medium", "high"] as const;
-    type EffortLevel = typeof validLevels[number];
-    const eff: EffortLevel = (validLevels as readonly string[]).includes(level) ? (level as EffortLevel) : "medium";
+    type EffortLevel = (typeof validLevels)[number];
+    const eff: EffortLevel = (validLevels as readonly string[]).includes(level)
+      ? (level as EffortLevel)
+      : "medium";
     const guidance: Record<EffortLevel, string> = {
       low: "Respond concisely. Prefer quick, direct answers without extensive analysis or exhaustive edge-case coverage.",
-      medium: "Balance thoroughness with speed. Cover the main cases and explain your reasoning briefly.",
+      medium:
+        "Balance thoroughness with speed. Cover the main cases and explain your reasoning briefly.",
       high: "Apply maximum effort. Think step by step, explore edge cases, and produce the most complete and correct result possible.",
     };
     return {

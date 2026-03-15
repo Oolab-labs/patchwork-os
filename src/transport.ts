@@ -127,7 +127,10 @@ export class McpTransport {
     const now = Date.now();
     const elapsed = now - this.toolBucketLastRefill;
     const refill = (elapsed / 60_000) * this.toolRateLimit;
-    this.toolBucketTokens = Math.min(this.toolRateLimit, this.toolBucketTokens + refill);
+    this.toolBucketTokens = Math.min(
+      this.toolRateLimit,
+      this.toolBucketTokens + refill,
+    );
     this.toolBucketLastRefill = now;
     if (this.toolBucketTokens < 1) return false;
     this.toolBucketTokens -= 1;
@@ -203,18 +206,28 @@ export class McpTransport {
       }, timeoutMs);
 
       this.pendingElicitations.set(id, {
-        resolve: (result) => { clearTimeout(timer); resolve(result); },
-        reject: (err) => { clearTimeout(timer); reject(err); },
+        resolve: (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
         requestedSchema,
       });
 
-      safeSend(this.activeWs!, JSON.stringify(request), this.logger).then((sent) => {
-        if (!sent) {
-          this.pendingElicitations.delete(id);
-          clearTimeout(timer);
-          reject(new Error("Failed to send elicitation/create — socket closed"));
-        }
-      });
+      safeSend(this.activeWs!, JSON.stringify(request), this.logger).then(
+        (sent) => {
+          if (!sent) {
+            this.pendingElicitations.delete(id);
+            clearTimeout(timer);
+            reject(
+              new Error("Failed to send elicitation/create — socket closed"),
+            );
+          }
+        },
+      );
     });
   }
 
@@ -244,7 +257,9 @@ export class McpTransport {
     this.inFlightControllers.clear();
     // Reject all pending elicitation requests so callers don't hang after disconnect
     for (const [, pending] of this.pendingElicitations) {
-      pending.reject(new Error("Client disconnected before responding to elicitation"));
+      pending.reject(
+        new Error("Client disconnected before responding to elicitation"),
+      );
     }
     this.pendingElicitations.clear();
     this.activeWs = null;
@@ -327,7 +342,9 @@ export class McpTransport {
             this.pendingElicitations.delete(msg.id);
             const resp = raw as JsonRpcResponse;
             if (resp.error) {
-              pending.reject(new Error(resp.error.message ?? "Elicitation declined"));
+              pending.reject(
+                new Error(resp.error.message ?? "Elicitation declined"),
+              );
             } else {
               // Validate that the result conforms to the schema type before resolving.
               // Full AJV validation is deferred to callers; here we guard against
@@ -335,17 +352,34 @@ export class McpTransport {
               // top-level `type` field — null is never a valid elicitation result.
               const result = resp.result;
               const schemaType = pending.requestedSchema.type;
-              const jsType = result === null ? "null" : Array.isArray(result) ? "array" : typeof result;
+              const jsType =
+                result === null
+                  ? "null"
+                  : Array.isArray(result)
+                    ? "array"
+                    : typeof result;
               let typeError: string | null = null;
               if (result === null || result === undefined) {
-                typeError = `Elicitation result must not be null/undefined`;
-              } else if (schemaType === "object" && (typeof result !== "object" || Array.isArray(result))) {
+                typeError = "Elicitation result must not be null/undefined";
+              } else if (
+                schemaType === "object" &&
+                (typeof result !== "object" || Array.isArray(result))
+              ) {
                 typeError = `Elicitation result type mismatch: expected object, got ${jsType}`;
-              } else if (schemaType === "string" && typeof result !== "string") {
+              } else if (
+                schemaType === "string" &&
+                typeof result !== "string"
+              ) {
                 typeError = `Elicitation result type mismatch: expected string, got ${jsType}`;
-              } else if (schemaType === "number" && typeof result !== "number") {
+              } else if (
+                schemaType === "number" &&
+                typeof result !== "number"
+              ) {
                 typeError = `Elicitation result type mismatch: expected number, got ${jsType}`;
-              } else if (schemaType === "boolean" && typeof result !== "boolean") {
+              } else if (
+                schemaType === "boolean" &&
+                typeof result !== "boolean"
+              ) {
                 typeError = `Elicitation result type mismatch: expected boolean, got ${jsType}`;
               } else if (schemaType === "array" && !Array.isArray(result)) {
                 typeError = `Elicitation result type mismatch: expected array, got ${jsType}`;
@@ -357,7 +391,9 @@ export class McpTransport {
               }
             }
           } else {
-            this.logger.debug(`Received unexpected response for id=${msg.id} — ignored`);
+            this.logger.debug(
+              `Received unexpected response for id=${msg.id} — ignored`,
+            );
           }
           return;
         }
@@ -678,16 +714,17 @@ export class McpTransport {
                   });
 
                   handlerPromise = withSpan(
-                    'mcp.tool_call',
+                    "mcp.tool_call",
                     {
-                      'mcp.tool.name': params.name,
-                      'mcp.session.id': this.sessionId ?? 'unknown',
+                      "mcp.tool.name": params.name,
+                      "mcp.session.id": this.sessionId ?? "unknown",
                     },
-                    async () => tool.handler(
-                      toolArgs as Record<string, unknown>,
-                      controller.signal,
-                      progressFn,
-                    ),
+                    async () =>
+                      tool.handler(
+                        toolArgs as Record<string, unknown>,
+                        controller.signal,
+                        progressFn,
+                      ),
                   );
 
                   const result = await Promise.race([

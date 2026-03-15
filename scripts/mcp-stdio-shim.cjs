@@ -208,7 +208,7 @@ if (explicitPort === null) {
     "ide",
   );
 
-  function scheduleReconnect() {
+  const scheduleReconnect = () => {
     if (reconnectTimer) clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
@@ -228,11 +228,11 @@ if (explicitPort === null) {
         connect(parsed.port, parsed.authToken);
       }
     }, RECONNECT_DEBOUNCE_MS);
-  }
+  };
 
   try {
     fs.watch(lockDir, (_event, filename) => {
-      if (filename && filename.endsWith(".lock")) {
+      if (filename?.endsWith(".lock")) {
         scheduleReconnect();
       }
     });

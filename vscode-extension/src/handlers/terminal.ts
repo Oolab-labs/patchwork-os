@@ -521,7 +521,8 @@ const SHELL_METACHAR_RE = /[;&|`$()<>{}!\\\n\r]/;
 export async function handleSendTerminalCommand(
   params: Record<string, unknown>,
 ): Promise<unknown> {
-  if (typeof params.text !== "string") return { success: false, error: "text must be a string" };
+  if (typeof params.text !== "string")
+    return { success: false, error: "text must be a string" };
   const text = params.text;
 
   // Defense-in-depth: block shell metacharacters even though the bridge validates too

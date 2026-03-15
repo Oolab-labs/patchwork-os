@@ -510,7 +510,9 @@ export class BridgeConnection {
           // No live lock file found — fall back to the cached token from SecretStorage.
           // This allows reconnecting immediately after a bridge restart before the new
           // lock file is written.
-          this.log("No lock file found — trying cached SecretStorage token as fallback");
+          this.log(
+            "No lock file found — trying cached SecretStorage token as fallback",
+          );
           this.connect(this.lockDataFallback);
         } else {
           this.state = ConnectionState.DISCONNECTING;

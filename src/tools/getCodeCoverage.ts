@@ -102,7 +102,8 @@ function parseClover(content: string): FileCoverageEntry[] {
     entries.push({
       file: filePath,
       lines: pct(coveredStatements, statements),
-      branches: conditionals > 0 ? pct(coveredConditionals, conditionals) : null,
+      branches:
+        conditionals > 0 ? pct(coveredConditionals, conditionals) : null,
       functions: methods > 0 ? pct(coveredMethods, methods) : null,
     });
   }
@@ -195,7 +196,9 @@ export function createGetCodeCoverageTool(workspace: string) {
             format = "clover";
             files = parseClover(content);
           } else {
-            return error(`Unknown coverage report format for file: ${reportFile}`);
+            return error(
+              `Unknown coverage report format for file: ${reportFile}`,
+            );
           }
         }
       } catch (err) {
@@ -220,7 +223,9 @@ export function createGetCodeCoverageTool(workspace: string) {
             ) / 100
           : 0;
       const belowThreshold =
-        minCoverage > 0 ? filtered.length : files.filter((f) => f.lines < 80).length;
+        minCoverage > 0
+          ? filtered.length
+          : files.filter((f) => f.lines < 80).length;
 
       return success({
         reportFile,

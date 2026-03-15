@@ -46,7 +46,9 @@ describe("createGetTypeSignatureTool", () => {
       makeClient({
         connected: true,
         hoverResult: {
-          contents: ["```typescript\nfunction greet(name: string): string\n```"],
+          contents: [
+            "```typescript\nfunction greet(name: string): string\n```",
+          ],
         },
       }),
     );

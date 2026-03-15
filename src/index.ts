@@ -132,8 +132,10 @@ if (config.watch) {
   function runChild(): void {
     if (stopping) return;
     const startAt = Date.now();
-    process.stderr.write(`[supervisor] starting bridge\n`);
-    const child = spawn(childArgv[0]!, childArgv.slice(1), { stdio: "inherit" });
+    process.stderr.write("[supervisor] starting bridge\n");
+    const child = spawn(childArgv[0]!, childArgv.slice(1), {
+      stdio: "inherit",
+    });
 
     for (const sig of ["SIGTERM", "SIGINT"] as const) {
       process.once(sig, () => {
@@ -144,7 +146,7 @@ if (config.watch) {
 
     child.on("exit", (code, signal) => {
       if (stopping) {
-        process.stderr.write(`[supervisor] bridge stopped\n`);
+        process.stderr.write("[supervisor] bridge stopped\n");
         process.exit(0);
       }
       const uptime = Date.now() - startAt;

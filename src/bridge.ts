@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
 import { ActivityLog } from "./activityLog.js";
+import { AutomationHooks, loadPolicy } from "./automation.js";
+import { createDriver } from "./claudeDriver.js";
+import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import type { Config } from "./config.js";
 import { ExtensionClient } from "./extensionClient.js";
 import { FileLock } from "./fileLock.js";
@@ -12,14 +15,11 @@ import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
-import { registerAllTools } from "./tools/index.js";
-import { createDriver } from "./claudeDriver.js";
-import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
-import { AutomationHooks, loadPolicy } from "./automation.js";
-import { cleanupTempDirs } from "./tools/openDiff.js";
-import { McpTransport } from "./transport.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
 import { initTelemetry, shutdownTelemetry } from "./telemetry.js";
+import { registerAllTools } from "./tools/index.js";
+import { cleanupTempDirs } from "./tools/openDiff.js";
+import { McpTransport } from "./transport.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 const MAX_SESSIONS = 5;
@@ -407,8 +407,10 @@ export class Bridge {
           driver,
           this.config.workspace,
           (msg) => this.logger.info(msg),
-          (taskId, chunk) => this.extensionClient.notifyTaskOutput(taskId, chunk),
-          (taskId, status) => this.extensionClient.notifyTaskDone(taskId, status),
+          (taskId, chunk) =>
+            this.extensionClient.notifyTaskOutput(taskId, chunk),
+          (taskId, status) =>
+            this.extensionClient.notifyTaskDone(taskId, status),
           {
             save: () => {
               if (this.checkpoint) {
@@ -416,7 +418,9 @@ export class Bridge {
               }
               // Persist terminal tasks for cross-session resumability (best-effort)
               if (this.port > 0 && this.orchestrator) {
-                void this.orchestrator.persistTasks(this.port).catch(() => {/* best-effort */});
+                void this.orchestrator.persistTasks(this.port).catch(() => {
+                  /* best-effort */
+                });
               }
             },
           },
@@ -524,7 +528,8 @@ export class Bridge {
       this.orchestrator,
       this.logger,
     );
-    this.server.httpMcpHandler = (req, res) => this.httpMcpHandler!.handle(req, res);
+    this.server.httpMcpHandler = (req, res) =>
+      this.httpMcpHandler?.handle(req, res);
 
     // 3. Check for stale lock files
     this.lockFile.cleanStale();
@@ -546,7 +551,9 @@ export class Bridge {
 
     // 4b. Load persisted tasks from previous sessions (best-effort)
     if (this.orchestrator) {
-      await this.orchestrator.loadPersistedTasks(port).catch(() => {/* best-effort */});
+      await this.orchestrator.loadPersistedTasks(port).catch(() => {
+        /* best-effort */
+      });
     }
 
     // 5. Enable activity log disk persistence

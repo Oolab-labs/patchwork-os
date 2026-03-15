@@ -1,4 +1,5 @@
 import type { ActivityLog } from "../activityLog.js";
+import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import type { Config } from "../config.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { FileLock } from "../fileLock.js";
@@ -6,12 +7,14 @@ import type { ProbeResults } from "../probe.js";
 import type { McpTransport } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
 import { createBridgeStatusTool } from "./bridgeStatus.js";
+import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
 import {
   createReadClipboardTool,
   createWriteClipboardTool,
 } from "./clipboard.js";
 import { createCloseAllDiffTabsTool, createCloseTabTool } from "./closeTabs.js";
+import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
 import {
   createEvaluateInDebuggerTool,
   createGetDebugStateTool,
@@ -33,13 +36,14 @@ import { createUnwatchFilesTool, createWatchFilesTool } from "./fileWatcher.js";
 import { createFindFilesTool } from "./findFiles.js";
 import { createFixAllLintErrorsTool } from "./fixAllLintErrors.js";
 import { createFormatDocumentTool } from "./formatDocument.js";
+import { createGenerateTestsTool } from "./generateTests.js";
 import { createGetBufferContentTool } from "./getBufferContent.js";
+import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
+import { createGetCodeCoverageTool } from "./getCodeCoverage.js";
 import {
   createGetCurrentSelectionTool,
   createGetLatestSelectionTool,
 } from "./getCurrentSelection.js";
-import { createGenerateTestsTool } from "./generateTests.js";
-import { createGetCodeCoverageTool } from "./getCodeCoverage.js";
 import { createGetDependencyTreeTool } from "./getDependencyTree.js";
 import { createGetDiagnosticsTool } from "./getDiagnostics.js";
 import { createGetDocumentSymbolsTool } from "./getDocumentSymbols.js";
@@ -48,11 +52,13 @@ import { createGetGitDiffTool } from "./getGitDiff.js";
 import { createGetGitHotspotsTool } from "./getGitHotspots.js";
 import { createGetGitLogTool } from "./getGitLog.js";
 import { createGetGitStatusTool } from "./getGitStatus.js";
+import { createGetImportTreeTool } from "./getImportTree.js";
 import { createGetOpenEditorsTool } from "./getOpenEditors.js";
 import { createGetPRTemplateTool } from "./getPRTemplate.js";
 import { createGetProjectInfoTool } from "./getProjectInfo.js";
 import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
 import { createGetToolCapabilitiesTool } from "./getToolCapabilities.js";
+import { createGetTypeSignatureTool } from "./getTypeSignature.js";
 import { createGetWorkspaceFoldersTool } from "./getWorkspaceFolders.js";
 import {
   createGetCommitDetailsTool,
@@ -84,15 +90,17 @@ import {
   createGithubPostPRReviewTool,
   createGithubViewPRTool,
 } from "./github/index.js";
-import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
+import {
+  createGetHandoffNoteTool,
+  createSetHandoffNoteTool,
+} from "./handoffNote.js";
 import { createGetHoverAtCursorTool } from "./hoverAtCursor.js";
-import { createGetImportTreeTool } from "./getImportTree.js";
-import { createGetTypeSignatureTool } from "./getTypeSignature.js";
 import {
   createParseHttpFileTool,
   createSendHttpRequestTool,
 } from "./httpClient.js";
 import { createGetInlayHintsTool } from "./inlayHints.js";
+import { createListClaudeTasksTool } from "./listClaudeTasks.js";
 import {
   createApplyCodeActionTool,
   createFindReferencesTool,
@@ -109,6 +117,8 @@ import { createOpenInBrowserTool } from "./openInBrowser.js";
 import { createOrganizeImportsTool } from "./organizeImports.js";
 import { createPlanTools } from "./planPersistence.js";
 import { createReplaceBlockTool } from "./replaceBlock.js";
+import { createResumeClaudeTaskTool } from "./resumeClaudeTask.js";
+import { createRunClaudeTaskTool } from "./runClaudeTask.js";
 import { createRunCommandTool } from "./runCommand.js";
 import { createRunTestsTool } from "./runTests.js";
 import { createSaveDocumentTool } from "./saveDocument.js";
@@ -126,20 +136,10 @@ import {
 } from "./terminal.js";
 import { createGetTypeHierarchyTool } from "./typeHierarchy.js";
 import {
-  createGetHandoffNoteTool,
-  createSetHandoffNoteTool,
-} from "./handoffNote.js";
-import {
   createExecuteVSCodeCommandTool,
   createListVSCodeCommandsTool,
 } from "./vscodeCommands.js";
 import { createWatchDiagnosticsTool } from "./watchDiagnostics.js";
-import { createRunClaudeTaskTool } from "./runClaudeTask.js";
-import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
-import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
-import { createListClaudeTasksTool } from "./listClaudeTasks.js";
-import { createResumeClaudeTaskTool } from "./resumeClaudeTask.js";
-import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import {
   createGetWorkspaceSettingsTool,
   createSetWorkspaceSettingTool,

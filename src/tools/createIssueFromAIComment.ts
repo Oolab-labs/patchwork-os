@@ -1,6 +1,12 @@
 import path from "node:path";
 import type { AIComment } from "../extensionClient.js";
 import {
+  GH_NOT_AUTHED,
+  GH_NOT_FOUND,
+  isNotAuthed,
+  isNotFound,
+} from "./github/shared.js";
+import {
   error,
   execSafe,
   optionalString,
@@ -8,12 +14,6 @@ import {
   requireString,
   success,
 } from "./utils.js";
-import {
-  GH_NOT_AUTHED,
-  GH_NOT_FOUND,
-  isNotAuthed,
-  isNotFound,
-} from "./github/shared.js";
 
 export function createCreateIssueFromAICommentTool(
   workspace: string,
@@ -55,10 +55,7 @@ export function createCreateIssueFromAICommentTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (
-      args: Record<string, unknown>,
-      signal?: AbortSignal,
-    ) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const file = requireString(args, "file");
       const line = requireInt(args, "line", 1);
       const titleArg = optionalString(args, "title", 256);
@@ -95,12 +92,7 @@ export function createCreateIssueFromAICommentTool(
       }
 
       // Build body
-      const body =
-        `**AI Comment** found in \`${relPath}\` at line ${line}\n\n` +
-        `> ${comment.comment}\n\n` +
-        `**Severity:** ${comment.severity ?? "task"}\n\n` +
-        `---\n` +
-        `*Created from AI comment via Claude IDE Bridge*`;
+      const body = `**AI Comment** found in \`${relPath}\` at line ${line}\n\n> ${comment.comment}\n\n**Severity:** ${comment.severity ?? "task"}\n\n---\n*Created from AI comment via Claude IDE Bridge*`;
 
       // Build gh args
       const ghArgs = ["issue", "create", "--title", title, "--body", body];

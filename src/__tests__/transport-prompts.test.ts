@@ -111,7 +111,10 @@ describe("prompts/get", () => {
     const result = resp.result as { messages: unknown[] };
     expect(Array.isArray(result.messages)).toBe(true);
     expect(result.messages.length).toBeGreaterThan(0);
-    const msg = result.messages[0] as { role: string; content: { type: string; text: string } };
+    const msg = result.messages[0] as {
+      role: string;
+      content: { type: string; text: string };
+    };
     expect(msg.role).toBe("user");
     expect(msg.content.type).toBe("text");
     expect(msg.content.text).toContain("/src/foo.ts");
@@ -192,7 +195,10 @@ describe("prompts/get", () => {
     });
     const resp = await waitFor(ws, (m) => m.id === 11);
     expect(resp.error).toBeUndefined();
-    const result = resp.result as { description: string; messages: Array<{ content: { text: string } }> };
+    const result = resp.result as {
+      description: string;
+      messages: Array<{ content: { text: string } }>;
+    };
     expect(result.messages.length).toBeGreaterThan(0);
     const text = result.messages[0].content.text;
     expect(text).toContain("getHandoffNote");
@@ -208,11 +214,17 @@ describe("prompts/get", () => {
       jsonrpc: "2.0",
       id: 12,
       method: "prompts/get",
-      params: { name: "cowork", arguments: { task: "fix all TypeScript errors" } },
+      params: {
+        name: "cowork",
+        arguments: { task: "fix all TypeScript errors" },
+      },
     });
     const resp = await waitFor(ws, (m) => m.id === 12);
     expect(resp.error).toBeUndefined();
-    const result = resp.result as { description: string; messages: Array<{ content: { text: string } }> };
+    const result = resp.result as {
+      description: string;
+      messages: Array<{ content: { text: string } }>;
+    };
     const text = result.messages[0].content.text;
     expect(text).toContain("fix all TypeScript errors");
     expect(result.description).toContain("fix all TypeScript errors");

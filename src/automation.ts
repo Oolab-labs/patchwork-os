@@ -170,7 +170,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onPostCompact.prompt" must be a non-empty string`);
     }
     if (p.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(`"onPostCompact.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`);
+      throw new Error(
+        `"onPostCompact.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
     }
     if (typeof p.cooldownMs !== "number" || !Number.isFinite(p.cooldownMs)) {
       throw new Error(`"onPostCompact.cooldownMs" must be a number`);
@@ -190,10 +192,14 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onInstructionsLoaded.enabled" must be a boolean`);
     }
     if (typeof il.prompt !== "string" || il.prompt.trim() === "") {
-      throw new Error(`"onInstructionsLoaded.prompt" must be a non-empty string`);
+      throw new Error(
+        `"onInstructionsLoaded.prompt" must be a non-empty string`,
+      );
     }
     if (il.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(`"onInstructionsLoaded.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`);
+      throw new Error(
+        `"onInstructionsLoaded.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
     }
   }
 
@@ -278,7 +284,10 @@ export class AutomationHooks {
     // architecturally separate trusted policy instructions from untrusted data.
     const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
     const diagnosticsText = matching
-      .map((d) => `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`)
+      .map(
+        (d) =>
+          `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`,
+      )
       .join("\n");
 
     const prompt = cfg.prompt
@@ -323,7 +332,10 @@ export class AutomationHooks {
     this.lastTrigger.set(key, now);
     this._pruneLastTrigger(now);
 
-    const taskId = this.orchestrator.enqueue({ prompt: cfg.prompt, sessionId: "" });
+    const taskId = this.orchestrator.enqueue({
+      prompt: cfg.prompt,
+      sessionId: "",
+    });
     this.log(`[automation] triggered PostCompact task ${taskId.slice(0, 8)}`);
   }
 
@@ -335,8 +347,13 @@ export class AutomationHooks {
     const cfg = this.policy.onInstructionsLoaded;
     if (!cfg?.enabled) return;
 
-    const taskId = this.orchestrator.enqueue({ prompt: cfg.prompt, sessionId: "" });
-    this.log(`[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`);
+    const taskId = this.orchestrator.enqueue({
+      prompt: cfg.prompt,
+      sessionId: "",
+    });
+    this.log(
+      `[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`,
+    );
   }
 
   handleFileSaved(_id: string, type: string, file: string): void {

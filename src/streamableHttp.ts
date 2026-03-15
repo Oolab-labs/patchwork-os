@@ -46,7 +46,8 @@ class HttpAdapter extends EventEmitter {
    * on the same HTTP session, each POST waits for *its own* response rather than
    * the first response that arrives.
    */
-  private pendingSends: Map<string | number, (data: string | null) => void> = new Map();
+  private pendingSends: Map<string | number, (data: string | null) => void> =
+    new Map();
   private sseRes: http.ServerResponse | null = null;
   private sseHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -182,7 +183,10 @@ export class StreamableHttpHandler {
     // Prune idle sessions every 5 minutes.
     // .unref() prevents this timer from keeping the Node process alive when
     // all other work is done — avoids test hangs and clean process exit.
-    this.cleanupTimer = setInterval(() => this.pruneIdle(), 5 * 60 * 1000).unref();
+    this.cleanupTimer = setInterval(
+      () => this.pruneIdle(),
+      5 * 60 * 1000,
+    ).unref();
   }
 
   /** Handle an incoming HTTP request to /mcp */
@@ -195,7 +199,10 @@ export class StreamableHttpHandler {
     const origin = corsOrigin(req.headers.origin);
     if (origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      res.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET, POST, DELETE, OPTIONS",
+      );
       res.setHeader(
         "Access-Control-Allow-Headers",
         "Content-Type, Authorization, Mcp-Session-Id",

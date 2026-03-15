@@ -17,7 +17,9 @@ export class BridgeInstaller {
   constructor(private readonly output: vscode.OutputChannel) {}
 
   private log(msg: string): void {
-    this.output.appendLine(`${new Date().toISOString()} [BridgeInstaller] ${msg}`);
+    this.output.appendLine(
+      `${new Date().toISOString()} [BridgeInstaller] ${msg}`,
+    );
   }
 
   /**
@@ -26,9 +28,13 @@ export class BridgeInstaller {
    */
   async getInstalledVersion(): Promise<string | null> {
     try {
-      const { stdout } = await execFileAsync("claude-ide-bridge", ["--version"], {
-        timeout: 10_000,
-      });
+      const { stdout } = await execFileAsync(
+        "claude-ide-bridge",
+        ["--version"],
+        {
+          timeout: 10_000,
+        },
+      );
       const match = stdout.trim().match(/(\d+\.\d+\.\d+[^\s]*)/);
       return match ? match[1] : null;
     } catch {
@@ -90,7 +96,9 @@ export class BridgeInstaller {
     const installed = await this.getInstalledVersion();
 
     if (installed === required) {
-      this.log(`claude-ide-bridge@${installed} already installed — no action needed.`);
+      this.log(
+        `claude-ide-bridge@${installed} already installed — no action needed.`,
+      );
       return;
     }
 

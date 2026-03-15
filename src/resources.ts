@@ -14,21 +14,58 @@ const MAX_RESOURCE_BYTES = 1 * 1024 * 1024; // 1 MB — same guard as getBufferC
 
 /** Extensions we emit as resources. Binary files (images, pdfs) are listed but not read as text. */
 const TEXT_RESOURCE_EXTS = new Set([
-  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-  ".json", ".yaml", ".yml", ".toml", ".xml",
-  ".html", ".htm", ".css", ".scss", ".less",
-  ".md", ".txt", ".sh", ".bash",
-  ".py", ".rb", ".rs", ".go", ".java",
-  ".c", ".cpp", ".h", ".hpp",
-  ".sql", ".graphql", ".vue", ".svelte",
-  ".gitignore", ".editorconfig",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".xml",
+  ".html",
+  ".htm",
+  ".css",
+  ".scss",
+  ".less",
+  ".md",
+  ".txt",
+  ".sh",
+  ".bash",
+  ".py",
+  ".rb",
+  ".rs",
+  ".go",
+  ".java",
+  ".c",
+  ".cpp",
+  ".h",
+  ".hpp",
+  ".sql",
+  ".graphql",
+  ".vue",
+  ".svelte",
+  ".gitignore",
+  ".editorconfig",
 ]);
 
 const SKIP_DIRS = new Set([
-  "node_modules", ".git", ".svn", ".hg",
-  "dist", "build", "out", ".next", ".nuxt",
-  "__pycache__", ".pytest_cache", ".tox",
-  "target", ".cargo",
+  "node_modules",
+  ".git",
+  ".svn",
+  ".hg",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".nuxt",
+  "__pycache__",
+  ".pytest_cache",
+  ".tox",
+  "target",
+  ".cargo",
   ".DS_Store",
 ]);
 
@@ -118,7 +155,10 @@ export function invalidateResourcesCache(workspace?: string): void {
  * List workspace files as MCP resources, with cursor-based pagination.
  * Cursor is an opaque base64-encoded decimal offset (same pattern as tools/list).
  */
-export function listResources(workspace: string, cursor?: string): ListResourcesResult {
+export function listResources(
+  workspace: string,
+  cursor?: string,
+): ListResourcesResult {
   const allFiles = getCachedWorkspaceFiles(workspace);
 
   let offset = 0;
@@ -155,7 +195,10 @@ export type ReadResourceResult =
  * Read a workspace file by URI.
  * Returns an error object if the file is outside the workspace, too large, or unreadable.
  */
-export function readResource(workspace: string, uri: string): ReadResourceResult {
+export function readResource(
+  workspace: string,
+  uri: string,
+): ReadResourceResult {
   // Accept file:// URIs only
   if (!uri.startsWith("file://")) {
     return { error: "Only file:// URIs are supported", code: "invalid_args" };
@@ -167,7 +210,10 @@ export function readResource(workspace: string, uri: string): ReadResourceResult
   try {
     rawPath = decodeURIComponent(uri.slice(7)); // strip "file://" then decode
   } catch {
-    return { error: `URI "${uri}" contains invalid percent-encoding`, code: "invalid_args" };
+    return {
+      error: `URI "${uri}" contains invalid percent-encoding`,
+      code: "invalid_args",
+    };
   }
   const absPath = path.resolve(rawPath);
   const normalizedWorkspace = path.resolve(workspace);
@@ -177,7 +223,10 @@ export function readResource(workspace: string, uri: string): ReadResourceResult
     absPath !== normalizedWorkspace &&
     !absPath.startsWith(normalizedWorkspace + path.sep)
   ) {
-    return { error: `URI "${uri}" is outside the workspace`, code: "workspace_escape" };
+    return {
+      error: `URI "${uri}" is outside the workspace`,
+      code: "workspace_escape",
+    };
   }
 
   // Stat to check size — use lstatSync so symlinks are not followed
@@ -190,7 +239,10 @@ export function readResource(workspace: string, uri: string): ReadResourceResult
 
   // Reject symlinks — listing already skips them; read must too
   if (stat.isSymbolicLink()) {
-    return { error: `URI "${uri}" is a symlink — not supported`, code: "invalid_args" };
+    return {
+      error: `URI "${uri}" is a symlink — not supported`,
+      code: "invalid_args",
+    };
   }
 
   if (!stat.isFile()) {

@@ -20,9 +20,7 @@ function parse(r: { content: Array<{ type: string; text: string }> }) {
   return JSON.parse(r.content[0]?.text ?? "{}");
 }
 
-function makeComment(
-  overrides: Partial<AIComment> = {},
-): AIComment {
+function makeComment(overrides: Partial<AIComment> = {}): AIComment {
   return {
     file: `${ws}/src/index.ts`,
     line: 10,
@@ -76,9 +74,7 @@ describe("createGithubIssueFromAIComment — title derivation", () => {
 
   it("uses explicit title override when provided", async () => {
     const file = `${ws}/src/index.ts`;
-    const cache = new Map<string, AIComment[]>([
-      [file, [makeComment()]],
-    ]);
+    const cache = new Map<string, AIComment[]>([[file, [makeComment()]]]);
     mockExecSafe.mockResolvedValue(
       makeResult("https://github.com/org/repo/issues/7"),
     );
@@ -93,9 +89,7 @@ describe("createGithubIssueFromAIComment — title derivation", () => {
 describe("createGithubIssueFromAIComment — gh args", () => {
   it("passes labels and assignee to gh when provided", async () => {
     const file = `${ws}/src/index.ts`;
-    const cache = new Map<string, AIComment[]>([
-      [file, [makeComment()]],
-    ]);
+    const cache = new Map<string, AIComment[]>([[file, [makeComment()]]]);
     mockExecSafe.mockResolvedValue(
       makeResult("https://github.com/org/repo/issues/9"),
     );
@@ -117,9 +111,7 @@ describe("createGithubIssueFromAIComment — gh args", () => {
 describe("createGithubIssueFromAIComment — error handling", () => {
   it("returns auth error when gh is not logged in", async () => {
     const file = `${ws}/src/index.ts`;
-    const cache = new Map<string, AIComment[]>([
-      [file, [makeComment()]],
-    ]);
+    const cache = new Map<string, AIComment[]>([[file, [makeComment()]]]);
     mockExecSafe.mockResolvedValue(
       makeResult("", 1, "not authenticated: run gh auth login"),
     );
@@ -133,9 +125,7 @@ describe("createGithubIssueFromAIComment — error handling", () => {
 describe("createGithubIssueFromAIComment — issue number parsing", () => {
   it("correctly parses issue number from returned URL", async () => {
     const file = `${ws}/src/index.ts`;
-    const cache = new Map<string, AIComment[]>([
-      [file, [makeComment()]],
-    ]);
+    const cache = new Map<string, AIComment[]>([[file, [makeComment()]]]);
     mockExecSafe.mockResolvedValue(
       makeResult("https://github.com/org/repo/issues/123"),
     );

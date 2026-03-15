@@ -1,7 +1,7 @@
-import * as esbuild from "esbuild";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import * as esbuild from "esbuild";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);

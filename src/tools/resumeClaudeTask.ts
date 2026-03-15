@@ -1,5 +1,5 @@
-import { ToolErrorCodes } from "../errors.js";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import { ToolErrorCodes } from "../errors.js";
 import { error, success } from "./utils.js";
 
 export function createResumeClaudeTaskTool(
@@ -32,17 +32,26 @@ export function createResumeClaudeTaskTool(
     handler: async (args: Record<string, unknown>) => {
       const taskId = args.taskId;
       if (typeof taskId !== "string" || taskId.trim() === "") {
-        return error("taskId must be a non-empty string", ToolErrorCodes.INVALID_ARGS);
+        return error(
+          "taskId must be a non-empty string",
+          ToolErrorCodes.INVALID_ARGS,
+        );
       }
 
       const original = orchestrator.getTask(taskId);
       if (!original) {
-        return error(`Task "${taskId}" not found`, ToolErrorCodes.TASK_NOT_FOUND);
+        return error(
+          `Task "${taskId}" not found`,
+          ToolErrorCodes.TASK_NOT_FOUND,
+        );
       }
 
       // Authorization: sessions may only resume their own tasks
       if (original.sessionId !== sessionId) {
-        return error(`Task "${taskId}" not found`, ToolErrorCodes.TASK_NOT_FOUND);
+        return error(
+          `Task "${taskId}" not found`,
+          ToolErrorCodes.TASK_NOT_FOUND,
+        );
       }
 
       if (original.status === "running" || original.status === "pending") {

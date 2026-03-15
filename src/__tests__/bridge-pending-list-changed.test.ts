@@ -43,7 +43,11 @@ function buildScaffold() {
   let pendingListChanged = false;
   const sessions = new Map<
     string,
-    { ws: WebSocket; transport: McpTransport; graceTimer: ReturnType<typeof setTimeout> | null }
+    {
+      ws: WebSocket;
+      transport: McpTransport;
+      graceTimer: ReturnType<typeof setTimeout> | null;
+    }
   >();
 
   function sendListChangedToAll() {
@@ -72,20 +76,25 @@ function buildScaffold() {
     // BUG target: onInitialized hook does NOT exist yet on McpTransport.
     // Once added, we hook it here to flush pendingListChanged.
     if ("onInitialized" in transport) {
-      (transport as unknown as { onInitialized: () => void }).onInitialized = () => {
-        if (pendingListChanged && ws.readyState === WebSocket.OPEN) {
-          McpTransport.sendNotification(
-            ws,
-            "notifications/tools/list_changed",
-            undefined,
-            logger,
-          );
-          pendingListChanged = false;
-        }
-      };
+      (transport as unknown as { onInitialized: () => void }).onInitialized =
+        () => {
+          if (pendingListChanged && ws.readyState === WebSocket.OPEN) {
+            McpTransport.sendNotification(
+              ws,
+              "notifications/tools/list_changed",
+              undefined,
+              logger,
+            );
+            pendingListChanged = false;
+          }
+        };
     }
 
-    const session = { ws, transport, graceTimer: null as ReturnType<typeof setTimeout> | null };
+    const session = {
+      ws,
+      transport,
+      graceTimer: null as ReturnType<typeof setTimeout> | null,
+    };
     sessions.set(sessionId, session);
     transport.attach(ws);
 
@@ -97,7 +106,12 @@ function buildScaffold() {
     });
   });
 
-  return { server, authToken, sendListChangedToAll, getSessions: () => sessions };
+  return {
+    server,
+    authToken,
+    sendListChangedToAll,
+    getSessions: () => sessions,
+  };
 }
 
 // ---------------------------------------------------------------------------

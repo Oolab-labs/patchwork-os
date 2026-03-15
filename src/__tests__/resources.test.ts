@@ -2,7 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { invalidateResourcesCache, listResources, readResource } from "../resources.js";
+import {
+  invalidateResourcesCache,
+  listResources,
+  readResource,
+} from "../resources.js";
 
 let workspace: string;
 
@@ -14,7 +18,9 @@ beforeAll(() => {
   fs.mkdirSync(path.join(workspace, "src"), { recursive: true });
   fs.writeFileSync(path.join(workspace, "src", "util.ts"), "export {};");
   // node_modules dir should be skipped
-  fs.mkdirSync(path.join(workspace, "node_modules", "pkg"), { recursive: true });
+  fs.mkdirSync(path.join(workspace, "node_modules", "pkg"), {
+    recursive: true,
+  });
   fs.writeFileSync(path.join(workspace, "node_modules", "pkg", "index.js"), "");
 });
 
@@ -117,7 +123,10 @@ describe("readResource", () => {
   });
 
   it("returns file_not_found for missing file", () => {
-    const result = readResource(workspace, `file://${path.join(workspace, "nonexistent.ts")}`);
+    const result = readResource(
+      workspace,
+      `file://${path.join(workspace, "nonexistent.ts")}`,
+    );
     expect("error" in result).toBe(true);
     if (!("error" in result)) return;
     expect(result.code).toBe("file_not_found");

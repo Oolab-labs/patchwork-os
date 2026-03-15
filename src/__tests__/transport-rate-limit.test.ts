@@ -18,7 +18,9 @@ function padToken(t: string): string {
 
 let _tokenCounter = 0;
 
-async function setup(rateLimit: number): Promise<{ ws: WebSocket; transport: McpTransport }> {
+async function setup(
+  rateLimit: number,
+): Promise<{ ws: WebSocket; transport: McpTransport }> {
   const token = padToken(`rate-limit-${++_tokenCounter}`);
   const server = new Server(token, logger);
   const transport = new McpTransport(logger);
@@ -111,7 +113,9 @@ describe("McpTransport — tool call rate limiter", () => {
     }
 
     const responses = await Promise.all(waiters);
-    const rateLimitHit = responses.some((r) => (r.error as any)?.code === -32029);
+    const rateLimitHit = responses.some(
+      (r) => (r.error as any)?.code === -32029,
+    );
     expect(rateLimitHit).toBe(true);
   });
 
@@ -133,6 +137,8 @@ describe("McpTransport — tool call rate limiter", () => {
     }
 
     const responses = await Promise.all(waiters);
-    expect(responses.every((r) => (r.error as any)?.code !== -32029)).toBe(true);
+    expect(responses.every((r) => (r.error as any)?.code !== -32029)).toBe(
+      true,
+    );
   });
 });

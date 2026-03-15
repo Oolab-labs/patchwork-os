@@ -410,13 +410,23 @@ export function __reset() {
   workspace.createFileSystemWatcher
     .mockReset()
     .mockImplementation(() => createMockWatcher());
-  workspace.onDidChangeTextDocument.mockReset().mockReturnValue({ dispose: vi.fn() });
-  workspace.onDidOpenTextDocument.mockReset().mockReturnValue({ dispose: vi.fn() });
-  workspace.onDidSaveTextDocument.mockReset().mockReturnValue({ dispose: vi.fn() });
-  workspace.onDidChangeWorkspaceFolders.mockReset().mockReturnValue({ dispose: vi.fn() });
-  workspace.getConfiguration.mockReset().mockImplementation((_section?: string) => ({
-    get: <T>(_key: string, defaultValue: T): T => defaultValue,
-  }));
+  workspace.onDidChangeTextDocument
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
+  workspace.onDidOpenTextDocument
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
+  workspace.onDidSaveTextDocument
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
+  workspace.onDidChangeWorkspaceFolders
+    .mockReset()
+    .mockReturnValue({ dispose: vi.fn() });
+  workspace.getConfiguration
+    .mockReset()
+    .mockImplementation((_section?: string) => ({
+      get: <T>(_key: string, defaultValue: T): T => defaultValue,
+    }));
 
   window.tabGroups.all = [];
   window.tabGroups.close.mockReset().mockResolvedValue(true);

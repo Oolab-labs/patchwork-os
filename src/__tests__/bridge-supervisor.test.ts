@@ -60,7 +60,7 @@ describe("--watch supervisor", () => {
     const scriptDir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-sup-"));
     tmpDirs.push(scriptDir);
     const scriptPath = path.join(scriptDir, "crasher.mjs");
-    fs.writeFileSync(scriptPath, 'process.exit(1);\n', "utf-8");
+    fs.writeFileSync(scriptPath, "process.exit(1);\n", "utf-8");
 
     // We can't easily spawn the real compiled index.js in a unit test,
     // so we test the supervisor logic directly by importing and calling it.
@@ -134,10 +134,14 @@ runChild();
       "utf-8",
     );
 
-    const proc = spawn(process.execPath, [supervisorPath], { stdio: ["ignore", "ignore", "pipe"] });
+    const proc = spawn(process.execPath, [supervisorPath], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
     const lines = await collectStderr(proc, 5000);
 
-    const startLines = lines.filter((l) => l.includes("[supervisor] starting bridge"));
+    const startLines = lines.filter((l) =>
+      l.includes("[supervisor] starting bridge"),
+    );
     expect(startLines.length).toBeGreaterThanOrEqual(2);
   }, 10_000);
 
@@ -176,7 +180,9 @@ child.on('exit', () => {
       "utf-8",
     );
 
-    const proc = spawn(process.execPath, [supervisorPath], { stdio: ["ignore", "ignore", "pipe"] });
+    const proc = spawn(process.execPath, [supervisorPath], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
 
     // Wait for supervisor to report it started the child
     await new Promise<void>((resolve) => {

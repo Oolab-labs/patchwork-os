@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import WebSocket from "ws";
 
-import { BridgeConnection } from "./connection";
 import { BridgeInstaller } from "./bridgeInstaller";
 import { BridgeProcess } from "./bridgeProcess";
+import { BridgeConnection } from "./connection";
 import { registerEvents } from "./events";
 import { createDebugHandlers } from "./handlers/debug";
 import { createDecorationHandlers } from "./handlers/decorations";
@@ -11,7 +11,10 @@ import { createFileWatcherHandlers } from "./handlers/fileWatcher";
 import { baseHandlers } from "./handlers/index";
 import { createLspHandlers } from "./handlers/lsp";
 import { clearAllTerminalBuffers } from "./handlers/terminal";
-import { readAllMatchingLockFiles, readLockFileForWorkspace } from "./lockfiles";
+import {
+  readAllMatchingLockFiles,
+  readLockFileForWorkspace,
+} from "./lockfiles";
 
 /**
  * SecretStorage key for a given workspace path.
@@ -39,7 +42,10 @@ async function storeTokenInSecrets(
   if (!vscode.workspace.isTrusted) return;
   try {
     const key = secretKey(workspacePath);
-    await context.secrets.store(key, JSON.stringify({ authToken, port, workspace: workspacePath }));
+    await context.secrets.store(
+      key,
+      JSON.stringify({ authToken, port, workspace: workspacePath }),
+    );
   } catch (err) {
     output.appendLine(
       `${new Date().toISOString()} WARN: Failed to store token in SecretStorage: ${String(err)}`,
@@ -61,9 +67,18 @@ async function loadTokenFromSecrets(
     const key = secretKey(workspacePath);
     const raw = await context.secrets.get(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { authToken?: string; port?: number; workspace?: string };
-    if (typeof parsed.authToken !== "string" || typeof parsed.port !== "number") return null;
-    return { authToken: parsed.authToken, port: parsed.port, workspace: parsed.workspace ?? workspacePath };
+    const parsed = JSON.parse(raw) as {
+      authToken?: string;
+      port?: number;
+      workspace?: string;
+    };
+    if (typeof parsed.authToken !== "string" || typeof parsed.port !== "number")
+      return null;
+    return {
+      authToken: parsed.authToken,
+      port: parsed.port,
+      workspace: parsed.workspace ?? workspacePath,
+    };
   } catch (err) {
     output.appendLine(
       `${new Date().toISOString()} WARN: Failed to read token from SecretStorage: ${String(err)}`,
@@ -73,7 +88,9 @@ async function loadTokenFromSecrets(
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  const output = vscode.window.createOutputChannel("Claude IDE Bridge", { log: true });
+  const output = vscode.window.createOutputChannel("Claude IDE Bridge", {
+    log: true,
+  });
   context.subscriptions.push(output);
 
   const statusBar = vscode.window.createStatusBarItem(
@@ -133,7 +150,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   }
 
-  async function makeConnection(workspacePath: string): Promise<BridgeConnection> {
+  async function makeConnection(
+    workspacePath: string,
+  ): Promise<BridgeConnection> {
     const bridge = new BridgeConnection();
     bridge.output = output;
     bridge.logLevel = logLevel;
@@ -262,7 +281,11 @@ export function activate(context: vscode.ExtensionContext): void {
             bridge.startWatchingLockDir();
 
             if (autoConnect) {
-              if (autoStartBridge && !processes.has(fsPath) && vscode.workspace.isTrusted) {
+              if (
+                autoStartBridge &&
+                !processes.has(fsPath) &&
+                vscode.workspace.isTrusted
+              ) {
                 // Check if a bridge is already running for this workspace
                 const existingLock = await readLockFileForWorkspace(
                   fsPath,
@@ -272,7 +295,11 @@ export function activate(context: vscode.ExtensionContext): void {
                   bridge.tryConnect();
                 } else {
                   // No running bridge — spawn one
-                  const proc = new BridgeProcess(output, fsPath, lockFileDir || undefined);
+                  const proc = new BridgeProcess(
+                    output,
+                    fsPath,
+                    lockFileDir || undefined,
+                  );
                   processes.set(fsPath, proc);
                   proc.onStarted = ({ port, authToken, pid }) => {
                     bridge.connectDirect(port, authToken, pid);
@@ -311,9 +338,7 @@ export function activate(context: vscode.ExtensionContext): void {
     updateStatusBar();
   }
 
-  output.appendLine(
-    `${new Date().toISOString()} Extension activating...`,
-  );
+  output.appendLine(`${new Date().toISOString()} Extension activating...`);
 
   registerEvents(context, getBridges, output);
 

@@ -2,10 +2,10 @@ import os from "node:os";
 import { describe, expect, it } from "vitest";
 import type { IClaudeDriver } from "../../claudeDriver.js";
 import { ClaudeOrchestrator } from "../../claudeOrchestrator.js";
-import { createRunClaudeTaskTool } from "../runClaudeTask.js";
-import { createGetClaudeTaskStatusTool } from "../getClaudeTaskStatus.js";
 import { createCancelClaudeTaskTool } from "../cancelClaudeTask.js";
+import { createGetClaudeTaskStatusTool } from "../getClaudeTaskStatus.js";
 import { createListClaudeTasksTool } from "../listClaudeTasks.js";
+import { createRunClaudeTaskTool } from "../runClaudeTask.js";
 
 function makeOrchestrator(driver?: IClaudeDriver) {
   const d: IClaudeDriver = driver ?? {

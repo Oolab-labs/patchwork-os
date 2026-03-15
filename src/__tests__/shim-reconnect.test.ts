@@ -8,7 +8,7 @@
  *        there is no polling fallback — the shim stays disconnected forever.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -175,7 +175,7 @@ describe("reconnection after bridge restart", () => {
     const reconnected = await waitFor(
       () =>
         stderrLines.some(
-          (l) => l.includes("reconnecting") || l.includes("port " + port2),
+          (l) => l.includes("reconnecting") || l.includes(`port ${port2}`),
         ),
       4000,
     );

@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mock vscode
 vi.mock("vscode", () => ({
   window: {
-    withProgress: vi.fn(async (_opts: unknown, task: () => Promise<void>) => task()),
+    withProgress: vi.fn(async (_opts: unknown, task: () => Promise<void>) =>
+      task(),
+    ),
     showWarningMessage: vi.fn(),
     showErrorMessage: vi.fn(),
   },
@@ -23,8 +25,8 @@ vi.mock("node:child_process", async (importOriginal) => {
 (globalThis as Record<string, unknown>).BRIDGE_VERSION = "2.0.1";
 
 import { execFile } from "node:child_process";
-import { BridgeInstaller } from "../bridgeInstaller";
 import * as vscode from "vscode";
+import { BridgeInstaller } from "../bridgeInstaller";
 
 const mockedExecFile = execFile as unknown as ReturnType<typeof vi.fn>;
 
@@ -43,7 +45,9 @@ let installer: BridgeInstaller;
 
 beforeEach(() => {
   output = { appendLine: vi.fn() };
-  installer = new BridgeInstaller(output as unknown as import("vscode").OutputChannel);
+  installer = new BridgeInstaller(
+    output as unknown as import("vscode").OutputChannel,
+  );
 });
 
 afterEach(() => {

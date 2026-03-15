@@ -5,7 +5,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createReplaceBlockTool } from "../replaceBlock.js";
 
-function parse(result: { content: Array<{ type: string; text: string }>; isError?: boolean }) {
+function parse(result: {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+}) {
   const raw = JSON.parse(result.content.at(0)?.text ?? "{}") as unknown;
   if (
     result.isError &&

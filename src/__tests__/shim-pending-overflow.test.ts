@@ -7,7 +7,7 @@
  * can diagnose the problem.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -53,7 +53,7 @@ describe("pendingLines overflow", () => {
     // Write 1001 newline-delimited JSON-RPC messages to stdin (limit is 1000).
     const msg = JSON.stringify({ jsonrpc: "2.0", method: "ping", id: 1 });
     for (let i = 0; i < 1001; i++) {
-      proc.stdin?.write(msg + "\n");
+      proc.stdin?.write(`${msg}\n`);
     }
     // Flush and give the shim a moment to process
     await new Promise((r) => setTimeout(r, 300));

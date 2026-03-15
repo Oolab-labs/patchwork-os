@@ -1,5 +1,5 @@
-import { ToolErrorCodes } from "../errors.js";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import { ToolErrorCodes } from "../errors.js";
 import { error, success } from "./utils.js";
 
 export function createCancelClaudeTaskTool(
@@ -38,12 +38,18 @@ export function createCancelClaudeTaskTool(
 
       const task = orchestrator.getTask(taskId);
       if (!task) {
-        return error(`Task "${taskId}" not found`, ToolErrorCodes.TASK_NOT_FOUND);
+        return error(
+          `Task "${taskId}" not found`,
+          ToolErrorCodes.TASK_NOT_FOUND,
+        );
       }
 
       // Authorization: sessions may only cancel their own tasks
       if (task.sessionId !== sessionId) {
-        return error(`Task "${taskId}" not found`, ToolErrorCodes.TASK_NOT_FOUND);
+        return error(
+          `Task "${taskId}" not found`,
+          ToolErrorCodes.TASK_NOT_FOUND,
+        );
       }
 
       const cancelled = orchestrator.cancel(taskId);

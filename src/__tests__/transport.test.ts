@@ -80,7 +80,9 @@ describe("McpTransport", () => {
     const info = result.serverInfo as Record<string, unknown>;
     expect(info.name).toBe("claude-ide-bridge");
     expect(info.version).toBe("1.1.0");
-    expect((info._meta as Record<string, unknown>).packageVersion).toMatch(/^\d+\.\d+\.\d+/);
+    expect((info._meta as Record<string, unknown>).packageVersion).toMatch(
+      /^\d+\.\d+\.\d+/,
+    );
   });
 
   it("tools/list returns registered tools with annotations", async () => {
@@ -179,7 +181,10 @@ describe("McpTransport", () => {
       isError: boolean;
     };
     expect(result.isError).toBe(true);
-    const errPayload = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+    const errPayload = JSON.parse(result.content[0]?.text ?? "{}") as Record<
+      string,
+      unknown
+    >;
     expect(errPayload.error).toBe("something broke");
   });
 

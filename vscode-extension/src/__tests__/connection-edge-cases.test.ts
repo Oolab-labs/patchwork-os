@@ -72,7 +72,10 @@ describe("bridge/claudeTaskOutput notifications", () => {
       JSON.stringify({
         jsonrpc: "2.0",
         method: "bridge/claudeTaskOutput",
-        params: { taskId: "abc12345-0000-0000-0000-000000000000", chunk: "hello world\n" },
+        params: {
+          taskId: "abc12345-0000-0000-0000-000000000000",
+          chunk: "hello world\n",
+        },
       }),
     );
 
@@ -98,7 +101,9 @@ describe("bridge/claudeTaskOutput notifications", () => {
     expect(appendLineSpy).toHaveBeenCalledWith(
       expect.stringContaining("abc12345"),
     );
-    expect(appendLineSpy).toHaveBeenCalledWith(expect.stringContaining("✓ done"));
+    expect(appendLineSpy).toHaveBeenCalledWith(
+      expect.stringContaining("✓ done"),
+    );
   });
 
   it("done=true with error status shows failure marker", () => {
@@ -117,7 +122,9 @@ describe("bridge/claudeTaskOutput notifications", () => {
       }),
     );
 
-    expect(appendLineSpy).toHaveBeenCalledWith(expect.stringContaining("✗ error"));
+    expect(appendLineSpy).toHaveBeenCalledWith(
+      expect.stringContaining("✗ error"),
+    );
   });
 });
 

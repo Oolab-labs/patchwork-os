@@ -88,9 +88,7 @@ export async function readLockFilesAsync(
   const candidates = await readValidLockFiles(lockDir);
   for (const candidate of candidates) {
     if (currentWorkspace && candidate.workspace) {
-      if (
-        path.resolve(candidate.workspace) !== path.resolve(currentWorkspace)
-      )
+      if (path.resolve(candidate.workspace) !== path.resolve(currentWorkspace))
         continue;
     }
     return candidate;

@@ -27,10 +27,7 @@ export function registerEvents(
   getBridges: () => BridgeConnection[],
   output: vscode.OutputChannel,
 ): void {
-  function notifyAll(
-    method: string,
-    params: Record<string, unknown>,
-  ): void {
+  function notifyAll(method: string, params: Record<string, unknown>): void {
     for (const bridge of getBridges()) {
       bridge.sendNotification(method, params);
     }

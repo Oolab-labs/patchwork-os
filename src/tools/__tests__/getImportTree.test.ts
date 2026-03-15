@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock node:fs before importing the tool
 const mockExistsSync = vi.fn((_p: string) => false);
-const mockReadFile = vi.fn(async (_p: string, _enc: string): Promise<string> => {
-  throw new Error(`ENOENT: no such file: ${_p}`);
-});
+const mockReadFile = vi.fn(
+  async (_p: string, _enc: string): Promise<string> => {
+    throw new Error(`ENOENT: no such file: ${_p}`);
+  },
+);
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -49,7 +51,7 @@ describe("createGetImportTreeTool", () => {
   it("returns tree for a file with ES module imports", async () => {
     setupFiles({
       "/workspace/src/index.ts": `import { foo } from "./foo.ts";\nimport bar from "./bar.ts";`,
-      "/workspace/src/foo.ts": `export const foo = 1;`,
+      "/workspace/src/foo.ts": "export const foo = 1;",
       "/workspace/src/bar.ts": `export default "bar";`,
     });
 
@@ -67,7 +69,7 @@ describe("createGetImportTreeTool", () => {
 
   it("handles files with no imports", async () => {
     setupFiles({
-      "/workspace/src/leaf.ts": `export const x = 42;`,
+      "/workspace/src/leaf.ts": "export const x = 42;",
     });
 
     const tool = createGetImportTreeTool(WS);
@@ -85,13 +87,19 @@ describe("createGetImportTreeTool", () => {
     });
 
     const tool = createGetImportTreeTool(WS);
-    const data = parse(await tool.handler({ file: "/workspace/src/a.ts", maxDepth: 5 }));
+    const data = parse(
+      await tool.handler({ file: "/workspace/src/a.ts", maxDepth: 5 }),
+    );
 
     expect(data.cycles.length).toBeGreaterThan(0);
     // The cycle node should have cycle: true
-    const bNode = data.tree.imports.find((n: { file: string }) => n.file === "/workspace/src/b.ts");
+    const bNode = data.tree.imports.find(
+      (n: { file: string }) => n.file === "/workspace/src/b.ts",
+    );
     expect(bNode).toBeTruthy();
-    const cycleNode = bNode.imports.find((n: { cycle?: boolean }) => n.cycle === true);
+    const cycleNode = bNode.imports.find(
+      (n: { cycle?: boolean }) => n.cycle === true,
+    );
     expect(cycleNode).toBeTruthy();
   });
 
@@ -100,13 +108,17 @@ describe("createGetImportTreeTool", () => {
       "/workspace/src/a.ts": `import "./b.ts";`,
       "/workspace/src/b.ts": `import "./c.ts";`,
       "/workspace/src/c.ts": `import "./d.ts";`,
-      "/workspace/src/d.ts": `export const deep = true;`,
+      "/workspace/src/d.ts": "export const deep = true;",
     });
 
     const tool = createGetImportTreeTool(WS);
     // maxDepth=1: only a.ts -> b.ts, b's children not explored
-    const data = parse(await tool.handler({ file: "/workspace/src/a.ts", maxDepth: 1 }));
-    const bNode = data.tree.imports.find((n: { file: string }) => n.file === "/workspace/src/b.ts");
+    const data = parse(
+      await tool.handler({ file: "/workspace/src/a.ts", maxDepth: 1 }),
+    );
+    const bNode = data.tree.imports.find(
+      (n: { file: string }) => n.file === "/workspace/src/b.ts",
+    );
     expect(bNode).toBeTruthy();
     expect(bNode.imports).toHaveLength(0); // depth limit hit
   });
@@ -118,7 +130,10 @@ describe("createGetImportTreeTool", () => {
 
     const tool = createGetImportTreeTool(WS);
     const data = parse(
-      await tool.handler({ file: "/workspace/src/index.ts", includeExternal: false }),
+      await tool.handler({
+        file: "/workspace/src/index.ts",
+        includeExternal: false,
+      }),
     );
     expect(data.tree.external).toBeUndefined();
     expect(data.tree.imports).toHaveLength(0);
@@ -131,7 +146,10 @@ describe("createGetImportTreeTool", () => {
 
     const tool = createGetImportTreeTool(WS);
     const data = parse(
-      await tool.handler({ file: "/workspace/src/index.ts", includeExternal: true }),
+      await tool.handler({
+        file: "/workspace/src/index.ts",
+        includeExternal: true,
+      }),
     );
     expect(Array.isArray(data.tree.external)).toBe(true);
     expect(data.tree.external).toContain("react");
@@ -141,12 +159,15 @@ describe("createGetImportTreeTool", () => {
   it("includes both local and external when includeExternal: true", async () => {
     setupFiles({
       "/workspace/src/app.ts": `import { helper } from "./helper.ts";\nimport express from "express";`,
-      "/workspace/src/helper.ts": `export const helper = () => {};`,
+      "/workspace/src/helper.ts": "export const helper = () => {};",
     });
 
     const tool = createGetImportTreeTool(WS);
     const data = parse(
-      await tool.handler({ file: "/workspace/src/app.ts", includeExternal: true }),
+      await tool.handler({
+        file: "/workspace/src/app.ts",
+        includeExternal: true,
+      }),
     );
     expect(data.tree.imports).toHaveLength(1);
     expect(data.tree.external).toContain("express");

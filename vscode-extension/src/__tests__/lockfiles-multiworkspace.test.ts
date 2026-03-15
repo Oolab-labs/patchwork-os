@@ -23,11 +23,17 @@ vi.mock("../constants", () => ({
 
 import * as fsp from "node:fs/promises";
 import * as vscode from "vscode";
-import { readAllMatchingLockFiles, readLockFileForWorkspace } from "../lockfiles";
+import {
+  readAllMatchingLockFiles,
+  readLockFileForWorkspace,
+} from "../lockfiles";
 
 const NOW = 1_700_000_000_000;
 
-function makeLockContent(workspace: string, overrides: Record<string, unknown> = {}): string {
+function makeLockContent(
+  workspace: string,
+  overrides: Record<string, unknown> = {},
+): string {
   return JSON.stringify({
     authToken: "tok-abc",
     pid: 9999,
@@ -37,7 +43,13 @@ function makeLockContent(workspace: string, overrides: Record<string, unknown> =
   });
 }
 
-function setupLocks(locks: Array<{ file: string; workspace: string; overrides?: Record<string, unknown> }>): void {
+function setupLocks(
+  locks: Array<{
+    file: string;
+    workspace: string;
+    overrides?: Record<string, unknown>;
+  }>,
+): void {
   vi.mocked(fsp.readdir).mockResolvedValue(locks.map((l) => l.file) as any);
   vi.mocked(fsp.stat).mockResolvedValue({ mtimeMs: NOW } as any);
   vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
@@ -151,9 +163,7 @@ describe("readAllMatchingLockFiles", () => {
 
   it("returns the newest available lock when no workspace folders are open", async () => {
     (vscode.workspace as any).workspaceFolders = undefined;
-    setupLocks([
-      { file: "10001.lock", workspace: "/some/ws" },
-    ]);
+    setupLocks([{ file: "10001.lock", workspace: "/some/ws" }]);
     const results = await readAllMatchingLockFiles();
     expect(results).toHaveLength(1);
     expect(results[0].port).toBe(10001);

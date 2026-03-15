@@ -2,7 +2,13 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, extensionRequired, requireInt, requireString, success } from "./utils.js";
+import {
+  error,
+  extensionRequired,
+  requireInt,
+  requireString,
+  success,
+} from "./utils.js";
 
 export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
   return {
@@ -46,7 +52,11 @@ export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
         if (Array.isArray(hover.contents)) {
           for (const c of hover.contents) {
             if (typeof c === "string") contents.push(c);
-            else if (c && typeof c === "object" && typeof (c as Record<string, unknown>).value === "string") {
+            else if (
+              c &&
+              typeof c === "object" &&
+              typeof (c as Record<string, unknown>).value === "string"
+            ) {
               contents.push((c as Record<string, unknown>).value as string);
             }
           }
@@ -77,7 +87,14 @@ export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
           return success({ found: false, file, line, column });
         }
 
-        return success({ found: true, file, line, column, signature, raw: contents });
+        return success({
+          found: true,
+          file,
+          line,
+          column,
+          signature,
+          raw: contents,
+        });
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out getting type signature");

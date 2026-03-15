@@ -42,12 +42,13 @@ export function createBridgeStatusTool(
           }),
         },
         uptimeSeconds: Math.round(uptimeMs / 1000),
-        ...(orchestrator !== null && orchestrator !== undefined && {
-          tokenBudget: {
-            activeTokens: orchestrator.activeTokens,
-            maxTokenBudget: ClaudeOrchestrator.MAX_TOKEN_BUDGET,
-          },
-        }),
+        ...(orchestrator !== null &&
+          orchestrator !== undefined && {
+            tokenBudget: {
+              activeTokens: orchestrator.activeTokens,
+              maxTokenBudget: ClaudeOrchestrator.MAX_TOKEN_BUDGET,
+            },
+          }),
         hint: extensionConnected
           ? "All tools available."
           : "Extension disconnected — extension-dependent tools (LSP, terminal, debugging, etc.) are temporarily unavailable. " +

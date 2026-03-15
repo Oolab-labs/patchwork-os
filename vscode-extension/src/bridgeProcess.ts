@@ -1,10 +1,10 @@
 import { execFile, spawn } from "node:child_process";
+import type * as cp from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fsp from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
-import type * as cp from "node:child_process";
 import * as vscode from "vscode";
 
 import { LOCK_DIR } from "./constants";
@@ -64,11 +64,15 @@ export class BridgeProcess {
   }
 
   private log(msg: string): void {
-    this.output.appendLine(`${new Date().toISOString()} [BridgeProcess:${path.basename(this.workspacePath)}] ${msg}`);
+    this.output.appendLine(
+      `${new Date().toISOString()} [BridgeProcess:${path.basename(this.workspacePath)}] ${msg}`,
+    );
   }
 
   isAlive(): boolean {
-    return this.child !== null && !this.child.killed && this.child.exitCode === null;
+    return (
+      this.child !== null && !this.child.killed && this.child.exitCode === null
+    );
   }
 
   /** Resolve the path to the `claude-ide-bridge` binary. */
@@ -105,7 +109,10 @@ export class BridgeProcess {
       /* lockDir may already exist */
     }
 
-    const SENTINEL_CONTENT = JSON.stringify({ pid: process.pid, startedAt: Date.now() });
+    const SENTINEL_CONTENT = JSON.stringify({
+      pid: process.pid,
+      startedAt: Date.now(),
+    });
     const SENTINEL_TTL_MS = 60_000; // sentinels older than 60s are always stale
 
     try {
@@ -121,7 +128,8 @@ export class BridgeProcess {
         const raw = await fsp.readFile(this.sentinelPath, "utf-8");
         const parsed = JSON.parse(raw) as { pid?: number; startedAt?: number };
         const pid = typeof parsed.pid === "number" ? parsed.pid : Number.NaN;
-        const startedAt = typeof parsed.startedAt === "number" ? parsed.startedAt : 0;
+        const startedAt =
+          typeof parsed.startedAt === "number" ? parsed.startedAt : 0;
 
         // Treat as stale if TTL expired (guards against PID reuse)
         if (Date.now() - startedAt > SENTINEL_TTL_MS) {
@@ -175,7 +183,10 @@ export class BridgeProcess {
           for (const file of files) {
             if (!file.endsWith(".lock")) continue;
             try {
-              const raw = await fsp.readFile(path.join(this.lockDir, file), "utf-8");
+              const raw = await fsp.readFile(
+                path.join(this.lockDir, file),
+                "utf-8",
+              );
               const content = JSON.parse(raw) as {
                 authToken?: string;
                 pid?: number;
@@ -186,7 +197,8 @@ export class BridgeProcess {
               if (!content.authToken) continue;
               if (
                 content.workspace &&
-                path.resolve(content.workspace) !== path.resolve(this.workspacePath)
+                path.resolve(content.workspace) !==
+                  path.resolve(this.workspacePath)
               )
                 continue;
 
@@ -194,7 +206,11 @@ export class BridgeProcess {
               if (Number.isNaN(port)) continue;
 
               this.clearLockPoll();
-              resolve({ port, authToken: content.authToken, pid: content.pid ?? -1 });
+              resolve({
+                port,
+                authToken: content.authToken,
+                pid: content.pid ?? -1,
+              });
               return;
             } catch {
               /* skip unreadable lock files */
@@ -203,7 +219,11 @@ export class BridgeProcess {
 
           if (Date.now() - start > this.lockPollTimeoutMs) {
             this.clearLockPoll();
-            reject(new Error(`Bridge did not write a lock file within ${LOCK_POLL_TIMEOUT_MS / 1000}s`));
+            reject(
+              new Error(
+                `Bridge did not write a lock file within ${LOCK_POLL_TIMEOUT_MS / 1000}s`,
+              ),
+            );
           }
         } catch (err) {
           this.clearLockPoll();
@@ -233,7 +253,9 @@ export class BridgeProcess {
 
     const acquired = await this.acquireSentinel();
     if (!acquired) {
-      this.log("Another process is already spawning the bridge — will poll for lock file instead.");
+      this.log(
+        "Another process is already spawning the bridge — will poll for lock file instead.",
+      );
       // Wait for the other spawner to finish and pick up the lock file
       try {
         const event = await this.waitForLockFile();
@@ -321,20 +343,25 @@ export class BridgeProcess {
     if (this.restartCount >= MAX_RESTARTS) {
       const msg = `Bridge crashed ${MAX_RESTARTS} times — giving up.`;
       this.log(msg);
-      void vscode.window.showErrorMessage(
-        `Claude IDE Bridge failed to start (crashed ${MAX_RESTARTS} times). Check the Claude IDE Bridge output channel.`,
-        "Show Logs",
-      ).then((choice) => {
-        if (choice === "Show Logs") this.output.show();
-      });
+      void vscode.window
+        .showErrorMessage(
+          `Claude IDE Bridge failed to start (crashed ${MAX_RESTARTS} times). Check the Claude IDE Bridge output channel.`,
+          "Show Logs",
+        )
+        .then((choice) => {
+          if (choice === "Show Logs") this.output.show();
+        });
       // Notify the connection so it falls back to watching for a manually-started bridge
       this.onStartupFailed?.(msg);
       return;
     }
 
-    const delay = RESTART_BACKOFF[Math.min(this.restartCount, RESTART_BACKOFF.length - 1)];
+    const delay =
+      RESTART_BACKOFF[Math.min(this.restartCount, RESTART_BACKOFF.length - 1)];
     this.restartCount++;
-    this.log(`Restarting in ${delay}ms (attempt ${this.restartCount}/${MAX_RESTARTS})...`);
+    this.log(
+      `Restarting in ${delay}ms (attempt ${this.restartCount}/${MAX_RESTARTS})...`,
+    );
 
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
@@ -359,7 +386,11 @@ export class BridgeProcess {
     return new Promise((resolve) => {
       const child = this.child!;
       const forceKill = setTimeout(() => {
-        try { child.kill("SIGKILL"); } catch { /* best-effort */ }
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* best-effort */
+        }
         resolve();
       }, 3_000);
 
