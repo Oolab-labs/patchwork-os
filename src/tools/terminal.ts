@@ -709,6 +709,11 @@ export function createSendTerminalCommandTool(
             type: "boolean" as const,
             description: "Append newline to execute as command (default: true)",
           },
+          isCommand: {
+            type: "boolean" as const,
+            description:
+              "Set to false when sending REPL input or raw keystrokes (e.g. typing into a Python/Node REPL, pasting text) — skips shell-command validation. Default: true.",
+          },
         },
         additionalProperties: false as const,
       },
@@ -721,6 +726,7 @@ export function createSendTerminalCommandTool(
       const name = optionalString(args, "name", 256);
       const index = optionalInt(args, "index", 0, 100);
       const addNewline = optionalBool(args, "addNewline") ?? true;
+      const isCommand = optionalBool(args, "isCommand") ?? true;
 
       if (name === undefined && index === undefined) {
         return error(
@@ -730,8 +736,10 @@ export function createSendTerminalCommandTool(
       const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
       if (indexErr) return error(indexErr);
 
-      const cmdErr = validateCommand(text, commandAllowlist);
-      if (cmdErr) return error(cmdErr);
+      if (isCommand) {
+        const cmdErr = validateCommand(text, commandAllowlist);
+        if (cmdErr) return error(cmdErr);
+      }
 
       try {
         const result = await extensionClient.sendTerminalCommand(

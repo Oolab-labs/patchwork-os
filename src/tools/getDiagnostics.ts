@@ -44,7 +44,16 @@ export function createGetDiagnosticsTool(
 ) {
   // Per-linter independent caches
   const caches = new Map<string, LinterCache>();
-  const runningPromises = new Map<string, Promise<LintDiagnostic[]>>();
+  // Tracks in-flight linter runs. Stores the origin signal alongside the promise
+  // so we can detect when the original caller was aborted and start a fresh run
+  // for a new non-aborted caller rather than deduping onto a doomed promise.
+  const runningPromises = new Map<
+    string,
+    {
+      promise: Promise<LintDiagnostic[]>;
+      originSignal: AbortSignal | undefined;
+    }
+  >();
 
   // Detect available linters at registration time
   const availableLinters = probes
@@ -68,14 +77,29 @@ export function createGetDiagnosticsTool(
       return cached.data;
     }
 
-    // Dedup concurrent runs — but don't serve a dedup'd result if our signal is fine
-    // and the existing promise was from an aborted request
-    let running = runningPromises.get(linter.name);
-    if (running && signal?.aborted) {
-      return running; // We're aborted anyway, dedup is fine
+    // Dedup concurrent runs, with one exception: if the in-flight run was
+    // started by a signal that has since been aborted, that run will resolve
+    // to [] without caching. A new non-aborted caller must start a fresh run
+    // rather than deduping onto the doomed promise.
+    let entry = runningPromises.get(linter.name);
+    if (entry?.originSignal?.aborted) {
+      entry = undefined; // origin caller aborted — treat as no run in-flight
     }
-    if (!running) {
-      running = linter
+    if (entry && signal?.aborted) {
+      return entry.promise; // caller is aborted anyway — dedup is fine
+    }
+    if (!entry) {
+      // Capture a stable reference to this run so the .finally() cleanup
+      // only removes the entry it created (not a newer run that started
+      // between the origin signal aborting and .finally() firing).
+      const run: {
+        promise: Promise<LintDiagnostic[]>;
+        originSignal: AbortSignal | undefined;
+      } = {
+        promise: null as unknown as Promise<LintDiagnostic[]>,
+        originSignal: signal,
+      };
+      run.promise = linter
         .run(workspace, signal)
         .then((data) => {
           caches.set(linter.name, { data, timestamp: Date.now() });
@@ -94,11 +118,16 @@ export function createGetDiagnosticsTool(
           return [] as LintDiagnostic[];
         })
         .finally(() => {
-          runningPromises.delete(linter.name);
+          // Only evict if this run is still the current entry — a newer run
+          // may have already replaced it while this one was aborting.
+          if (runningPromises.get(linter.name) === run) {
+            runningPromises.delete(linter.name);
+          }
         });
-      runningPromises.set(linter.name, running);
+      runningPromises.set(linter.name, run);
+      entry = run;
     }
-    return running;
+    return entry.promise;
   }
 
   return {
