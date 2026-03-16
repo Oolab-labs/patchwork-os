@@ -4,7 +4,7 @@ Complete feature reference for the Claude IDE Bridge MCP server and VS Code exte
 
 ## Overview
 
-Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 135+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state. The extension supports remote extension hosts (VS Code Remote-SSH, Cursor SSH) via `extensionKind: ["workspace"]`.
+Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 136+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state. The extension supports remote extension hosts (VS Code Remote-SSH, Cursor SSH) via `extensionKind: ["workspace"]`.
 
 The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code CLI** via WebSocket — both sessions share the same running bridge, enabling seamless context handoff between the two clients.
 
@@ -110,8 +110,9 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `checkScope` | Verify current work stays within defined scope |
 | `expandScope` | Request scope expansion with justification |
 | `getActivityLog` | Session metrics — tool call counts, durations, errors |
-| `setHandoffNote` | Persist a free-text context summary to `~/.claude/ide/handoff-note.json`. Shared across all MCP sessions (Desktop, CLI, HTTP). Use when switching clients mid-task. |
-| `getHandoffNote` | Read the handoff note left by a previous session. Returns `note`, `updatedAt`, `updatedBy` (session ID), and human-readable `age`. Returns `null` note if none saved. |
+| `getBridgeStatus` | Get current bridge status: extension connection state, circuit breaker status, active sessions, and uptime. Use to diagnose when tools are unavailable or the extension appears disconnected. |
+| `setHandoffNote` | Persist a free-text context summary to `~/.claude/ide/handoff-note.json`. Shared across all MCP sessions (Desktop, CLI, HTTP). Use when switching clients mid-task. Note content is capped at 10 000 chars. |
+| `getHandoffNote` | Read the handoff note left by a previous session. Returns `note`, `updatedAt`, `updatedBy` (`"cli"`), and human-readable `age`. Returns `null` note if none saved. |
 
 ---
 
@@ -533,6 +534,8 @@ Launches tmux session with 4 panes: orchestrator, bridge, Claude CLI, remote con
 --claude-binary <path>    Path to claude binary (default: claude)
 --automation              Enable event-driven automation hooks
 --automation-policy <path> Path to JSON automation policy file
+--plugin <path>           Load a plugin from a directory (repeatable; requires manifest)
+--plugin-watch            Hot-reload plugins on file change (requires --plugin)
 --verbose                 Debug logging
 --jsonl                   Structured JSONL events to stderr
 ```

@@ -84,13 +84,29 @@ Domain data connections, state management, and protocol flows that are not expre
 | `entries` | `ActivityEntry[]` | Capped at `maxEntries` (default 500); batch-evicted at 120% capacity |
 | `lifecycleEntries` | `LifecycleEntry[]` | Same cap; records connection lifecycle events |
 | `nextId` | `number` | Shared monotonic counter across both entry types (enables timeline merge) |
-| `persistPath` | `string \| null` | Set via `setPersistPath()`; enables JSONL append to `~/.claude/ide/activity-<port>.jsonl` |
+| `persistPath` | `string \| null` | Set via `setPersistPath()`; enables JSONL append to `~/.claude/ide/activity-<port>.jsonl` (respects `CLAUDE_CONFIG_DIR`) |
+
+Entries loaded from disk are type-validated on read: `status` must be a string, `timestamp` a number, and `durationMs` a number or undefined. Entries failing validation are silently skipped — this prevents corrupted or truncated JSONL lines from poisoning in-memory state.
 
 ### SessionCheckpoint (`sessionCheckpoint.ts`)
 | State | Type | Lifecycle |
 |-------|------|-----------|
-| `checkpointPath` | `string` | `~/.claude/ide/checkpoint-<port>.json` |
+| `checkpointPath` | `string` | `~/.claude/ide/checkpoint-<port>.json` (respects `CLAUDE_CONFIG_DIR`) |
+| `workspace` | `string \| undefined` | Passed at construction; written to each `CheckpointData.workspace` field; used by `loadLatest()` to filter out checkpoints from other instances |
 | `intervalHandle` | `ReturnType<setInterval> \| null` | Writes every 30s (unref'd — doesn't block process exit) |
+
+**`CheckpointData` schema** (stored in checkpoint JSON):
+```typescript
+{
+  savedAt: number;           // Unix ms timestamp
+  workspace?: string;        // Bridge workspace path — used to filter cross-instance checkpoints
+  sessions: Array<{
+    sessionId: string;
+    openedFiles: string[];
+  }>;
+}
+```
+`loadLatest()` accepts an optional `workspace` param. When provided, it skips checkpoints whose `workspace` field is set but does not match — this prevents cross-instance contamination when multiple bridges share the same `~/.claude/ide/` directory. Legacy checkpoints without the `workspace` field are still loaded (upgrade compat). Stale checkpoints (future `savedAt` > `Date.now() + 5s`) are rejected and emit `console.warn`.
 
 ---
 
@@ -120,6 +136,7 @@ Domain data connections, state management, and protocol flows that are not expre
 - Lock files cleaned on startup (`cleanStale()` removes dead PIDs)
 - Lock file deleted on graceful shutdown
 - `isBridge: true` in the lock file distinguishes the bridge from IDE-owned lock files (e.g. Windsurf writes its own lock in `~/.claude/ide/`); the stdio shim filters on this field to avoid connecting to the wrong process
+- `CLAUDE_CONFIG_DIR` overrides `~/.claude` for **all** persistence paths: lock file, checkpoint, activity log, and task queue. Set this env var to isolate multiple bridge instances (e.g. in CI) or to use a non-home-directory config location.
 
 ---
 

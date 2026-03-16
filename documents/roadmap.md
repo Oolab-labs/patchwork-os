@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.1.31 — 2026-03-17)
+## Current State (v2.1.32 — 2026-03-17)
 
-- 135+ MCP tools; 1214 bridge tests + 362 extension tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
-- Extension v1.0.2 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.23`)
+- 135+ MCP tools; 1222+ bridge tests + 362 extension tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
+- Extension v1.0.5 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.32`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
@@ -22,6 +22,15 @@ Development direction and exploration guidance. Living document — update as pr
 - Remote Desktop IDE support: extension runs in remote extension host (SSH/Cursor SSH); `print-token` CLI subcommand for headless VPS setup
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.1.32 shipped (2026-03-17) — session persistence correctness & robustness sweep:**
+- `sessionCheckpoint.ts`: `CheckpointData` now includes `workspace?: string` field; `loadLatest()` accepts optional `workspace` param and filters checkpoints by workspace — prevents cross-instance contamination when multiple bridge instances share the same `~/.claude/ide/` directory; legacy checkpoints without the field still load (upgrade compat)
+- `sessionCheckpoint.ts`: stale checkpoint rejection now emits `console.warn` instead of silently discarding — improves diagnosability on systems with significant clock skew
+- `bridge.ts`: workspace passed to `SessionCheckpoint` constructor and `loadLatest()` — ensures checkpoint isolation per workspace
+- `claudeOrchestrator.ts`: task file path respects `CLAUDE_CONFIG_DIR` env var instead of being hardcoded to `~/.claude` — consistent with lock file, activity log, and checkpoint path handling
+- `handoffNote.ts`: handler enforces 10 000 char limit on `note` content; `updatedBy` is now always `"cli"` (was incorrectly set to the raw session UUID)
+- `activityLog.ts`: entries loaded from disk are now type-validated (`status`, `timestamp`, `durationMs` checked) — prevents corrupted on-disk entries from poisoning in-memory state
+- 8 new tests (checkpoint workspace filtering: 3, handoff validation: 2, activityLog load validation: 2, orchestrator config dir: 1); 1222 bridge tests total (↑ from 1214)
 
 **v2.1.31 shipped (2026-03-16) — plugin hot-reload bug hunt fixes:**
 - `transport.ts`: `deregisterToolsByPrefix("")` empty-prefix guard — prevents accidental wipe of all tools
@@ -318,8 +327,8 @@ Implemented in `src/prompts.ts`. No extension required. Transport handles `promp
 - `organizeImports` fallback shipped — biome → prettier chain; 3 tests covering both CLI paths and the "no CLI available" error
 - All others (terminal, debugger, LSP, decorations, VS Code commands) have no viable fallback — intentionally `extensionRequired`
 
-### Test Coverage *(complete — 2026-03-16)*
-- 1158 bridge tests + 362 extension tests, 97 + 40 files; 0 failures
+### Test Coverage *(complete — 2026-03-17)*
+- 1222+ bridge tests + 362 extension tests, 100 files; 0 failures
 - Integration tests: 6 files, full WebSocket round-trip coverage
 - All bridge tool files and extension handler files now have unit tests
 - `searchAndReplace` rg-integration suite now runs on macOS (Claude binary shim) in addition to Linux CI; mocked-rg logic suite runs on all platforms
@@ -407,8 +416,11 @@ Implemented in `src/prompts.ts`. No extension required. Transport handles `promp
 - Accepts named `export function register()` or default export
 - Collision detection, dedup, prefix enforcement, per-plugin error isolation
 
-### Persistent Session State *(Shipped — v2.1.27)*
+### Persistent Session State *(Shipped — v2.1.27; correctness fixes in v2.1.32)*
 - `openedFiles` restored from checkpoint on restart — first connecting session is seeded with the union of all previously-tracked files
+- Checkpoint data is now workspace-scoped (`workspace` field in `CheckpointData`) — multiple bridge instances no longer cross-contaminate each other's checkpoints
+- All persistence paths (`checkpoint`, `activity log`, `task queue`) respect `CLAUDE_CONFIG_DIR` env var
+- Activity log entries are type-validated on load from disk; `handoffNote.updatedBy` is always `"cli"` (stable, not a session UUID)
 - Activity log already persisted to disk (v2.0.x); diagnostics are live from extension/CLI (no cache to restore)
 - Task queue already persisted (v2.1.8)
 
