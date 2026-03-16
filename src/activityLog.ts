@@ -71,7 +71,11 @@ export class ActivityLog {
           if (obj.kind === "tool") {
             if (
               typeof obj.tool !== "string" ||
-              typeof obj.durationMs !== "number"
+              typeof obj.durationMs !== "number" ||
+              obj.durationMs < 0 ||
+              !Number.isFinite(obj.durationMs) ||
+              (obj.status !== "success" && obj.status !== "error") ||
+              typeof obj.timestamp !== "string"
             ) {
               process.stderr.write(
                 `[activityLog] Skipping invalid tool entry (missing/wrong-type fields): ${line}\n`,

@@ -659,7 +659,10 @@ export class Bridge {
     );
 
     // 6. Check for recent checkpoint from previous run and restore openedFiles
-    const prevCheckpoint = SessionCheckpoint.loadLatest();
+    const prevCheckpoint = SessionCheckpoint.loadLatest(
+      5 * 60 * 1000,
+      this.config.workspace,
+    );
     if (prevCheckpoint) {
       const ageSec = Math.round((Date.now() - prevCheckpoint.savedAt) / 1000);
       const allFiles = extractRestoredFiles(
@@ -687,7 +690,7 @@ export class Bridge {
     );
 
     // 8. Start session checkpoint (write every 30s)
-    this.checkpoint = new SessionCheckpoint(port);
+    this.checkpoint = new SessionCheckpoint(port, this.config.workspace);
     this.checkpoint.start(() => this._buildCheckpoint(port));
 
     // Register shutdown handlers

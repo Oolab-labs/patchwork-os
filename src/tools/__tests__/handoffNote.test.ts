@@ -57,7 +57,7 @@ describe("handoffNote tools", () => {
         (getResult.content[0] as { text: string }).text,
       );
       expect(getContent.note).toBe("Working on auth bug in login.ts:42");
-      expect(getContent.updatedBy).toBe("session-abc");
+      expect(getContent.updatedBy).toBe("cli");
       expect(getContent.age).toMatch(/m ago|h ago/);
     });
 
@@ -80,6 +80,32 @@ describe("handoffNote tools", () => {
       const stat = fs.statSync(notePath);
       // mode & 0o777 should be 0o600
       expect(stat.mode & 0o777).toBe(0o600);
+    });
+
+    it("rejects notes exceeding 10,000 characters", async () => {
+      const setter = createSetHandoffNoteTool("s1");
+      const longNote = "x".repeat(10_001);
+      const result = await setter.handler({ note: longNote });
+      expect(result.isError).toBe(true);
+      expect((result.content[0] as { text: string }).text).toMatch(/10,000/);
+    });
+
+    it("accepts notes at exactly 10,000 characters", async () => {
+      const setter = createSetHandoffNoteTool("s1");
+      const exactNote = "x".repeat(10_000);
+      const result = await setter.handler({ note: exactNote });
+      expect(result.isError).toBeFalsy();
+    });
+
+    it("stores updatedBy as 'cli' not a raw session UUID", async () => {
+      const setter = createSetHandoffNoteTool("some-uuid-1234");
+      await setter.handler({ note: "test" });
+
+      const getter = createGetHandoffNoteTool();
+      const result = await getter.handler({});
+      const content = JSON.parse((result.content[0] as { text: string }).text);
+      expect(content.updatedBy).toBe("cli");
+      expect(content.updatedBy).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/); // not a UUID
     });
   });
 });

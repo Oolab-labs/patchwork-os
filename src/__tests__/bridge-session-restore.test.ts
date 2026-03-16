@@ -231,7 +231,12 @@ describe("Bridge session restore: first-session seeding", () => {
     ws2.close();
   });
 
-  it("restored set is the exact same object passed in (no copy overhead)", async () => {
+  it("restored set is passed directly to the first session (scaffold uses same reference)", async () => {
+    // NOTE: This scaffold passes the restoredFiles Set directly (no copy).
+    // bridge.ts creates `new Set(captured)` — a copy — so in production code
+    // the session's openedFiles will NOT be the same object reference as the
+    // captured checkpoint set. This test verifies the scaffold's own behaviour,
+    // not the production copy semantics.
     const restored = new Set(["/exact.ts"]);
     const { server, authToken, sessions } = buildRestorationScaffold(restored);
     servers.push(server);
@@ -241,7 +246,10 @@ describe("Bridge session restore: first-session seeding", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     const sessionValues = [...sessions.values()];
-    expect(sessionValues[0]!.openedFiles).toBe(restored); // same reference
+    // Contents must match the restored set
+    expect([...sessionValues[0]!.openedFiles]).toEqual([...restored]);
+    // The scaffold passes the same reference; production bridge.ts passes a copy (not same ref)
+    expect(sessionValues[0]!.openedFiles).toBe(restored); // scaffold-specific: same ref
 
     ws.close();
   });

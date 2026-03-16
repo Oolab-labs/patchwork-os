@@ -529,6 +529,19 @@ When you restart the bridge (e.g. after an update or crash), existing sessions n
 - **Claude Desktop:** The stdio shim reconnects automatically — no app restart needed. Only restart Claude Desktop if the shim process itself died (check MCP Logs in Settings → Developer).
 - **VS Code extension:** The extension reconnects automatically. If the bridge was updated, **reload the VS Code window** (`Developer: Reload Window`) so the extension picks up the new version.
 
+### Persistent Sessions (beta)
+
+The bridge saves a checkpoint every 30 seconds to `~/.claude/ide/checkpoint-<port>.json`. On restart, it reads the most recent checkpoint to restore state.
+
+**What persists:**
+
+- **Open-file tracking** — restored only after a **crash or kill signal**, not after a clean `stop()` (which deletes the checkpoint). The first Claude Code session to reconnect after a crash receives the merged list of files that were open across all prior sessions. Subsequent sessions in the same run start empty.
+- **Task history** (when `--claude-driver` is enabled) — saved to `~/.claude/ide/tasks-<port>.json` and restored on every restart, including clean stops.
+
+**Staleness window:** Checkpoints older than **5 minutes** are silently ignored and no restore occurs. A `console.warn` is emitted when a stale checkpoint is rejected.
+
+**Multi-workspace safety:** Each checkpoint is tagged with its workspace path. Two bridge instances running on different workspaces will not share or cross-contaminate each other's checkpoints.
+
 ### Reduce duplicate git instructions
 
 Claude Code ships with its own built-in commit/PR guidance. When using the bridge's dedicated git tools (`gitCommit`, `gitPush`, `gitCreatePR`, etc.), you can suppress the duplicate Claude Code instructions by adding to `~/.claude/settings.json`:

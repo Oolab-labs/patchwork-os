@@ -200,4 +200,82 @@ describe("SessionCheckpoint.loadLatest", () => {
     });
     expect(SessionCheckpoint.loadLatest()).toBeNull();
   });
+
+  it("returns null when checkpoint savedAt is exactly past maxAgeMs (6 min old, default 5 min TTL)", () => {
+    const stale = { ...sampleData, savedAt: Date.now() - 6 * 60 * 1000 };
+    mockFs.readdirSync = vi.fn(() => ["checkpoint-9999.json"] as any);
+    mockFs.readFileSync = vi.fn(() => JSON.stringify(stale));
+    expect(SessionCheckpoint.loadLatest()).toBeNull();
+  });
+
+  it("write then loadLatest round-trip returns matching data", () => {
+    // Capture the JSON written by write() so loadLatest can read it back
+    let writtenJson = "";
+    mockFs.writeFileSync = vi.fn((_path: unknown, data: unknown) => {
+      writtenJson = data as string;
+    });
+    mockFs.renameSync = vi.fn();
+    mockFs.chmodSync = vi.fn();
+    mockFs.readdirSync = vi.fn(() => ["checkpoint-5555.json"] as any);
+    mockFs.readFileSync = vi.fn(
+      () => writtenJson || JSON.stringify(sampleData),
+    );
+
+    const sc = new SessionCheckpoint(5555);
+    const data: CheckpointData = {
+      ...sampleData,
+      port: 5555,
+      savedAt: Date.now(),
+    };
+    sc.write(data);
+
+    const result = SessionCheckpoint.loadLatest();
+    expect(result).not.toBeNull();
+    expect(result?.port).toBe(5555);
+    expect(result?.sessions).toHaveLength(1);
+  });
+
+  it("filters out checkpoints from a different workspace", () => {
+    const checkpointA: CheckpointData = {
+      ...sampleData,
+      savedAt: Date.now(),
+      workspace: "/tmp/workspace-a",
+    };
+    mockFs.readdirSync = vi.fn(() => ["checkpoint-7777.json"] as any);
+    mockFs.readFileSync = vi.fn(() => JSON.stringify(checkpointA));
+    // Loading with workspace-b should return null — no cross-contamination
+    expect(
+      SessionCheckpoint.loadLatest(5 * 60 * 1000, "/tmp/workspace-b"),
+    ).toBeNull();
+  });
+
+  it("accepts checkpoints from the matching workspace", () => {
+    const checkpointA: CheckpointData = {
+      ...sampleData,
+      savedAt: Date.now(),
+      workspace: "/tmp/workspace-a",
+    };
+    mockFs.readdirSync = vi.fn(() => ["checkpoint-7777.json"] as any);
+    mockFs.readFileSync = vi.fn(() => JSON.stringify(checkpointA));
+    const result = SessionCheckpoint.loadLatest(
+      5 * 60 * 1000,
+      "/tmp/workspace-a",
+    );
+    expect(result).not.toBeNull();
+    expect(result?.workspace).toBe("/tmp/workspace-a");
+  });
+
+  it("accepts checkpoints without a workspace field (upgrade compat)", () => {
+    // Old checkpoints (pre-workspace field) have no workspace property
+    const legacyCheckpoint = { ...sampleData, savedAt: Date.now() };
+    (legacyCheckpoint as Partial<CheckpointData>).workspace = undefined;
+    mockFs.readdirSync = vi.fn(() => ["checkpoint-8888.json"] as any);
+    mockFs.readFileSync = vi.fn(() => JSON.stringify(legacyCheckpoint));
+    // Even when filtering by workspace, legacy checkpoints are accepted
+    const result = SessionCheckpoint.loadLatest(
+      5 * 60 * 1000,
+      "/tmp/any-workspace",
+    );
+    expect(result).not.toBeNull();
+  });
 });

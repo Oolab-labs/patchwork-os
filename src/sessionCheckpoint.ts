@@ -16,13 +16,17 @@ export interface CheckpointData {
   sessions: SessionSnapshot[];
   extensionConnected: boolean;
   gracePeriodMs: number;
+  /** Absolute path of the workspace this checkpoint belongs to. Used to prevent
+   *  cross-contamination when multiple bridge instances run on different workspaces. */
+  workspace?: string;
 }
 
 export class SessionCheckpoint {
   private checkpointPath: string;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
+  private readonly workspace: string | undefined;
 
-  constructor(port: number) {
+  constructor(port: number, workspace?: string) {
     const configDir =
       process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
     this.checkpointPath = path.join(
@@ -30,6 +34,7 @@ export class SessionCheckpoint {
       "ide",
       `checkpoint-${port}.json`,
     );
+    this.workspace = workspace;
   }
 
   /** Start writing checkpoints every `intervalMs` ms (default: 30s). */
@@ -57,7 +62,15 @@ export class SessionCheckpoint {
       // Write atomically: write to a temp file then rename so a crash mid-write
       // never leaves a truncated or partially-written checkpoint file.
       const tmpPath = `${this.checkpointPath}.tmp`;
-      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+      // Include workspace so loadLatest can filter by workspace and prevent
+      // cross-contamination between bridge instances on different workspaces.
+      const dataWithWorkspace: CheckpointData =
+        this.workspace !== undefined
+          ? { ...data, workspace: this.workspace }
+          : data;
+      fs.writeFileSync(tmpPath, JSON.stringify(dataWithWorkspace, null, 2), {
+        mode: 0o600,
+      });
       fs.renameSync(tmpPath, this.checkpointPath);
       // Ensure restrictive permissions even if the file pre-existed with a wider mode.
       fs.chmodSync(this.checkpointPath, 0o600);
@@ -74,8 +87,18 @@ export class SessionCheckpoint {
     }
   }
 
-  /** Load the most recent checkpoint for any port (finds newest file). */
-  static loadLatest(maxAgeMs = 5 * 60 * 1000): CheckpointData | null {
+  /** Load the most recent checkpoint for any port (finds newest file).
+   *
+   * @param maxAgeMs  Reject checkpoints older than this (default: 5 minutes).
+   * @param workspace If provided, only return checkpoints whose `workspace`
+   *                  field matches. Checkpoints written without a workspace
+   *                  field (pre-v2.1.32 format) are always accepted so that
+   *                  upgrading users don't lose their checkpoint on first boot.
+   */
+  static loadLatest(
+    maxAgeMs = 5 * 60 * 1000,
+    workspace?: string,
+  ): CheckpointData | null {
     const configDir =
       process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
     const ideDir = path.join(configDir, "ide");
@@ -95,6 +118,15 @@ export class SessionCheckpoint {
           const raw = fs.readFileSync(file, "utf8");
           const checkpoint = JSON.parse(raw) as CheckpointData;
           if (!Array.isArray(checkpoint.sessions)) continue; // skip malformed
+          // Filter by workspace when both the caller and the checkpoint specify one.
+          // Checkpoints without a workspace field are accepted unconditionally (upgrade compat).
+          if (
+            workspace !== undefined &&
+            checkpoint.workspace !== undefined &&
+            checkpoint.workspace !== workspace
+          ) {
+            continue;
+          }
           parsed.push({ file, checkpoint });
         } catch {
           // skip unreadable or unparseable files
@@ -113,7 +145,12 @@ export class SessionCheckpoint {
 
       // Use savedAt from the checkpoint JSON for staleness — filesystem mtime is
       // unreliable when a file is copied or restored from backup.
-      if (Date.now() - checkpoint.savedAt > maxAgeMs) return null;
+      if (Date.now() - checkpoint.savedAt > maxAgeMs) {
+        console.warn(
+          `[sessionCheckpoint] Ignoring stale checkpoint (savedAt=${new Date(checkpoint.savedAt).toISOString()}, age=${Math.round((Date.now() - checkpoint.savedAt) / 1000)}s > maxAge=${Math.round(maxAgeMs / 1000)}s)`,
+        );
+        return null;
+      }
 
       return checkpoint;
     } catch {

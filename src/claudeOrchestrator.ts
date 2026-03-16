@@ -3,6 +3,10 @@ import fs from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
+
+function getConfigDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+}
 import type { IClaudeDriver } from "./claudeDriver.js";
 
 export type TaskStatus =
@@ -332,7 +336,7 @@ export class ClaudeOrchestrator {
 
   /** Persist all tasks to disk for cross-session resumability. Best-effort. */
   async persistTasks(port: number): Promise<void> {
-    const filePath = join(homedir(), ".claude", "ide", `tasks-${port}.json`);
+    const filePath = join(getConfigDir(), "ide", `tasks-${port}.json`);
     const payload = {
       version: 1,
       savedAt: Date.now(),
@@ -347,7 +351,7 @@ export class ClaudeOrchestrator {
    * pre-cancellation state (pending = still pending, running = interrupted).
    * Must be called BEFORE cancel() so the status snapshot is accurate. */
   flushTasksToDisk(port: number): void {
-    const filePath = join(homedir(), ".claude", "ide", `tasks-${port}.json`);
+    const filePath = join(getConfigDir(), "ide", `tasks-${port}.json`);
     try {
       const payload = {
         version: 1,
@@ -369,7 +373,7 @@ export class ClaudeOrchestrator {
    *   tasks are restored as history; unknown future versions fall back to terminal-only
    */
   async loadPersistedTasks(port: number): Promise<void> {
-    const filePath = join(homedir(), ".claude", "ide", `tasks-${port}.json`);
+    const filePath = join(getConfigDir(), "ide", `tasks-${port}.json`);
     try {
       const raw = await readFile(filePath, "utf-8");
       // biome-ignore lint/suspicious/noExplicitAny: raw JSON from disk — validated field-by-field below

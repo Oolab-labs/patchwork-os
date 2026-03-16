@@ -45,11 +45,16 @@ export function createSetHandoffNoteTool(sessionId: string) {
     },
     handler: async (args: Record<string, unknown>) => {
       const note = args.note as string;
+      if (note.length > 10_000) {
+        return error(
+          `Note exceeds maximum length of 10,000 characters (got ${note.length}).`,
+        );
+      }
       const notePath = getNotePath();
       const content: HandoffNote = {
         note,
         updatedAt: Date.now(),
-        updatedBy: sessionId || "unknown",
+        updatedBy: "cli",
       };
       try {
         fs.mkdirSync(path.dirname(notePath), { recursive: true, mode: 0o700 });
