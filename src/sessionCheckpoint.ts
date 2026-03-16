@@ -87,26 +87,29 @@ export class SessionCheckpoint {
 
       if (files.length === 0) return null;
 
-      // Find the most recently modified checkpoint
-      let newest: { file: string; mtime: number } | null = null;
+      // Parse all candidate files and sort by savedAt (from JSON) descending.
+      // This is more reliable than mtime, which can be wrong after a file copy or backup restore.
+      const parsed: { file: string; checkpoint: CheckpointData }[] = [];
       for (const file of files) {
         try {
-          const stat = fs.statSync(file);
-          if (!newest || stat.mtimeMs > newest.mtime) {
-            newest = { file, mtime: stat.mtimeMs };
-          }
+          const raw = fs.readFileSync(file, "utf8");
+          const checkpoint = JSON.parse(raw) as CheckpointData;
+          if (!Array.isArray(checkpoint.sessions)) continue; // skip malformed
+          parsed.push({ file, checkpoint });
         } catch {
-          // skip unreadable files
+          // skip unreadable or unparseable files
         }
       }
-      if (!newest) return null;
+      if (parsed.length === 0) return null;
 
-      const raw = fs.readFileSync(newest.file, "utf8");
-      const checkpoint = JSON.parse(raw) as CheckpointData;
+      // Sort by savedAt descending — highest savedAt is most recent
+      parsed.sort((a, b) => b.checkpoint.savedAt - a.checkpoint.savedAt);
 
-      // Validate that sessions is an array — a non-array would crash callers
-      // that iterate over checkpoint.sessions without a guard.
-      if (!Array.isArray(checkpoint.sessions)) return null;
+      // biome-ignore lint/style/noNonNullAssertion: sorted array is non-empty (checked above)
+      const { checkpoint } = parsed[0]!;
+
+      // Reject checkpoints with a future savedAt (clock skew tolerance: 5s)
+      if (checkpoint.savedAt > Date.now() + 5_000) return null;
 
       // Use savedAt from the checkpoint JSON for staleness — filesystem mtime is
       // unreliable when a file is copied or restored from backup.

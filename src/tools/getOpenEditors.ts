@@ -4,11 +4,12 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { languageIdFromPath, success } from "./utils.js";
+import { languageIdFromPath, resolveFilePath, success } from "./utils.js";
 
 export function createGetOpenEditorsTool(
   openedFiles: Set<string>,
   extensionClient?: ExtensionClient,
+  workspace?: string,
 ) {
   return {
     schema: {
@@ -62,7 +63,16 @@ export function createGetOpenEditorsTool(
 
       // Fallback: files tracked locally via openFile calls
       const tabs = [];
+      const toEvict: string[] = [];
       for (const filePath of openedFiles) {
+        if (workspace) {
+          try {
+            resolveFilePath(filePath, workspace);
+          } catch {
+            toEvict.push(filePath);
+            continue;
+          }
+        }
         try {
           const stat = await fs.promises.stat(filePath);
           const estimatedLines = Math.max(1, Math.ceil(stat.size / 40));
@@ -83,9 +93,10 @@ export function createGetOpenEditorsTool(
           });
         } catch {
           // file may have been deleted
-          openedFiles.delete(filePath);
+          toEvict.push(filePath);
         }
       }
+      for (const p of toEvict) openedFiles.delete(p);
       return success({ tabs, source: "local-tracking" });
     },
   };

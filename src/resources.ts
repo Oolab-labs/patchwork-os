@@ -259,6 +259,26 @@ export function readResource(
     };
   }
 
+  // Re-check containment after resolving any intermediate symlinks in ancestor directories
+  // e.g. workspace/dir/link -> /etc would be caught here
+  let realPath: string;
+  let realWorkspace: string;
+  try {
+    realPath = fs.realpathSync(absPath);
+    realWorkspace = fs.realpathSync(normalizedWorkspace);
+  } catch {
+    return { error: `Resource not found: ${uri}`, code: "file_not_found" };
+  }
+  if (
+    realPath !== realWorkspace &&
+    !realPath.startsWith(realWorkspace + path.sep)
+  ) {
+    return {
+      error: `URI "${uri}" is outside the workspace`,
+      code: "workspace_escape",
+    };
+  }
+
   const ext = path.extname(absPath).toLowerCase();
   if (!TEXT_RESOURCE_EXTS.has(ext)) {
     return {
@@ -269,7 +289,7 @@ export function readResource(
 
   let text: string;
   try {
-    text = fs.readFileSync(absPath, "utf-8");
+    text = fs.readFileSync(realPath, "utf-8");
   } catch (err) {
     return {
       error: `Failed to read resource: ${err instanceof Error ? err.message : String(err)}`,

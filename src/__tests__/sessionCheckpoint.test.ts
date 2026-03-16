@@ -193,9 +193,9 @@ describe("SessionCheckpoint.loadLatest", () => {
     expect(SessionCheckpoint.loadLatest()).toBeNull();
   });
 
-  it("skips files where statSync throws", () => {
+  it("skips files where readFileSync throws", () => {
     mockFs.readdirSync = vi.fn(() => ["checkpoint-1234.json"] as any);
-    mockFs.statSync = vi.fn(() => {
+    mockFs.readFileSync = vi.fn(() => {
       throw new Error("ENOENT");
     });
     expect(SessionCheckpoint.loadLatest()).toBeNull();

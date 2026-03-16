@@ -138,8 +138,14 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof s.enabled !== "boolean") {
       throw new Error(`"onFileSave.enabled" must be a boolean`);
     }
-    if (!Array.isArray(s.patterns)) {
-      throw new Error(`"onFileSave.patterns" must be an array`);
+    if (
+      !Array.isArray(s.patterns) ||
+      s.patterns.length > 100 ||
+      s.patterns.some((p: unknown) => typeof p !== "string" || p.length > 1024)
+    ) {
+      throw new Error(
+        "onFileSave.patterns must be an array of ≤100 strings, each ≤1024 chars",
+      );
     }
     if (typeof s.prompt !== "string" || s.prompt.trim() === "") {
       throw new Error(`"onFileSave.prompt" must be a non-empty string`);
