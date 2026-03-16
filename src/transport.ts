@@ -44,7 +44,7 @@ interface ToolAnnotations {
   openWorldHint?: boolean;
 }
 
-interface ToolSchema {
+export interface ToolSchema {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
@@ -209,6 +209,7 @@ export class McpTransport {
     if (!this.initialized) {
       throw new Error("MCP client not yet initialized");
     }
+    const ws = this.activeWs;
 
     const id = `elicit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const request: JsonRpcRequest = {
@@ -237,19 +238,17 @@ export class McpTransport {
         requestedSchema,
       });
 
-      safeSend(this.activeWs!, JSON.stringify(request), this.logger).then(
-        (sent) => {
-          // Guard: only reject if the entry hasn't already been resolved (e.g. fast loopback
-          // where a response arrives before safeSend's .then() fires under backpressure).
-          if (!sent && this.pendingElicitations.has(id)) {
-            this.pendingElicitations.delete(id);
-            clearTimeout(timer);
-            reject(
-              new Error("Failed to send elicitation/create — socket closed"),
-            );
-          }
-        },
-      );
+      safeSend(ws, JSON.stringify(request), this.logger).then((sent) => {
+        // Guard: only reject if the entry hasn't already been resolved (e.g. fast loopback
+        // where a response arrives before safeSend's .then() fires under backpressure).
+        if (!sent && this.pendingElicitations.has(id)) {
+          this.pendingElicitations.delete(id);
+          clearTimeout(timer);
+          reject(
+            new Error("Failed to send elicitation/create — socket closed"),
+          );
+        }
+      });
     });
   }
 
@@ -263,7 +262,42 @@ export class McpTransport {
         `Invalid tool name "${schema.name}": must contain only letters, digits, and underscores`,
       );
     }
+    if (this.tools.has(schema.name)) {
+      throw new Error(
+        `Duplicate tool name "${schema.name}": a tool with this name is already registered`,
+      );
+    }
     this.tools.set(schema.name, { schema, handler, timeoutMs });
+  }
+
+  /** Upsert a tool by name — replaces if already registered, inserts if new. */
+  replaceTool(
+    schema: ToolSchema,
+    handler: ToolHandler,
+    timeoutMs?: number,
+  ): void {
+    if (!/^[a-zA-Z0-9_]+$/.test(schema.name)) {
+      throw new Error(
+        `Invalid tool name "${schema.name}": must contain only letters, digits, and underscores`,
+      );
+    }
+    // Clear cached AJV validator so the new schema is compiled on next use
+    this.schemaValidators.delete(schema.name);
+    this.tools.set(schema.name, { schema, handler, timeoutMs });
+  }
+
+  /** Remove all tools whose name starts with `prefix`. Returns count removed. */
+  deregisterToolsByPrefix(prefix: string): number {
+    if (!prefix) return 0;
+    let count = 0;
+    for (const name of [...this.tools.keys()]) {
+      if (name.startsWith(prefix)) {
+        this.tools.delete(name);
+        this.schemaValidators.delete(name);
+        count++;
+      }
+    }
+    return count;
   }
 
   detach(): void {
@@ -358,7 +392,12 @@ export class McpTransport {
 
         // Detect client-to-server responses (elicitation/create results, etc.)
         // JSON-RPC responses have no "method" but have an "id" and "result" or "error".
-        if (!msg.method && msg.id !== undefined && msg.id !== null) {
+        if (
+          !msg.method &&
+          msg.id !== undefined &&
+          msg.id !== null &&
+          ("result" in msg || "error" in msg)
+        ) {
           const pending = this.pendingElicitations.get(msg.id);
           if (pending) {
             this.pendingElicitations.delete(msg.id);
@@ -409,6 +448,26 @@ export class McpTransport {
               if (typeError) {
                 pending.reject(new Error(typeError));
               } else {
+                // Defense-in-depth: reject prototype-poisoning keys from object results
+                if (
+                  schemaType === "object" &&
+                  result !== null &&
+                  typeof result === "object"
+                ) {
+                  const dangerous = ["__proto__", "constructor", "prototype"];
+                  if (
+                    dangerous.some((k) =>
+                      Object.prototype.hasOwnProperty.call(result, k),
+                    )
+                  ) {
+                    pending.reject(
+                      new Error(
+                        "Elicitation result contains disallowed keys (__proto__, constructor, prototype)",
+                      ),
+                    );
+                    return; // don't fall through to pending.resolve
+                  }
+                }
                 pending.resolve(result);
               }
             }
