@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.1.11 — 2026-03-15)
+## Current State (v2.1.31 — 2026-03-16)
 
-- 120+ MCP tools; 926 bridge tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
-- Extension v1.0.1 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.11`)
+- 135+ MCP tools; 1214 bridge tests + 362 extension tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
+- Extension v1.0.2 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.23`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
@@ -19,6 +19,133 @@ Development direction and exploration guidance. Living document — update as pr
 - MCP elicitation (`elicitation: {}` capability): `McpTransport.elicit()` sends `elicitation/create` to Claude Code 2.1.76+
 - Deep security hardening: SSRF three-layer defense, Origin validation, rate limiting, lstatSync everywhere, TOCTOU mitigations, structured error codes
 - Claude Desktop + Cowork integration documented; `setHandoffNote`/`getHandoffNote` for cross-session context
+- Remote Desktop IDE support: extension runs in remote extension host (SSH/Cursor SSH); `print-token` CLI subcommand for headless VPS setup
+- `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
+- Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.1.31 shipped (2026-03-16) — plugin hot-reload bug hunt fixes:**
+- `transport.ts`: `deregisterToolsByPrefix("")` empty-prefix guard — prevents accidental wipe of all tools
+- `pluginWatcher.ts`: `stopped` flag checked in `scheduleReload` — post-`stop()` timers are no-ops
+- `pluginWatcher.ts`: `reloadInFlight` per-spec guard — concurrent reloads for the same plugin are serialised (second reload reschedules rather than racing)
+- `pluginWatcher.ts`: per-transport try/catch with rollback — `replaceTool` throw leaves old tools in place instead of split state + unhandled rejection
+- `bridge.ts`: `addTransport` moved before `registerAllTools` — closes race where reload fires between the two and new transport never gets patched
+- `streamableHttp.ts`: HTTP sessions now receive plugin tools — `getPluginTools` / `getPluginWatcher` callbacks threaded through `StreamableHttpHandler`; HTTP sessions tracked in `PluginWatcher` for live reload
+- `config.ts`: warning emitted when `--plugin-watch` is used without `--plugin`
+- Tests: false-positive cache-busting test fixed (handlers now called); `timeoutMs` forwarding actually asserted; `FSWatcher.close()` asserted in stop test; zero-transport reload → `getTools()` correctness; `loadPluginsFull` direct coverage; entrypoint path-traversal guard tested; `replaceTool` AJV cache clear proven via schema change; insert path tested; 4 new tests → 1214 total (↑ from 1210)
+
+**v2.1.30 shipped (2026-03-16) — plugin hot-reload:**
+- `--plugin-watch` CLI flag (and `pluginWatch: boolean` config key) — re-loads plugins automatically on file change
+- `src/pluginWatcher.ts` (new): `PluginWatcher` class with per-plugin `fs.watch()`, 300ms debounce, per-transport `deregisterToolsByPrefix` + `replaceTool`, `getTools()` for new-session correctness, and `stop()` for clean shutdown
+- `pluginLoader.ts`: `LoadedPlugin` type (spec + dir + manifest + tools), `loadOnePluginFull()` / `loadPluginsFull()` exported; cache-busting `?t=<timestamp>` import URL prevents Node ESM cache from returning stale module on reload
+- `transport.ts`: `replaceTool()` (upsert with AJV cache invalidation) and `deregisterToolsByPrefix()` (bulk remove by prefix)
+- Reload safety: failed reload leaves old tools in place; new sessions after reload get fresh tools via `pluginWatcher.getTools()`
+- `notifications/tools/list_changed` broadcast after every successful reload
+- 14 new tests (pluginWatcher: 8, transport: 3, pluginLoader: 3); 1210 bridge tests (↑ from 1196)
+
+**v2.1.29 shipped (2026-03-16) — correctness sweep:**
+- `bridge.ts`: restored `openedFiles` Set now copied (`new Set(captured)`) — sessions no longer share a mutable reference; null-out is atomic with capture (H-1, H-2)
+- `pluginLoader.ts`: `existingNames.add()` moved inside `loadOnePlugin` — collision guard correct even if loader is ever parallelised (H-3); entrypoint escape check uses `path.relative` not string prefix (L-2)
+- `organizeImports.ts`: both post-operation `readFileSync` calls wrapped in try/catch — graceful error instead of unhandled throw if file deleted after organize (H-4)
+- `transport.ts`: elicitation response detection requires `result` or `error` field — malformed requests no longer routed to `pendingElicitations` (M-1); misleading `safeResult` variable removed (M-2)
+- `sessionCheckpoint.ts`: `loadLatest` selects newest file by `savedAt` JSON field, not filesystem mtime — correct under file-copy/backup scenarios (M-3)
+- `getOpenEditors.ts`: `openedFiles.delete()` deferred until after iteration completes — transiently-unresolvable files no longer permanently evicted (M-4)
+- `index.ts`: gen-claude-md writes `.tmp` before backup rename — original intact if write fails (M-6); scoped npm package names (`@org/pkg`) produce valid `name` in generated package.json (L-4)
+
+**v2.1.28 shipped (2026-03-16) — security hardening round 2:**
+- Plugin entrypoint path traversal (CRITICAL): `pluginLoader.ts` containment check before `import()` — `startsWith(pluginDir + sep)` guard
+- Checkpoint path injection (CRITICAL): `extractRestoredFiles` now calls `resolveFilePath` per file; workspace-escaping paths silently dropped
+- `gen-plugin-stub` code injection (HIGH): `--name` format validated `/^[a-zA-Z0-9@._/-]{1,100}$/`; all template interpolations use `JSON.stringify()`
+- `install-extension` arbitrary executable (HIGH): `KNOWN_EDITORS` allowlist check for bare editor names before `execFileSync`
+- `resources.ts` multi-hop symlink bypass (HIGH): `realpathSync` re-check after `lstatSync` catches ancestor directory symlinks
+- Elicitation prototype pollution (MEDIUM): `__proto__` / `constructor` / `prototype` keys rejected in elicitation result handler
+- Checkpoint future timestamp bypass (MEDIUM): `savedAt > Date.now() + 5_000` guard in `loadLatest`
+- `automation.ts` pattern validation (LOW): `onFileSave.patterns` capped at ≤100 entries × ≤1024 chars each
+- `getOpenEditors` fallback path safety (supporting fix): `resolveFilePath` called before `stat()` in native fallback loop
+- 1196 bridge tests (↑ from 1195)
+
+**v2.1.27 shipped (2026-03-16) — persistent session state (openedFiles restore):**
+- `extractRestoredFiles(checkpoint)` — exported pure function collects union of openedFiles across all checkpoint sessions
+- `Bridge.restoredOpenedFiles` — consumed by the first connecting session after restart, then cleared; subsequent sessions start empty
+- `Bridge.getPort()` / `Bridge.getAuthToken()` — accessors for test inspection without calling `Bridge.start()`
+- Checkpoint log improved: now reports file count and port rather than listing all paths
+- 10 new tests in `src/__tests__/bridge-session-restore.test.ts` (5 unit + 5 integration scaffold)
+- 1195 bridge tests (↑ from 1185)
+
+**v2.1.26 shipped (2026-03-16) — plugin type exports:**
+- `package.json` `exports` map: `"."` → `dist/index.{js,d.ts}`, `"./plugin"` → `dist/plugin.{js,d.ts}`
+- `types` field added for tooling that doesn't read `exports`
+- `import type { PluginContext } from 'claude-ide-bridge/plugin'` now resolves correctly for TypeScript plugin authors
+- No new tests needed — covered by existing typecheck + build
+
+**v2.1.25 shipped (2026-03-16) — plugin developer experience:**
+- `gen-plugin-stub <dir> [--name <org/name>] [--prefix <prefix>]` subcommand — scaffolds manifest + `index.mjs` + `package.json` in one command
+- `documents/plugin-authoring.md` — full plugin author reference (manifest schema, PluginContext API, tool schema, security model, npm distribution guide)
+- Help text updated: all four subcommands now listed under `Subcommands:` in `--help`
+
+**v2.1.24 shipped (2026-03-16) — plugin system + test gap closure:**
+- Dynamic plugin loading: `--plugin <path>` CLI flag + `plugins` config file key
+- `src/plugin.ts`: public type contract for plugin authors (`PluginContext`, `PluginManifest`, `PluginRegistration`, `PluginSafeConfig`)
+- `src/pluginLoader.ts`: manifest validation, `toolNamePrefix` enforcement, cross-plugin collision detection, dedup, error isolation, inline semver check, authToken exclusion from `PluginSafeConfig`
+- Transport: `registerTool()` now throws on duplicate name; `ToolSchema` exported
+- 20 new pluginLoader tests; 5 new config tests (`--plugin` flag); 1 new transport test (duplicate-name throw)
+- 1195 bridge tests (↑ from 1180)
+
+**v2.1.23 shipped (2026-03-16) — extension handler test coverage:**
+- 51 tests across 6 previously uncovered extension handler files (clipboard, inlayHints, typeHierarchy, validation, vscodeCommands, workspaceSettings)
+- Fixed `__reset()` to also reset `env.clipboard.readText`
+- Extension: 362 tests (↑ from 311); Bridge: 1158 tests
+
+**v2.1.22 shipped (2026-03-16) — coverage sweep complete:**
+- 38 new tests covering 7 previously untested tools: activityLog, setEditorDecorations, clearEditorDecorations, getCurrentSelection, getLatestSelection, getInlayHints, setActiveWorkspaceFolder, getTypeHierarchy, getWorkspaceSettings, setWorkspaceSetting
+- Bridge tool files now have full test coverage
+
+**v2.1.21 shipped (2026-03-16) — 2 correctness fixes:**
+- `fileOperations`: `deleteFile` with `useTrash: true` on a directory returned "recursive required" instead of "cannot trash without extension" — useTrash guard now runs before stat()
+- `editText`: `applyEditsToContent` now validates that delete/replace edits include both `endLine` and `endColumn`; previously undefined `endColumn` silently produced a zero-width no-op
+
+**v2.1.20 shipped (2026-03-16) — 4 bug fixes (openFile, clipboard, symlink):**
+- `openFile`: `startLine` now correctly takes precedence over `startText` in the extension path (was inverted)
+- `clipboard`: `truncateToBytes()` uses `Buffer.byteLength` for UTF-8 byte counting (not UTF-16 code units); `writeClipboard` enforces 1 MB server-side before invoking extension
+- `utils`: `resolveFilePath` walks ancestor tree to catch symlinks at grandparent levels (e.g. `workspace/link/nonexistent/file.txt`)
+
+**v2.1.19 shipped (2026-03-16) — test coverage round (+83 tests):**
+- New test files: editText, fileOperations, cancelClaudeTask/getClaudeTaskStatus/listClaudeTasks, openFile, clipboard
+- 1109 bridge tests (↑ from 1026)
+
+**v2.1.18 shipped (2026-03-16) — 8 bug fixes (input validation, cache key, session header, JSON parser):**
+- HIGH: `getSecurityAdvisories` cache key used raw `"auto"` not resolved manager; `isValidRef` accepted leading-dash refs (git flag injection); `findFiles` find fallback accepted `-`-prefixed patterns; streamableHttp sent session header in 504 response (client could reuse destroyed session)
+- MEDIUM: `searchAndReplace` null byte in non-regex pattern caused misleading output; `vitestJest` JSON fast-path accepted wrong-shaped first match
+- LOW: `cargoTest` PANIC regex mis-matched timestamp strings; `httpClient` timeout error name check missed Node <18.14 naming
+
+**v2.1.17 shipped (2026-03-16) — captureScreenshot tool + test coverage:**
+- `captureScreenshot`: `screencapture -x` (macOS) / `import -window root` (Linux); returns `{ type: "image", data, mimeType: "image/png" }` MCP image content block
+- +72 tests across debug, getDocumentSymbols, fixAllLintErrors, formatDocument, fileWatcher, screenshot
+- Bridge: 1017 tests; Extension: 311 tests
+
+**v2.1.16 shipped (2026-03-15) — Remote Desktop IDE support:**
+- `extensionKind: ["workspace"]` in extension package.json — loads in remote extension host for VS Code Remote-SSH and Cursor SSH
+- `print-token [--port]` CLI subcommand — prints bridge auth token from lock file for headless VPS setup
+- `scripts/gen-mcp-config.sh` `remote` target — generates HTTP MCP config from `--host` and `--token` without needing a lock file
+- Extension bumped to v1.0.2
+
+**v2.1.15 shipped (2026-03-15) — 2 correctness fixes:**
+- Notification off-by-one: `notifCount > 500` → `>= 500` so the 500th notification is the first dropped
+- `gitCheckout` detached HEAD: `previousBranch` now returns `null` (was the literal string `"HEAD"`); added `wasDetached: true` and `previousCommit` (12-char hash) for safe navigation back
+
+**v2.1.14 shipped (2026-03-15) — 4 correctness fixes:**
+- `getDiagnostics`: pre-aborted caller signal returns `[]` immediately (no subprocess spawned)
+- `searchAndReplace`: glob values starting with `-` rejected (rg flag injection prevention)
+- `auditDependencies`: resolved manager name used as cache key (`"auto"` + `"npm"` now share one entry)
+- `httpClient`: abort forwarder cleaned up from caller signal to prevent listener accumulation
+
+**v2.1.13 shipped (2026-03-15) — 7 security/correctness fixes:**
+- CRITICAL: `watchDiagnostics` TDZ ReferenceError when diagnostic update arrived mid-handler
+- HIGH (security): `runCommand` `--flag=value` form bypassed dangerous-flag blocklist; `httpClient` user Host header could overwrite IP-pinning Host; terminal Unicode line/paragraph separators (U+2028/U+2029) bypassed newline injection check
+- HIGH (correctness): `cargoTest` PANIC regex mis-match; `runTests` noCache eviction race (stale cache clobber); `getSecurityAdvisories` per-severity cache key caused redundant subprocesses
+- 28 new regression tests; 937 total
+
+**v2.1.12 shipped (2026-03-15) — template fixes:**
+- `templates/CLAUDE.bridge.md`: added "Bug fix methodology" section (write failing test → fix → confirm); corrected stale tool names (`gitStatus` → `getGitStatus`, `gitDiff` → `getGitDiff`)
 
 **v2.1.11 shipped (2026-03-15) — Quick Start accuracy + install-extension npm-global fix:**
 - README Step 3: `CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide` — env var required for bridge discovery; omitting it silently broke all new users
@@ -184,24 +311,25 @@ Implemented in `src/prompts.ts`. No extension required. Transport handles `promp
 - Auto-detection and name mapping for all four editors tested and passing
 - JetBrains: no extension yet — would require a separate plugin (different extension API)
 
-### Native Fallback Improvements *(partial — one item remains)*
+### Native Fallback Improvements *(complete)*
 - Currently: extension disconnect → hide 27 tools (audited 2026-03-12)
 - `listTasks` fallback shipped — parses `.vscode/tasks.json` + Makefile targets
 - `watchDiagnostics` fallback shipped — runs detected CLI linters immediately, returns snapshot
-- Remaining viable fallback: `organizeImports` (prettier/biome) — low priority
+- `organizeImports` fallback shipped — biome → prettier chain; 3 tests covering both CLI paths and the "no CLI available" error
 - All others (terminal, debugger, LSP, decorations, VS Code commands) have no viable fallback — intentionally `extensionRequired`
 
-### Test Coverage *(healthy — no integration gap)*
-- 926 tests, 85 files; integration tests exist (6 files, full WebSocket round-trip coverage)
-- `searchAndReplace` core logic now tested on all platforms via mocked-rg suite
-- Original rg-integration suite still gates on binary availability for CI
+### Test Coverage *(complete — 2026-03-16)*
+- 1158 bridge tests + 362 extension tests, 97 + 40 files; 0 failures
+- Integration tests: 6 files, full WebSocket round-trip coverage
+- All bridge tool files and extension handler files now have unit tests
+- `searchAndReplace` rg-integration suite now runs on macOS (Claude binary shim) in addition to Linux CI; mocked-rg logic suite runs on all platforms
 
-### Performance *(CI-gated 2026-03-14)*
+### Performance *(CI-gated 2026-03-14; sustained-load closed 2026-03-16)*
 - Benchmark script: `node scripts/benchmark.mjs [--json] [--threshold <ms>]`
 - CI runs benchmark on every push to main: 100 iterations, p99 > 100ms = build failure
-- Baseline (50 iterations, loopback): all representative tools measure p50=0 ms, p99=1 ms — at Node.js timer resolution floor
+- Baseline (50 iterations, loopback): all tools p50=0ms, p99=1ms — at Node.js timer resolution floor; confirmed for `searchWorkspace×200` and `getBufferContent` disk-path scenarios
 - Benchmark results archived as GitHub Actions artifacts (30-day retention) for trend analysis
-- Remaining open: profiling under sustained load and large file scenarios (`getBufferContent`, large `searchWorkspace` results)
+- `getBufferContent` large-file bug fixed (2026-03-16): size cap was checked before slicing — `startLine`/`endLine` params silently failed on files >512KB despite the error message instructing users to use them. Fixed via `stat()` + readline streaming for large files with a range; no-range requests on large files still error as before.
 
 ### Multi-Workspace Support *(shipped 2026-03-14)*
 - Extension now connects to one bridge per VS Code workspace folder in multi-root workspaces
@@ -266,15 +394,23 @@ Implemented in `src/prompts.ts`. No extension required. Transport handles `promp
 
 ## Medium-Term Possibilities
 
-### Plugin System
-- Allow third-party tool registration without forking
-- Dynamic tool loading from npm packages or local paths
-- Plugin manifest format (schema, handler entry point, dependencies)
+### Plugin Hot-Reload *(Shipped — v2.1.30)*
+- `--plugin-watch` flag triggers `PluginWatcher` which monitors each plugin directory with `fs.watch()`
+- 300ms debounce coalesces rapid editor saves into a single reload
+- ESM cache-busting via `?t=<timestamp>` query param on dynamic `import()`
+- Failed reload keeps old tools in place; `notifications/tools/list_changed` sent on success
 
-### Persistent Session State
-- Survive bridge restarts (currently all state is in-memory)
-- Serialize: openedFiles, diagnostics cache, activity log
-- Resume sessions after crash/restart
+### Plugin System *(Shipped — v2.1.24)*
+- `--plugin <path>` CLI flag + `plugins` config file key
+- `claude-ide-bridge-plugin.json` manifest: `schemaVersion`, `name`, `entrypoint`, `toolNamePrefix`, `minBridgeVersion`
+- `PluginContext` passed to `register(ctx)`: `workspace`, `workspaceFolders`, `config` (`PluginSafeConfig` — no authToken), `logger`
+- Accepts named `export function register()` or default export
+- Collision detection, dedup, prefix enforcement, per-plugin error isolation
+
+### Persistent Session State *(Shipped — v2.1.27)*
+- `openedFiles` restored from checkpoint on restart — first connecting session is seeded with the union of all previously-tracked files
+- Activity log already persisted to disk (v2.0.x); diagnostics are live from extension/CLI (no cache to restore)
+- Task queue already persisted (v2.1.8)
 
 ### Multi-Workspace Bridging
 - One bridge instance serving multiple workspaces

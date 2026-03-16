@@ -169,10 +169,28 @@ ws.on("open", async () => {
       ...toolCall("getWorkspaceFiles", { maxFiles: 200 }),
     ],
     [
-      "searchWorkspace     ",
+      "searchWorkspace×20  ",
       ...toolCall("searchWorkspace", { query: "function", maxResults: 20 }),
     ],
+    [
+      "searchWorkspace×200 ",
+      ...toolCall("searchWorkspace", { query: "function", maxResults: 200 }),
+    ],
     ["getDiagnostics      ", ...toolCall("getDiagnostics", {})],
+    [
+      "getBufferContent    ",
+      ...toolCall("getBufferContent", {
+        filePath: "src/tools/index.ts",
+      }),
+    ],
+    [
+      "getBufferContent rng",
+      ...toolCall("getBufferContent", {
+        filePath: "src/tools/index.ts",
+        startLine: 1,
+        endLine: 50,
+      }),
+    ],
   ];
 
   const results = [];

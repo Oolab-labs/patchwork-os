@@ -97,6 +97,54 @@ describe("getBufferContent: disconnected extension", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("not found");
   });
+
+  it("serves a line range from a large file (>512KB) without error", async () => {
+    // Write a file larger than MAX_CONTENT_BYTES (512 KB)
+    const bigFile = path.join(workspace, "big.ts");
+    const lineCount = 15_000;
+    const lines = Array.from(
+      { length: lineCount },
+      (_, i) => `const line${i} = ${i}; // padding padding padding padding`,
+    );
+    fs.writeFileSync(bigFile, lines.join("\n"));
+
+    const tool = createGetBufferContentTool(
+      workspace,
+      mockDisconnectedExtensionClient(),
+    );
+    const result = (await tool.handler({
+      filePath: "big.ts",
+      startLine: 100,
+      endLine: 150,
+    })) as any;
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.content).toContain("const line99");
+    expect(parsed.startLine).toBe(100);
+    expect(parsed.endLine).toBe(150);
+    expect(parsed.totalLines).toBe(lineCount);
+  });
+
+  it("returns isError for large file when no range is specified", async () => {
+    const bigFile = path.join(workspace, "big.ts");
+    // big.ts already created by previous test (or create if running in isolation)
+    if (!fs.existsSync(bigFile)) {
+      const lines = Array.from(
+        { length: 15_000 },
+        (_, i) => `const line${i} = ${i}; // padding padding padding padding`,
+      );
+      fs.writeFileSync(bigFile, lines.join("\n"));
+    }
+
+    const tool = createGetBufferContentTool(
+      workspace,
+      mockDisconnectedExtensionClient(),
+    );
+    const result = (await tool.handler({ filePath: "big.ts" })) as any;
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("too large");
+  });
 });
 
 // ── replaceBlock ──────────────────────────────────────────────────────────────

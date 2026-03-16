@@ -13,7 +13,10 @@ function isRgAvailable(): boolean {
     execFileSync("rg", ["--version"], { stdio: "ignore" });
     return true;
   } catch {
-    return false;
+    // On macOS inside Claude Code, `rg` is a shell function (not a binary),
+    // so execFileSync throws. If the Claude binary exists we can shim it in
+    // beforeEach and still run the integration suite.
+    return findClaudeBinary() !== undefined;
   }
 }
 

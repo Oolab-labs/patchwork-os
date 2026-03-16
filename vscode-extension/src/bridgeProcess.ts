@@ -383,8 +383,8 @@ export class BridgeProcess {
 
     if (!this.child || this.child.killed) return;
 
+    const child = this.child;
     return new Promise((resolve) => {
-      const child = this.child!;
       const forceKill = setTimeout(() => {
         try {
           child.kill("SIGKILL");

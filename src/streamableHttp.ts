@@ -22,6 +22,8 @@ import type { Config } from "./config.js";
 import type { ExtensionClient } from "./extensionClient.js";
 import type { FileLock } from "./fileLock.js";
 import type { Logger } from "./logger.js";
+import type { LoadedPluginTool } from "./pluginLoader.js";
+import type { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { corsOrigin } from "./server.js";
 import { registerAllTools } from "./tools/index.js";
@@ -108,9 +110,9 @@ class HttpAdapter extends EventEmitter {
     }
     this.sseRes = res;
     if (res) {
-      this.sseHeartbeatTimer = setInterval(() => {
+      const timer = setInterval(() => {
         if (res.writableEnded) {
-          clearInterval(this.sseHeartbeatTimer!);
+          clearInterval(timer);
           this.sseHeartbeatTimer = null;
         } else {
           try {
@@ -122,7 +124,8 @@ class HttpAdapter extends EventEmitter {
           }
         }
       }, SSE_HEARTBEAT_MS);
-      this.sseHeartbeatTimer.unref();
+      this.sseHeartbeatTimer = timer;
+      timer.unref();
     }
   }
 
@@ -206,6 +209,8 @@ export class StreamableHttpHandler {
     private allSessions: Map<string, unknown>, // bridge sessions — for capacity guard
     private orchestrator: unknown,
     private logger: Logger,
+    private getPluginTools: () => LoadedPluginTool[] = () => [],
+    private getPluginWatcher: () => PluginWatcher | null = () => null,
   ) {
     // Prune idle sessions every 5 minutes.
     // .unref() prevents this timer from keeping the Node process alive when
@@ -449,6 +454,11 @@ export class StreamableHttpHandler {
     const openedFiles = new Set<string>();
     const terminalPrefix = `h${id.slice(0, 8)}-`; // "h" prefix distinguishes HTTP sessions
 
+    // Join the plugin watcher BEFORE registerAllTools so that if a reload fires
+    // between the two, this transport is already tracked and will receive fresh tools.
+    this.getPluginWatcher()?.addTransport(transport);
+    const pluginTools = this.getPluginTools();
+
     registerAllTools(
       transport,
       this.config,
@@ -474,6 +484,7 @@ export class StreamableHttpHandler {
         | import("./claudeOrchestrator.js").ClaudeOrchestrator
         | null,
       id,
+      pluginTools,
     );
 
     transport.attach(adapter as unknown as import("ws").WebSocket);
@@ -498,6 +509,7 @@ export class StreamableHttpHandler {
     if (!session) return;
     // Abort in-flight tool calls before closing the response channel so handlers
     // receive their cancellation signal while they can still observe it.
+    this.getPluginWatcher()?.removeTransport(session.transport);
     session.transport.detach();
     session.adapter.close();
     this.sessions.delete(id);

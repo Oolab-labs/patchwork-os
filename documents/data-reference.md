@@ -280,7 +280,7 @@ notifications/message:
 
 ## Extension Handler Protocol Reference
 
-All handler methods use the `extension/` prefix and communicate via JSON-RPC 2.0 over WebSocket. Positions use **1-based** line and column numbers in the protocol (converted to 0-based internally). **55 handler methods** total across 7 registration groups.
+All handler methods use the `extension/` prefix and communicate via JSON-RPC 2.0 over WebSocket. Positions use **1-based** line and column numbers in the protocol (converted to 0-based internally). **52 handler methods** total across 7 registration groups.
 
 ### LSP (9 methods)
 
@@ -348,7 +348,7 @@ All handler methods use the `extension/` prefix and communicate via JSON-RPC 2.0
 | `extension/fixAllLintErrors` | `file` | `{success, actionsApplied}` |
 | `extension/organizeImports` | `file` | `{success, actionsApplied}` |
 
-### Other Handlers (19 methods)
+### Other Handlers (16 methods)
 
 | Method | Parameters | Return Shape |
 |--------|-----------|--------------|
@@ -359,11 +359,6 @@ All handler methods use the `extension/` prefix and communicate via JSON-RPC 2.0
 | `extension/unwatchFiles` | `id` | `{unwatched, id?}` |
 | `extension/setDecorations` | `id, file, decorations: Array<{startLine, style?, hoverMessage?, message?}>` | `{applied, editorsUpdated}` |
 | `extension/clearDecorations` | `id?` | `{cleared}` |
-| `extension/getNotebookCells` | `file` | `{file, cellCount, cells}` |
-| `extension/runNotebookCell` | `file, cellIndex, timeoutMs?` | `{cellIndex, durationMs, output}` |
-| `extension/getNotebookOutput` | `file, cellIndex` | `{cellIndex, executionCount, output}` |
-| `extension/listTasks` | _(none)_ | `{tasks: Array<{name, type, source, group, detail}>, count}` |
-| `extension/runTask` | `name, type?, timeoutMs?` | `{name, type, exitCode, durationMs, success}` |
 | `extension/readClipboard` | _(none)_ | `{text, byteLength, truncated}` |
 | `extension/writeClipboard` | `text` | `{written, byteLength}` |
 | `extension/getInlayHints` | `file, startLine, endLine` | `{hints: Array<{position, label, kind, tooltip?}>, count}` |
@@ -371,6 +366,8 @@ All handler methods use the `extension/` prefix and communicate via JSON-RPC 2.0
 | `extension/getWorkspaceSettings` | `section?` | `{section, settings: Record<string, {value, defaultValue, ...}>}` |
 | `extension/setWorkspaceSetting` | `key, value, target?` | `{set, key, target}` |
 | `extension/executeVSCodeCommand` | `command, args?` | `{result}` |
+| `extension/listVSCodeCommands` | `filter?` | `{commands: string[], count, truncated}` |
+| `extension/captureScreenshot` | _(none)_ | `{base64, mimeType: "image/png"}` |
 
 ### Notifications (Extension → Bridge)
 

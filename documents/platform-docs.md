@@ -4,7 +4,7 @@ Complete feature reference for the Claude IDE Bridge MCP server and VS Code exte
 
 ## Overview
 
-Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 138+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
+Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 135+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state. The extension supports remote extension hosts (VS Code Remote-SSH, Cursor SSH) via `extensionKind: ["workspace"]`.
 
 The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code CLI** via WebSocket — both sessions share the same running bridge, enabling seamless context handoff between the two clients.
 
@@ -126,7 +126,7 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `checkDocumentDirty` | Check if a file has unsaved changes |
 | `saveDocument` | Save an open document |
 | `closeTab` | Close a specific editor tab |
-| `getBufferContent` | Get current in-memory content of an open file |
+| `getBufferContent` | Get current in-memory content of an open file. Falls back to disk. `startLine`/`endLine` work on files of any size — large files (>512KB) are streamed line-by-line when a range is given. |
 
 ### LSP Features
 | Tool | Description |
@@ -265,17 +265,8 @@ Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering whil
 | `listVSCodeCommands` | List available commands with optional filter |
 | `getWorkspaceSettings` | Read VS Code settings |
 | `setWorkspaceSetting` | Write VS Code settings |
-| `listTasks` | List VS Code tasks (15s timeout) |
-| `runTask` | Run a VS Code task |
 | `readClipboard` | Read system clipboard |
 | `writeClipboard` | Write to system clipboard |
-
-### Notebooks
-| Tool | Description |
-|------|-------------|
-| `getNotebookCells` | Get cells from a Jupyter notebook |
-| `runNotebookCell` | Execute a notebook cell |
-| `getNotebookOutput` | Get output from a notebook cell |
 
 ---
 
