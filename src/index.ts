@@ -263,7 +263,7 @@ export function register(ctx) {
           },
           annotations: { readOnlyHint: true },
         },
-        handler: async (args) => ({
+        handler: async (args, _signal) => ({
           content: [{ type: "text", text: "Hello from " + ${JSON.stringify(pluginName)} + ", " + args.name + "!" }],
         }),
       },

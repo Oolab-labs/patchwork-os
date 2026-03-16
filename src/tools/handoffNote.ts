@@ -24,7 +24,7 @@ function readNote(): HandoffNote | null {
   }
 }
 
-export function createSetHandoffNoteTool(sessionId: string) {
+export function createSetHandoffNoteTool(_sessionId: string) {
   return {
     schema: {
       name: "setHandoffNote",

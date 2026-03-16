@@ -26,13 +26,14 @@ import type {
   PluginToolRegistration,
 } from "./plugin.js";
 import type { ToolHandler, ToolSchema } from "./transport.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 const MANIFEST_FILE = "claude-ide-bridge-plugin.json";
 const SUPPORTED_SCHEMA_VERSION = 1;
 const MAX_TOOLS_PER_PLUGIN = 100;
 
-/** Compiled package version — compared against minBridgeVersion. */
-const BRIDGE_VERSION = "2.1.23";
+/** Runtime package version — compared against minBridgeVersion. */
+const BRIDGE_VERSION = PACKAGE_VERSION;
 
 // ── Semver helpers ────────────────────────────────────────────────────────────
 
