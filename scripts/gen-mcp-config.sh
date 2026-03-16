@@ -24,23 +24,35 @@ LOCK_DIR="$CLAUDE_DIR/ide"
 
 TARGET="${1:-}"
 WRITE=false
+REMOTE_HOST=""
+REMOTE_TOKEN=""
 
-for arg in "$@"; do
-  [[ "$arg" == "--write" ]] && WRITE=true
+# Parse flags (handle --host <val> and --token <val> for the remote target)
+_argv=("$@")
+for (( _i=1; _i<${#_argv[@]}; _i++ )); do
+  case "${_argv[$_i]}" in
+    --write) WRITE=true ;;
+    --host)  REMOTE_HOST="${_argv[$((_i+1))]:-}"; ((_i++)) ;;
+    --token) REMOTE_TOKEN="${_argv[$((_i+1))]:-}"; ((_i++)) ;;
+  esac
 done
 
 # --- Usage ---
 if [[ -z "$TARGET" || "$TARGET" == "--help" || "$TARGET" == "-h" ]]; then
   echo "Usage: $0 <target> [--write]"
   echo ""
-  echo "Targets: cursor | antigravity | codex | claude-desktop"
+  echo "Targets: cursor | antigravity | codex | claude-desktop | remote"
   echo "  cursor           .cursor/mcp.json"
   echo "  antigravity      mcp_config.json for Google Antigravity"
   echo "  codex            ~/.codex/config.toml section for OpenAI Codex CLI"
   echo "  claude-desktop   claude_desktop_config.json for Claude Desktop app"
+  echo "  remote           ~/.claude/mcp.json entry for a remote bridge over HTTP"
+  echo "                   Requires: --host <host:port> --token <token>"
   echo ""
   echo "Flags:"
-  echo "  --write   Write config to the correct location"
+  echo "  --write          Write config to the correct location"
+  echo "  --host <h:port>  Remote host and port (remote target only)"
+  echo "  --token <tok>    Auth token (remote target only; get via: claude-ide-bridge print-token)"
   exit 0
 fi
 
@@ -92,6 +104,49 @@ PYEOF
     mkdir -p "$(dirname "$OUTPUT_PATH")"
     if [[ -f "$OUTPUT_PATH" ]]; then
       cp "$OUTPUT_PATH" "${OUTPUT_PATH}.$(date +%Y%m%d%H%M%S).bak"
+    fi
+    printf '%s\n' "$CONFIG" > "$TMP_PATH"
+    mv "$TMP_PATH" "$OUTPUT_PATH"
+    echo "Written: $OUTPUT_PATH"
+  fi
+  exit 0
+fi
+
+# --- Remote target: no lock file needed — caller supplies host and token ---
+if [[ "$TARGET" == "remote" ]]; then
+  if [[ -z "$REMOTE_HOST" || -z "$REMOTE_TOKEN" ]]; then
+    echo "Error: remote target requires --host <host:port> and --token <token>" >&2
+    echo "  Get the token with: claude-ide-bridge print-token" >&2
+    exit 1
+  fi
+  OUTPUT_PATH="${HOME}/.claude/mcp.json"
+  CONFIG=$(cat <<EOF
+{
+  "mcpServers": {
+    "claude-ide-bridge-remote": {
+      "type": "http",
+      "url": "http://${REMOTE_HOST}/mcp",
+      "headers": {
+        "Authorization": "Bearer ${REMOTE_TOKEN}"
+      }
+    }
+  }
+}
+EOF
+)
+  echo "=== Remote bridge MCP config ==="
+  echo "Bridge: http://${REMOTE_HOST}/mcp"
+  echo ""
+  echo "$CONFIG"
+  echo ""
+  echo "Note: Use HTTPS in production — put nginx or Caddy in front with TLS."
+  if $WRITE; then
+    TMP_PATH="${OUTPUT_PATH}.tmp"
+    mkdir -p "$(dirname "$OUTPUT_PATH")"
+    if [[ -f "$OUTPUT_PATH" ]]; then
+      BACKUP="${OUTPUT_PATH}.$(date +%Y%m%d%H%M%S).bak"
+      cp "$OUTPUT_PATH" "$BACKUP"
+      echo "Backed up existing config to $(basename "$BACKUP")"
     fi
     printf '%s\n' "$CONFIG" > "$TMP_PATH"
     mv "$TMP_PATH" "$OUTPUT_PATH"
@@ -201,7 +256,7 @@ EOF
     ;;
 
   *)
-    echo "Error: Unknown target '$TARGET'. Use: cursor | antigravity | codex | claude-desktop" >&2
+    echo "Error: Unknown target '$TARGET'. Use: cursor | antigravity | codex | claude-desktop | remote" >&2
     exit 1
     ;;
 esac

@@ -21,7 +21,7 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `findFiles` | File search using `fd` (preferred) or `find` fallback |
 | `getFileTree` | Directory tree view with configurable depth |
 | `searchWorkspace` | Content search using `rg` (preferred) or `grep` fallback |
-| `searchAndReplace` | Find and replace across workspace files |
+| `searchAndReplace` | Find and replace across workspace files. Glob values starting with `-` are rejected to prevent flag injection into `rg`. |
 
 ### Git
 | Tool | Description |
@@ -33,7 +33,7 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `getDiffBetweenRefs` | Diff between any two git refs |
 | `gitAdd` | Stage files |
 | `gitCommit` | Create commits |
-| `gitCheckout` | Switch branches or restore files |
+| `gitCheckout` | Switch branches or create new ones. When switching away from detached HEAD, the response includes `previousBranch: null`, `previousCommit` (12-char hash of prior HEAD), and `wasDetached: true` — callers should use `previousCommit` to navigate back, not `previousBranch`. |
 | `gitBlame` | Line-by-line blame annotation |
 | `gitFetch` | Fetch from remotes |
 | `gitListBranches` | List local and remote branches |
@@ -46,7 +46,7 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 ### Linting & Testing
 | Tool | Description |
 |------|-------------|
-| `getDiagnostics` | Errors/warnings — uses extension if connected, falls back to CLI linters (`tsc --noEmit`, `eslint`, `pyright`, `ruff`, `cargo check`, `go vet`, `biome`) |
+| `getDiagnostics` | Errors/warnings — uses extension if connected, falls back to CLI linters (`tsc --noEmit`, `eslint`, `pyright`, `ruff`, `cargo check`, `go vet`, `biome`). Returns `[]` immediately if the caller's AbortSignal is already aborted (no subprocess spawned). |
 | `runTests` | Run tests via auto-detected runner (vitest, jest, pytest, cargo test, go test) |
 | `diffDebugger` | Combined diagnostics + test failure analysis in one call |
 
@@ -181,7 +181,7 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | Tool | Description |
 |------|-------------|
 | `getDependencyTree` | Unified dependency graph across npm, pip, cargo, and go mod. Auto-detects from manifest files. Supports configurable depth. |
-| `auditDependencies` | Detect outdated packages and report current vs. latest versions. Supports npm, yarn, pnpm, cargo, and pip. Auto-detects package manager from lock files (pnpm-lock.yaml → yarn.lock → package.json) and manifests. |
+| `auditDependencies` | Detect outdated packages and report current vs. latest versions. Supports npm, yarn, pnpm, cargo, and pip. Auto-detects package manager from lock files (pnpm-lock.yaml → yarn.lock → package.json) and manifests. Cache is keyed on the resolved manager — `"auto"` and `"npm"` (when npm is detected) share the same entry and won't re-run the subprocess. |
 | `getSecurityAdvisories` | Run a security audit and return known vulnerabilities with severity, CVE IDs, and remediation steps. Supports npm, yarn, pnpm, cargo audit, and pip-audit. Auto-detects from lock files and manifests. Filter by minimum severity. |
 | `getGitHotspots` | Identify most frequently changed files in git history over a time window. Useful for prioritizing refactoring and code review focus. |
 | `getPRTemplate` | Generate a pull request body from git commit messages and diff stats. Supports bullet, prose, and conventional commit styles. Pairs with `githubCreatePR`. |

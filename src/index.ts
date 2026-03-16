@@ -8,8 +8,10 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Bridge } from "./bridge.js";
@@ -96,6 +98,71 @@ if (process.argv[2] === "gen-claude-md") {
 
   renameSync(`${targetPath}.tmp`, targetPath);
   process.stderr.write(`✓ Bridge workflow section written to ${targetPath}\n`);
+  process.exit(0);
+}
+
+// Handle print-token subcommand — print the bridge auth token from a lock file
+if (process.argv[2] === "print-token") {
+  const argv = process.argv.slice(3);
+  const portIdx = argv.indexOf("--port");
+  const portArg = portIdx !== -1 ? argv[portIdx + 1] : undefined;
+
+  const lockDir = path.join(
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+    "ide",
+  );
+
+  let lockFile: string | undefined;
+
+  if (portArg) {
+    lockFile = path.join(lockDir, `${portArg}.lock`);
+    if (!existsSync(lockFile)) {
+      process.stderr.write(
+        `Error: No lock file found for port ${portArg} at ${lockFile}\n`,
+      );
+      process.exit(1);
+    }
+  } else {
+    // Find the most recently modified lock file
+    let bestMtime = 0;
+    try {
+      for (const f of readdirSync(lockDir)) {
+        if (!f.endsWith(".lock")) continue;
+        const full = path.join(lockDir, f);
+        const mtime = statSync(full).mtimeMs;
+        if (mtime > bestMtime) {
+          bestMtime = mtime;
+          lockFile = full;
+        }
+      }
+    } catch {
+      // lock dir doesn't exist — handled below
+    }
+  }
+
+  if (!lockFile) {
+    process.stderr.write(`Error: No bridge lock file found in ${lockDir}\n`);
+    process.stderr.write(
+      "Make sure the bridge is running first, or pass --port <port>.\n",
+    );
+    process.exit(1);
+  }
+
+  try {
+    const data = JSON.parse(readFileSync(lockFile, "utf-8")) as {
+      authToken?: string;
+    };
+    if (!data.authToken) {
+      process.stderr.write(
+        `Error: Lock file ${lockFile} has no authToken field\n`,
+      );
+      process.exit(1);
+    }
+    process.stdout.write(`${data.authToken}\n`);
+  } catch {
+    process.stderr.write(`Error: Could not read lock file ${lockFile}\n`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 

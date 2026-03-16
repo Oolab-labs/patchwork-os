@@ -359,6 +359,46 @@ claude-ide-bridge install-extension cursor
 bash scripts/install-extension.sh --ide <name>
 ```
 
+## Remote Desktop IDEs
+
+Run the bridge on a VPS with the IDE on your local machine — full tools, no compromise.
+
+### VS Code Remote-SSH / Cursor SSH (recommended)
+
+When you connect VS Code or Cursor to a VPS via SSH, the extension host runs on the VPS. The bridge extension runs there too — it spawns the bridge, polls lock files, and connects over VPS localhost. Nothing needs to change on your end.
+
+**Setup:**
+1. Install the extension in VS Code/Cursor locally (it will auto-install on the VPS via SSH)
+2. Connect via Remote-SSH and open your VPS workspace
+3. The extension activates on the VPS, auto-installs `claude-ide-bridge` if needed, and starts the bridge
+4. Claude Code on your local machine connects normally via the lock file
+
+All tools are available — LSP, debugger, terminals, git, diagnostics — because the extension runs alongside the bridge on the same machine.
+
+### Headless VPS (no IDE, CLI tools only)
+
+For VPS environments without VS Code (e.g. JetBrains Gateway, or a pure server setup):
+
+```bash
+# On the VPS — start bridge bound to all interfaces
+claude-ide-bridge --bind 0.0.0.0 --port 9000 --workspace /path/to/project
+
+# Get the auth token
+claude-ide-bridge print-token --port 9000
+```
+
+```bash
+# On your local machine — generate and write the MCP config
+bash scripts/gen-mcp-config.sh remote \
+  --host your-vps-ip:9000 \
+  --token <token-from-above> \
+  --write
+```
+
+> **Security:** `--bind 0.0.0.0` exposes the bridge to your network. For production, put nginx or Caddy in front with TLS. The `remote` config generator uses `http://` — update the URL to `https://` once TLS is in place.
+
+Available tools in headless mode: file operations, git, terminals, search, CLI linters, dependency audits, HTTP client. LSP, debugger, and editor-state tools are unavailable without the extension.
+
 ## Use with Claude Desktop
 
 Connect the Claude Desktop app to your running bridge — chat with your IDE using natural language.
