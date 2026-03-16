@@ -64,6 +64,19 @@ describe("handleFormatDocument", () => {
   it("throws on missing file param", async () => {
     await expect(handleFormatDocument({} as any)).rejects.toThrow();
   });
+
+  it("returns error shape when executeCommand throws", async () => {
+    setupEditorMock();
+    vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
+      new Error("provider failed"),
+    );
+
+    const result = (await handleFormatDocument({
+      file: "/workspace/file.ts",
+    })) as any;
+    expect(result.error).toBe("provider failed");
+    expect(result.success).toBeUndefined();
+  });
 });
 
 describe("handleFixAllLintErrors", () => {
@@ -106,6 +119,18 @@ describe("handleFixAllLintErrors", () => {
     })) as any;
     expect(result.success).toBe(true);
     expect(result.actionsApplied).toBe(0);
+  });
+
+  it("returns error shape when executeCommand throws", async () => {
+    setupEditorMock();
+    vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
+      new Error("lint provider crashed"),
+    );
+
+    const result = (await handleFixAllLintErrors({
+      file: "/workspace/file.ts",
+    })) as any;
+    expect(result.error).toBe("lint provider crashed");
   });
 });
 

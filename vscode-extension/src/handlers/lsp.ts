@@ -57,9 +57,14 @@ export function createLspHandlers(
     await vscode.workspace.openTextDocument(uri); // Ensure document is loaded for language server
     const position = new vscode.Position(line, column);
 
-    const locations = await vscode.commands.executeCommand<
-      vscode.Location[] | vscode.LocationLink[]
-    >("vscode.executeDefinitionProvider", uri, position);
+    let locations: vscode.Location[] | vscode.LocationLink[] | undefined;
+    try {
+      locations = await vscode.commands.executeCommand<
+        vscode.Location[] | vscode.LocationLink[]
+      >("vscode.executeDefinitionProvider", uri, position);
+    } catch (err: unknown) {
+      return null;
+    }
 
     if (!locations || locations.length === 0) return null;
 
@@ -93,11 +98,16 @@ export function createLspHandlers(
     await vscode.workspace.openTextDocument(uri);
     const position = new vscode.Position(line, column);
 
-    const locations = await vscode.commands.executeCommand<vscode.Location[]>(
-      "vscode.executeReferenceProvider",
-      uri,
-      position,
-    );
+    let locations: vscode.Location[] | undefined;
+    try {
+      locations = await vscode.commands.executeCommand<vscode.Location[]>(
+        "vscode.executeReferenceProvider",
+        uri,
+        position,
+      );
+    } catch (err: unknown) {
+      return { references: [] };
+    }
 
     if (!locations || locations.length === 0) return { references: [] };
 
@@ -123,11 +133,16 @@ export function createLspHandlers(
     await vscode.workspace.openTextDocument(uri);
     const position = new vscode.Position(line, column);
 
-    const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
-      "vscode.executeHoverProvider",
-      uri,
-      position,
-    );
+    let hovers: vscode.Hover[] | undefined;
+    try {
+      hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+        "vscode.executeHoverProvider",
+        uri,
+        position,
+      );
+    } catch (err: unknown) {
+      return null;
+    }
 
     if (!hovers || hovers.length === 0) return null;
 
@@ -167,11 +182,16 @@ export function createLspHandlers(
     await vscode.workspace.openTextDocument(uri);
     const range = new vscode.Range(startLine, startColumn, endLine, endColumn);
 
-    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
-      "vscode.executeCodeActionProvider",
-      uri,
-      range,
-    );
+    let actions: vscode.CodeAction[] | undefined;
+    try {
+      actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+        "vscode.executeCodeActionProvider",
+        uri,
+        range,
+      );
+    } catch (err: unknown) {
+      return { actions: [] };
+    }
 
     if (!actions || actions.length === 0) return { actions: [] };
 
@@ -197,11 +217,19 @@ export function createLspHandlers(
     await vscode.workspace.openTextDocument(uri);
     const range = new vscode.Range(startLine, startColumn, endLine, endColumn);
 
-    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
-      "vscode.executeCodeActionProvider",
-      uri,
-      range,
-    );
+    let actions: vscode.CodeAction[] | undefined;
+    try {
+      actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+        "vscode.executeCodeActionProvider",
+        uri,
+        range,
+      );
+    } catch (err: unknown) {
+      return {
+        applied: false,
+        error: err instanceof Error ? err.message : "Command failed",
+      };
+    }
 
     if (!actions || actions.length === 0) {
       return {
@@ -228,10 +256,17 @@ export function createLspHandlers(
 
     if (action.command) {
       deps.log(`Executing code action command: ${action.command.command}`);
-      await vscode.commands.executeCommand(
-        action.command.command,
-        ...(action.command.arguments ?? []),
-      );
+      try {
+        await vscode.commands.executeCommand(
+          action.command.command,
+          ...(action.command.arguments ?? []),
+        );
+      } catch (err: unknown) {
+        return {
+          applied: false,
+          error: err instanceof Error ? err.message : "Command failed",
+        };
+      }
     }
 
     return {
@@ -252,12 +287,20 @@ export function createLspHandlers(
     await vscode.workspace.openTextDocument(uri);
     const position = new vscode.Position(line, column);
 
-    const edit = await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
-      "vscode.executeDocumentRenameProvider",
-      uri,
-      position,
-      newName,
-    );
+    let edit: vscode.WorkspaceEdit | undefined;
+    try {
+      edit = await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
+        "vscode.executeDocumentRenameProvider",
+        uri,
+        position,
+        newName,
+      );
+    } catch (err: unknown) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : "Command failed",
+      };
+    }
 
     if (!edit) {
       return { success: false, error: "Rename not supported at this position" };
@@ -290,9 +333,14 @@ export function createLspHandlers(
       200,
     );
 
-    const symbols = await vscode.commands.executeCommand<
-      vscode.SymbolInformation[]
-    >("vscode.executeWorkspaceSymbolProvider", query);
+    let symbols: vscode.SymbolInformation[] | undefined;
+    try {
+      symbols = await vscode.commands.executeCommand<
+        vscode.SymbolInformation[]
+      >("vscode.executeWorkspaceSymbolProvider", query);
+    } catch (err: unknown) {
+      return { symbols: [], count: 0 };
+    }
 
     if (!symbols || symbols.length === 0) return { symbols: [], count: 0 };
 
@@ -318,9 +366,15 @@ export function createLspHandlers(
     const uri = vscode.Uri.file(file);
     await vscode.workspace.openTextDocument(uri);
 
-    const symbols = await vscode.commands.executeCommand<
-      vscode.DocumentSymbol[]
-    >("vscode.executeDocumentSymbolProvider", uri);
+    let symbols: vscode.DocumentSymbol[] | undefined;
+    try {
+      symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+        "vscode.executeDocumentSymbolProvider",
+        uri,
+      );
+    } catch (err: unknown) {
+      return { symbols: [], count: 0 };
+    }
 
     if (!symbols || symbols.length === 0) return { symbols: [], count: 0 };
 
@@ -345,9 +399,16 @@ export function createLspHandlers(
     await vscode.workspace.openTextDocument(uri);
     const position = new vscode.Position(line, column);
 
-    const items = await vscode.commands.executeCommand<
-      vscode.CallHierarchyItem[]
-    >("vscode.prepareCallHierarchy", uri, position);
+    let items: vscode.CallHierarchyItem[] | undefined;
+    try {
+      items = await vscode.commands.executeCommand<vscode.CallHierarchyItem[]>(
+        "vscode.prepareCallHierarchy",
+        uri,
+        position,
+      );
+    } catch (err: unknown) {
+      return null;
+    }
 
     if (!items || items.length === 0) return null;
 
@@ -365,9 +426,14 @@ export function createLspHandlers(
     let outgoing: unknown[] | null = null;
 
     if (direction === "incoming" || direction === "both") {
-      const calls = await vscode.commands.executeCommand<
-        vscode.CallHierarchyIncomingCall[]
-      >("vscode.provideIncomingCalls", item);
+      let calls: vscode.CallHierarchyIncomingCall[] | undefined;
+      try {
+        calls = await vscode.commands.executeCommand<
+          vscode.CallHierarchyIncomingCall[]
+        >("vscode.provideIncomingCalls", item);
+      } catch {
+        calls = undefined;
+      }
       incoming = calls
         ? calls.slice(0, maxResults).map((c) => ({
             name: c.from.name,
@@ -385,9 +451,14 @@ export function createLspHandlers(
     }
 
     if (direction === "outgoing" || direction === "both") {
-      const calls = await vscode.commands.executeCommand<
-        vscode.CallHierarchyOutgoingCall[]
-      >("vscode.provideOutgoingCalls", item);
+      let calls: vscode.CallHierarchyOutgoingCall[] | undefined;
+      try {
+        calls = await vscode.commands.executeCommand<
+          vscode.CallHierarchyOutgoingCall[]
+        >("vscode.provideOutgoingCalls", item);
+      } catch {
+        calls = undefined;
+      }
       outgoing = calls
         ? calls.slice(0, maxResults).map((c) => ({
             name: c.to.name,

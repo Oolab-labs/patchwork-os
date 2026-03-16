@@ -87,10 +87,14 @@ async function loadTokenFromSecrets(
   }
 }
 
+/** Shared output channel — kept module-level so deactivate() can log to it. */
+let sharedOutput: vscode.OutputChannel | null = null;
+
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Claude IDE Bridge", {
     log: true,
   });
+  sharedOutput = output;
   context.subscriptions.push(output);
 
   const statusBar = vscode.window.createStatusBarItem(
@@ -394,5 +398,11 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-  // Cleanup happens via dispose() above
+  sharedOutput?.appendLine(
+    `${new Date().toISOString()} Extension deactivating`,
+  );
+  // Active connections and processes are disposed via context.subscriptions
+  // (registered in activate()). VS Code calls dispose() on each subscription
+  // automatically when the extension is deactivated.
+  sharedOutput = null;
 }

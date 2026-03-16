@@ -1,21 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleCaptureScreenshot } from "../../handlers/screenshot";
 
-// Mock node:child_process and node:fs for all tests
+// Mock node:child_process and node:fs/promises for all tests
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
 }));
 
-vi.mock("node:fs", () => ({
-  readFileSync: vi.fn(),
-  unlinkSync: vi.fn(),
+vi.mock("node:fs/promises", () => ({
+  readFile: vi.fn(),
+  unlink: vi.fn().mockResolvedValue(undefined),
 }));
 
 import * as childProcess from "node:child_process";
-import * as fs from "node:fs";
+import * as fsp from "node:fs/promises";
 
 const mockSpawn = vi.mocked(childProcess.spawn);
-const mockReadFileSync = vi.mocked(fs.readFileSync);
+const mockReadFile = vi.mocked(fsp.readFile);
 
 function makeSpawnMock(exitCode: number, errorEvent?: Error) {
   const listeners: Record<string, ((arg: unknown) => void)[]> = {};
@@ -53,7 +53,7 @@ describe("handleCaptureScreenshot", () => {
 
     const fakeBuffer = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // PNG magic bytes
     mockSpawn.mockReturnValue(makeSpawnMock(0));
-    mockReadFileSync.mockReturnValue(fakeBuffer as unknown as string);
+    mockReadFile.mockResolvedValue(fakeBuffer as unknown as string);
 
     const result = (await handleCaptureScreenshot()) as {
       base64: string;
@@ -67,6 +67,34 @@ describe("handleCaptureScreenshot", () => {
       "screencapture",
       expect.arrayContaining(["-x"]),
     );
+
+    Object.defineProperty(process, "platform", {
+      value: originalPlatform,
+      configurable: true,
+    });
+  });
+
+  it("uses unique tmp file per call — concurrent calls get distinct paths", async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", {
+      value: "darwin",
+      configurable: true,
+    });
+
+    const fakeBuffer = Buffer.from("fake-png");
+    mockSpawn.mockReturnValue(makeSpawnMock(0));
+    mockReadFile.mockResolvedValue(fakeBuffer as unknown as string);
+
+    const capturedArgs: string[][] = [];
+    mockSpawn.mockImplementation((_cmd, args) => {
+      capturedArgs.push(args as string[]);
+      return makeSpawnMock(0);
+    });
+
+    await Promise.all([handleCaptureScreenshot(), handleCaptureScreenshot()]);
+
+    const paths = capturedArgs.map((a) => a[a.length - 1] as string);
+    expect(paths[0]).not.toBe(paths[1]);
 
     Object.defineProperty(process, "platform", {
       value: originalPlatform,
@@ -137,7 +165,7 @@ describe("handleCaptureScreenshot", () => {
 
     const fakeBuffer = Buffer.from("fake-png");
     mockSpawn.mockReturnValue(makeSpawnMock(0));
-    mockReadFileSync.mockReturnValue(fakeBuffer as unknown as string);
+    mockReadFile.mockResolvedValue(fakeBuffer as unknown as string);
 
     await handleCaptureScreenshot();
 
@@ -145,6 +173,52 @@ describe("handleCaptureScreenshot", () => {
       "import",
       expect.arrayContaining(["-window", "root"]),
     );
+
+    Object.defineProperty(process, "platform", {
+      value: originalPlatform,
+      configurable: true,
+    });
+  });
+
+  it("retries readFile up to 3 times on transient ENOENT before succeeding", async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", {
+      value: "darwin",
+      configurable: true,
+    });
+
+    const fakeBuffer = Buffer.from("retry-success");
+    mockSpawn.mockReturnValue(makeSpawnMock(0));
+    const enoent = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    mockReadFile
+      .mockRejectedValueOnce(enoent)
+      .mockResolvedValue(fakeBuffer as unknown as string);
+
+    const result = (await handleCaptureScreenshot()) as {
+      base64: string;
+    };
+    expect(result.base64).toBe(fakeBuffer.toString("base64"));
+    expect(mockReadFile).toHaveBeenCalledTimes(2);
+
+    Object.defineProperty(process, "platform", {
+      value: originalPlatform,
+      configurable: true,
+    });
+  });
+
+  it("rejects after all retries fail", async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", {
+      value: "darwin",
+      configurable: true,
+    });
+
+    mockSpawn.mockReturnValue(makeSpawnMock(0));
+    const enoent = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    mockReadFile.mockRejectedValue(enoent);
+
+    await expect(handleCaptureScreenshot()).rejects.toThrow("ENOENT");
+    expect(mockReadFile).toHaveBeenCalledTimes(3);
 
     Object.defineProperty(process, "platform", {
       value: originalPlatform,

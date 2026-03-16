@@ -657,7 +657,7 @@ describe("McpTransport", () => {
     expect(progressMsgs).toHaveLength(0);
   });
 
-  it("extensionRequired tools hidden when extension disconnected, visible when connected", async () => {
+  it("extensionRequired tools always visible in tools/list; calling while disconnected returns error content", async () => {
     const { ws } = await setup("ext-required-test", (t) => {
       t.registerTool(
         {
@@ -679,17 +679,53 @@ describe("McpTransport", () => {
       t.setExtensionConnectedFn(() => false);
     });
 
+    // Both tools visible when disconnected
     send(ws, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
     const resp1 = await waitFor(ws, (m) => m.id === 1);
     const tools1 = (resp1.result as { tools: Array<{ name: string }> }).tools;
-    expect(tools1.map((t) => t.name)).toEqual(["alwaysAvailable"]);
+    expect(tools1.map((t) => t.name)).toContain("alwaysAvailable");
+    expect(tools1.map((t) => t.name)).toContain("extensionOnly");
 
-    // Simulate extension connecting
+    // Calling extensionOnly while disconnected returns an error content block
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "extensionOnly", arguments: {} },
+    });
+    const callResp = await waitFor(ws, (m) => m.id === 2);
+    expect(callResp.error).toBeUndefined();
+    const callResult = callResp.result as {
+      content: Array<{ type: string; text: string }>;
+      isError: boolean;
+    };
+    expect(callResult.isError).toBe(true);
+    expect(callResult.content[0].text).toMatch(/extension is not connected/i);
+    expect(callResult.content[0].text).toMatch(/Reconnect/);
+
+    // Simulate extension connecting — tool still visible, call now succeeds
     transport?.setExtensionConnectedFn(() => true);
-    send(ws, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
-    const resp2 = await waitFor(ws, (m) => m.id === 2);
-    const tools2 = (resp2.result as { tools: Array<{ name: string }> }).tools;
-    expect(tools2.map((t) => t.name)).toContain("extensionOnly");
+    send(ws, { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} });
+    const resp3 = await waitFor(ws, (m) => m.id === 3);
+    const tools3 = (resp3.result as { tools: Array<{ name: string }> }).tools;
+    expect(tools3.map((t) => t.name)).toContain("extensionOnly");
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: { name: "extensionOnly", arguments: {} },
+    });
+    const callResp2 = await waitFor(ws, (m) => m.id === 4);
+    expect(callResp2.error).toBeUndefined();
+    expect(
+      (
+        callResp2.result as {
+          content: Array<{ type: string; text: string }>;
+          isError?: boolean;
+        }
+      ).isError,
+    ).toBeUndefined();
   });
 
   it("registerTool throws on invalid tool name", () => {
@@ -843,8 +879,8 @@ describe("McpTransport", () => {
     );
   });
 
-  it("extensionRequired tools appear in tools/list when isExtensionConnectedFn is not set (defaults to connected)", async () => {
-    // Intentionally do NOT call setExtensionConnectedFn — transport defaults to ?? true
+  it("extensionRequired tools appear in tools/list when isExtensionConnectedFn is not set", async () => {
+    // Intentionally do NOT call setExtensionConnectedFn
     const { ws } = await setup("ext-required-default", (t) => {
       t.registerTool(
         {
@@ -862,8 +898,8 @@ describe("McpTransport", () => {
     const names = (resp.result as { tools: Array<{ name: string }> }).tools.map(
       (t) => t.name,
     );
-    // Default is ?? false (fail-closed), so extension tools are hidden when isExtensionConnectedFn is not set
-    expect(names).not.toContain("extensionOnlyTool");
+    // Tools are always visible regardless of extension connection state
+    expect(names).toContain("extensionOnlyTool");
   });
 
   it("getStats() returns zero counters on a fresh transport", async () => {

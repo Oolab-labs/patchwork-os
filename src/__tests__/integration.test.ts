@@ -346,17 +346,11 @@ const EXTENSION_REQUIRED_TOOLS = [
   "setDebugBreakpoints",
   "startDebugging",
   "stopDebugging",
-  // getNotebookCells, getNotebookOutput — now have native fs fallback, no longer extension-required
-  "runNotebookCell",
-  // readClipboard, writeClipboard — now have native CLI fallback, no longer extension-required
-  // listTasks — now has native fallback (.vscode/tasks.json + Makefile), no longer extension-required
-  "runTask",
+  // runNotebookCell / runTask — not currently registered as tools
   "setEditorDecorations",
   "clearEditorDecorations",
   "closeTab",
-  // organizeImports — has native prettier/biome fallback, no longer extension-required
   "getInlayHints",
-  // watchDiagnostics — now has native CLI linter fallback, no longer extension-required
   "executeVSCodeCommand",
   "listVSCodeCommands",
   "getHover",
@@ -367,9 +361,8 @@ const EXTENSION_REQUIRED_TOOLS = [
 ];
 
 describe("Integration: extensionRequired full-registry filter", () => {
-  it("tools/list hides all extensionRequired tools when extension is disconnected", async () => {
+  it("tools/list shows all tools including extensionRequired when extension is disconnected", async () => {
     const bridge = await setupBridge(true);
-    // Must wire the fn — setupBridge does not do this; without it the default is ?? true (all visible)
     bridge.transport.setExtensionConnectedFn(() =>
       bridge.extensionClient.isConnected(),
     );
@@ -385,11 +378,12 @@ describe("Integration: extensionRequired full-registry filter", () => {
     const tools = (resp.result as { tools: Array<{ name: string }> }).tools;
     const names = new Set(tools.map((t) => t.name));
 
+    // extensionRequired tools are always visible regardless of extension state
     for (const toolName of EXTENSION_REQUIRED_TOOLS) {
       expect(
         names.has(toolName),
-        `${toolName} should be hidden when extension disconnected`,
-      ).toBe(false);
+        `${toolName} should be visible even when extension disconnected`,
+      ).toBe(true);
     }
     // Pure tools must still be present
     expect(names.has("getGitStatus")).toBe(true);

@@ -573,4 +573,28 @@ describe("searchSymbols", () => {
     expect(result.symbols).toHaveLength(3);
     expect(result.truncated).toBe(true);
   });
+
+  it("returns empty result when executeCommand throws", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
+      new Error("symbol provider failed"),
+    );
+    const result = (await call({ query: "foo" })) as any;
+    expect(result.symbols).toEqual([]);
+    expect(result.count).toBe(0);
+  });
+});
+
+// ── goToDefinition throw path ──────────────────────────────────
+
+describe("goToDefinition — executeCommand throw path", () => {
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/goToDefinition"](params);
+
+  it("returns null when executeCommand throws", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
+      new Error("definition provider error"),
+    );
+    const result = await call({ file: "/test.ts", line: 1, column: 1 });
+    expect(result).toBeNull();
+  });
 });

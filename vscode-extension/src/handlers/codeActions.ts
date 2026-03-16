@@ -24,14 +24,21 @@ export async function handleFormatDocument(
   const file = requireFile(params);
   const editor = await openAndShowDocument(file);
 
-  const edits = await vscode.commands.executeCommand<vscode.TextEdit[]>(
-    "vscode.executeFormatDocumentProvider",
-    editor.document.uri,
-    {
-      tabSize: editor.options.tabSize,
-      insertSpaces: editor.options.insertSpaces,
-    },
-  );
+  let edits: vscode.TextEdit[] | undefined;
+  try {
+    edits = await vscode.commands.executeCommand<vscode.TextEdit[]>(
+      "vscode.executeFormatDocumentProvider",
+      editor.document.uri,
+      {
+        tabSize: editor.options.tabSize,
+        insertSpaces: editor.options.insertSpaces,
+      },
+    );
+  } catch (err: unknown) {
+    return {
+      error: err instanceof Error ? err.message : "Command failed",
+    };
+  }
 
   if (edits && edits.length > 0) {
     const wsEdit = new vscode.WorkspaceEdit();
@@ -53,12 +60,19 @@ export async function handleFixAllLintErrors(
 
   // Try source.fixAll code action
   const range = new vscode.Range(0, 0, editor.document.lineCount, 0);
-  const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
-    "vscode.executeCodeActionProvider",
-    editor.document.uri,
-    range,
-    vscode.CodeActionKind.SourceFixAll.value,
-  );
+  let actions: vscode.CodeAction[] | undefined;
+  try {
+    actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      "vscode.executeCodeActionProvider",
+      editor.document.uri,
+      range,
+      vscode.CodeActionKind.SourceFixAll.value,
+    );
+  } catch (err: unknown) {
+    return {
+      error: err instanceof Error ? err.message : "Command failed",
+    };
+  }
 
   let appliedCount = 0;
   if (actions && actions.length > 0) {
@@ -68,10 +82,16 @@ export async function handleFixAllLintErrors(
         if (applied) appliedCount++;
       }
       if (action.command) {
-        await vscode.commands.executeCommand(
-          action.command.command,
-          ...(action.command.arguments ?? []),
-        );
+        try {
+          await vscode.commands.executeCommand(
+            action.command.command,
+            ...(action.command.arguments ?? []),
+          );
+        } catch (err: unknown) {
+          return {
+            error: err instanceof Error ? err.message : "Command failed",
+          };
+        }
         appliedCount++;
       }
     }
@@ -89,12 +109,19 @@ export async function handleOrganizeImports(
 
   // Use the organize imports code action
   const range = new vscode.Range(0, 0, editor.document.lineCount, 0);
-  const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
-    "vscode.executeCodeActionProvider",
-    editor.document.uri,
-    range,
-    vscode.CodeActionKind.SourceOrganizeImports.value,
-  );
+  let actions: vscode.CodeAction[] | undefined;
+  try {
+    actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      "vscode.executeCodeActionProvider",
+      editor.document.uri,
+      range,
+      vscode.CodeActionKind.SourceOrganizeImports.value,
+    );
+  } catch (err: unknown) {
+    return {
+      error: err instanceof Error ? err.message : "Command failed",
+    };
+  }
 
   let appliedCount = 0;
   if (actions && actions.length > 0) {
@@ -104,10 +131,16 @@ export async function handleOrganizeImports(
         if (applied) appliedCount++;
       }
       if (action.command) {
-        await vscode.commands.executeCommand(
-          action.command.command,
-          ...(action.command.arguments ?? []),
-        );
+        try {
+          await vscode.commands.executeCommand(
+            action.command.command,
+            ...(action.command.arguments ?? []),
+          );
+        } catch (err: unknown) {
+          return {
+            error: err instanceof Error ? err.message : "Command failed",
+          };
+        }
         appliedCount++;
       }
     }

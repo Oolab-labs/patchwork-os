@@ -49,7 +49,7 @@ export interface ToolSchema {
   description: string;
   inputSchema: Record<string, unknown>;
   annotations?: ToolAnnotations;
-  /** If true, this tool requires the VS Code extension and is hidden when it is disconnected */
+  /** If true, this tool requires the VS Code extension. When disconnected, calling it returns an error. */
   extensionRequired?: boolean;
 }
 
@@ -602,10 +602,9 @@ export class McpTransport {
               };
               break;
             }
-            const extConnected = this.isExtensionConnectedFn?.() ?? false;
-            const allTools = Array.from(this.tools.values())
-              .filter((t) => !t.schema.extensionRequired || extConnected)
-              .map((t) => t.schema);
+            const allTools = Array.from(this.tools.values()).map(
+              (t) => t.schema,
+            );
 
             // Parse cursor (opaque base64-encoded decimal offset)
             const listParams = msg.params as { cursor?: unknown } | undefined;
@@ -702,6 +701,25 @@ export class McpTransport {
                   code: ErrorCodes.TOOL_NOT_FOUND,
                   message: "Tool not found",
                   data: params.name,
+                },
+              };
+            } else if (
+              tool.schema.extensionRequired &&
+              !(this.isExtensionConnectedFn?.() ?? true)
+            ) {
+              this.callCount++;
+              this.errorCount++;
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                result: {
+                  content: [
+                    {
+                      type: "text",
+                      text: 'The VS Code extension is not connected. This tool requires the extension to be running.\n\nTo reconnect: open the Command Palette in VS Code and run "Claude IDE Bridge: Reconnect".\nIf the extension is not installed, install it from the marketplace: oolab-labs.claude-ide-bridge-extension',
+                    },
+                  ],
+                  isError: true,
                 },
               };
             } else {

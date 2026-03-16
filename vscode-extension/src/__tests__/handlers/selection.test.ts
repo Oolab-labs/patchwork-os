@@ -13,9 +13,10 @@ beforeEach(() => {
 });
 
 describe("handleGetSelection", () => {
-  it("returns null when no active editor", async () => {
+  it("returns error object when no active editor", async () => {
     vscode.window.activeTextEditor = undefined;
-    expect(await handleGetSelection()).toBeNull();
+    const result = (await handleGetSelection()) as any;
+    expect(result).toEqual({ error: "No active editor" });
   });
 
   it("returns selection data for active editor", async () => {

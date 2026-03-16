@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 
 export async function handleGetSelection(): Promise<unknown> {
   const editor = vscode.window.activeTextEditor;
-  if (!editor) return null;
+  if (!editor) return { error: "No active editor" };
   const sel = editor.selection;
   return {
     file: editor.document.uri.fsPath,

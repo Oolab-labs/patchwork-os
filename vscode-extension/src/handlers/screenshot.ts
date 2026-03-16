@@ -1,10 +1,27 @@
 import * as child_process from "node:child_process";
-import * as fs from "node:fs";
+import * as fsp from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
+const RETRY_COUNT = 3;
+const RETRY_DELAY_MS = 50;
+
+async function readWithRetry(filePath: string): Promise<Buffer> {
+  for (let attempt = 0; attempt < RETRY_COUNT; attempt++) {
+    try {
+      return await fsp.readFile(filePath);
+    } catch (err) {
+      if (attempt === RETRY_COUNT - 1) throw err;
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    }
+  }
+  // unreachable — for type safety
+  return fsp.readFile(filePath);
+}
+
 export async function handleCaptureScreenshot(): Promise<unknown> {
-  const tmpFile = path.join(os.tmpdir(), `claude-screenshot-${Date.now()}.png`);
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tmpFile = path.join(os.tmpdir(), `claude-screenshot-${suffix}.png`);
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -37,12 +54,12 @@ export async function handleCaptureScreenshot(): Promise<unknown> {
       proc.on("error", (err) => reject(err));
     });
 
-    const buffer = fs.readFileSync(tmpFile);
+    const buffer = await readWithRetry(tmpFile);
     const base64 = buffer.toString("base64");
     return { base64, mimeType: "image/png" };
   } finally {
     try {
-      fs.unlinkSync(tmpFile);
+      await fsp.unlink(tmpFile);
     } catch {
       // ignore cleanup errors
     }

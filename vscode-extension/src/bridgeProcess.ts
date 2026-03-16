@@ -214,6 +214,23 @@ export class BridgeProcess {
               const port = Number.parseInt(path.basename(file, ".lock"), 10);
               if (Number.isNaN(port)) continue;
 
+              // Check if the process that wrote the lock file is still alive.
+              // A stale lock file (dead PID) would cause a connection hang.
+              const pid = content.pid;
+              if (typeof pid === "number" && pid > 0) {
+                try {
+                  process.kill(pid, 0);
+                  // If we reach here, the process is alive
+                } catch (err: unknown) {
+                  const code = (err as NodeJS.ErrnoException).code;
+                  if (code === "ESRCH") {
+                    // Process is dead — skip this stale lock file
+                    continue;
+                  }
+                  // EPERM means alive but different user — treat as live
+                }
+              }
+
               this.clearLockPoll();
               resolve({
                 port,
