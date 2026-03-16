@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.1.31 — 2026-03-16)
+## Current State (v2.1.31 — 2026-03-17)
 
 - 135+ MCP tools; 1214 bridge tests + 362 extension tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
 - Extension v1.0.2 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.23`)
