@@ -9,6 +9,14 @@ When a bug is reported, do NOT start by trying to fix it. Instead:
 2. Fix the bug and confirm the test now passes
 3. Only then consider the bug fixed
 
+### Documentation & memory
+
+Keep project documentation and Claude's memory in sync with the code:
+
+- **After architectural changes** — update `CLAUDE.md` so future sessions have accurate context. If a pattern, rule, or constraint changes, the file should reflect it.
+- **At the end of a work session** — if meaningful decisions were made (why a pattern was chosen, what was tried and rejected, what the next steps are), save a summary to memory: *"Remember that we chose X approach because Y."*
+- **Prune stale instructions** — if `CLAUDE.md` contains outdated guidance, remove or correct it. Stale instructions cause confident mistakes in future sessions.
+
 ### Workflow rules
 
 - **After editing any file** — call `getDiagnostics` to catch errors introduced by the change

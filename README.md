@@ -76,15 +76,21 @@ Claude Code connects to the bridge. Type `/ide` to confirm — you'll see your o
 
 **That's it.** Claude can now read your diagnostics, navigate your code, run tests, commit to Git, and more.
 
----
-
-**Optional — add bridge workflow guidance to your project's CLAUDE.md:**
+**Step 4 — Add bridge guidance to your project's CLAUDE.md (recommended)**
 
 ```bash
 claude-ide-bridge gen-claude-md --write
 ```
 
-This appends a `## Claude IDE Bridge` section to your project's `CLAUDE.md` (creating it if absent) with workflow rules and a quick-reference tool table. Helps Claude default to bridge tools instead of falling back to shell commands. Idempotent — if the section already exists, no changes are made. When appending to an existing file, a timestamped `.bak` backup is created alongside `CLAUDE.md`.
+This appends a `## Claude IDE Bridge` section to your `CLAUDE.md` (creating it if absent) with:
+- **Bug-fix methodology** — write a failing test first, fix, confirm the test passes
+- **Documentation practices** — when to update CLAUDE.md and save decisions to Claude's memory
+- **Workflow rules** — use bridge tools instead of shell fallbacks
+- **Quick-reference tool table** — 14 common tasks mapped to the right tool
+
+Idempotent — safe to re-run; won't duplicate the section if it already exists. When appending to an existing file, a timestamped `.bak` backup is created.
+
+> **Why this matters for existing projects:** Claude Code has no built-in awareness of bridge tools. Without this section, Claude may fall back to raw shell commands for git, testing, and diagnostics — missing structured output, error codes, and IDE integration. Running `gen-claude-md` once teaches Claude how to work in your project from the first message of every session.
 
 ---
 
@@ -164,11 +170,11 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 
 ## 138+ MCP Tools
 
-### File Operations (7)
-`openFile` · `openDiff` · `saveDocument` · `closeTab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors`
+### File Operations (8)
+`openFile` · `openDiff` · `saveDocument` · `closeTab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors` · `searchWorkspace`
 
-### LSP / Code Intelligence (12)
-`goToDefinition` · `findReferences` · `getHover` · `getHoverAtCursor` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchWorkspaceSymbols` · `getDocumentSymbols` · `getCallHierarchy` · `getTypeHierarchy` · `getInlayHints`
+### LSP / Code Intelligence (13)
+`goToDefinition` · `findReferences` · `getHover` · `getHoverAtCursor` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchWorkspaceSymbols` · `getDocumentSymbols` · `getCallHierarchy` · `getTypeHierarchy` · `getInlayHints` · `getTypeSignature`
 
 ### Debugging (5)
 `setDebugBreakpoints` · `startDebugging` · `evaluateInDebugger` · `getDebugState` · `stopDebugging`
@@ -179,8 +185,8 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 ### Git (16)
 `getGitStatus` · `getGitDiff` · `getGitLog` · `gitAdd` · `gitCommit` · `gitPush` · `gitPull` · `gitFetch` · `gitListBranches` · `gitCheckout` · `gitStash` · `gitStashList` · `gitStashPop` · `gitBlame` · `getCommitDetails` · `getDiffBetweenRefs`
 
-### GitHub (11)
-`githubCreatePR` · `githubViewPR` · `githubGetPRDiff` · `githubPostPRReview` · `githubListPRs` · `githubCreateIssue` · `githubListIssues` · `githubGetIssue` · `githubCommentIssue` · `githubListRuns` · `githubGetRunLogs`
+### GitHub (12)
+`githubCreatePR` · `githubViewPR` · `githubGetPRDiff` · `githubPostPRReview` · `githubListPRs` · `githubCreateIssue` · `githubListIssues` · `githubGetIssue` · `githubCommentIssue` · `githubListRuns` · `githubGetRunLogs` · `createGithubIssueFromAIComment`
 
 ### Diagnostics & Testing (4)
 `getDiagnostics` · `watchDiagnostics` · `runTests` · `getCodeCoverage`
@@ -194,35 +200,42 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 ### Editor State (6)
 `getCurrentSelection` · `getLatestSelection` · `getOpenEditors` · `getBufferContent` · `setEditorDecorations` · `clearEditorDecorations`
 
-### Code Analysis & Security (7)
-`auditDependencies` · `getSecurityAdvisories` · `detectUnusedCode` · `refactorExtractFunction` · `generateAPIDocumentation` · `getDependencyTree` · `getGitHotspots`
+### Code Analysis & Security (9)
+`auditDependencies` · `getSecurityAdvisories` · `detectUnusedCode` · `refactorExtractFunction` · `generateAPIDocumentation` · `getDependencyTree` · `getGitHotspots` · `getImportTree` · `getActivityLog`
+
+### Bridge & Session (3)
+`getBridgeStatus` · `getHandoffNote` · `setHandoffNote`
+
+### Clipboard (2)
+`readClipboard` · `writeClipboard`
 
 ### Screen Capture (1)
 `captureScreenshot`
 
-### And More
-Text editing · Workspace management · HTTP requests · File watchers · Decorations · VS Code commands
+### VS Code Integration (10)
+Text editing · Workspace settings · File watchers · Decorations · `executeVSCodeCommand` · `listVSCodeCommands` · `getWorkspaceSettings` · `updateWorkspaceSetting` · `openInBrowser`
 
 | Category | Count | Extension Required |
 |----------|------:|:-:|
-| File Operations | 7 | No |
-| Git | 15 | No |
-| GitHub | 11 | No (requires `gh`) |
-| LSP / Code Intelligence | 12 | Yes (with fallbacks) |
-| Editor State | 7 | Yes |
+| File Operations | 8 | No |
+| Git | 16 | No |
+| GitHub | 12 | No (requires `gh`) |
+| LSP / Code Intelligence | 13 | Yes (with fallbacks) |
+| Editor State | 6 | Yes |
 | Text Editing | 5 | Yes |
-| Terminal | 7 | Yes |
-| Diagnostics & Testing | 3 | Mixed |
-| Code Analysis & Security | 7 | No |
+| Terminal | 8 | Yes |
+| Diagnostics & Testing | 4 | Mixed |
+| Code Analysis & Security | 9 | No |
 | Code Quality | 3 | Yes |
 | Debug | 5 | Yes |
 | Decorations | 2 | Yes |
 | Screen Capture | 1 | Yes |
-| Workspace Management | 4 | No |
 | Snapshots & Plans | 10 | No |
+| Bridge & Session | 3 | No |
+| Clipboard | 2 | Mixed |
 | HTTP | 2 | No |
-| VS Code Integration | 8 | Yes |
-| **Total** | **~108** | |
+| VS Code Integration | 10 | Yes |
+| **Total** | **~119** | |
 
 ## MCP Prompts (Slash Commands)
 
@@ -241,6 +254,60 @@ The bridge exposes 7 built-in slash commands via the MCP `prompts/list` + `promp
 > **Cowork sessions and MCP tools:** MCP tools (including all bridge tools) are **not available inside a Cowork session**. Use a two-step workflow: run `/mcp__bridge__cowork` in a regular Claude Code chat first — it gathers full IDE context and produces an action plan — then open a Cowork session armed with that context.
 
 Prompts are served directly from the bridge — no extension required. Implemented in `src/prompts.ts`.
+
+---
+
+## MCP Resources
+
+The bridge exposes your workspace files as MCP Resources via `resources/list` and `resources/read`. Any MCP client that supports the resources protocol can browse and read files directly — without calling individual file tools.
+
+- Workspace tree is walked automatically (skips `node_modules`, `.git`, `dist`, etc.)
+- Only text file extensions are exposed
+- Cursor-paginated (50 files per page)
+- 1 MB per-file cap
+- Workspace-confined: paths outside the workspace are rejected
+
+No configuration needed — resources are enabled by default.
+
+---
+
+## HTTP Monitoring Endpoints
+
+The bridge exposes several HTTP endpoints for monitoring and integration. All require `Authorization: Bearer <token>` except `/.well-known/mcp`.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Liveness probe — returns `{ status, uptime, connections }` |
+| `GET /ready` | Readiness probe — returns 200 only after MCP handshake completes and reports tool count + extension state. Returns 503 before ready. |
+| `GET /status` | Detailed status object with uptime and session diagnostics |
+| `GET /metrics` | Prometheus-format metrics: `bridge_tool_calls_total`, `bridge_tool_duration_ms_avg`, `bridge_uptime_seconds` |
+| `GET /stream` | Server-Sent Events stream of all activity log entries in real time (tool calls, lifecycle events). Keep-alive pings included. |
+| `GET /tasks` | Sanitized task list (when `--claude-driver` is active) |
+| `GET /.well-known/mcp` | Public MCP server discovery — name, version, capabilities, transports (no auth required) |
+
+```bash
+TOKEN=$(cat ~/.claude/ide/*.lock | python3 -c "import sys,json; print(json.load(sys.stdin)['authToken'])")
+
+# Live tool call feed
+curl -N -H "Authorization: Bearer $TOKEN" http://localhost:PORT/stream
+
+# Prometheus scrape
+curl -H "Authorization: Bearer $TOKEN" http://localhost:PORT/metrics
+```
+
+---
+
+## OpenTelemetry
+
+The bridge instruments every tool call with OpenTelemetry spans. Tracing is zero-overhead when disabled (the default).
+
+```bash
+# Export traces to any OTLP-compatible collector (Jaeger, Datadog, Honeycomb, etc.)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 claude-ide-bridge
+OTEL_SERVICE_NAME=my-bridge claude-ide-bridge  # optional service name override
+```
+
+Spans are exported on process exit. No bridge code changes needed — the env var activates tracing automatically.
 
 ---
 
@@ -339,6 +406,64 @@ claude -p "Run tests with runTests, fix any failures, and commit" \
 claude -p "Map the project using getFileTree, getDocumentSymbols, and getCallHierarchy" \
   --mcp-config ./mcp-bridge.json --output-format json
 ```
+
+## Persistent Sessions *(beta)*
+
+When the bridge restarts, it picks up where it left off — restoring the set of files you had open in Claude's view of the workspace.
+
+**What's restored:**
+- Open file tracking (the set of files Claude was aware of across the last session's activity)
+- Task queue — pending and running tasks survive bridge crashes and restarts (persisted to `~/.claude/ide/tasks-<port>.json`)
+- Activity log — all tool calls from past sessions remain readable
+
+**What isn't restored:**
+- In-progress tool calls (those are cancelled on disconnect)
+- Live diagnostics (always fetched fresh from the extension)
+- Claude's own conversation context (that's Claude Code's responsibility, not the bridge's)
+
+**How it works:** The bridge checkpoints session state every 30 seconds to `~/.claude/ide/`. On startup, the first connecting Claude session is seeded with the union of all previously-tracked open files. No configuration needed — this is on by default.
+
+> **Beta caveat:** Checkpoint restore is file-list only. Full "resume from mid-task" support (restoring partial tool progress, re-streaming output) is not yet implemented.
+
+---
+
+## Headless VPS *(new)*
+
+Run the bridge on a remote server with no display — give Claude full IDE capabilities over SSH without opening a desktop environment.
+
+**Recommended: VS Code Remote-SSH or Cursor SSH**
+
+Connect your local VS Code or Cursor to a VPS via Remote-SSH. The bridge extension runs in the remote extension host automatically — no extra setup. LSP, debugger, terminals, and all editor-state tools work normally because the extension and bridge run together on the server.
+
+**Fully headless (no IDE)**
+
+For servers with no VS Code at all:
+
+```bash
+# On the VPS — install and start the bridge
+npm install -g claude-ide-bridge
+claude-ide-bridge --workspace /path/to/project --bind 0.0.0.0 --port 9000
+
+# Get the token
+claude-ide-bridge print-token --port 9000
+```
+
+```bash
+# On your local machine — write an MCP config pointing at the VPS
+bash scripts/gen-mcp-config.sh remote \
+  --host your-vps-ip:9000 \
+  --token <token-from-above> \
+  --write
+
+# Then connect Claude Code
+claude --ide
+```
+
+Available tools in headless mode: file operations, git, terminals, search, CLI linters, dependency audits, HTTP client. LSP, debugger, and editor-state tools require the extension.
+
+> **Security:** `--bind 0.0.0.0` exposes the bridge to the network. Put nginx or Caddy in front with TLS before exposing to the internet. See [docs/remote-access.md](docs/remote-access.md) for a production Caddy setup.
+
+---
 
 ## Supported Editors
 
@@ -490,6 +615,8 @@ claude-ide-bridge gen-claude-md [--write] [--workspace <path>]
 --claude-binary <path>    Path to claude binary (default: claude)
 --automation              Enable event-driven automation
 --automation-policy <path> Path to JSON automation policy file
+--plugin <path>           Load a plugin directory (repeatable)
+--plugin-watch            Watch plugin directories and hot-reload on change
 --verbose                 Enable debug logging
 --help                    Show this help
 ```
@@ -520,6 +647,30 @@ claude-ide-bridge/
 ```
 
 ## Tips
+
+### Useful tools you might not know about
+
+- **`getBridgeStatus`** — ask Claude to call this when things feel wrong. It returns extension connection state, circuit breaker status (including remaining suspension time), active session count, and uptime. Faster than reading logs.
+
+- **`getActivityLog`** — returns a history of all tool calls in the current bridge session. Pass `showStats: true` to get per-tool call counts, average durations, and error rates. Useful after long autonomous tasks.
+
+- **`getHandoffNote`** / **`setHandoffNote`** — a persistent scratchpad (10KB, shared across all MCP sessions) stored at `~/.claude/ide/handoff-note.json`. Use it to pass context between a Claude Code CLI session and Claude Desktop, or between sessions on different machines. Ask Claude to write a summary note before closing a session, then read it in the next.
+
+- **`createGithubIssueFromAIComment`** — Claude can scan your code for `// AI:` comments (e.g. `// AI: this function needs error handling`) and file them as GitHub issues automatically. Run `getAIComments` first to populate the cache, then `createGithubIssueFromAIComment` to file them.
+
+- **`executeVSCodeCommand`** — run any VS Code command by ID with optional arguments. Requires the command to be on the allowlist (`--vscode-allow-command <id>`). Use `listVSCodeCommands` to discover available command IDs.
+
+### Keep your documentation and AI memory fresh
+
+Claude's effectiveness improves significantly when your project documentation and memory stay current. A few habits that pay off:
+
+- **Update `CLAUDE.md` after architectural changes.** Run `claude-ide-bridge gen-claude-md --write` when you add new tools or change patterns — stale guidance causes Claude to use wrong workflows.
+- **Tell Claude to remember important decisions.** Say "remember that we don't mock the database in tests" or "remember we're targeting Node 20". Claude Code stores these in its memory and applies them in future sessions automatically.
+- **Update memory at end-of-session.** If you've been working on a complex feature or debugging a subtle issue, ask Claude to save a summary to memory before closing — next session picks up where you left off with full context.
+- **Prune stale memories.** Ask Claude "what do you remember about this project?" occasionally and tell it to forget anything outdated. Stale memory causes Claude to confidently do the wrong thing.
+- **Keep `documents/` in sync with code.** If your team has docs in the `documents/` directory (platform-docs, roadmap, etc.), update them when features ship. Claude reads these at session start — accurate docs mean fewer mistakes.
+
+> **Quick memory check:** Ask Claude *"What do you remember about this project?"* at the start of a new session to confirm context loaded correctly.
 
 ### After restarting the bridge
 
@@ -564,7 +715,7 @@ Production-grade reliability:
 - Circuit breaker with exponential backoff for timeout cascades
 - Generation counter preventing stale handler responses
 - Extension-required tool filtering when extension disconnects
-- 909 tests (bridge); full WebSocket round-trip integration coverage
+- 1214 tests (bridge) + 362 extension tests; full WebSocket round-trip integration coverage
 - MCP elicitation support (`elicitation: {}` capability) — bridge can send `elicitation/create` mid-task to request structured user input via Claude Code's interactive dialog (Claude Code 2.1.76+)
 
 ## Building
@@ -573,13 +724,13 @@ Production-grade reliability:
 # Bridge
 npm run build        # TypeScript compilation
 npm run dev          # Development with tsx
-npm test             # Run 909 bridge tests
+npm test             # Run 1214 bridge tests
 
 # Extension
 cd vscode-extension
 npm run build        # esbuild bundle
 npm run package      # Create .vsix
-npm test             # Run 306 extension tests
+npm test             # Run 362 extension tests
 ```
 
 ## Troubleshooting
@@ -611,6 +762,20 @@ Then reload the VS Code window.
 ### Extension keeps reconnecting (oscillation)
 
 Repeated disconnects / `tools/list` changes usually mean multiple old VSIX versions are installed across VS Code forks (e.g. both VS Code and Cursor). Install the latest extension in every editor and reload each window.
+
+### Remote control: prompt doesn't appear or gets stuck (Claude mobile app)
+
+When using `claude remote-control` from the Claude mobile app, the user prompt sometimes fails to appear in the session or the input appears stuck. This is a known quirk of the remote control connection, not a bridge issue.
+
+**Fix:** Force-quit and relaunch the Claude app. The session reconnects and the prompt reappears.
+
+This tends to happen after the phone has been in the background for a while or after a network change (switching from WiFi to cellular). If you notice messages not sending or the UI not updating, a quick app restart is the fastest fix.
+
+### Remote control: agent is running but not making progress
+
+Occasionally a running agent or tool call hangs — the bridge is active, the extension is connected, but Claude isn't advancing. This usually means the subprocess or agent has stalled internally.
+
+**Fix:** Stop the current process (interrupt the Claude Code session or cancel the running task), then try again. In most cases the task resumes cleanly on the second attempt. If it happens repeatedly on the same prompt, try breaking the task into smaller steps.
 
 ### `start-all` launched from inside a Claude Code session
 
