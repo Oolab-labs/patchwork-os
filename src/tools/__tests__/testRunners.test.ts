@@ -159,7 +159,9 @@ describe("vitestRunner", () => {
       testResults: [
         {
           testFilePath: "/ws/a.test.ts",
-          testResults: [{ fullName: "ok", status: "passed", failureMessages: [] }],
+          testResults: [
+            { fullName: "ok", status: "passed", failureMessages: [] },
+          ],
         },
       ],
     };

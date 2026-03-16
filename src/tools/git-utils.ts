@@ -3,9 +3,7 @@ import { execSafe } from "./utils.js";
 // `..` in a ref is interpreted as a range by git (e.g. main..HEAD) and must not
 // appear in a single ref name. Leading `-` would be interpreted by git as a flag.
 export function isValidRef(ref: string): boolean {
-  return (
-    /^[\w.\-/]+$/.test(ref) && !ref.includes("..") && !ref.startsWith("-")
-  );
+  return /^[\w.\-/]+$/.test(ref) && !ref.includes("..") && !ref.startsWith("-");
 }
 
 export async function runGit(
