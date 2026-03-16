@@ -1,9 +1,20 @@
 {
   "name": "claude-ide-bridge",
-  "version": "2.1.23",
+  "version": "2.1.31",
   "description": "Standalone MCP bridge for Claude Code IDE integration with any editor — 120+ tools for LSP, debugging, terminals, Git, GitHub, and more",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./plugin": {
+      "import": "./dist/plugin.js",
+      "types": "./dist/plugin.d.ts"
+    }
+  },
   "bin": {
     "claude-ide-bridge": "dist/index.js",
     "claude-ide-bridge-start": "dist/index.js"
