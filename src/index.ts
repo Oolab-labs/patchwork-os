@@ -84,13 +84,14 @@ if (process.argv[2] === "gen-claude-md") {
       );
       process.exit(0);
     }
-    // Backup existing file before modifying
+    // Write tmp first — if the write fails, the original is still intact
+    const updated = `${existing.trimEnd()}\n\n${content.trimEnd()}\n`;
+    writeFileSync(`${targetPath}.tmp`, updated, "utf-8");
+    // Backup existing file before replacing
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const backupPath = `${targetPath}.${ts}.bak`;
     renameSync(targetPath, backupPath);
     process.stderr.write(`Backed up existing CLAUDE.md to ${backupPath}\n`);
-    const updated = `${existing.trimEnd()}\n\n${content.trimEnd()}\n`;
-    writeFileSync(`${targetPath}.tmp`, updated, "utf-8");
   } else {
     mkdirSync(workspace, { recursive: true });
     writeFileSync(`${targetPath}.tmp`, content, "utf-8");
@@ -166,8 +167,165 @@ if (process.argv[2] === "print-token") {
   process.exit(0);
 }
 
+// Handle gen-plugin-stub subcommand — scaffolds a new plugin directory
+if (process.argv[2] === "gen-plugin-stub") {
+  const argv = process.argv.slice(3);
+
+  // Parse args: gen-plugin-stub <dir> [--name <name>] [--prefix <prefix>]
+  const dirArg = argv.find((a) => !a.startsWith("--"));
+  if (!dirArg) {
+    process.stderr.write(
+      "Usage: claude-ide-bridge gen-plugin-stub <output-dir> [--name <org/plugin-name>] [--prefix <toolPrefix>]\n",
+    );
+    process.exit(1);
+  }
+
+  const nameIdx = argv.indexOf("--name");
+  const prefixIdx = argv.indexOf("--prefix");
+  const pluginName: string =
+    nameIdx !== -1 && argv[nameIdx + 1]
+      ? (argv[nameIdx + 1] as string)
+      : "my-org/my-plugin";
+  const toolPrefix: string =
+    prefixIdx !== -1 && argv[prefixIdx + 1]
+      ? (argv[prefixIdx + 1] as string)
+      : "myPlugin";
+
+  // Validate name format
+  if (!/^[a-zA-Z0-9@._/-]{1,100}$/.test(pluginName)) {
+    process.stderr.write(
+      `Error: --name "${pluginName}" contains invalid characters. Use only letters, numbers, @, ., _, /, -.\n`,
+    );
+    process.exit(1);
+  }
+
+  // Validate prefix format
+  if (!/^[a-zA-Z][a-zA-Z0-9_]{1,19}$/.test(toolPrefix)) {
+    process.stderr.write(
+      `Error: --prefix "${toolPrefix}" is invalid. Must match /^[a-zA-Z][a-zA-Z0-9_]{1,19}$/ (2–20 chars, start with a letter).\n`,
+    );
+    process.exit(1);
+  }
+
+  const outDir = path.resolve(dirArg);
+
+  if (existsSync(outDir)) {
+    process.stderr.write(
+      `Error: "${outDir}" already exists. Choose a new directory.\n`,
+    );
+    process.exit(1);
+  }
+
+  mkdirSync(outDir, { recursive: true });
+
+  // claude-ide-bridge-plugin.json
+  const manifest = {
+    schemaVersion: 1,
+    name: pluginName,
+    version: "0.1.0",
+    description: "A Claude IDE Bridge plugin",
+    entrypoint: "./index.mjs",
+    toolNamePrefix: toolPrefix,
+    minBridgeVersion: "2.1.24",
+  };
+  writeFileSync(
+    path.join(outDir, "claude-ide-bridge-plugin.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    "utf-8",
+  );
+
+  // index.mjs entrypoint
+  const entrypoint = `/**
+ * ${pluginName} — Claude IDE Bridge plugin
+ *
+ * Each tool must have a name starting with "${toolPrefix}".
+ * The \`ctx\` object provides: ctx.workspace, ctx.workspaceFolders,
+ * ctx.config (commandTimeout, maxResultSize), and ctx.logger.
+ */
+
+/** @param {import('claude-ide-bridge/plugin').PluginContext} ctx */
+export function register(ctx) {
+  ctx.logger.info(${JSON.stringify(`${pluginName} loaded`)}, { workspace: ctx.workspace });
+
+  return {
+    tools: [
+      {
+        schema: {
+          name: ${JSON.stringify(`${toolPrefix}Hello`)},
+          description: "Example tool — returns a greeting",
+          inputSchema: {
+            type: "object",
+            required: ["name"],
+            additionalProperties: false,
+            properties: {
+              name: { type: "string", description: "Name to greet" },
+            },
+          },
+          annotations: { readOnlyHint: true },
+        },
+        handler: async (args) => ({
+          content: [{ type: "text", text: "Hello from " + ${JSON.stringify(pluginName)} + ", " + args.name + "!" }],
+        }),
+      },
+    ],
+  };
+}
+`;
+  writeFileSync(path.join(outDir, "index.mjs"), entrypoint, "utf-8");
+
+  // package.json (optional, for npm publishing)
+  const pkg = {
+    name: pluginName.replace(/^@[^/]+\//, "").replace(/\//g, "-"),
+    version: "0.1.0",
+    description: "A Claude IDE Bridge plugin",
+    type: "module",
+    main: "index.mjs",
+    keywords: ["claude-ide-bridge", "claude-ide-bridge-plugin"],
+    peerDependencies: { "claude-ide-bridge": ">=2.1.24" },
+  };
+  writeFileSync(
+    path.join(outDir, "package.json"),
+    `${JSON.stringify(pkg, null, 2)}\n`,
+    "utf-8",
+  );
+
+  // .gitignore
+  writeFileSync(path.join(outDir, ".gitignore"), "node_modules\n", "utf-8");
+
+  process.stderr.write(`✓ Plugin stub created at ${outDir}\n`);
+  process.stderr.write("\nNext steps:\n");
+  process.stderr.write(
+    `  1. Edit ${path.join(outDir, "index.mjs")} to implement your tools\n`,
+  );
+  process.stderr.write(
+    `  2. Run the bridge with: claude-ide-bridge --plugin ${outDir}\n`,
+  );
+  process.stderr.write(
+    `  3. Or add to your config: { "plugins": ["${outDir}"] }\n`,
+  );
+  process.exit(0);
+}
+
 // Handle install-extension subcommand before parseConfig (avoids unknown-flag error)
 if (process.argv[2] === "install-extension") {
+  const KNOWN_EDITORS = new Set([
+    "code",
+    "windsurf",
+    "cursor",
+    "antigravity",
+    "ag",
+  ]);
+  const editorArg = process.argv[3];
+  if (
+    editorArg !== undefined &&
+    !KNOWN_EDITORS.has(editorArg) &&
+    !path.isAbsolute(editorArg)
+  ) {
+    process.stderr.write(
+      `Error: Unknown editor "${editorArg}". Use one of: code, windsurf, cursor, antigravity, ag\n`,
+    );
+    process.exit(1);
+  }
   const editor = process.argv[3] || findEditor();
   if (!editor) {
     process.stderr.write(
@@ -274,7 +432,9 @@ if (config.watch) {
     if (stopping) return;
     const startAt = Date.now();
     process.stderr.write("[supervisor] starting bridge\n");
-    const child = spawn(childArgv[0]!, childArgv.slice(1), {
+    const [cmd, ...args] = childArgv;
+    if (!cmd) return;
+    const child = spawn(cmd, args, {
       stdio: "inherit",
     });
 
