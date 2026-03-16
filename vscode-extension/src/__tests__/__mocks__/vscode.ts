@@ -138,6 +138,17 @@ export const SymbolKind: Record<number, string> &
   Array: 17,
 };
 
+export const InlayHintKind = {
+  Type: 1,
+  Parameter: 2,
+} as const;
+
+export const ConfigurationTarget = {
+  Global: 1,
+  Workspace: 2,
+  WorkspaceFolder: 3,
+} as const;
+
 export const CodeActionKind = {
   SourceFixAll: { value: "source.fixAll" },
   SourceOrganizeImports: { value: "source.organizeImports" },
@@ -317,6 +328,7 @@ export const debug = {
 export const commands = {
   executeCommand: vi.fn(async () => undefined),
   registerCommand: vi.fn(() => ({ dispose: vi.fn() })),
+  getCommands: vi.fn(async () => [] as string[]),
 };
 
 export const env = {
@@ -426,6 +438,8 @@ export function __reset() {
     .mockReset()
     .mockImplementation((_section?: string) => ({
       get: <T>(_key: string, defaultValue: T): T => defaultValue,
+      inspect: vi.fn(() => undefined),
+      update: vi.fn(async () => {}),
     }));
 
   window.tabGroups.all = [];
@@ -466,6 +480,8 @@ export function __reset() {
   languages.getDiagnostics.mockReset().mockReturnValue([]);
   commands.executeCommand.mockReset().mockResolvedValue(undefined);
   commands.registerCommand.mockReset().mockReturnValue({ dispose: vi.fn() });
+  commands.getCommands.mockReset().mockResolvedValue([]);
+  env.clipboard.readText.mockReset().mockResolvedValue("");
   env.clipboard.writeText.mockReset();
 
   debug.activeDebugSession = undefined;
