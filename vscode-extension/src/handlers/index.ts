@@ -21,6 +21,7 @@ import {
   handleSaveFile,
 } from "./files";
 import { handleGetInlayHints } from "./inlayHints";
+import { handleCaptureScreenshot } from "./screenshot";
 import { handleGetSelection } from "./selection";
 import {
   handleCreateTerminal,
@@ -79,4 +80,5 @@ export const baseHandlers: Record<string, RequestHandler> = {
   "extension/getInlayHints": handleGetInlayHints,
   "extension/getTypeHierarchy": handleGetTypeHierarchy,
   "extension/getWorkspaceFolders": handleGetWorkspaceFolders,
+  "extension/captureScreenshot": handleCaptureScreenshot,
 };

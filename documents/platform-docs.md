@@ -4,7 +4,7 @@ Complete feature reference for the Claude IDE Bridge MCP server and VS Code exte
 
 ## Overview
 
-Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 137+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
+Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 138+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state.
 
 The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code CLI** via WebSocket — both sessions share the same running bridge, enabling seamless context handoff between the two clients.
 
@@ -246,6 +246,11 @@ Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering whil
 | `setDebugBreakpoints` | Set breakpoints with conditions |
 | `startDebugging` | Start a debug session (15s timeout) |
 | `stopDebugging` | Stop active debug session |
+
+### Screen Capture
+| Tool | Description |
+|------|-------------|
+| `captureScreenshot` | Capture a screenshot of the current display and return it as an MCP image block. Uses `screencapture -x` on macOS and ImageMagick `import` on Linux. Returns `{ type: "image", data, mimeType: "image/png" }` directly — Claude receives and can reason about the visual output. |
 
 ### Decorations
 | Tool | Description |
@@ -559,3 +564,26 @@ Launches tmux session with 4 panes: orchestrator, bridge, Claude CLI, remote con
 - **Auto-install** (`autoInstallBridge: true`): extension installs `claude-ide-bridge` npm package globally on first activation; version-pinned to the bundled `BRIDGE_VERSION`
 - **Auto-start** (`autoStartBridge: true`): extension spawns a bridge process per workspace folder; polls lock dir (250ms) to detect readiness; uses exponential restart backoff (max 5 restarts, 30s cap)
 - **Untrusted workspace**: bridge install and auto-start are skipped in untrusted workspaces (VS Code workspace trust). The extension still watches for a manually-started bridge via lock file discovery.
+- **`extensionKind: ["workspace"]`** (v1.0.2+): extension runs in the remote extension host when using VS Code Remote-SSH or Cursor SSH — bridge spawns on the VPS, connects over VPS localhost, all tools available remotely.
+
+### Remote Deployment
+
+**VS Code Remote-SSH / Cursor SSH (full tools)**
+No extra setup. The extension activates on the VPS automatically when you connect via SSH and open a remote folder. Claude Code on your local machine connects normally.
+
+**Headless VPS (CLI tools only — no IDE)**
+```bash
+# On VPS
+claude-ide-bridge --bind 0.0.0.0 --port 9000 --workspace /project
+claude-ide-bridge print-token --port 9000     # prints auth token
+
+# On local machine
+bash scripts/gen-mcp-config.sh remote \
+  --host vps-ip:9000 --token <token> --write
+```
+
+CLI subcommands added in v2.1.16:
+- `print-token [--port N]` — prints authToken from most recent (or specified) lock file
+- `gen-mcp-config.sh remote --host <h:p> --token <t>` — generates HTTP MCP config, no local lock file needed
+
+Available tools headless: file operations, git, terminals, search, CLI linters, dependency audits, HTTP client. Missing without extension: LSP, debugger, editor state.

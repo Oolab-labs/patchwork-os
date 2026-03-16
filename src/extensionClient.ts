@@ -896,6 +896,15 @@ export class ExtensionClient {
     return this.requestOrNull("extension/unwatchFiles", { id });
   }
 
+  async captureScreenshot(): Promise<{
+    base64: string;
+    mimeType: string;
+  } | null> {
+    return this.proxy<{ base64: string; mimeType: string }>(
+      "extension/captureScreenshot",
+    );
+  }
+
   // --- Terminal Features ---
 
   async listTerminals(): Promise<unknown> {

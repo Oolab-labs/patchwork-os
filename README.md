@@ -4,7 +4,7 @@
 [![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **120+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, code analysis, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
+A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **138+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, code analysis, screen capture, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
 
 ## How It Works
 
@@ -162,7 +162,7 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 | `SessionStart` | Reports bridge status, connection, and tool count |
 | `SubagentStart` | Verifies bridge is alive before IDE subagents run |
 
-## 120+ MCP Tools
+## 138+ MCP Tools
 
 ### File Operations (7)
 `openFile` · `openDiff` · `saveDocument` · `closeTab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors`
@@ -197,6 +197,9 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 ### Code Analysis & Security (7)
 `auditDependencies` · `getSecurityAdvisories` · `detectUnusedCode` · `refactorExtractFunction` · `generateAPIDocumentation` · `getDependencyTree` · `getGitHotspots`
 
+### Screen Capture (1)
+`captureScreenshot`
+
 ### And More
 Text editing · Workspace management · HTTP requests · File watchers · Decorations · VS Code commands
 
@@ -214,11 +217,12 @@ Text editing · Workspace management · HTTP requests · File watchers · Decora
 | Code Quality | 3 | Yes |
 | Debug | 5 | Yes |
 | Decorations | 2 | Yes |
+| Screen Capture | 1 | Yes |
 | Workspace Management | 4 | No |
 | Snapshots & Plans | 10 | No |
 | HTTP | 2 | No |
 | VS Code Integration | 8 | Yes |
-| **Total** | **~107** | |
+| **Total** | **~108** | |
 
 ## MCP Prompts (Slash Commands)
 
@@ -503,7 +507,7 @@ claude-ide-bridge/
     claudeDriver.ts   IClaudeDriver interface + SubprocessDriver
     claudeOrchestrator.ts Task queue (MAX_CONCURRENT=10, MAX_QUEUE=20)
     automation.ts     AutomationHooks — onDiagnosticsError / onFileSave / onPostCompact / onInstructionsLoaded policies
-    tools/            120+ MCP tool implementations
+    tools/            138+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
     src/connection.ts WebSocket connection management

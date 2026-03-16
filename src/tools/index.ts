@@ -126,6 +126,7 @@ import { createRunClaudeTaskTool } from "./runClaudeTask.js";
 import { createRunCommandTool } from "./runCommand.js";
 import { createRunTestsTool } from "./runTests.js";
 import { createSaveDocumentTool } from "./saveDocument.js";
+import { createCaptureScreenshotTool } from "./screenshot.js";
 import { createSearchAndReplaceTool } from "./searchAndReplace.js";
 import { createSearchWorkspaceTool } from "./searchWorkspace.js";
 import { createSetActiveWorkspaceFolderTool } from "./setActiveWorkspaceFolder.js";
@@ -268,6 +269,7 @@ export function registerAllTools(
     createSetHandoffNoteTool(sessionId),
     createGetWorkspaceSettingsTool(extensionClient),
     createSetWorkspaceSettingTool(extensionClient),
+    createCaptureScreenshotTool(extensionClient),
     createExecuteVSCodeCommandTool(extensionClient, config),
     createListVSCodeCommandsTool(extensionClient),
     createGetInlayHintsTool(workspace, extensionClient),
