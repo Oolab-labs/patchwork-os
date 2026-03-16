@@ -132,3 +132,17 @@ describe("createFindFilesTool — missing pattern", () => {
     await expect(tool.handler({})).rejects.toThrow();
   });
 });
+
+describe("createFindFilesTool — find fallback leading-dash guard", () => {
+  const probes = { fd: false, git: false } as any;
+
+  it("rejects pattern starting with - in find fallback (flag injection)", async () => {
+    // Regression: pattern "-exec rm -rf {} ;" or "-maxdepth 0" was passed
+    // directly to find -name without validation, potentially being interpreted
+    // as a find primary rather than a name pattern.
+    const tool = createFindFilesTool(ws, probes);
+    const result = parse(await tool.handler({ pattern: "-maxdepth 0" }));
+    expect(result.isError ?? result.error).toBeTruthy();
+    expect(mockExecSafe).not.toHaveBeenCalled();
+  });
+});

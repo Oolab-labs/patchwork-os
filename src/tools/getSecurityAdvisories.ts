@@ -427,18 +427,9 @@ export function createGetSecurityAdvisoriesTool(
         | Severity
         | "all";
 
-      // Cache key uses only the package manager, not the severity filter.
-      // We always cache the full (all-severity) result and filter at presentation
-      // time. This prevents redundant audit runs when the same tool is called
-      // with different severity thresholds (e.g. "high" then "all").
-      const cacheKey = pm;
-      const now = Date.now();
-      const cached = cache.get(cacheKey);
-      if (cached && now - cached.timestamp < CACHE_TTL) {
-        const result = filterBySeverity(cached.data, minSeverity);
-        return success({ available: true, ...result });
-      }
-
+      // Resolve "auto" to the actual package manager before computing the cache
+      // key so that `pm="auto"` and `pm="npm"` share the same cache entry on an
+      // npm workspace (same fix applied to auditDependencies.ts in v2.1.14).
       const detected = detectAuditor(workspace, pm);
       if (!detected) {
         return success({
@@ -447,6 +438,18 @@ export function createGetSecurityAdvisoriesTool(
           error:
             "No supported package manifest found (pnpm-lock.yaml, yarn.lock, package.json, Cargo.toml, requirements.txt, pyproject.toml)",
         });
+      }
+
+      // Cache key uses the resolved manager name (not the raw `pm` input) so
+      // that "auto" and explicit calls (e.g. "npm") share the same cache entry.
+      // We always cache the full (all-severity) result and filter at presentation
+      // time — this prevents redundant audit runs for different severity thresholds.
+      const cacheKey = detected;
+      const now = Date.now();
+      const cached = cache.get(cacheKey);
+      if (cached && now - cached.timestamp < CACHE_TTL) {
+        const result = filterBySeverity(cached.data, minSeverity);
+        return success({ available: true, ...result });
       }
 
       try {

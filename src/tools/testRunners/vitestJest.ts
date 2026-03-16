@@ -49,25 +49,43 @@ function parseJsonReport(
   // then falling back to scanning { positions. This avoids O(n^2) on large output.
   let report: JsonReport | null = null;
 
-  // Fast path: look for known JSON report markers
+  // Helper: return a parsed object only if it looks like a test report
+  const isReport = (obj: unknown): obj is JsonReport =>
+    typeof obj === "object" &&
+    obj !== null &&
+    Array.isArray((obj as JsonReport).testResults);
+
+  // Fast path: look for known JSON report markers.
+  // Try both the first and last occurrence — some reporters prepend preamble JSON
+  // (e.g. a setup script logging {"testResults":"none"}) before the real report.
   const markers = [
     '{"numTotalTestSuites"',
     '{"testResults"',
     '{"numFailedTestSuites"',
   ];
   for (const marker of markers) {
-    const idx = stdout.indexOf(marker);
-    if (idx !== -1) {
-      try {
-        report = JSON.parse(stdout.slice(idx));
-        break;
-      } catch {
-        // Marker found but parse failed — fall through to scan
+    for (const searchFn of [
+      (s: string) => s.indexOf(marker),
+      (s: string) => s.lastIndexOf(marker),
+    ]) {
+      const idx = searchFn(stdout);
+      if (idx !== -1) {
+        try {
+          const parsed = JSON.parse(stdout.slice(idx));
+          if (isReport(parsed)) {
+            report = parsed;
+            break;
+          }
+        } catch {
+          // parse failed — continue
+        }
       }
     }
+    if (report) break;
   }
 
-  // Slow path: scan from each { position (capped at 20 attempts to avoid O(n^2))
+  // Slow path: scan from each { position (capped at 20 attempts to avoid O(n^2)).
+  // Each failed attempt advances past the current { so we make forward progress.
   if (!report) {
     let searchFrom = 0;
     let attempts = 0;
@@ -75,12 +93,17 @@ function parseJsonReport(
       const start = stdout.indexOf("{", searchFrom);
       if (start === -1) break;
       try {
-        report = JSON.parse(stdout.slice(start));
-        break;
+        const parsed = JSON.parse(stdout.slice(start));
+        if (isReport(parsed)) {
+          report = parsed;
+          break;
+        }
+        // Valid JSON but wrong shape — skip past this {
+        searchFrom = start + 1;
       } catch {
         searchFrom = start + 1;
-        attempts++;
       }
+      attempts++;
     }
   }
   if (!report) return [];

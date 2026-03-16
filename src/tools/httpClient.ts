@@ -363,7 +363,10 @@ export function createSendHttpRequestTool() {
         });
       } catch (err: unknown) {
         cleanup();
-        if (err instanceof Error && err.name === "AbortError") {
+        if (
+          err instanceof Error &&
+          (err.name === "AbortError" || err.name === "TimeoutError")
+        ) {
           return error(`Request timed out after ${timeoutMs}ms`);
         }
         const msg = err instanceof Error ? err.message : String(err);

@@ -352,10 +352,13 @@ export class StreamableHttpHandler {
     try {
       responseData = await responsePromise;
     } catch {
-      // Destroy newly-created sessions that timed out: the client never received
-      // the session ID (504 replaces the 200 that would carry the header), so the
-      // session is unreachable and would occupy a slot until the 30-min idle pruner.
-      if (sessionIsNew) this.destroySession(session.id);
+      // Destroy newly-created sessions that timed out and strip the session ID
+      // header so the client doesn't attempt to reuse a session that no longer
+      // exists (setHeader is in-memory until writeHead; removeHeader undoes it).
+      if (sessionIsNew) {
+        this.destroySession(session.id);
+        res.removeHeader("Mcp-Session-Id");
+      }
       res.writeHead(504, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({

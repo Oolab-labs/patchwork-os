@@ -146,6 +146,18 @@ describe("searchAndReplace — core replacement logic (mock rg)", () => {
     expect(parse(result).error).toMatch(/must not start with/i);
   });
 
+  it("rejects pattern containing null byte (flag injection via rg -e arg)", async () => {
+    // Regression: a null byte (\x00) in the pattern terminates the rg -e argument
+    // at the OS level, causing rg to see an empty pattern and match every line.
+    // The JS split(pattern) then has no matches, producing a misleading 0-replacement result.
+    const tool = createSearchAndReplaceTool(tmpDir);
+    const result = parse(
+      await tool.handler({ pattern: "import\x00bar", replacement: "x" }),
+    );
+    expect(result.error).toMatch(/null byte/i);
+    expect(mockedExecSafe).not.toHaveBeenCalled();
+  });
+
   it("replaces across multiple matched files", async () => {
     mockedExecSafe.mockResolvedValue({
       stdout: `${alphaPath}\n${betaPath}\n`,

@@ -14,7 +14,10 @@ const PANIC_RE = /panicked at\s+'(.+?)',\s*(.+?):(\d+):(\d+)/;
 // Also handle newer Rust format (1.73+): panicked at src/file.rs:42:5:\nmessage
 // The negative lookahead (?!') prevents this from matching old-style lines that
 // start with a quoted message (e.g. when PANIC_RE fails due to a quote in the message).
-const PANIC_NEW_RE = /panicked at\s+(?!')([^\s']\S*):(\d+):(\d+)/;
+// The file path must end in .rs or contain a path separator to avoid matching
+// timestamps (e.g. "2024-01-01T00:00:00:123:456") as false positives.
+const PANIC_NEW_RE =
+  /panicked at\s+(?!')([^\s']\S*(?:\.rs|\/\S*))\s*:(\d+):(\d+)/;
 
 export const cargoTestRunner: TestRunner = {
   name: "cargo-test",

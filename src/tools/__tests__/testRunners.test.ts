@@ -151,6 +151,27 @@ describe("vitestRunner", () => {
     expect(results[0]?.status).toBe("skipped");
   });
 
+  it("run() ignores preamble JSON that looks like testResults but has wrong shape", async () => {
+    // Regression: fast path used indexOf(marker) and accepted the FIRST occurrence
+    // of '{"testResults"', which could be a setup-script log line like
+    // {"testResults":"none"} rather than the real reporter output.
+    const realReport = {
+      testResults: [
+        {
+          testFilePath: "/ws/a.test.ts",
+          testResults: [{ fullName: "ok", status: "passed", failureMessages: [] }],
+        },
+      ],
+    };
+    // Preamble: a JSON object with testResults as a string (wrong shape).
+    const preamble = JSON.stringify({ testResults: "none" });
+    const stdout = `${preamble}\n${JSON.stringify(realReport)}`;
+    mockExecSafe.mockResolvedValue(ok(stdout));
+    const results = await vitestRunner.run("/ws");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.name).toBe("ok");
+  });
+
   it("run() extracts line from stack trace when location is default", async () => {
     const report = {
       testResults: [
@@ -345,6 +366,26 @@ describe("cargoTestRunner", () => {
     // File path must not start with a quote character (would indicate PANIC_NEW_RE mis-matched)
     if (failed[0]?.file) {
       expect(failed[0].file).not.toMatch(/^'/);
+    }
+  });
+
+  it("PANIC_NEW_RE does not match timestamp-like strings as file paths", async () => {
+    // Regression: PANIC_NEW_RE captured "2024-01-01T00:00:00" as the file path
+    // when a panic message contained a timestamp, corrupting the source location.
+    const output = [
+      "test module::test_ts ... FAILED",
+      "",
+      "failures:",
+      "thread 'module::test_ts' panicked at 2024-01-01T00:00:00:123:456",
+      "some panic message",
+    ].join("\n");
+    mockExecSafe.mockResolvedValue(ok(output));
+    const results = await cargoTestRunner.run("/ws");
+    const failed = results.filter((r) => r.status === "failed");
+    expect(failed.length).toBe(1);
+    // file should be undefined or must end with .rs / contain /
+    if (failed[0]?.file) {
+      expect(failed[0].file).toMatch(/\.rs$|[/\\]/);
     }
   });
 

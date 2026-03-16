@@ -1,5 +1,6 @@
 import type { ProbeResults } from "../probe.js";
 import {
+  error,
   execSafe,
   makeRelative,
   optionalString,
@@ -96,6 +97,13 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
       }
 
       // Fallback: find
+      // Guard: a pattern starting with `-` would be interpreted by `find` as a
+      // primary or option (e.g. `-maxdepth 0`, `-exec …`) rather than a name pattern.
+      if (pattern.startsWith("-")) {
+        return error(
+          `Pattern must not start with "-" (would be interpreted as a find option)`,
+        );
+      }
       const findArgs = [
         searchDir,
         "-maxdepth",

@@ -77,6 +77,11 @@ export function createSearchAndReplaceTool(workspace: string) {
       if (pattern.length === 0) {
         return error("pattern must not be empty");
       }
+      // A null byte terminates the rg -e argument at the OS level, causing rg to
+      // match every line while the JS replacement finds nothing — misleading output.
+      if (pattern.includes("\x00")) {
+        return error("pattern must not contain a null byte");
+      }
       // Compile regex once (used for both counting matches and replacement)
       let regex: RegExp | null = null;
       if (isRegex) {

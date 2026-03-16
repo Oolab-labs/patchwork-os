@@ -105,6 +105,27 @@ describe("sendHttpRequest — AbortSignal listener cleanup", () => {
   });
 });
 
+describe("sendHttpRequest — timeout error message (AbortError / TimeoutError)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("returns 'timed out' message when fetch throws TimeoutError (Node <18.14 naming)", async () => {
+    // Regression: err.name === "AbortError" only — Node <18.14 throws TimeoutError.
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "93.184.216.34",
+      family: 4,
+    } as any);
+    const timeoutErr = Object.assign(new Error("The operation was aborted"), {
+      name: "TimeoutError",
+    });
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(timeoutErr);
+
+    const result = parse(
+      await tool.handler({ method: "GET", url: "https://example.com" }),
+    );
+    expect(result.error).toMatch(/timed out/i);
+  });
+});
+
 describe("sendHttpRequest — Host header SSRF bypass prevention", () => {
   it("does not allow caller-supplied Host header to override the pinned hostname", async () => {
     // The tool sets Host = parsedUrl.hostname when IP-pinning.

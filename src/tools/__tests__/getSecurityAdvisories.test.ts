@@ -462,4 +462,26 @@ describe("getSecurityAdvisories", () => {
     expect(result.error).toContain("pip-audit");
     expect(result.error).toContain("pip install pip-audit");
   });
+
+  it("auto and npm cache key dedup — only one subprocess run for auto then npm", async () => {
+    // Regression: cacheKey was `pm` (raw "auto") not `detected` ("npm"), so two
+    // calls with auto/npm within the TTL window spawned two audit subprocesses.
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("package.json"),
+    );
+    const auditOutput = JSON.stringify(NPM_AUDIT_RESPONSE);
+    mockExecSafe.mockResolvedValue({
+      stdout: auditOutput,
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 100,
+    });
+
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    await tool.handler({ packageManager: "auto" });
+    await tool.handler({ packageManager: "npm" });
+    // Both calls resolve to npm; second should hit cache — only one execSafe call
+    expect(mockExecSafe).toHaveBeenCalledTimes(1);
+  });
 });

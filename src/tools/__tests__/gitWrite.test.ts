@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { isValidRef } from "../git-utils.js";
 import {
   createGitAddTool,
   createGitBlameTool,
@@ -11,6 +12,25 @@ import {
   createGitListBranchesTool,
   createGitPushTool,
 } from "../gitWrite.js";
+
+describe("isValidRef", () => {
+  it("accepts normal branch names", () => {
+    expect(isValidRef("main")).toBe(true);
+    expect(isValidRef("feature/my-branch")).toBe(true);
+    expect(isValidRef("v1.2.3")).toBe(true);
+  });
+
+  it("rejects refs starting with - (flag injection)", () => {
+    // Regression: isValidRef accepted "-p", which git interprets as a flag
+    expect(isValidRef("-p")).toBe(false);
+    expect(isValidRef("--paginate")).toBe(false);
+    expect(isValidRef("-")).toBe(false);
+  });
+
+  it("rejects refs containing ..", () => {
+    expect(isValidRef("main..HEAD")).toBe(false);
+  });
+});
 
 function parse(result: { content: Array<{ type: string; text: string }> }) {
   return JSON.parse(result.content.at(0)?.text ?? "{}");
