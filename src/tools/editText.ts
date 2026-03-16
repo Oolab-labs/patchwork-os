@@ -29,6 +29,20 @@ export function applyEditsToContent(
   content: string,
   edits: TextEdit[],
 ): string {
+  // Validate that delete/replace edits include a range end — without endColumn the
+  // fallback `edit.column` produces a zero-width range that silently deletes nothing.
+  for (let i = 0; i < edits.length; i++) {
+    const e = edits[i]!;
+    if (
+      (e.type === "delete" || e.type === "replace") &&
+      (e.endLine === undefined || e.endColumn === undefined)
+    ) {
+      throw new Error(
+        `edits[${i}]: delete/replace requires endLine and endColumn`,
+      );
+    }
+  }
+
   const lines = content.split("\n");
 
   // Sort edits in forward order first to detect overlaps

@@ -195,16 +195,18 @@ export function createDeleteFileTool(
 
       // Native fs fallback (no trash support — permanent delete only)
       try {
-        const stat = await fs.promises.stat(filePath);
-        if (stat.isDirectory() && !recursive) {
-          return error("Cannot delete directory without recursive: true");
-        }
+        // Check trash first: it is the more actionable error when the extension
+        // is not connected. Checking it before stat avoids returning a misleading
+        // "recursive required" error when the real problem is the missing extension.
         if (useTrash) {
-          // Cannot move to trash without the extension — warn the user
           return error(
             "VS Code extension not connected — native fallback cannot move to trash. " +
               "Set useTrash: false for permanent deletion, or reconnect the extension.",
           );
+        }
+        const stat = await fs.promises.stat(filePath);
+        if (stat.isDirectory() && !recursive) {
+          return error("Cannot delete directory without recursive: true");
         }
         await fs.promises.rm(filePath, { recursive, force: false });
         return success({

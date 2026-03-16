@@ -132,6 +132,26 @@ describe("applyEditsToContent — replace", () => {
   });
 });
 
+describe("applyEditsToContent — endLine/endColumn validation", () => {
+  it("throws when delete is missing endColumn (regression: was silent no-op)", () => {
+    // Regression: endColumn defaulted to column when undefined, producing a zero-width
+    // range that silently deleted nothing instead of erroring.
+    expect(() =>
+      applyEditsToContent("hello world\n", [
+        { type: "delete", line: 1, column: 3, endLine: 1 } as any,
+      ]),
+    ).toThrow(/endLine.*endColumn|endColumn.*endLine/i);
+  });
+
+  it("throws when replace is missing endLine", () => {
+    expect(() =>
+      applyEditsToContent("hello\n", [
+        { type: "replace", line: 1, column: 1, endColumn: 3, text: "x" } as any,
+      ]),
+    ).toThrow(/endLine.*endColumn|endColumn.*endLine/i);
+  });
+});
+
 describe("applyEditsToContent — overlap detection", () => {
   it("throws when two edits overlap on the same line", () => {
     expect(() =>

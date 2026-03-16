@@ -179,6 +179,18 @@ describe("deleteFile — native fs (no extension)", () => {
     expect(fs.existsSync(dirPath)).toBe(true);
   });
 
+  it("returns trash error (not recursive error) when deleting a directory with useTrash:true (regression)", async () => {
+    // Regression: previously stat() ran before the useTrash check, so deleting a
+    // directory with useTrash:true (default) returned "recursive required" instead
+    // of the actionable "extension not connected, cannot trash" message.
+    const dirPath = path.join(tmpDir, "mydir");
+    fs.mkdirSync(dirPath);
+    const tool = createDeleteFileTool(tmpDir, disconnected);
+    const result = parse(await tool.handler({ filePath: "mydir" })); // useTrash defaults to true
+    expect(result.error).toMatch(/trash/i);
+    expect(result.error).not.toMatch(/recursive/i);
+  });
+
   it("deletes a directory recursively when recursive is true", async () => {
     const dirPath = path.join(tmpDir, "mydir");
     fs.mkdirSync(dirPath);
