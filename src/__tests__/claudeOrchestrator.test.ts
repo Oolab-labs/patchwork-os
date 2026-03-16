@@ -298,11 +298,8 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 describe("ClaudeOrchestrator — persistence", () => {
-  // biome-ignore lint/suspicious/noExplicitAny: mocked fs modules
   let mockWriteFile: any;
-  // biome-ignore lint/suspicious/noExplicitAny: mocked fs modules
   let mockReadFile: any;
-  // biome-ignore lint/suspicious/noExplicitAny: mocked fs modules
   let mockWriteFileSync: any;
 
   beforeEach(async () => {

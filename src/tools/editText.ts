@@ -31,8 +31,7 @@ export function applyEditsToContent(
 ): string {
   // Validate that delete/replace edits include a range end — without endColumn the
   // fallback `edit.column` produces a zero-width range that silently deletes nothing.
-  for (let i = 0; i < edits.length; i++) {
-    const e = edits[i]!;
+  for (const [i, e] of edits.entries()) {
     if (
       (e.type === "delete" || e.type === "replace") &&
       (e.endLine === undefined || e.endColumn === undefined)

@@ -146,7 +146,8 @@ export function createGetImportTreeTool(workspace: string) {
       ];
 
       while (queue.length > 0) {
-        const item = queue.shift()!;
+        const item = queue.shift();
+        if (!item) break;
         const { absPath, depth, nodeRef } = item;
 
         let src: string;

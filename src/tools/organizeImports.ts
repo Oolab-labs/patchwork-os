@@ -83,7 +83,12 @@ export function createOrganizeImportsTool(
               "Extension not connected and no CLI formatter (biome/prettier) available — cannot organize imports",
           });
         }
-        const contentAfter = fs.readFileSync(resolved, "utf-8");
+        let contentAfter: string;
+        try {
+          contentAfter = fs.readFileSync(resolved, "utf-8");
+        } catch {
+          return error({ error: "File unreadable after organize operation" });
+        }
         return success({
           organized: true,
           source: nativeResult.source,
@@ -110,7 +115,12 @@ export function createOrganizeImportsTool(
         });
       }
 
-      const contentAfter = fs.readFileSync(resolved, "utf-8");
+      let contentAfter: string;
+      try {
+        contentAfter = fs.readFileSync(resolved, "utf-8");
+      } catch {
+        return error({ error: "File unreadable after organize operation" });
+      }
       return success({
         organized: true,
         source: "extension",
