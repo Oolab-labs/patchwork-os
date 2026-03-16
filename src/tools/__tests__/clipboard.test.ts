@@ -62,6 +62,27 @@ describe("writeClipboard — validation", () => {
     const result = parse(await tool.handler({}));
     expect(result.error).toMatch(/text is required/i);
   });
+
+  it("returns error when text exceeds 1 MB (regression: was not enforced)", async () => {
+    const tool = createWriteClipboardTool(disconnected);
+    // 1 MB + 1 byte of ASCII content (each char = 1 byte in UTF-8)
+    const big = "x".repeat(1024 * 1024 + 1);
+    const result = parse(await tool.handler({ text: big }));
+    expect(result.error).toMatch(/1 MB/i);
+  });
+
+  it("allows text exactly at 1 MB boundary", async () => {
+    const ext = {
+      isConnected: () => true,
+      writeClipboard: vi.fn().mockResolvedValue({ success: true }),
+    } as any;
+    const tool = createWriteClipboardTool(ext);
+    const exact = "x".repeat(1024 * 1024);
+    const result = parse(await tool.handler({ text: exact }));
+    // Should reach extension, not error
+    expect(ext.writeClipboard).toHaveBeenCalledOnce();
+    expect(result.error).toBeUndefined();
+  });
 });
 
 describe("writeClipboard — extension path", () => {

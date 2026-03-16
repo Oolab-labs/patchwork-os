@@ -80,11 +80,12 @@ export function createOpenFileTool(
       // and supports precise cursor positioning
       if (extensionClient?.isConnected()) {
         let line: number | undefined;
-        if (startText) {
+        // startLine takes precedence over startText (matches CLI fallback behaviour and schema docs)
+        if (startLine) {
+          line = startLine;
+        } else if (startText) {
           const found = await findLineNumber(filePath, startText);
           if (found) line = found;
-        } else if (startLine) {
-          line = startLine;
         }
         try {
           const result = await extensionClient.openFile(filePath, line);

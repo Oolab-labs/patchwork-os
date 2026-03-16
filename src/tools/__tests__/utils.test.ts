@@ -70,6 +70,29 @@ describe("resolveFilePath", () => {
     }
   });
 
+  it("rejects symlink escape via grandparent when intermediate dirs don't exist (regression)", () => {
+    // Regression: resolveFilePath("link/nonexistent/file.txt", workspace) where
+    // "link" is a symlink to an outside directory. Previously, when the parent
+    // ("link/nonexistent") didn't exist, we fell back to "trust path.resolve" — but
+    // path.resolve doesn't follow symlinks, so the symlink in "link/" was never checked.
+    // The fix walks up the ancestor tree until it finds a real path, then resolves.
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "outside-"));
+    const symlinkInWorkspace = path.join(workspace, "dangerous-link");
+    fs.symlinkSync(outsideDir, symlinkInWorkspace);
+    try {
+      // "dangerous-link/newdir/file.txt" — parent ("dangerous-link/newdir") doesn't exist
+      // but "dangerous-link" symlinks outside; the file path resolves to outsideDir/newdir/file.txt
+      expect(() =>
+        resolveFilePath("dangerous-link/newdir/file.txt", workspace, {
+          write: true,
+        }),
+      ).toThrow(/escapes workspace/i);
+    } finally {
+      fs.unlinkSync(symlinkInWorkspace); // symlink — unlink, not rmdir
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects hardlink to outside file on write path", () => {
     // Create a real file outside the workspace
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "outside-"));

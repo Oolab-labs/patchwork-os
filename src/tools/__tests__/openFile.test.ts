@@ -107,6 +107,22 @@ describe("openFile — extension path", () => {
     await tool.handler({ filePath: "test.ts", startText: "world" });
     expect(ext.openFile).toHaveBeenCalledWith(filePath, 2);
   });
+
+  it("startLine takes precedence over startText when both provided (regression: was inverted)", async () => {
+    // File has "hello" on line 1, "world" on line 2.
+    // startLine: 1 should win — extension must be called with line 1, not 2.
+    const ext = {
+      isConnected: () => true,
+      openFile: vi.fn().mockResolvedValue(true),
+    } as any;
+    const tool = createOpenFileTool(tmpDir, null, new Set(), ext);
+    await tool.handler({
+      filePath: "test.ts",
+      startLine: 1,
+      startText: "world",
+    });
+    expect(ext.openFile).toHaveBeenCalledWith(filePath, 1);
+  });
 });
 
 describe("openFile — no editor command", () => {

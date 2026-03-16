@@ -311,7 +311,11 @@ export function createRenameFileTool(
                 `Target already exists: ${newPath} (set overwrite: true to replace)`,
               );
             }
-            // Cross-device link not permitted — fall back to best-effort check + rename
+            // Cross-device link not permitted — fall back to best-effort check + rename.
+            // NOTE: access()+rename() is not atomic (TOCTOU): a concurrent process
+            // could create newPath between the two calls, causing a silent overwrite.
+            // This is an inherent limitation of cross-device moves without a lock;
+            // same-device moves use the atomic link()+unlink() path above.
             if (code !== "EXDEV") throw linkErr;
             try {
               await fs.promises.access(newPath);

@@ -140,17 +140,27 @@ export function resolveFilePath(
     try {
       realTarget = fs.realpathSync(resolved);
     } catch {
-      // File doesn't exist yet — resolve parent directory
-      const parentDir = path.dirname(resolved);
-      try {
-        realTarget = path.join(
-          fs.realpathSync(parentDir),
-          path.basename(resolved),
-        );
-      } catch {
-        // Parent doesn't exist either — trust the path.resolve check above
+      // File doesn't exist yet — walk up ancestors until we find one that exists,
+      // then reconstruct the logical path below it. This prevents a symlink at
+      // any ancestor level (e.g. workspace/link/nonexistent/file) from bypassing
+      // the containment check when the immediate parent doesn't exist yet.
+      let ancestor = path.dirname(resolved);
+      const suffix = [path.basename(resolved)];
+      let realAncestor: string | null = null;
+      while (ancestor !== path.dirname(ancestor)) {
+        try {
+          realAncestor = fs.realpathSync(ancestor);
+          break;
+        } catch {
+          suffix.unshift(path.basename(ancestor));
+          ancestor = path.dirname(ancestor);
+        }
+      }
+      if (realAncestor === null) {
+        // Reached filesystem root without finding a real ancestor — trust path.resolve check
         return resolved;
       }
+      realTarget = path.join(realAncestor, ...suffix);
     }
     if (
       realTarget !== realWorkspace &&

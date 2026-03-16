@@ -9,13 +9,32 @@ import { error, success } from "./utils.js";
 const execFileAsync = promisify(execFile);
 
 const MAX_CLIPBOARD_BYTES = 100 * 1024; // 100 KB
+const MAX_WRITE_BYTES = 1024 * 1024; // 1 MB (documented limit for writeClipboard)
+
+/**
+ * Truncate a string so that its UTF-8 byte length does not exceed `maxBytes`.
+ * String.slice() counts UTF-16 code units, not bytes, so for content with
+ * multi-byte characters (CJK, emoji) a character-based slice can exceed the
+ * byte limit by up to 4×. We walk backwards from maxBytes to find the last
+ * safe character boundary.
+ */
+function truncateToBytes(str: string, maxBytes: number): string {
+  if (Buffer.byteLength(str, "utf8") <= maxBytes) return str;
+  // Binary-search or simple linear walk from the byte-length boundary.
+  // A single character is at most 4 bytes, so start at maxBytes chars and shrink.
+  let len = maxBytes;
+  while (len > 0 && Buffer.byteLength(str.slice(0, len), "utf8") > maxBytes) {
+    len--;
+  }
+  return str.slice(0, len);
+}
 
 /** Read clipboard text using platform-native CLI tools. */
 async function nativeReadClipboard(): Promise<string | null> {
   try {
     if (process.platform === "darwin") {
       const { stdout } = await execFileAsync("pbpaste");
-      return stdout.slice(0, MAX_CLIPBOARD_BYTES);
+      return truncateToBytes(stdout, MAX_CLIPBOARD_BYTES);
     }
     if (process.platform === "linux") {
       // xclip preferred; fall back to xsel
@@ -25,13 +44,13 @@ async function nativeReadClipboard(): Promise<string | null> {
           "clipboard",
           "-o",
         ]);
-        return stdout.slice(0, MAX_CLIPBOARD_BYTES);
+        return truncateToBytes(stdout, MAX_CLIPBOARD_BYTES);
       } catch {
         const { stdout } = await execFileAsync("xsel", [
           "--clipboard",
           "--output",
         ]);
-        return stdout.slice(0, MAX_CLIPBOARD_BYTES);
+        return truncateToBytes(stdout, MAX_CLIPBOARD_BYTES);
       }
     }
     if (process.platform === "win32") {
@@ -40,7 +59,7 @@ async function nativeReadClipboard(): Promise<string | null> {
         "-Command",
         "Get-Clipboard",
       ]);
-      return stdout.slice(0, MAX_CLIPBOARD_BYTES);
+      return truncateToBytes(stdout, MAX_CLIPBOARD_BYTES);
     }
   } catch {
     // tool not available or clipboard empty
@@ -150,6 +169,10 @@ export function createWriteClipboardTool(extensionClient: ExtensionClient) {
     async handler(args: Record<string, unknown>) {
       const text = args.text;
       if (typeof text !== "string") return error("text is required");
+      if (Buffer.byteLength(text, "utf8") > MAX_WRITE_BYTES)
+        return error(
+          `text exceeds the 1 MB clipboard write limit (${Buffer.byteLength(text, "utf8")} bytes)`,
+        );
       if (extensionClient.isConnected()) {
         try {
           const result = await extensionClient.writeClipboard(text);
