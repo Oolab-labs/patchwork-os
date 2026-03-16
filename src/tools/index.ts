@@ -3,6 +3,7 @@ import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import type { Config } from "../config.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { FileLock } from "../fileLock.js";
+import type { LoadedPluginTool } from "../pluginLoader.js";
 import type { ProbeResults } from "../probe.js";
 import type { McpTransport } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
@@ -162,6 +163,7 @@ export function registerAllTools(
   sessions?: Map<string, unknown>,
   orchestrator: ClaudeOrchestrator | null = null,
   sessionId = "",
+  pluginTools: LoadedPluginTool[] = [],
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -184,7 +186,7 @@ export function registerAllTools(
     ),
     createOpenDiffTool(workspace, config.editorCommand),
     createOpenInBrowserTool(),
-    createGetOpenEditorsTool(openedFiles, extensionClient),
+    createGetOpenEditorsTool(openedFiles, extensionClient, workspace),
     createGetWorkspaceFoldersTool(workspaceFolders, extensionClient),
     createGetProjectInfoTool(workspace),
     createGetCurrentSelectionTool(extensionClient),
@@ -328,7 +330,7 @@ export function registerAllTools(
       : []),
   ];
 
-  for (const tool of tools) {
+  for (const tool of [...tools, ...pluginTools]) {
     transport.registerTool(
       tool.schema,
       tool.handler,

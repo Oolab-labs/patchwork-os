@@ -26,6 +26,8 @@ export interface Config {
   automationPolicyPath: string | null;
   toolRateLimit: number;
   watch: boolean;
+  plugins: string[];
+  pluginWatch: boolean;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -107,6 +109,8 @@ interface ConfigFile {
   claudeBinary?: string;
   automationEnabled?: boolean;
   automationPolicyPath?: string;
+  plugins?: string[];
+  pluginWatch?: boolean;
 }
 
 const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
@@ -127,6 +131,8 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "claudeBinary",
   "automationEnabled",
   "automationPolicyPath",
+  "plugins",
+  "pluginWatch",
 ]);
 
 /**
@@ -232,6 +238,7 @@ export function parseConfig(argv: string[]): Config {
   let gracePeriodMs = fileConfig.gracePeriodMs ?? 30_000;
   let autoTmux = fileConfig.autoTmux ?? false;
   let watch = false;
+  let pluginWatch = fileConfig.pluginWatch ?? false;
   let claudeDriver: "subprocess" | "api" | "none" =
     fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
@@ -239,6 +246,7 @@ export function parseConfig(argv: string[]): Config {
   let automationPolicyPath: string | null =
     fileConfig.automationPolicyPath ?? null;
   let toolRateLimit = 60;
+  const plugins: string[] = [...(fileConfig.plugins ?? [])];
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -355,6 +363,16 @@ export function parseConfig(argv: string[]): Config {
           requireArg(args, ++i, "--automation-policy"),
         );
         break;
+      case "--plugin": {
+        const pluginPath = requireArg(args, ++i, "--plugin");
+        if (pluginPath.length > 4096)
+          throw new Error("--plugin path too long (max 4096 chars)");
+        plugins.push(pluginPath);
+        break;
+      }
+      case "--plugin-watch":
+        pluginWatch = true;
+        break;
       case "--tool-rate-limit": {
         const tlStr = requireArg(args, ++i, "--tool-rate-limit");
         toolRateLimit = Number.parseInt(tlStr, 10);
@@ -426,6 +444,21 @@ Automation:
   --claude-binary <path>    Path to claude binary (default: "claude")
   --automation              Enable event-driven automation hooks (requires --claude-driver != none and --automation-policy)
   --automation-policy <path>  Path to JSON automation policy file
+
+Plugins:
+  --plugin <path-or-package>  Load a plugin (repeatable). Accepts a local path (./my-plugin) or
+                              an npm package name (claude-ide-bridge-plugin-jira).
+                              Plugins must contain a claude-ide-bridge-plugin.json manifest.
+  --plugin-watch         Re-load plugins automatically on file change (requires --plugin)
+
+Subcommands:
+  gen-plugin-stub <dir>       Scaffold a new plugin directory with manifest + entrypoint.
+                              Options: --name <org/name>  --prefix <toolPrefix>
+  gen-claude-md               Generate a CLAUDE.md bridge workflow section.
+                              Options: --write [--workspace <path>]
+  print-token                 Print the auth token from the active bridge lock file.
+                              Options: --port <port>
+  install-extension [editor]  Install the VS Code extension into the given editor.
 
 Environment Variables:
   CLAUDE_IDE_BRIDGE_EDITOR           Editor command override
@@ -508,6 +541,12 @@ Environment Variables:
     }
   }
 
+  if (pluginWatch && plugins.length === 0) {
+    process.stderr.write(
+      "Warning: --plugin-watch has no effect without --plugin\n",
+    );
+  }
+
   return {
     workspace,
     workspaceFolders: [workspace],
@@ -531,5 +570,7 @@ Environment Variables:
     automationPolicyPath,
     toolRateLimit,
     watch,
+    plugins,
+    pluginWatch,
   };
 }

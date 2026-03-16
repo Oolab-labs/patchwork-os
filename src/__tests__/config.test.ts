@@ -222,6 +222,27 @@ describe("parseConfig flags", () => {
     );
   });
 
+  it("adds plugin path from --plugin", () => {
+    expect(cfg("--plugin", "/path/to/my-plugin").plugins).toContain(
+      "/path/to/my-plugin",
+    );
+  });
+
+  it("accumulates multiple --plugin flags", () => {
+    expect(cfg("--plugin", "/a", "--plugin", "/b").plugins).toEqual([
+      "/a",
+      "/b",
+    ]);
+  });
+
+  it("throws when --plugin path is too long", () => {
+    expect(() => cfg("--plugin", "x".repeat(4097))).toThrow(/too long/);
+  });
+
+  it("defaults plugins to empty array", () => {
+    expect(cfg().plugins).toEqual([]);
+  });
+
   it("throws on unknown flag", () => {
     expect(() => cfg("--unknown-flag")).toThrow(/Unknown option/);
   });

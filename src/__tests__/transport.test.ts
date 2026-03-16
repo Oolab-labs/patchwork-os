@@ -714,6 +714,20 @@ describe("McpTransport", () => {
     ).not.toThrow();
   });
 
+  it("registerTool throws on duplicate tool name", () => {
+    const t = new McpTransport(logger);
+    t.registerTool(
+      { name: "myTool", description: "x", inputSchema: {} },
+      async () => ({ content: [] }),
+    );
+    expect(() =>
+      t.registerTool(
+        { name: "myTool", description: "y", inputSchema: {} },
+        async () => ({ content: [] }),
+      ),
+    ).toThrow(/duplicate tool name/i);
+  });
+
   it("activity log records success and error tool calls", async () => {
     const log = new ActivityLog();
 
@@ -928,5 +942,158 @@ describe("McpTransport", () => {
     transport?.detach();
     // Counters must NOT be reset by detach()
     expect(transport?.getStats()).toEqual({ callCount: 1, errorCount: 0 });
+  });
+
+  it("deregisterToolsByPrefix — removes matching tools, returns count, leaves others", () => {
+    const t = new McpTransport(logger);
+    t.registerTool(
+      { name: "fooA", description: "x", inputSchema: {} },
+      async () => ({ content: [] }),
+    );
+    t.registerTool(
+      { name: "fooB", description: "x", inputSchema: {} },
+      async () => ({ content: [] }),
+    );
+    t.registerTool(
+      { name: "barC", description: "x", inputSchema: {} },
+      async () => ({ content: [] }),
+    );
+
+    const removed = t.deregisterToolsByPrefix("foo");
+    expect(removed).toBe(2);
+
+    // fooA and fooB gone, barC still present
+    // Verify via tools/list requires a live WebSocket; instead verify via toolCount
+    expect(t.toolCount).toBe(1);
+
+    // Re-registering fooA should succeed (it was removed)
+    expect(() =>
+      t.registerTool(
+        { name: "fooA", description: "new", inputSchema: {} },
+        async () => ({ content: [] }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("replaceTool — replaces existing tool handler and clears AJV cache", async () => {
+    // Use v1 schema with required field `x` and v2 with required field `y`.
+    // Calling with { y: "hello" } is valid for v2 but invalid for v1 (missing x).
+    // This proves the old AJV validator was cleared when the tool was replaced.
+    let callsV1 = 0;
+    let callsV2 = 0;
+
+    const { ws } = await setup("replace-tool-test", (t) => {
+      t.registerTool(
+        {
+          name: "myTool",
+          description: "v1",
+          inputSchema: {
+            type: "object",
+            properties: { x: { type: "string" } },
+            required: ["x"],
+            additionalProperties: false,
+          },
+        },
+        async () => {
+          callsV1++;
+          return { content: [{ type: "text", text: "v1" }] };
+        },
+      );
+    });
+
+    // Call v1 with valid args (x provided)
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "myTool", arguments: { x: "hello" } },
+    });
+    const r1 = await waitFor(ws, (m) => m.id === 1);
+    expect(
+      (r1.result as { content: Array<{ text: string }> }).content[0]?.text,
+    ).toBe("v1");
+    expect(callsV1).toBe(1);
+
+    // Replace with v2 schema that requires `y` instead of `x`
+    transport?.replaceTool(
+      {
+        name: "myTool",
+        description: "v2",
+        inputSchema: {
+          type: "object",
+          properties: { y: { type: "string" } },
+          required: ["y"],
+          additionalProperties: false,
+        },
+      },
+      async () => {
+        callsV2++;
+        return { content: [{ type: "text", text: "v2" }] };
+      },
+    );
+
+    // Call v2 with { y: "hello" } — valid for v2, invalid for v1 (missing x).
+    // If AJV cache was NOT cleared, the old v1 validator would reject this call.
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "myTool", arguments: { y: "hello" } },
+    });
+    const r2 = await waitFor(ws, (m) => m.id === 2);
+    // Must succeed — old AJV validator was cleared
+    expect(r2.error).toBeUndefined();
+    expect(
+      (r2.result as { content: Array<{ text: string }> }).content[0]?.text,
+    ).toBe("v2");
+    expect(callsV2).toBe(1);
+    expect(callsV1).toBe(1); // original handler not called again
+  });
+
+  it("replaceTool — insert path: registers new tool when name was never registered", async () => {
+    const { ws } = await setup("replace-tool-insert", (t) => {
+      // Register an unrelated tool just to initialize the transport
+      t.registerTool(
+        {
+          name: "existingTool",
+          description: "existing",
+          inputSchema: { type: "object" },
+        },
+        async () => ({ content: [{ type: "text", text: "existing" }] }),
+      );
+    });
+
+    // replaceTool on a name that was never registered (insert path)
+    transport?.replaceTool(
+      {
+        name: "brandNewTool",
+        description: "new",
+        inputSchema: { type: "object", properties: {} },
+      },
+      async () => ({ content: [{ type: "text", text: "inserted" }] }),
+    );
+
+    // The new tool should be callable
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "brandNewTool", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 1);
+    expect(resp.error).toBeUndefined();
+    expect(
+      (resp.result as { content: Array<{ text: string }> }).content[0]?.text,
+    ).toBe("inserted");
+  });
+
+  it("replaceTool throws on invalid tool name", () => {
+    const t = new McpTransport(logger);
+    expect(() =>
+      t.replaceTool(
+        { name: "invalid-name", description: "x", inputSchema: {} },
+        async () => ({ content: [] }),
+      ),
+    ).toThrow(/invalid tool name/i);
   });
 });

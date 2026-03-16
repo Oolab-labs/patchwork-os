@@ -11,6 +11,9 @@ import { ExtensionClient } from "./extensionClient.js";
 import { FileLock } from "./fileLock.js";
 import { LockFileManager } from "./lockfile.js";
 import { Logger } from "./logger.js";
+import type { LoadedPluginTool } from "./pluginLoader.js";
+import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
+import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
 import { Server } from "./server.js";
@@ -19,11 +22,32 @@ import { StreamableHttpHandler } from "./streamableHttp.js";
 import { initTelemetry, shutdownTelemetry } from "./telemetry.js";
 import { registerAllTools } from "./tools/index.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
+import { resolveFilePath } from "./tools/utils.js";
 import { McpTransport } from "./transport.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 const MAX_SESSIONS = 5;
 let globalHandlersRegistered = false;
+
+/** Collect the union of openedFiles across all sessions in a checkpoint. */
+export function extractRestoredFiles(
+  checkpoint: CheckpointData,
+  workspace: string,
+): Set<string> {
+  const all = new Set<string>();
+  for (const s of checkpoint.sessions) {
+    for (const f of s.openedFiles) {
+      // Only restore paths that resolve safely within the workspace
+      try {
+        resolveFilePath(f, workspace);
+        all.add(f);
+      } catch {
+        // skip paths that fail workspace containment
+      }
+    }
+  }
+  return all;
+}
 
 function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
@@ -62,7 +86,11 @@ export class Bridge {
   private lastDisconnectAt: string | null = null;
   private checkpoint: SessionCheckpoint | null = null;
   private orchestrator: ClaudeOrchestrator | null = null;
+  /** openedFiles restored from the previous-run checkpoint; consumed by the first connecting session. */
+  private restoredOpenedFiles: Set<string> | null = null;
   private port = 0;
+  private pluginTools: LoadedPluginTool[] = [];
+  private pluginWatcher: PluginWatcher | null = null;
   private automationHooks: AutomationHooks | null = null;
   private httpMcpHandler: StreamableHttpHandler | null = null;
 
@@ -122,11 +150,22 @@ export class Bridge {
         }
       };
 
+      // Restore previously-tracked files into the first connecting session, then
+      // clear so subsequent sessions in the same run start with a clean slate.
+      let openedFiles: Set<string>;
+      if (this.sessions.size === 0 && this.restoredOpenedFiles !== null) {
+        const captured = this.restoredOpenedFiles;
+        this.restoredOpenedFiles = null;
+        openedFiles = new Set(captured);
+      } else {
+        openedFiles = new Set<string>();
+      }
+
       const session: AgentSession = {
         id: sessionId,
         ws,
         transport,
-        openedFiles: new Set(),
+        openedFiles,
         terminalPrefix: `s${sessionId.slice(0, 8)}-`,
         graceTimer: null,
         connectedAt: Date.now(),
@@ -134,6 +173,10 @@ export class Bridge {
 
       // Register tools for this session — probes guaranteed non-null due to ready guard above
       const probes = this.probes ?? ({} as ProbeResults);
+      // addTransport BEFORE registerAllTools so that if a reload fires between
+      // these two calls, the new transport is already tracked by the watcher.
+      this.pluginWatcher?.addTransport(transport);
+      const pluginTools = this.pluginWatcher?.getTools() ?? this.pluginTools;
       registerAllTools(
         transport,
         this.config,
@@ -146,6 +189,7 @@ export class Bridge {
         this.sessions,
         this.orchestrator,
         sessionId,
+        pluginTools,
       );
 
       transport.attach(ws);
@@ -202,30 +246,7 @@ export class Bridge {
       });
     });
 
-    // Debounced tools/list_changed notification — max one per 2 seconds
-    const sendListChanged = () => {
-      if (this.stopped) return; // Don't fire after stop()
-      if (this.listChangedTimer) return; // Already scheduled
-      this.listChangedTimer = setTimeout(() => {
-        this.listChangedTimer = null;
-        let notifiedAny = false;
-        for (const session of this.sessions.values()) {
-          if (session.ws.readyState === WebSocket.OPEN) {
-            McpTransport.sendNotification(
-              session.ws,
-              "notifications/tools/list_changed",
-              undefined,
-              this.logger,
-            );
-            notifiedAny = true;
-          }
-        }
-        // No open sessions — mark pending so the next session gets it on initialize
-        if (!notifiedAny) {
-          this.pendingListChanged = true;
-        }
-      }, 2000);
-    };
+    // (sendListChanged is a private method — see below)
 
     // Handle VS Code extension connections — notify Claude immediately (no debounce)
     // so it re-queries capabilities and discovers LSP/terminal/selection are now available.
@@ -290,34 +311,59 @@ export class Bridge {
       );
       this.activityLog.recordEvent("extension_disconnected");
       this.logger.event("extension_disconnected_notify");
-      sendListChanged();
+      this.sendListChanged();
     };
 
     // Forward diagnostics changes from extension to Claude Code
     this.extensionClient.onDiagnosticsChanged = (_file, _diagnostics) => {
       this.logger.event("diagnostics_changed", { file: _file });
-      sendListChanged();
+      this.sendListChanged();
       this.automationHooks?.handleDiagnosticsChanged(_file, _diagnostics ?? []);
     };
 
     // Forward AI comment changes from extension to Claude Code
     this.extensionClient.onAICommentsChanged = (_comments) => {
       this.logger.event("ai_comments_changed", { count: _comments.length });
-      sendListChanged();
+      this.sendListChanged();
     };
 
     // Forward file change notifications from extension to Claude Code
     this.extensionClient.onFileChanged = (id, type, file) => {
       this.logger.event("file_changed", { id, type, file });
-      sendListChanged();
+      this.sendListChanged();
       this.automationHooks?.handleFileSaved(id, type, file);
     };
 
     // Forward debug session changes from extension to Claude Code
     this.extensionClient.onDebugSessionChanged = (_state) => {
       this.logger.event("debug_session_changed");
-      sendListChanged();
+      this.sendListChanged();
     };
+  }
+
+  /** Debounced tools/list_changed notification — max one per 2 seconds. */
+  private sendListChanged(): void {
+    if (this.stopped) return; // Don't fire after stop()
+    if (this.listChangedTimer) return; // Already scheduled
+    this.listChangedTimer = setTimeout(() => {
+      this.listChangedTimer = null;
+      let notifiedAny = false;
+      for (const session of this.sessions.values()) {
+        if (session.ws.readyState === WebSocket.OPEN) {
+          McpTransport.sendNotification(
+            session.ws,
+            "notifications/tools/list_changed",
+            undefined,
+            this.logger,
+          );
+          notifiedAny = true;
+        }
+      }
+      // No open sessions — mark pending so the next session gets it on initialize
+      if (!notifiedAny) {
+        this.pendingListChanged = true;
+      }
+    }, 2000);
   }
 
   private _buildCheckpoint(port: number): CheckpointData {
@@ -352,6 +398,7 @@ export class Bridge {
     // Read stats before detach() — counters survive detach
     const { callCount, errorCount } = session.transport.getStats();
     const durationMs = Date.now() - session.connectedAt;
+    this.pluginWatcher?.removeTransport(session.transport);
     session.transport.detach();
     session.openedFiles.clear();
     this.sessions.delete(id);
@@ -378,6 +425,16 @@ export class Bridge {
     }
   }
 
+  /** Returns the port the bridge is listening on (0 before start()). */
+  getPort(): number {
+    return this.port;
+  }
+
+  /** Returns the auth token for this bridge instance. */
+  getAuthToken(): string {
+    return this.authToken;
+  }
+
   async start(): Promise<void> {
     // 0. Initialize OpenTelemetry (no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset)
     initTelemetry();
@@ -385,6 +442,30 @@ export class Bridge {
     // 1. Probe available CLI tools
     this.probes = await probeAll();
     this.ready = true;
+
+    // 2. Load plugins (after probes, before accepting sessions)
+    this.pluginTools = await loadPlugins(
+      this.config.plugins,
+      this.config,
+      this.logger,
+    );
+
+    if (this.config.pluginWatch && this.config.plugins.length > 0) {
+      const loadedPlugins = await loadPluginsFull(
+        this.config.plugins,
+        this.config,
+        this.logger,
+      );
+      this.pluginTools = loadedPlugins.flatMap((p) => p.tools);
+      this.pluginWatcher = new PluginWatcher(this.config, this.logger, () =>
+        this.sendListChanged(),
+      );
+      this.pluginWatcher.start(loadedPlugins);
+      this.logger.info(
+        `[plugin-watch] Watching ${loadedPlugins.length} plugin director${loadedPlugins.length === 1 ? "y" : "ies"}`,
+      );
+    }
+
     const probes = this.probes;
     const probeList = (keys?: string[]) =>
       Object.entries(probes)
@@ -532,6 +613,8 @@ export class Bridge {
       this.sessions as Map<string, unknown>,
       this.orchestrator,
       this.logger,
+      () => this.pluginWatcher?.getTools() ?? this.pluginTools,
+      () => this.pluginWatcher,
     );
     this.server.httpMcpHandler = (req, res) =>
       this.httpMcpHandler?.handle(req, res) ?? Promise.resolve();
@@ -575,22 +658,23 @@ export class Bridge {
       path.join(configDir, "ide", `activity-${port}.jsonl`),
     );
 
-    // 6. Check for recent checkpoint from previous run and log summary
+    // 6. Check for recent checkpoint from previous run and restore openedFiles
     const prevCheckpoint = SessionCheckpoint.loadLatest();
     if (prevCheckpoint) {
       const ageSec = Math.round((Date.now() - prevCheckpoint.savedAt) / 1000);
-      this.logger.info(
-        `Previous session checkpoint found (${ageSec}s ago, port ${prevCheckpoint.port}):`,
+      const allFiles = extractRestoredFiles(
+        prevCheckpoint,
+        this.config.workspace,
       );
-      this.logger.info(
-        `  ${prevCheckpoint.sessions.length} session(s), ${prevCheckpoint.sessions.reduce((n, s) => n + s.openedFiles.length, 0)} tracked file(s)`,
-      );
-      if (prevCheckpoint.sessions.length > 0) {
-        for (const s of prevCheckpoint.sessions) {
-          this.logger.info(
-            `  Session ${s.id}: ${s.openedFiles.length} file(s) — prefix: ${s.terminalPrefix}`,
-          );
-        }
+      if (allFiles.size > 0) {
+        this.restoredOpenedFiles = allFiles;
+        this.logger.info(
+          `Restored ${allFiles.size} tracked file(s) from previous session (${ageSec}s ago, port ${prevCheckpoint.port})`,
+        );
+      } else {
+        this.logger.info(
+          `Previous session checkpoint found (${ageSec}s ago, port ${prevCheckpoint.port}) — no files to restore`,
+        );
       }
     }
 
@@ -687,6 +771,8 @@ export class Bridge {
     if (this.stopped) return;
     this.stopped = true;
     this.logger.info("Shutting down...");
+    this.pluginWatcher?.stop();
+    this.pluginWatcher = null;
     this.httpMcpHandler?.close();
     if (this.listChangedTimer) {
       clearTimeout(this.listChangedTimer);
