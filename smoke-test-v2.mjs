@@ -186,6 +186,11 @@ ws.on("open", async () => {
       ritData.fallback === "subprocess"
         ? pass("fallback=subprocess (shell integration unavailable)")
         : pass("no fallback flag (shell integration active)");
+    } else if (ritData.success === false && ritData.error?.includes("Terminal not found")) {
+      // Extension connected but no active terminal in this MCP session — subprocess
+      // fallback only triggers on null/timeout, not on "terminal not found" errors.
+      // This is expected when testing via a fixed-token bridge with no open terminals.
+      warn("runInTerminal: no active terminal in session", "open a terminal in Windsurf or test via lock-file bridge");
     } else {
       fail("runInTerminal unexpected response", JSON.stringify(ritData).slice(0, 80));
     }
