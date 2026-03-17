@@ -172,7 +172,7 @@ export class Server extends EventEmitter<ServerEvents> {
 
       // CORS preflight for /mcp — browsers (and Claude Desktop's web renderer) send
       // OPTIONS before POST. Respond without requiring auth so the preflight succeeds.
-      if (req.method === "OPTIONS" && req.url === "/mcp") {
+      if (req.method === "OPTIONS" && new URL(req.url ?? "/", "http://localhost").pathname === "/mcp") {
         const origin = corsOrigin(req.headers.origin);
         if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
         res.setHeader(
@@ -214,7 +214,7 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
-      if (req.url === "/metrics" && req.method === "GET") {
+      if (parsedUrl.pathname === "/metrics" && req.method === "GET") {
         try {
           const body = this.metricsFn?.() ?? "";
           res.writeHead(200, {
@@ -360,7 +360,7 @@ export class Server extends EventEmitter<ServerEvents> {
       // Bearer auth is already checked above (line ~138), so all requests here
       // are authenticated. The Mcp-Session-Id header routes to the correct session.
       // OPTIONS is handled before auth (line ~126) so CORS preflight works.
-      if (req.url === "/mcp" && this.httpMcpHandler) {
+      if (parsedUrl.pathname === "/mcp" && this.httpMcpHandler) {
         if (
           req.method === "POST" ||
           req.method === "GET" ||
