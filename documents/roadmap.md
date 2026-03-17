@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.1.34 — 2026-03-17)
+## Current State (v2.1.35 — 2026-03-17)
 
 - 135+ MCP tools; 1222+ bridge tests + 369 extension tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
 - Extension v1.0.5 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.32`)
@@ -22,6 +22,14 @@ Development direction and exploration guidance. Living document — update as pr
 - Remote Desktop IDE support: extension runs in remote extension host (SSH/Cursor SSH); `print-token` CLI subcommand for headless VPS setup
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.1.35 shipped (2026-03-17) — PreToolUse/WorktreeCreate hooks + worktree isolation docs:**
+- `claude-ide-bridge-plugin/hooks/hooks.json`: added `PreToolUse` hook (path normalization via `updatedInput`) and `WorktreeCreate` hook (worktree ↔ bridge workspace mapping)
+- `claude-ide-bridge-plugin/scripts/pre-tool-use.sh` (new): resolves relative `path`/`filePath`/`uri`/`file` args to absolute paths using the bridge workspace root; skips built-in Claude Code tools; silent no-op when no patch needed
+- `claude-ide-bridge-plugin/scripts/worktree-create.sh` (new): same-repo detection via `git rev-parse`; warns about LSP/extension tool limitations in worktree agents
+- `docs/worktree-isolation.md` (new): safe vs unsafe tool categories in worktree agents, recommended `disallowedTools` pattern, multi-bridge setup, summary table
+- Bridge plugin now has 7 hooks: PreToolUse, PostToolUse, SessionStart, InstructionsLoaded, Elicitation, WorktreeCreate, SubagentStart
+- npm `claude-ide-bridge@2.1.35` published; extension unchanged (v1.0.6)
 
 **v2.1.34 shipped (2026-03-17) — Claude Code platform alignment:**
 - `claude-ide-bridge-plugin/hooks/hooks.json`: added `InstructionsLoaded` hook (fires on every CLAUDE.md load, not just session start — delivers live bridge status each time Claude refreshes its instructions) and `Elicitation` hook (pre-answers file/path/uri fields in elicitation requests using the active editor, avoiding "which file?" interruptions)
@@ -334,25 +342,24 @@ Implemented in `src/prompts.ts`. No extension required. Transport handles `promp
 
 ---
 
-## Claude Code Platform Alignment (Shipped — v2.1.34)
+## Claude Code Platform Alignment (Shipped — v2.1.34–35)
 
-Research (2026-03-17) against current Claude Code docs revealed gaps between the bridge's platform integration and what's now available. Prioritised actions:
+Research (2026-03-17) against current Claude Code docs revealed gaps between the bridge's platform integration and what's now available. All items shipped.
 
-### Quick wins
-- Add **`argument-hint`** field to all 6 bridge skills in `.claude/skills/` — enables autocomplete when invoking `/claude-ide-bridge:review-file <tab>`
-- Add **`memory: project`** to all 3 bridge subagents (`ide-code-reviewer`, `ide-debugger`, `ide-test-runner`) — enables cross-session learning of project patterns
-- Update **`gen-claude-md` template** to document `.claude/rules/` modular scoping and `@import` syntax
-- Document **env var expansion** (`${VAR:-default}`) for bridge `.mcp.json` config (authToken, port) in README
+### Shipped (v2.1.34)
+- **`gen-claude-md` template** — `.claude/rules/` modular scoping and `@import` syntax documented
+- **Env var expansion** — `${VAR:-default}` in `.mcp.json` documented in `docs/remote-access.md`
+- **`InstructionsLoaded` hook** — live bridge status injected every time CLAUDE.md loads
+- **`Elicitation` hook** — pre-answers file/path/uri fields using the active editor
 
-### Medium-effort
-- Add **`Elicitation` hook** to bridge plugin — hook fires when Claude wants to ask a question; can pre-answer "which file?" using the current open editor from the bridge
-- Add **`InstructionsLoaded` hook** — inject live tool count, workspace name, and extension connection status at session start (replaces the static SessionStart hook message)
-- Add **`updatedInput` field** to PostToolUse hook — allows hooks to correct common tool arg mistakes before they reach handlers
+### Shipped (v2.1.35)
+- **`PreToolUse` hook with `updatedInput`** — resolves relative path args to absolute before bridge tools execute
+- **`WorktreeCreate` hook** — reports bridge ↔ worktree relationship; warns about LSP tool limitations
+- **`docs/worktree-isolation.md`** — safe vs unsafe tool categories, `disallowedTools` pattern, summary table
 
-### Long-term
-- Verify bridge tool search compatibility — with 135+ tools, Claude Code's MCP Tool Search may activate; confirm tool descriptions are search-friendly
-- Worktree isolation guidance — document safe use of `isolation: worktree` with bridge file tools (concurrent edits in different worktrees need coordination)
-- Agent Teams — when Claude Code's multi-session Teams feature ships, bridge is the natural coordination layer; plan session namespacing
+### Remaining (deferred)
+- Verify Tool Search compatibility — with 135+ tools active; low priority (automatic, no bridge changes needed)
+- Agent Teams — when Claude Code's multi-session Teams feature ships; plan session namespacing then
 
 ---
 
