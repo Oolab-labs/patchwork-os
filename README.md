@@ -573,31 +573,26 @@ Config location:
 
 Connect the bridge to [claude.ai](https://claude.ai) via a **Custom Connector** — chat with your IDE from the browser without installing anything extra.
 
-**Prerequisites:** The bridge must be reachable over HTTPS from the public internet. Two options:
+**Prerequisites:** The bridge must be reachable over HTTPS from the public internet. The recommended path is a **Cloudflare Named Tunnel** — no domain registration required, free, and the URL never changes.
 
-**Option A — Reverse proxy with a domain (production)**
-Put nginx or Caddy in front of the bridge with TLS. See [docs/remote-access.md](docs/remote-access.md) for a ready-made setup.
-
-**Option B — Cloudflare Named Tunnel (permanent URL, recommended)**
-
-A named tunnel gives you a stable subdomain under your own domain that survives `cloudflared` restarts.
+### Step 1 — Expose the bridge with a Cloudflare Named Tunnel
 
 ```bash
-# 1. Install cloudflared
+# Install cloudflared on the machine running the bridge
 curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
   -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
 
-# 2. Authenticate with your Cloudflare account (opens browser)
+# Authenticate (one-time — opens a browser window)
 cloudflared tunnel login
 
-# 3. Create a named tunnel (one-time)
+# Create a named tunnel (one-time)
 cloudflared tunnel create my-bridge
 
-# 4. Route a DNS hostname to the tunnel (requires your domain on Cloudflare)
+# Route a hostname to it (requires a domain managed on Cloudflare)
 cloudflared tunnel route dns my-bridge bridge.yourdomain.com
 
-# 5. Create a config file at ~/.cloudflared/config.yml
-cat > ~/.cloudflared/config.yml <<EOF
+# Create ~/.cloudflared/config.yml
+cat > ~/.cloudflared/config.yml <<'EOF'
 tunnel: my-bridge
 credentials-file: /root/.cloudflared/<tunnel-id>.json
 
@@ -607,36 +602,58 @@ ingress:
   - service: http_status:404
 EOF
 
-# 6. Run the tunnel (add to systemd/pm2 for auto-start)
+# Start the tunnel (permanent — add to systemd or pm2 for auto-start on reboot)
 cloudflared tunnel run my-bridge
-# Bridge is now permanently reachable at https://bridge.yourdomain.com
 ```
 
-Your MCP connector URL is then permanently `https://bridge.yourdomain.com/mcp?token=<token>` — it will not change across restarts.
+The bridge is now permanently reachable at `https://bridge.yourdomain.com`. The URL **does not change** across `cloudflared` or bridge restarts.
 
-**Option C — Ephemeral Cloudflare Tunnel (quick test only)**
+> **Auto-start:** Run `cloudflared service install` to register the tunnel as a systemd service so it starts on boot alongside the bridge.
 
-> ⚠️ The subdomain changes every time `cloudflared` restarts. Do not use this for a permanent setup — your MCP config and connector URL will break. Use Option B above for anything beyond a one-off test.
+### Step 2 — Start the bridge with a fixed token
+
+```bash
+# Generate a token once and keep it — store it somewhere safe
+TOKEN=$(uuidgen)
+
+claude-ide-bridge --bind 0.0.0.0 --workspace /path/to/project --fixed-token $TOKEN
+```
+
+`--fixed-token` ensures the token never rotates across restarts, so your connector URL stays valid permanently.
+
+### Step 3 — Add the Custom Connector on claude.ai
+
+1. Go to **claude.ai → Settings → Integrations → Add custom connector**
+2. Enter the connector URL:
+   ```
+   https://bridge.yourdomain.com/mcp?token=<your-token>
+   ```
+3. Save — claude.ai verifies the connection and lists all available tools
+
+The `?token=` query param is supported alongside `Authorization: Bearer` headers, since the claude.ai connector UI cannot set custom request headers.
+
+> **Tool availability:** All 138+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~80 CLI tools still work (file ops, git, terminal, search, HTTP client).
+
+### Alternatives
+
+<details>
+<summary>Reverse proxy with nginx or Caddy (if you already have a domain + TLS setup)</summary>
+
+Put nginx or Caddy in front of the bridge with TLS. See [docs/remote-access.md](docs/remote-access.md) for a ready-made config.
+
+</details>
+
+<details>
+<summary>Ephemeral Cloudflare Tunnel (one-off testing only)</summary>
+
+> ⚠️ **Do not use for permanent setups.** The subdomain (`abc123.trycloudflare.com`) changes every time `cloudflared` restarts — your MCP config and connector URL will break. Use the named tunnel above for anything you'll use more than once.
 
 ```bash
 cloudflared tunnel --url http://localhost:9000
 # Outputs a temporary URL like: https://abc123.trycloudflare.com
 ```
 
-Once the bridge is publicly reachable, add a Custom Connector on claude.ai:
-
-1. Go to **claude.ai → Settings → Integrations → Add custom connector**
-2. Enter the URL with your token embedded as a query param:
-   ```
-   https://bridge.yourdomain.com/mcp?token=<your-token>
-   ```
-3. Save — claude.ai will verify the connection and list all available tools
-
-The `?token=` query param is supported in addition to `Authorization: Bearer` headers, since the claude.ai connector UI cannot set custom request headers.
-
-> **Stable tokens:** Use `--fixed-token <uuid>` when starting the bridge so the token doesn't change across restarts and your connector URL stays valid.
-
-> **Tool availability:** All 138+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~80 CLI tools still work (file ops, git, terminal, search, HTTP client).
+</details>
 
 **Mobile app:** The connector syncs to the Claude mobile app once added on the web. If it doesn't appear immediately, use claude.ai in your phone's browser — the connector works there without the native app.
 
