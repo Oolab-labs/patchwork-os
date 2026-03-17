@@ -3,9 +3,7 @@
   "displayName": "Claude IDE Bridge",
   "description": "Companion extension for claude-ide-bridge — provides real-time editor state to Claude Code",
   "version": "1.0.7",
-  "extensionKind": [
-    "workspace"
-  ],
+  "extensionKind": ["workspace"],
   "publisher": "oolab-labs",
   "license": "MIT",
   "icon": "icon.png",
@@ -16,18 +14,14 @@
   "engines": {
     "vscode": "^1.93.0"
   },
-  "categories": [
-    "Other"
-  ],
+  "categories": ["Other"],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
       "description": "Watches for a manually-started bridge via lock file. Bridge auto-install and auto-start are disabled in untrusted workspaces."
     }
   },
-  "activationEvents": [
-    "onStartupFinished"
-  ],
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
@@ -35,11 +29,7 @@
       "properties": {
         "claudeIdeBridge.logLevel": {
           "type": "string",
-          "enum": [
-            "info",
-            "debug",
-            "warn"
-          ],
+          "enum": ["info", "debug", "warn"],
           "default": "info",
           "description": "Log verbosity level for the output channel."
         },
