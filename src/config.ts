@@ -28,6 +28,7 @@ export interface Config {
   watch: boolean;
   plugins: string[];
   pluginWatch: boolean;
+  fixedToken: string | null;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -111,6 +112,7 @@ interface ConfigFile {
   automationPolicyPath?: string;
   plugins?: string[];
   pluginWatch?: boolean;
+  fixedToken?: string;
 }
 
 const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
@@ -133,6 +135,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "automationPolicyPath",
   "plugins",
   "pluginWatch",
+  "fixedToken",
 ]);
 
 /**
@@ -239,6 +242,7 @@ export function parseConfig(argv: string[]): Config {
   let autoTmux = fileConfig.autoTmux ?? false;
   let watch = false;
   let pluginWatch = fileConfig.pluginWatch ?? false;
+  let fixedToken: string | null = fileConfig.fixedToken ?? null;
   let claudeDriver: "subprocess" | "api" | "none" =
     fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
@@ -370,6 +374,13 @@ export function parseConfig(argv: string[]): Config {
         plugins.push(pluginPath);
         break;
       }
+      case "--fixed-token": {
+        const tok = requireArg(args, ++i, "--fixed-token");
+        if (!/^[0-9a-f-]{36}$/.test(tok))
+          throw new Error("--fixed-token must be a valid UUID (e.g. from uuidgen or crypto.randomUUID())");
+        fixedToken = tok;
+        break;
+      }
       case "--plugin-watch":
         pluginWatch = true;
         break;
@@ -426,6 +437,7 @@ Options:
   --editor <cmd>            Editor CLI command (default: auto-detect windsurf/cursor/antigravity/code)
   --port <number>           Force specific port (default: random)
   --bind <addr>             Bind address (default: 127.0.0.1, env: BRIDGE_BIND_ADDRESS)
+  --fixed-token <uuid>      Use a stable auth token (default: random UUID on each start)
   --linter <name>           Enable specific linter (repeatable; default: auto-detect)
   --allow-command <cmd>     Add command to execution allowlist (repeatable)
   --vscode-allow-command <cmd>  Add VS Code command to invocation allowlist (repeatable)
@@ -489,6 +501,16 @@ Environment Variables:
   }
 
   // Env var overrides
+  if (process.env.CLAUDE_IDE_BRIDGE_TOKEN) {
+    const envTok = process.env.CLAUDE_IDE_BRIDGE_TOKEN;
+    if (/^[0-9a-f-]{36}$/.test(envTok)) {
+      fixedToken = envTok;
+    } else {
+      console.warn(
+        `Warning: CLAUDE_IDE_BRIDGE_TOKEN is not a valid UUID — ignored.`,
+      );
+    }
+  }
   if (process.env.CLAUDE_IDE_BRIDGE_LINTERS) {
     linters = process.env.CLAUDE_IDE_BRIDGE_LINTERS.split(",").map((s) =>
       s.trim(),
@@ -572,5 +594,6 @@ Environment Variables:
     watch,
     plugins,
     pluginWatch,
+    fixedToken,
   };
 }

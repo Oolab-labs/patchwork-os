@@ -47,7 +47,7 @@ if [[ -z "$TARGET" || "$TARGET" == "--help" || "$TARGET" == "-h" ]]; then
   echo "  antigravity      mcp_config.json for Google Antigravity"
   echo "  codex            ~/.codex/config.toml section for OpenAI Codex CLI"
   echo "  claude-desktop   claude_desktop_config.json for Claude Desktop app"
-  echo "  remote           ~/.claude/mcp.json entry for a remote bridge over HTTP"
+  echo "  remote           Merges a remote bridge entry into the nearest .mcp.json (or ~/.claude/mcp.json)"
   echo "                   Requires: --host <host:port> --token <token>"
   echo "  claude-web       Custom Connector snippet for claude.ai web"
   echo "                   Requires: --host <host:port> --token <token>"
@@ -147,16 +147,49 @@ EOF
   echo "      with \${BRIDGE_TOKEN} and set BRIDGE_TOKEN in your shell profile to avoid"
   echo "      storing the token in the config file. See docs/remote-access.md for details."
   if $WRITE; then
-    TMP_PATH="${OUTPUT_PATH}.tmp"
-    mkdir -p "$(dirname "$OUTPUT_PATH")"
-    if [[ -f "$OUTPUT_PATH" ]]; then
-      BACKUP="${OUTPUT_PATH}.$(date +%Y%m%d%H%M%S).bak"
-      cp "$OUTPUT_PATH" "$BACKUP"
-      echo "Backed up existing config to $(basename "$BACKUP")"
+    # Find the nearest .mcp.json (walk up from cwd, fallback to ~/.claude/mcp.json)
+    _find_mcp_json() {
+      local dir="$PWD"
+      while [[ "$dir" != "/" ]]; do
+        [[ -f "$dir/.mcp.json" ]] && echo "$dir/.mcp.json" && return
+        dir="$(dirname "$dir")"
+      done
+      echo "${HOME}/.claude/mcp.json"
+    }
+    OUTPUT_PATH="$(_find_mcp_json)"
+
+    # Merge the new server entry into the existing file (python3 required)
+    if command -v python3 >/dev/null 2>&1; then
+      MERGE_HOST="$REMOTE_HOST" MERGE_TOKEN="$REMOTE_TOKEN" OUTPUT_PATH="$OUTPUT_PATH" python3 - <<'PYEOF'
+import json, os, sys
+path = os.environ["OUTPUT_PATH"]
+host = os.environ["MERGE_HOST"]
+token = os.environ["MERGE_TOKEN"]
+try:
+    with open(path) as f:
+        existing = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    existing = {}
+existing.setdefault("mcpServers", {})["claude-ide-bridge-remote"] = {
+    "type": "http",
+    "url": f"http://{host}/mcp",
+    "headers": {"Authorization": f"Bearer {token}"}
+}
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(existing, f, indent=2)
+    f.write("\n")
+os.replace(tmp, path)
+print(f"Written: {path}")
+PYEOF
+    else
+      # Fallback: write standalone file
+      TMP_PATH="${OUTPUT_PATH}.tmp"
+      mkdir -p "$(dirname "$OUTPUT_PATH")"
+      printf '%s\n' "$CONFIG" > "$TMP_PATH"
+      mv "$TMP_PATH" "$OUTPUT_PATH"
+      echo "Written: $OUTPUT_PATH"
     fi
-    printf '%s\n' "$CONFIG" > "$TMP_PATH"
-    mv "$TMP_PATH" "$OUTPUT_PATH"
-    echo "Written: $OUTPUT_PATH"
   fi
   exit 0
 fi

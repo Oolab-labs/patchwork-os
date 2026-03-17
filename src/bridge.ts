@@ -97,7 +97,7 @@ export class Bridge {
   constructor(private config: Config) {
     this.logger = new Logger(config.verbose, config.jsonl);
     this.lockFile = new LockFileManager(this.logger);
-    this.authToken = randomUUID();
+    this.authToken = config.fixedToken ?? randomUUID();
     this.server = new Server(this.authToken, this.logger);
     this.activityLog = new ActivityLog();
     this.extensionClient = new ExtensionClient(this.logger);
