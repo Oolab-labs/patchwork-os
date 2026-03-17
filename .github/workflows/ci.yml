@@ -25,10 +25,82 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Test
-        run: npm test
+      - name: Test (1237 unit tests)
+        run: npm test -- --reporter=dot
+        timeout-minutes: 5
       - name: Build
         run: npm run build
+
+  plugin-validate:
+    name: Validate plugin manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check plugin.json exists
+        run: test -f claude-ide-bridge-plugin/.claude-plugin/plugin.json
+
+      - name: Validate plugin.json schema
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('claude-ide-bridge-plugin/.claude-plugin/plugin.json', 'utf8'));
+            const required = ['name', 'version', 'description', 'author', 'license'];
+            for (const f of required) {
+              if (!p[f]) throw new Error('plugin.json missing required field: ' + f);
+            }
+            const semver = /^\d+\.\d+\.\d+$/;
+            if (!semver.test(p.version)) throw new Error('plugin.json version is not semver: ' + p.version);
+            console.log('plugin.json valid:', p.name, p.version);
+          "
+
+      - name: Check plugin icon exists
+        run: test -f claude-ide-bridge-plugin/icon.png
+
+      - name: Check MCP config exists and is valid
+        run: |
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('claude-ide-bridge-plugin/.mcp.json', 'utf8'));
+            if (!m.mcpServers) throw new Error('.mcp.json missing mcpServers');
+            const servers = Object.keys(m.mcpServers);
+            if (!servers.length) throw new Error('.mcp.json has no servers defined');
+            console.log('.mcp.json valid — servers:', servers.join(', '));
+          "
+
+      - name: Validate skill SKILL.md frontmatter
+        run: |
+          node -e "
+            const fs = require('fs'), path = require('path');
+            const skillsDir = 'claude-ide-bridge-plugin/skills';
+            const dirs = fs.readdirSync(skillsDir);
+            for (const d of dirs) {
+              const f = path.join(skillsDir, d, 'SKILL.md');
+              if (!fs.existsSync(f)) throw new Error('Missing SKILL.md in ' + d);
+              const c = fs.readFileSync(f, 'utf8');
+              if (!c.startsWith('---')) throw new Error('SKILL.md missing frontmatter: ' + d);
+              if (!c.includes('name:')) throw new Error('SKILL.md missing name: ' + d);
+              if (!c.includes('description:')) throw new Error('SKILL.md missing description: ' + d);
+              console.log('  ok:', d);
+            }
+            console.log('All', dirs.length, 'skills valid');
+          "
+
+      - name: Validate agent frontmatter
+        run: |
+          node -e "
+            const fs = require('fs'), path = require('path');
+            const agentsDir = 'claude-ide-bridge-plugin/agents';
+            const files = fs.readdirSync(agentsDir).filter(f => f.endsWith('.md'));
+            for (const f of files) {
+              const c = fs.readFileSync(path.join(agentsDir, f), 'utf8');
+              if (!c.startsWith('---')) throw new Error('Agent missing frontmatter: ' + f);
+              if (!c.includes('name:')) throw new Error('Agent missing name: ' + f);
+              if (!c.includes('description:')) throw new Error('Agent missing description: ' + f);
+              console.log('  ok:', f);
+            }
+            console.log('All', files.length, 'agents valid');
+          "
 
   benchmark:
     runs-on: ubuntu-latest
