@@ -16,6 +16,7 @@
 # Example:
 #   bash scripts/gen-mcp-config.sh cursor
 #   bash scripts/gen-mcp-config.sh codex --write
+#   bash scripts/gen-mcp-config.sh claude-web --host mybridge.example.com --token <tok>
 
 set -euo pipefail
 
@@ -41,18 +42,20 @@ done
 if [[ -z "$TARGET" || "$TARGET" == "--help" || "$TARGET" == "-h" ]]; then
   echo "Usage: $0 <target> [--write]"
   echo ""
-  echo "Targets: cursor | antigravity | codex | claude-desktop | remote"
+  echo "Targets: cursor | antigravity | codex | claude-desktop | remote | claude-web"
   echo "  cursor           .cursor/mcp.json"
   echo "  antigravity      mcp_config.json for Google Antigravity"
   echo "  codex            ~/.codex/config.toml section for OpenAI Codex CLI"
   echo "  claude-desktop   claude_desktop_config.json for Claude Desktop app"
   echo "  remote           ~/.claude/mcp.json entry for a remote bridge over HTTP"
   echo "                   Requires: --host <host:port> --token <token>"
+  echo "  claude-web       Custom Connector snippet for claude.ai web"
+  echo "                   Requires: --host <host:port> --token <token>"
   echo ""
   echo "Flags:"
-  echo "  --write          Write config to the correct location"
-  echo "  --host <h:port>  Remote host and port (remote target only)"
-  echo "  --token <tok>    Auth token (remote target only; get via: claude-ide-bridge print-token)"
+  echo "  --write          Write config to the correct location (not applicable for claude-web)"
+  echo "  --host <h:port>  Remote host and port (remote / claude-web targets)"
+  echo "  --token <tok>    Auth token (remote / claude-web targets; get via: claude-ide-bridge print-token)"
   exit 0
 fi
 
@@ -158,6 +161,37 @@ EOF
   exit 0
 fi
 
+# --- Claude.ai Web Custom Connector target ---
+if [[ "$TARGET" == "claude-web" ]]; then
+  if [[ -z "$REMOTE_HOST" || -z "$REMOTE_TOKEN" ]]; then
+    echo "Error: claude-web target requires --host <host:port> and --token <token>" >&2
+    echo "  The bridge must be behind a reverse proxy with TLS for claude.ai to reach it." >&2
+    echo "  Get the token with: claude-ide-bridge print-token" >&2
+    exit 1
+  fi
+  # claude.ai Custom Connectors use HTTPS — warn if http:// is implied (no scheme in host)
+  if [[ "$REMOTE_HOST" != https://* && "$REMOTE_HOST" != http://* ]]; then
+    CONNECTOR_URL="https://${REMOTE_HOST}/mcp"
+  else
+    CONNECTOR_URL="${REMOTE_HOST}/mcp"
+  fi
+  echo "=== claude.ai Web — Custom Connector settings ==="
+  echo ""
+  echo "1. Go to claude.ai → Settings → Custom Connectors → Add connector"
+  echo "2. Enter the following:"
+  echo ""
+  echo "   Name:      Claude IDE Bridge"
+  echo "   URL:       ${CONNECTOR_URL}"
+  echo "   Auth:      Bearer token"
+  echo "   Token:     ${REMOTE_TOKEN}"
+  echo ""
+  echo "Note: The bridge must be reachable over HTTPS from the public internet."
+  echo "      See docs/remote-access.md for a production-ready Caddy/nginx TLS setup."
+  echo "Tip:  Rotate the token with: claude-ide-bridge rotate-token"
+  echo "      Then update the connector's token in claude.ai settings."
+  exit 0
+fi
+
 LOCK_FILE=$(find_lock)
 
 if [[ -z "$LOCK_FILE" ]]; then
@@ -259,7 +293,7 @@ EOF
     ;;
 
   *)
-    echo "Error: Unknown target '$TARGET'. Use: cursor | antigravity | codex | claude-desktop | remote" >&2
+    echo "Error: Unknown target '$TARGET'. Use: cursor | antigravity | codex | claude-desktop | remote | claude-web" >&2
     exit 1
     ;;
 esac

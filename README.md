@@ -558,6 +558,31 @@ Config location:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
+## Use with Claude.ai Web
+
+Connect the bridge to [claude.ai](https://claude.ai) via a **Custom Connector** — chat with your IDE from the browser without installing anything extra.
+
+**Prerequisites:** The bridge must be reachable over HTTPS from the public internet. The simplest setup is a VPS running the bridge behind Caddy or nginx with TLS. See [Headless VPS](#headless-vps-new) and [docs/remote-access.md](docs/remote-access.md) for a production-ready setup.
+
+Once the bridge is publicly reachable:
+
+```bash
+# Print the Custom Connector setup instructions
+bash scripts/gen-mcp-config.sh claude-web \
+  --host mybridge.example.com \
+  --token $(claude-ide-bridge print-token)
+```
+
+Paste the printed URL, auth type, and token into claude.ai → **Settings → Custom Connectors → Add connector**.
+
+> **Token rotation:** When you rotate the token (`claude-ide-bridge rotate-token`), update the token in claude.ai Settings → Custom Connectors to match.
+
+> **Tool availability:** All 138+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine.
+
+**Try it:** Open [claude.ai](https://claude.ai), start a new conversation, and ask *"What files are open in my IDE?"*
+
+---
+
 ## Streamable HTTP (Remote MCP)
 
 The bridge also exposes an MCP-compliant **Streamable HTTP** transport at `POST/GET/DELETE /mcp`. This lets any MCP client that speaks HTTP (including Claude Desktop via Custom Connectors, or curl) connect without a WebSocket.

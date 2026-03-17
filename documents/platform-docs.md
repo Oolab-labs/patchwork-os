@@ -311,8 +311,9 @@ Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket
 - Extension authenticates via `x-claude-ide-extension` header
 
 ### Tool Filtering
-- Tools with `extensionRequired: true` are hidden from `tools/list` when extension is disconnected
-- Extension connect/disconnect triggers `notifications/tools/list_changed` to Claude Code
+- Tools with `extensionRequired: true` are **always visible** in `tools/list` regardless of extension state (changed in v2.1.33)
+- When the extension is disconnected, calling an `extensionRequired` tool returns `isError: true` with reconnect instructions instead of a "Tool Not Found" error
+- Extension connect/disconnect triggers `notifications/tools/list_changed` to Claude Code (still sent — allows clients to refresh state)
 
 ### Limits & Timeouts
 | Setting | Default | Max |
@@ -418,7 +419,7 @@ getHandoffNote()  →  { note: "auth bug in login.ts:42 ...", age: "4m ago" }
 ### Cowork Workflow — One Prompt to Start
 
 > **Why Cowork sessions can't use MCP bridge tools**
-> Cowork (computer-use) sessions connect to Claude Desktop as a separate process with no VS Code extension attached. Because the bridge only exposes tools to authenticated MCP clients that have an active extension connection, tools marked `extensionRequired: true` are filtered out — and without a real editor session, even unrestricted tools can't do useful IDE work. This is an architectural constraint of how Cowork sessions are isolated; it is not a bug. The two-step workflow below (gather context first, then hand off) is the correct workaround.
+> Cowork (computer-use) sessions connect to Claude Desktop as a separate process with no VS Code extension attached. Tools marked `extensionRequired: true` are still visible in `tools/list`, but calling them while the extension is disconnected returns `isError: true` with reconnect instructions — without a real editor session they cannot do useful IDE work. This is an architectural constraint of how Cowork sessions are isolated; it is not a bug. The two-step workflow below (gather context first, then hand off) is the correct workaround.
 
 The `/mcp__bridge__cowork` prompt is the recommended entry point for any Cowork session. It eliminates the need to manually invoke context tools before describing a task.
 
@@ -555,7 +556,7 @@ Launches tmux session with 4 panes: orchestrator, bridge, Claude CLI, remote con
 - Commands: Reconnect, Show Logs, Copy Connection Info
 - Auto-reconnect: exponential backoff with jitter, sleep detection, escalating notifications
 - Real-time push: diagnostics, selections, active file, AI comments, file saves, debug state
-- **Auto-install** (`autoInstallBridge: true`): extension installs `claude-ide-bridge` npm package globally on first activation; version-pinned to the bundled `BRIDGE_VERSION`
+- **Auto-install** (`autoInstallBridge: true`): extension installs `claude-ide-bridge` npm package globally on first activation; version-pinned to the bundled `BRIDGE_VERSION` (read from `PACKAGE_VERSION` in `version.ts` — no longer hardcoded)
 - **Auto-start** (`autoStartBridge: true`): extension spawns a bridge process per workspace folder; polls lock dir (250ms) to detect readiness; uses exponential restart backoff (max 5 restarts, 30s cap)
 - **Untrusted workspace**: bridge install and auto-start are skipped in untrusted workspaces (VS Code workspace trust). The extension still watches for a manually-started bridge via lock file discovery.
 - **`extensionKind: ["workspace"]`** (v1.0.2+): extension runs in the remote extension host when using VS Code Remote-SSH or Cursor SSH — bridge spawns on the VPS, connects over VPS localhost, all tools available remotely.

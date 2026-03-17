@@ -182,13 +182,15 @@ Registration (startup):
   └─ Tool name validated: /^[a-zA-Z0-9_]+$/
 
 Discovery (runtime):
-  Claude sends tools/list → transport filters by extensionRequired flag
-  └─ extension connected: all tools visible
-  └─ extension disconnected: extensionRequired tools hidden
+  Claude sends tools/list → all tools returned regardless of extension state
+  └─ extensionRequired flag is NO LONGER a list filter (changed v2.1.33)
+  └─ all tools always visible; extension state affects dispatch, not discovery
 
 Execution:
   Claude sends tools/call → rate limit check → concurrent limit check
-  → create AbortController → start timeout race
+  → if extensionRequired tool AND extension disconnected:
+      → return isError:true with reconnect instructions immediately
+  → else: create AbortController → start timeout race
   → handler executes → record in activityLog
   → respond with result or isError:true content
 
@@ -497,7 +499,7 @@ Returned as `{ jsonrpc: "2.0", id, error: { code, message, data? } }`. Request w
 | `-32600` | Invalid Request | Batch request, not initialized, or duplicate request ID | Send individual requests; complete handshake; use unique IDs |
 | `-32601` | Method Not Found | Unrecognized JSON-RPC method | Use `initialize`, `tools/list`, `tools/call`, `ping`, or notifications |
 | `-32602` | Invalid Params | Args not object, exceed 1 MB, or fail AJV schema validation | Fix arguments to match tool's `inputSchema` |
-| `-32003` | Tool Not Found | Tool not registered or hidden (extensionRequired + disconnected) | Call `tools/list`; reconnect extension |
+| `-32003` | Tool Not Found | Tool not registered | Call `tools/list` to confirm tool name |
 | `-32004` | Rate Limit | >200 requests in 60s sliding window | Back off; limit is 200 req/min per connection |
 
 ### HTTP/WebSocket Rejections
