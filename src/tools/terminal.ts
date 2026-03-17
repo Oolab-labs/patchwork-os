@@ -272,7 +272,7 @@ export function createGetTerminalOutputTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("terminal output");
       }
@@ -346,7 +346,7 @@ export function createCreateTerminalTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("createTerminal");
       }
@@ -465,7 +465,7 @@ export function createWaitForTerminalOutputTool(
     // the tool ceiling by 10 s so the extension response always arrives before
     // the MCP transport cancels the request.
     timeoutMs: 310_000,
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("waitForTerminalOutput");
       }
@@ -575,7 +575,7 @@ export function createRunInTerminalTool(
     // the tool ceiling by 10 s so the extension response always arrives before
     // the MCP transport cancels the request.
     timeoutMs: 310_000,
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("runInTerminal");
       }
@@ -643,7 +643,7 @@ export function createDisposeTerminalTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("disposeTerminal");
       }
@@ -720,7 +720,7 @@ export function createSendTerminalCommandTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("sendTerminalCommand");
       }

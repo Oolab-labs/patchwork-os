@@ -178,7 +178,7 @@ export function createGenerateTestsTool(workspace: string) {
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       const fileArg = requireString(args, "file");
       const frameworkArg = optionalString(args, "framework") ?? "auto";
       const outputFileArg = optionalString(args, "outputFile");

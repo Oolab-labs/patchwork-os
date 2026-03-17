@@ -842,14 +842,14 @@ export class ExtensionClient {
     startColumn: number,
     endLine: number,
     endColumn: number,
+    signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/getCodeActions", {
-      file,
-      startLine,
-      startColumn,
-      endLine,
-      endColumn,
-    });
+    return this.requestOrNull(
+      "extension/getCodeActions",
+      { file, startLine, startColumn, endLine, endColumn },
+      undefined,
+      signal,
+    );
   }
 
   async applyCodeAction(
@@ -859,15 +859,14 @@ export class ExtensionClient {
     endLine: number,
     endColumn: number,
     actionTitle: string,
+    signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/applyCodeAction", {
-      file,
-      startLine,
-      startColumn,
-      endLine,
-      endColumn,
-      actionTitle,
-    });
+    return this.requestOrNull(
+      "extension/applyCodeAction",
+      { file, startLine, startColumn, endLine, endColumn, actionTitle },
+      undefined,
+      signal,
+    );
   }
 
   async renameSymbol(
@@ -875,17 +874,28 @@ export class ExtensionClient {
     line: number,
     column: number,
     newName: string,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     // Rename can be slow on large projects
     return this.requestOrNull(
       "extension/renameSymbol",
       { file, line, column, newName },
       15_000,
+      signal,
     );
   }
 
-  async searchSymbols(query: string, maxResults?: number): Promise<unknown> {
-    return this.requestOrNull("extension/searchSymbols", { query, maxResults });
+  async searchSymbols(
+    query: string,
+    maxResults?: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/searchSymbols",
+      { query, maxResults },
+      undefined,
+      signal,
+    );
   }
 
   async watchFiles(id: string, pattern: string): Promise<unknown> {
@@ -993,8 +1003,16 @@ export class ExtensionClient {
     });
   }
 
-  async getDocumentSymbols(file: string): Promise<unknown> {
-    return this.requestOrNull("extension/getDocumentSymbols", { file });
+  async getDocumentSymbols(
+    file: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/getDocumentSymbols",
+      { file },
+      undefined,
+      signal,
+    );
   }
 
   async getCallHierarchy(
@@ -1003,11 +1021,13 @@ export class ExtensionClient {
     column: number,
     direction?: string,
     maxResults?: number,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     return this.requestOrNull(
       "extension/getCallHierarchy",
       { file, line, column, direction, maxResults },
       15_000,
+      signal,
     );
   }
 

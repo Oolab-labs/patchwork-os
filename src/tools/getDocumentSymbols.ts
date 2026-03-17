@@ -46,14 +46,17 @@ export function createGetDocumentSymbolsTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
       const filePath = resolveFilePath(rawPath, workspace);
 
       // Extension path: full LSP document symbols
       if (extensionClient?.isConnected()) {
         try {
-          const result = await extensionClient.getDocumentSymbols(filePath);
+          const result = await extensionClient.getDocumentSymbols(
+            filePath,
+            signal,
+          );
           if (result !== null && typeof result === "object") {
             const r = result as Record<string, unknown>;
             return success({ ...r, source: "lsp" });

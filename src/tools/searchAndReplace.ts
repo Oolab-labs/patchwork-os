@@ -65,7 +65,7 @@ export function createSearchAndReplaceTool(workspace: string) {
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const pattern = requireString(args, "pattern");
       const replacement = requireString(args, "replacement", 65536);
       const glob = optionalString(args, "glob");
@@ -119,6 +119,7 @@ export function createSearchAndReplaceTool(workspace: string) {
         cwd: workspace,
         timeout: 15_000,
         maxBuffer: 256 * 1024,
+        signal,
       });
 
       const matchedFiles = findResult.stdout
@@ -155,6 +156,7 @@ export function createSearchAndReplaceTool(workspace: string) {
 
       const processFile = async (
         filePath: string,
+        fileSignal?: AbortSignal,
       ): Promise<FileResult | null> => {
         // Safety: only operate within workspace. Use the validated real path for
         // all subsequent fs operations — do NOT call path.resolve(filePath) again,
@@ -176,7 +178,10 @@ export function createSearchAndReplaceTool(workspace: string) {
               written: false,
             };
           }
-          content = await fs.promises.readFile(resolved, "utf-8");
+          content = await fs.promises.readFile(resolved, {
+            encoding: "utf-8",
+            signal: fileSignal,
+          });
         } catch {
           return null;
         }
@@ -203,7 +208,10 @@ export function createSearchAndReplaceTool(workspace: string) {
 
         if (!dryRun) {
           try {
-            await fs.promises.writeFile(resolved, newContent, "utf-8");
+            await fs.promises.writeFile(resolved, newContent, {
+              encoding: "utf-8",
+              signal: fileSignal,
+            });
             return { file: filePath, replacements: count, written: true };
           } catch (err) {
             return {
@@ -219,8 +227,11 @@ export function createSearchAndReplaceTool(workspace: string) {
 
       const results: FileResult[] = [];
       for (let i = 0; i < matchedFiles.length; i += CONCURRENCY) {
+        if (signal?.aborted) break;
         const batch = matchedFiles.slice(i, i + CONCURRENCY);
-        const batchResults = await Promise.all(batch.map(processFile));
+        const batchResults = await Promise.all(
+          batch.map((f) => processFile(f, signal)),
+        );
         for (const r of batchResults) {
           if (r !== null) results.push(r);
         }

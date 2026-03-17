@@ -255,7 +255,7 @@ export function createGetCodeActionsTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("LSP features");
       }
@@ -274,6 +274,7 @@ export function createGetCodeActionsTool(
           startColumn,
           endLine,
           endColumn,
+          signal,
         );
         if (result === null) {
           return success({ actions: [] });
@@ -342,7 +343,7 @@ export function createApplyCodeActionTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("LSP features");
       }
@@ -363,6 +364,7 @@ export function createApplyCodeActionTool(
           endLine,
           endColumn,
           actionTitle,
+          signal,
         );
         if (result === null) {
           return error(
@@ -417,7 +419,7 @@ export function createRenameSymbolTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("LSP features");
       }
@@ -437,6 +439,7 @@ export function createRenameSymbolTool(
           line,
           column,
           newName,
+          signal,
         );
         if (result === null) {
           return error(
@@ -500,7 +503,7 @@ export function createGetCallHierarchyTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
         return extensionRequired("getCallHierarchy");
       }
@@ -523,6 +526,7 @@ export function createGetCallHierarchyTool(
           column,
           rawDirection,
           maxResults,
+          signal,
         );
         if (result === null) {
           return success({
@@ -571,7 +575,7 @@ export function createSearchWorkspaceSymbolsTool(
         additionalProperties: false as const,
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const query = requireString(args, "query", 256);
       if (query.trim().length === 0) {
         return error("query must not be empty");
@@ -581,7 +585,11 @@ export function createSearchWorkspaceSymbolsTool(
       }
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
       try {
-        const result = await extensionClient.searchSymbols(query, maxResults);
+        const result = await extensionClient.searchSymbols(
+          query,
+          maxResults,
+          signal,
+        );
         if (result === null) {
           return success({ symbols: [], count: 0 });
         }

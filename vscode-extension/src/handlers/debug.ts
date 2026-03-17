@@ -284,7 +284,14 @@ const handleStopDebugging: RequestHandler = async () => {
   if (!session) {
     return { stopped: false, message: "No active debug session" };
   }
-  await vscode.debug.stopDebugging(session);
+  try {
+    await vscode.debug.stopDebugging(session);
+  } catch (err) {
+    return {
+      stopped: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
   return { stopped: true };
 };
 

@@ -28,6 +28,13 @@ export async function handleWriteClipboard(
       `Text too large: ${byteLength} bytes (max ${MAX_WRITE_BYTES})`,
     );
   }
-  await vscode.env.clipboard.writeText(text);
+  try {
+    await vscode.env.clipboard.writeText(text);
+  } catch (err) {
+    return {
+      written: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
   return { written: true, byteLength };
 }

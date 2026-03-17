@@ -54,8 +54,16 @@ async function readLineRange(
       resolve({ lines: collected, totalLines: lineNum });
     });
 
-    rl.on("error", () => resolve(null));
-    stream.on("error", () => resolve(null));
+    rl.on("error", () => {
+      rl.close();
+      stream.destroy();
+      resolve(null);
+    });
+    stream.on("error", () => {
+      rl.close();
+      stream.destroy();
+      resolve(null);
+    });
 
     signal?.addEventListener("abort", () => {
       rl.close();
@@ -182,7 +190,7 @@ export function createGetBufferContentTool(
 
         // Small file — read fully
         try {
-          content = await fs.readFile(filePath, "utf-8");
+          content = await fs.readFile(filePath, { encoding: "utf-8", signal });
           meta = { isDirty: false, source: "disk" };
         } catch {
           return error(`File not found: ${filePath}`);
