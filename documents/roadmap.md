@@ -4,9 +4,9 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.1.32 — 2026-03-17)
+## Current State (v2.1.34 — 2026-03-17)
 
-- 135+ MCP tools; 1222+ bridge tests + 362 extension tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
+- 135+ MCP tools; 1222+ bridge tests + 369 extension tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
 - Extension v1.0.5 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.32`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
@@ -22,6 +22,28 @@ Development direction and exploration guidance. Living document — update as pr
 - Remote Desktop IDE support: extension runs in remote extension host (SSH/Cursor SSH); `print-token` CLI subcommand for headless VPS setup
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.1.34 shipped (2026-03-17) — Claude Code platform alignment:**
+- `claude-ide-bridge-plugin/hooks/hooks.json`: added `InstructionsLoaded` hook (fires on every CLAUDE.md load, not just session start — delivers live bridge status each time Claude refreshes its instructions) and `Elicitation` hook (pre-answers file/path/uri fields in elicitation requests using the active editor, avoiding "which file?" interruptions)
+- `claude-ide-bridge-plugin/scripts/instructions-loaded.sh` (new): same status format as `session-info.sh` — port, tool count, extension state, workspace
+- `claude-ide-bridge-plugin/scripts/elicitation.sh` (new): reads elicitation schema from stdin, queries bridge `/health` for `activeFile`, returns pre-filled field value or exits silently
+- `templates/CLAUDE.bridge.md`: added "Modular rules" section — `.claude/rules/` scoped files + `@import` syntax guidance
+- `docs/remote-access.md`: added "Env var expansion" section — `${BRIDGE_TOKEN}` in `.mcp.json` keeps tokens out of config files
+- `scripts/gen-mcp-config.sh`: added env var tip to remote target output
+- No code changes, no test changes — hooks/scripts/docs only
+
+**v2.1.33 shipped (2026-03-17) — extension disconnect UX, handler correctness, plugin fixes:**
+- `transport.ts`: `extensionRequired: true` tools are NO LONGER hidden from `tools/list` when the extension disconnects. They remain always visible. Calling them while disconnected returns `isError: true` with reconnect instructions. The `isExtensionConnectedFn` is now used in the dispatch path (error gate) instead of the list filter.
+- `vscode-extension/src/handlers/codeActions.ts`: all `vscode.commands.executeCommand` calls wrapped in try-catch; returns `{ error: msg }` on failure instead of throwing.
+- `vscode-extension/src/handlers/lsp.ts`: same try-catch treatment; error shapes return null / empty arrays / `{ applied: false, error }` as appropriate.
+- `vscode-extension/src/handlers/screenshot.ts`: replaced `readFileSync` with async `readFile` + 3-attempt retry (50ms apart); unique temp file per call (timestamp + random suffix).
+- `vscode-extension/src/bridgeProcess.ts`: `process.kill(pid, 0)` liveness check before connecting to a lock file; dead bridge stale locks skipped immediately.
+- `vscode-extension/src/extension.ts`: `deactivate()` logs "Extension deactivating" via output channel.
+- `vscode-extension/src/handlers/selection.ts`: returns `{ error: "No active editor" }` instead of `null`.
+- `src/pluginLoader.ts`: `BRIDGE_VERSION` now reads from `PACKAGE_VERSION` (was hardcoded `"2.1.23"`).
+- `src/index.ts`: `gen-plugin-stub` scaffold now includes `_signal` param.
+- `src/tools/handoffNote.ts`: unused `sessionId` param renamed to `_sessionId`.
+- Bridge tests: 1222 (unchanged); Extension tests: 369 (↑7 from 362).
 
 **v2.1.32 shipped (2026-03-17) — session persistence correctness & robustness sweep:**
 - `sessionCheckpoint.ts`: `CheckpointData` now includes `workspace?: string` field; `loadLatest()` accepts optional `workspace` param and filters checkpoints by workspace — prevents cross-instance contamination when multiple bridge instances share the same `~/.claude/ide/` directory; legacy checkpoints without the field still load (upgrade compat)
@@ -312,6 +334,28 @@ Implemented in `src/prompts.ts`. No extension required. Transport handles `promp
 
 ---
 
+## Claude Code Platform Alignment (Shipped — v2.1.34)
+
+Research (2026-03-17) against current Claude Code docs revealed gaps between the bridge's platform integration and what's now available. Prioritised actions:
+
+### Quick wins
+- Add **`argument-hint`** field to all 6 bridge skills in `.claude/skills/` — enables autocomplete when invoking `/claude-ide-bridge:review-file <tab>`
+- Add **`memory: project`** to all 3 bridge subagents (`ide-code-reviewer`, `ide-debugger`, `ide-test-runner`) — enables cross-session learning of project patterns
+- Update **`gen-claude-md` template** to document `.claude/rules/` modular scoping and `@import` syntax
+- Document **env var expansion** (`${VAR:-default}`) for bridge `.mcp.json` config (authToken, port) in README
+
+### Medium-effort
+- Add **`Elicitation` hook** to bridge plugin — hook fires when Claude wants to ask a question; can pre-answer "which file?" using the current open editor from the bridge
+- Add **`InstructionsLoaded` hook** — inject live tool count, workspace name, and extension connection status at session start (replaces the static SessionStart hook message)
+- Add **`updatedInput` field** to PostToolUse hook — allows hooks to correct common tool arg mistakes before they reach handlers
+
+### Long-term
+- Verify bridge tool search compatibility — with 135+ tools, Claude Code's MCP Tool Search may activate; confirm tool descriptions are search-friendly
+- Worktree isolation guidance — document safe use of `isolation: worktree` with bridge file tools (concurrent edits in different worktrees need coordination)
+- Agent Teams — when Claude Code's multi-session Teams feature ships, bridge is the natural coordination layer; plan session namespacing
+
+---
+
 ## Near-Term Exploration Areas
 
 ### Multi-Editor Support *(baselined)*
@@ -321,14 +365,14 @@ Implemented in `src/prompts.ts`. No extension required. Transport handles `promp
 - JetBrains: no extension yet — would require a separate plugin (different extension API)
 
 ### Native Fallback Improvements *(complete)*
-- Currently: extension disconnect → hide 27 tools (audited 2026-03-12)
+- Currently: extension disconnect → tools remain visible; calling them returns `isError: true` with reconnect instructions (changed in v2.1.33 — previously hid 27 tools)
 - `listTasks` fallback shipped — parses `.vscode/tasks.json` + Makefile targets
 - `watchDiagnostics` fallback shipped — runs detected CLI linters immediately, returns snapshot
 - `organizeImports` fallback shipped — biome → prettier chain; 3 tests covering both CLI paths and the "no CLI available" error
 - All others (terminal, debugger, LSP, decorations, VS Code commands) have no viable fallback — intentionally `extensionRequired`
 
 ### Test Coverage *(complete — 2026-03-17)*
-- 1222+ bridge tests + 362 extension tests, 100 files; 0 failures
+- 1222+ bridge tests + 369 extension tests, 100 files; 0 failures
 - Integration tests: 6 files, full WebSocket round-trip coverage
 - All bridge tool files and extension handler files now have unit tests
 - `searchAndReplace` rg-integration suite now runs on macOS (Claude binary shim) in addition to Linux CI; mocked-rg logic suite runs on all platforms

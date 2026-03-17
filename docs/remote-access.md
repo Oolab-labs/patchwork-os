@@ -186,6 +186,32 @@ restarting the bridge.
 For long-lived setups, consider wrapping the bridge in a script that reads the current
 token from the lock file and passes it to your reverse proxy config dynamically.
 
+### Env var expansion in `.mcp.json`
+
+Claude Code supports `${VAR:-default}` syntax in `.mcp.json` values. Keep the token out of the file:
+
+```json
+{
+  "mcpServers": {
+    "claude-ide-bridge-remote": {
+      "type": "http",
+      "url": "https://bridge.yourdomain.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${BRIDGE_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+Set `BRIDGE_TOKEN` in your shell profile (`.zshrc`, `.bashrc`) or via a secrets manager. Retrieve the current token with:
+
+```bash
+claude-ide-bridge print-token
+```
+
+This way the token never appears in version-controlled config files.
+
 ---
 
 ## Endpoint reference

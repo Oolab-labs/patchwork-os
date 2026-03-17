@@ -21,6 +21,26 @@
         ]
       }
     ],
+    "InstructionsLoaded": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/instructions-loaded.sh"
+          }
+        ]
+      }
+    ],
+    "Elicitation": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/elicitation.sh"
+          }
+        ]
+      }
+    ],
     "SubagentStart": [
       {
         "matcher": "ide-debugger|ide-test-runner|ide-code-reviewer",

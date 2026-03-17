@@ -17,6 +17,23 @@ Keep project documentation and Claude's memory in sync with the code:
 - **At the end of a work session** — if meaningful decisions were made (why a pattern was chosen, what was tried and rejected, what the next steps are), save a summary to memory: *"Remember that we chose X approach because Y."*
 - **Prune stale instructions** — if `CLAUDE.md` contains outdated guidance, remove or correct it. Stale instructions cause confident mistakes in future sessions.
 
+### Modular rules (optional)
+
+For large projects, move individual rules out of CLAUDE.md into scoped files under `.claude/rules/`:
+
+```
+.claude/rules/testing.md     — applies when working with test files
+.claude/rules/security.md    — applies to auth, payments, sensitive modules
+.claude/rules/typescript.md  — TypeScript-specific conventions
+```
+
+Reference them from CLAUDE.md with:
+```
+@import .claude/rules/testing.md
+```
+
+Path globs on rule files mean Claude only loads them when working on matching files — keeps context focused and token-efficient.
+
 ### Workflow rules
 
 - **After editing any file** — call `getDiagnostics` to catch errors introduced by the change

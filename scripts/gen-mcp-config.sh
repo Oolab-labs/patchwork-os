@@ -140,6 +140,9 @@ EOF
   echo "$CONFIG"
   echo ""
   echo "Note: Use HTTPS in production — put nginx or Caddy in front with TLS."
+  echo "Tip:  Claude Code supports \${VAR:-default} in .mcp.json. Replace the token value"
+  echo "      with \${BRIDGE_TOKEN} and set BRIDGE_TOKEN in your shell profile to avoid"
+  echo "      storing the token in the config file. See docs/remote-access.md for details."
   if $WRITE; then
     TMP_PATH="${OUTPUT_PATH}.tmp"
     mkdir -p "$(dirname "$OUTPUT_PATH")"
