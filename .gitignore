@@ -19,3 +19,8 @@ coverage/
 .DS_Store
 claude-ide-bridge.config.json
 .claude/worktrees/
+
+# Temp/scratch files
+smoke-stash-test.ts
+smoke-test-temp.ts
+scripts/test-rg.mjs
