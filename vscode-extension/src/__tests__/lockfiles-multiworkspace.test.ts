@@ -39,6 +39,7 @@ function makeLockContent(
     pid: 9999,
     workspace,
     startedAt: NOW - 60_000,
+    isBridge: true,
     ...overrides,
   });
 }

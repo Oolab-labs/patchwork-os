@@ -12,7 +12,7 @@ import {
 import { readLockFileForWorkspace, readLockFilesAsync } from "./lockfiles";
 import type { LockFileData, RequestHandler } from "./types";
 
-enum ConnectionState {
+export enum ConnectionState {
   IDLE = 0,
   CONNECTING = 1,
   CONNECTED = 2,
@@ -386,7 +386,7 @@ export class BridgeConnection {
     this.ws?.on("ping", this.pongHandler);
     this.heartbeatTimer = setInterval(() => {
       const now = Date.now();
-      if (now - this.lastTickTime > 60_000) {
+      if (now - this.lastTickTime > 50_000) {
         this.log("Probable sleep/wake detected, checking connection");
         this.lastTickTime = now;
         if (this.ws?.readyState !== WebSocket.OPEN) {
@@ -488,7 +488,8 @@ export class BridgeConnection {
     if (this.disposed) return;
     if (
       this.state === ConnectionState.CONNECTING ||
-      this.state === ConnectionState.CONNECTED
+      this.state === ConnectionState.CONNECTED ||
+      this.state === ConnectionState.DISCONNECTING
     )
       return;
     this.connect({ port, authToken, pid, workspace: this.workspaceOverride });

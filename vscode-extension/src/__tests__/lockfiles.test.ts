@@ -44,6 +44,7 @@ function makeLockContent(overrides: Record<string, unknown> = {}): string {
     pid: 9999,
     workspace: "/some/workspace",
     startedAt: NOW - 60_000, // 1 minute ago — valid by default
+    isBridge: true,
     ...overrides,
   });
 }

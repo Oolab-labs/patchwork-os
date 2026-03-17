@@ -310,6 +310,9 @@ export function activate(context: vscode.ExtensionContext): void {
                   lockFileDir || undefined,
                 );
                 if (existingLock) {
+                  output.appendLine(
+                    `${new Date().toISOString()} Found existing bridge on port ${existingLock.port} for ${fsPath} — skipping auto-start`,
+                  );
                   bridge.tryConnect();
                 } else {
                   // No running bridge — spawn one
@@ -326,6 +329,9 @@ export function activate(context: vscode.ExtensionContext): void {
                     output.appendLine(
                       `${new Date().toISOString()} Bridge startup failed for ${fsPath}: ${err}`,
                     );
+                    // Remove from map so a subsequent syncConnections call can
+                    // attempt a fresh spawn rather than assuming one is running.
+                    processes.delete(fsPath);
                     void vscode.window
                       .showErrorMessage(
                         `Claude IDE Bridge failed to start: ${err}`,

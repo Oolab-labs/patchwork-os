@@ -49,6 +49,7 @@ function makeLockContent(overrides: Record<string, unknown> = {}): string {
     pid: 9999,
     workspace: "/some/workspace",
     startedAt: NOW - 60_000, // 1 minute ago — valid by default
+    isBridge: true,
     ...overrides,
   });
 }
@@ -241,7 +242,7 @@ describe("readLockFilesAsync — dead PID", () => {
     expect(result).toBeNull();
   });
 
-  it("rejects lock file with dead PID (EPERM is treated as alive)", async () => {
+  it("accepts lock file when PID check throws EPERM (process exists, different user)", async () => {
     // EPERM means process exists but we can't signal it — should be treated as alive
     vi.spyOn(process, "kill").mockImplementation(() => {
       throw Object.assign(new Error("EPERM"), { code: "EPERM" });
@@ -249,11 +250,8 @@ describe("readLockFilesAsync — dead PID", () => {
     vi.mocked(fsp.readFile).mockResolvedValue(
       makeLockContent({ workspace: "/workspace" }) as any,
     );
-    // EPERM causes process.kill to throw → lockfiles.ts catch block → `continue`
-    // The lock is skipped regardless of the error code
     const result = await readLockFilesAsync();
-    // EPERM → throw → caught → continue → returns null
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
   });
 });
 

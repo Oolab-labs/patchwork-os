@@ -42,11 +42,19 @@ async function readValidLockFiles(
         const port = Number.parseInt(path.basename(file, ".lock"), 10);
         if (Number.isNaN(port)) continue;
         if (!content.authToken) continue;
+        // Only bridge-owned locks are valid candidates. IDE-owned locks
+        // (e.g. Windsurf's own lock file without isBridge) must be skipped so
+        // they don't fool the auto-start gate into thinking a bridge is running.
+        if (!content.isBridge) continue;
 
         try {
           process.kill(content.pid, 0);
-        } catch {
-          continue;
+        } catch (err: unknown) {
+          // ESRCH → process is dead → stale lock, skip it.
+          // EPERM → process exists but is owned by a different user (e.g. remote
+          //         SSH, container) → treat as alive and proceed.
+          // Any other error → conservative: treat as dead.
+          if ((err as NodeJS.ErrnoException).code !== "EPERM") continue;
         }
 
         // Guard against PID reuse: startedAt is required.
@@ -124,7 +132,7 @@ export async function readAllMatchingLockFiles(
   if (folders.length === 0) {
     // No workspace folders — return the newest available lock file (if any)
     const candidates = await readValidLockFiles(lockDir);
-    return candidates.length > 0 ? [candidates[0]] : [];
+    return candidates.length > 0 ? [candidates[0] as LockFileData] : [];
   }
 
   const candidates = await readValidLockFiles(lockDir);
