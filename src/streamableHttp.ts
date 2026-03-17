@@ -40,7 +40,12 @@ class HttpAdapter extends EventEmitter {
   /** WebSocket.OPEN = 1; WebSocket.CLOSED = 3 */
   readyState: number = WebSocket.OPEN;
 
-  constructor(private readonly warn: (msg: string) => void = () => {}) {
+  constructor(
+    private readonly warn: (msg: string) => void = () => {},
+    /** Called when the adapter writes to the SSE stream so the session's
+     *  lastActivity is refreshed even during long-idle SSE connections. */
+    private readonly onSseSend: () => void = () => {},
+  ) {
     super();
   }
   /** Always 0 — no send buffer for HTTP (bypasses backpressure drain). */
@@ -51,6 +56,10 @@ class HttpAdapter extends EventEmitter {
    * Keying by ID fixes the FIFO ordering race: if two concurrent tool calls arrive
    * on the same HTTP session, each POST waits for *its own* response rather than
    * the first response that arrives.
+   *
+   * Duplicate-ID guard: if a second POST arrives with the same id while the first
+   * is still pending (client bug per JSON-RPC spec), waitForSend() rejects it
+   * immediately with a 400 rather than silently overwriting the first waiter.
    */
   private pendingSends: Map<string | number, (data: string | null) => void> =
     new Map();
@@ -89,6 +98,7 @@ class HttpAdapter extends EventEmitter {
 
     if (this.sseRes && !this.sseRes.writableEnded) {
       this.sseRes.write(`data: ${str}\n\n`);
+      this.onSseSend(); // refresh session lastActivity so idle pruner doesn't kill open SSE connections
       cb?.();
       return;
     }
@@ -135,6 +145,14 @@ class HttpAdapter extends EventEmitter {
     return new Promise<string>((resolve, reject) => {
       if (this.pendingSends.size >= MAX_PENDING_SENDS) {
         reject(new Error("HTTP session send queue full"));
+        return;
+      }
+      // Reject duplicate in-flight IDs — reusing the same id while a request
+      // is pending is a client-side JSON-RPC spec violation.
+      if (this.pendingSends.has(requestId)) {
+        reject(
+          new Error(`Duplicate request id=${requestId} — already in flight`),
+        );
         return;
       }
       const timer = setTimeout(() => {
@@ -272,7 +290,24 @@ export class StreamableHttpHandler {
     // Parse JSON-RPC
     let msg: { jsonrpc: string; id?: unknown; method?: string };
     try {
-      msg = JSON.parse(body);
+      const parsed = JSON.parse(body);
+      // Batch requests (arrays) are not supported — reject early with a clear error
+      // rather than letting the request silently fall through as a notification.
+      if (Array.isArray(parsed)) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: -32600,
+              message: "Batch requests are not supported",
+            },
+          }),
+        );
+        return;
+      }
+      msg = parsed;
     } catch {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(
@@ -350,7 +385,25 @@ export class StreamableHttpHandler {
 
     // Request → feed to adapter, wait for transport's response keyed by request ID
     const requestId = (msg.id as string | number) ?? 0;
-    const responsePromise = session.adapter.waitForSend(requestId);
+    let responsePromise: Promise<string>;
+    try {
+      responsePromise = session.adapter.waitForSend(requestId);
+    } catch (err) {
+      // Duplicate in-flight id — reject before feeding to transport so the
+      // transport never sees a second message with the same id.
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: msg.id ?? null,
+          error: {
+            code: -32600,
+            message: err instanceof Error ? err.message : "Invalid request",
+          },
+        }),
+      );
+      return;
+    }
     session.adapter.receive(body);
 
     let responseData: string;
@@ -433,7 +486,20 @@ export class StreamableHttpHandler {
 
   private createSession(): HttpSession {
     const id = crypto.randomUUID();
-    const adapter = new HttpAdapter((msg) => this.logger.warn(msg));
+    const session: HttpSession = {
+      id,
+      adapter: null!, // filled in below once adapter is created
+      transport: null!,
+      openedFiles: new Set(),
+      terminalPrefix: `http-${id.slice(0, 8)}`,
+      lastActivity: Date.now(),
+    };
+    const adapter = new HttpAdapter(
+      (msg) => this.logger.warn(msg),
+      () => {
+        session.lastActivity = Date.now();
+      }, // refresh on SSE writes
+    );
     const transport = new McpTransport(this.logger);
     transport.workspace = this.config.workspace;
     transport.sessionId = id;
@@ -451,8 +517,12 @@ export class StreamableHttpHandler {
     }
     transport.setExtensionConnectedFn(() => this.extensionClient.isConnected());
 
-    const openedFiles = new Set<string>();
     const terminalPrefix = `h${id.slice(0, 8)}-`; // "h" prefix distinguishes HTTP sessions
+
+    // Populate the early session stub so onSseSend callback can reference it.
+    session.adapter = adapter;
+    session.transport = transport;
+    session.terminalPrefix = terminalPrefix;
 
     // Join the plugin watcher BEFORE registerAllTools so that if a reload fires
     // between the two, this transport is already tracked and will receive fresh tools.
@@ -462,7 +532,7 @@ export class StreamableHttpHandler {
     registerAllTools(
       transport,
       this.config,
-      openedFiles,
+      session.openedFiles,
       this.probes,
       this.extensionClient,
       this.activityLog,
@@ -489,14 +559,6 @@ export class StreamableHttpHandler {
 
     transport.attach(adapter as unknown as import("ws").WebSocket);
 
-    const session: HttpSession = {
-      id,
-      adapter,
-      transport,
-      openedFiles,
-      terminalPrefix,
-      lastActivity: Date.now(),
-    };
     this.sessions.set(id, session);
     this.logger.info(
       `HTTP session created (${id.slice(0, 8)}) — ${this.sessions.size} HTTP sessions`,
@@ -524,6 +586,24 @@ export class StreamableHttpHandler {
       if (now - session.lastActivity > SESSION_TTL_MS) {
         this.logger.info(`Pruning idle HTTP session ${id.slice(0, 8)}`);
         this.destroySession(id);
+      }
+    }
+  }
+
+  /**
+   * Broadcast notifications/tools/list_changed to all HTTP sessions that have
+   * an open SSE stream. Called by bridge.ts sendListChanged() so HTTP clients
+   * learn about plugin reloads alongside WebSocket clients.
+   */
+  broadcastListChanged(): void {
+    for (const session of this.sessions.values()) {
+      if (session.adapter.readyState === WebSocket.OPEN) {
+        McpTransport.sendNotification(
+          session.adapter as unknown as import("ws").WebSocket,
+          "notifications/tools/list_changed",
+          undefined,
+          this.logger,
+        );
       }
     }
   }

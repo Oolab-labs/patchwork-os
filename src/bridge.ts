@@ -359,7 +359,10 @@ export class Bridge {
           notifiedAny = true;
         }
       }
-      // No open sessions — mark pending so the next session gets it on initialize
+      // Also notify HTTP sessions — they have their own session map in the handler.
+      this.httpMcpHandler?.broadcastListChanged();
+      // No open WebSocket sessions — mark pending so the next WS session gets it on initialize.
+      // HTTP sessions always receive their tools via broadcastListChanged above.
       if (!notifiedAny) {
         this.pendingListChanged = true;
       }
