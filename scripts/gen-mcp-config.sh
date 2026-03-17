@@ -137,6 +137,18 @@ if [[ "$TARGET" == "remote" ]]; then
 }
 EOF
 )
+  # Warn when using an ephemeral trycloudflare.com tunnel
+  if [[ "$REMOTE_HOST" == *".trycloudflare.com"* ]]; then
+    echo "⚠️  WARNING: trycloudflare.com tunnels are ephemeral — the URL changes every time" >&2
+    echo "   cloudflared restarts. Your MCP config will break on the next restart." >&2
+    echo "   For a permanent URL, use a named tunnel:" >&2
+    echo "     cloudflared tunnel login" >&2
+    echo "     cloudflared tunnel create my-bridge" >&2
+    echo "     cloudflared tunnel route dns my-bridge bridge.yourdomain.com" >&2
+    echo "   See the README (Cloudflare section) for the full setup guide." >&2
+    echo "" >&2
+  fi
+
   echo "=== Remote bridge MCP config ==="
   echo "Bridge: http://${REMOTE_HOST}/mcp"
   echo ""
@@ -202,6 +214,18 @@ if [[ "$TARGET" == "claude-web" ]]; then
     echo "  Get the token with: claude-ide-bridge print-token" >&2
     exit 1
   fi
+  # Warn when using an ephemeral trycloudflare.com tunnel
+  if [[ "$REMOTE_HOST" == *".trycloudflare.com"* ]]; then
+    echo "⚠️  WARNING: trycloudflare.com tunnels are ephemeral — the URL changes every time" >&2
+    echo "   cloudflared restarts. Your connector URL will break on the next restart." >&2
+    echo "   For a permanent URL, use a named tunnel:" >&2
+    echo "     cloudflared tunnel login" >&2
+    echo "     cloudflared tunnel create my-bridge" >&2
+    echo "     cloudflared tunnel route dns my-bridge bridge.yourdomain.com" >&2
+    echo "   See the README (Cloudflare section) for the full setup guide." >&2
+    echo "" >&2
+  fi
+
   # claude.ai Custom Connectors use HTTPS — warn if http:// is implied (no scheme in host)
   if [[ "$REMOTE_HOST" != https://* && "$REMOTE_HOST" != http://* ]]; then
     CONNECTOR_URL="https://${REMOTE_HOST}/mcp"

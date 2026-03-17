@@ -578,13 +578,49 @@ Connect the bridge to [claude.ai](https://claude.ai) via a **Custom Connector** 
 **Option A — Reverse proxy with a domain (production)**
 Put nginx or Caddy in front of the bridge with TLS. See [docs/remote-access.md](docs/remote-access.md) for a ready-made setup.
 
-**Option B — Cloudflare Tunnel (quick test, no domain needed)**
+**Option B — Cloudflare Named Tunnel (permanent URL, recommended)**
+
+A named tunnel gives you a stable subdomain under your own domain that survives `cloudflared` restarts.
+
 ```bash
-# On the VPS — install cloudflared and create an instant HTTPS tunnel
+# 1. Install cloudflared
 curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
   -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
+
+# 2. Authenticate with your Cloudflare account (opens browser)
+cloudflared tunnel login
+
+# 3. Create a named tunnel (one-time)
+cloudflared tunnel create my-bridge
+
+# 4. Route a DNS hostname to the tunnel (requires your domain on Cloudflare)
+cloudflared tunnel route dns my-bridge bridge.yourdomain.com
+
+# 5. Create a config file at ~/.cloudflared/config.yml
+cat > ~/.cloudflared/config.yml <<EOF
+tunnel: my-bridge
+credentials-file: /root/.cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: bridge.yourdomain.com
+    service: http://localhost:9000
+  - service: http_status:404
+EOF
+
+# 6. Run the tunnel (add to systemd/pm2 for auto-start)
+cloudflared tunnel run my-bridge
+# Bridge is now permanently reachable at https://bridge.yourdomain.com
+```
+
+Your MCP connector URL is then permanently `https://bridge.yourdomain.com/mcp?token=<token>` — it will not change across restarts.
+
+**Option C — Ephemeral Cloudflare Tunnel (quick test only)**
+
+> ⚠️ The subdomain changes every time `cloudflared` restarts. Do not use this for a permanent setup — your MCP config and connector URL will break. Use Option B above for anything beyond a one-off test.
+
+```bash
 cloudflared tunnel --url http://localhost:9000
-# Outputs a public HTTPS URL like: https://abc123.trycloudflare.com
+# Outputs a temporary URL like: https://abc123.trycloudflare.com
 ```
 
 Once the bridge is publicly reachable, add a Custom Connector on claude.ai:
@@ -592,7 +628,7 @@ Once the bridge is publicly reachable, add a Custom Connector on claude.ai:
 1. Go to **claude.ai → Settings → Integrations → Add custom connector**
 2. Enter the URL with your token embedded as a query param:
    ```
-   https://abc123.trycloudflare.com/mcp?token=<your-token>
+   https://bridge.yourdomain.com/mcp?token=<your-token>
    ```
 3. Save — claude.ai will verify the connection and list all available tools
 
@@ -601,8 +637,6 @@ The `?token=` query param is supported in addition to `Authorization: Bearer` he
 > **Stable tokens:** Use `--fixed-token <uuid>` when starting the bridge so the token doesn't change across restarts and your connector URL stays valid.
 
 > **Tool availability:** All 138+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~80 CLI tools still work (file ops, git, terminal, search, HTTP client).
-
-> **Cloudflare tunnels are ephemeral** — the subdomain changes every time you restart `cloudflared`. For a permanent URL use Option A (reverse proxy with a domain).
 
 **Mobile app:** The connector syncs to the Claude mobile app once added on the web. If it doesn't appear immediately, use claude.ai in your phone's browser — the connector works there without the native app.
 
