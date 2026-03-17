@@ -2,38 +2,57 @@
 # VPS startup script for claude-ide-bridge.
 # Starts the bridge on a fixed port inside tmux, with optional ngrok tunnel.
 #
+# Personal config lives in .env.vps (gitignored) — copy from .env.vps.example:
+#   cp .env.vps.example .env.vps && edit .env.vps
+#
 # Usage:
-#   bash scripts/start-vps.sh [--port 9000] [--token <fixed-token>] [--ngrok]
+#   bash scripts/start-vps.sh [--ngrok] [--stop]
 #   npm run vps
 #
 # Controls:
-#   tmux attach -t bridge   — view bridge logs
-#   tmux attach -t ngrok    — view ngrok status
-#   Ctrl+B, D               — detach (keeps running)
-#   bash scripts/start-vps.sh --stop  — kill all sessions
+#   tmux attach -t bridge   -- view bridge logs
+#   tmux attach -t ngrok    -- view ngrok status
+#   Ctrl+B, D               -- detach (keeps running)
+#   bash scripts/start-vps.sh --stop  -- kill all sessions
 
 set -uo pipefail
 
-# ── Defaults ─────────────────────────────────────────────────────────────────
-PORT=9000
-WORKSPACE="/root/claude-ide-bridge"
-FIXED_TOKEN="f3fbe7ca-b547-4d22-8338-69e7ec8845c9"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# -- Load personal config (.env.vps) ------------------------------------------
+ENV_FILE="$REPO_ROOT/.env.vps"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+else
+  echo "Error: $ENV_FILE not found." >&2
+  echo "  Copy the example: cp .env.vps.example .env.vps" >&2
+  echo "  Then fill in your PORT, WORKSPACE, and FIXED_TOKEN." >&2
+  exit 1
+fi
+
+# -- Defaults (can be overridden in .env.vps) ----------------------------------
+PORT="${PORT:-9000}"
+WORKSPACE="${WORKSPACE:-$REPO_ROOT}"
+FIXED_TOKEN="${FIXED_TOKEN:-}"
 START_NGROK=false
 STOP=false
-BRIDGE_SESSION="bridge"
-NGROK_SESSION="ngrok"
+BRIDGE_SESSION="${BRIDGE_SESSION:-bridge}"
+NGROK_SESSION="${NGROK_SESSION:-ngrok}"
 
-# ── Parse args ────────────────────────────────────────────────────────────────
+if [[ -z "$FIXED_TOKEN" ]]; then
+  echo "Error: FIXED_TOKEN is not set in $ENV_FILE" >&2
+  exit 1
+fi
+# -- Parse args ----------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --port)    PORT="$2"; shift 2 ;;
-    --token)   FIXED_TOKEN="$2"; shift 2 ;;
     --ngrok)   START_NGROK=true; shift ;;
     --stop)    STOP=true; shift ;;
     *)         echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
-
 # ── Stop mode ─────────────────────────────────────────────────────────────────
 if [[ "$STOP" == true ]]; then
   echo "Stopping bridge and ngrok sessions..."
