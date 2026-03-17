@@ -71,6 +71,8 @@
     "postinstall": "node scripts/postinstall.mjs || true",
     "smoke": "node smoke-test-v2.mjs",
     "remote": "bash scripts/start-remote.sh",
+    "vps": "bash scripts/start-vps.sh",
+    "vps:stop": "bash scripts/start-vps.sh --stop",
     "start-all": "bash scripts/start-all.sh"
   },
   "dependencies": {
