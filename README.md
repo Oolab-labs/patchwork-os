@@ -440,26 +440,33 @@ Connect your local VS Code or Cursor to a VPS via Remote-SSH. The bridge extensi
 For servers with no VS Code at all:
 
 ```bash
-# On the VPS — install and start the bridge
+# On the VPS — install Node.js 20 + the bridge
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
 npm install -g claude-ide-bridge
-claude-ide-bridge --workspace /path/to/project --bind 0.0.0.0 --port 9000
 
-# Get the token
+# Generate a stable token (survives restarts — save this value)
+export BRIDGE_TOKEN=$(uuidgen | tr '[:upper:]' '[:lower:]')
+
+# Start the bridge in the background with tmux
+tmux new-session -d -s bridge 'claude-ide-bridge --bind 0.0.0.0 --port 9000 --fixed-token $BRIDGE_TOKEN --workspace /path/to/project'
+
+# Confirm the token
 claude-ide-bridge print-token --port 9000
 ```
 
 ```bash
 # On your local machine — write an MCP config pointing at the VPS
+# Run from inside your project directory (merges into the nearest .mcp.json)
 bash scripts/gen-mcp-config.sh remote \
   --host your-vps-ip:9000 \
   --token <token-from-above> \
   --write
-
-# Then connect Claude Code
-claude --ide
 ```
 
 Available tools in headless mode: file operations, git, terminals, search, CLI linters, dependency audits, HTTP client. LSP, debugger, and editor-state tools require the extension.
+
+> **Stable tokens:** Use `--fixed-token <uuid>` (or `CLAUDE_IDE_BRIDGE_TOKEN=<uuid>`) to keep the same token across restarts. Without it, a new token is generated each time the bridge starts, requiring a config update.
 
 > **Security:** `--bind 0.0.0.0` exposes the bridge to the network. Put nginx or Caddy in front with TLS before exposing to the internet. See [docs/remote-access.md](docs/remote-access.md) for a production Caddy setup.
 
@@ -506,11 +513,12 @@ All tools are available — LSP, debugger, terminals, git, diagnostics — becau
 
 ### Headless VPS (no IDE, CLI tools only)
 
-For VPS environments without VS Code (e.g. JetBrains Gateway, or a pure server setup):
+For VPS environments without VS Code (e.g. a pure server setup):
 
 ```bash
-# On the VPS — start bridge bound to all interfaces
-claude-ide-bridge --bind 0.0.0.0 --port 9000 --workspace /path/to/project
+# On the VPS — start bridge with a stable token so it survives restarts
+export BRIDGE_TOKEN=$(uuidgen | tr '[:upper:]' '[:lower:]')
+tmux new-session -d -s bridge 'claude-ide-bridge --bind 0.0.0.0 --port 9000 --fixed-token $BRIDGE_TOKEN --workspace /path/to/project'
 
 # Get the auth token
 claude-ide-bridge print-token --port 9000
@@ -518,11 +526,14 @@ claude-ide-bridge print-token --port 9000
 
 ```bash
 # On your local machine — generate and write the MCP config
+# Run from inside your project directory (merges into the nearest .mcp.json)
 bash scripts/gen-mcp-config.sh remote \
   --host your-vps-ip:9000 \
   --token <token-from-above> \
   --write
 ```
+
+> **Stable tokens:** `--fixed-token` keeps the same token across bridge restarts so your local config stays valid. Without it, the token changes every restart.
 
 > **Security:** `--bind 0.0.0.0` exposes the bridge to your network. For production, put nginx or Caddy in front with TLS. The `remote` config generator uses `http://` — update the URL to `https://` once TLS is in place.
 
@@ -562,7 +573,19 @@ Config location:
 
 Connect the bridge to [claude.ai](https://claude.ai) via a **Custom Connector** — chat with your IDE from the browser without installing anything extra.
 
-**Prerequisites:** The bridge must be reachable over HTTPS from the public internet. The simplest setup is a VPS running the bridge behind Caddy or nginx with TLS. See [Headless VPS](#headless-vps-new) and [docs/remote-access.md](docs/remote-access.md) for a production-ready setup.
+**Prerequisites:** The bridge must be reachable over HTTPS from the public internet. Two options:
+
+**Option A — Reverse proxy with a domain (production)**
+Put nginx or Caddy in front of the bridge with TLS. See [docs/remote-access.md](docs/remote-access.md) for a ready-made setup.
+
+**Option B — Cloudflare Tunnel (quick test, no domain needed)**
+```bash
+# On the VPS — install cloudflared and create an instant HTTPS tunnel
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+  -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared
+cloudflared tunnel --url http://localhost:9000
+# Outputs a public HTTPS URL like: https://abc123.trycloudflare.com
+```
 
 Once the bridge is publicly reachable:
 
@@ -573,13 +596,15 @@ bash scripts/gen-mcp-config.sh claude-web \
   --token $(claude-ide-bridge print-token)
 ```
 
-Paste the printed URL, auth type, and token into claude.ai → **Settings → Custom Connectors → Add connector**.
+Paste the printed URL, auth type, and token into claude.ai → **Settings → Integrations → Add MCP server** (web) or **Settings → Claude Code** (mobile app).
 
-> **Token rotation:** When you rotate the token (`claude-ide-bridge rotate-token`), update the token in claude.ai Settings → Custom Connectors to match.
+> **Claude Code mobile app:** The mobile app uses the same Custom Connector flow. Add the HTTPS URL and Bearer token in Settings — the bridge tools are then available in mobile sessions.
+
+> **Token rotation:** When you rotate the token (`claude-ide-bridge rotate-token`), update the token in the connector settings to match.
 
 > **Tool availability:** All 138+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine.
 
-**Try it:** Open [claude.ai](https://claude.ai), start a new conversation, and ask *"What files are open in my IDE?"*
+**Try it:** Open [claude.ai](https://claude.ai) or the Claude mobile app, start a new conversation, and ask *"What files are in my workspace?"*
 
 ---
 
