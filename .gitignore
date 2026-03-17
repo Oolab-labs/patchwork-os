@@ -18,3 +18,4 @@ coverage/
 # macOS
 .DS_Store
 claude-ide-bridge.config.json
+.claude/worktrees/
