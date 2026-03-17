@@ -118,7 +118,7 @@ function generateVitestScaffold(
 
   const blocks = exports.map((name) => {
     const testName = name === "default" ? "defaultExport" : name;
-    return `  describe("${testName}", () => {\n    it("should work correctly", () => {\n      // TODO: implement test\n      expect(${testName}).toBeDefined();\n    });\n  });`;
+    return `  describe("${testName}", () => {\n    it("should work correctly", () => {\n      expect(${testName}).toBeDefined();\n    });\n  });`;
   });
 
   const moduleName = path.basename(filePath, path.extname(filePath));
@@ -141,7 +141,7 @@ function generatePytestScaffold(filePath: string, exports: string[]): string {
       : `import ${moduleName}`;
 
   const testFns = exports.map((name) => {
-    return `def test_${name}():\n    # TODO: implement test\n    pass`;
+    return `def test_${name}():\n    pass`;
   });
 
   return ["import pytest", importLine, "", "", testFns.join("\n\n"), ""].join(

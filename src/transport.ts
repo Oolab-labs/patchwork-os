@@ -534,7 +534,7 @@ export class McpTransport {
               id: msg.id,
               error: {
                 code: ErrorCodes.RATE_LIMIT_EXCEEDED,
-                message: "Rate limit exceeded — too many requests",
+                message: `Rate limit exceeded — max ${RATE_LIMIT_MAX} requests per ${RATE_LIMIT_WINDOW_MS / 1000}s window`,
               },
             }),
             this.logger,

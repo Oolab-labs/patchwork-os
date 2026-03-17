@@ -128,7 +128,7 @@ export function resolveFilePath(
     !resolved.startsWith(normalizedWorkspace + path.sep)
   ) {
     const err = new Error(
-      `Path "${filePath}" escapes workspace "${workspace}". All paths must be within the workspace.`,
+      `Path "${filePath}" (resolved: "${resolved}") escapes workspace "${workspace}". All paths must be within the workspace.`,
     ) as Error & { code: string };
     err.code = "workspace_escape";
     throw err;

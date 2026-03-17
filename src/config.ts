@@ -176,7 +176,7 @@ export function loadConfigFile(configPath?: string): Partial<ConfigFile> {
       for (const key of Object.keys(obj)) {
         if (!KNOWN_CONFIG_FILE_KEYS.has(key)) {
           console.warn(
-            `Warning: Unknown config file key "${key}" in ${candidate} — ignored`,
+            `Warning: Unknown config file key "${key}" in ${candidate} — check for typos or update the bridge. Key ignored.`,
           );
         }
       }
