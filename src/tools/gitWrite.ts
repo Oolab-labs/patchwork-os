@@ -742,6 +742,9 @@ export function createGitPullTool(workspace: string) {
 
 export function createGitPushTool(workspace: string) {
   return {
+    // Override the global 60s MCP tool timeout — SSH pushes on high-latency
+    // VPS connections can take longer than 60s end-to-end.
+    timeoutMs: 180_000,
     schema: {
       name: "gitPush",
       description:
@@ -835,7 +838,19 @@ export function createGitPushTool(workspace: string) {
         ({ stdout: pushStdout, stderr: pushStderr } = await runGit(
           pushArgs,
           workspace,
-          { signal, timeout: 60_000 },
+          {
+            signal,
+            // SSH pushes on high-latency VPS connections can exceed 60s;
+            // raise to 120s to avoid false-timeout failures.
+            timeout: 120_000,
+            // Inject SSH options: fast connect-timeout surfaces auth errors
+            // immediately instead of hanging; keepalive prevents silent TCP drops.
+            env: {
+              ...process.env,
+              GIT_SSH_COMMAND:
+                "ssh -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=6",
+            },
+          },
         ));
       } catch (e) {
         const msg = e instanceof Error ? e.message : "unknown error";

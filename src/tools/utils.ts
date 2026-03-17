@@ -306,6 +306,7 @@ export async function execSafe(
     maxBuffer?: number;
     signal?: AbortSignal;
     stdin?: string;
+    env?: NodeJS.ProcessEnv;
   } = {},
 ): Promise<ExecSafeResult> {
   const timeout = opts.timeout ?? 30_000;
@@ -314,6 +315,7 @@ export async function execSafe(
   try {
     const { stdout, stderr } = await execFileAsync(cmd, args, {
       cwd: opts.cwd,
+      env: opts.env ?? process.env,
       timeout,
       maxBuffer,
       signal: opts.signal,

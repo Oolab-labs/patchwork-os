@@ -9,13 +9,14 @@ export function isValidRef(ref: string): boolean {
 export async function runGit(
   args: string[],
   cwd: string,
-  opts: { signal?: AbortSignal; timeout?: number; maxBuffer?: number } = {},
+  opts: { signal?: AbortSignal; timeout?: number; maxBuffer?: number; env?: NodeJS.ProcessEnv } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   const result = await execSafe("git", args, {
     cwd,
     signal: opts.signal,
     timeout: opts.timeout ?? 30_000,
     maxBuffer: opts.maxBuffer,
+    env: opts.env,
   });
   if (result.timedOut) throw new Error("git command timed out");
   if (result.exitCode !== 0)
