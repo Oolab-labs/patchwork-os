@@ -200,9 +200,14 @@ export class Server extends EventEmitter<ServerEvents> {
       // This prevents any local process or network peer (if --bind 0.0.0.0 is used)
       // from reading internal state without possessing the session auth token.
       const authHeader = req.headers.authorization ?? "";
-      const bearer = authHeader.startsWith("Bearer ")
+      const bearerFromHeader = authHeader.startsWith("Bearer ")
         ? authHeader.slice(7)
         : "";
+      // Also accept token via ?token= query param for clients that cannot set
+      // Authorization headers (e.g. claude.ai Custom Connectors UI).
+      const parsedUrl = new URL(req.url ?? "/", "http://localhost");
+      const bearerFromQuery = parsedUrl.searchParams.get("token") ?? "";
+      const bearer = bearerFromHeader || bearerFromQuery;
       if (!timingSafeTokenCompare(bearer, this.authToken)) {
         res.writeHead(401, { "Content-Type": "text/plain" });
         res.end("Unauthorized");
