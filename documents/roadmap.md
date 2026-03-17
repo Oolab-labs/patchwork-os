@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.1.35 — 2026-03-17)
+## Current State (v2.1.35 + post-release fixes — 2026-03-17)
 
-- 135+ MCP tools; 1222+ bridge tests + 369 extension tests, 0 failures; CI on Node 20 + 22 (Ubuntu + Windows)
-- Extension v1.0.5 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.32`)
+- 135+ MCP tools; 1222+ bridge tests + 370 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- Extension v1.0.7 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.35`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
@@ -22,6 +22,14 @@ Development direction and exploration guidance. Living document — update as pr
 - Remote Desktop IDE support: extension runs in remote extension host (SSH/Cursor SSH); `print-token` CLI subcommand for headless VPS setup
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**Post-v2.1.35 (2026-03-17) — CI fixes + claude.ai web support (no version bump):**
+- `scripts/gen-mcp-config.sh`: new `claude-web` target — prints URL/auth/token to paste into claude.ai Settings → Custom Connectors
+- `README.md`: new "Use with Claude.ai Web" section with prerequisites, setup command, and token rotation notes
+- `biome.json`: added `.claude/worktrees` to ignore list — worktree copies of extension package.json were triggering formatter CI failures
+- `vscode-extension/package.json`: biome auto-format (single-item arrays → inline) — was causing CI failures since v1.0.5
+- `src/__tests__/bridge-supervisor.test.ts`: 50ms settle delay before SIGTERM — supervisor logs "starting bridge" before spawn(), race was visible on Linux CI
+- CI now green on `main` (6776f16)
 
 **v2.1.35 shipped (2026-03-17) — PreToolUse/WorktreeCreate hooks + worktree isolation docs:**
 - `claude-ide-bridge-plugin/hooks/hooks.json`: added `PreToolUse` hook (path normalization via `updatedInput`) and `WorktreeCreate` hook (worktree ↔ bridge workspace mapping)
