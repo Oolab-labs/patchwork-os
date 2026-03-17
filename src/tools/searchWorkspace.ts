@@ -1,4 +1,5 @@
 import type { ProbeResults } from "../probe.js";
+import { resolveCommandPath } from "../probe.js";
 import type { ProgressFn } from "../transport.js";
 import {
   error,
@@ -94,7 +95,7 @@ export function createSearchWorkspaceTool(
         if (contextLines > 0) rgArgs.push("-C", String(contextLines));
         rgArgs.push("--", query, workspace);
 
-        const result = await execSafe("rg", rgArgs, {
+        const result = await execSafe(resolveCommandPath("rg", workspace), rgArgs, {
           timeout: 15000,
           maxBuffer: 1024 * 1024,
           signal,

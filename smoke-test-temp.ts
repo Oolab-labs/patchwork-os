@@ -1,0 +1,1 @@
+// smoke test file\nexport const hello = "world";\n

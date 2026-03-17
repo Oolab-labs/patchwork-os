@@ -77,6 +77,10 @@ const JS_LOCAL_TOOLS = new Set([
   "prettier",
   "vitest",
   "jest",
+  // ripgrep and fd-find ship pre-built binaries via npm packages
+  // (@vscode/ripgrep, fd-find) — check node_modules/.bin as fallback
+  "rg",
+  "fd",
 ]);
 
 const COMMANDS: Array<[keyof ProbeResults, string]> = [
@@ -113,4 +117,25 @@ export async function probeAll(workspace = ""): Promise<ProbeResults> {
   );
 
   return Object.fromEntries(entries) as unknown as ProbeResults;
+}
+
+/**
+ * Resolve the executable path for a command.
+ * Returns the absolute local bin path when a workspace-local binary exists,
+ * otherwise returns the bare command name (resolved via system PATH).
+ *
+ * Use this in tool handlers instead of bare command names so that
+ * node_modules/.bin binaries (e.g. rg from @vscode/ripgrep) are invoked
+ * directly without needing them on the system PATH.
+ */
+export function resolveCommandPath(cmd: string, workspace: string): string {
+  if (!workspace) return cmd;
+  const localBin = path.join(workspace, "node_modules", ".bin", cmd);
+  try {
+    const stat = fs.statSync(localBin);
+    if (stat.isFile() || stat.isSymbolicLink()) return localBin;
+  } catch {
+    // not present — fall through
+  }
+  return cmd;
 }

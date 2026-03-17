@@ -1,0 +1,1 @@
+// stash smoke test\n

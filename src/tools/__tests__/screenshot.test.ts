@@ -30,7 +30,7 @@ describe("captureScreenshot", () => {
     const result = await tool.handler();
     expect(result.isError).toBe(true);
     const text = (result.content as Array<{ text: string }>)[0]?.text ?? "";
-    expect(text).toContain("not supported");
+    expect(text).toContain("unavailable");
   });
 
   it("returns image content block when extension returns base64 data", async () => {

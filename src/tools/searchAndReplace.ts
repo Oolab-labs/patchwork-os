@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { resolveCommandPath } from "../probe.js";
 import {
   error,
   execSafe,
@@ -127,7 +128,7 @@ export function createSearchAndReplaceTool(workspace: string) {
       }
       rgArgs.push(workspace);
 
-      const findResult = await execSafe("rg", rgArgs, {
+      const findResult = await execSafe(resolveCommandPath("rg", workspace), rgArgs, {
         cwd: workspace,
         timeout: 15_000,
         maxBuffer: 256 * 1024,
