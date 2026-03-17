@@ -5,6 +5,7 @@ import {
 } from "../extensionClient.js";
 import {
   error,
+  execSafe,
   extensionRequired,
   optionalBool,
   optionalInt,
@@ -524,6 +525,7 @@ export function createWaitForTerminalOutputTool(
 }
 
 export function createRunInTerminalTool(
+  workspace: string,
   extensionClient: ExtensionClient,
   commandAllowlist: string[],
   terminalPrefix = "",
@@ -531,13 +533,12 @@ export function createRunInTerminalTool(
   return {
     schema: {
       name: "runInTerminal",
-      extensionRequired: true,
       description:
         "Execute a command in a VS Code integrated terminal and wait for it to complete. " +
         "Returns the exit code and full output — unlike sendTerminalCommand (fire-and-forget), " +
         "this is synchronous. Unlike runCommand, execution is visible in the VS Code terminal panel. " +
-        "Requires VS Code 1.93+ with Shell Integration enabled (bash, zsh, fish, or PowerShell). " +
-        "Use listTerminals to pick a terminal; if none specified, uses the active terminal.",
+        "On SSH remotes or when shell integration is unavailable, automatically falls back to a " +
+        "direct subprocess so the tool remains functional headlessly.",
       inputSchema: {
         type: "object" as const,
         required: ["command"],
@@ -575,44 +576,64 @@ export function createRunInTerminalTool(
     // the tool ceiling by 10 s so the extension response always arrives before
     // the MCP transport cancels the request.
     timeoutMs: 310_000,
-    handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
-      if (!extensionClient.isConnected()) {
-        return extensionRequired("runInTerminal");
-      }
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const command = requireString(args, "command", 10_000);
       const name = optionalString(args, "name", 256);
       const index = optionalInt(args, "index", 0, 100);
       const timeoutSec = optionalInt(args, "timeout", 1, 300) ?? 30;
       const show = optionalBool(args, "show") ?? true;
       const timeoutMs = timeoutSec * 1_000;
-      const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
-      if (indexErr) return error(indexErr);
 
       const cmdErr = validateCommand(command, commandAllowlist);
       if (cmdErr) return error(cmdErr);
 
-      try {
-        const result = await extensionClient.executeInTerminal(
-          command,
-          prefixName(name, terminalPrefix),
-          index,
-          timeoutMs,
-          show,
-        );
-        if (result === null) {
-          return error(
-            "Extension did not respond — ensure the VS Code extension is running",
+      // Attempt VS Code shell integration path when extension is connected
+      if (extensionClient.isConnected()) {
+        const indexErr = checkIndexWithPrefix(name, index, terminalPrefix);
+        if (indexErr) return error(indexErr);
+
+        try {
+          const result = await extensionClient.executeInTerminal(
+            command,
+            prefixName(name, terminalPrefix),
+            index,
+            timeoutMs,
+            show,
           );
+          if (result !== null) {
+            return success(result);
+          }
+          // null means shell integration unavailable (SSH remote, no PTY hooks)
+          // — fall through to subprocess fallback below
+        } catch (err) {
+          if (err instanceof ExtensionTimeoutError) {
+            // Timeout also means shell integration stalled — fall through to fallback
+          } else {
+            throw err;
+          }
         }
-        return success(result);
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Extension connection timed out waiting for the command to complete",
-          );
-        }
-        throw err;
       }
+
+      // Subprocess fallback: runs the command directly in the workspace using
+      // execSafe (same primitive as runCommand). This path activates when:
+      //   • The extension is not connected
+      //   • Shell integration is unavailable (SSH remote, headless VPS)
+      //   • executeInTerminal timed out waiting for a shell event
+      //
+      // The command has already passed validateCommand so first-token allowlist
+      // and metacharacter checks are satisfied. Split on whitespace for execSafe
+      // which takes argv-style args rather than a raw shell string.
+      const tokens = command.trim().split(/\s+/);
+      const cmd = tokens[0] ?? command;
+      const cmdArgs = tokens.slice(1);
+
+      const fallbackResult = await execSafe(cmd, cmdArgs, {
+        cwd: workspace,
+        timeout: timeoutMs,
+        signal: signal ?? undefined,
+      });
+
+      return success({ ...fallbackResult, fallback: "subprocess" });
     },
   };
 }

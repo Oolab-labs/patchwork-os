@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -39,6 +41,44 @@ async function probeCommand(cmd: string): Promise<boolean> {
   }
 }
 
+/**
+ * Check whether a command is available either on the global PATH or as a local
+ * node_modules/.bin binary inside the workspace.
+ *
+ * JS tooling (tsc, eslint, biome, prettier, vitest, jest) is almost always
+ * installed locally rather than globally in Node projects. Checking only the
+ * global PATH causes probes to report false for these tools on VPS / CI
+ * environments where nothing is installed globally, even though the workspace
+ * has a perfectly functional local binary.
+ */
+async function probeCommandWithLocalFallback(
+  cmd: string,
+  workspace: string,
+): Promise<boolean> {
+  // 1. Check global PATH first (fast path for globally installed tools)
+  if (await probeCommand(cmd)) return true;
+
+  // 2. Fall back to workspace-local node_modules/.bin
+  const localBin = path.join(workspace, "node_modules", ".bin", cmd);
+  try {
+    const stat = fs.statSync(localBin);
+    // Must be a file or symlink that is executable
+    return stat.isFile() || stat.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/** JS-ecosystem tools that are commonly installed locally rather than globally. */
+const JS_LOCAL_TOOLS = new Set([
+  "tsc",
+  "eslint",
+  "biome",
+  "prettier",
+  "vitest",
+  "jest",
+]);
+
 const COMMANDS: Array<[keyof ProbeResults, string]> = [
   ["rg", "rg"],
   ["fd", "fd"],
@@ -61,10 +101,13 @@ const COMMANDS: Array<[keyof ProbeResults, string]> = [
   ["codex", "codex"],
 ];
 
-export async function probeAll(): Promise<ProbeResults> {
+export async function probeAll(workspace = ""): Promise<ProbeResults> {
   const entries = await Promise.all(
     COMMANDS.map(async ([key, cmd]) => {
-      const available = await probeCommand(cmd);
+      const available =
+        workspace && JS_LOCAL_TOOLS.has(cmd)
+          ? await probeCommandWithLocalFallback(cmd, workspace)
+          : await probeCommand(cmd);
       return [key, available] as const;
     }),
   );

@@ -12,6 +12,73 @@ import {
   success,
 } from "./utils.js";
 
+/**
+ * LSP cold-start retry wrapper.
+ *
+ * On SSH remotes the TypeScript language server takes 5-20 s to index the
+ * workspace after Windsurf opens. During that window every LSP call times out
+ * at the ExtensionClient REQUEST_TIMEOUT (10 s). Retrying with linear backoff
+ * converts most cold-start failures into eventual successes without needing any
+ * new extension-side protocol.
+ *
+ * Strategy:
+ *   attempt 1 → immediate
+ *   attempt 2 → wait 4 s   (TS server usually ready by here)
+ *   attempt 3 → wait 8 s   (catches slow / large workspaces)
+ *   → hard error with actionable message
+ *
+ * Non-timeout errors (e.g. network drop) propagate immediately — we only retry
+ * on ExtensionTimeoutError because that is the cold-start signal.
+ *
+ * The AbortSignal is checked before each wait so cancellation is still fast.
+ */
+const LSP_RETRY_DELAYS_MS = [4_000, 8_000] as const;
+
+async function lspWithRetry<T>(
+  fn: () => Promise<T | null>,
+  signal?: AbortSignal,
+): Promise<T | null | "timeout"> {
+  // Attempt 1 — no wait
+  try {
+    return await fn();
+  } catch (err) {
+    if (!(err instanceof ExtensionTimeoutError)) throw err;
+  }
+
+  // Retry attempts with increasing backoff
+  for (const delayMs of LSP_RETRY_DELAYS_MS) {
+    if (signal?.aborted) return "timeout";
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, delayMs);
+      if (signal) {
+        signal.addEventListener(
+          "abort",
+          () => { clearTimeout(timer); reject(new Error("aborted")); },
+          { once: true },
+        );
+      }
+    }).catch(() => { /* aborted — loop will exit on next iteration */ });
+    if (signal?.aborted) return "timeout";
+
+    try {
+      return await fn();
+    } catch (err) {
+      if (!(err instanceof ExtensionTimeoutError)) throw err;
+      // still timing out — continue to next delay or fall through
+    }
+  }
+
+  return "timeout";
+}
+
+/** Standard error returned when an LSP tool exhausts its retry budget. */
+function lspColdStartError() {
+  return error(
+    "Language server timed out after retries — it may still be indexing the workspace. " +
+      "Wait a few seconds and try again, or open a TypeScript file in the editor to trigger indexing.",
+  );
+}
+
 export function createGoToDefinitionTool(
   workspace: string,
   extensionClient: ExtensionClient,
@@ -53,28 +120,18 @@ export function createGoToDefinitionTool(
       );
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
-      try {
-        const result = await extensionClient.goToDefinition(
-          filePath,
-          line,
-          column,
-          signal,
-        );
-        if (result === null) {
-          return success({
-            found: false,
-            message: "No definition found at this position",
-          });
-        }
-        return success(result);
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Extension timed out — the language server may be slow or unresponsive",
-          );
-        }
-        throw err;
+      const result = await lspWithRetry(
+        () => extensionClient.goToDefinition(filePath, line, column, signal),
+        signal,
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return success({
+          found: false,
+          message: "No definition found at this position",
+        });
       }
+      return success(result);
     },
   };
 }
@@ -120,25 +177,15 @@ export function createFindReferencesTool(
       );
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
-      try {
-        const result = await extensionClient.findReferences(
-          filePath,
-          line,
-          column,
-          signal,
-        );
-        if (result === null) {
-          return success({ found: false, references: [] });
-        }
-        return success(result);
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Extension timed out — the language server may be slow or unresponsive",
-          );
-        }
-        throw err;
+      const result = await lspWithRetry(
+        () => extensionClient.findReferences(filePath, line, column, signal),
+        signal,
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return success({ found: false, references: [] });
       }
+      return success(result);
     },
   };
 }
@@ -184,28 +231,18 @@ export function createGetHoverTool(
       );
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
-      try {
-        const result = await extensionClient.getHover(
-          filePath,
-          line,
-          column,
-          signal,
-        );
-        if (result === null) {
-          return success({
-            found: false,
-            message: "No hover information at this position",
-          });
-        }
-        return success(result);
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Extension timed out — the language server may be slow or unresponsive",
-          );
-        }
-        throw err;
+      const result = await lspWithRetry(
+        () => extensionClient.getHover(filePath, line, column, signal),
+        signal,
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return success({
+          found: false,
+          message: "No hover information at this position",
+        });
       }
+      return success(result);
     },
   };
 }
@@ -267,27 +304,22 @@ export function createGetCodeActionsTool(
       const startColumn = requireInt(args, "startColumn");
       const endLine = requireInt(args, "endLine");
       const endColumn = requireInt(args, "endColumn");
-      try {
-        const result = await extensionClient.getCodeActions(
+      const result = await lspWithRetry(
+        () => extensionClient.getCodeActions(
           filePath,
           startLine,
           startColumn,
           endLine,
           endColumn,
           signal,
-        );
-        if (result === null) {
-          return success({ actions: [] });
-        }
-        return success(result);
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Extension timed out — the language server may be slow or unresponsive",
-          );
-        }
-        throw err;
+        ),
+        signal,
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return success({ actions: [] });
       }
+      return success(result);
     },
   };
 }
@@ -356,8 +388,9 @@ export function createApplyCodeActionTool(
       const startColumn = requireInt(args, "startColumn");
       const endLine = requireInt(args, "endLine");
       const endColumn = requireInt(args, "endColumn");
+      let result: unknown;
       try {
-        const result = await extensionClient.applyCodeAction(
+        result = await extensionClient.applyCodeAction(
           filePath,
           startLine,
           startColumn,
@@ -366,20 +399,21 @@ export function createApplyCodeActionTool(
           actionTitle,
           signal,
         );
-        if (result === null) {
-          return error(
-            "Extension returned no result — code action may not be available",
-          );
-        }
-        return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
-            "Extension timed out — code action may require more time",
+            "Language server timed out — it may still be indexing. " +
+              "Wait a few seconds and try again.",
           );
         }
         throw err;
       }
+      if (result === null) {
+        return error(
+          "Extension returned no result — code action may not be available",
+        );
+      }
+      return success(result);
     },
   };
 }
@@ -433,28 +467,30 @@ export function createRenameSymbolTool(
       }
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
+      let result: unknown;
       try {
-        const result = await extensionClient.renameSymbol(
+        result = await extensionClient.renameSymbol(
           filePath,
           line,
           column,
           newName,
           signal,
         );
-        if (result === null) {
-          return error(
-            "Extension returned no result — symbol may not be renameable at this position",
-          );
-        }
-        return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
-            "Extension timed out — rename may require more time on large projects",
+            "Language server timed out — it may still be indexing. " +
+              "Wait a few seconds and try again.",
           );
         }
         throw err;
       }
+      if (result === null) {
+        return error(
+          "Extension returned no result — symbol may not be renameable at this position",
+        );
+      }
+      return success(result);
     },
   };
 }
@@ -519,31 +555,26 @@ export function createGetCallHierarchyTool(
         return error('direction must be "incoming", "outgoing", or "both"');
       }
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
-      try {
-        const result = await extensionClient.getCallHierarchy(
+      const result = await lspWithRetry(
+        () => extensionClient.getCallHierarchy(
           filePath,
           line,
           column,
           rawDirection,
           maxResults,
           signal,
-        );
-        if (result === null) {
-          return success({
-            found: false,
-            message:
-              "No call hierarchy available at this position — ensure a language server is active",
-          });
-        }
-        return success(result);
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Extension timed out — the language server may be slow or unresponsive",
-          );
-        }
-        throw err;
+        ),
+        signal,
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return success({
+          found: false,
+          message:
+            "No call hierarchy available at this position — ensure a language server is active",
+        });
       }
+      return success(result);
     },
   };
 }
@@ -584,24 +615,15 @@ export function createSearchWorkspaceSymbolsTool(
         return extensionRequired("LSP features");
       }
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
-      try {
-        const result = await extensionClient.searchSymbols(
-          query,
-          maxResults,
-          signal,
-        );
-        if (result === null) {
-          return success({ symbols: [], count: 0 });
-        }
-        return success(result);
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Extension timed out — the language server may be slow or unresponsive",
-          );
-        }
-        throw err;
+      const result = await lspWithRetry(
+        () => extensionClient.searchSymbols(query, maxResults, signal),
+        signal,
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return success({ symbols: [], count: 0 });
       }
+      return success(result);
     },
   };
 }

@@ -442,8 +442,8 @@ export class Bridge {
     // 0. Initialize OpenTelemetry (no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset)
     initTelemetry();
 
-    // 1. Probe available CLI tools
-    this.probes = await probeAll();
+    // 1. Probe available CLI tools (pass workspace so local node_modules/.bin is checked)
+    this.probes = await probeAll(this.config.workspace);
     this.ready = true;
 
     // 2. Load plugins (after probes, before accepting sessions)

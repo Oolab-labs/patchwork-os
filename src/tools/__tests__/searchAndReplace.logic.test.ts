@@ -175,3 +175,61 @@ describe("searchAndReplace — core replacement logic (mock rg)", () => {
     expect(fs.readFileSync(betaPath, "utf-8")).toContain("earth");
   });
 });
+
+describe("searchAndReplace — glob normalisation", () => {
+  let tmpDir: string;
+  let alphaPath: string;
+
+  beforeEach(() => {
+    tmpDir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "sar-glob-")),
+    );
+    alphaPath = path.join(tmpDir, "alpha.ts");
+    fs.writeFileSync(alphaPath, "hello world\n");
+    mockedExecSafe.mockResolvedValue({ stdout: `${alphaPath}\n`, stderr: "" });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("bare glob '*.ts' is normalised to '**/*.ts' before passing to rg", async () => {
+    const tool = createSearchAndReplaceTool(tmpDir);
+    await tool.handler({ pattern: "hello", replacement: "hi", glob: "*.ts" });
+    const call = mockedExecSafe.mock.calls[0];
+    const rgArgs: string[] = call[1] as string[];
+    const globIdx = rgArgs.indexOf("--glob");
+    expect(globIdx).toBeGreaterThan(-1);
+    expect(rgArgs[globIdx + 1]).toBe("**/*.ts");
+  });
+
+  it("glob with path separator is passed through unchanged", async () => {
+    const tool = createSearchAndReplaceTool(tmpDir);
+    await tool.handler({ pattern: "hello", replacement: "hi", glob: "src/**/*.ts" });
+    const call = mockedExecSafe.mock.calls[0];
+    const rgArgs: string[] = call[1] as string[];
+    const globIdx = rgArgs.indexOf("--glob");
+    expect(rgArgs[globIdx + 1]).toBe("src/**/*.ts");
+  });
+
+  it("glob already starting with '**/' is passed through unchanged", async () => {
+    const tool = createSearchAndReplaceTool(tmpDir);
+    await tool.handler({ pattern: "hello", replacement: "hi", glob: "**/*.ts" });
+    const call = mockedExecSafe.mock.calls[0];
+    const rgArgs: string[] = call[1] as string[];
+    const globIdx = rgArgs.indexOf("--glob");
+    expect(rgArgs[globIdx + 1]).toBe("**/*.ts");
+  });
+
+  it("negation glob '!*.ts' is normalised to '!**/*.ts'", async () => {
+    // Negation globs start with '!' not '-', so they pass the dash check.
+    // The '**/' prefix must be inserted after the '!' to keep it a valid negation.
+    const tool = createSearchAndReplaceTool(tmpDir);
+    await tool.handler({ pattern: "hello", replacement: "hi", glob: "!*.ts" });
+    const call = mockedExecSafe.mock.calls[0];
+    const rgArgs: string[] = call[1] as string[];
+    const globIdx = rgArgs.indexOf("--glob");
+    expect(rgArgs[globIdx + 1]).toBe("!**/*.ts");
+  });
+});

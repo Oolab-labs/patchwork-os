@@ -11,7 +11,8 @@ export function createCaptureScreenshotTool(extensionClient: ExtensionClient) {
       extensionRequired: true,
       description:
         "Capture a screenshot of the current screen. Returns the image as a base64-encoded PNG. " +
-        "Supported on macOS (screencapture) and Linux (ImageMagick import). " +
+        "Supported on macOS (screencapture) and Linux with a display server (ImageMagick import). " +
+        "Not available on headless servers (no DISPLAY / Wayland compositor). " +
         "Requires the VS Code extension.",
       annotations: { readOnlyHint: true },
       inputSchema: {
@@ -28,7 +29,9 @@ export function createCaptureScreenshotTool(extensionClient: ExtensionClient) {
         const result = await extensionClient.captureScreenshot();
         if (result === null) {
           return error(
-            "Screenshot failed or is not supported on this platform",
+            "Screenshot unavailable — this environment has no display server. " +
+              "captureScreenshot requires a local IDE session with a graphical display (macOS or Linux + X11/Wayland). " +
+              "It cannot run on headless VPS or SSH remote sessions.",
           );
         }
         const { base64, mimeType } = result;

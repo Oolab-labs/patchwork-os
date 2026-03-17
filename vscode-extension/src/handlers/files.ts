@@ -120,14 +120,33 @@ export async function handleCloseTab(
   const file = requireString(params.file, "file");
   assertWithinWorkspace(file);
   const uri = vscode.Uri.file(file);
+  // Normalize the target path: resolve symlinks when the file exists so our
+  // comparison matches what VS Code stores in tab.input.uri.fsPath, which may
+  // also be a real (symlink-resolved) path on some platforms.
+  let normalizedTarget: string;
+  try {
+    normalizedTarget = fs.realpathSync(uri.fsPath);
+  } catch {
+    normalizedTarget = path.resolve(uri.fsPath);
+  }
+
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {
-      if (
-        tab.input instanceof vscode.TabInputText &&
-        tab.input.uri.fsPath === uri.fsPath
-      ) {
-        const result = await vscode.window.tabGroups.close(tab);
-        return { success: result, promptedToSave: tab.isDirty };
+      if (tab.input instanceof vscode.TabInputText) {
+        const tabFsPath = tab.input.uri.fsPath;
+        // Normalize the tab path the same way so symlink differences don't
+        // cause a mismatch (e.g. /private/var vs /var on macOS, or SSH remote
+        // paths where the workspace root is a symlink).
+        let normalizedTab: string;
+        try {
+          normalizedTab = fs.realpathSync(tabFsPath);
+        } catch {
+          normalizedTab = path.resolve(tabFsPath);
+        }
+        if (normalizedTab === normalizedTarget) {
+          const result = await vscode.window.tabGroups.close(tab);
+          return { success: result, promptedToSave: tab.isDirty };
+        }
       }
     }
   }

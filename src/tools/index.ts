@@ -244,6 +244,7 @@ export function registerAllTools(
       terminalPrefix,
     ),
     createRunInTerminalTool(
+      workspace,
       extensionClient,
       config.commandAllowlist,
       terminalPrefix,

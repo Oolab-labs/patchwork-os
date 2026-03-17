@@ -145,7 +145,7 @@ describe("disposeTerminal — index-only lookup with prefix (Bug 6)", () => {
 describe("runInTerminal — index-only lookup with prefix (Bug 6)", () => {
   it("returns an error when index is used without name in multi-session mode", async () => {
     const client = mockExtensionClient();
-    const tool = createRunInTerminalTool(client, ALLOWLIST, PREFIX);
+    const tool = createRunInTerminalTool("/tmp/workspace", client, ALLOWLIST, PREFIX);
 
     const result = (await tool.handler({
       command: "npm test",

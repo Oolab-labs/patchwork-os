@@ -111,7 +111,19 @@ export function createSearchAndReplaceTool(workspace: string) {
             `Invalid glob pattern "${glob}": must not start with '-'`,
           );
         }
-        rgArgs.push("--glob", glob);
+        // rg applies --glob relative to the search root. A bare pattern like
+        // '*.ts' only matches files at the root level; 'src/*.ts' matches one
+        // level deep. Prepend '**/' when the glob contains no path separator so
+        // that '*.ts' becomes '**/*.ts' and matches files in any subdirectory —
+        // which is what every caller expects.
+        // Handle negation globs ('!*.ts') by prepending after the '!'.
+        const isNegation = glob.startsWith("!");
+        const rawPattern = isNegation ? glob.slice(1) : glob;
+        const needsPrefix = !rawPattern.includes("/") && !rawPattern.startsWith("**/");
+        const normalizedGlob = needsPrefix
+          ? `${isNegation ? "!" : ""}**/${rawPattern}`
+          : glob;
+        rgArgs.push("--glob", normalizedGlob);
       }
       rgArgs.push(workspace);
 
