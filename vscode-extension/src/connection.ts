@@ -179,7 +179,10 @@ export class BridgeConnection {
           this.pendingNotifications.length >=
           BridgeConnection.MAX_PENDING_NOTIFICATIONS
         ) {
-          this.pendingNotifications.shift(); // Drop oldest
+          const dropped = this.pendingNotifications.shift(); // Drop oldest
+          this.logDebug(
+            `Notification buffer full — dropped oldest: ${dropped?.method ?? "unknown"}`,
+          );
         }
         this.pendingNotifications.push({ method, params });
       }

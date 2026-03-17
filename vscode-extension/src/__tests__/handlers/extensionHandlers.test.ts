@@ -374,6 +374,17 @@ describe("handleExecuteVSCodeCommand", () => {
     })) as any;
     expect(result.result).toBeNull();
   });
+
+  it("returns string fallback and _warning when result is non-JSON-serializable", async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(circular);
+    const result = (await handleExecuteVSCodeCommand({
+      command: "cmd.circular",
+    })) as any;
+    expect(typeof result.result).toBe("string");
+    expect(result._warning).toMatch(/not JSON-serializable/i);
+  });
 });
 
 describe("handleListVSCodeCommands", () => {

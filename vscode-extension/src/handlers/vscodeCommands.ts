@@ -21,12 +21,21 @@ export async function handleExecuteVSCodeCommand(
 
   // Safely serialize result — guard against circular references
   let serialized: unknown;
+  let nonSerializable = false;
   try {
     serialized = JSON.parse(JSON.stringify(result ?? null));
   } catch {
+    // Result contains non-JSON-serializable values (functions, Symbols, circular refs).
+    // Return a best-effort string rather than silently losing all data.
+    nonSerializable = true;
     serialized = String(result);
   }
-  return { result: serialized };
+  const out: Record<string, unknown> = { result: serialized };
+  if (nonSerializable) {
+    out._warning =
+      "Result was not JSON-serializable and has been converted to a string. The original object may contain more data.";
+  }
+  return out;
 }
 
 export async function handleListVSCodeCommands(
