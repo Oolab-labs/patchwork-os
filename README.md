@@ -587,24 +587,26 @@ cloudflared tunnel --url http://localhost:9000
 # Outputs a public HTTPS URL like: https://abc123.trycloudflare.com
 ```
 
-Once the bridge is publicly reachable:
+Once the bridge is publicly reachable, add a Custom Connector on claude.ai:
 
-```bash
-# Print the Custom Connector setup instructions
-bash scripts/gen-mcp-config.sh claude-web \
-  --host mybridge.example.com \
-  --token $(claude-ide-bridge print-token)
-```
+1. Go to **claude.ai → Settings → Integrations → Add custom connector**
+2. Enter the URL with your token embedded as a query param:
+   ```
+   https://abc123.trycloudflare.com/mcp?token=<your-token>
+   ```
+3. Save — claude.ai will verify the connection and list all available tools
 
-Paste the printed URL, auth type, and token into claude.ai → **Settings → Integrations → Add MCP server** (web) or **Settings → Claude Code** (mobile app).
+The `?token=` query param is supported in addition to `Authorization: Bearer` headers, since the claude.ai connector UI cannot set custom request headers.
 
-> **Claude Code mobile app:** The mobile app uses the same Custom Connector flow. Add the HTTPS URL and Bearer token in Settings — the bridge tools are then available in mobile sessions.
+> **Stable tokens:** Use `--fixed-token <uuid>` when starting the bridge so the token doesn't change across restarts and your connector URL stays valid.
 
-> **Token rotation:** When you rotate the token (`claude-ide-bridge rotate-token`), update the token in the connector settings to match.
+> **Tool availability:** All 138+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~80 CLI tools still work (file ops, git, terminal, search, HTTP client).
 
-> **Tool availability:** All 138+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine.
+> **Cloudflare tunnels are ephemeral** — the subdomain changes every time you restart `cloudflared`. For a permanent URL use Option A (reverse proxy with a domain).
 
-**Try it:** Open [claude.ai](https://claude.ai) or the Claude mobile app, start a new conversation, and ask *"What files are in my workspace?"*
+**Mobile app:** The connector syncs to the Claude mobile app once added on the web. If it doesn't appear immediately, use claude.ai in your phone's browser — the connector works there without the native app.
+
+**Try it:** Open [claude.ai](https://claude.ai), start a new conversation, and ask *"What files are in my workspace?"*
 
 ---
 
