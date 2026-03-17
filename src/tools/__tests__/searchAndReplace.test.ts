@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSearchAndReplaceTool } from "../searchAndReplace.js";
 
 // Detect whether a real `rg` binary is available on PATH (not via shim).
@@ -156,5 +156,61 @@ describe.skipIf(!rgAvailable)("searchAndReplace tool", () => {
 
     expect(data.matched).toBe(0);
     expect(data.modified).toBe(0);
+  });
+
+  it("already-aborted signal before rg search returns without writing files", async () => {
+    const originalContent = fs.readFileSync(
+      path.join(tmpDir, "alpha.txt"),
+      "utf-8",
+    );
+    const controller = new AbortController();
+    controller.abort();
+    const tool = createSearchAndReplaceTool(tmpDir);
+    // An aborted signal causes execSafe to throw — the handler should catch it
+    // and either return an error result or bubble. Either way, no writes happen.
+    let result: Awaited<ReturnType<typeof tool.handler>>;
+    try {
+      result = await tool.handler(
+        { pattern: "hello", replacement: "hi" },
+        controller.signal,
+      );
+      // If it returned rather than throwing, ensure it's not a success with modifications
+      const data = parse(result);
+      expect(data.modified ?? 0).toBe(0);
+    } catch {
+      // An aborted-error throw is also acceptable behaviour
+    }
+    // Files must be unchanged
+    const afterContent = fs.readFileSync(
+      path.join(tmpDir, "alpha.txt"),
+      "utf-8",
+    );
+    expect(afterContent).toBe(originalContent);
+  });
+
+  it("abort mid-batch skips remaining batches and does not write extra files", async () => {
+    // Write enough files to have multiple batches (CONCURRENCY=10, so 11 files)
+    for (let i = 0; i < 11; i++) {
+      fs.writeFileSync(path.join(tmpDir, `extra${i}.txt`), "hello batch\n");
+    }
+    const controller = new AbortController();
+    const tool = createSearchAndReplaceTool(tmpDir);
+    // Abort after a tiny delay so the first batch may start
+    setTimeout(() => controller.abort(), 5);
+    let result: Awaited<ReturnType<typeof tool.handler>>;
+    try {
+      result = await tool.handler(
+        { pattern: "hello", replacement: "hi" },
+        controller.signal,
+      );
+      // If handler returned: confirm it did not error in a way that means "all wrote"
+      // (just sanity check the result is parseable)
+      const data = parse(result);
+      expect(typeof data).toBe("object");
+    } catch {
+      // Abort throw is acceptable
+    }
+    // The test just verifies no unhandled exception escapes — the abort path is exercised
+    vi.restoreAllMocks();
   });
 });

@@ -77,6 +77,16 @@ export class BridgeConnection {
    */
   onConnected: ((lockData: LockFileData) => void) | null = null;
 
+  /**
+   * Optional callback fired whenever a fresh lock file is successfully read
+   * from disk during a reconnect attempt — even if the subsequent WebSocket
+   * handshake fails. Receives the LockFileData that was parsed from the lock
+   * file. Used by extension.ts to eagerly persist the latest token to
+   * SecretStorage so stale cached tokens don't block reconnects after a bridge
+   * restart with a new token.
+   */
+  onLockFileRead: ((lockData: LockFileData) => void) | null = null;
+
   private handlers: Record<string, RequestHandler> = {};
   private onDispose: (() => void) | null = null;
   private pendingNotifications: Array<{
@@ -508,6 +518,13 @@ export class BridgeConnection {
           return;
         }
         if (lockData) {
+          // Eagerly update the fallback and notify listeners so the latest
+          // token is persisted to SecretStorage even if the connection fails.
+          this.lockDataFallback = lockData;
+          this.logDebug(
+            `Lock file read — token refreshed (port ${lockData.port})`,
+          );
+          this.onLockFileRead?.(lockData);
           this.connect(lockData);
         } else if (this.lockDataFallback) {
           // No live lock file found — fall back to the cached token from SecretStorage.

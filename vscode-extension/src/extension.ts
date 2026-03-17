@@ -197,6 +197,20 @@ export function activate(context: vscode.ExtensionContext): void {
         // reconnects use the latest port/token.
         bridge.lockDataFallback = lockData;
       };
+
+      // Eagerly persist the token to SecretStorage whenever a fresh lock file
+      // is read — even if the subsequent WebSocket handshake fails. This
+      // prevents stale SecretStorage tokens from blocking reconnects when the
+      // bridge restarts with a new token while the extension is disconnected.
+      bridge.onLockFileRead = (lockData) => {
+        void storeTokenInSecrets(
+          context,
+          workspacePath,
+          lockData.authToken,
+          lockData.port,
+          output,
+        );
+      };
     }
 
     // Create per-connection handler factories that reference this bridge

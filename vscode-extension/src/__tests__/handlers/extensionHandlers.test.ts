@@ -10,6 +10,7 @@ import {
   handleReadClipboard,
   handleWriteClipboard,
 } from "../../handlers/clipboard";
+import { createDebugHandlers } from "../../handlers/debug";
 import { handleGetInlayHints } from "../../handlers/inlayHints";
 import { handleGetTypeHierarchy } from "../../handlers/typeHierarchy";
 import { requireNumber, requireString } from "../../handlers/validation";
@@ -21,7 +22,7 @@ import {
   handleGetWorkspaceSettings,
   handleSetWorkspaceSetting,
 } from "../../handlers/workspaceSettings";
-import { __reset } from "../__mocks__/vscode";
+import { __reset, debug } from "../__mocks__/vscode";
 
 beforeEach(() => {
   __reset();
@@ -65,6 +66,48 @@ describe("handleWriteClipboard", () => {
     await expect(handleWriteClipboard({ text: big })).rejects.toThrow(
       /too large/i,
     );
+  });
+
+  it("clipboard.writeText throws → returns written:false with error message", async () => {
+    vi.mocked(vscode.env.clipboard.writeText).mockRejectedValue(
+      new Error("clipboard unavailable"),
+    );
+    const result = (await handleWriteClipboard({ text: "hello" })) as any;
+    expect(result.written).toBe(false);
+    expect(result.error).toMatch(/clipboard unavailable/i);
+  });
+});
+
+// ── debug (stopDebugging) ──────────────────────────────────────────────────────
+
+describe("handleStopDebugging", () => {
+  it("stopDebugging throws → returns stopped:false with error message", async () => {
+    const { handlers } = createDebugHandlers({ getBridge: () => null });
+    const handler = handlers["extension/stopDebugging"];
+    // Provide an active session so the handler reaches stopDebugging
+    debug.activeDebugSession = {
+      id: "session-1",
+      name: "test",
+      type: "node",
+      customRequest: vi.fn(),
+      workspaceFolder: undefined,
+      configuration: {},
+    } as any;
+    vi.mocked(vscode.debug.stopDebugging).mockRejectedValue(
+      new Error("stop failed"),
+    );
+    const result = (await handler({}, undefined as any)) as any;
+    expect(result.stopped).toBe(false);
+    expect(result.error).toMatch(/stop failed/i);
+  });
+
+  it("no active debug session → returns stopped:false with message", async () => {
+    const { handlers } = createDebugHandlers({ getBridge: () => null });
+    const handler = handlers["extension/stopDebugging"];
+    debug.activeDebugSession = undefined;
+    const result = (await handler({}, undefined as any)) as any;
+    expect(result.stopped).toBe(false);
+    expect(result.message).toMatch(/no active/i);
   });
 });
 
