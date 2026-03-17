@@ -69,6 +69,7 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.mjs || true",
+    "smoke": "node smoke-test-v2.mjs",
     "remote": "bash scripts/start-remote.sh",
     "start-all": "bash scripts/start-all.sh"
   },
