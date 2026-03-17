@@ -197,7 +197,10 @@ child.on('exit', () => {
           .forEach((l) => allLines.push(l));
       });
 
-      // Wait for supervisor to report it started the child
+      // Wait for supervisor to report it started the child, then give the
+      // child process a moment to actually spawn — the supervisor writes
+      // "starting bridge" before calling spawn(), so on fast Linux runners
+      // a SIGTERM sent immediately can race with child creation.
       await new Promise<void>((resolve) => {
         const check = () => {
           if (allLines.some((l) => l.includes("starting bridge"))) resolve();
@@ -205,6 +208,7 @@ child.on('exit', () => {
         proc.stderr?.on("data", check);
         check(); // in case it already arrived
       });
+      await new Promise((r) => setTimeout(r, 50)); // let spawn() complete
 
       // Send SIGTERM and wait for process to exit
       proc.kill("SIGTERM");
