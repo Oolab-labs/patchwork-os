@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.1.35 + post-release fixes — 2026-03-17)
+## Current State (v2.1.36 — 2026-03-17)
 
-- 135+ MCP tools; 1222+ bridge tests + 370 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
-- Extension v1.0.7 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.35`)
+- 135+ MCP tools; 1229+ bridge tests + 373 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- Extension v1.0.8 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.1.35`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
@@ -23,6 +23,14 @@ Development direction and exploration guidance. Living document — update as pr
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
 
+**v2.1.36 shipped (2026-03-17) — correctness sweep + SecretStorage fix:**
+- Signal propagation: `searchAndReplace`, `lsp.ts` tools, `getDocumentSymbols`, `generateTests`, `terminal.ts` — cancellation now flows through to extension requests and file I/O
+- `getBufferContent`: fd leak on stream error fixed (rl.close + stream.destroy); `fs.readFile` now receives signal
+- Extension `clipboard.ts` + `debug.ts`: `writeText` and `stopDebugging` wrapped in try-catch — returns structured error instead of crashing handler
+- `connection.ts` / `extension.ts`: SecretStorage updated on lock file read (not just on successful connect) — stale token no longer persists across bridge restarts
+- Tests: `getBufferContent.test.ts` (new), `searchAndReplace` signal tests, clipboard/debug error-path tests
+- npm `claude-ide-bridge@2.1.36` published; extension v1.0.8 published to VS Code Marketplace + Open VSX
+
 **Post-v2.1.35 (2026-03-17) — CI fixes + claude.ai web support (no version bump):**
 - `scripts/gen-mcp-config.sh`: new `claude-web` target — prints URL/auth/token to paste into claude.ai Settings → Custom Connectors
 - `README.md`: new "Use with Claude.ai Web" section with prerequisites, setup command, and token rotation notes
@@ -37,7 +45,7 @@ Development direction and exploration guidance. Living document — update as pr
 - `claude-ide-bridge-plugin/scripts/worktree-create.sh` (new): same-repo detection via `git rev-parse`; warns about LSP/extension tool limitations in worktree agents
 - `docs/worktree-isolation.md` (new): safe vs unsafe tool categories in worktree agents, recommended `disallowedTools` pattern, multi-bridge setup, summary table
 - Bridge plugin now has 7 hooks: PreToolUse, PostToolUse, SessionStart, InstructionsLoaded, Elicitation, WorktreeCreate, SubagentStart
-- npm `claude-ide-bridge@2.1.35` published; extension unchanged (v1.0.6)
+- npm `claude-ide-bridge@2.1.36` published; extension unchanged (v1.0.6)
 
 **v2.1.34 shipped (2026-03-17) — Claude Code platform alignment:**
 - `claude-ide-bridge-plugin/hooks/hooks.json`: added `InstructionsLoaded` hook (fires on every CLAUDE.md load, not just session start — delivers live bridge status each time Claude refreshes its instructions) and `Elicitation` hook (pre-answers file/path/uri fields in elicitation requests using the active editor, avoiding "which file?" interruptions)
