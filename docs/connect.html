@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connect to Claude.ai — Claude IDE Bridge</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --black: #040406;
+    --white: #f0f0f0;
+    --acid: #b8ff57;
+    --acid-dim: #7ab832;
+    --red: #ff3b3b;
+    --blue: #4fc3f7;
+    --muted: #3a3a4a;
+    --surface: #0d0d14;
+    --surface2: #14141e;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--black);
+    color: var(--white);
+    font-family: 'JetBrains Mono', monospace;
+    overflow-x: hidden;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* NOISE OVERLAY */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9998;
+    opacity: .6;
+  }
+
+  /* GRID BACKGROUND */
+  .grid-bg {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(184,255,87,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(184,255,87,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* =================== NAV =================== */
+  .nav {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px 40px;
+    border-bottom: 1px solid #1a1a28;
+  }
+
+  .nav-back {
+    font-size: 12px;
+    letter-spacing: .06em;
+    color: #555;
+    text-decoration: none;
+    transition: color .2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .nav-back:hover { color: var(--acid); }
+  .nav-back .arrow { font-size: 14px; }
+
+  .nav-brand {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: .06em;
+    color: var(--acid);
+    text-transform: uppercase;
+  }
+
+  /* =================== MAIN =================== */
+  .main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    max-width: 760px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 56px 40px 80px;
+  }
+
+  .page-header {
+    margin-bottom: 56px;
+  }
+
+  .page-tag {
+    font-size: 10px;
+    letter-spacing: .25em;
+    text-transform: uppercase;
+    color: var(--acid);
+    margin-bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .page-tag::before {
+    content: '';
+    display: inline-block;
+    width: 24px;
+    height: 1px;
+    background: var(--acid);
+  }
+
+  .page-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: clamp(28px, 5vw, 48px);
+    line-height: 1.05;
+    letter-spacing: -.02em;
+    margin-bottom: 16px;
+  }
+  .page-title .accent { color: var(--acid); }
+
+  .page-sub {
+    font-size: 13px;
+    line-height: 1.7;
+    color: #666;
+    max-width: 520px;
+  }
+
+  /* =================== STEP PROGRESS =================== */
+  .step-progress {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 48px;
+  }
+
+  .step-pip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    position: relative;
+  }
+
+  .step-pip:not(:last-child)::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #1e1e2e;
+    margin: 0 12px;
+    transition: background .4s;
+  }
+  .step-pip.done:not(:last-child)::after { background: var(--acid-dim); }
+
+  .step-dot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid #2a2a3a;
+    background: var(--surface2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #444;
+    flex-shrink: 0;
+    transition: all .3s;
+  }
+
+  .step-pip.active .step-dot {
+    border-color: var(--acid);
+    color: var(--acid);
+    background: rgba(184,255,87,0.08);
+    box-shadow: 0 0 12px rgba(184,255,87,0.15);
+  }
+
+  .step-pip.done .step-dot {
+    border-color: var(--acid-dim);
+    background: var(--acid-dim);
+    color: var(--black);
+  }
+
+  .step-label {
+    font-size: 11px;
+    letter-spacing: .06em;
+    color: #333;
+    white-space: nowrap;
+    transition: color .3s;
+  }
+  .step-pip.active .step-label { color: var(--white); }
+  .step-pip.done .step-label { color: var(--acid-dim); }
+
+  /* =================== STEP CARDS =================== */
+  .step-card {
+    background: var(--surface);
+    border: 1px solid #1a1a28;
+    border-left: 3px solid #1a1a28;
+    padding: 32px;
+    margin-bottom: 16px;
+    transition: border-color .3s, opacity .3s;
+    position: relative;
+  }
+
+  .step-card.active {
+    border-left-color: var(--acid);
+  }
+
+  .step-card.dimmed {
+    opacity: .4;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .step-card.done {
+    border-left-color: var(--acid-dim);
+  }
+
+  .step-num {
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--acid);
+    margin-bottom: 8px;
+  }
+
+  .step-card.dimmed .step-num { color: #333; }
+
+  .step-heading {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    margin-bottom: 24px;
+    color: var(--white);
+  }
+
+  .step-card.dimmed .step-heading { color: #444; }
+
+  /* =================== CODE BLOCKS =================== */
+  .code-block {
+    position: relative;
+    margin-bottom: 16px;
+  }
+
+  .code-block pre {
+    background: var(--surface2);
+    border: 1px solid #1e1e2e;
+    padding: 16px 52px 16px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--acid);
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .code-block pre.json-block { color: #ccc; }
+  .code-block pre.json-block .key { color: var(--blue); }
+  .code-block pre.json-block .str { color: #98c379; }
+  .code-block pre.json-block .brace { color: #888; }
+
+  .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(184,255,87,0.08);
+    border: 1px solid rgba(184,255,87,0.2);
+    color: var(--acid);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .08em;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: background .2s, border-color .2s;
+    white-space: nowrap;
+  }
+  .copy-btn:hover {
+    background: rgba(184,255,87,0.15);
+    border-color: var(--acid);
+  }
+  .copy-btn.copied {
+    color: var(--black);
+    background: var(--acid);
+    border-color: var(--acid);
+  }
+
+  /* =================== NOTE =================== */
+  .step-note {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #555;
+    margin-top: 8px;
+  }
+  .step-note code {
+    color: var(--acid);
+    background: rgba(184,255,87,0.06);
+    padding: 1px 6px;
+    border: 1px solid rgba(184,255,87,0.15);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+
+  /* =================== ACKNOWLEDGE BUTTON =================== */
+  .ack-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 20px;
+    background: transparent;
+    border: 1px solid rgba(184,255,87,0.25);
+    color: var(--acid);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: .08em;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .ack-btn:hover {
+    background: rgba(184,255,87,0.08);
+    border-color: var(--acid);
+  }
+  .ack-btn.done-state {
+    color: var(--acid-dim);
+    border-color: var(--acid-dim);
+    background: rgba(122,184,50,0.06);
+    cursor: default;
+  }
+
+  /* =================== FORM FIELDS =================== */
+  .field-group {
+    margin-bottom: 20px;
+  }
+
+  .field-label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: #666;
+    margin-bottom: 8px;
+  }
+
+  .field-wrap {
+    position: relative;
+  }
+
+  .field-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid #1e1e2e;
+    color: var(--white);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 12px 16px;
+    outline: none;
+    transition: border-color .2s;
+    /* for password field with toggle button */
+    padding-right: 44px;
+  }
+  .field-input:focus { border-color: rgba(184,255,87,0.4); }
+  .field-input::placeholder { color: #333; }
+
+  .toggle-pw {
+    position: absolute;
+    right: 0;
+    top: 0;
+    height: 100%;
+    width: 42px;
+    background: none;
+    border: none;
+    border-left: 1px solid #1e1e2e;
+    color: #444;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color .2s;
+    font-size: 14px;
+  }
+  .toggle-pw:hover { color: var(--acid); }
+
+  .config-label {
+    font-size: 10px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 8px;
+    margin-top: 24px;
+  }
+
+  /* =================== STEP 3 =================== */
+  .instructions-list {
+    list-style: none;
+    counter-reset: inst;
+    margin-bottom: 28px;
+  }
+
+  .instructions-list li {
+    counter-increment: inst;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid #111118;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #888;
+  }
+  .instructions-list li:last-child { border-bottom: none; }
+
+  .inst-num {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border: 1px solid #2a2a3a;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #444;
+    margin-top: 1px;
+  }
+
+  .step-card.active .inst-num {
+    border-color: rgba(184,255,87,0.3);
+    color: var(--acid);
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--acid);
+    color: var(--black);
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: 14px 28px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .btn-primary:hover { transform: translate(-2px,-2px); box-shadow: 4px 4px 0 var(--acid-dim); }
+
+  /* =================== FOOTER =================== */
+  .footer {
+    position: relative;
+    z-index: 1;
+    padding: 24px 40px;
+    border-top: 1px solid #1a1a28;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #333;
+  }
+
+  .footer a {
+    color: #555;
+    text-decoration: none;
+    transition: color .2s;
+  }
+  .footer a:hover { color: var(--acid); }
+
+  .footer-dot {
+    color: #222;
+  }
+
+  /* =================== CHECKMARK SVG =================== */
+  .check-icon {
+    width: 12px;
+    height: 12px;
+    display: inline-block;
+  }
+
+  /* =================== ANIMATIONS =================== */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .page-header { animation: fadeUp .5s .1s both; }
+  .step-progress { animation: fadeUp .5s .2s both; }
+  .step-card:nth-child(1) { animation: fadeUp .5s .25s both; }
+  .step-card:nth-child(2) { animation: fadeUp .5s .35s both; }
+  .step-card:nth-child(3) { animation: fadeUp .5s .45s both; }
+
+  /* =================== RESPONSIVE =================== */
+  @media (max-width: 600px) {
+    .nav { padding: 16px 20px; }
+    .main { padding: 36px 20px 60px; }
+    .step-card { padding: 20px; }
+    .step-label { display: none; }
+    .step-pip:not(:last-child)::after { margin: 0 6px; }
+    .footer { padding: 20px; flex-wrap: wrap; justify-content: center; gap: 4px; }
+    .code-block pre { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+
+<!-- NAV -->
+<nav class="nav">
+  <a href="index.html" class="nav-back">
+    <span class="arrow">←</span> claude-ide-bridge
+  </a>
+  <span class="nav-brand">Setup Wizard</span>
+</nav>
+
+<!-- MAIN -->
+<main class="main">
+
+  <div class="page-header">
+    <div class="page-tag">Quick setup</div>
+    <h1 class="page-title">Connect to <span class="accent">Claude.ai</span></h1>
+    <p class="page-sub">Three steps to wire your remote bridge into Claude.ai as an MCP integration.</p>
+  </div>
+
+  <!-- STEP PROGRESS -->
+  <div class="step-progress" id="stepProgress">
+    <div class="step-pip active" id="pip1">
+      <div class="step-dot">1</div>
+      <span class="step-label">Install &amp; Start</span>
+    </div>
+    <div class="step-pip dimmed" id="pip2">
+      <div class="step-dot">2</div>
+      <span class="step-label">Configure</span>
+    </div>
+    <div class="step-pip dimmed" id="pip3">
+      <div class="step-dot">3</div>
+      <span class="step-label">Add to Claude</span>
+    </div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="step-card active" id="card1">
+    <div class="step-num">Step 01</div>
+    <h2 class="step-heading">Install &amp; Start the bridge</h2>
+
+    <p style="font-size:12px;color:#666;margin-bottom:16px;">Install the bridge globally on your server:</p>
+
+    <div class="code-block">
+      <pre id="cmd1">npm install -g claude-ide-bridge</pre>
+      <button class="copy-btn" onclick="copyCode('cmd1', this)">copy</button>
+    </div>
+
+    <p style="font-size:12px;color:#666;margin-bottom:16px;margin-top:8px;">Then start it with a fixed auth token:</p>
+
+    <div class="code-block">
+      <pre id="cmd2">claude-ide-bridge --bind 0.0.0.0 --port 9000 --fixed-token YOUR_TOKEN</pre>
+      <button class="copy-btn" onclick="copyCode('cmd2', this)">copy</button>
+    </div>
+
+    <p class="step-note">
+      Replace <code>YOUR_TOKEN</code> with any secret string, or generate one:
+      <code>openssl rand -hex 16</code>
+    </p>
+
+    <button class="ack-btn" id="ackBtn" onclick="acknowledgeStep1()">
+      <svg class="check-icon" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="2,6 5,9 10,3"/>
+      </svg>
+      Bridge is running — continue to step 2
+    </button>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step-card dimmed" id="card2">
+    <div class="step-num">Step 02</div>
+    <h2 class="step-heading">Generate your MCP config</h2>
+
+    <div class="field-group">
+      <label class="field-label" for="bridgeUrl">Bridge URL</label>
+      <div class="field-wrap">
+        <input
+          class="field-input"
+          type="url"
+          id="bridgeUrl"
+          placeholder="https://your-server.com"
+          autocomplete="off"
+          spellcheck="false"
+          oninput="updateConfig()"
+          style="padding-right:16px;"
+        >
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label" for="authToken">Auth Token</label>
+      <div class="field-wrap">
+        <input
+          class="field-input"
+          type="password"
+          id="authToken"
+          placeholder="your-secret-token"
+          autocomplete="off"
+          spellcheck="false"
+          oninput="updateConfig()"
+        >
+        <button class="toggle-pw" id="togglePw" onclick="togglePassword()" title="Show / hide token" aria-label="Toggle token visibility">
+          <svg id="eyeIcon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <ellipse cx="8" cy="8" rx="5" ry="3.5"/>
+            <circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="config-label">Generated MCP Config</div>
+    <div class="code-block">
+      <pre class="json-block" id="configOutput"><!-- populated by JS --></pre>
+      <button class="copy-btn" id="copyConfigBtn" onclick="copyConfig(this)">copy</button>
+    </div>
+
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step-card dimmed" id="card3">
+    <div class="step-num">Step 03</div>
+    <h2 class="step-heading">Add the integration to Claude.ai</h2>
+
+    <ol class="instructions-list">
+      <li>
+        <span class="inst-num">1</span>
+        <span>Go to <strong style="color:var(--white)">claude.ai</strong> → Settings → Integrations → <strong style="color:var(--white)">Add integration</strong></span>
+      </li>
+      <li>
+        <span class="inst-num">2</span>
+        <span>Paste the MCP config generated in Step 2 above</span>
+      </li>
+      <li>
+        <span class="inst-num">3</span>
+        <span>Click <strong style="color:var(--white)">Save</strong> — Claude will connect to your bridge</span>
+      </li>
+    </ol>
+
+    <a href="https://claude.ai/settings" target="_blank" rel="noopener" class="btn-primary">
+      Go to Claude.ai Settings
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 7h8M7 3l4 4-4 4"/>
+      </svg>
+    </a>
+  </div>
+
+</main>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <span>claude-ide-bridge is open source</span>
+  <span class="footer-dot">·</span>
+  <a href="https://github.com/Oolab-labs/claude-ide-bridge" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  var step1Done = false;
+
+  // ── Step progression ───────────────────────────────────────────────────────
+  function setStepState(index, state) {
+    // index: 1-based; state: 'active' | 'done' | 'dimmed' | 'pending'
+    var card = document.getElementById('card' + index);
+    var pip  = document.getElementById('pip'  + index);
+    var dot  = pip.querySelector('.step-dot');
+
+    card.classList.remove('active', 'done', 'dimmed');
+    pip.classList.remove('active', 'done', 'dimmed');
+
+    if (state === 'active') {
+      card.classList.add('active');
+      pip.classList.add('active');
+      dot.textContent = String(index);
+    } else if (state === 'done') {
+      card.classList.add('done');
+      pip.classList.add('done');
+      dot.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="2,6 5,9 10,3"/></svg>';
+    } else {
+      card.classList.add('dimmed');
+      pip.classList.add('dimmed');
+      dot.textContent = String(index);
+    }
+  }
+
+  function refreshStepStates() {
+    var urlVal   = document.getElementById('bridgeUrl').value.trim();
+    var tokenVal = document.getElementById('authToken').value.trim();
+    var step2Done = urlVal.length > 0 && tokenVal.length > 0;
+
+    if (!step1Done) {
+      setStepState(1, 'active');
+      setStepState(2, 'dimmed');
+      setStepState(3, 'dimmed');
+    } else if (!step2Done) {
+      setStepState(1, 'done');
+      setStepState(2, 'active');
+      setStepState(3, 'dimmed');
+    } else {
+      setStepState(1, 'done');
+      setStepState(2, 'done');
+      setStepState(3, 'active');
+    }
+
+    // Remove pointer-events block from step 2 once step 1 done
+    var card2 = document.getElementById('card2');
+    if (step1Done) {
+      card2.style.pointerEvents = '';
+      card2.style.userSelect = '';
+    }
+  }
+
+  // ── Step 1 acknowledge ─────────────────────────────────────────────────────
+  window.acknowledgeStep1 = function () {
+    step1Done = true;
+    var btn = document.getElementById('ackBtn');
+    btn.classList.add('done-state');
+    btn.textContent = '';
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '12'); svg.setAttribute('height', '12');
+    svg.setAttribute('viewBox', '0 0 12 12');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    poly.setAttribute('points', '2,6 5,9 10,3');
+    svg.appendChild(poly);
+    btn.appendChild(svg);
+    btn.appendChild(document.createTextNode(' Done — step 2 is unlocked'));
+    btn.onclick = null;
+    refreshStepStates();
+    // Smooth scroll to step 2
+    setTimeout(function () {
+      document.getElementById('card2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('bridgeUrl').focus();
+    }, 200);
+  };
+
+  // ── Config generation ──────────────────────────────────────────────────────
+  function buildConfigObj() {
+    var rawUrl   = document.getElementById('bridgeUrl').value.trim();
+    var rawToken = document.getElementById('authToken').value.trim();
+
+    var url   = rawUrl   || 'https://your-server.com';
+    var token = rawToken || 'your-secret-token';
+
+    // Normalise: strip trailing slash, append /mcp
+    var base = url.replace(/\/+$/, '');
+    var mcpUrl = base + '/mcp';
+
+    return {
+      mcpServers: {
+        'claude-ide-bridge': {
+          type: 'http',
+          url: mcpUrl,
+          headers: {
+            Authorization: 'Bearer ' + token
+          }
+        }
+      }
+    };
+  }
+
+  function syntaxHighlight(json) {
+    // Minimal JSON syntax colouring for display
+    return json
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"([^"]+)"(\s*:)/g, '<span class="key">"$1"</span>$2')
+      .replace(/:\s*"([^"]*)"/g, ': <span class="str">"$1"</span>')
+      .replace(/[{}[\]]/g, '<span class="brace">$&</span>');
+  }
+
+  window.updateConfig = function () {
+    var obj  = buildConfigObj();
+    var json = JSON.stringify(obj, null, 2);
+    document.getElementById('configOutput').innerHTML = syntaxHighlight(json);
+    refreshStepStates();
+  };
+
+  // ── Password toggle ─────────────────────────────────────────────────────────
+  window.togglePassword = function () {
+    var input = document.getElementById('authToken');
+    var icon  = document.getElementById('eyeIcon');
+    if (input.type === 'password') {
+      input.type = 'text';
+      // Crossed eye
+      icon.innerHTML =
+        '<ellipse cx="8" cy="8" rx="5" ry="3.5"/>' +
+        '<line x1="3" y1="3" x2="13" y2="13" stroke-width="1.5"/>';
+    } else {
+      input.type = 'password';
+      icon.innerHTML =
+        '<ellipse cx="8" cy="8" rx="5" ry="3.5"/>' +
+        '<circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none"/>';
+    }
+  };
+
+  // ── Copy helpers ────────────────────────────────────────────────────────────
+  function copyText(text, btn) {
+    var label = btn.textContent;
+    function success() {
+      btn.textContent = 'copied!';
+      btn.classList.add('copied');
+      setTimeout(function () {
+        btn.textContent = 'copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(success).catch(function () {
+        fallbackCopy(text, btn, success);
+      });
+    } else {
+      fallbackCopy(text, btn, success);
+    }
+  }
+
+  function fallbackCopy(text, btn, cb) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); cb(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  window.copyCode = function (id, btn) {
+    var text = document.getElementById(id).textContent;
+    copyText(text, btn);
+  };
+
+  window.copyConfig = function (btn) {
+    var obj  = buildConfigObj();
+    var json = JSON.stringify(obj, null, 2);
+    copyText(json, btn);
+  };
+
+  // ── Init ────────────────────────────────────────────────────────────────────
+  updateConfig();
+
+}());
+</script>
+</body>
+</html>
