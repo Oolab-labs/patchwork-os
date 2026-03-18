@@ -1,0 +1,49 @@
+# deploy/claude-ide-bridge.service.template
+# Reference template — paths and user are injected by the install scripts.
+# Do NOT copy this file to /etc/systemd/system/ directly.
+# Use bootstrap-new-vps.sh or install-vps-service.sh which generate
+# the final unit file with all variables substituted.
+
+[Unit]
+Description=Claude IDE Bridge MCP Server
+Documentation=https://github.com/Oolab-labs/claude-ide-bridge
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=${SERVICE_USER}
+WorkingDirectory=${INSTALL_DIR}
+
+# Load personal config — FIXED_TOKEN, PORT, WORKSPACE must be set here
+EnvironmentFile=${ENV_FILE}
+
+# Bridge process — reads PORT, WORKSPACE, FIXED_TOKEN from EnvironmentFile
+ExecStart=/usr/bin/node ${INSTALL_DIR}/dist/index.js \
+    --port ${PORT} \
+    --workspace ${WORKSPACE} \
+    --fixed-token ${FIXED_TOKEN} \
+    --grace-period 120000 \
+    --vps
+
+# Graceful shutdown: SIGTERM → wait 15s → SIGKILL
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Restart policy: always restart unless manually stopped
+Restart=always
+RestartSec=5
+
+# Logging — view with: journalctl -u claude-ide-bridge -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-ide-bridge
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
