@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { Logger } from "./logger.js";
+import type { OAuthServer } from "./oauth.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 
 const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -100,6 +101,8 @@ export class Server extends EventEmitter<ServerEvents> {
   private lastClaudeConnectionTime = 0;
   private lastExtensionConnectionTime = 0;
   private startTime = Date.now();
+  /** OAuth 2.0 Authorization Server — set via setOAuthServer() when running in remote mode */
+  private oauthServer: OAuthServer | null = null;
 
   /** Set by bridge to provide health data */
   public healthDataFn: (() => Record<string, unknown>) | null = null;
@@ -119,6 +122,20 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
   /** Set by bridge to subscribe a caller to real-time activity events. Returns unsubscribe fn. */
   public streamFn: ((listener: ActivityListener) => () => void) | null = null;
+
+  /**
+   * Attach an OAuth 2.0 Authorization Server.
+   * When set, the bridge exposes:
+   *   GET  /.well-known/oauth-authorization-server
+   *   GET  /oauth/authorize
+   *   POST /oauth/token
+   *   POST /oauth/revoke
+   * Bearer tokens issued via the OAuth flow are accepted in addition to the
+   * static bridge token, enabling claude.ai's authenticated MCP server flow.
+   */
+  setOAuthServer(oauth: OAuthServer): void {
+    this.oauthServer = oauth;
+  }
 
   constructor(
     private authToken: string,
@@ -140,7 +157,79 @@ export class Server extends EventEmitter<ServerEvents> {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Cache-Control", "no-store");
 
-      // Public discovery endpoint — no auth required
+      const parsedUrl = new URL(req.url ?? "/", "http://localhost");
+
+      // ── OAuth 2.0 endpoints (unauthenticated — handled before bearer check) ──
+
+      // RFC 8414 discovery document
+      if (
+        parsedUrl.pathname === "/.well-known/oauth-authorization-server" &&
+        req.method === "GET"
+      ) {
+        if (this.oauthServer) {
+          this.oauthServer.handleDiscovery(res);
+        } else {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("OAuth not configured");
+        }
+        return;
+      }
+
+      // Authorization endpoint
+      if (
+        parsedUrl.pathname === "/oauth/authorize" &&
+        req.method === "GET"
+      ) {
+        if (this.oauthServer) {
+          this.oauthServer.handleAuthorize(req, res);
+        } else {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("OAuth not configured");
+        }
+        return;
+      }
+
+      // Token endpoint
+      if (
+        parsedUrl.pathname === "/oauth/token" &&
+        req.method === "POST"
+      ) {
+        if (this.oauthServer) {
+          this.oauthServer.handleToken(req, res).catch((err) => {
+            if (!res.headersSent) {
+              res.writeHead(500, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: String(err) }));
+            }
+          });
+        } else {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("OAuth not configured");
+        }
+        return;
+      }
+
+      // Revocation endpoint (RFC 7009)
+      if (
+        parsedUrl.pathname === "/oauth/revoke" &&
+        req.method === "POST"
+      ) {
+        if (this.oauthServer) {
+          this.oauthServer.handleRevoke(req, res).catch(() => {
+            // RFC 7009: always 200
+            if (!res.headersSent) {
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end("{}");
+            }
+          });
+        } else {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end("{}");
+        }
+        return;
+      }
+
+      // ── MCP server-card (public) ──────────────────────────────────────────
+
       if (
         req.url === "/.well-known/mcp/server-card.json" ||
         req.url === "/.well-known/mcp"
@@ -172,7 +261,7 @@ export class Server extends EventEmitter<ServerEvents> {
 
       // CORS preflight for /mcp — browsers (and Claude Desktop's web renderer) send
       // OPTIONS before POST. Respond without requiring auth so the preflight succeeds.
-      if (req.method === "OPTIONS" && new URL(req.url ?? "/", "http://localhost").pathname === "/mcp") {
+      if (req.method === "OPTIONS" && parsedUrl.pathname === "/mcp") {
         const origin = corsOrigin(req.headers.origin);
         if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
         res.setHeader(
@@ -196,20 +285,33 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
-      // All other HTTP endpoints require Bearer token authentication.
-      // This prevents any local process or network peer (if --bind 0.0.0.0 is used)
-      // from reading internal state without possessing the session auth token.
+      // ── Bearer token authentication ───────────────────────────────────────
+      // All other HTTP endpoints require a valid Bearer token.
+      // Accepts either:
+      //   (a) the bridge's static token (--fixed-token / generated on start), or
+      //   (b) an OAuth 2.0 access token issued via /oauth/token (when oauthServer is set)
       const authHeader = req.headers.authorization ?? "";
       const bearerFromHeader = authHeader.startsWith("Bearer ")
         ? authHeader.slice(7)
         : "";
       // Also accept token via ?token= query param for clients that cannot set
       // Authorization headers (e.g. claude.ai Custom Connectors UI).
-      const parsedUrl = new URL(req.url ?? "/", "http://localhost");
       const bearerFromQuery = parsedUrl.searchParams.get("token") ?? "";
       const bearer = bearerFromHeader || bearerFromQuery;
-      if (!timingSafeTokenCompare(bearer, this.authToken)) {
-        res.writeHead(401, { "Content-Type": "text/plain" });
+
+      const isStaticToken = timingSafeTokenCompare(bearer, this.authToken);
+      const oauthResolved = !isStaticToken && this.oauthServer
+        ? this.oauthServer.resolveBearerToken(bearer)
+        : null;
+      // oauthResolved is the bridge token if the OAuth token is valid; null otherwise
+      if (!isStaticToken && !oauthResolved) {
+        res.writeHead(401, {
+          "Content-Type": "text/plain",
+          // RFC 6750: indicate OAuth Bearer is accepted
+          "WWW-Authenticate": this.oauthServer
+            ? `Bearer realm="claude-ide-bridge", error="invalid_token"`
+            : `Bearer realm="claude-ide-bridge"`,
+        });
         res.end("Unauthorized");
         return;
       }
@@ -357,9 +459,9 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
       // MCP Streamable HTTP transport — POST/GET/DELETE /mcp.
-      // Bearer auth is already checked above (line ~138), so all requests here
-      // are authenticated. The Mcp-Session-Id header routes to the correct session.
-      // OPTIONS is handled before auth (line ~126) so CORS preflight works.
+      // Bearer auth is already checked above, so all requests here are authenticated.
+      // The Mcp-Session-Id header routes to the correct session.
+      // OPTIONS is handled before auth so CORS preflight works.
       if (parsedUrl.pathname === "/mcp" && this.httpMcpHandler) {
         if (
           req.method === "POST" ||

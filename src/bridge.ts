@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { OAuthServerImpl } from "./oauth.js";
 import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
@@ -99,6 +100,10 @@ export class Bridge {
     this.lockFile = new LockFileManager(this.logger);
     this.authToken = config.fixedToken ?? randomUUID();
     this.server = new Server(this.authToken, this.logger);
+    if (config.issuerUrl) {
+      this.server.setOAuthServer(new OAuthServerImpl(this.authToken, config.issuerUrl));
+      this.logger.info(`OAuth 2.0 enabled — issuer: ${config.issuerUrl}`);
+    }
     this.activityLog = new ActivityLog();
     this.extensionClient = new ExtensionClient(this.logger);
 
