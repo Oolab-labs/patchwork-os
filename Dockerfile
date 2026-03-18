@@ -20,6 +20,6 @@ ENV CLAUDE_CONFIG_DIR=/data/claude
 ENV BRIDGE_BIND_ADDRESS=0.0.0.0
 EXPOSE 18765
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget -qO- "http://127.0.0.1:${PORT:-18765}/health" || exit 1
+  CMD wget -qO- "http://127.0.0.1:${PORT:-18765}/ping" || exit 1
 ENTRYPOINT ["tini", "--", "node", "dist/index.js"]
 CMD ["--workspace", "/workspace", "--bind", "0.0.0.0"]

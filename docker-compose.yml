@@ -1,0 +1,27 @@
+services:
+  bridge:
+    build: .
+    image: claude-ide-bridge:latest
+    restart: unless-stopped
+    ports:
+      - "18765:18765"
+    volumes:
+      - bridge-data:/data
+      - workspace:/workspace:ro
+    environment:
+      # CLAUDE_IDE_BRIDGE_TOKEN is required — must be a UUID v4 (36 chars).
+      # Generate with: node -e "console.log(require('crypto').randomUUID())"
+      # Set in a .env file or pass directly:
+      #   CLAUDE_IDE_BRIDGE_TOKEN=<uuid> docker compose up -d
+      CLAUDE_IDE_BRIDGE_TOKEN: "${CLAUDE_IDE_BRIDGE_TOKEN:?CLAUDE_IDE_BRIDGE_TOKEN is required}"
+      PORT: "18765"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:18765/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  bridge-data:
+  workspace:

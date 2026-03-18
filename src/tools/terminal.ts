@@ -318,6 +318,7 @@ export function createCreateTerminalTool(
     schema: {
       name: "createTerminal",
       extensionRequired: true,
+      annotations: { destructiveHint: true },
       description:
         "Create a new VS Code integrated terminal. Optionally set a name, working directory, environment variables, and shell. Requires the VS Code extension.",
       inputSchema: {
@@ -533,6 +534,7 @@ export function createRunInTerminalTool(
   return {
     schema: {
       name: "runInTerminal",
+      annotations: { destructiveHint: true, openWorldHint: true },
       description:
         "Execute a command in a VS Code integrated terminal and wait for it to complete. " +
         "Returns the exit code and full output — unlike sendTerminalCommand (fire-and-forget), " +
@@ -707,6 +709,7 @@ export function createSendTerminalCommandTool(
     schema: {
       name: "sendTerminalCommand",
       extensionRequired: true,
+      annotations: { destructiveHint: true, openWorldHint: true },
       description:
         "Send text or a command to a VS Code integrated terminal. " +
         "Identify the terminal by name or index (from listTerminals). " +
