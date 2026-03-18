@@ -75,7 +75,7 @@ fi
 tmux kill-session -t "$BRIDGE_SESSION" 2>/dev/null || true
 
 # ── Bridge session (auto-restart loop) ───────────────────────────────────────
-BRIDGE_CMD="node $DIST --port $PORT --workspace $WORKSPACE --fixed-token $FIXED_TOKEN"
+BRIDGE_CMD="node $DIST --port $PORT --workspace $WORKSPACE --fixed-token $FIXED_TOKEN --vps"
 
 tmux new-session -d -s "$BRIDGE_SESSION" -x 220 -y 50 bash
 sleep 0.3

@@ -1,7 +1,35 @@
 import fs from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { execSafe, optionalString, requireString, success } from "./utils.js";
+
+/** True when a graphical display is available. */
+function hasDisplay(): boolean {
+  if (process.platform === "darwin" || process.platform === "win32") return true;
+  return !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
+}
+
+/**
+ * Serve HTML once over a loopback HTTP server on a random port.
+ * Closes after the first GET or after 5 minutes. Never binds to 0.0.0.0.
+ */
+function serveOnce(html: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+      res.end(html);
+      setImmediate(() => server.close());
+    });
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      if (!addr || typeof addr === "string") { server.close(); return reject(new Error("Failed to bind")); }
+      resolve(`http://127.0.0.1:${(addr as { port: number }).port}/`);
+      setTimeout(() => server.close(), 5 * 60 * 1000).unref();
+    });
+  });
+}
 
 export function createOpenInBrowserTool() {
   return {
@@ -60,6 +88,22 @@ export function createOpenInBrowserTool() {
       const tmpPath = path.join(os.tmpdir(), sanitizedFilename);
       await fs.writeFile(tmpPath, html, "utf8");
 
+      // Headless VPS — no display server, serve over loopback HTTP instead
+      if (process.platform !== "darwin" && process.platform !== "win32" && !hasDisplay()) {
+        const url = await serveOnce(html);
+        const port = new URL(url).port;
+        return success({
+          path: tmpPath,
+          headless: true,
+          url,
+          note:
+            `Headless server detected (no DISPLAY). HTML at ${url} — ` +
+            `SSH tunnel: ssh -L ${port}:127.0.0.1:${port} your-vps then open http://localhost:${port}/ ` +
+            `or save: curl -s ${url} -o /tmp/report.html`,
+        });
+      }
+
+      // Desktop — open in system default browser
       const platform = process.platform;
       if (platform === "darwin") {
         await execSafe("open", [tmpPath]);

@@ -110,7 +110,8 @@ export function createGetBufferContentTool(
       },
     },
 
-    timeoutMs: 5_000,
+    // 15s: disk fallback on slow VPS storage or large files via readline streaming
+    timeoutMs: 15_000,
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const rawPath = requireString(args, "filePath");
       const filePath = resolveFilePath(rawPath, workspace);

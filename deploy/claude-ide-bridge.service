@@ -18,7 +18,8 @@ ExecStart=/usr/bin/node /root/claude-ide-bridge/dist/index.js \
     --port ${PORT} \
     --workspace ${WORKSPACE} \
     --fixed-token ${FIXED_TOKEN} \
-    --grace-period 120000
+    --grace-period 120000 \
+    --vps
 
 # Graceful shutdown: SIGTERM, wait 10s, then SIGKILL
 KillMode=mixed

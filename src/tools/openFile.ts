@@ -100,7 +100,10 @@ export function createOpenFileTool(
         return success({
           success: true,
           filePath,
-          message: "No editor command configured — file tracked but not opened",
+          tracked: true,
+          message:
+            "No editor command configured (headless VPS or SSH remote without GUI IDE). " +
+            "File recorded internally — use getBufferContent, editText, or replaceBlock to work with it directly.",
         });
       }
 
