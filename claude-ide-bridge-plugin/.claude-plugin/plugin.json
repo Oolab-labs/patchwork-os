@@ -8,5 +8,15 @@
   "homepage": "https://github.com/Oolab-labs/claude-ide-bridge#readme",
   "repository": "https://github.com/Oolab-labs/claude-ide-bridge",
   "license": "MIT",
-  "keywords": ["ide", "vscode", "windsurf", "lsp", "debugging", "terminal", "git", "github", "mcp"]
+  "keywords": [
+    "ide",
+    "vscode",
+    "windsurf",
+    "lsp",
+    "debugging",
+    "terminal",
+    "git",
+    "github",
+    "mcp"
+  ]
 }

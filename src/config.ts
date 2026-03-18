@@ -380,7 +380,9 @@ export function parseConfig(argv: string[]): Config {
       case "--fixed-token": {
         const tok = requireArg(args, ++i, "--fixed-token");
         if (!/^[0-9a-f-]{36}$/.test(tok))
-          throw new Error("--fixed-token must be a valid UUID (e.g. from uuidgen or crypto.randomUUID())");
+          throw new Error(
+            "--fixed-token must be a valid UUID (e.g. from uuidgen or crypto.randomUUID())",
+          );
         fixedToken = tok;
         break;
       }
@@ -517,7 +519,7 @@ Environment Variables:
       fixedToken = envTok;
     } else {
       console.warn(
-        `Warning: CLAUDE_IDE_BRIDGE_TOKEN is not a valid UUID — ignored.`,
+        "Warning: CLAUDE_IDE_BRIDGE_TOKEN is not a valid UUID — ignored.",
       );
     }
   }

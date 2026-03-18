@@ -6,8 +6,8 @@
  */
 
 import crypto from "node:crypto";
-import { Readable } from "node:stream";
 import type http from "node:http";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { OAuthServerImpl } from "../oauth.js";
 
@@ -26,7 +26,10 @@ function makeOAuth() {
 
 function makeVerifier() {
   const verifier = crypto.randomBytes(32).toString("base64url");
-  const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+  const challenge = crypto
+    .createHash("sha256")
+    .update(verifier)
+    .digest("base64url");
   return { verifier, challenge };
 }
 
@@ -47,21 +50,39 @@ class MockResponse {
     }
     return this;
   }
-  setHeader(k: string, v: string) { this.headers[k.toLowerCase()] = v; }
-  getHeader(k: string) { return this.headers[k.toLowerCase()]; }
-  end(body?: string) { this.body = body ?? ""; return this; }
-  json(): unknown { return JSON.parse(this.body || "{}"); }
+  setHeader(k: string, v: string) {
+    this.headers[k.toLowerCase()] = v;
+  }
+  getHeader(k: string) {
+    return this.headers[k.toLowerCase()];
+  }
+  end(body?: string) {
+    this.body = body ?? "";
+    return this;
+  }
+  json(): unknown {
+    return JSON.parse(this.body || "{}");
+  }
 }
 
-function makeGetReq(url: string, headers: Record<string, string> = {}): http.IncomingMessage {
+function makeGetReq(
+  url: string,
+  headers: Record<string, string> = {},
+): http.IncomingMessage {
   return { method: "GET", url, headers } as unknown as http.IncomingMessage;
 }
 
-function makePostReq(body: string, headers: Record<string, string> = {}): http.IncomingMessage {
+function makePostReq(
+  body: string,
+  headers: Record<string, string> = {},
+): http.IncomingMessage {
   const stream = Readable.from([Buffer.from(body, "utf-8")]);
   return Object.assign(stream, {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      ...headers,
+    },
   }) as unknown as http.IncomingMessage;
 }
 
@@ -83,9 +104,12 @@ async function issueCode(
   const req = makePostReq(form.toString());
   const res = new MockResponse();
   await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
-  const location = new URL(res.headers["location"] ?? "http://invalid");
+  const location = new URL(res.headers.location ?? "http://invalid");
   const code = location.searchParams.get("code");
-  if (!code) throw new Error(`No code issued. Status=${res.statusCode} Location=${res.headers["location"]}`);
+  if (!code)
+    throw new Error(
+      `No code issued. Status=${res.statusCode} Location=${res.headers.location}`,
+    );
   return { code, verifier };
 }
 
@@ -135,10 +159,16 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
     const oauth = makeOAuth();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
-      response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
-      state: "abc", code_challenge: challenge, code_challenge_method: "S256",
+      response_type: "code",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
     });
-    const req = makeGetReq(`/oauth/authorize?${params}`, { authorization: `Bearer ${BRIDGE_TOKEN}` });
+    const req = makeGetReq(`/oauth/authorize?${params}`, {
+      authorization: `Bearer ${BRIDGE_TOKEN}`,
+    });
     const res = new MockResponse();
     oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(200);
@@ -150,8 +180,12 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
     const oauth = makeOAuth();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
-      response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
-      state: "abc", code_challenge: challenge, code_challenge_method: "S256",
+      response_type: "code",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
     });
     const req = makeGetReq(`/oauth/authorize?${params}`);
     const res = new MockResponse();
@@ -163,10 +197,16 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
     const oauth = makeOAuth();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
-      response_type: "token", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
-      state: "abc", code_challenge: challenge, code_challenge_method: "S256",
+      response_type: "token",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
     });
-    const req = makeGetReq(`/oauth/authorize?${params}`, { authorization: `Bearer ${BRIDGE_TOKEN}` });
+    const req = makeGetReq(`/oauth/authorize?${params}`, {
+      authorization: `Bearer ${BRIDGE_TOKEN}`,
+    });
     const res = new MockResponse();
     oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(400);
@@ -175,10 +215,15 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
   it("returns 400 when code_challenge is missing", () => {
     const oauth = makeOAuth();
     const params = new URLSearchParams({
-      response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
-      state: "abc", code_challenge_method: "S256",
+      response_type: "code",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge_method: "S256",
     });
-    const req = makeGetReq(`/oauth/authorize?${params}`, { authorization: `Bearer ${BRIDGE_TOKEN}` });
+    const req = makeGetReq(`/oauth/authorize?${params}`, {
+      authorization: `Bearer ${BRIDGE_TOKEN}`,
+    });
     const res = new MockResponse();
     oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(400);
@@ -188,10 +233,16 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
     const oauth = makeOAuth();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
-      response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
-      state: "abc", code_challenge: challenge, code_challenge_method: "plain",
+      response_type: "code",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge: challenge,
+      code_challenge_method: "plain",
     });
-    const req = makeGetReq(`/oauth/authorize?${params}`, { authorization: `Bearer ${BRIDGE_TOKEN}` });
+    const req = makeGetReq(`/oauth/authorize?${params}`, {
+      authorization: `Bearer ${BRIDGE_TOKEN}`,
+    });
     const res = new MockResponse();
     oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(400);
@@ -201,8 +252,12 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
     const oauth = makeOAuth();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
-      response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
-      state: "abc", code_challenge: challenge, code_challenge_method: "S256",
+      response_type: "code",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
       bridge_token: BRIDGE_TOKEN,
     });
     const req = makeGetReq(`/oauth/authorize?${params}`);
@@ -226,14 +281,18 @@ describe("OAuthServerImpl — POST /oauth/authorize", () => {
     const oauth = makeOAuth();
     const { challenge } = makeVerifier();
     const form = new URLSearchParams({
-      action: "deny", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
-      code_challenge: challenge, scope: "mcp", state: "s1",
+      action: "deny",
+      client_id: CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      code_challenge: challenge,
+      scope: "mcp",
+      state: "s1",
     });
     const req = makePostReq(form.toString());
     const res = new MockResponse();
     await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(302);
-    const location = new URL(res.headers["location"] ?? "");
+    const location = new URL(res.headers.location ?? "");
     expect(location.searchParams.get("error")).toBe("access_denied");
   });
 
@@ -263,7 +322,11 @@ describe("OAuthServerImpl — POST /oauth/token", () => {
   it("rejects wrong code_verifier", async () => {
     const oauth = makeOAuth();
     const { code } = await issueCode(oauth);
-    const { res, data } = await issueToken(oauth, code, "not-the-right-verifier-aaa");
+    const { res, data } = await issueToken(
+      oauth,
+      code,
+      "not-the-right-verifier-aaa",
+    );
     expect(res.statusCode).toBe(400);
     expect(data.error).toBe("invalid_grant");
   });
@@ -287,17 +350,23 @@ describe("OAuthServerImpl — POST /oauth/token", () => {
 
   it("rejects unsupported grant_type", async () => {
     const oauth = makeOAuth();
-    const req = makePostReq("grant_type=implicit&client_id=x&redirect_uri=x&code=x&code_verifier=x");
+    const req = makePostReq(
+      "grant_type=implicit&client_id=x&redirect_uri=x&code=x&code_verifier=x",
+    );
     const res = new MockResponse();
     await oauth.handleToken(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(400);
-    expect((res.json() as Record<string, unknown>).error).toBe("unsupported_grant_type");
+    expect((res.json() as Record<string, unknown>).error).toBe(
+      "unsupported_grant_type",
+    );
   });
 
   it("rejects client_id mismatch", async () => {
     const oauth = makeOAuth();
     const { code, verifier } = await issueCode(oauth);
-    const { res, data } = await issueToken(oauth, code, verifier, { client_id: "wrong-client" });
+    const { res, data } = await issueToken(oauth, code, verifier, {
+      client_id: "wrong-client",
+    });
     expect(res.statusCode).toBe(400);
     expect(data.error).toBe("invalid_grant");
   });
@@ -308,7 +377,9 @@ describe("OAuthServerImpl — POST /oauth/token", () => {
     const res = new MockResponse();
     await oauth.handleToken(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(400);
-    expect((res.json() as Record<string, unknown>).error).toBe("invalid_request");
+    expect((res.json() as Record<string, unknown>).error).toBe(
+      "invalid_request",
+    );
   });
 });
 
@@ -354,7 +425,9 @@ describe("OAuthServerImpl — resolveBearerToken", () => {
     const oauth = makeOAuth();
     const { code, verifier } = await issueCode(oauth);
     const { data } = await issueToken(oauth, code, verifier);
-    expect(oauth.resolveBearerToken(data.access_token as string)).toBe(BRIDGE_TOKEN);
+    expect(oauth.resolveBearerToken(data.access_token as string)).toBe(
+      BRIDGE_TOKEN,
+    );
   });
 
   it("does NOT resolve the static bridge token itself — that path is in server.ts", () => {

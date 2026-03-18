@@ -15,7 +15,13 @@
  * Exit 0 = all pass, Exit 1 = failures present.
  */
 
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
@@ -30,7 +36,8 @@ const args = process.argv.slice(2);
 const explicitPort = args[0] ? Number.parseInt(args[0], 10) : null;
 const explicitToken = args[1] ?? null;
 
-let port, token;
+let port;
+let token;
 
 if (explicitPort && explicitToken) {
   // Direct mode — no lock file needed (used for --fixed-token bridges)
@@ -90,9 +97,15 @@ function record(status, name, detail = "") {
   results.sections.at(-1).items.push({ status, name, detail });
 }
 
-function pass(name, detail) { record("PASS", name, detail); }
-function warn(name, detail) { record("WARN", name, detail); }
-function fail(name, detail) { record("FAIL", name, detail); }
+function pass(name, detail) {
+  record("PASS", name, detail);
+}
+function warn(name, detail) {
+  record("WARN", name, detail);
+}
+function fail(name, detail) {
+  record("FAIL", name, detail);
+}
 
 function send(method, params) {
   return new Promise((resolve, reject) => {
@@ -125,10 +138,16 @@ function parse(resp) {
 ws.on("message", (data) => {
   const msg = JSON.parse(data.toString());
   const resolver = pending.get(msg.id);
-  if (resolver) { pending.delete(msg.id); resolver(msg); }
+  if (resolver) {
+    pending.delete(msg.id);
+    resolver(msg);
+  }
 });
 
-ws.on("error", (err) => { console.error("WebSocket error:", err.message); process.exit(1); });
+ws.on("error", (err) => {
+  console.error("WebSocket error:", err.message);
+  process.exit(1);
+});
 
 ws.on("open", async () => {
   try {
@@ -139,19 +158,31 @@ ws.on("open", async () => {
       capabilities: {},
       clientInfo: { name: "smoke-test-v2", version: "2.0" },
     });
-    init.result ? pass("initialize") : fail("initialize", JSON.stringify(init.error));
+    init.result
+      ? pass("initialize")
+      : fail("initialize", JSON.stringify(init.error));
     const pv = init.result?.protocolVersion;
     ["2025-03-26", "2025-11-25"].includes(pv)
       ? pass("protocolVersion", pv)
       : warn("protocolVersion", `got ${pv}`);
     const si = init.result?.serverInfo?.name;
-    si === "claude-ide-bridge" ? pass("serverInfo", si) : fail("serverInfo", si);
+    si === "claude-ide-bridge"
+      ? pass("serverInfo", si)
+      : fail("serverInfo", si);
 
     // MCP 2025-11-25: notify server that client init is complete
-    ws.send(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }));
+    ws.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+        params: {},
+      }),
+    );
 
     const ping = await send("ping", {});
-    JSON.stringify(ping.result) === "{}" ? pass("ping") : fail("ping", JSON.stringify(ping.result));
+    JSON.stringify(ping.result) === "{}"
+      ? pass("ping")
+      : fail("ping", JSON.stringify(ping.result));
 
     // ── Tools list ────────────────────────────────────────────────────────────
     section("Tools list");
@@ -162,7 +193,13 @@ ws.on("open", async () => {
       ? pass("tool count", `${tools.length} tools`)
       : fail("tool count", `only ${tools.length}`);
 
-    for (const t of ["runInTerminal", "searchAndReplace", "getDiagnostics", "getHover", "captureScreenshot"]) {
+    for (const t of [
+      "runInTerminal",
+      "searchAndReplace",
+      "getDiagnostics",
+      "getHover",
+      "captureScreenshot",
+    ]) {
       toolNames.has(t) ? pass(`${t} registered`) : fail(`${t} registered`);
     }
 
@@ -170,38 +207,67 @@ ws.on("open", async () => {
     const ritSchema = tools.find((t) => t.name === "runInTerminal");
     ritSchema?.extensionRequired !== true
       ? pass("runInTerminal.extensionRequired absent (fallback enabled)")
-      : warn("runInTerminal.extensionRequired still true (fallback may not activate)");
+      : warn(
+          "runInTerminal.extensionRequired still true (fallback may not activate)",
+        );
 
     // ── 1. runInTerminal subprocess fallback ──────────────────────────────────
     section("1 · runInTerminal subprocess fallback");
-    const rit = await tool("runInTerminal", { command: "npm --version", timeout: 20 });
+    const rit = await tool("runInTerminal", {
+      command: "npm --version",
+      timeout: 20,
+    });
     const ritData = parse(rit);
     if (ritData._error) {
       fail("runInTerminal", `error: ${ritData._error.message}`);
     } else if (typeof ritData.exitCode === "number") {
       pass("runInTerminal returns exitCode", `exitCode=${ritData.exitCode}`);
-      typeof ritData.stdout === "string" && ritData.stdout.trim().match(/^\d+\.\d+/)
-        ? pass("stdout contains npm version", ritData.stdout.trim().slice(0, 20))
-        : warn("stdout unexpected", JSON.stringify(ritData.stdout ?? "").slice(0, 40));
+      typeof ritData.stdout === "string" &&
+      ritData.stdout.trim().match(/^\d+\.\d+/)
+        ? pass(
+            "stdout contains npm version",
+            ritData.stdout.trim().slice(0, 20),
+          )
+        : warn(
+            "stdout unexpected",
+            JSON.stringify(ritData.stdout ?? "").slice(0, 40),
+          );
       ritData.fallback === "subprocess"
         ? pass("fallback=subprocess (shell integration unavailable)")
         : pass("no fallback flag (shell integration active)");
-    } else if (ritData.success === false && ritData.error?.includes("Terminal not found")) {
+    } else if (
+      ritData.success === false &&
+      ritData.error?.includes("Terminal not found")
+    ) {
       // Extension connected but no active terminal in this MCP session — subprocess
       // fallback only triggers on null/timeout, not on "terminal not found" errors.
       // This is expected when testing via a fixed-token bridge with no open terminals.
-      warn("runInTerminal: no active terminal in session", "open a terminal in Windsurf or test via lock-file bridge");
+      warn(
+        "runInTerminal: no active terminal in session",
+        "open a terminal in Windsurf or test via lock-file bridge",
+      );
     } else {
-      fail("runInTerminal unexpected response", JSON.stringify(ritData).slice(0, 80));
+      fail(
+        "runInTerminal unexpected response",
+        JSON.stringify(ritData).slice(0, 80),
+      );
     }
 
     // ── 2. LSP tools ──────────────────────────────────────────────────────────
     section("2 · LSP tools");
-    const lspTools = ["goToDefinition", "findReferences", "getHover", "getDocumentSymbols", "searchWorkspaceSymbols"];
+    const lspTools = [
+      "goToDefinition",
+      "findReferences",
+      "getHover",
+      "getDocumentSymbols",
+      "searchWorkspaceSymbols",
+    ];
     const knownFile = "src/tools/terminal.ts";
 
     for (const t of lspTools) {
-      if (!toolNames.has(t)) { warn(t, "not in tools list"); continue; }
+      if (!toolNames.has(t)) {
+        warn(t, "not in tools list");
+      }
     }
 
     // getDocumentSymbols — most reliable LSP call (doesn't need position)
@@ -212,18 +278,31 @@ ws.on("open", async () => {
     } else if (symsData.source === "lsp" && symsData.count > 0) {
       pass("getDocumentSymbols via LSP", `${symsData.count} symbols`);
     } else if (symsData.count > 0) {
-      warn("getDocumentSymbols via fallback", `source=${symsData.source}, count=${symsData.count}`);
+      warn(
+        "getDocumentSymbols via fallback",
+        `source=${symsData.source}, count=${symsData.count}`,
+      );
     } else {
-      warn("getDocumentSymbols returned 0", JSON.stringify(symsData).slice(0, 60));
+      warn(
+        "getDocumentSymbols returned 0",
+        JSON.stringify(symsData).slice(0, 60),
+      );
     }
 
     // getHover at a known symbol position
-    const hover = await tool("getHover", { filePath: knownFile, line: 1, column: 8 });
+    const hover = await tool("getHover", {
+      filePath: knownFile,
+      line: 1,
+      column: 8,
+    });
     const hoverData = parse(hover);
     if (hoverData._error) {
       const msg = hoverData._error.message ?? "";
       msg.includes("timed out after retries")
-        ? warn("getHover LSP cold-start (retry budget exhausted)", msg.slice(0, 60))
+        ? warn(
+            "getHover LSP cold-start (retry budget exhausted)",
+            msg.slice(0, 60),
+          )
         : fail("getHover", msg.slice(0, 80));
     } else if (hoverData.found === false) {
       warn("getHover no hover at line 1:8", "try a different position");
@@ -232,7 +311,9 @@ ws.on("open", async () => {
     }
 
     // searchWorkspaceSymbols — workspace-wide
-    const wsyms = await tool("searchWorkspaceSymbols", { query: "createRunInTerminalTool" });
+    const wsyms = await tool("searchWorkspaceSymbols", {
+      query: "createRunInTerminalTool",
+    });
     const wsymsData = parse(wsyms);
     if (wsymsData._error) {
       fail("searchWorkspaceSymbols", wsymsData._error.message?.slice(0, 60));
@@ -248,15 +329,24 @@ ws.on("open", async () => {
     if (caps._error) {
       fail("getToolCapabilities", caps._error.message);
     } else {
-      pass("getToolCapabilities ok", `extensionConnected=${caps.extensionConnected}`);
+      pass(
+        "getToolCapabilities ok",
+        `extensionConnected=${caps.extensionConnected}`,
+      );
 
       // After a bridge restart with workspace arg, these should be true
       caps.linters?.tsc === true
         ? pass("tsc detected (global or local bin)")
-        : warn("tsc NOT detected", "restart bridge to pick up local node_modules/.bin probe");
+        : warn(
+            "tsc NOT detected",
+            "restart bridge to pick up local node_modules/.bin probe",
+          );
       caps.linters?.biome === true
         ? pass("biome detected")
-        : warn("biome NOT detected", "restart bridge to pick up local node_modules/.bin probe");
+        : warn(
+            "biome NOT detected",
+            "restart bridge to pick up local node_modules/.bin probe",
+          );
 
       // git should always be on global PATH
       caps.cliTools?.git === true
@@ -268,7 +358,10 @@ ws.on("open", async () => {
         ? pass("LSP feature available")
         : warn("LSP feature", caps.features?.lsp);
       caps.features?.terminalOutput
-        ? pass("terminalOutput feature", caps.features.terminalOutput.slice(0, 50))
+        ? pass(
+            "terminalOutput feature",
+            caps.features.terminalOutput.slice(0, 50),
+          )
         : warn("terminalOutput feature missing");
     }
 
@@ -284,14 +377,26 @@ ws.on("open", async () => {
     });
     const sarBareData = parse(sarBare);
     if (sarBareData._error) {
-      fail("searchAndReplace bare glob", sarBareData._error.message?.slice(0, 60));
+      fail(
+        "searchAndReplace bare glob",
+        sarBareData._error.message?.slice(0, 60),
+      );
     } else if (sarBareData.matched > 0) {
-      pass("bare *.ts glob matches nested files", `matched=${sarBareData.matched} files`);
+      pass(
+        "bare *.ts glob matches nested files",
+        `matched=${sarBareData.matched} files`,
+      );
     } else if (sarBareData.message?.includes("No files")) {
       // rg not available — grep fallback doesn't support --glob, so 0 matches expected
-      warn("bare *.ts glob matched 0 files", "rg not on PATH — glob normalisation untestable without rg");
+      warn(
+        "bare *.ts glob matched 0 files",
+        "rg not on PATH — glob normalisation untestable without rg",
+      );
     } else {
-      warn("bare *.ts glob matched 0 files", JSON.stringify(sarBareData).slice(0, 60));
+      warn(
+        "bare *.ts glob matched 0 files",
+        JSON.stringify(sarBareData).slice(0, 60),
+      );
     }
 
     // dryRun with explicit **/*.ts — same result expected
@@ -307,10 +412,16 @@ ws.on("open", async () => {
       if (sarBareData.matched > 0) {
         sarBareData.matched === sarDoubleData.matched
           ? pass("bare *.ts and **/*.ts produce identical results")
-          : warn("match counts differ", `bare=${sarBareData.matched}, double=${sarDoubleData.matched}`);
+          : warn(
+              "match counts differ",
+              `bare=${sarBareData.matched}, double=${sarDoubleData.matched}`,
+            );
       }
     } else if (!sarDoubleData._error && sarDoubleData.matched === 0) {
-      warn("**/*.ts baseline matched 0", "rg not on PATH — install ripgrep for full glob support");
+      warn(
+        "**/*.ts baseline matched 0",
+        "rg not on PATH — install ripgrep for full glob support",
+      );
     } else {
       warn("**/*.ts baseline", JSON.stringify(sarDoubleData).slice(0, 60));
     }
@@ -324,7 +435,10 @@ ws.on("open", async () => {
     });
     const sarNegData = parse(sarNeg);
     sarNegData._error
-      ? fail("negation glob !*.md errored", sarNegData._error.message?.slice(0, 60))
+      ? fail(
+          "negation glob !*.md errored",
+          sarNegData._error.message?.slice(0, 60),
+        )
       : pass("negation glob !*.md accepted without error");
 
     // ── 5. captureScreenshot graceful degradation ─────────────────────────────
@@ -337,11 +451,24 @@ ws.on("open", async () => {
       fail("captureScreenshot threw", shotData._error.message?.slice(0, 60));
     } else {
       const errText = shot.result?.content?.[0]?.text ?? "";
-      if (errText.includes("headless") || errText.includes("display server") || errText.includes("SSH remote")) {
-        pass("captureScreenshot returns actionable error on headless", errText.slice(0, 80));
-      } else if (errText.includes("not connected") || errText.includes("requires the extension")) {
+      if (
+        errText.includes("headless") ||
+        errText.includes("display server") ||
+        errText.includes("SSH remote")
+      ) {
+        pass(
+          "captureScreenshot returns actionable error on headless",
+          errText.slice(0, 80),
+        );
+      } else if (
+        errText.includes("not connected") ||
+        errText.includes("requires the extension")
+      ) {
         // Extension disconnected — can't reach the headless check yet, that's fine
-        warn("captureScreenshot: extension disconnected (reconnect to test headless message)", errText.slice(0, 60));
+        warn(
+          "captureScreenshot: extension disconnected (reconnect to test headless message)",
+          errText.slice(0, 60),
+        );
       } else {
         warn("captureScreenshot error message generic", errText.slice(0, 80));
       }
@@ -349,10 +476,13 @@ ws.on("open", async () => {
 
     // ── Error handling ────────────────────────────────────────────────────────
     section("Error handling");
-    const bad = await send("tools/call", { name: "nonexistent_tool", arguments: {} });
+    const bad = await send("tools/call", {
+      name: "nonexistent_tool",
+      arguments: {},
+    });
     // Bridge returns -32003 (tool not found) or -32602 (invalid params) — both acceptable
     const badCode = bad.error?.code;
-    (badCode === -32003 || badCode === -32602)
+    badCode === -32003 || badCode === -32602
       ? pass("invalid tool → tool-not-found error", `code=${badCode}`)
       : fail("invalid tool error code", JSON.stringify(bad.error));
 
@@ -362,19 +492,22 @@ ws.on("open", async () => {
       : fail("unknown method error code", JSON.stringify(unknownMethod.error));
 
     // ── Summary ───────────────────────────────────────────────────────────────
-    console.log("\n" + "─".repeat(56));
+    console.log(`\n${"─".repeat(56)}`);
     console.log(`  ✅ PASS  ${String(results.pass).padStart(3)}`);
-    console.log(`  ⚠️  WARN  ${String(results.warn).padStart(3)}  (expected before bridge restart)`);
+    console.log(
+      `  ⚠️  WARN  ${String(results.warn).padStart(3)}  (expected before bridge restart)`,
+    );
     console.log(`  ❌ FAIL  ${String(results.fail).padStart(3)}`);
     console.log("─".repeat(56));
 
     if (results.warn > 0) {
-      console.log("\nWARNs resolve after: pkill -f 'node dist/index.js' && npm run start");
+      console.log(
+        "\nWARNs resolve after: pkill -f 'node dist/index.js' && npm run start",
+      );
     }
 
     ws.close();
     process.exit(results.fail > 0 ? 1 : 0);
-
   } catch (err) {
     console.error("\nFATAL:", err.message);
     console.error(err.stack);

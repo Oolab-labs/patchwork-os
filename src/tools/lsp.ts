@@ -53,11 +53,16 @@ async function lspWithRetry<T>(
       if (signal) {
         signal.addEventListener(
           "abort",
-          () => { clearTimeout(timer); reject(new Error("aborted")); },
+          () => {
+            clearTimeout(timer);
+            reject(new Error("aborted"));
+          },
           { once: true },
         );
       }
-    }).catch(() => { /* aborted — loop will exit on next iteration */ });
+    }).catch(() => {
+      /* aborted — loop will exit on next iteration */
+    });
     if (signal?.aborted) return "timeout";
 
     try {
@@ -305,14 +310,15 @@ export function createGetCodeActionsTool(
       const endLine = requireInt(args, "endLine");
       const endColumn = requireInt(args, "endColumn");
       const result = await lspWithRetry(
-        () => extensionClient.getCodeActions(
-          filePath,
-          startLine,
-          startColumn,
-          endLine,
-          endColumn,
-          signal,
-        ),
+        () =>
+          extensionClient.getCodeActions(
+            filePath,
+            startLine,
+            startColumn,
+            endLine,
+            endColumn,
+            signal,
+          ),
         signal,
       );
       if (result === "timeout") return lspColdStartError();
@@ -556,14 +562,15 @@ export function createGetCallHierarchyTool(
       }
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
       const result = await lspWithRetry(
-        () => extensionClient.getCallHierarchy(
-          filePath,
-          line,
-          column,
-          rawDirection,
-          maxResults,
-          signal,
-        ),
+        () =>
+          extensionClient.getCallHierarchy(
+            filePath,
+            line,
+            column,
+            rawDirection,
+            maxResults,
+            signal,
+          ),
         signal,
       );
       if (result === "timeout") return lspColdStartError();

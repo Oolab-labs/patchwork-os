@@ -52,7 +52,7 @@ interface AccessToken {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CODE_TTL_MS = 5 * 60 * 1_000;   // 5 min
+const CODE_TTL_MS = 5 * 60 * 1_000; // 5 min
 const TOKEN_TTL_MS = 60 * 60 * 1_000; // 1 hour
 const DEFAULT_SCOPE = "mcp";
 const SUPPORTED_SCOPES = ["mcp"];
@@ -69,11 +69,16 @@ export class OAuthServerImpl implements OAuthServer {
   constructor(bridgeToken: string, issuerUrl: string) {
     this.bridgeToken = bridgeToken;
     this.issuerUrl = issuerUrl.replace(/\/$/, "");
-    this.gcTimer = setInterval(() => {
-      const now = Date.now();
-      for (const [k, v] of this.authCodes) if (v.expiresAt < now) this.authCodes.delete(k);
-      for (const [k, v] of this.accessTokens) if (v.expiresAt < now) this.accessTokens.delete(k);
-    }, 10 * 60 * 1_000);
+    this.gcTimer = setInterval(
+      () => {
+        const now = Date.now();
+        for (const [k, v] of this.authCodes)
+          if (v.expiresAt < now) this.authCodes.delete(k);
+        for (const [k, v] of this.accessTokens)
+          if (v.expiresAt < now) this.accessTokens.delete(k);
+      },
+      10 * 60 * 1_000,
+    );
     this.gcTimer.unref();
   }
 
@@ -99,7 +104,10 @@ export class OAuthServerImpl implements OAuthServer {
 
   // ── Authorization endpoint ────────────────────────────────────────────────
 
-  async handleAuthorize(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  async handleAuthorize(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
     const method = req.method ?? "GET";
     if (method === "GET") {
       this.authorizeGet(req, res);
@@ -116,12 +124,17 @@ export class OAuthServerImpl implements OAuthServer {
 
     // Authenticate resource owner via bridge token
     const authHeader = req.headers.authorization ?? "";
-    const fromHeader = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    const fromHeader = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : "";
     const fromQuery = url.searchParams.get("bridge_token") ?? "";
     const presented = fromHeader || fromQuery;
 
     if (!this.safeEqual(presented, this.bridgeToken)) {
-      res.writeHead(401, { "Content-Type": "text/plain", "WWW-Authenticate": "Bearer" });
+      res.writeHead(401, {
+        "Content-Type": "text/plain",
+        "WWW-Authenticate": "Bearer",
+      });
       res.end("Unauthorized: supply bridge token to initiate OAuth");
       return;
     }
@@ -136,16 +149,21 @@ export class OAuthServerImpl implements OAuthServer {
     }
 
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(this.approvalPage({
-      clientId: clientId!,
-      redirectUri: redirectUri!,
-      codeChallenge: codeChallenge!,
-      scope: scope ?? DEFAULT_SCOPE,
-      state: state ?? "",
-    }));
+    res.end(
+      this.approvalPage({
+        clientId: clientId!,
+        redirectUri: redirectUri!,
+        codeChallenge: codeChallenge!,
+        scope: scope ?? DEFAULT_SCOPE,
+        state: state ?? "",
+      }),
+    );
   }
 
-  private async authorizePost(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  private async authorizePost(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
     const body = await this.readBody(req);
     const action = body.get("action");
     const clientId = body.get("client_id") ?? "";
@@ -177,7 +195,10 @@ export class OAuthServerImpl implements OAuthServer {
 
     const code = this.randomToken(32);
     this.authCodes.set(code, {
-      clientId, redirectUri, codeChallenge, scope,
+      clientId,
+      redirectUri,
+      codeChallenge,
+      scope,
       expiresAt: Date.now() + CODE_TTL_MS,
       used: false,
     });
@@ -205,17 +226,32 @@ export class OAuthServerImpl implements OAuthServer {
     const verifier = body.get("code_verifier") ?? "";
 
     if (!code || !redirectUri || !clientId || !verifier) {
-      this.sendError(res, 400, "invalid_request", "missing required parameters");
+      this.sendError(
+        res,
+        400,
+        "invalid_request",
+        "missing required parameters",
+      );
       return;
     }
 
     const record = this.authCodes.get(code);
     if (!record) {
-      this.sendError(res, 400, "invalid_grant", "authorization code not found or expired");
+      this.sendError(
+        res,
+        400,
+        "invalid_grant",
+        "authorization code not found or expired",
+      );
       return;
     }
     if (record.used) {
-      this.sendError(res, 400, "invalid_grant", "authorization code already used");
+      this.sendError(
+        res,
+        400,
+        "invalid_grant",
+        "authorization code already used",
+      );
       return;
     }
     if (record.expiresAt < Date.now()) {
@@ -240,7 +276,8 @@ export class OAuthServerImpl implements OAuthServer {
 
     const accessToken = this.randomToken(32);
     this.accessTokens.set(accessToken, {
-      clientId, scope: record.scope,
+      clientId,
+      scope: record.scope,
       expiresAt: Date.now() + TOKEN_TTL_MS,
     });
 
@@ -265,7 +302,10 @@ export class OAuthServerImpl implements OAuthServer {
     } catch {
       // RFC 7009: always 200
     }
-    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    });
     res.end("{}");
   }
 
@@ -304,7 +344,10 @@ export class OAuthServerImpl implements OAuthServer {
   }
 
   private pkceVerify(verifier: string, challenge: string): boolean {
-    const hash = crypto.createHash("sha256").update(verifier).digest("base64url");
+    const hash = crypto
+      .createHash("sha256")
+      .update(verifier)
+      .digest("base64url");
     return this.safeEqual(hash, challenge);
   }
 
@@ -320,7 +363,11 @@ export class OAuthServerImpl implements OAuthServer {
     });
   }
 
-  private sendJson(res: ServerResponse, status: number, body: Record<string, unknown>): void {
+  private sendJson(
+    res: ServerResponse,
+    status: number,
+    body: Record<string, unknown>,
+  ): void {
     res.writeHead(status, {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
@@ -329,7 +376,12 @@ export class OAuthServerImpl implements OAuthServer {
     res.end(JSON.stringify(body));
   }
 
-  private sendError(res: ServerResponse, status: number, error: string, description?: string): void {
+  private sendError(
+    res: ServerResponse,
+    status: number,
+    error: string,
+    description?: string,
+  ): void {
     this.sendJson(res, status, {
       error,
       ...(description ? { error_description: description } : {}),
@@ -337,8 +389,12 @@ export class OAuthServerImpl implements OAuthServer {
   }
 
   private parseAuthorizeParams(url: URL): {
-    error?: string; clientId?: string; redirectUri?: string;
-    codeChallenge?: string; scope?: string; state?: string;
+    error?: string;
+    clientId?: string;
+    redirectUri?: string;
+    codeChallenge?: string;
+    scope?: string;
+    state?: string;
   } {
     const responseType = url.searchParams.get("response_type");
     const clientId = url.searchParams.get("client_id");
@@ -348,11 +404,14 @@ export class OAuthServerImpl implements OAuthServer {
     const state = url.searchParams.get("state");
 
     if (responseType !== "code") return { error: "unsupported_response_type" };
-    if (!clientId || !redirectUri || !codeChallenge) return { error: "invalid_request" };
+    if (!clientId || !redirectUri || !codeChallenge)
+      return { error: "invalid_request" };
     if (codeChallengeMethod !== "S256") return { error: "invalid_request" };
 
     return {
-      clientId, redirectUri, codeChallenge,
+      clientId,
+      redirectUri,
+      codeChallenge,
       scope: url.searchParams.get("scope") ?? DEFAULT_SCOPE,
       state: state ?? "",
     };
@@ -361,12 +420,19 @@ export class OAuthServerImpl implements OAuthServer {
   // ── Approval page HTML ────────────────────────────────────────────────────
 
   private approvalPage(opts: {
-    clientId: string; redirectUri: string; codeChallenge: string;
-    scope: string; state: string;
+    clientId: string;
+    redirectUri: string;
+    codeChallenge: string;
+    scope: string;
+    state: string;
   }): string {
-    const e = (s: string) => s
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    const e = (s: string) =>
+      s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 
     return `<!DOCTYPE html>
 <html lang="en">

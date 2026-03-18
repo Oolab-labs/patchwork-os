@@ -134,7 +134,9 @@ describe("probeAll — local node_modules/.bin fallback", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    const { mkdtempSync, mkdirSync, writeFileSync, chmodSync } = await import("node:fs");
+    const { mkdtempSync, mkdirSync, writeFileSync, chmodSync } = await import(
+      "node:fs"
+    );
     const { join } = await import("node:path");
     const { tmpdir } = await import("node:os");
     tmpDir = mkdtempSync(join(tmpdir(), "probe-test-"));
@@ -208,7 +210,11 @@ describe("probeAll — local node_modules/.bin fallback", () => {
       if (typeof cb === "function") {
         const arg = (args as string[])[0];
         if (arg === "tsc") {
-          (cb as (err: null, stdout: string, stderr: string) => void)(null, "/usr/local/bin/tsc", "");
+          (cb as (err: null, stdout: string, stderr: string) => void)(
+            null,
+            "/usr/local/bin/tsc",
+            "",
+          );
         } else {
           const err = new Error("not found") as NodeJS.ErrnoException;
           err.code = "ENOENT";

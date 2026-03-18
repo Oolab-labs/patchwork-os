@@ -176,10 +176,7 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       // Authorization endpoint
-      if (
-        parsedUrl.pathname === "/oauth/authorize" &&
-        req.method === "GET"
-      ) {
+      if (parsedUrl.pathname === "/oauth/authorize" && req.method === "GET") {
         if (this.oauthServer) {
           this.oauthServer.handleAuthorize(req, res);
         } else {
@@ -190,10 +187,7 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       // Token endpoint
-      if (
-        parsedUrl.pathname === "/oauth/token" &&
-        req.method === "POST"
-      ) {
+      if (parsedUrl.pathname === "/oauth/token" && req.method === "POST") {
         if (this.oauthServer) {
           this.oauthServer.handleToken(req, res).catch((err) => {
             if (!res.headersSent) {
@@ -209,10 +203,7 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       // Revocation endpoint (RFC 7009)
-      if (
-        parsedUrl.pathname === "/oauth/revoke" &&
-        req.method === "POST"
-      ) {
+      if (parsedUrl.pathname === "/oauth/revoke" && req.method === "POST") {
         if (this.oauthServer) {
           this.oauthServer.handleRevoke(req, res).catch(() => {
             // RFC 7009: always 200
@@ -300,9 +291,10 @@ export class Server extends EventEmitter<ServerEvents> {
       const bearer = bearerFromHeader || bearerFromQuery;
 
       const isStaticToken = timingSafeTokenCompare(bearer, this.authToken);
-      const oauthResolved = !isStaticToken && this.oauthServer
-        ? this.oauthServer.resolveBearerToken(bearer)
-        : null;
+      const oauthResolved =
+        !isStaticToken && this.oauthServer
+          ? this.oauthServer.resolveBearerToken(bearer)
+          : null;
       // oauthResolved is the bridge token if the OAuth token is valid; null otherwise
       if (!isStaticToken && !oauthResolved) {
         res.writeHead(401, {
