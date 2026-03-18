@@ -1,0 +1,101 @@
+# deploy/nginx-claude-bridge.conf.template
+# Reference template — domain and port are injected by the install scripts.
+# Do NOT use this file directly. Use bootstrap-new-vps.sh or install-vps-service.sh
+# which write the final nginx config to /etc/nginx/sites-available/claude-bridge
+# with $DOMAIN and $PORT substituted.
+#
+# To manually generate from this template:
+#   DOMAIN=bridge.example.com PORT=9000 \
+#   envsubst '$DOMAIN $PORT' < deploy/nginx-claude-bridge.conf.template \
+#   > /etc/nginx/sites-available/claude-bridge
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    # Let Certbot complete ACME HTTP-01 challenges
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    # Redirect all other HTTP to HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${DOMAIN};
+
+    # TLS — Certbot populates these after: certbot --nginx -d ${DOMAIN}
+    # ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    # include /etc/letsencrypt/options-ssl-nginx.conf;
+    # ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Security headers
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # /mcp — Streamable HTTP MCP endpoint (SSE-safe, never buffer)
+    location /mcp {
+        proxy_pass http://127.0.0.1:${PORT};
+        proxy_http_version 1.1;
+
+        # SSE requires no buffering
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 10s;
+
+        # Forward auth and MCP session headers
+        proxy_set_header Authorization $http_authorization;
+        proxy_pass_header Authorization;
+        proxy_set_header Mcp-Session-Id $http_mcp_session_id;
+        proxy_pass_header Mcp-Session-Id;
+
+        # Standard proxy headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket upgrade passthrough
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+
+    # /health — unauthenticated health check
+    location /health {
+        proxy_pass http://127.0.0.1:${PORT};
+        proxy_http_version 1.1;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 10s;
+    }
+
+    # /.well-known — MCP server card + OAuth discovery
+    location /.well-known/ {
+        proxy_pass http://127.0.0.1:${PORT};
+        proxy_http_version 1.1;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 10s;
+    }
+
+    # Block everything else
+    location / {
+        return 404;
+    }
+}
+
+# Note: add this to the `http {}` block in /etc/nginx/nginx.conf if not present
+# (bootstrap-new-vps.sh and install-vps-service.sh do this automatically):
+#
+# map $http_upgrade $connection_upgrade {
+#     default upgrade;
+#     ''      close;
+# }
