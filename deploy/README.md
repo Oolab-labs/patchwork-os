@@ -6,30 +6,58 @@ Production VPS deployment files for claude-ide-bridge.
 
 | File | Purpose |
 |------|---------|
-| `claude-ide-bridge.service` | systemd unit — auto-starts bridge on boot, restarts on crash |
-| `nginx-claude-bridge.conf` | nginx reverse proxy — HTTPS on `bridge.massappealdesigns.co.ke` |
-| `install-vps-service.sh` | One-shot installer — runs both of the above end-to-end |
+| `bootstrap-new-vps.sh` | **Full fresh-server setup** — Node.js, clone, build, user, firewall, systemd, nginx, Certbot |
+| `install-vps-service.sh` | **Idempotent updater** — re-installs service + nginx after `git pull` on an existing server |
+| `nginx-claude-bridge.conf.template` | nginx config reference (domain + port injected by scripts) |
+| `claude-ide-bridge.service.template` | systemd unit reference (paths + user injected by scripts) |
 | `claude-ide-bridge@.service` | Template unit for multi-user demo instances (alternate pattern) |
 
-## Quick Setup
+## First-time setup (new VPS)
 
 ```bash
-# From repo root on the VPS, as root:
+# Option A: run remotely on fresh server
+DOMAIN=bridge.example.com bash <(curl -fsSL https://raw.githubusercontent.com/Oolab-labs/claude-ide-bridge/main/deploy/bootstrap-new-vps.sh)
+
+# Option B: after cloning the repo
+DOMAIN=bridge.example.com bash deploy/bootstrap-new-vps.sh
+```
+
+The bootstrap script handles everything end-to-end:
+1. Installs Node.js 20, nginx, certbot
+2. Creates a dedicated `claude-bridge` system user (non-root)
+3. Clones the repo to `/opt/claude-ide-bridge`
+4. Runs `npm ci && npm run build`
+5. Generates `.env.vps` with a random auth token
+6. Opens ports 80/443 in ufw
+7. Installs and enables the systemd service
+8. Writes the nginx config with your domain injected
+9. Runs Certbot for HTTPS
+10. Starts the bridge and confirms it's healthy
+
+**Required:** `DOMAIN` env var pointing to a subdomain that resolves to your VPS IP.
+
+**Optional overrides:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REPO_URL` | GitHub upstream | Git repo to clone |
+| `INSTALL_DIR` | `/opt/claude-ide-bridge` | Where to install |
+| `SERVICE_USER` | `claude-bridge` | System user to run as |
+| `PORT` | `9000` | Bridge listen port |
+| `BRANCH` | `main` | Git branch |
+| `SKIP_CERTBOT` | `0` | Set to `1` to skip TLS (DNS not ready) |
+
+## Updating an existing server
+
+```bash
+cd /opt/claude-ide-bridge   # or wherever INSTALL_DIR is
+git pull
+npm ci
+npm run build
 bash deploy/install-vps-service.sh
 ```
 
-This will:
-1. Install and enable the systemd service (reads from `.env.vps`)
-2. Install the nginx site config for `bridge.massappealdesigns.co.ke`
-3. Obtain a TLS cert via Certbot
-4. Stop the tmux bridge session (now superseded)
-5. Start the service and confirm it's healthy
-
-**Prerequisites:**
-- `.env.vps` present with `PORT`, `WORKSPACE`, `FIXED_TOKEN` set
-- `npm run build` has been run (`dist/index.js` exists)
-- DNS: `bridge.massappealdesigns.co.ke` → VPS IP
-- Packages: `nginx`, `certbot`, `python3-certbot-nginx`
+`install-vps-service.sh` re-generates the systemd unit and nginx config from the current state of `.env.vps`, then restarts the service. It auto-detects the domain and service user from the existing installation — no config needed.
 
 ## Day-to-day management
 
@@ -37,11 +65,11 @@ This will:
 # View live logs
 journalctl -u claude-ide-bridge -f
 
-# Restart after code change
-npm run build && systemctl restart claude-ide-bridge
-
 # Check status
 systemctl status claude-ide-bridge
+
+# Restart after code change
+npm run build && systemctl restart claude-ide-bridge
 
 # Stop (won't restart until manually started)
 systemctl stop claude-ide-bridge
@@ -50,17 +78,17 @@ systemctl stop claude-ide-bridge
 ## MCP endpoint
 
 ```
-https://bridge.massappealdesigns.co.ke/mcp
+https://<your-domain>/mcp
 ```
 
-Use this in `.mcp.json` for Claude Desktop, claude.ai Custom Connectors, or any remote MCP client:
+Use in `.mcp.json` for Claude Desktop, claude.ai Custom Connectors, or any remote MCP client:
 
 ```json
 {
   "mcpServers": {
     "claude-ide-bridge": {
       "type": "http",
-      "url": "https://bridge.massappealdesigns.co.ke/mcp",
+      "url": "https://your-domain/mcp",
       "headers": {
         "Authorization": "Bearer ${BRIDGE_TOKEN}"
       }
@@ -69,21 +97,8 @@ Use this in `.mcp.json` for Claude Desktop, claude.ai Custom Connectors, or any 
 }
 ```
 
-Set `BRIDGE_TOKEN` in your shell profile. Retrieve it anytime:
+Set `BRIDGE_TOKEN` in your shell profile. Retrieve the token anytime:
 
 ```bash
-claude-ide-bridge print-token
-# or directly from .env.vps:
-grep FIXED_TOKEN /root/claude-ide-bridge/.env.vps
-```
-
-## Updating
-
-```bash
-# Pull latest, rebuild, restart
-cd /root/claude-ide-bridge
-git pull
-npm install
-npm run build
-systemctl restart claude-ide-bridge
+grep FIXED_TOKEN /opt/claude-ide-bridge/.env.vps
 ```
