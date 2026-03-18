@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.4.0 — 2026-03-18)
+## Current State (v2.4.1 — 2026-03-19)
 
 - 138+ MCP tools; 1237+ bridge tests + 369 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - Extension v1.0.9 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.4.0`)
@@ -22,6 +22,16 @@ Development direction and exploration guidance. Living document — update as pr
 - Remote Desktop IDE support: extension runs in remote extension host (SSH/Cursor SSH); `print-token` CLI subcommand for headless VPS setup
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.4.1 shipped (2026-03-19) — VPS/headless tool improvements + deploy overhaul:**
+- `openInBrowser`: detects headless server (no DISPLAY/WAYLAND_DISPLAY); serves HTML over a one-shot loopback HTTP server and returns URL + SSH tunnel instructions instead of silently calling `xdg-open`
+- `getDiagnostics`: timeoutMs 5s → 30s (CLI linters cold-start on VPS disk)
+- `getBufferContent`: timeoutMs 5s → 15s (readline streaming on slow storage)
+- `runInTerminal`: description leads with subprocess fallback story for VPS/SSH
+- `listTerminals`/`getTerminalOutput`: point to `runInTerminal` when extension absent on headless
+- `openFile`: headless no-editor message now explains tracked state and suggests `editText`/`getBufferContent`
+- `config`: `VPS_ALLOWLIST_EXTRAS` + `--vps` flag adds curl, systemctl, journalctl, nginx, pm2, docker to runCommand allowlist; wired into `start-vps.sh` and systemd service
+- `deploy`: full overhaul — `bootstrap-new-vps.sh` handles fresh server end-to-end (Node.js, clone, build, user, ufw, systemd, nginx, Certbot); `install-vps-service.sh` becomes idempotent updater; all paths/domains parameterised via env vars (nothing hardcoded); template reference files added
 
 **v2.1.36 shipped (2026-03-17) — correctness sweep + SecretStorage fix:**
 - Signal propagation: `searchAndReplace`, `lsp.ts` tools, `getDocumentSymbols`, `generateTests`, `terminal.ts` — cancellation now flows through to extension requests and file I/O

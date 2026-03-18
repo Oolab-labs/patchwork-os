@@ -542,6 +542,8 @@ export function createRunInTerminalTool(
         "Works headlessly on VPS/SSH — falls back to direct subprocess when extension is disconnected or shell integration unavailable. " +
         "When the extension IS connected, execution is also visible in the VS Code terminal panel. " +
         "Prefer this over runCommand when you need output capture on a headless server.",
+      inputSchema: {
+        type: "object" as const,
         required: ["command"],
         properties: {
           command: {
