@@ -28,6 +28,7 @@ export interface Config {
   watch: boolean;
   plugins: string[];
   pluginWatch: boolean;
+  vps: boolean;
   fixedToken: string | null;
   issuerUrl: string | null;
 }
@@ -44,6 +45,21 @@ const DEFAULT_ALLOWLIST = [
   "eslint",
   "biome",
 ];
+
+/**
+ * Extra commands enabled by --vps flag for headless server deployments.
+ * Not interpreter commands — safe to allowlist when no GUI IDE is attached.
+ */
+export const VPS_ALLOWLIST_EXTRAS = [
+  "curl",
+  "systemctl",
+  "journalctl",
+  "service",
+  "nginx",
+  "pm2",
+  "docker",
+];
+
 
 /** Commands that can execute arbitrary code via flags like -e, -c, --eval.
  *  These are blocked from the default allowlist but can be added via --allow-command. */
@@ -243,6 +259,7 @@ export function parseConfig(argv: string[]): Config {
   let gracePeriodMs = fileConfig.gracePeriodMs ?? 30_000;
   let autoTmux = fileConfig.autoTmux ?? false;
   let watch = false;
+  let vps = false;
   let pluginWatch = fileConfig.pluginWatch ?? false;
   let fixedToken: string | null = fileConfig.fixedToken ?? null;
   let issuerUrl: string | null = fileConfig.issuerUrl ?? null;
@@ -336,6 +353,10 @@ export function parseConfig(argv: string[]): Config {
       case "--config":
         // Already consumed above to load config file; skip the value
         i++;
+        break;
+      case "--vps":
+        vps = true;
+        commandAllowlist.push(...VPS_ALLOWLIST_EXTRAS);
         break;
       case "--watch":
         watch = true;
@@ -457,6 +478,7 @@ Options:
   --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
   --grace-period <ms>       Reconnect grace period in ms (default: 30000, max: 600000)
   --watch                   Supervisor mode: auto-restart bridge on crash (exponential backoff, max 30s)
+  --vps                     VPS/headless mode: expands runCommand allowlist with curl, systemctl, journalctl, nginx, pm2, docker
   --auto-tmux               Auto-wrap in tmux session if not already inside one
   --config <path>           Load config file (default: ./claude-ide-bridge.config.json)
   --verbose                 Enable debug logging
@@ -611,5 +633,6 @@ Environment Variables:
     pluginWatch,
     fixedToken,
     issuerUrl,
+    vps,
   };
 }

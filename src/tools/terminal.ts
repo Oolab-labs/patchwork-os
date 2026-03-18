@@ -192,7 +192,8 @@ export function createListTerminalsTool(
       name: "listTerminals",
       extensionRequired: true,
       description:
-        "List all active VS Code integrated terminals. Returns terminal names, indices, and whether output capture is available. Requires the VS Code extension.",
+        "List all active VS Code integrated terminals. Returns terminal names, indices, and whether output capture is available. " +
+        "Requires the VS Code extension — on headless VPS/SSH without the extension, use runInTerminal instead.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -251,7 +252,8 @@ export function createGetTerminalOutputTool(
       name: "getTerminalOutput",
       extensionRequired: true,
       description:
-        "Get recent output from a VS Code integrated terminal. Identify the terminal by name or index (from listTerminals). Returns the last N lines of output. Requires the VS Code extension with terminal output capture enabled.",
+        "Get recent output from a VS Code integrated terminal. Identify the terminal by name or index (from listTerminals). Returns the last N lines of output. " +
+        "Requires the VS Code extension — on headless VPS/SSH, use runInTerminal which captures output directly via subprocess fallback.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -536,13 +538,10 @@ export function createRunInTerminalTool(
       name: "runInTerminal",
       annotations: { destructiveHint: true, openWorldHint: true },
       description:
-        "Execute a command in a VS Code integrated terminal and wait for it to complete. " +
-        "Returns the exit code and full output — unlike sendTerminalCommand (fire-and-forget), " +
-        "this is synchronous. Unlike runCommand, execution is visible in the VS Code terminal panel. " +
-        "On SSH remotes or when shell integration is unavailable, automatically falls back to a " +
-        "direct subprocess so the tool remains functional headlessly.",
-      inputSchema: {
-        type: "object" as const,
+        "Execute a command and wait for completion, returning exit code and full output. " +
+        "Works headlessly on VPS/SSH — falls back to direct subprocess when extension is disconnected or shell integration unavailable. " +
+        "When the extension IS connected, execution is also visible in the VS Code terminal panel. " +
+        "Prefer this over runCommand when you need output capture on a headless server.",
         required: ["command"],
         properties: {
           command: {

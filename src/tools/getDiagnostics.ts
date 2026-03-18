@@ -166,7 +166,8 @@ export function createGetDiagnosticsTool(
       },
     },
 
-    timeoutMs: 5_000,
+    // 30s: CLI linters (tsc, biome) can be slow on cold start over VPS disk
+    timeoutMs: 30_000,
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const uri = optionalString(args, "uri");
       const severityFilter = optionalString(args, "severity") as
