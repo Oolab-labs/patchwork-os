@@ -28,6 +28,7 @@ export function createSetHandoffNoteTool(_sessionId: string) {
   return {
     schema: {
       name: "setHandoffNote",
+      annotations: { destructiveHint: true },
       description:
         "Save a context note that persists across sessions — readable by Claude Code CLI, Claude Desktop, and any other MCP client connected to this bridge. Use this to hand off context when switching between the desktop app and the terminal (e.g. 'working on auth bug in login.ts:42, next step: fix token expiry logic').",
       inputSchema: {
@@ -75,6 +76,7 @@ export function createGetHandoffNoteTool() {
   return {
     schema: {
       name: "getHandoffNote",
+      annotations: { readOnlyHint: true },
       description:
         "Retrieve the handoff context note left by a previous session (Claude Desktop or Claude Code CLI). Call this at the start of a session to pick up where you left off.",
       inputSchema: {

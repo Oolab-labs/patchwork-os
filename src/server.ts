@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { Logger } from "./logger.js";
+import { createOAuthServer, type OAuthServer } from "./oauth.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 
 const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -100,6 +101,7 @@ export class Server extends EventEmitter<ServerEvents> {
   private lastClaudeConnectionTime = 0;
   private lastExtensionConnectionTime = 0;
   private startTime = Date.now();
+  private oauthServer: OAuthServer;
 
   /** Set by bridge to provide health data */
   public healthDataFn: (() => Record<string, unknown>) | null = null;
@@ -135,6 +137,7 @@ export class Server extends EventEmitter<ServerEvents> {
         `authToken is only ${authToken.length} chars — production tokens should be ≥ 32 chars (crypto.randomBytes(32).toString('hex'))`,
       );
     }
+    this.oauthServer = createOAuthServer(authToken);
     this.httpServer = http.createServer((req, res) => {
       // Security headers on all responses
       res.setHeader("X-Content-Type-Options", "nosniff");
@@ -196,6 +199,47 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // Privacy policy — redirect to hosted docs page.
+      if (req.url === "/privacy" && req.method === "GET") {
+        res.writeHead(302, {
+          Location:
+            "https://oolab-labs.github.io/claude-ide-bridge/privacy.html",
+        });
+        res.end();
+        return;
+      }
+
+      // OAuth 2.1 endpoints — no auth required (they ARE the auth flow).
+      const reqPath = new URL(req.url ?? "/", "http://localhost").pathname;
+      if (reqPath === "/.well-known/oauth-protected-resource") {
+        this.oauthServer.handleProtectedResourceMetadata(req, res);
+        return;
+      }
+      if (reqPath === "/.well-known/oauth-authorization-server") {
+        this.oauthServer.handleAuthorizationServerMetadata(req, res);
+        return;
+      }
+      if (reqPath === "/authorize") {
+        this.oauthServer.handleAuthorize(req, res).catch((err) => {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "text/plain" });
+            res.end("Internal Server Error");
+          }
+          this.logger.error(`OAuth /authorize error: ${err instanceof Error ? err.message : String(err)}`);
+        });
+        return;
+      }
+      if (reqPath === "/token" && req.method === "POST") {
+        this.oauthServer.handleToken(req, res).catch((err) => {
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "text/plain" });
+            res.end("Internal Server Error");
+          }
+          this.logger.error(`OAuth /token error: ${err instanceof Error ? err.message : String(err)}`);
+        });
+        return;
+      }
+
       // All other HTTP endpoints require Bearer token authentication.
       // This prevents any local process or network peer (if --bind 0.0.0.0 is used)
       // from reading internal state without possessing the session auth token.
@@ -209,7 +253,10 @@ export class Server extends EventEmitter<ServerEvents> {
       const bearerFromQuery = parsedUrl.searchParams.get("token") ?? "";
       const bearer = bearerFromHeader || bearerFromQuery;
       if (!timingSafeTokenCompare(bearer, this.authToken)) {
-        res.writeHead(401, { "Content-Type": "text/plain" });
+        res.writeHead(401, {
+          "Content-Type": "text/plain",
+          "WWW-Authenticate": this.oauthServer.wwwAuthenticate(),
+        });
         res.end("Unauthorized");
         return;
       }
@@ -529,6 +576,7 @@ export class Server extends EventEmitter<ServerEvents> {
             reject(new Error("Unexpected server address"));
             return;
           }
+          this.oauthServer.setPort(addr.port, bindAddress);
           // Ping clients every 30s; terminate after 3 missed pongs (90s tolerance)
           this.pingInterval = setInterval(() => {
             const now = Date.now();
@@ -588,6 +636,7 @@ export class Server extends EventEmitter<ServerEvents> {
 
   async close(): Promise<void> {
     if (this.pingInterval) clearInterval(this.pingInterval);
+    this.oauthServer.close();
     for (const client of this.wss.clients) {
       client.close(1001, "Server shutting down");
     }

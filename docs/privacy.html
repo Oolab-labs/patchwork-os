@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy — Claude IDE Bridge</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+      color: #1a1a1a;
+      line-height: 1.65;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.15rem; margin-top: 2rem; }
+    .meta { color: #666; font-size: 0.9rem; margin-bottom: 2.5rem; }
+    a { color: #1a56db; }
+    ul { padding-left: 1.5rem; }
+    li { margin-bottom: 0.35rem; }
+    .note {
+      background: #f0f4ff;
+      border-left: 3px solid #1a56db;
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1.5rem 0;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Privacy Policy</h1>
+<p class="meta">Claude IDE Bridge &mdash; Last updated: March 2026</p>
+
+<div class="note">
+  <strong>Short version:</strong> Claude IDE Bridge runs entirely on your own machine.
+  No data about you, your code, or your IDE is collected, transmitted, or stored by Oolab Labs.
+</div>
+
+<h2>1. What Claude IDE Bridge is</h2>
+<p>
+  Claude IDE Bridge is an open-source, self-hosted bridge server that connects Claude Code
+  (Anthropic's CLI) to your local IDE (VS Code and compatible editors). It runs as a local
+  process on your machine and communicates only with your IDE and your local Claude Code session.
+</p>
+
+<h2>2. Data we do not collect</h2>
+<p>Oolab Labs does not collect, receive, or have access to any of the following:</p>
+<ul>
+  <li>Your source code, file contents, or project structure</li>
+  <li>IDE state, diagnostics, or editor activity</li>
+  <li>Terminal commands or their output</li>
+  <li>Authentication tokens or credentials</li>
+  <li>Usage statistics, telemetry, or analytics</li>
+  <li>IP addresses, device identifiers, or any personally identifiable information</li>
+</ul>
+
+<h2>3. How data flows</h2>
+<p>
+  All communication occurs locally on your machine via WebSocket or HTTP on
+  <code>localhost</code>. Data may flow between:
+</p>
+<ul>
+  <li>Your IDE extension and the bridge server (local WebSocket)</li>
+  <li>Claude Code CLI and the bridge server (local WebSocket or stdio)</li>
+  <li>Claude API calls initiated by Claude Code (governed by
+    <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's Privacy Policy</a>)</li>
+</ul>
+<p>
+  When you use the optional <code>--bind 0.0.0.0</code> flag to expose the bridge on your
+  network or the internet, traffic between the bridge and remote Claude Code clients travels
+  over your own network. Oolab Labs has no visibility into this traffic.
+</p>
+
+<h2>4. Authentication tokens</h2>
+<p>
+  The bridge generates a random authentication token stored in
+  <code>~/.claude/ide/&lt;port&gt;.lock</code> on your local file system. This token is
+  used only to authenticate connections to your bridge. It is never sent to or stored by
+  Oolab Labs.
+</p>
+
+<h2>5. Third-party services</h2>
+<p>
+  The bridge itself makes no outbound network requests. Any AI inference is performed by
+  Claude Code, which calls Anthropic's API directly. Use of Claude Code and the Claude API
+  is subject to <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's Privacy Policy</a>.
+</p>
+
+<h2>6. Open source</h2>
+<p>
+  Claude IDE Bridge is fully open source. You can inspect everything it does at
+  <a href="https://github.com/Oolab-labs/claude-ide-bridge" target="_blank" rel="noopener">github.com/Oolab-labs/claude-ide-bridge</a>.
+</p>
+
+<h2>7. Changes to this policy</h2>
+<p>
+  If this policy changes materially, the updated version will be published at this URL and
+  the "Last updated" date above will be revised. Because no personal data is collected,
+  changes are unlikely.
+</p>
+
+<h2>8. Contact</h2>
+<p>
+  Questions about this policy can be directed to
+  <a href="mailto:mcp-review@anthropic.com">the maintainer</a> via the
+  <a href="https://github.com/Oolab-labs/claude-ide-bridge/issues" target="_blank" rel="noopener">GitHub issue tracker</a>.
+</p>
+
+</body>
+</html>

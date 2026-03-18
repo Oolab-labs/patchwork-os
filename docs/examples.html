@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Usage Examples — Claude IDE Bridge</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+      color: #1a1a1a;
+      line-height: 1.65;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.25rem; margin-top: 2.5rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.4rem; }
+    h3 { font-size: 1rem; margin-top: 1.5rem; margin-bottom: 0.25rem; color: #374151; }
+    .meta { color: #666; font-size: 0.9rem; margin-bottom: 2.5rem; }
+    a { color: #1a56db; }
+    pre {
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+    code { font-family: ui-monospace, monospace; font-size: 0.875em; }
+    .prompt {
+      background: #eff6ff;
+      border-left: 3px solid #1a56db;
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1rem 0;
+      font-style: italic;
+    }
+    .prompt::before {
+      content: "User prompt: ";
+      font-style: normal;
+      font-weight: 600;
+      color: #1a56db;
+    }
+    .tools {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-top: 0.5rem;
+    }
+    .tools strong { color: #374151; }
+    ol { padding-left: 1.5rem; }
+    li { margin-bottom: 0.5rem; }
+    .example-num {
+      display: inline-block;
+      background: #1a56db;
+      color: #fff;
+      border-radius: 50%;
+      width: 1.6rem;
+      height: 1.6rem;
+      text-align: center;
+      line-height: 1.6rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-right: 0.5rem;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Usage Examples</h1>
+<p class="meta">Claude IDE Bridge — realistic prompts and what they unlock</p>
+
+<p>
+  These examples show how Claude Code uses the bridge to interact with your live IDE.
+  Each example includes the user prompt, the bridge tools involved, and the outcome.
+</p>
+
+<!-- ───────────────────────────────────────────────────── -->
+<h2><span class="example-num">1</span> Fix all errors in the current file</h2>
+
+<div class="prompt">
+  Fix all the TypeScript errors in the file I have open right now.
+</div>
+
+<h3>What happens</h3>
+<ol>
+  <li>Bridge calls <code>getActiveFile</code> — reads the path of the file currently focused in the editor.</li>
+  <li>Bridge calls <code>getDiagnostics</code> for that file — returns the live compiler errors from VS Code's language server, with exact line numbers, error codes, and messages (e.g. <em>"TS2345: Argument of type 'string' is not assignable to parameter of type 'number'"</em>).</li>
+  <li>Bridge calls <code>readFile</code> to get the current file contents.</li>
+  <li>Claude reasons over the errors and the code, writes corrected content.</li>
+  <li>Bridge calls <code>editFile</code> — applies the changes directly in the open editor, preserving unsaved state and undo history.</li>
+  <li>Bridge calls <code>getDiagnostics</code> again to confirm the error count dropped to zero.</li>
+</ol>
+
+<h3>Why the bridge is needed</h3>
+<p>
+  Without the bridge, Claude Code has no access to live compiler diagnostics — it can only
+  read files from disk. The bridge exposes VS Code's Language Server Protocol output in
+  real time, so Claude sees the same errors you see in the Problems panel, including errors
+  in files that haven't been saved yet.
+</p>
+
+<div class="tools"><strong>Tools used:</strong> getActiveFile, getDiagnostics, readFile, editFile</div>
+
+<!-- ───────────────────────────────────────────────────── -->
+<h2><span class="example-num">2</span> Find every caller of a function and rename it safely</h2>
+
+<div class="prompt">
+  Rename the function <code>getUserById</code> to <code>fetchUserById</code> everywhere
+  it's used across the project.
+</div>
+
+<h3>What happens</h3>
+<ol>
+  <li>Bridge calls <code>getDocumentSymbols</code> on the file containing <code>getUserById</code> — locates the exact definition position.</li>
+  <li>Bridge calls <code>findReferences</code> with that position — returns every call site across all project files, with file paths and line numbers, using the live LSP index.</li>
+  <li>Claude groups the edits by file (definition + all callers) and builds a minimal change set.</li>
+  <li>Bridge calls <code>editFile</code> for each file — applies the rename atomically, one file at a time, without touching unrelated lines.</li>
+  <li>Bridge calls <code>getDiagnostics</code> project-wide to confirm no import or type errors were introduced.</li>
+</ol>
+
+<h3>Why the bridge is needed</h3>
+<p>
+  A naive text search would miss dynamic call patterns, miss callers in files that import
+  via re-exports, and have no way to verify correctness. The bridge uses the actual LSP
+  reference index — the same source of truth that powers VS Code's built-in rename refactor —
+  so every caller is found, even across dozens of files.
+</p>
+
+<div class="tools"><strong>Tools used:</strong> getDocumentSymbols, findReferences, editFile, getDiagnostics</div>
+
+<!-- ───────────────────────────────────────────────────── -->
+<h2><span class="example-num">3</span> Run tests, read failures, and fix the code</h2>
+
+<div class="prompt">
+  Run the tests for the auth module, find out what's failing, and fix it.
+</div>
+
+<h3>What happens</h3>
+<ol>
+  <li>Bridge calls <code>runTests</code> targeting the auth module — executes the test runner (Jest/Vitest/pytest/etc.) and returns structured results: pass/fail counts, test names, failure messages, and stack traces.</li>
+  <li>Claude reads the failure output — e.g. <em>"Expected 401 but received 200 on POST /login with expired token"</em>.</li>
+  <li>Bridge calls <code>readFile</code> on the relevant source and test files to understand the implementation.</li>
+  <li>Claude identifies the bug (e.g., token expiry check using <code>&gt;</code> instead of <code>&gt;=</code>) and writes the fix.</li>
+  <li>Bridge calls <code>editFile</code> to apply the change in the editor.</li>
+  <li>Bridge calls <code>runTests</code> again — confirms all tests now pass before reporting back.</li>
+</ol>
+
+<h3>Why the bridge is needed</h3>
+<p>
+  The bridge runs the test suite through the IDE's integrated test runner and returns
+  machine-readable results — not raw terminal output. Claude gets structured pass/fail data
+  it can reason over directly, and can loop: fix → re-run → verify, without any manual
+  copy-pasting from a terminal window.
+</p>
+
+<div class="tools"><strong>Tools used:</strong> runTests, readFile, editFile</div>
+
+<!-- ───────────────────────────────────────────────────── -->
+<h2>Prerequisites</h2>
+<p>
+  All examples require:
+</p>
+<ol>
+  <li>Claude IDE Bridge running locally (<code>npm install -g claude-ide-bridge &amp;&amp; claude-ide-bridge start-all</code>)</li>
+  <li>The companion VS Code extension installed and connected (shown as "Connected" in the status bar)</li>
+  <li>Claude Code CLI configured to use the bridge (<code>claude-ide-bridge gen-claude-md</code> adds the MCP config)</li>
+</ol>
+<p>
+  See the <a href="https://github.com/Oolab-labs/claude-ide-bridge#readme" target="_blank" rel="noopener">README</a>
+  for full setup instructions.
+</p>
+
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IP Allowlist — Claude IDE Bridge</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+      color: #1a1a1a;
+      line-height: 1.65;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.2rem; margin-top: 2.5rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.4rem; }
+    h3 { font-size: 1rem; margin-top: 1.5rem; color: #374151; }
+    .meta { color: #666; font-size: 0.9rem; margin-bottom: 2.5rem; }
+    a { color: #1a56db; }
+    pre {
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      font-size: 0.875rem;
+      line-height: 1.6;
+    }
+    code {
+      font-family: ui-monospace, monospace;
+      font-size: 0.875em;
+      background: #f3f4f6;
+      padding: 0.1em 0.35em;
+      border-radius: 3px;
+    }
+    pre code { background: none; padding: 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin: 1rem 0;
+    }
+    th {
+      background: #f9fafb;
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid #e5e7eb;
+      font-weight: 600;
+    }
+    td {
+      padding: 0.55rem 0.75rem;
+      border: 1px solid #e5e7eb;
+      vertical-align: top;
+    }
+    .note {
+      background: #f0f4ff;
+      border-left: 3px solid #1a56db;
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1.5rem 0;
+    }
+    .warn {
+      background: #fffbeb;
+      border-left: 3px solid #f59e0b;
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1.5rem 0;
+    }
+    ul, ol { padding-left: 1.5rem; }
+    li { margin-bottom: 0.4rem; }
+  </style>
+</head>
+<body>
+
+<h1>IP Allowlist Guide</h1>
+<p class="meta">Claude IDE Bridge — for self-hosters exposing the bridge remotely</p>
+
+<div class="note">
+  <strong>Local use only?</strong> If you run Claude Code CLI on the same machine as the
+  bridge (the default setup), no firewall changes are needed. This guide applies only when
+  exposing the bridge to the network — for remote Claude Code, claude.ai Custom Connectors,
+  or Claude Desktop.
+</div>
+
+<h2>When you need an IP allowlist</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Client</th>
+      <th>Connection origin</th>
+      <th>Allowlist needed?</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Claude Code CLI (local)</td>
+      <td><code>127.0.0.1</code> — same machine</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>Claude Code CLI (remote SSH)</td>
+      <td>Developer's machine IP</td>
+      <td>Allowlist developer's IP only</td>
+    </tr>
+    <tr>
+      <td>claude.ai Custom Connectors</td>
+      <td>Anthropic's server IPs</td>
+      <td><strong>Yes</strong> — see below</td>
+    </tr>
+    <tr>
+      <td>Claude Desktop (MCP connector)</td>
+      <td>Anthropic's server IPs</td>
+      <td><strong>Yes</strong> — see below</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Anthropic's IP ranges</h2>
+
+<p>
+  When claude.ai or Claude Desktop connects to a remote MCP server, requests originate from
+  Anthropic's infrastructure. You must allowlist these IPs on your firewall or reverse proxy.
+</p>
+
+<p>
+  The canonical, always-up-to-date list is published by Anthropic at:<br>
+  <a href="https://docs.claude.com/en/api/ip-addresses" target="_blank" rel="noopener">
+    https://docs.claude.com/en/api/ip-addresses
+  </a>
+</p>
+
+<div class="warn">
+  <strong>Always use Anthropic's published list.</strong> IP ranges change over time.
+  Do not hardcode IPs from this page — fetch the live list from the URL above.
+</div>
+
+<h2>Configuring your firewall</h2>
+
+<h3>ufw (Ubuntu / Debian)</h3>
+<pre><code># Replace &lt;BRIDGE_PORT&gt; with your bridge port (default: auto-assigned, check the lock file)
+# Replace each IP/CIDR with the current entries from Anthropic's IP list
+
+for cidr in 160.79.104.0/23 54.84.169.0/24; do   # example — use live list
+  ufw allow from "$cidr" to any port &lt;BRIDGE_PORT&gt; proto tcp
+done</code></pre>
+
+<h3>iptables</h3>
+<pre><code>BRIDGE_PORT=&lt;BRIDGE_PORT&gt;
+for cidr in 160.79.104.0/23 54.84.169.0/24; do   # example — use live list
+  iptables -A INPUT -p tcp --dport "$BRIDGE_PORT" -s "$cidr" -j ACCEPT
+done
+iptables -A INPUT -p tcp --dport "$BRIDGE_PORT" -j DROP</code></pre>
+
+<h3>nginx (reverse proxy with allowlist)</h3>
+<pre><code>server {
+    listen 443 ssl;
+    server_name bridge.example.com;
+
+    # Allow Anthropic IPs (replace with current list from Anthropic's docs)
+    allow 160.79.104.0/23;
+    allow 54.84.169.0/24;
+    # Also allow your own IP for direct access
+    allow &lt;YOUR_IP&gt;;
+    deny all;
+
+    location / {
+        proxy_pass http://127.0.0.1:&lt;BRIDGE_PORT&gt;;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 310s;
+    }
+}</code></pre>
+
+<h2>Binding the bridge to a public address</h2>
+
+<p>By default the bridge binds to <code>127.0.0.1</code> (loopback only). To accept
+remote connections, start with <code>--bind</code>:</p>
+
+<pre><code># Bind to all interfaces (firewall/allowlist required)
+claude-ide-bridge --bind 0.0.0.0
+
+# Bind to a specific interface
+claude-ide-bridge --bind 10.0.0.5</code></pre>
+
+<div class="warn">
+  Always protect a publicly bound bridge with both the IP allowlist <em>and</em> the
+  bearer token auth that the bridge enforces by default. The token lives in
+  <code>~/.claude/ide/&lt;port&gt;.lock</code>. Use <code>claude-ide-bridge print-token</code>
+  to retrieve it for MCP client configuration.
+</div>
+
+<h2>Generating the MCP config for a remote bridge</h2>
+
+<p>Once the bridge is reachable, generate a client config pointing to it:</p>
+
+<pre><code># On the remote VPS — print the auth token
+claude-ide-bridge print-token
+
+# On the local machine — generate an HTTP MCP config
+bash scripts/gen-mcp-config.sh remote \
+  --host bridge.example.com:&lt;BRIDGE_PORT&gt; \
+  --token &lt;TOKEN&gt;</code></pre>
+
+<p>
+  See the
+  <a href="https://github.com/Oolab-labs/claude-ide-bridge#remote-deployment"
+     target="_blank" rel="noopener">Remote Deployment section of the README</a>
+  for the full walkthrough.
+</p>
+
+</body>
+</html>
