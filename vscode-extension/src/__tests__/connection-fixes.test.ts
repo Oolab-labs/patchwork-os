@@ -15,7 +15,11 @@ vi.mock("ws", () => {
       EventEmitter.prototype.removeAllListeners.call(this);
       return this;
     });
-    removeListener = vi.fn(function (this: MockWebSocket, event: string, fn: Function) {
+    removeListener = vi.fn(function (
+      this: MockWebSocket,
+      event: string,
+      fn: Function,
+    ) {
       EventEmitter.prototype.removeListener.call(this, event, fn as any);
       return this;
     });
@@ -58,7 +62,9 @@ describe("connectDirect — DISCONNECTING state guard", () => {
   it("calls connect() when state is DISCONNECTED", () => {
     const conn = new BridgeConnection("ws://localhost:9999", "tok", -1);
     (conn as any).state = ConnectionState.DISCONNECTED;
-    const connectSpy = vi.spyOn(conn as any, "connect").mockImplementation(() => {});
+    const connectSpy = vi
+      .spyOn(conn as any, "connect")
+      .mockImplementation(() => {});
     conn.connectDirect(9999, "tok");
     expect(connectSpy).toHaveBeenCalledOnce();
     conn.dispose();

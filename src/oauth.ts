@@ -1,339 +1,206 @@
-import crypto from "node:crypto";
-import http from "node:http";
-import { parse as parseQs } from "node:querystring";
-
 /**
- * OAuth 2.1 Authorization Server + Resource Server for claude-ide-bridge.
+ * OAuth 2.0 Authorization Server for claude-ide-bridge.
  *
- * Implements the MCP spec (2025-11-25) authorization requirements:
- *  - /.well-known/oauth-protected-resource  (RFC 9728)
- *  - /.well-known/oauth-authorization-server (RFC 8414)
- *  - GET  /authorize  — approval page
- *  - POST /authorize  — form submit (issues auth code)
- *  - POST /token      — code + PKCE verifier → access token
+ * Implements the MCP OAuth 2.0 profile required for authenticated remote servers:
+ *   - RFC 8414  Authorization Server Metadata (/.well-known/oauth-authorization-server)
+ *   - RFC 6749  Authorization Code Grant with PKCE (S256, RFC 7636)
+ *   - RFC 7009  Token Revocation (/oauth/revoke)
  *
- * The existing authToken from the lock file is issued as the access token —
- * no new token system is needed.
+ * Design
+ *   All state is in-memory. The bridge's static bearer token is the resource owner
+ *   credential: only someone who knows it can open an OAuth flow via the approval page.
+ *   Issued access tokens are opaque base64url strings stored in a TTL map.
+ *   resolveBearerToken() is called by server.ts to admit OAuth-issued tokens alongside
+ *   the static bridge token (backward compat).
+ *   Refresh tokens are not issued.
+ *
+ * Security
+ *   PKCE S256 mandatory. Auth codes single-use, 5 min TTL. Access tokens 1 h TTL.
+ *   All string comparisons via crypto.timingSafeEqual. HTML output attribute-escaped.
  */
 
-// Redirect URIs accepted from MCP clients (Claude Code / Claude Desktop).
-export const ALLOWED_REDIRECT_URIS = new Set([
-  "https://claude.ai/api/mcp/auth_callback",
-  "https://claude.com/api/mcp/auth_callback",
-  "http://localhost:6274/oauth/callback",
-  "http://localhost:6274/oauth/callback/debug",
-]);
+import crypto from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { URL } from "node:url";
 
-// Max concurrent in-flight auth codes (anti-stuffing).
-const MAX_PENDING_CODES = 20;
-// Auth code TTL in milliseconds.
-const CODE_TTL_MS = 60_000;
-// Prune interval for expired codes.
-const PRUNE_INTERVAL_MS = 5 * 60_000;
+// ── Public interface (consumed by server.ts) ──────────────────────────────────
 
-interface PendingCode {
-  challenge: string; // S256 code_challenge value
-  redirectUri: string;
-  clientId: string;
-  expiresAt: number;
+export interface OAuthServer {
+  handleDiscovery(res: ServerResponse): void;
+  handleAuthorize(req: IncomingMessage, res: ServerResponse): Promise<void>;
+  handleToken(req: IncomingMessage, res: ServerResponse): Promise<void>;
+  handleRevoke(req: IncomingMessage, res: ServerResponse): Promise<void>;
+  resolveBearerToken(token: string): string | null;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+// ── Internal types ────────────────────────────────────────────────────────────
 
-function verifyS256(verifier: string, storedChallenge: string): boolean {
-  // RFC 7636: verifier charset [A-Z a-z 0-9 - . _ ~], length 43-128
-  if (!/^[A-Za-z0-9\-._~]{43,128}$/.test(verifier)) return false;
-  const digest = crypto
-    .createHash("sha256")
-    .update(verifier, "ascii")
-    .digest("base64url");
-  if (digest.length !== storedChallenge.length) return false;
-  return crypto.timingSafeEqual(
-    Buffer.from(digest),
-    Buffer.from(storedChallenge),
-  );
-}
-
-function buildApprovalPage(params: {
+interface AuthCode {
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
-  state: string;
-  port: number;
-}): string {
-  const { clientId, redirectUri, codeChallenge, state, port } = params;
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Authorize — Claude IDE Bridge</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 480px;
-           margin: 80px auto; padding: 0 1rem; color: #1a1a1a; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 2rem; }
-    h1 { font-size: 1.25rem; margin-top: 0; }
-    p  { font-size: .9rem; color: #444; }
-    .client { font-weight: 600; }
-    .actions { display: flex; gap: .75rem; margin-top: 1.5rem; }
-    button { flex: 1; padding: .6rem; border-radius: 6px;
-             font-size: .95rem; cursor: pointer; border: 1px solid; }
-    .allow  { background: #1a56db; color: #fff; border-color: #1a56db; }
-    .deny   { background: #fff; color: #111; border-color: #ccc; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Authorize Access</h1>
-    <p>
-      <span class="client">${escapeHtml(clientId)}</span> wants to connect
-      to your local Claude IDE Bridge on port ${port}.
-    </p>
-    <p>This will grant access to your IDE tools, file system, and terminal.</p>
-    <form method="POST" action="/authorize">
-      <input type="hidden" name="response_type"         value="code">
-      <input type="hidden" name="client_id"             value="${escapeHtml(clientId)}">
-      <input type="hidden" name="redirect_uri"          value="${escapeHtml(redirectUri)}">
-      <input type="hidden" name="code_challenge"        value="${escapeHtml(codeChallenge)}">
-      <input type="hidden" name="code_challenge_method" value="S256">
-      <input type="hidden" name="state"                 value="${escapeHtml(state)}">
-      <div class="actions">
-        <button class="allow" type="submit" name="approve" value="true">Allow</button>
-        <button class="deny"  type="submit" name="approve" value="false">Deny</button>
-      </div>
-    </form>
-  </div>
-</body>
-</html>`;
+  scope: string;
+  expiresAt: number;
+  used: boolean;
 }
 
-function sendJson(
-  res: http.ServerResponse,
-  status: number,
-  body: unknown,
-  extraHeaders?: Record<string, string>,
-): void {
-  res.writeHead(status, {
-    "Content-Type": "application/json",
-    "Cache-Control": "no-store",
-    "Access-Control-Allow-Origin": "*",
-    ...extraHeaders,
-  });
-  res.end(JSON.stringify(body));
+interface AccessToken {
+  clientId: string;
+  scope: string;
+  expiresAt: number;
 }
 
-function oauthError(
-  res: http.ServerResponse,
-  status: number,
-  error: string,
-  description?: string,
-): void {
-  sendJson(res, status, {
-    error,
-    ...(description ? { error_description: description } : {}),
-  });
-}
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-async function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => {
-      if (chunks.reduce((n, b) => n + b.length, 0) + c.length > 65_536) {
-        reject(new Error("Request body too large"));
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    req.on("error", reject);
-  });
-}
+const CODE_TTL_MS = 5 * 60 * 1_000; // 5 min
+const TOKEN_TTL_MS = 60 * 60 * 1_000; // 1 hour
+const DEFAULT_SCOPE = "mcp";
+const SUPPORTED_SCOPES = ["mcp"];
 
-export class OAuthServer {
-  private port = 0;
-  private bindAddress = "127.0.0.1";
-  private codes = new Map<string, PendingCode>();
-  private pruneTimer: ReturnType<typeof setInterval> | null = null;
+// ── OAuthServerImpl ───────────────────────────────────────────────────────────
 
-  constructor(private readonly authToken: string) {
-    this.pruneTimer = setInterval(() => this.pruneExpiredCodes(), PRUNE_INTERVAL_MS);
-    this.pruneTimer.unref();
+export class OAuthServerImpl implements OAuthServer {
+  private readonly bridgeToken: string;
+  private readonly issuerUrl: string;
+  private readonly authCodes = new Map<string, AuthCode>();
+  private readonly accessTokens = new Map<string, AccessToken>();
+  private readonly gcTimer: ReturnType<typeof setInterval>;
+
+  constructor(bridgeToken: string, issuerUrl: string) {
+    this.bridgeToken = bridgeToken;
+    this.issuerUrl = issuerUrl.replace(/\/$/, "");
+    this.gcTimer = setInterval(
+      () => {
+        const now = Date.now();
+        for (const [k, v] of this.authCodes)
+          if (v.expiresAt < now) this.authCodes.delete(k);
+        for (const [k, v] of this.accessTokens)
+          if (v.expiresAt < now) this.accessTokens.delete(k);
+      },
+      10 * 60 * 1_000,
+    );
+    this.gcTimer.unref();
   }
 
-  setPort(port: number, bindAddress = "127.0.0.1"): void {
-    this.port = port;
-    this.bindAddress = bindAddress;
+  destroy(): void {
+    clearInterval(this.gcTimer);
   }
 
-  close(): void {
-    if (this.pruneTimer) {
-      clearInterval(this.pruneTimer);
-      this.pruneTimer = null;
-    }
-  }
+  // ── RFC 8414 discovery ────────────────────────────────────────────────────
 
-  private baseUrl(): string {
-    const host =
-      this.bindAddress === "0.0.0.0" || this.bindAddress === "::"
-        ? "localhost"
-        : this.bindAddress;
-    return `http://${host}:${this.port}`;
-  }
-
-  private pruneExpiredCodes(): void {
-    const now = Date.now();
-    for (const [code, entry] of this.codes) {
-      if (entry.expiresAt < now) this.codes.delete(code);
-    }
-  }
-
-  /** WWW-Authenticate header value to include on 401 responses. */
-  wwwAuthenticate(): string {
-    const base = this.baseUrl();
-    return `Bearer realm="${base}", resource_metadata="${base}/.well-known/oauth-protected-resource"`;
-  }
-
-  // ──────────────────────────────────────────────────────────
-  // GET /.well-known/oauth-protected-resource (RFC 9728)
-  // ──────────────────────────────────────────────────────────
-  handleProtectedResourceMetadata(
-    _req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): void {
-    const base = this.baseUrl();
-    sendJson(res, 200, {
-      resource: base,
-      authorization_servers: [base],
-      bearer_methods_supported: ["header"],
-      resource_documentation:
-        "https://github.com/Oolab-labs/claude-ide-bridge",
-    });
-  }
-
-  // ──────────────────────────────────────────────────────────
-  // GET /.well-known/oauth-authorization-server (RFC 8414)
-  // ──────────────────────────────────────────────────────────
-  handleAuthorizationServerMetadata(
-    _req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): void {
-    const base = this.baseUrl();
-    sendJson(res, 200, {
-      issuer: base,
-      authorization_endpoint: `${base}/authorize`,
-      token_endpoint: `${base}/token`,
+  handleDiscovery(res: ServerResponse): void {
+    this.sendJson(res, 200, {
+      issuer: this.issuerUrl,
+      authorization_endpoint: `${this.issuerUrl}/oauth/authorize`,
+      token_endpoint: `${this.issuerUrl}/oauth/token`,
+      revocation_endpoint: `${this.issuerUrl}/oauth/revoke`,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
-      scopes_supported: ["mcp"],
+      scopes_supported: SUPPORTED_SCOPES,
     });
   }
 
-  // ──────────────────────────────────────────────────────────
-  // GET /authorize — show approval page
-  // POST /authorize — process approval form
-  // ──────────────────────────────────────────────────────────
+  // ── Authorization endpoint ────────────────────────────────────────────────
+
   async handleAuthorize(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
+    req: IncomingMessage,
+    res: ServerResponse,
   ): Promise<void> {
-    if (req.method === "GET") {
-      return this.handleAuthorizeGet(req, res);
+    const method = req.method ?? "GET";
+    if (method === "GET") {
+      this.authorizeGet(req, res);
+    } else if (method === "POST") {
+      await this.authorizePost(req, res);
+    } else {
+      res.writeHead(405, { "Content-Type": "text/plain", Allow: "GET, POST" });
+      res.end("Method Not Allowed");
     }
-    if (req.method === "POST") {
-      return this.handleAuthorizePost(req, res);
-    }
-    res.writeHead(405, { Allow: "GET, POST" });
-    res.end("Method Not Allowed");
   }
 
-  private handleAuthorizeGet(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): void {
-    const url = new URL(req.url ?? "/", "http://localhost");
-    const p = url.searchParams;
+  private authorizeGet(req: IncomingMessage, res: ServerResponse): void {
+    const url = new URL(req.url ?? "/", this.issuerUrl);
 
-    const err = this.validateAuthorizeParams(
-      p.get("response_type"),
-      p.get("redirect_uri"),
-      p.get("code_challenge"),
-      p.get("code_challenge_method"),
-    );
-    if (err) {
-      res.writeHead(400, { "Content-Type": "text/plain" });
-      res.end(`Bad Request: ${err}`);
+    // Authenticate resource owner via bridge token
+    const authHeader = req.headers.authorization ?? "";
+    const fromHeader = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : "";
+    const fromQuery = url.searchParams.get("bridge_token") ?? "";
+    const presented = fromHeader || fromQuery;
+
+    if (!this.safeEqual(presented, this.bridgeToken)) {
+      res.writeHead(401, {
+        "Content-Type": "text/plain",
+        "WWW-Authenticate": "Bearer",
+      });
+      res.end("Unauthorized: supply bridge token to initiate OAuth");
       return;
     }
 
-    const html = buildApprovalPage({
-      clientId: p.get("client_id") ?? "(unknown)",
-      redirectUri: p.get("redirect_uri") ?? "",
-      codeChallenge: p.get("code_challenge") ?? "",
-      state: p.get("state") ?? "",
-      port: this.port,
-    });
+    const { error, clientId, redirectUri, codeChallenge, scope, state } =
+      this.parseAuthorizeParams(url);
+
+    if (error) {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end(error);
+      return;
+    }
+
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(html);
+    res.end(
+      this.approvalPage({
+        clientId: clientId!,
+        redirectUri: redirectUri!,
+        codeChallenge: codeChallenge!,
+        scope: scope ?? DEFAULT_SCOPE,
+        state: state ?? "",
+      }),
+    );
   }
 
-  private async handleAuthorizePost(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
+  private async authorizePost(
+    req: IncomingMessage,
+    res: ServerResponse,
   ): Promise<void> {
-    let body: string;
-    try {
-      body = await readBody(req);
-    } catch {
+    const body = await this.readBody(req);
+    const action = body.get("action");
+    const clientId = body.get("client_id") ?? "";
+    const redirectUri = body.get("redirect_uri") ?? "";
+    const codeChallenge = body.get("code_challenge") ?? "";
+    const scope = body.get("scope") ?? DEFAULT_SCOPE;
+    const state = body.get("state") ?? "";
+
+    if (!clientId || !redirectUri || !codeChallenge) {
       res.writeHead(400, { "Content-Type": "text/plain" });
-      res.end("Bad Request: could not read body");
+      res.end("missing parameters");
       return;
     }
 
-    const p = parseQs(body) as Record<string, string>;
-    const redirectUri = p.redirect_uri ?? "";
-    const state = p.state ?? "";
-
-    const err = this.validateAuthorizeParams(
-      p.response_type ?? null,
-      redirectUri,
-      p.code_challenge ?? null,
-      p.code_challenge_method ?? null,
-    );
-    if (err) {
-      res.writeHead(400, { "Content-Type": "text/plain" });
-      res.end(`Bad Request: ${err}`);
-      return;
-    }
-
-    if (p.approve !== "true") {
-      const dest = new URL(redirectUri);
-      dest.searchParams.set("error", "access_denied");
-      if (state) dest.searchParams.set("state", state);
-      res.writeHead(302, { Location: dest.toString() });
+    if (action === "deny") {
+      const u = new URL(redirectUri);
+      u.searchParams.set("error", "access_denied");
+      if (state) u.searchParams.set("state", state);
+      res.writeHead(302, { Location: u.toString() });
       res.end();
       return;
     }
 
-    if (this.codes.size >= MAX_PENDING_CODES) {
-      res.writeHead(503, { "Content-Type": "text/plain" });
-      res.end("Service Unavailable: too many pending authorizations");
+    if (action !== "approve") {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("invalid action");
       return;
     }
 
-    const code = crypto.randomBytes(32).toString("hex");
-    this.codes.set(code, {
-      challenge: p.code_challenge ?? "",
+    const code = this.randomToken(32);
+    this.authCodes.set(code, {
+      clientId,
       redirectUri,
-      clientId: p.client_id ?? "",
+      codeChallenge,
+      scope,
       expiresAt: Date.now() + CODE_TTL_MS,
+      used: false,
     });
 
     const dest = new URL(redirectUri);
@@ -343,83 +210,285 @@ export class OAuthServer {
     res.end();
   }
 
-  private validateAuthorizeParams(
-    responseType: string | null,
-    redirectUri: string | null,
-    codeChallenge: string | null,
-    codeChallengeMethod: string | null,
-  ): string | null {
-    if (responseType !== "code") return "response_type must be 'code'";
-    if (!redirectUri || !ALLOWED_REDIRECT_URIS.has(redirectUri))
-      return "redirect_uri not in allowlist";
-    if (codeChallengeMethod !== "S256")
-      return "code_challenge_method must be 'S256'";
-    if (!codeChallenge || !/^[A-Za-z0-9\-._~]{43,128}$/.test(codeChallenge))
-      return "code_challenge missing or invalid";
-    return null;
-  }
+  // ── Token endpoint ────────────────────────────────────────────────────────
 
-  // ──────────────────────────────────────────────────────────
-  // POST /token — exchange auth code + PKCE for access token
-  // ──────────────────────────────────────────────────────────
-  async handleToken(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): Promise<void> {
-    if (req.method !== "POST") {
-      res.writeHead(405, { Allow: "POST" });
-      res.end("Method Not Allowed");
+  async handleToken(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await this.readBody(req);
+
+    if (body.get("grant_type") !== "authorization_code") {
+      this.sendError(res, 400, "unsupported_grant_type");
       return;
     }
 
-    let body: string;
-    try {
-      body = await readBody(req);
-    } catch {
-      oauthError(res, 400, "invalid_request", "Could not read request body");
+    const code = body.get("code") ?? "";
+    const redirectUri = body.get("redirect_uri") ?? "";
+    const clientId = body.get("client_id") ?? "";
+    const verifier = body.get("code_verifier") ?? "";
+
+    if (!code || !redirectUri || !clientId || !verifier) {
+      this.sendError(
+        res,
+        400,
+        "invalid_request",
+        "missing required parameters",
+      );
       return;
     }
 
-    const p = parseQs(body) as Record<string, string>;
-
-    if (p.grant_type !== "authorization_code") {
-      oauthError(res, 400, "unsupported_grant_type");
+    const record = this.authCodes.get(code);
+    if (!record) {
+      this.sendError(
+        res,
+        400,
+        "invalid_grant",
+        "authorization code not found or expired",
+      );
+      return;
+    }
+    if (record.used) {
+      this.sendError(
+        res,
+        400,
+        "invalid_grant",
+        "authorization code already used",
+      );
+      return;
+    }
+    if (record.expiresAt < Date.now()) {
+      this.authCodes.delete(code);
+      this.sendError(res, 400, "invalid_grant", "authorization code expired");
+      return;
+    }
+    if (!this.safeEqual(record.clientId, clientId)) {
+      this.sendError(res, 400, "invalid_grant", "client_id mismatch");
+      return;
+    }
+    if (!this.safeEqual(record.redirectUri, redirectUri)) {
+      this.sendError(res, 400, "invalid_grant", "redirect_uri mismatch");
+      return;
+    }
+    if (!this.pkceVerify(verifier, record.codeChallenge)) {
+      this.sendError(res, 400, "invalid_grant", "code_verifier mismatch");
       return;
     }
 
-    const code = p.code ?? "";
-    const verifier = p.code_verifier ?? "";
-    const redirectUri = p.redirect_uri ?? "";
+    record.used = true;
 
-    const entry = this.codes.get(code);
-    if (!entry || entry.expiresAt < Date.now()) {
-      this.codes.delete(code);
-      oauthError(res, 400, "invalid_grant", "Auth code expired or already used");
-      return;
-    }
+    const accessToken = this.randomToken(32);
+    this.accessTokens.set(accessToken, {
+      clientId,
+      scope: record.scope,
+      expiresAt: Date.now() + TOKEN_TTL_MS,
+    });
 
-    if (entry.redirectUri !== redirectUri) {
-      oauthError(res, 400, "invalid_grant", "redirect_uri mismatch");
-      return;
-    }
-
-    if (!verifyS256(verifier, entry.challenge)) {
-      oauthError(res, 400, "invalid_grant", "PKCE verification failed");
-      return;
-    }
-
-    // Consume the code — single-use only.
-    this.codes.delete(code);
-
-    sendJson(res, 200, {
-      access_token: this.authToken,
+    this.sendJson(res, 200, {
+      access_token: accessToken,
       token_type: "Bearer",
-      expires_in: 0,
-      scope: "mcp",
+      expires_in: Math.floor(TOKEN_TTL_MS / 1_000),
+      scope: record.scope,
     });
   }
-}
 
-export function createOAuthServer(authToken: string): OAuthServer {
-  return new OAuthServer(authToken);
+  // ── Revocation endpoint (RFC 7009) ────────────────────────────────────────
+
+  async handleRevoke(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    try {
+      const body = await this.readBody(req);
+      const token = body.get("token");
+      if (token) {
+        this.accessTokens.delete(token);
+        this.authCodes.delete(token);
+      }
+    } catch {
+      // RFC 7009: always 200
+    }
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    });
+    res.end("{}");
+  }
+
+  // ── Bearer resolution (called by server.ts) ───────────────────────────────
+
+  resolveBearerToken(token: string): string | null {
+    const record = this.accessTokens.get(token);
+    if (!record) return null;
+    if (record.expiresAt < Date.now()) {
+      this.accessTokens.delete(token);
+      return null;
+    }
+    return this.bridgeToken;
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+  private randomToken(bytes: number): string {
+    return crypto.randomBytes(bytes).toString("base64url");
+  }
+
+  private safeEqual(a: string, b: string): boolean {
+    const ab = Buffer.from(a);
+    const bb = Buffer.from(b);
+    const lenA = Buffer.allocUnsafe(4);
+    const lenB = Buffer.allocUnsafe(4);
+    lenA.writeUInt32BE(ab.length, 0);
+    lenB.writeUInt32BE(bb.length, 0);
+    const lenOk = crypto.timingSafeEqual(lenA, lenB);
+    const len = Math.max(ab.length, bb.length);
+    const padA = Buffer.alloc(len);
+    const padB = Buffer.alloc(len);
+    ab.copy(padA);
+    bb.copy(padB);
+    return crypto.timingSafeEqual(padA, padB) && lenOk;
+  }
+
+  private pkceVerify(verifier: string, challenge: string): boolean {
+    const hash = crypto
+      .createHash("sha256")
+      .update(verifier)
+      .digest("base64url");
+    return this.safeEqual(hash, challenge);
+  }
+
+  private readBody(req: IncomingMessage): Promise<URLSearchParams> {
+    return new Promise((resolve, reject) => {
+      let data = "";
+      req.on("data", (chunk: Buffer) => {
+        data += chunk.toString();
+        if (data.length > 8_192) reject(new Error("Request body too large"));
+      });
+      req.on("end", () => resolve(new URLSearchParams(data)));
+      req.on("error", reject);
+    });
+  }
+
+  private sendJson(
+    res: ServerResponse,
+    status: number,
+    body: Record<string, unknown>,
+  ): void {
+    res.writeHead(status, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
+    });
+    res.end(JSON.stringify(body));
+  }
+
+  private sendError(
+    res: ServerResponse,
+    status: number,
+    error: string,
+    description?: string,
+  ): void {
+    this.sendJson(res, status, {
+      error,
+      ...(description ? { error_description: description } : {}),
+    });
+  }
+
+  private parseAuthorizeParams(url: URL): {
+    error?: string;
+    clientId?: string;
+    redirectUri?: string;
+    codeChallenge?: string;
+    scope?: string;
+    state?: string;
+  } {
+    const responseType = url.searchParams.get("response_type");
+    const clientId = url.searchParams.get("client_id");
+    const redirectUri = url.searchParams.get("redirect_uri");
+    const codeChallenge = url.searchParams.get("code_challenge");
+    const codeChallengeMethod = url.searchParams.get("code_challenge_method");
+    const state = url.searchParams.get("state");
+
+    if (responseType !== "code") return { error: "unsupported_response_type" };
+    if (!clientId || !redirectUri || !codeChallenge)
+      return { error: "invalid_request" };
+    if (codeChallengeMethod !== "S256") return { error: "invalid_request" };
+
+    return {
+      clientId,
+      redirectUri,
+      codeChallenge,
+      scope: url.searchParams.get("scope") ?? DEFAULT_SCOPE,
+      state: state ?? "",
+    };
+  }
+
+  // ── Approval page HTML ────────────────────────────────────────────────────
+
+  private approvalPage(opts: {
+    clientId: string;
+    redirectUri: string;
+    codeChallenge: string;
+    scope: string;
+    state: string;
+  }): string {
+    const e = (s: string) =>
+      s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Authorize \u2014 Claude IDE Bridge</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         background:#0f1117;color:#e2e8f0;display:flex;align-items:center;
+         justify-content:center;min-height:100vh;padding:2rem}
+    .card{background:#1a1d27;border:1px solid #2d3148;border-radius:12px;
+          padding:2rem;max-width:420px;width:100%;box-shadow:0 4px 32px rgba(0,0,0,.4)}
+    .logo{font-size:1.5rem;font-weight:700;color:#818cf8;margin-bottom:1.5rem}
+    h1{font-size:1.1rem;margin-bottom:.5rem}
+    .client{font-size:.9rem;color:#94a3b8;margin-bottom:1.5rem;word-break:break-all}
+    .scope{background:#12141e;border:1px solid #2d3148;border-radius:8px;
+           padding:1rem;margin-bottom:1.5rem;font-size:.875rem;color:#94a3b8}
+    .scope strong{color:#e2e8f0;display:block;margin-bottom:.5rem}
+    .item::before{content:"\u2713 ";color:#34d399}
+    .actions{display:flex;gap:.75rem}
+    button{flex:1;padding:.65rem 1rem;border:none;border-radius:8px;
+           font-size:.95rem;font-weight:600;cursor:pointer;transition:opacity .15s}
+    button:hover{opacity:.85}
+    .approve{background:#818cf8;color:#0f1117}
+    .deny{background:#2d3148;color:#94a3b8}
+    footer{margin-top:1.25rem;font-size:.75rem;color:#475569;text-align:center}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">\u29ed Claude IDE Bridge</div>
+    <h1>Authorization Request</h1>
+    <p class="client">Client: <strong>${e(opts.clientId)}</strong></p>
+    <div class="scope">
+      <strong>Requested permissions</strong>
+      <div class="item">Full MCP tool access (read, write, execute)</div>
+    </div>
+    <form method="POST" action="/oauth/authorize">
+      <input type="hidden" name="client_id"      value="${e(opts.clientId)}">
+      <input type="hidden" name="redirect_uri"   value="${e(opts.redirectUri)}">
+      <input type="hidden" name="code_challenge" value="${e(opts.codeChallenge)}">
+      <input type="hidden" name="scope"          value="${e(opts.scope)}">
+      <input type="hidden" name="state"          value="${e(opts.state)}">
+      <div class="actions">
+        <button class="approve" type="submit" name="action" value="approve">Authorize</button>
+        <button class="deny"    type="submit" name="action" value="deny">Deny</button>
+      </div>
+    </form>
+    <footer>
+      Issuer: ${e(this.issuerUrl)}<br>
+      Only approve if you initiated this from your MCP client.
+    </footer>
+  </div>
+</body>
+</html>`;
+  }
 }

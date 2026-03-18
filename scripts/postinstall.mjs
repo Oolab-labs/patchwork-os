@@ -7,8 +7,8 @@
  *   @vscode/ripgrep  →  node_modules/.bin/rg
  */
 
+import { existsSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
 import { createRequire } from "node:module";
-import { existsSync, symlinkSync, unlinkSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,7 +27,8 @@ function linkBin(pkgName, binaryName, linkName = binaryName) {
     ];
     // Also check the package's bin field
     if (pkg.bin) {
-      const binEntry = typeof pkg.bin === "string" ? pkg.bin : pkg.bin[binaryName];
+      const binEntry =
+        typeof pkg.bin === "string" ? pkg.bin : pkg.bin[binaryName];
       if (binEntry) {
         candidates.unshift(path.join(root, "node_modules", pkgName, binEntry));
       }

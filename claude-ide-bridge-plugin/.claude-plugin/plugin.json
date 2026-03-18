@@ -1,12 +1,22 @@
 {
   "name": "claude-ide-bridge",
-  "version": "2.3.0",
-  "description": "Full IDE integration for Claude Code — 124+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, and more",
+  "version": "2.4.0",
+  "description": "Full IDE integration for Claude Code — 138+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth2, and more",
   "author": {
     "name": "Oolab Labs"
   },
   "homepage": "https://github.com/Oolab-labs/claude-ide-bridge#readme",
   "repository": "https://github.com/Oolab-labs/claude-ide-bridge",
   "license": "MIT",
-  "keywords": ["ide", "vscode", "windsurf", "lsp", "debugging", "terminal", "git", "github", "mcp"]
+  "keywords": [
+    "ide",
+    "vscode",
+    "windsurf",
+    "lsp",
+    "debugging",
+    "terminal",
+    "git",
+    "github",
+    "mcp"
+  ]
 }

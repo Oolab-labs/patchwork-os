@@ -206,7 +206,11 @@ describe("searchAndReplace — glob normalisation", () => {
 
   it("glob with path separator is passed through unchanged", async () => {
     const tool = createSearchAndReplaceTool(tmpDir);
-    await tool.handler({ pattern: "hello", replacement: "hi", glob: "src/**/*.ts" });
+    await tool.handler({
+      pattern: "hello",
+      replacement: "hi",
+      glob: "src/**/*.ts",
+    });
     const call = mockedExecSafe.mock.calls[0];
     const rgArgs: string[] = call[1] as string[];
     const globIdx = rgArgs.indexOf("--glob");
@@ -215,7 +219,11 @@ describe("searchAndReplace — glob normalisation", () => {
 
   it("glob already starting with '**/' is passed through unchanged", async () => {
     const tool = createSearchAndReplaceTool(tmpDir);
-    await tool.handler({ pattern: "hello", replacement: "hi", glob: "**/*.ts" });
+    await tool.handler({
+      pattern: "hello",
+      replacement: "hi",
+      glob: "**/*.ts",
+    });
     const call = mockedExecSafe.mock.calls[0];
     const rgArgs: string[] = call[1] as string[];
     const globIdx = rgArgs.indexOf("--glob");

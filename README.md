@@ -129,7 +129,7 @@ Requires `tmux` and the `claude` CLI to be on `PATH`.
 
 ## Claude Code Plugin
 
-The bridge ships as a **Claude Code plugin** with 9 skills, 3 subagents, and 3 hooks:
+The bridge ships as a **Claude Code plugin** with 9 skills, 3 subagents, and 7 hook events — available on the [Claude Code plugin directory](https://claude.com/plugins):
 
 ```bash
 # Load the plugin
@@ -235,7 +235,7 @@ Text editing · Workspace settings · File watchers · Decorations · `executeVS
 | Clipboard | 2 | Mixed |
 | HTTP | 2 | No |
 | VS Code Integration | 10 | Yes |
-| **Total** | **~119** | |
+| **Total** | **~138** | |
 
 ## MCP Prompts (Slash Commands)
 
@@ -745,7 +745,7 @@ claude-ide-bridge/
   claude-ide-bridge-plugin/
     skills/           9 slash commands
     agents/           3 specialized subagents
-    hooks/            3 lifecycle automations
+    hooks/            7 hook events (PreToolUse, PostToolUse, SessionStart, InstructionsLoaded, Elicitation, WorktreeCreate, SubagentStart)
     .mcp.json         MCP server config
 ```
 
@@ -818,7 +818,7 @@ Production-grade reliability:
 - Circuit breaker with exponential backoff for timeout cascades
 - Generation counter preventing stale handler responses
 - Extension-required tool filtering when extension disconnects
-- 1214 tests (bridge) + 362 extension tests; full WebSocket round-trip integration coverage
+- 1237 tests (bridge) + 362 extension tests; full WebSocket round-trip integration coverage
 - MCP elicitation support (`elicitation: {}` capability) — bridge can send `elicitation/create` mid-task to request structured user input via Claude Code's interactive dialog (Claude Code 2.1.76+)
 
 ## Building
@@ -827,7 +827,7 @@ Production-grade reliability:
 # Bridge
 npm run build        # TypeScript compilation
 npm run dev          # Development with tsx
-npm test             # Run 1214 bridge tests
+npm test             # Run 1237 bridge tests
 
 # Extension
 cd vscode-extension
