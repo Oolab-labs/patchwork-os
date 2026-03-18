@@ -120,7 +120,8 @@ export function createSearchAndReplaceTool(workspace: string) {
         // Handle negation globs ('!*.ts') by prepending after the '!'.
         const isNegation = glob.startsWith("!");
         const rawPattern = isNegation ? glob.slice(1) : glob;
-        const needsPrefix = !rawPattern.includes("/") && !rawPattern.startsWith("**/");
+        const needsPrefix =
+          !rawPattern.includes("/") && !rawPattern.startsWith("**/");
         const normalizedGlob = needsPrefix
           ? `${isNegation ? "!" : ""}**/${rawPattern}`
           : glob;
@@ -128,12 +129,16 @@ export function createSearchAndReplaceTool(workspace: string) {
       }
       rgArgs.push(workspace);
 
-      const findResult = await execSafe(resolveCommandPath("rg", workspace), rgArgs, {
-        cwd: workspace,
-        timeout: 15_000,
-        maxBuffer: 256 * 1024,
-        signal,
-      });
+      const findResult = await execSafe(
+        resolveCommandPath("rg", workspace),
+        rgArgs,
+        {
+          cwd: workspace,
+          timeout: 15_000,
+          maxBuffer: 256 * 1024,
+          signal,
+        },
+      );
 
       const matchedFiles = findResult.stdout
         .split("\n")

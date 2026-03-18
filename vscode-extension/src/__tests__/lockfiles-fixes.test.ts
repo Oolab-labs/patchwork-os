@@ -18,10 +18,7 @@ vi.mock("../constants", () => ({
 
 import * as fsp from "node:fs/promises";
 import * as vscode from "vscode";
-import {
-  readLockFilesAsync,
-  readLockFileForWorkspace,
-} from "../lockfiles";
+import { readLockFileForWorkspace, readLockFilesAsync } from "../lockfiles";
 
 const NOW = 1_700_000_000_000;
 
@@ -74,7 +71,9 @@ describe("readValidLockFiles — isBridge filter (bug #1)", () => {
   });
 
   it("accepts a bridge lock (isBridge=true) in readLockFilesAsync", async () => {
-    vi.mocked(fsp.readFile).mockResolvedValue(makeLock({ isBridge: true }) as any);
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      makeLock({ isBridge: true }) as any,
+    );
     const result = await readLockFilesAsync();
     expect(result).not.toBeNull();
     expect(result?.authToken).toBe("tok");

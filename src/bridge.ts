@@ -11,6 +11,7 @@ import { ExtensionClient } from "./extensionClient.js";
 import { FileLock } from "./fileLock.js";
 import { LockFileManager } from "./lockfile.js";
 import { Logger } from "./logger.js";
+import { OAuthServerImpl } from "./oauth.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
@@ -99,6 +100,12 @@ export class Bridge {
     this.lockFile = new LockFileManager(this.logger);
     this.authToken = config.fixedToken ?? randomUUID();
     this.server = new Server(this.authToken, this.logger);
+    if (config.issuerUrl) {
+      this.server.setOAuthServer(
+        new OAuthServerImpl(this.authToken, config.issuerUrl),
+      );
+      this.logger.info(`OAuth 2.0 enabled — issuer: ${config.issuerUrl}`);
+    }
     this.activityLog = new ActivityLog();
     this.extensionClient = new ExtensionClient(this.logger);
 
