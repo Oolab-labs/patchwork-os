@@ -1,6 +1,6 @@
 {
   "name": "claude-ide-bridge",
-  "version": "2.4.2",
+  "version": "2.4.3",
   "description": "Standalone MCP bridge for Claude Code IDE integration with any editor — 120+ tools for LSP, debugging, terminals, Git, GitHub, and more",
   "type": "module",
   "main": "dist/index.js",
@@ -58,7 +58,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
@@ -67,7 +67,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run build && node dist/index.js --help | grep -q issuer-url",
     "postinstall": "node scripts/postinstall.mjs || true",
     "smoke": "node smoke-test-v2.mjs",
     "remote": "bash scripts/start-remote.sh",
