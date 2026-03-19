@@ -409,7 +409,10 @@ export class BridgeConnection {
         const probeSocket = this.ws;
         this.sleepProbeTimer = setTimeout(() => {
           this.sleepProbeTimer = null;
-          if (this.ws === probeSocket && this.ws?.readyState === WebSocket.OPEN) {
+          if (
+            this.ws === probeSocket &&
+            this.ws?.readyState === WebSocket.OPEN
+          ) {
             this.log("Sleep/wake probe timed out — forcing reconnect");
             this.ws.terminate();
             this.handleDisconnect();
