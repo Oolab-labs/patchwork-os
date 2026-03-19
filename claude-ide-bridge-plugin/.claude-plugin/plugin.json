@@ -1,7 +1,7 @@
 {
   "name": "claude-ide-bridge",
-  "version": "2.4.1",
-  "description": "Full IDE integration for Claude Code — 138+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth2, and more",
+  "version": "2.4.10",
+  "description": "Full IDE integration for Claude Code — 124+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth2, and more",
   "author": {
     "name": "Oolab Labs"
   },

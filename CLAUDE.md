@@ -60,7 +60,7 @@ Run `npx biome check .` before committing.
 - New tools need unit tests in `src/tools/__tests__/`
 - New extension handlers need tests in `vscode-extension/src/__tests__/handlers/`
 - Use vitest for both bridge and extension tests
-- Coverage gates: 70% lines, 65% branches, 70% functions
+- Coverage gates: 75% lines, 70% branches, 75% functions
 - Test circuit breaker and reconnect behavior for connection-related changes
 
 ## Plugin System
