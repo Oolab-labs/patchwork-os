@@ -34,6 +34,11 @@ vi.mock("../lockfiles", () => ({
   readLockFilesAsync: vi.fn(async () => null),
 }));
 
+// Mock httpProbe so tryConnect() doesn't make real HTTP requests
+vi.mock("../httpProbe", () => ({
+  pingBridge: vi.fn(async () => true),
+}));
+
 import WebSocket from "ws";
 // Must import after mocks are set up
 import { BridgeConnection } from "../connection";
@@ -517,9 +522,10 @@ describe("tryConnect", () => {
     (bridge as any).state = 3; // ConnectionState.DISCONNECTING
 
     // Step 3: lock file resolves — tryConnect() .then() runs:
-    //   connecting=false, then calls connect()
+    //   connecting=false, then awaits pingBridge(), then calls connect()
     resolveLock({ port: 1234, authToken: "token" });
-    await Promise.resolve(); // flush .then() microtask
+    // Flush multiple microtask rounds: .then() fires → awaits pingBridge() → continues
+    for (let i = 0; i < 6; i++) await Promise.resolve();
 
     // After connect() is called (step 3), verify state is CONNECTING again.
     // This is the fix: connect() re-asserts state=CONNECTING before creating the ws.

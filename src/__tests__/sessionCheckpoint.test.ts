@@ -279,3 +279,41 @@ describe("SessionCheckpoint.loadLatest", () => {
     expect(result).not.toBeNull();
   });
 });
+
+// ── Checkpoint flush before stop (2c) ─────────────────────────────────────────
+
+describe("SessionCheckpoint — write before stop ordering", () => {
+  it("write() followed by stop() leaves file absent (stop deletes the written file)", () => {
+    const sc = new SessionCheckpoint(7777);
+    sc.write(sampleData);
+
+    // write() should have written the file
+    expect(mockFs.writeFileSync).toHaveBeenCalled();
+    const writeCalls = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock
+      .calls.length;
+
+    sc.stop();
+
+    // stop() should delete the file (unlinkSync called)
+    expect(mockFs.unlinkSync).toHaveBeenCalled();
+
+    // write() happened before stop() — write call count should be same (no extra writes by stop)
+    expect(
+      (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls.length,
+    ).toBe(writeCalls);
+  });
+
+  it("write() persists checkpoint data before stop() removes it", () => {
+    const sc = new SessionCheckpoint(7778);
+    sc.write(sampleData);
+
+    const written = (mockFs.writeFileSync as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as string;
+    const parsed = JSON.parse(written);
+    expect(parsed.port).toBe(sampleData.port);
+    expect(parsed.sessions).toHaveLength(1);
+
+    // Confirm stop() is safe after write()
+    expect(() => sc.stop()).not.toThrow();
+  });
+});

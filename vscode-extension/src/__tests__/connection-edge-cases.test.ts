@@ -34,6 +34,11 @@ vi.mock("../lockfiles", () => ({
   readLockFilesAsync: vi.fn(async () => null),
 }));
 
+// Mock httpProbe so tryConnect() doesn't make real HTTP requests
+vi.mock("../httpProbe", () => ({
+  pingBridge: vi.fn(async () => true),
+}));
+
 import WebSocket from "ws";
 // Must import after mocks are set up
 import { BridgeConnection } from "../connection";
