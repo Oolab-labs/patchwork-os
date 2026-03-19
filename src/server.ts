@@ -333,12 +333,15 @@ export class Server extends EventEmitter<ServerEvents> {
           : null;
       // oauthResolved is the bridge token if the OAuth token is valid; null otherwise
       if (!isStaticToken && !oauthResolved) {
+        // RFC 6750: only include error= when a token was actually presented but invalid
+        const tokenPresented = bearer.length > 0;
+        const wwwAuth = this.oauthServer && this.oauthIssuerUrl
+          ? `Bearer realm="claude-ide-bridge", resource_metadata="${this.oauthIssuerUrl}/.well-known/oauth-protected-resource"` +
+            (tokenPresented ? `, error="invalid_token"` : "")
+          : `Bearer realm="claude-ide-bridge"` + (tokenPresented ? `, error="invalid_token"` : "");
         res.writeHead(401, {
           "Content-Type": "text/plain",
-          // RFC 6750: indicate OAuth Bearer is accepted
-          "WWW-Authenticate": this.oauthServer
-            ? `Bearer realm="claude-ide-bridge", error="invalid_token"`
-            : `Bearer realm="claude-ide-bridge"`,
+          "WWW-Authenticate": wwwAuth,
         });
         res.end("Unauthorized");
         return;
