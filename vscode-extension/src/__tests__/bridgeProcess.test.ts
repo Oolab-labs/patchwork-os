@@ -304,3 +304,67 @@ describe("BridgeProcess — restart loop", () => {
     }
   });
 });
+
+// ── stderr capture in failure messages (1d) ───────────────────────────────────
+
+describe("BridgeProcess — stderr captured in failure message", () => {
+  it("includes last stderr output in onStartupFailed message on lock file timeout", async () => {
+    const ws = "/home/user/project-stderr";
+    const proc = makeProc(ws, 300); // 300ms timeout
+    const failedMessages: string[] = [];
+    proc.onStartupFailed = (msg) => failedMessages.push(msg);
+
+    const spawnPromise = proc.spawn();
+
+    // Emit stderr from the mock child process before the timeout fires
+    await new Promise((r) => setTimeout(r, 30));
+    mockChildProcess.stderr.emit(
+      "data",
+      Buffer.from("Error: address already in use ::54321\n"),
+    );
+
+    await spawnPromise;
+
+    expect(failedMessages).toHaveLength(1);
+    expect(failedMessages[0]).toContain("address already in use");
+  }, 5_000);
+
+  it("resets stale stderr between spawn attempts", async () => {
+    const ws = "/home/user/project-stderr-reset";
+    const proc = makeProc(ws, 200);
+    const failedMessages: string[] = [];
+    proc.onStartupFailed = (msg) => failedMessages.push(msg);
+
+    // First spawn: emit stale stderr then time out
+    const spawnPromise1 = proc.spawn();
+    await new Promise((r) => setTimeout(r, 30));
+    mockChildProcess.stderr.emit(
+      "data",
+      Buffer.from("OLD ERROR from attempt 1\n"),
+    );
+    await spawnPromise1;
+
+    expect(failedMessages[0]).toContain("OLD ERROR from attempt 1");
+
+    // Reset mock for second spawn
+    mockChildProcess.removeAllListeners();
+    mockChildProcess.stdout.removeAllListeners();
+    mockChildProcess.stderr.removeAllListeners();
+    mockChildProcess.killed = false;
+    mockChildProcess.exitCode = null;
+    failedMessages.length = 0;
+
+    // Second spawn: emit different stderr
+    const spawnPromise2 = proc.spawn();
+    await new Promise((r) => setTimeout(r, 30));
+    mockChildProcess.stderr.emit(
+      "data",
+      Buffer.from("NEW ERROR from attempt 2\n"),
+    );
+    await spawnPromise2;
+
+    // Second failure should NOT contain the old stderr
+    expect(failedMessages[0]).toContain("NEW ERROR from attempt 2");
+    expect(failedMessages[0]).not.toContain("OLD ERROR from attempt 1");
+  }, 5_000);
+});

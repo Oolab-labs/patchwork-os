@@ -29,7 +29,7 @@ import { corsOrigin } from "./server.js";
 import { registerAllTools } from "./tools/index.js";
 import { McpTransport } from "./transport.js";
 
-const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes idle TTL
+const SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes idle TTL
 const MAX_HTTP_SESSIONS = 5;
 const BODY_SIZE_LIMIT = 1_048_576; // 1 MB
 const MAX_PENDING_SENDS = 100; // per-session response queue cap
@@ -230,12 +230,12 @@ export class StreamableHttpHandler {
     private getPluginTools: () => LoadedPluginTool[] = () => [],
     private getPluginWatcher: () => PluginWatcher | null = () => null,
   ) {
-    // Prune idle sessions every 5 minutes.
+    // Prune idle sessions every 2 minutes.
     // .unref() prevents this timer from keeping the Node process alive when
     // all other work is done — avoids test hangs and clean process exit.
     this.cleanupTimer = setInterval(
       () => this.pruneIdle(),
-      5 * 60 * 1000,
+      2 * 60 * 1000,
     ).unref();
   }
 
@@ -326,17 +326,22 @@ export class StreamableHttpHandler {
     let sessionIsNew = false;
 
     if (msg.method === "initialize") {
-      // Capacity guard
+      // Capacity guard — try to evict the oldest idle session before rejecting.
+      // If a client crashed without sending DELETE, its session lingers until
+      // the TTL prune fires. Eviction here gives new connections a seat without
+      // waiting up to 10 minutes for the idle sweep.
       if (this.sessions.size >= MAX_HTTP_SESSIONS) {
-        res.writeHead(503, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: msg.id ?? null,
-            error: { code: -32000, message: "HTTP session capacity reached" },
-          }),
-        );
-        return;
+        if (!this.evictOldestIdleSession()) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: msg.id ?? null,
+              error: { code: -32000, message: "HTTP session capacity reached" },
+            }),
+          );
+          return;
+        }
       }
       session = this.createSession();
       sessionIsNew = true;
@@ -588,6 +593,33 @@ export class StreamableHttpHandler {
         this.destroySession(id);
       }
     }
+  }
+
+  /**
+   * Evict the oldest idle HTTP session to make room for a new connection.
+   * Only evicts if the oldest session has been idle for more than 60 seconds,
+   * which indicates the client is gone (crashed, network dropped, no DELETE sent).
+   * Returns true if a slot was freed, false if all sessions are actively in use.
+   */
+  private evictOldestIdleSession(): boolean {
+    const IDLE_THRESHOLD_MS = 60_000;
+    const now = Date.now();
+    let oldestId: string | null = null;
+    let oldestActivity = now;
+    for (const [id, session] of this.sessions) {
+      if (session.lastActivity < oldestActivity) {
+        oldestActivity = session.lastActivity;
+        oldestId = id;
+      }
+    }
+    if (oldestId && now - oldestActivity > IDLE_THRESHOLD_MS) {
+      this.logger.warn(
+        `Evicting idle HTTP session ${oldestId.slice(0, 8)} (idle ${Math.round((now - oldestActivity) / 1000)}s) to make room`,
+      );
+      this.destroySession(oldestId);
+      return true;
+    }
+    return false;
   }
 
   /**

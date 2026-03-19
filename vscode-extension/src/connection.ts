@@ -9,6 +9,7 @@ import {
   RECONNECT_BASE_DELAY,
   RECONNECT_MAX_DELAY,
 } from "./constants";
+import { pingBridge } from "./httpProbe";
 import { readLockFileForWorkspace, readLockFilesAsync } from "./lockfiles";
 import type { LockFileData, RequestHandler } from "./types";
 
@@ -41,6 +42,7 @@ export class BridgeConnection {
   lockWatcher: fs.FSWatcher | null = null;
   private lockPollTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private sleepProbeTimer: ReturnType<typeof setTimeout> | null = null;
   private pongHandler: (() => void) | null = null;
   private lastBridgePong = Date.now();
   private lastTickTime = Date.now();
@@ -182,6 +184,7 @@ export class BridgeConnection {
   }
 
   sendNotification(method: string, params: Record<string, unknown>): void {
+    if (this.disposed) return;
     if (this.ws?.readyState !== WebSocket.OPEN) {
       // Buffer important notifications during transient disconnects
       if (BridgeConnection.BUFFERABLE_METHODS.has(method)) {
@@ -387,15 +390,44 @@ export class BridgeConnection {
     this.heartbeatTimer = setInterval(() => {
       const now = Date.now();
       if (now - this.lastTickTime > 50_000) {
-        this.log("Probable sleep/wake detected, checking connection");
+        this.log("Probable sleep/wake detected, probing connection");
         this.lastTickTime = now;
         if (this.ws?.readyState !== WebSocket.OPEN) {
           this.ws?.terminate();
           this.handleDisconnect();
           return;
         }
-        // After sleep/wake, reset pong baseline to give bridge time to recover
-        this.lastBridgePong = now;
+        // Actively probe the socket rather than assuming it is still alive.
+        // TCP connections silently die on macOS during sleep (common on Windsurf
+        // and other Electron IDEs); waiting 120s for pong timeout is too slow.
+        // We send a WebSocket ping frame and wait 5s for the pong. If no pong
+        // arrives we force-reconnect immediately.
+        if (this.sleepProbeTimer) {
+          clearTimeout(this.sleepProbeTimer);
+          this.sleepProbeTimer = null;
+        }
+        const probeSocket = this.ws;
+        this.sleepProbeTimer = setTimeout(() => {
+          this.sleepProbeTimer = null;
+          if (this.ws === probeSocket && this.ws?.readyState === WebSocket.OPEN) {
+            this.log("Sleep/wake probe timed out — forcing reconnect");
+            this.ws.terminate();
+            this.handleDisconnect();
+          }
+        }, 5_000);
+        probeSocket.once("pong", () => {
+          if (this.sleepProbeTimer) {
+            clearTimeout(this.sleepProbeTimer);
+            this.sleepProbeTimer = null;
+          }
+          this.lastBridgePong = Date.now(); // refresh pong baseline
+        });
+        try {
+          probeSocket.ping();
+        } catch {
+          /* best-effort */
+        }
+        return; // don't fall through to the 120s check on this tick
       }
       this.lastTickTime = now;
       // Bridge pings every 30s; terminates after 3 missed pongs (90s).
@@ -413,6 +445,10 @@ export class BridgeConnection {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+    if (this.sleepProbeTimer) {
+      clearTimeout(this.sleepProbeTimer);
+      this.sleepProbeTimer = null;
     }
     if (this.pongHandler) {
       // Accept an explicit socket ref so callers can pass the socket before
@@ -512,7 +548,7 @@ export class BridgeConnection {
         )
       : readLockFilesAsync(this.lockDirOverride || undefined);
     readFn
-      .then((lockData) => {
+      .then(async (lockData) => {
         this.connecting = false;
         if (this.disposed) {
           this.state = ConnectionState.IDLE;
@@ -526,11 +562,42 @@ export class BridgeConnection {
             `Lock file read — token refreshed (port ${lockData.port})`,
           );
           this.onLockFileRead?.(lockData);
+          // Pre-flight: verify the bridge HTTP server is actually listening
+          // before attempting the WebSocket handshake. Prevents a silent 30s
+          // hang when the bridge PID is alive but its HTTP server is still
+          // starting (--watch restart race) or has crashed internally.
+          const reachable = await pingBridge(lockData.port);
+          if (this.disposed) {
+            this.state = ConnectionState.IDLE;
+            return;
+          }
+          if (!reachable) {
+            this.log(
+              `Bridge at port ${lockData.port} not yet reachable — will retry`,
+            );
+            this.state = ConnectionState.DISCONNECTING;
+            this.scheduleReconnect();
+            return;
+          }
           this.connect(lockData);
         } else if (this.lockDataFallback) {
           // No live lock file found — fall back to the cached token from SecretStorage.
-          // This allows reconnecting immediately after a bridge restart before the new
-          // lock file is written.
+          // Validate the cached port is reachable before using it; after a bridge
+          // restart on a different port, the stale token would cause a 30s WebSocket
+          // timeout — far slower than simply waiting for the new lock file to appear.
+          const reachable = await pingBridge(this.lockDataFallback.port);
+          if (this.disposed) {
+            this.state = ConnectionState.IDLE;
+            return;
+          }
+          if (!reachable) {
+            this.log(
+              `Cached port ${this.lockDataFallback.port} unreachable — waiting for fresh lock file`,
+            );
+            this.state = ConnectionState.DISCONNECTING;
+            this.scheduleReconnect();
+            return;
+          }
           this.log(
             "No lock file found — trying cached SecretStorage token as fallback",
           );
@@ -728,7 +795,7 @@ export class BridgeConnection {
 
   dispose(): void {
     this.disposed = true;
-    this.stopHeartbeat();
+    this.stopHeartbeat(); // also clears sleepProbeTimer
     if (this.lockWatcher) {
       this.lockWatcher.close();
       this.lockWatcher = null;

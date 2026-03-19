@@ -37,6 +37,7 @@ export class BridgeProcess {
   private stopped = false;
   private restartCount = 0;
   private spawnedAt = 0;
+  private stderrTail = "";
   private lockPollTimer: ReturnType<typeof setInterval> | null = null;
   private lockPollTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -298,6 +299,7 @@ export class BridgeProcess {
 
     this.log(`Spawning: ${binary} --workspace ${this.workspacePath}`);
     this.spawnedAt = Date.now();
+    this.stderrTail = ""; // reset stderr tail from any previous spawn attempt
 
     const child = spawn(binary, ["--workspace", this.workspacePath], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -310,12 +312,20 @@ export class BridgeProcess {
       this.output.append(chunk.toString("utf-8"));
     });
     child.stderr?.on("data", (chunk: Buffer) => {
-      this.output.append(chunk.toString("utf-8"));
+      const text = chunk.toString("utf-8");
+      this.output.append(text);
+      // Keep a rolling tail of the last 2 KB of stderr so we can surface it in
+      // startup failure notifications (the output channel is often not visible).
+      this.stderrTail = (this.stderrTail + text).slice(-2000);
     });
 
     child.on("error", async (err) => {
       await this.releaseSentinel();
-      const msg = `Bridge spawn error: ${err.message}`;
+      const base = `Bridge spawn error: ${err.message}`;
+      const tail = this.stderrTail.trim();
+      const msg = tail
+        ? `${base}\nLast output: ${tail.slice(-500)}`
+        : base;
       this.log(msg);
       this.clearLockPoll();
       if (!this.stopped) this.onStartupFailed?.(msg);
@@ -343,7 +353,11 @@ export class BridgeProcess {
       await this.releaseSentinel();
       // Intentional stop — don't surface as a failure to the caller
       if (this.stopped) return;
-      const msg = err instanceof Error ? err.message : String(err);
+      const base = err instanceof Error ? err.message : String(err);
+      const tail = this.stderrTail.trim();
+      const msg = tail
+        ? `${base}\nLast output: ${tail.slice(-500)}`
+        : base;
       this.log(`Startup failed: ${msg}`);
       this.onStartupFailed?.(msg);
     }
