@@ -27,6 +27,7 @@ import { URL } from "node:url";
 
 export interface OAuthServer {
   handleDiscovery(res: ServerResponse): void;
+  handleRegister(req: IncomingMessage, res: ServerResponse): Promise<void>;
   handleAuthorize(req: IncomingMessage, res: ServerResponse): Promise<void>;
   handleToken(req: IncomingMessage, res: ServerResponse): Promise<void>;
   handleRevoke(req: IncomingMessage, res: ServerResponse): Promise<void>;
@@ -94,11 +95,54 @@ export class OAuthServerImpl implements OAuthServer {
       authorization_endpoint: `${this.issuerUrl}/oauth/authorize`,
       token_endpoint: `${this.issuerUrl}/oauth/token`,
       revocation_endpoint: `${this.issuerUrl}/oauth/revoke`,
+      registration_endpoint: `${this.issuerUrl}/oauth/register`,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: SUPPORTED_SCOPES,
+    });
+  }
+
+  // ── RFC 7591 Dynamic Client Registration ──────────────────────────────────
+
+  async handleRegister(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    if (req.method !== "POST") {
+      res.writeHead(405, { Allow: "POST" });
+      res.end("Method Not Allowed");
+      return;
+    }
+    let body: Record<string, unknown> = {};
+    try {
+      const raw = await new Promise<string>((resolve, reject) => {
+        let data = "";
+        req.on("data", (c: Buffer) => { data += c.toString(); if (data.length > 8192) reject(new Error("too large")); });
+        req.on("end", () => resolve(data));
+        req.on("error", reject);
+      });
+      body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      this.sendJson(res, 400, { error: "invalid_client_metadata" });
+      return;
+    }
+    const redirectUris = body["redirect_uris"];
+    if (!Array.isArray(redirectUris) || redirectUris.length === 0) {
+      this.sendJson(res, 400, { error: "invalid_redirect_uri" });
+      return;
+    }
+    // Public clients only — no client secret issued
+    const clientId = this.randomToken(16);
+    this.sendJson(res, 201, {
+      client_id: clientId,
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+      redirect_uris: redirectUris,
+      grant_types: ["authorization_code"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+      ...(body["client_name"] ? { client_name: body["client_name"] } : {}),
     });
   }
 
