@@ -1,6 +1,6 @@
 # Claude IDE Bridge Plugin
 
-A Claude Code plugin that provides full IDE integration — 138+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth 2.0, and more.
+A Claude Code plugin that provides full IDE integration — 124+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth 2.0, and more.
 
 ## Prerequisites
 
@@ -98,7 +98,7 @@ All agents have `memory: project` enabled — they learn codebase patterns acros
 
 ### MCP Server
 
-The plugin configures the bridge as an MCP server, providing 138+ tools:
+The plugin configures the bridge as an MCP server, providing 124+ tools:
 
 - **LSP** (13 tools): goToDefinition, findReferences, getHover, renameSymbol, getCallHierarchy, getTypeHierarchy, getInlayHints, ...
 - **Debugging** (5 tools): setDebugBreakpoints, startDebugging, evaluateInDebugger, getDebugState, stopDebugging
