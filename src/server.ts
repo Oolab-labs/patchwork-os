@@ -35,12 +35,15 @@ interface ServerEvents {
 
 /**
  * Return the CORS origin to reflect, or null if the origin is untrusted.
- * Only loopback origins are allowed — the bridge binds locally and does not
- * need to serve cross-origin requests from arbitrary sites.
- * Covers: localhost, 127.0.0.1, and [::1] (IPv6 loopback for --bind ::1 users).
+ * Loopback origins are always allowed. Additional origins can be passed via
+ * --cors-origin (e.g. https://claude.ai for remote deployments).
  */
-export function corsOrigin(requestOrigin: string | undefined): string | null {
+export function corsOrigin(
+  requestOrigin: string | undefined,
+  extraOrigins: string[] = [],
+): string | null {
   if (!requestOrigin) return null;
+  if (extraOrigins.includes(requestOrigin)) return requestOrigin;
   try {
     const { hostname, protocol } = new URL(requestOrigin);
     if (
@@ -140,6 +143,7 @@ export class Server extends EventEmitter<ServerEvents> {
   constructor(
     private authToken: string,
     private logger: Logger,
+    private extraCorsOrigins: string[] = [],
   ) {
     super();
     // Defense-in-depth: ensure token is non-empty so timingSafeTokenCompare
@@ -253,7 +257,7 @@ export class Server extends EventEmitter<ServerEvents> {
       // CORS preflight for /mcp — browsers (and Claude Desktop's web renderer) send
       // OPTIONS before POST. Respond without requiring auth so the preflight succeeds.
       if (req.method === "OPTIONS" && parsedUrl.pathname === "/mcp") {
-        const origin = corsOrigin(req.headers.origin);
+        const origin = corsOrigin(req.headers.origin, this.extraCorsOrigins);
         if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
         res.setHeader(
           "Access-Control-Allow-Methods",
