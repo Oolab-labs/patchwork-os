@@ -161,6 +161,15 @@ export class Server extends EventEmitter<ServerEvents> {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Cache-Control", "no-store");
 
+      // CORS — set on every response so browsers can read 401s and initiate OAuth
+      const allowedOrigin = corsOrigin(req.headers.origin, this.extraCorsOrigins);
+      if (allowedOrigin) {
+        res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id");
+        res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+      }
+
       const parsedUrl = new URL(req.url ?? "/", "http://localhost");
 
       // ── OAuth 2.0 endpoints (unauthenticated — handled before bearer check) ──
