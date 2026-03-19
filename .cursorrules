@@ -1,0 +1,76 @@
+# Claude IDE Bridge — Cursor Rules
+
+## Build
+- Run `npm run build` for bridge, `cd vscode-extension && npm run build && npm run package` for extension.
+- Run `npx biome check .` before every commit.
+- Run `npm test` before every commit.
+- Always rebuild bridge + extension + VSIX before testing changes.
+
+## Tool Pattern
+- Create tools using `createXxxTool(deps)` returning `{ schema, handler }`.
+- Register every tool in `src/tools/index.ts`.
+- Set `extensionRequired: true` if the tool needs the VS Code extension.
+- Tool names must match `/^[a-zA-Z0-9_]+$/`.
+- Use `readOnlyHint: true` in annotations for tools that do not modify state.
+- Never throw from a tool handler — catch and return `{ content: [...], isError: true }`.
+
+## Extension Handlers
+- Create handlers as standalone async functions.
+- Register in `vscode-extension/src/handlers/index.ts`.
+- All `ws.send()` calls must use `safeSend()` or readyState check + try-catch.
+
+## Error Handling
+- Tool execution errors: return `isError: true` in content blocks. See docs/adr/0004-tool-errors-as-content.md.
+- Protocol errors: use `ErrorCodes` (JSON-RPC -32xxx). Never mix the two.
+- Never use JSON-RPC error codes in tool handlers.
+
+## Input Validation
+- All tool arguments are validated by AJV schemas at the transport layer.
+- Use `resolveFilePath()` for any user-supplied path — blocks null bytes, symlinks, and workspace escapes.
+- Use `isValidRef()` for git ref arguments — blocks leading-dash refs.
+- Clipboard operations enforce 1MB cap via `Buffer.byteLength`.
+- `searchAndReplace` rejects null bytes and `-`-prefixed glob patterns.
+
+## Security
+- `runCommand` only executes allowlisted commands. Interpreter commands (node, python, bash) are permanently blocked.
+- `sendHttpRequest` blocks private/loopback IPs (SSRF). DNS pre-resolves hostnames. Host header overridden after user headers.
+- Never include auth tokens, IPs, or domain names in source code or documentation.
+- Lock files use `O_EXCL` creation (symlink attack prevention) and `chmod 0o600`.
+
+## Testing
+- New bridge tools: add tests in `src/tools/__tests__/`.
+- New extension handlers: add tests in `vscode-extension/src/__tests__/handlers/`.
+- Use vitest for both. Coverage gates: 70% lines, 65% branches, 70% functions.
+- Bug fix protocol: write a failing test first, then fix.
+
+## Version Numbers
+- `BRIDGE_PROTOCOL_VERSION` in `src/version.ts`: only bump when wire format changes. See docs/adr/0001-dual-version-numbers.md.
+- `PACKAGE_VERSION`: auto-read from package.json. Bump on every npm release.
+- Bumping package.json does NOT bump the protocol version.
+
+## Lock Files
+- Lock files live at `~/.claude/ide/<port>.lock` with `isBridge: true` to distinguish from IDE locks. See docs/adr/0003-isbridge-lock-file-flag.md.
+- Stale lock cleanup: check PID liveness + 24h age guard for PID reuse.
+- Directory mode `0o700`, file mode `0o600`.
+
+## Plugin System
+- Scaffold: `claude-ide-bridge gen-plugin-stub <dir> --name <org/name> --prefix <prefix>`.
+- All plugin tool names must start with the manifest `toolNamePrefix`.
+- Entrypoint exports `register(ctx)`. ctx provides `workspace`, `workspaceFolders`, `config`, `logger`.
+- Manifest requires `schemaVersion: 1`.
+
+## Reconnection
+- Every WebSocket callback must check `gen !== this.generation` before acting. See docs/adr/0002-generation-guards-on-reconnect.md.
+- HTTP sessions evict oldest idle (>60s) on capacity. 503 only when all sessions genuinely active. See docs/adr/0005-http-session-eviction.md.
+- Grace period (default 30s) preserves session state across brief disconnects.
+
+## Rate Limiting
+- 200 requests/minute per session (ring buffer).
+- 500 notifications/minute per connection.
+- Tool calls: token bucket, default 60/min, configurable via `--tool-rate-limit`.
+- Failed AJV validation does not consume rate limit tokens.
+
+## Documentation
+- `CLAUDE.md`: behavioral rules for AI assistants. Keep concise. No secrets.
+- `documents/`: deep reference docs. Do not duplicate content in CLAUDE.md.
+- `docs/adr/`: architecture decisions. Follow standard ADR template (Status, Context, Decision, Consequences).
