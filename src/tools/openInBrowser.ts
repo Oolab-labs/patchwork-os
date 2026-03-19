@@ -6,7 +6,8 @@ import { execSafe, optionalString, requireString, success } from "./utils.js";
 
 /** True when a graphical display is available. */
 function hasDisplay(): boolean {
-  if (process.platform === "darwin" || process.platform === "win32") return true;
+  if (process.platform === "darwin" || process.platform === "win32")
+    return true;
   return !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
 }
 
@@ -17,14 +18,20 @@ function hasDisplay(): boolean {
 function serveOnce(html: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const server = http.createServer((_req, res) => {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
       res.end(html);
       setImmediate(() => server.close());
     });
     server.on("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address();
-      if (!addr || typeof addr === "string") { server.close(); return reject(new Error("Failed to bind")); }
+      if (!addr || typeof addr === "string") {
+        server.close();
+        return reject(new Error("Failed to bind"));
+      }
       resolve(`http://127.0.0.1:${(addr as { port: number }).port}/`);
       setTimeout(() => server.close(), 5 * 60 * 1000).unref();
     });
@@ -89,7 +96,11 @@ export function createOpenInBrowserTool() {
       await fs.writeFile(tmpPath, html, "utf8");
 
       // Headless VPS — no display server, serve over loopback HTTP instead
-      if (process.platform !== "darwin" && process.platform !== "win32" && !hasDisplay()) {
+      if (
+        process.platform !== "darwin" &&
+        process.platform !== "win32" &&
+        !hasDisplay()
+      ) {
         const url = await serveOnce(html);
         const port = new URL(url).port;
         return success({

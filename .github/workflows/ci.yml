@@ -25,7 +25,7 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Test (1237 unit tests)
+      - name: Test (1265 unit tests)
         run: npm test -- --reporter=dot
         timeout-minutes: 5
       - name: Build

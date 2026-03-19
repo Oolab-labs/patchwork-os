@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.4.1 — 2026-03-19)
+## Current State (v2.4.2 — 2026-03-19)
 
-- 138+ MCP tools; 1237+ bridge tests + 369 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
-- Extension v1.0.9 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.4.0`)
+- 138+ MCP tools; 1265+ bridge tests + 394 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- Extension v1.0.9 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.4.2`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)

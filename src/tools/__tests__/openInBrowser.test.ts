@@ -100,12 +100,19 @@ describe("createOpenInBrowserTool", () => {
       value: "linux",
       configurable: true,
     });
-    const html = "<html></html>";
-    await tool.handler({ html });
+    // Simulate a graphical session so hasDisplay() returns true
+    const origDisplay = process.env.DISPLAY;
+    process.env.DISPLAY = ":0";
+    try {
+      const html = "<html></html>";
+      await tool.handler({ html });
 
-    expect(execSafe).toHaveBeenCalledWith("xdg-open", [
-      expect.stringMatching(/\.html$/),
-    ]);
+      expect(execSafe).toHaveBeenCalledWith("xdg-open", [
+        expect.stringMatching(/\.html$/),
+      ]);
+    } finally {
+      process.env.DISPLAY = origDisplay;
+    }
   });
 
   it("uses cmd /c start on win32", async () => {

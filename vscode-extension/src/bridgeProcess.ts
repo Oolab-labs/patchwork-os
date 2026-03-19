@@ -323,9 +323,7 @@ export class BridgeProcess {
       await this.releaseSentinel();
       const base = `Bridge spawn error: ${err.message}`;
       const tail = this.stderrTail.trim();
-      const msg = tail
-        ? `${base}\nLast output: ${tail.slice(-500)}`
-        : base;
+      const msg = tail ? `${base}\nLast output: ${tail.slice(-500)}` : base;
       this.log(msg);
       this.clearLockPoll();
       if (!this.stopped) this.onStartupFailed?.(msg);
@@ -355,9 +353,7 @@ export class BridgeProcess {
       if (this.stopped) return;
       const base = err instanceof Error ? err.message : String(err);
       const tail = this.stderrTail.trim();
-      const msg = tail
-        ? `${base}\nLast output: ${tail.slice(-500)}`
-        : base;
+      const msg = tail ? `${base}\nLast output: ${tail.slice(-500)}` : base;
       this.log(`Startup failed: ${msg}`);
       this.onStartupFailed?.(msg);
     }

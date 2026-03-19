@@ -60,7 +60,6 @@ export const VPS_ALLOWLIST_EXTRAS = [
   "docker",
 ];
 
-
 /** Commands that can execute arbitrary code via flags like -e, -c, --eval.
  *  These are blocked from the default allowlist but can be added via --allow-command. */
 export const INTERPRETER_COMMANDS = new Set([
