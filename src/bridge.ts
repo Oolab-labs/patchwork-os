@@ -101,7 +101,7 @@ export class Bridge {
     this.logger = new Logger(config.verbose, config.jsonl);
     this.lockFile = new LockFileManager(this.logger);
     this.authToken = config.fixedToken ?? randomUUID();
-    this.server = new Server(this.authToken, this.logger);
+    this.server = new Server(this.authToken, this.logger, config.corsOrigins);
     if (config.issuerUrl) {
       this.server.setOAuthServer(
         new OAuthServerImpl(this.authToken, config.issuerUrl),
