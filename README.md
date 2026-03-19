@@ -911,6 +911,13 @@ tmux kill-server
 env -u CLAUDECODE claude-ide-bridge start-all --workspace /your/project
 ```
 
+## Developer Documentation
+
+- **[CLAUDE.md](CLAUDE.md)** — Project instructions for AI assistants (Claude Code, Cursor). Covers architecture rules, plugin system, OAuth, remote deployment, security model.
+- **[.cursorrules](.cursorrules)** — Imperative rules for Cursor IDE AI. Condensed mirror of CLAUDE.md.
+- **[docs/adr/](docs/adr/)** — Architecture Decision Records for non-obvious design choices (version numbers, reconnect guards, lock files, error model, session eviction).
+- **[documents/](documents/)** — Deep reference docs: feature reference, code conventions, data flows, personas, roadmap.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and how to add new tools.
