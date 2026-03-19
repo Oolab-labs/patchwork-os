@@ -31,6 +31,7 @@ export interface Config {
   vps: boolean;
   fixedToken: string | null;
   issuerUrl: string | null;
+  corsOrigins: string[];
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -130,6 +131,7 @@ interface ConfigFile {
   pluginWatch?: boolean;
   fixedToken?: string;
   issuerUrl?: string;
+  corsOrigins?: string[];
 }
 
 const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
@@ -153,6 +155,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "plugins",
   "pluginWatch",
   "fixedToken",
+  "corsOrigins",
 ]);
 
 /**
@@ -262,6 +265,7 @@ export function parseConfig(argv: string[]): Config {
   let pluginWatch = fileConfig.pluginWatch ?? false;
   let fixedToken: string | null = fileConfig.fixedToken ?? null;
   let issuerUrl: string | null = fileConfig.issuerUrl ?? null;
+  let corsOrigins: string[] = fileConfig.corsOrigins ?? [];
   let claudeDriver: "subprocess" | "api" | "none" =
     fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
@@ -412,6 +416,11 @@ export function parseConfig(argv: string[]): Config {
           throw new Error("--issuer-url must be a valid http/https URL");
         break;
       }
+      case "--cors-origin": {
+        const origin = requireArg(args, ++i, "--cors-origin");
+        corsOrigins.push(origin);
+        break;
+      }
       case "--plugin-watch":
         pluginWatch = true;
         break;
@@ -547,6 +556,9 @@ Environment Variables:
   if (process.env.CLAUDE_IDE_BRIDGE_ISSUER_URL) {
     issuerUrl = process.env.CLAUDE_IDE_BRIDGE_ISSUER_URL;
   }
+  if (process.env.CLAUDE_IDE_BRIDGE_CORS_ORIGINS) {
+    corsOrigins = process.env.CLAUDE_IDE_BRIDGE_CORS_ORIGINS.split(",").map((s) => s.trim());
+  }
   if (process.env.CLAUDE_IDE_BRIDGE_LINTERS) {
     linters = process.env.CLAUDE_IDE_BRIDGE_LINTERS.split(",").map((s) =>
       s.trim(),
@@ -632,6 +644,7 @@ Environment Variables:
     pluginWatch,
     fixedToken,
     issuerUrl,
+    corsOrigins,
     vps,
   };
 }
