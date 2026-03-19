@@ -8,10 +8,7 @@ import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 
 const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-// ActivityEntry|LifecycleEntry live in activityLog.ts — importing them here creates a
-// circular dependency, so we use `any` and suppress the rule with a named alias.
-// biome-ignore lint/suspicious/noExplicitAny: circular dep — see comment above
-type ActivityListener = (kind: string, entry: any) => void;
+import type { ActivityListener } from "./activityTypes.js";
 
 interface AliveWebSocket extends WebSocket {
   isAlive: boolean;

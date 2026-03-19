@@ -82,9 +82,9 @@ npm run remote
 4. Claude Code can now call IDE tools (open files, get diagnostics, etc.)
 5. The lock file is automatically cleaned up when the bridge stops
 
-## Available Tools (120+)
+## Available Tools (124+)
 
-The bridge exposes 120+ MCP tools across file ops, LSP, git, GitHub, terminals, debugging, diagnostics, planning, and more. See the full reference in [documents/platform-docs.md](documents/platform-docs.md).
+The bridge exposes 124+ MCP tools across file ops, LSP, git, GitHub, terminals, debugging, diagnostics, planning, and more. See the full reference in [documents/platform-docs.md](documents/platform-docs.md).
 
 **Without extension** (25 tools hidden): Terminal, debug, file watching, tasks, and advanced LSP tools require the VS Code extension. All other tools work with native filesystem/CLI fallbacks.
 

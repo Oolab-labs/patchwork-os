@@ -151,6 +151,28 @@ import {
   createSetWorkspaceSettingTool,
 } from "./workspaceSettings.js";
 
+/**
+ * Context object for all tool factories.
+ *
+ * Currently tools receive individual parameters via registerAllTools — this
+ * interface documents the full context surface and serves as the migration
+ * path toward a single `ctx: ToolContext` parameter in a future refactor.
+ */
+export interface ToolContext {
+  transport: McpTransport;
+  config: Config;
+  openedFiles: Set<string>;
+  probes: ProbeResults;
+  extensionClient: ExtensionClient;
+  activityLog?: ActivityLog;
+  terminalPrefix?: string;
+  fileLock?: FileLock;
+  sessions?: Map<string, unknown>;
+  orchestrator?: ClaudeOrchestrator | null;
+  sessionId?: string;
+  pluginTools?: LoadedPluginTool[];
+}
+
 export function registerAllTools(
   transport: McpTransport,
   config: Config,
