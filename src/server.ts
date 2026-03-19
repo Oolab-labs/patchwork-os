@@ -106,6 +106,7 @@ export class Server extends EventEmitter<ServerEvents> {
   private startTime = Date.now();
   /** OAuth 2.0 Authorization Server — set via setOAuthServer() when running in remote mode */
   private oauthServer: OAuthServer | null = null;
+  private oauthIssuerUrl: string | null = null;
 
   /** Set by bridge to provide health data */
   public healthDataFn: (() => Record<string, unknown>) | null = null;
@@ -136,8 +137,9 @@ export class Server extends EventEmitter<ServerEvents> {
    * Bearer tokens issued via the OAuth flow are accepted in addition to the
    * static bridge token, enabling claude.ai's authenticated MCP server flow.
    */
-  setOAuthServer(oauth: OAuthServer): void {
+  setOAuthServer(oauth: OAuthServer, issuerUrl: string): void {
     this.oauthServer = oauth;
+    this.oauthIssuerUrl = issuerUrl;
   }
 
   constructor(
@@ -181,6 +183,27 @@ export class Server extends EventEmitter<ServerEvents> {
       ) {
         if (this.oauthServer) {
           this.oauthServer.handleDiscovery(res);
+        } else {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("OAuth not configured");
+        }
+        return;
+      }
+
+      // RFC 9396 Protected Resource Metadata — Claude.ai probes this to discover
+      // which authorization server protects this resource. Both the bare and
+      // resource-path variants are handled.
+      if (
+        req.method === "GET" &&
+        (parsedUrl.pathname === "/.well-known/oauth-protected-resource" ||
+          parsedUrl.pathname.startsWith("/.well-known/oauth-protected-resource/"))
+      ) {
+        if (this.oauthServer && this.oauthIssuerUrl) {
+          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify({
+            resource: this.oauthIssuerUrl,
+            authorization_servers: [this.oauthIssuerUrl],
+          }));
         } else {
           res.writeHead(404, { "Content-Type": "text/plain" });
           res.end("OAuth not configured");

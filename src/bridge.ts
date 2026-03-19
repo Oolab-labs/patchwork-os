@@ -105,6 +105,7 @@ export class Bridge {
     if (config.issuerUrl) {
       this.server.setOAuthServer(
         new OAuthServerImpl(this.authToken, config.issuerUrl),
+        config.issuerUrl,
       );
       this.logger.info(`OAuth 2.0 enabled — issuer: ${config.issuerUrl}`);
     }
