@@ -125,12 +125,18 @@ server {
     ssl_certificate     /etc/letsencrypt/live/bridge.yourdomain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/bridge.yourdomain.com/privkey.pem;
 
-    # Only proxy /mcp — reject everything else
-    location /mcp {
+    # Proxy all paths — OAuth endpoints (/.well-known/*, /oauth/*) must be reachable
+    # alongside the MCP endpoint (/mcp) for claude.ai custom connectors to work.
+    location / {
         proxy_pass http://127.0.0.1:<BRIDGE_PORT>;
         proxy_http_version 1.1;
 
-        # Required for SSE (GET /mcp) streaming
+        # Required for SSE (GET /mcp) and WebSocket upgrades
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+
+        # Required for SSE streaming — disable buffering
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 3600s;
@@ -139,10 +145,6 @@ server {
         proxy_set_header Authorization $http_authorization;
         proxy_pass_header Authorization;
     }
-
-    location / {
-        return 404;
-    }
 }
 ```
 
@@ -150,6 +152,13 @@ Get a certificate with Certbot:
 ```bash
 certbot --nginx -d bridge.yourdomain.com
 ```
+
+Then generate your MCP config and update the URL to `https://`:
+```bash
+bash scripts/gen-mcp-config.sh remote --host bridge.yourdomain.com --token <TOKEN>
+```
+
+> **Note:** `gen-mcp-config.sh remote` outputs `http://` — change it to `https://` manually after TLS is in place.
 
 ---
 
@@ -168,23 +177,67 @@ npm run start-all -- --bind 0.0.0.0
 
 ---
 
+## OAuth 2.0 (for claude.ai Custom Connectors)
+
+claude.ai uses OAuth 2.0 + PKCE to authenticate with the bridge. Pass two extra flags when running the bridge remotely:
+
+```bash
+claude-ide-bridge \
+  --bind 0.0.0.0 \
+  --fixed-token $TOKEN \
+  --issuer-url https://bridge.yourdomain.com \
+  --cors-origin https://claude.ai
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--issuer-url <url>` | Your public HTTPS URL. Activates OAuth 2.0 and sets the issuer in all discovery documents. |
+| `--cors-origin <url>` | Adds `Access-Control-Allow-Origin` for the given origin on all responses (including 401s). Repeatable for multiple origins. |
+
+**Authorization flow:**
+
+1. claude.ai discovers OAuth metadata at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
+2. claude.ai registers a dynamic client at `POST /oauth/register` (RFC 7591)
+3. claude.ai redirects you to `GET /oauth/authorize` — enter your bridge token and click **Authorize**
+4. claude.ai exchanges the auth code for an access token at `POST /oauth/token`
+5. claude.ai uses the access token as a `Bearer` token on all subsequent `/mcp` requests
+
+Access tokens expire after **1 hour**. claude.ai re-authorizes automatically.
+
+### CORS
+
+The `--cors-origin` flag is required for claude.ai because its connector makes browser-side requests. Without it, the browser blocks the 401 challenge response and the OAuth flow never starts.
+
+You can repeat the flag for multiple trusted origins:
+```bash
+--cors-origin https://claude.ai --cors-origin https://app.yourdomain.com
+```
+
+Or set via environment variable (comma-separated):
+```bash
+CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai,https://app.yourdomain.com
+```
+
+---
+
 ## Security Model
 
 - **Bearer token required** on every request to `/mcp` (POST, GET, DELETE)
 - Token is stored in `~/.claude/ide/<port>.lock` with `chmod 600`
-- CORS preflight (`OPTIONS`) does not require auth — browsers send it before any request
+- CORS `OPTIONS` preflight does not require auth — browsers send it automatically
+- OAuth access tokens are opaque 32-byte base64url strings; auth codes are single-use with 5 min TTL
 - Session IDs are `crypto.randomUUID()` (122 bits of entropy)
-- Sessions expire after **30 minutes of inactivity** and are pruned automatically
-- Maximum **5 concurrent HTTP sessions** (separate from WebSocket sessions)
+- Sessions expire after **10 minutes of inactivity** and are pruned every 2 minutes
+- Maximum **5 concurrent HTTP sessions**; oldest idle session is evicted when capacity is reached
 
 ### Token rotation
 
-The auth token changes every time the bridge restarts (it's generated fresh at startup).
-If you use a Custom Connector with a hardcoded token, you'll need to update it after
-restarting the bridge.
+The auth token changes every restart unless `--fixed-token` is set. For claude.ai connectors, always use `--fixed-token` — the OAuth access token issued to claude.ai stays valid independently, but a new bridge token invalidates it, requiring re-authorization.
 
-For long-lived setups, consider wrapping the bridge in a script that reads the current
-token from the lock file and passes it to your reverse proxy config dynamically.
+```bash
+TOKEN=$(uuidgen)   # generate once, store securely
+claude-ide-bridge --fixed-token $TOKEN --issuer-url https://... --cors-origin https://claude.ai
+```
 
 ### Env var expansion in `.mcp.json`
 
@@ -216,18 +269,33 @@ This way the token never appears in version-controlled config files.
 
 ## Endpoint reference
 
+### MCP endpoints
+
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `OPTIONS` | `/mcp` | None | CORS preflight |
 | `POST` | `/mcp` | Bearer | Send JSON-RPC request/notification. `initialize` creates a session. |
 | `GET` | `/mcp` | Bearer + `Mcp-Session-Id` | Open SSE stream for server-push notifications |
 | `DELETE` | `/mcp` | Bearer + `Mcp-Session-Id` | Terminate session |
+| `GET` | `/ping` | None | Health check — returns `{"ok":true,"v":"<version>"}` |
+
+### OAuth 2.0 endpoints (enabled with `--issuer-url`)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/.well-known/oauth-authorization-server` | None | RFC 8414 authorization server metadata |
+| `GET` | `/.well-known/oauth-protected-resource` | None | RFC 9396 protected resource metadata |
+| `POST` | `/oauth/register` | None | RFC 7591 dynamic client registration |
+| `GET` | `/oauth/authorize` | None | Authorization page (enter bridge token to approve) |
+| `POST` | `/oauth/authorize` | None | Form submission — issues auth code on approval |
+| `POST` | `/oauth/token` | None | Exchange auth code for access token |
+| `POST` | `/oauth/revoke` | None | Revoke an access token (RFC 7009) |
 
 ### Headers
 
 | Header | Direction | Description |
 |--------|-----------|-------------|
-| `Authorization: Bearer <token>` | Request | Required on all POST/GET/DELETE |
+| `Authorization: Bearer <token>` | Request | Required on all POST/GET/DELETE to `/mcp` |
 | `Mcp-Session-Id: <uuid>` | Request | Required on all requests after initialize |
 | `Mcp-Session-Id: <uuid>` | Response | Returned by server on successful initialize |
 
@@ -240,16 +308,29 @@ This way the token never appears in version-controlled config files.
 python3 -c "import json; d=json.load(open('$(ls -t ~/.claude/ide/*.lock | head -1)')); print(d['authToken'])"
 ```
 
-**`503 HTTP session capacity reached`** — Max 5 HTTP sessions active. Wait for idle
-sessions to expire (30 min) or DELETE an existing session.
+**MCP config updated but Claude Code still uses the old URL** — Claude Code reads MCP config from two places. Check and update both:
+```bash
+# Project-level (takes precedence for Claude Code CLI)
+cat .mcp.json
 
-**`404 Session not found or expired — re-initialize`** — Session expired (30 min idle)
+# User-level
+cat ~/.claude/settings.json
+```
+Update the `url` and `Authorization` header in whichever file has the stale entry.
+
+**`503 HTTP session capacity reached`** — Max 5 HTTP sessions active. The bridge evicts
+the oldest idle session (idle > 60s) automatically. If all 5 are genuinely active, wait
+for sessions to expire (10 min idle TTL) or DELETE an existing session.
+
+**`404 Session not found or expired — re-initialize`** — Session expired (10 min idle)
 or bridge restarted. Send a new `initialize` request to get a fresh session.
 
 **SSE stream disconnects every few seconds** — A reverse proxy is timing out the
 connection. Ensure `proxy_read_timeout` is set to at least 3600s (nginx) or that
 `proxy_buffering off` is configured.
 
-**CORS errors in browser** — The `Access-Control-Allow-Origin: *` header is set on all
-`/mcp` responses. If you see CORS errors, check that the browser is sending an
-`Authorization` header (some fetch configurations require explicit opt-in).
+**CORS errors in browser** — The bridge only sends `Access-Control-Allow-Origin` for
+origins listed via `--cors-origin`. If you see CORS errors, ensure you passed
+`--cors-origin https://claude.ai` (or the appropriate client origin) when starting the
+bridge. You can also set `CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai` in the
+environment. Note: OPTIONS preflight requests are always allowed regardless of origin.
