@@ -40,7 +40,7 @@
 ## Testing
 - New bridge tools: add tests in `src/tools/__tests__/`.
 - New extension handlers: add tests in `vscode-extension/src/__tests__/handlers/`.
-- Use vitest for both. Coverage gates: 70% lines, 65% branches, 70% functions.
+- Use vitest for both. Coverage gates: 75% lines, 70% branches, 75% functions.
 - Bug fix protocol: write a failing test first, then fix.
 
 ## Version Numbers
