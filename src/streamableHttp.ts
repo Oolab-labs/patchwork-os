@@ -244,9 +244,7 @@ export class StreamableHttpHandler {
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ): Promise<void> {
-    // CORS — only reflect localhost/127.0.0.1 origins; wildcard would let any
-    // page that obtains the Bearer token call the API cross-origin.
-    const origin = corsOrigin(req.headers.origin);
+    const origin = corsOrigin(req.headers.origin, this.config.corsOrigins);
     if (origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader(

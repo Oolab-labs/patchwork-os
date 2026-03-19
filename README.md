@@ -433,7 +433,9 @@ Run the bridge on a remote server with no display — give Claude full IDE capab
 
 **Recommended: VS Code Remote-SSH or Cursor SSH**
 
-Connect your local VS Code or Cursor to a VPS via Remote-SSH. The bridge extension runs in the remote extension host automatically — no extra setup. LSP, debugger, terminals, and all editor-state tools work normally because the extension and bridge run together on the server.
+Connect your local VS Code, Cursor, or Windsurf to a VPS via Remote-SSH. The bridge extension runs in the remote extension host automatically — no extra setup. LSP, debugger, terminals, and all editor-state tools work normally because the extension and bridge run together on the server.
+
+> **Windsurf SSH tip:** Windsurf with an active SSH session counts as Remote-SSH — the extension loads on the VPS side and connects to the bridge. Confirm with `curl .../health` and look for `"extension": true`.
 
 **Fully headless (no IDE)**
 
@@ -610,27 +612,36 @@ The bridge is now permanently reachable at `https://bridge.yourdomain.com`. The 
 
 > **Auto-start:** Run `cloudflared service install` to register the tunnel as a systemd service so it starts on boot alongside the bridge.
 
-### Step 2 — Start the bridge with a fixed token
+### Step 2 — Start the bridge with OAuth enabled
 
 ```bash
-# Generate a token once and keep it — store it somewhere safe
+# Generate a token once — keep it safe, you'll need it to approve connections
 TOKEN=$(uuidgen)
 
-claude-ide-bridge --bind 0.0.0.0 --workspace /path/to/project --fixed-token $TOKEN
+claude-ide-bridge \
+  --bind 0.0.0.0 \
+  --workspace /path/to/project \
+  --fixed-token $TOKEN \
+  --issuer-url https://bridge.yourdomain.com \
+  --cors-origin https://claude.ai
 ```
 
-`--fixed-token` ensures the token never rotates across restarts, so your connector URL stays valid permanently.
+- `--fixed-token` — token never rotates across restarts
+- `--issuer-url` — your public HTTPS URL; activates OAuth 2.0 so claude.ai can authenticate
+- `--cors-origin https://claude.ai` — allows claude.ai's browser requests to reach the bridge
 
 ### Step 3 — Add the Custom Connector on claude.ai
 
 1. Go to **claude.ai → Settings → Integrations → Add custom connector**
-2. Enter the connector URL:
+2. Enter the MCP endpoint URL (no token in the URL — OAuth handles auth):
    ```
-   https://bridge.yourdomain.com/mcp?token=<your-token>
+   https://bridge.yourdomain.com/mcp
    ```
-3. Save — claude.ai verifies the connection and lists all available tools
+3. Click **Connect** — claude.ai redirects you to the bridge's authorization page
+4. Enter your bridge token (`$TOKEN` from Step 2) and click **Authorize**
+5. claude.ai completes the OAuth exchange and lists all available tools
 
-The `?token=` query param is supported alongside `Authorization: Bearer` headers, since the claude.ai connector UI cannot set custom request headers.
+> The bridge token is entered once during authorization. After that, claude.ai holds a short-lived OAuth access token that it refreshes automatically — you don't need to update the connector URL when the bridge restarts.
 
 > **Tool availability:** All 138+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~80 CLI tools still work (file ops, git, terminal, search, HTTP client).
 
@@ -639,7 +650,7 @@ The `?token=` query param is supported alongside `Authorization: Bearer` headers
 <details>
 <summary>Reverse proxy with nginx or Caddy (if you already have a domain + TLS setup)</summary>
 
-Put nginx or Caddy in front of the bridge with TLS. See [docs/remote-access.md](docs/remote-access.md) for a ready-made config.
+Put nginx or Caddy in front of the bridge with TLS — proxy **all paths** (not just `/mcp`) so the OAuth discovery and authorization endpoints are reachable. See [docs/remote-access.md](docs/remote-access.md) for a ready-made config.
 
 </details>
 

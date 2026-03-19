@@ -32,12 +32,15 @@ interface ServerEvents {
 
 /**
  * Return the CORS origin to reflect, or null if the origin is untrusted.
- * Only loopback origins are allowed — the bridge binds locally and does not
- * need to serve cross-origin requests from arbitrary sites.
- * Covers: localhost, 127.0.0.1, and [::1] (IPv6 loopback for --bind ::1 users).
+ * Loopback origins are always allowed. Additional origins can be passed via
+ * --cors-origin (e.g. https://claude.ai for remote deployments).
  */
-export function corsOrigin(requestOrigin: string | undefined): string | null {
+export function corsOrigin(
+  requestOrigin: string | undefined,
+  extraOrigins: string[] = [],
+): string | null {
   if (!requestOrigin) return null;
+  if (extraOrigins.includes(requestOrigin)) return requestOrigin;
   try {
     const { hostname, protocol } = new URL(requestOrigin);
     if (
@@ -100,6 +103,7 @@ export class Server extends EventEmitter<ServerEvents> {
   private startTime = Date.now();
   /** OAuth 2.0 Authorization Server — set via setOAuthServer() when running in remote mode */
   private oauthServer: OAuthServer | null = null;
+  private oauthIssuerUrl: string | null = null;
 
   /** Set by bridge to provide health data */
   public healthDataFn: (() => Record<string, unknown>) | null = null;
@@ -130,13 +134,15 @@ export class Server extends EventEmitter<ServerEvents> {
    * Bearer tokens issued via the OAuth flow are accepted in addition to the
    * static bridge token, enabling claude.ai's authenticated MCP server flow.
    */
-  setOAuthServer(oauth: OAuthServer): void {
+  setOAuthServer(oauth: OAuthServer, issuerUrl: string): void {
     this.oauthServer = oauth;
+    this.oauthIssuerUrl = issuerUrl;
   }
 
   constructor(
     private authToken: string,
     private logger: Logger,
+    private extraCorsOrigins: string[] = [],
   ) {
     super();
     // Defense-in-depth: ensure token is non-empty so timingSafeTokenCompare
@@ -153,6 +159,15 @@ export class Server extends EventEmitter<ServerEvents> {
       // Security headers on all responses
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Cache-Control", "no-store");
+
+      // CORS — set on every response so browsers can read 401s and initiate OAuth
+      const allowedOrigin = corsOrigin(req.headers.origin, this.extraCorsOrigins);
+      if (allowedOrigin) {
+        res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id");
+        res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+      }
 
       const parsedUrl = new URL(req.url ?? "/", "http://localhost");
 
@@ -172,10 +187,47 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // RFC 9396 Protected Resource Metadata — Claude.ai probes this to discover
+      // which authorization server protects this resource. Both the bare and
+      // resource-path variants are handled.
+      if (
+        req.method === "GET" &&
+        (parsedUrl.pathname === "/.well-known/oauth-protected-resource" ||
+          parsedUrl.pathname.startsWith("/.well-known/oauth-protected-resource/"))
+      ) {
+        if (this.oauthServer && this.oauthIssuerUrl) {
+          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify({
+            resource: this.oauthIssuerUrl,
+            authorization_servers: [this.oauthIssuerUrl],
+          }));
+        } else {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("OAuth not configured");
+        }
+        return;
+      }
+
       // Authorization endpoint
-      if (parsedUrl.pathname === "/oauth/authorize" && req.method === "GET") {
+      if (parsedUrl.pathname === "/oauth/authorize" && (req.method === "GET" || req.method === "POST")) {
         if (this.oauthServer) {
           this.oauthServer.handleAuthorize(req, res);
+        } else {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("OAuth not configured");
+        }
+        return;
+      }
+
+      // Dynamic Client Registration endpoint (RFC 7591)
+      if (parsedUrl.pathname === "/oauth/register") {
+        if (this.oauthServer) {
+          this.oauthServer.handleRegister(req, res).catch((err) => {
+            if (!res.headersSent) {
+              res.writeHead(500, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: String(err) }));
+            }
+          });
         } else {
           res.writeHead(404, { "Content-Type": "text/plain" });
           res.end("OAuth not configured");
@@ -250,7 +302,7 @@ export class Server extends EventEmitter<ServerEvents> {
       // CORS preflight for /mcp — browsers (and Claude Desktop's web renderer) send
       // OPTIONS before POST. Respond without requiring auth so the preflight succeeds.
       if (req.method === "OPTIONS" && parsedUrl.pathname === "/mcp") {
-        const origin = corsOrigin(req.headers.origin);
+        const origin = corsOrigin(req.headers.origin, this.extraCorsOrigins);
         if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
         res.setHeader(
           "Access-Control-Allow-Methods",
@@ -294,12 +346,15 @@ export class Server extends EventEmitter<ServerEvents> {
           : null;
       // oauthResolved is the bridge token if the OAuth token is valid; null otherwise
       if (!isStaticToken && !oauthResolved) {
+        // RFC 6750: only include error= when a token was actually presented but invalid
+        const tokenPresented = bearer.length > 0;
+        const wwwAuth = this.oauthServer && this.oauthIssuerUrl
+          ? `Bearer realm="claude-ide-bridge", resource_metadata="${this.oauthIssuerUrl}/.well-known/oauth-protected-resource"` +
+            (tokenPresented ? `, error="invalid_token"` : "")
+          : `Bearer realm="claude-ide-bridge"` + (tokenPresented ? `, error="invalid_token"` : "");
         res.writeHead(401, {
           "Content-Type": "text/plain",
-          // RFC 6750: indicate OAuth Bearer is accepted
-          "WWW-Authenticate": this.oauthServer
-            ? `Bearer realm="claude-ide-bridge", error="invalid_token"`
-            : `Bearer realm="claude-ide-bridge"`,
+          "WWW-Authenticate": wwwAuth,
         });
         res.end("Unauthorized");
         return;
