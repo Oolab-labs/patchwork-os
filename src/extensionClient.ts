@@ -706,6 +706,16 @@ export class ExtensionClient {
         this.logger.warn(
           `Extension timed out (failure #${failures}) — suspending for ${Math.round(backoffMs / 100) / 10}s`,
         );
+        // Fast-fail all other in-flight requests immediately when the circuit
+        // opens. Without this, each queued request waits its own REQUEST_TIMEOUT
+        // (10s) independently, so a tool handler chaining N extension calls
+        // would hang for up to N×10s after the extension becomes unresponsive.
+        // The timed-out request itself is already removed from pendingRequests
+        // by its timer callback before reaching this catch block, so calling
+        // rejectAllPending here cannot double-reject it.
+        this.rejectAllPending(
+          `Extension circuit open after ${failures} failure${failures === 1 ? "" : "s"} — fast-failing pending requests`,
+        );
       }
       throw err;
     }

@@ -413,4 +413,41 @@ describe("ExtensionClient", () => {
     ws.close();
     vi.useRealTimers();
   });
+
+  it("circuit breaker rejects in-flight requests immediately when circuit opens (2d)", async () => {
+    vi.useFakeTimers();
+    const serverConn = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws);
+    const serverWs = await serverConn;
+    client.handleExtensionConnection(serverWs);
+
+    // Start req1 — will time out at REQUEST_TIMEOUT (10s)
+    const req1 = client.getDiagnostics().catch((e) => e);
+
+    // Advance 1s — req1 still in flight
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    // Start req2 AFTER req1 — its own 10s timeout would fire at 11s total (1s from now)
+    const req2 = client.getSelection();
+
+    // Advance to just past req1's timeout (total 10001ms from req1 start)
+    // req1 times out → circuit opens → rejectAllPending() → req2 is cleared immediately
+    await vi.advanceTimersByTimeAsync(9_001);
+
+    // req2's own timeout (from when it was sent at t=1s) would fire at t=11001ms.
+    // Since we are only at t=10001ms, req2 should already be settled (null) via
+    // rejectAllPending — NOT still pending waiting for its own timeout.
+    expect((client as any).pendingRequests.size).toBe(0);
+    expect(client.getCircuitBreakerState().suspended).toBe(true);
+
+    const result2 = await req2; // resolves immediately — already settled
+    expect(result2).toBeNull(); // proxy converts rejection → null (fast-fail via rejectAllPending)
+
+    ws.close();
+    vi.useRealTimers();
+  });
 });
