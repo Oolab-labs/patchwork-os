@@ -699,3 +699,65 @@ describe("Streamable HTTP: idle pruning", () => {
     // The pruneIdle logic is straightforward: `now - lastActivity > TTL`.
   });
 });
+
+// ── Session overflow eviction (2b) ─────────────────────────────────────────────
+
+describe("Streamable HTTP: session overflow eviction", () => {
+  it("evicts oldest idle session when at capacity rather than returning 503", async () => {
+    // Fill all 5 session slots
+    const sessionIds: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      sessionIds.push(await initSession(port));
+    }
+
+    // Make the first session appear idle by backdating its lastActivity
+    const sessions: Map<string, { lastActivity: number }> = (handler as any)
+      .sessions;
+    const [firstId] = sessions.keys();
+    const firstSession = sessions.get(firstId)!;
+    firstSession.lastActivity = Date.now() - 120_000; // idle for 2 minutes > 60s threshold
+
+    // A 6th initialize should succeed (evicting the stale session) rather than return 503
+    const newSid = await initSession(port);
+    expect(typeof newSid).toBe("string");
+
+    // Total sessions should still be 5 (evicted 1, added 1)
+    expect(sessions.size).toBe(5);
+
+    // Evicted session should be gone
+    expect(sessions.has(firstId)).toBe(false);
+
+    // New session should be present
+    expect(sessions.has(newSid)).toBe(true);
+  });
+
+  it("returns 503 when all 5 sessions are recently active", async () => {
+    // Fill all 5 session slots with recently-active sessions
+    for (let i = 0; i < 5; i++) {
+      await initSession(port);
+    }
+
+    // All sessions are fresh (lastActivity = now), so no eviction happens
+    const sessions: Map<string, { lastActivity: number }> = (handler as any)
+      .sessions;
+    for (const session of sessions.values()) {
+      session.lastActivity = Date.now(); // all active
+    }
+
+    // A 6th initialize should fail with 503
+    const res = await post(port, {
+      jsonrpc: "2.0",
+      id: 99,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "test", version: "1.0" },
+      },
+    });
+
+    expect(res.status).toBe(503);
+    const body = JSON.parse(res.body);
+    expect(body.error.message).toContain("capacity");
+  });
+});

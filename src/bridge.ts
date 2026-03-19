@@ -93,6 +93,8 @@ export class Bridge {
   private pluginWatcher: PluginWatcher | null = null;
   private automationHooks: AutomationHooks | null = null;
   private httpMcpHandler: StreamableHttpHandler | null = null;
+  /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
+  private extensionConnectionGeneration = 0;
 
   constructor(private config: Config) {
     this.logger = new Logger(config.verbose, config.jsonl);
@@ -273,10 +275,16 @@ export class Bridge {
       // Refresh workspace folders from extension (multi-root workspace support).
       // Only broadcast a second list_changed if the folders actually changed,
       // to avoid a spurious double-notification on every extension connect.
+      //
+      // Generation guard: if the extension disconnects and reconnects before
+      // getWorkspaceFolders() resolves, the stale response is discarded so it
+      // cannot overwrite the config populated by the newer connection.
+      const myGen = ++this.extensionConnectionGeneration;
       const prevFolders = (this.config.workspaceFolders ?? []).join(",");
       this.extensionClient
         .getWorkspaceFolders()
         .then((folders) => {
+          if (myGen !== this.extensionConnectionGeneration) return;
           if (folders && folders.length > 0) {
             this.config.workspaceFolders = folders.map((f) => f.path);
             this.logger.info(
@@ -795,6 +803,17 @@ export class Bridge {
       totalCalls += stats.callCount;
       totalErrors += stats.errorCount;
       maxDurationMs = Math.max(maxDurationMs, Date.now() - session.connectedAt);
+    }
+    // Flush checkpoint with current session state before cleaning up sessions.
+    // The periodic checkpoint writer runs every 30s, so up to 30s of editor
+    // state can be lost on SIGTERM without this. The flush runs synchronously
+    // so the checkpoint file is complete before we remove the lock file.
+    if (this.checkpoint && this.port > 0) {
+      try {
+        this.checkpoint.write(this._buildCheckpoint(this.port));
+      } catch {
+        // best-effort — don't prevent clean shutdown
+      }
     }
     // Clean up all active sessions (cleanupSession skips the extension notification
     // during shutdown because this.stopped is already true)
