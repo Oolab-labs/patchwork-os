@@ -189,9 +189,10 @@ ws.on("open", async () => {
     const list = await send("tools/list", {});
     const tools = list.result?.tools ?? [];
     const toolNames = new Set(tools.map((t) => t.name));
-    tools.length > 50
+    // Tool count: 100+ base (124 with all features; GitHub tools only load when gh is on PATH)
+    tools.length >= 100
       ? pass("tool count", `${tools.length} tools`)
-      : fail("tool count", `only ${tools.length}`);
+      : fail("tool count", `only ${tools.length} — expected 100+`);
 
     for (const t of [
       "runInTerminal",
@@ -472,6 +473,54 @@ ws.on("open", async () => {
       } else {
         warn("captureScreenshot error message generic", errText.slice(0, 80));
       }
+    }
+
+    // ── 6. Streamable HTTP /mcp endpoint ─────────────────────────────────────
+    section("6 · Streamable HTTP /mcp endpoint");
+    try {
+      // POST initialize to /mcp — same port as WS, different transport.
+      // A 200 or 202 with a valid JSON-RPC response body means the handler is live.
+      // A 401 means the endpoint is reachable but auth is required (also acceptable —
+      // it means nginx/bridge routing is working; WS token != HTTP Bearer token in
+      // some configs).
+      const mcpUrl = `http://127.0.0.1:${port}/mcp`;
+      const initBody = JSON.stringify({
+        jsonrpc: "2.0",
+        id: 9001,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-03-26",
+          capabilities: {},
+          clientInfo: { name: "smoke-mcp-http", version: "1.0" },
+        },
+      });
+      const resp = await fetch(mcpUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json, text/event-stream",
+        },
+        body: initBody,
+      });
+      if (resp.status === 200 || resp.status === 202) {
+        const text = await resp.text();
+        // SSE response starts with "data: " prefix
+        const json = text.startsWith("data:")
+          ? JSON.parse(text.replace(/^data:\s*/, "").split("\n")[0])
+          : JSON.parse(text);
+        json?.result?.serverInfo?.name === "claude-ide-bridge"
+          ? pass("/mcp POST initialize → 200 with valid serverInfo")
+          : pass("/mcp POST initialize → 200", `body=${text.slice(0, 80)}`);
+      } else if (resp.status === 401) {
+        warn("/mcp POST → 401 (auth rejected — check Bearer token format)", `status=${resp.status}`);
+      } else if (resp.status === 404) {
+        fail("/mcp endpoint returned 404 — Streamable HTTP handler not mounted", `status=${resp.status}`);
+      } else {
+        warn(`/mcp POST → unexpected status`, `status=${resp.status}`);
+      }
+    } catch (httpErr) {
+      warn("/mcp HTTP test skipped", httpErr.message.slice(0, 80));
     }
 
     // ── Error handling ────────────────────────────────────────────────────────

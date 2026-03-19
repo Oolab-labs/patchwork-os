@@ -110,6 +110,10 @@ export class Bridge {
       this.logger.info(`OAuth 2.0 enabled — issuer: ${config.issuerUrl}`);
     }
     this.activityLog = new ActivityLog();
+    if (config.auditLogPath) {
+      this.activityLog.setPersistPath(config.auditLogPath);
+      this.logger.info(`Audit log: ${config.auditLogPath}`);
+    }
     this.extensionClient = new ExtensionClient(this.logger);
 
     // Handle new Claude Code connections

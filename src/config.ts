@@ -32,6 +32,7 @@ export interface Config {
   fixedToken: string | null;
   issuerUrl: string | null;
   corsOrigins: string[];
+  auditLogPath: string | null;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -274,6 +275,7 @@ export function parseConfig(argv: string[]): Config {
     fileConfig.automationPolicyPath ?? null;
   let toolRateLimit = 60;
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
+  let auditLogPath: string | null = null;
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -424,6 +426,13 @@ export function parseConfig(argv: string[]): Config {
       case "--plugin-watch":
         pluginWatch = true;
         break;
+      case "--audit-log": {
+        const logPath = requireArg(args, ++i, "--audit-log");
+        if (logPath.length > 4096)
+          throw new Error("--audit-log path too long (max 4096 chars)");
+        auditLogPath = path.resolve(logPath);
+        break;
+      }
       case "--tool-rate-limit": {
         const tlStr = requireArg(args, ++i, "--tool-rate-limit");
         toolRateLimit = Number.parseInt(tlStr, 10);
@@ -646,5 +655,6 @@ Environment Variables:
     issuerUrl,
     corsOrigins,
     vps,
+    auditLogPath,
   };
 }
