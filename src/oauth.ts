@@ -122,23 +122,6 @@ export class OAuthServerImpl implements OAuthServer {
   private authorizeGet(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url ?? "/", this.issuerUrl);
 
-    // Authenticate resource owner via bridge token
-    const authHeader = req.headers.authorization ?? "";
-    const fromHeader = authHeader.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : "";
-    const fromQuery = url.searchParams.get("bridge_token") ?? "";
-    const presented = fromHeader || fromQuery;
-
-    if (!this.safeEqual(presented, this.bridgeToken)) {
-      res.writeHead(401, {
-        "Content-Type": "text/plain",
-        "WWW-Authenticate": "Bearer",
-      });
-      res.end("Unauthorized: supply bridge token to initiate OAuth");
-      return;
-    }
-
     const { error, clientId, redirectUri, codeChallenge, scope, state } =
       this.parseAuthorizeParams(url);
 
@@ -190,6 +173,23 @@ export class OAuthServerImpl implements OAuthServer {
     if (action !== "approve") {
       res.writeHead(400, { "Content-Type": "text/plain" });
       res.end("invalid action");
+      return;
+    }
+
+    // Verify bridge token on approve
+    const presentedToken = body.get("bridge_token") ?? "";
+    if (!this.safeEqual(presentedToken, this.bridgeToken)) {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        this.approvalPage({
+          clientId,
+          redirectUri,
+          codeChallenge,
+          scope,
+          state,
+          tokenError: true,
+        }),
+      );
       return;
     }
 
@@ -425,6 +425,7 @@ export class OAuthServerImpl implements OAuthServer {
     codeChallenge: string;
     scope: string;
     state: string;
+    tokenError?: boolean;
   }): string {
     const e = (s: string) =>
       s
@@ -454,6 +455,12 @@ export class OAuthServerImpl implements OAuthServer {
            padding:1rem;margin-bottom:1.5rem;font-size:.875rem;color:#94a3b8}
     .scope strong{color:#e2e8f0;display:block;margin-bottom:.5rem}
     .item::before{content:"\u2713 ";color:#34d399}
+    .token-field{margin-bottom:1.25rem}
+    .token-field label{display:block;font-size:.8rem;color:#94a3b8;margin-bottom:.4rem}
+    .token-field input{width:100%;padding:.5rem .75rem;background:#12141e;border:1px solid #2d3148;
+           border-radius:6px;color:#e2e8f0;font-size:.875rem;font-family:monospace}
+    .token-field input.err{border-color:#f87171}
+    .token-err{color:#f87171;font-size:.8rem;margin-top:.3rem}
     .actions{display:flex;gap:.75rem}
     button{flex:1;padding:.65rem 1rem;border:none;border-radius:8px;
            font-size:.95rem;font-weight:600;cursor:pointer;transition:opacity .15s}
@@ -478,6 +485,12 @@ export class OAuthServerImpl implements OAuthServer {
       <input type="hidden" name="code_challenge" value="${e(opts.codeChallenge)}">
       <input type="hidden" name="scope"          value="${e(opts.scope)}">
       <input type="hidden" name="state"          value="${e(opts.state)}">
+      <div class="token-field">
+        <label for="bridge_token">Bridge Token</label>
+        <input id="bridge_token" type="password" name="bridge_token" placeholder="Paste your bridge token"
+               class="${opts.tokenError ? "err" : ""}" autocomplete="off" required>
+        ${opts.tokenError ? '<div class="token-err">Incorrect token — check your bridge token and try again.</div>' : ""}
+      </div>
       <div class="actions">
         <button class="approve" type="submit" name="action" value="approve">Authorize</button>
         <button class="deny"    type="submit" name="action" value="deny">Deny</button>
