@@ -587,6 +587,10 @@ export function createGetCallHierarchyTool(
 }
 
 export function createSearchWorkspaceSymbolsTool(
+  // _workspace is intentionally unused: symbol search is delegated entirely to
+  // the VS Code extension's LSP provider, which handles its own workspace scope.
+  // The parameter is retained so the factory signature stays consistent with
+  // all other tools in this file and allows future workspace-scoped filtering.
   _workspace: string,
   extensionClient: ExtensionClient,
 ) {

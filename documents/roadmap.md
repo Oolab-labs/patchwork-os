@@ -215,7 +215,7 @@ Development direction and exploration guidance. Living document — update as pr
 **v2.1.11 shipped (2026-03-15) — Quick Start accuracy + install-extension npm-global fix:**
 - README Step 3: `CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide` — env var required for bridge discovery; omitting it silently broke all new users
 - `install-extension` subcommand: falls back to marketplace ID when `vscode-extension/` absent (npm-global install); previously crashed with ENOENT
-- README tool table: 12 wrong names corrected, 8 phantom tools removed, 8 missing tools added, header 137+→120+
+- README tool table: 12 wrong names corrected, 8 phantom tools removed, 8 missing tools added, header 137+→124+
 - SETUP.md: labelled as development-mode guide
 
 **v2.1.10 shipped (2026-03-15) — B2 dedup fix + A7 isCommand flag:**

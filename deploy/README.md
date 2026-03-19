@@ -2,6 +2,13 @@
 
 Production VPS deployment files for claude-ide-bridge.
 
+> **Deployment targets:** The **systemd + nginx** path (this directory) is the
+> production-supported deployment for VPS/remote use. A `Dockerfile` and
+> `docker-compose.yml` exist in the repo root as an alternative for
+> containerised environments, but are not actively tested against the systemd
+> config — if you use Docker, treat it as a community-supported path and keep
+> it in sync with any service config changes.
+
 ## Files
 
 | File | Purpose |

@@ -40,9 +40,14 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options DENY always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Content-Security-Policy "default-src 'none'" always;
 
     # /mcp — Streamable HTTP MCP endpoint (SSE-safe, never buffer)
     location /mcp {
+        # Rate limit: 30 req/min per IP, burst of 10 (requires limit_req_zone in http{} block)
+        limit_req zone=mcp_zone burst=10 nodelay;
+        limit_req_status 429;
+
         proxy_pass http://127.0.0.1:${PORT};
         proxy_http_version 1.1;
 
@@ -99,3 +104,6 @@ server {
 #     default upgrade;
 #     ''      close;
 # }
+#
+# Rate limiting zone — add to http {} block:
+# limit_req_zone $binary_remote_addr zone=mcp_zone:10m rate=30r/m;
