@@ -222,6 +222,22 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // Dynamic Client Registration endpoint (RFC 7591)
+      if (parsedUrl.pathname === "/oauth/register") {
+        if (this.oauthServer) {
+          this.oauthServer.handleRegister(req, res).catch((err) => {
+            if (!res.headersSent) {
+              res.writeHead(500, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: String(err) }));
+            }
+          });
+        } else {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("OAuth not configured");
+        }
+        return;
+      }
+
       // Token endpoint
       if (parsedUrl.pathname === "/oauth/token" && req.method === "POST") {
         if (this.oauthServer) {
