@@ -212,7 +212,7 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       // Authorization endpoint
-      if (parsedUrl.pathname === "/oauth/authorize" && req.method === "GET") {
+      if (parsedUrl.pathname === "/oauth/authorize" && (req.method === "GET" || req.method === "POST")) {
         if (this.oauthServer) {
           this.oauthServer.handleAuthorize(req, res);
         } else {
