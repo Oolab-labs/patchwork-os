@@ -73,7 +73,8 @@
     "remote": "bash scripts/start-remote.sh",
     "vps": "bash scripts/start-vps.sh",
     "vps:stop": "bash scripts/start-vps.sh --stop",
-    "start-all": "bash scripts/start-all.sh"
+    "start-all": "bash scripts/start-all.sh",
+    "prepare": "husky"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
@@ -90,8 +91,13 @@
     "@types/ws": "^8.5.0",
     "@vitest/coverage-v8": "^3.0.0",
     "@vscode/ripgrep": "^1.17.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,js,mjs,cjs,json}": "biome check --no-errors-on-unmatched"
   }
 }

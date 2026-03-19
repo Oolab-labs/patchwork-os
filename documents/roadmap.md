@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.4.2 — 2026-03-19)
+## Current State (v2.4.10 — 2026-03-19)
 
-- 138+ MCP tools; 1265+ bridge tests + 394 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
-- Extension v1.0.9 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.4.2`)
+- 124+ MCP tools; 1265+ bridge tests + 394 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- Extension v1.0.9 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.4.10`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
@@ -22,6 +22,19 @@ Development direction and exploration guidance. Living document — update as pr
 - Remote Desktop IDE support: extension runs in remote extension host (SSH/Cursor SSH); `print-token` CLI subcommand for headless VPS setup
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.4.10 shipped (2026-03-19) — Full OAuth 2.0 for claude.ai custom connectors:**
+- `--issuer-url <url>` flag: activates OAuth 2.0 mode; sets issuer in all discovery documents
+- `--cors-origin <url>` flag (repeatable): adds `Access-Control-Allow-Origin` for specific origin on ALL responses (including 401s); env var `CLAUDE_IDE_BRIDGE_CORS_ORIGINS` (comma-separated)
+- RFC 9396 `/.well-known/oauth-protected-resource` endpoint (claude.ai probes this before OAuth)
+- RFC 7591 `POST /oauth/register` dynamic client registration (claude.ai registers client_id before PKCE)
+- Approval page: bridge token entered in browser at `/oauth/authorize` (no more `?token=` URL)
+- POST `/oauth/authorize` route fixed (was GET-only; form submission fell through to 401)
+- CORS headers on ALL responses (was only OPTIONS preflight)
+- WWW-Authenticate: includes `resource_metadata` link; no `error=invalid_token` when no token presented
+- Clean build: `npm run build` always wipes `dist/`; `prepublishOnly` smoke-checks `--issuer-url` in binary
+- Comprehensive developer documentation: CLAUDE.md expanded (7 new sections), 5 ADRs, `.cursorrules` for Cursor IDE
+- Biome pre-commit hook via husky + lint-staged
 
 **v2.4.1 shipped (2026-03-19) — VPS/headless tool improvements + deploy overhaul:**
 - `openInBrowser`: detects headless server (no DISPLAY/WAYLAND_DISPLAY); serves HTML over a one-shot loopback HTTP server and returns URL + SSH tunnel instructions instead of silently calling `xdg-open`
