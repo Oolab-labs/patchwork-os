@@ -173,7 +173,498 @@ export const PROMPTS: McpPrompt[] = [
       "Comprehensive project health: tests, diagnostics, security advisories, git status, and dependency audit. Designed for scheduled nightly/hourly runs.",
     arguments: [],
   },
+
+  // ── Setup prompts ─────────────────────────────────────────────────────────
+  {
+    name: "orient-project",
+    description:
+      "Set up a new or existing project to work with the Claude IDE Bridge. " +
+      "Discovers project type, generates/updates CLAUDE.md, scaffolds documents/ " +
+      "and docs/adr/ directories, creates .claude/rules/, and verifies connectivity. " +
+      "Safe to run multiple times.",
+    arguments: [
+      {
+        name: "style",
+        description:
+          "Scaffolding depth: 'minimal' (CLAUDE.md + bridge section only), " +
+          "'standard' (+ documents/, docs/adr/, .claude/rules/), " +
+          "'full' (+ commands, agents, use-cases). Default: standard.",
+        required: false,
+      },
+    ],
+  },
 ];
+
+// ── Orient-project prompt text builder ────────────────────────────────────────
+
+const ORIENT_PHASE_1 = `## Phase 1 — Discover the project
+
+1. Call \`getProjectInfo\` to detect:
+   - Language/runtime (TypeScript, Python, Rust, Go, etc.)
+   - Package manager (npm, pnpm, yarn, pip, cargo, go)
+   - Frameworks and key dependencies
+   - Build, test, lint, and dev scripts
+   - Monorepo structure (if any)
+
+2. Call \`getFileTree\` with depth 2 to see the directory layout
+
+3. Call \`getGitStatus\` to check if this is a git repo and its current state
+
+4. Call \`findFiles\` with these patterns to check what already exists:
+   - \`CLAUDE.md\`
+   - \`documents/*.md\`
+   - \`docs/adr/*.md\`
+   - \`.claude/rules/*.md\`
+   - \`.claude/settings.local.json\`
+   - \`README.md\`
+
+Store all results mentally — you will use them in every subsequent phase.`;
+
+function buildOrientPhase2(style: OrientStyle): string {
+  const lines = [
+    "## Phase 2 — Generate or update CLAUDE.md",
+    "",
+    "Based on the project info from Phase 1, create or update the project's CLAUDE.md.",
+  ];
+
+  if (style !== "minimal") {
+    lines.push(
+      "The CLAUDE.md follows a proven pattern: it is the **entry point** that directs Claude",
+      "to `documents/` for reference documentation and `docs/adr/` for design decisions.",
+    );
+  }
+
+  lines.push(
+    "",
+    "### If CLAUDE.md does NOT exist:",
+    "",
+    "Create it with `createFile` at the workspace root. The content should have TWO sections:",
+    "",
+    "**Section A — Project-specific context** (generate from `getProjectInfo` results):",
+    "",
+    "```markdown",
+    "# <Project Name> — Project Instructions",
+    "",
+  );
+
+  if (style !== "minimal") {
+    lines.push(
+      "## Documentation",
+      "",
+      "Read and comply with all documents in `/documents/`. Consult the relevant doc before making changes:",
+      "",
+      "- **[documents/architecture.md](documents/architecture.md)** — System architecture and data flows",
+      "- **[documents/styleguide.md](documents/styleguide.md)** — Code conventions and patterns",
+      "- **[documents/roadmap.md](documents/roadmap.md)** — Development direction and version history",
+      "- **[docs/adr/](docs/adr/)** — Architecture Decision Records",
+      "",
+    );
+  }
+
+  lines.push(
+    "## Tech Stack",
+    "- Language: <detected language>",
+    "- Framework: <detected framework(s)>",
+    "- Package manager: <detected>",
+    "- Test runner: <detected>",
+    "",
+    "## Key Commands",
+    "| Task | Command |",
+    "|------|---------|",
+    "| Build | `<detected build command>` |",
+    "| Test | `<detected test command>` |",
+    "| Lint | `<detected lint command>` |",
+    "| Dev | `<detected dev command>` |",
+    "",
+    "## Project Structure",
+    "<Top-level directory listing with one-line descriptions based on getFileTree results>",
+    "",
+    "## Conventions",
+    "<Infer 3-5 conventions from config files detected by getProjectInfo:",
+    '- If tsconfig.json: "TypeScript strict mode" (check if strict: true)',
+    '- If biome.json/eslint: "Linting with <tool>"',
+    '- If prettier/.prettierrc: "Formatting with Prettier"',
+    '- If vitest/jest: "Testing with <framework>"',
+    '- If .github/workflows: "CI via GitHub Actions">',
+    "```",
+    "",
+    "**Section B — Bridge workflow section:**",
+    "",
+    "Append the standard Claude IDE Bridge section. Include ALL of the following:",
+    "- `## Claude IDE Bridge` header",
+    '- "The bridge is connected via MCP. Call `getToolCapabilities` at the start of each session..."',
+    "- Bug fix methodology (test-first: write failing test, fix, confirm)",
+    "- Documentation & memory rules (update CLAUDE.md after arch changes, save decisions to memory, prune stale instructions)",
+    "- Modular rules note (reference `.claude/rules/` directory)",
+    "- Workflow rules (getDiagnostics after edits, runTests, bridge git tools, debugging, navigation)",
+    "- Quick reference table (14 tasks mapped to tools)",
+    "- Dispatch prompts table (phone message → prompt → tools)",
+    "- Agent Teams & Scheduled Tasks table",
+    "",
+    "### If CLAUDE.md ALREADY exists:",
+    "",
+    "1. Read it with `getBufferContent`",
+    "2. Check if it already has a `## Claude IDE Bridge` section",
+    "3. If the bridge section is missing: append Section B (bridge section only) using `editText` — do NOT duplicate or overwrite existing project context",
+    '4. If the bridge section already exists: report "Bridge section already present — no changes needed"',
+  );
+
+  if (style !== "minimal") {
+    lines.push(
+      "5. Check if the existing CLAUDE.md has a `## Documentation` section referencing `documents/`. If missing, suggest adding it but do NOT modify existing content without asking",
+    );
+  }
+
+  return lines.join("\n");
+}
+
+const ORIENT_PHASE_3_DOCS = `## Phase 3 — Scaffold documents/ directory
+
+Create documentation stubs that do not already exist. These give Claude and developers
+a structure to fill in over time. Populate what you can from \`getProjectInfo\` and
+\`getFileTree\` results; leave \`<placeholders>\` for the rest.
+
+### documents/architecture.md
+
+\`\`\`markdown
+# Architecture
+
+## Overview
+<Describe the system architecture, key components, and how they interact>
+
+## Data Flow
+<Request lifecycle, state ownership, key flows>
+
+## Key Design Decisions
+See [docs/adr/](../docs/adr/) for Architecture Decision Records.
+\`\`\`
+
+### documents/styleguide.md
+
+\`\`\`markdown
+# Style Guide
+
+## Code Conventions
+<Naming, formatting, file organization rules for this project>
+
+## Patterns
+<Common patterns used across the codebase>
+
+## Anti-patterns
+<What to avoid and why>
+\`\`\`
+
+### documents/roadmap.md
+
+\`\`\`markdown
+# Roadmap
+
+## Current Version
+<version> — <date>
+
+## Recent Changes
+<What shipped recently>
+
+## Planned
+<What's next>
+\`\`\`
+
+Use \`createFile\` for each file. If \`documents/\` does not exist, \`createFile\` will create intermediate directories.
+Only create files that do NOT already exist (check Phase 1 results).`;
+
+const ORIENT_PHASE_3_DOCS_FULL_EXTRA = `
+### documents/use-cases.md (full style only)
+
+\`\`\`markdown
+# Use Cases
+
+## Workflows
+<Key user workflows and how they map to code paths>
+
+## Integration Points
+<External systems, APIs, and how they connect>
+\`\`\``;
+
+const ORIENT_PHASE_3B_ADR = `## Phase 3b — Scaffold docs/adr/ directory
+
+Create the ADR directory with a README template if it does not already exist.
+
+### docs/adr/README.md
+
+\`\`\`markdown
+# Architecture Decision Records
+
+This directory contains Architecture Decision Records (ADRs) for non-obvious design decisions.
+
+## Format
+
+Each ADR follows this template:
+
+- **Status:** Proposed | Accepted | Deprecated | Superseded by ADR-NNNN
+- **Date:** YYYY-MM-DD
+- **Context:** The problem or situation
+- **Decision:** The choice made
+- **Consequences:** Positive and negative outcomes
+
+## Index
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| (none yet) | | |
+
+## When to write an ADR
+
+Write an ADR when:
+- A design decision is non-obvious and someone might question it later
+- You chose between multiple valid approaches
+- A constraint or trade-off shaped the design
+- You are deprecating or replacing an existing pattern
+\`\`\`
+
+Do NOT create numbered ADR files — those are written by developers as decisions arise. The README gives them the template and format.`;
+
+const ORIENT_PHASE_3C_RULES = `## Phase 3c — Scaffold .claude/rules/
+
+Create rule files that do NOT already exist (check Phase 1 results).
+
+### For ALL project types, create:
+
+**.claude/rules/testing.md:**
+\`\`\`markdown
+# Testing Rules
+
+- Write tests BEFORE fixing bugs (test-first methodology)
+- Use \`runTests\` bridge tool instead of shell commands
+- After creating tests, call \`getDiagnostics\` to verify no type errors in test files
+- Follow existing test file naming: \`<name>.test.<ext>\` (or \`<name>_test.<ext>\` for Go)
+- Test edge cases: empty inputs, null/undefined, boundary values, error conditions
+- Call \`getCodeCoverage\` (if available) to identify untested paths before writing tests
+\`\`\`
+
+**.claude/rules/security.md:**
+\`\`\`markdown
+# Security Rules
+
+- Never commit secrets, API keys, tokens, or credentials
+- Validate all user inputs at trust boundaries
+- Use parameterized queries for database operations — never string concatenation
+- Check \`getSecurityAdvisories\` and \`auditDependencies\` before releases
+- Review authentication and authorization on every endpoint change
+- Sanitize data before rendering in templates (XSS prevention)
+\`\`\`
+
+**.claude/rules/workflow.md:**
+\`\`\`markdown
+# Workflow Rules
+
+- After editing ANY file, call \`getDiagnostics\` to catch regressions
+- Use bridge git tools (\`getGitStatus\`, \`gitAdd\`, \`gitCommit\`) for auditable operations
+- Call \`getProjectInfo\` at the start of each session for context
+- Use \`goToDefinition\` and \`findReferences\` instead of grep for code navigation
+- Check \`getOpenEditors\` for context on what the user is working on
+- Run \`formatDocument\` before committing if a formatter is configured
+\`\`\`
+
+### Language-specific rules (based on getProjectInfo detection):
+
+**If TypeScript/JavaScript detected, also create .claude/rules/typescript.md:**
+\`\`\`markdown
+# TypeScript Rules
+
+- Enable and respect \`strict\` mode in tsconfig.json
+- Prefer \`interface\` over \`type\` for object shapes (unless union/intersection needed)
+- Use \`as const\` for literal types and readonly arrays
+- Never use \`any\` — use \`unknown\` with type guards instead
+- Prefer \`??\` (nullish coalescing) over \`||\` for default values
+- Handle Promise rejections — no unhandled promise warnings
+\`\`\`
+
+**If Python detected, also create .claude/rules/python.md:**
+\`\`\`markdown
+# Python Rules
+
+- Use type hints on all function signatures
+- Follow PEP 8 style conventions
+- Prefer \`pathlib.Path\` over \`os.path\` for file operations
+- Use context managers (\`with\` statements) for resource management
+- Handle exceptions specifically — avoid bare \`except:\`
+- Use \`dataclasses\` or \`pydantic\` for data structures
+\`\`\`
+
+**If Rust detected, also create .claude/rules/rust.md:**
+\`\`\`markdown
+# Rust Rules
+
+- Follow the ownership model — minimize \`.clone()\` calls
+- Use \`Result<T, E>\` for fallible operations, not panics
+- Prefer \`&str\` over \`String\` in function parameters
+- Use \`cargo clippy\` diagnostics (check via \`getDiagnostics\`)
+- Implement \`Display\` and \`Error\` traits for custom error types
+- Use \`#[must_use]\` on functions whose return values should not be ignored
+\`\`\`
+
+**If Go detected, also create .claude/rules/go.md:**
+\`\`\`markdown
+# Go Rules
+
+- Follow effective Go conventions and Go proverbs
+- Handle errors explicitly — never use \`_\` to discard errors
+- Use \`context.Context\` as the first parameter for functions that do I/O
+- Prefer table-driven tests
+- Run \`go vet\` and \`golangci-lint\` via diagnostics tools
+- Use meaningful variable names — avoid single-letter names outside loops
+\`\`\`
+
+Use \`createFile\` for each rule file. Only create files that do NOT already exist.`;
+
+const ORIENT_PHASE_3D_FULL = `## Phase 3d — Additional scaffolding (full style only)
+
+### Create .claude/commands/orient.md:
+
+\`\`\`markdown
+Re-run project orientation: discover project type, update CLAUDE.md, and verify bridge connectivity.
+
+Call the \`orient-project\` MCP prompt to re-orient this project. This is safe to run multiple times — it will only create files that don't already exist and will not overwrite existing content.
+\`\`\`
+
+This lets users re-run orientation via \`/project:orient\` in Claude Code.
+
+### Create .claude/agents/project-builder.md:
+
+\`\`\`markdown
+---
+name: project-builder
+description: Build, test, and lint the project. Use when you need to verify changes compile and pass tests.
+disallowedTools: Edit, Write
+model: sonnet
+---
+
+You are a build verification agent. Your job is to verify the project builds, tests pass, and linting is clean.
+
+1. Call \`getProjectInfo\` to detect build/test/lint commands
+2. Call \`runTests\` to run the test suite
+3. Call \`getDiagnostics\` to check for compilation errors
+4. If there is a build script, call \`runCommand\` with it
+5. Report results in a structured format:
+   - BUILD: PASS/FAIL
+   - TESTS: N passed, M failed
+   - LINT: N errors, M warnings
+\`\`\`
+
+For non-TypeScript/JavaScript projects, adapt the agent instructions to use the appropriate build/test tools (cargo build, go build, pytest, etc.).`;
+
+const ORIENT_PHASE_4 = `## Phase 4 — Verify bridge connectivity
+
+1. Call \`getToolCapabilities\` to confirm:
+   - Which CLI tools are available (git, rg, fd)
+   - Whether the VS Code extension is connected
+   - Which linters and formatters are detected
+   - Which test runners are available
+
+2. If the extension is NOT connected:
+   - Note this in the summary but do NOT treat it as a failure
+   - Explain which tools will be limited (LSP features: goToDefinition, findReferences, getHover, debugging)
+
+3. If the extension IS connected:
+   - Call \`getDiagnostics\` with no file argument to verify it returns results
+   - Confirm full tool access
+
+Report any issues found.`;
+
+function buildOrientPhase5(style: OrientStyle): string {
+  const lines = [
+    "## Phase 5 — Summary report",
+    "",
+    "Produce a structured summary of everything that was done:",
+    "",
+    "```",
+    "# Orient Project — Summary",
+    "",
+    "## Project",
+    "- Name: <name>",
+    "- Type: <language/framework>",
+    "",
+    "## Files",
+    "- [ ] CLAUDE.md — <created | updated | already up to date>",
+  ];
+
+  if (style !== "minimal") {
+    lines.push(
+      "- [ ] documents/architecture.md — <created | already existed>",
+      "- [ ] documents/styleguide.md — <created | already existed>",
+      "- [ ] documents/roadmap.md — <created | already existed>",
+      "- [ ] docs/adr/README.md — <created | already existed>",
+      "- [ ] .claude/rules/testing.md — <created | already existed>",
+      "- [ ] .claude/rules/security.md — <created | already existed>",
+      "- [ ] .claude/rules/workflow.md — <created | already existed>",
+      "- [ ] .claude/rules/<language>.md — <created | already existed | N/A>",
+    );
+  }
+
+  lines.push(
+    "",
+    "## Bridge status",
+    "- Extension: <connected | not connected>",
+    "- CLI tools: <list available>",
+    "- Test runner: <detected runner>",
+    "",
+    "## Next steps",
+    "1. Review CLAUDE.md and fill in project-specific sections",
+  );
+
+  if (style !== "minimal") {
+    lines.push(
+      "2. Fill in documents/architecture.md with your system design",
+      "3. Fill in documents/styleguide.md with your code conventions",
+      "4. Review .claude/rules/ and adjust to match your team's preferences",
+      "5. Run `/health-check` to verify tests and diagnostics",
+      "6. Write your first ADR when you make a non-obvious design decision",
+    );
+  } else {
+    lines.push(
+      "2. Run `/health-check` to verify tests and diagnostics",
+      "3. Consider re-running with style=standard for full documentation scaffolding",
+    );
+  }
+
+  lines.push(
+    "```",
+    "",
+    'Keep the summary concise. If everything was already set up, just say "Project already oriented — no changes needed" with a brief status confirmation.',
+  );
+
+  return lines.join("\n");
+}
+
+type OrientStyle = "minimal" | "standard" | "full";
+
+function buildOrientPromptText(style: OrientStyle): string {
+  const sections = [
+    "Set up this project to work with the Claude IDE Bridge.",
+    "This process is idempotent — safe to run multiple times. It will only create files that do not already exist and will not overwrite existing content.",
+    "",
+    ORIENT_PHASE_1,
+    "",
+    buildOrientPhase2(style),
+  ];
+
+  if (style !== "minimal") {
+    sections.push("", ORIENT_PHASE_3_DOCS);
+    if (style === "full") {
+      sections.push(ORIENT_PHASE_3_DOCS_FULL_EXTRA);
+    }
+    sections.push("", ORIENT_PHASE_3B_ADR);
+    sections.push("", ORIENT_PHASE_3C_RULES);
+    if (style === "full") {
+      sections.push("", ORIENT_PHASE_3D_FULL);
+    }
+  }
+
+  sections.push("", ORIENT_PHASE_4);
+  sections.push("", buildOrientPhase5(style));
+
+  return sections.join("\n");
+}
 
 // ── Prompt template strings ───────────────────────────────────────────────────
 
@@ -599,6 +1090,25 @@ const TEMPLATES: Record<
       },
     ],
   }),
+
+  "orient-project": ({ style = "standard" }) => {
+    const validStyles = ["minimal", "standard", "full"] as const;
+    const s: OrientStyle = (validStyles as readonly string[]).includes(style)
+      ? (style as OrientStyle)
+      : "standard";
+    return {
+      description: "Orient project for Claude IDE Bridge",
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: buildOrientPromptText(s),
+          },
+        },
+      ],
+    };
+  },
 
   "health-check": (_args) => ({
     description: "Comprehensive project health check",

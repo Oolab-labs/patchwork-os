@@ -292,6 +292,27 @@ describe("prompts/get", () => {
     expect(text).toContain("HEALTHY");
   });
 
+  it("orient-project: returns setup instructions via transport", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 40,
+      method: "prompts/get",
+      params: { name: "orient-project", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 40);
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as {
+      description: string;
+      messages: Array<{ content: { text: string } }>;
+    };
+    expect(result.messages.length).toBeGreaterThan(0);
+    const text = result.messages[0].content.text;
+    expect(text).toContain("getProjectInfo");
+    expect(text).toContain("documents/architecture.md");
+    expect(text).toContain(".claude/rules/");
+  });
+
   it("cowork: appears in prompts/list", async () => {
     const { ws } = await setup();
     send(ws, { jsonrpc: "2.0", id: 10, method: "prompts/list", params: {} });
