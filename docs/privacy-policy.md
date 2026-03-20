@@ -23,7 +23,7 @@ The bridge processes the following categories of data **locally on your machine*
 | Terminal output | stdout/stderr from test runs and commands | Only in remote mode |
 | Editor state | Open tabs, diagnostics, cursor position | Only in remote mode |
 | Handoff notes | Short context strings written via `setHandoffNote` | Stored on disk only, never transmitted |
-| OAuth tokens | Short-lived access tokens (1 hour TTL) | In-memory only, never persisted to disk |
+| OAuth tokens | Short-lived access tokens (24-hour TTL) | In-memory only, never persisted to disk |
 
 **Local mode (default):** The bridge binds to `127.0.0.1` only. No data leaves your machine. Your AI assistant connects over localhost.
 
@@ -35,7 +35,7 @@ The bridge processes the following categories of data **locally on your machine*
 
 - We do not collect telemetry, usage metrics, or crash reports.
 - We do not transmit your code, file contents, or git history to Anthropic or any third party.
-- We do not persist OAuth tokens or auth codes to disk — they live only in process memory and expire automatically (auth codes: 5 minutes, access tokens: 1 hour).
+- We do not persist OAuth tokens or auth codes to disk — they live only in process memory and expire automatically (auth codes: 5 minutes, access tokens: 24 hours).
 - We do not set cookies or use browser storage.
 - We do not show ads or share data with advertisers.
 

@@ -81,12 +81,19 @@ export class ActivityLog {
               this.nextId = Math.max(this.nextId, obj.id + 1);
             }
           }
-        } catch {
-          // skip malformed lines
+        } catch (err) {
+          process.stderr.write(
+            `[activityLog] Skipping malformed JSON line: ${err instanceof Error ? err.message : String(err)}\n`,
+          );
         }
       }
-    } catch {
-      // file doesn't exist yet, that's fine
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        process.stderr.write(
+          `[activityLog] Failed to load persist file: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
     }
   }
 
@@ -108,12 +115,19 @@ export class ActivityLog {
           if (stat.size > MAX_PERSIST_BYTES) {
             this._rotateDisk();
           }
-        } catch {
-          // file doesn't exist yet — nothing to rotate
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code !== "ENOENT") {
+            process.stderr.write(
+              `[activityLog] Failed to stat persist file for rotation: ${err instanceof Error ? err.message : String(err)}\n`,
+            );
+          }
         }
         await fs.promises.appendFile(persistPath, line);
-      } catch {
-        // Disk persistence is best-effort — never block tool execution
+      } catch (err) {
+        process.stderr.write(
+          `[activityLog] Disk persistence failed (best-effort): ${err instanceof Error ? err.message : String(err)}\n`,
+        );
       }
     })();
   }
@@ -137,8 +151,10 @@ export class ActivityLog {
         lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
       }
       fs.writeFileSync(this.persistPath, `${lines.join("\n")}\n`);
-    } catch {
-      // ignore rotation errors
+    } catch (err) {
+      process.stderr.write(
+        `[activityLog] Rotation failed: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
     }
   }
 

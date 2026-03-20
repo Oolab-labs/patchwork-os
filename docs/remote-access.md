@@ -198,7 +198,7 @@ claude-ide-bridge \
 4. claude.ai exchanges the auth code for an access token at `POST /oauth/token`
 5. claude.ai uses the access token as a `Bearer` token on all subsequent `/mcp` requests
 
-Access tokens expire after **1 hour**. claude.ai re-authorizes automatically.
+Access tokens expire after **24 hours**. claude.ai re-authorizes automatically.
 
 ### CORS
 
