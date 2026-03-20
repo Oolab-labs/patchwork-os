@@ -102,6 +102,30 @@ claude-ide-bridge start-all --workspace /your/project
 
 Launches four tmux panes: health monitor, bridge, Claude Code, and remote control — with automatic restart on failure. Requires `tmux`.
 
+## Documentation
+
+> **These guides are essential for setup and deployment** — not optional reading. Each covers a specific scenario you'll encounter when running the bridge beyond localhost.
+
+| Guide | What it covers |
+|-------|----------------|
+| **[Remote Access](docs/remote-access.md)** | Production reverse proxy setup (Caddy/nginx), TLS, Streamable HTTP transport |
+| **[SSH Resilience](docs/ssh-resilience.md)** | Surviving SSH drops, tmux strategies, phone-to-VPS workflows |
+| **[IP Allowlist](docs/ip-allowlist.md)** | Firewall rules, network access control for remote bridge instances |
+| **[Worktree Isolation](docs/worktree-isolation.md)** | How git worktrees interact with the bridge, safe concurrent editing |
+| **[Privacy Policy](docs/privacy-policy.md)** | What data the bridge handles, stores, and never transmits |
+| **[Demo Setup](docs/demo-setup.md)** | Standing up a persistent demo instance for review/testing |
+| **[Architecture Decisions](docs/adr/)** | ADRs for version numbers, reconnect guards, lock files, error model, session eviction |
+
+**Reference docs** (in [`documents/`](documents/)):
+
+| Doc | What it covers |
+|-----|----------------|
+| **[Platform Docs](documents/platform-docs.md)** | Complete tool reference (124+ tools), parameters, examples |
+| **[Data Reference](documents/data-reference.md)** | Data flows, state management, protocol details |
+| **[Plugin Authoring](documents/plugin-authoring.md)** | Writing custom plugins — manifest schema, entrypoint API |
+| **[Use Cases](documents/use-cases.md)** | Real-world workflows and scenarios |
+| **[Roadmap](documents/roadmap.md)** | Planned features and development direction |
+
 ## Full Orchestrator
 
 The `start-all` command launches everything in a tmux session: bridge + Claude Code + remote control, with automatic health monitoring and process restart.
@@ -1090,10 +1114,10 @@ env -u CLAUDECODE claude-ide-bridge start-all --workspace /your/project
 
 ## Developer Documentation
 
+See [Documentation](#documentation) above for all guides, ADRs, and reference docs. AI-specific project instructions:
+
 - **[CLAUDE.md](CLAUDE.md)** — Project instructions for AI assistants (Claude Code, Cursor). Covers architecture rules, plugin system, OAuth, remote deployment, security model.
 - **[.cursorrules](.cursorrules)** — Imperative rules for Cursor IDE AI. Condensed mirror of CLAUDE.md.
-- **[docs/adr/](docs/adr/)** — Architecture Decision Records for non-obvious design choices (version numbers, reconnect guards, lock files, error model, session eviction).
-- **[documents/](documents/)** — Deep reference docs: feature reference, code conventions, data flows, personas, roadmap.
 
 ## Contributing
 
