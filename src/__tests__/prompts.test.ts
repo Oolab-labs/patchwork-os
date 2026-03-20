@@ -142,6 +142,59 @@ describe("getPrompt", () => {
     expect(text).toContain("getActivityLog");
   });
 
+  // ── Setup prompts ────────────────────────────────────────────────────────
+
+  it("returns messages for orient-project with default style (standard)", () => {
+    const result = getPrompt("orient-project", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getProjectInfo");
+    expect(text).toContain("getFileTree");
+    expect(text).toContain("getGitStatus");
+    expect(text).toContain("findFiles");
+    expect(text).toContain("getToolCapabilities");
+    expect(text).toContain("CLAUDE.md");
+    expect(text).toContain("documents/architecture.md");
+    expect(text).toContain("documents/styleguide.md");
+    expect(text).toContain("documents/roadmap.md");
+    expect(text).toContain("docs/adr/README.md");
+    expect(text).toContain(".claude/rules/");
+    expect(text).toContain("createFile");
+  });
+
+  it("orient-project with style=minimal omits docs and rules scaffolding", () => {
+    const result = getPrompt("orient-project", { style: "minimal" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getProjectInfo");
+    expect(text).toContain("CLAUDE.md");
+    expect(text).toContain("getToolCapabilities");
+    expect(text).not.toContain("Phase 3");
+    expect(text).not.toContain("documents/architecture.md");
+    expect(text).not.toContain(".claude/rules/testing.md");
+  });
+
+  it("orient-project with style=full includes commands and agents", () => {
+    const result = getPrompt("orient-project", { style: "full" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("documents/architecture.md");
+    expect(text).toContain("documents/use-cases.md");
+    expect(text).toContain(".claude/commands/orient.md");
+    expect(text).toContain("project-builder");
+    expect(text).toContain(".claude/rules/");
+  });
+
+  it("orient-project with invalid style defaults to standard", () => {
+    const result = getPrompt("orient-project", { style: "bogus" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("documents/architecture.md");
+    expect(text).toContain(".claude/rules/");
+    expect(text).not.toContain("documents/use-cases.md");
+    expect(text).not.toContain(".claude/commands/orient.md");
+  });
+
   it("returns messages for health-check with no args", () => {
     const result = getPrompt("health-check", {});
     expect(result).not.toBeNull();
