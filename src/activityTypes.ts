@@ -13,6 +13,8 @@ export interface ActivityEntry {
   durationMs: number;
   status: "success" | "error";
   errorMessage?: string;
+  sessionId?: string;
+  teammateName?: string;
 }
 
 export interface LifecycleEntry {
@@ -20,6 +22,8 @@ export interface LifecycleEntry {
   timestamp: string;
   event: string;
   metadata?: Record<string, unknown>;
+  sessionId?: string;
+  teammateName?: string;
 }
 
 export type TimelineEntry =

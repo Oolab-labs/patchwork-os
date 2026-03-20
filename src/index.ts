@@ -167,6 +167,137 @@ if (process.argv[2] === "print-token") {
   process.exit(0);
 }
 
+// Handle token subcommand — create, list, or revoke teammate tokens
+if (process.argv[2] === "token") {
+  const sub = process.argv[3];
+  const argv = process.argv.slice(4);
+
+  const { defaultTokensPath, generateToken, loadTokens, saveTokens } =
+    await import("./teammateTokens.js");
+
+  const tokensPath =
+    process.env.CLAUDE_IDE_BRIDGE_TOKENS_PATH || defaultTokensPath();
+
+  if (sub === "create") {
+    const name = argv.find((a) => !a.startsWith("--"));
+    if (!name) {
+      process.stderr.write(
+        "Usage: claude-ide-bridge token create <name> [--scope read-only]\n",
+      );
+      process.exit(1);
+    }
+    const scopeIdx = argv.indexOf("--scope");
+    const scope =
+      scopeIdx !== -1 && argv[scopeIdx + 1] === "read-only"
+        ? "read-only"
+        : "full";
+
+    const tokens = loadTokens(tokensPath);
+    // Check for duplicate name
+    for (const stored of tokens.values()) {
+      if (stored.name === name) {
+        process.stderr.write(
+          `Error: A token with name "${name}" already exists. Revoke it first.\n`,
+        );
+        process.exit(1);
+      }
+    }
+
+    // Generate token, retrying on the rare case of identifier collision
+    let result = generateToken(name, [scope as "full" | "read-only"]);
+    if (tokens.has(result.stored.identifier)) {
+      result = generateToken(name, [scope as "full" | "read-only"]);
+      if (tokens.has(result.stored.identifier)) {
+        process.stderr.write(
+          "Error: Identifier collision after retry. Please try again.\n",
+        );
+        process.exit(1);
+      }
+    }
+    const { token, stored } = result;
+    tokens.set(stored.identifier, stored);
+    saveTokens(tokensPath, tokens);
+
+    process.stdout.write(`\nTeammate token created for "${name}":\n\n`);
+    process.stdout.write(`  ${token}\n\n`);
+    process.stdout.write(
+      "This token will only be shown once. Store it securely.\n",
+    );
+    process.stdout.write(`Scope: ${scope}\n`);
+    process.stdout.write(`Saved to: ${tokensPath}\n\n`);
+    process.stdout.write("Add to teammate's MCP config:\n");
+    process.stdout.write(`  "Authorization": "Bearer ${token}"\n\n`);
+    process.exit(0);
+  }
+
+  if (sub === "list") {
+    const tokens = loadTokens(tokensPath);
+    if (tokens.size === 0) {
+      process.stdout.write("No teammate tokens configured.\n");
+      process.stdout.write(
+        "Create one with: claude-ide-bridge token create <name>\n",
+      );
+      process.exit(0);
+    }
+
+    process.stdout.write(
+      `\n${"Name".padEnd(20)} ${"Identifier".padEnd(12)} ${"Scopes".padEnd(14)} ${"Created".padEnd(22)} Last Used\n`,
+    );
+    process.stdout.write(`${"─".repeat(90)}\n`);
+
+    for (const t of tokens.values()) {
+      const name = t.name.padEnd(20);
+      const id = `cib_${t.identifier}`.padEnd(12);
+      const scopes = t.scopes.join(",").padEnd(14);
+      const created = (t.createdAt?.slice(0, 19) ?? "unknown").padEnd(22);
+      const lastUsed = t.lastUsedAt?.slice(0, 19) ?? "never";
+      process.stdout.write(`${name} ${id} ${scopes} ${created} ${lastUsed}\n`);
+    }
+    process.stdout.write(`\nTotal: ${tokens.size} token(s)\n`);
+    process.stdout.write(`File: ${tokensPath}\n\n`);
+    process.exit(0);
+  }
+
+  if (sub === "revoke") {
+    const target = argv.find((a) => !a.startsWith("--"));
+    if (!target) {
+      process.stderr.write(
+        "Usage: claude-ide-bridge token revoke <name-or-identifier>\n",
+      );
+      process.exit(1);
+    }
+
+    const tokens = loadTokens(tokensPath);
+    let found = false;
+    for (const [id, stored] of tokens.entries()) {
+      if (stored.name === target || id === target) {
+        tokens.delete(id);
+        found = true;
+        process.stdout.write(`Token "${stored.name}" (cib_${id}) revoked.\n`);
+        break;
+      }
+    }
+
+    if (!found) {
+      process.stderr.write(
+        `Error: No token found with name or identifier "${target}".\n`,
+      );
+      process.exit(1);
+    }
+
+    saveTokens(tokensPath, tokens);
+    process.exit(0);
+  }
+
+  process.stderr.write(
+    "Usage: claude-ide-bridge token <create|list|revoke> [args]\n\n" +
+      "  create <name> [--scope read-only]  Generate a new teammate token\n" +
+      "  list                               Show all teammate tokens\n" +
+      "  revoke <name-or-identifier>        Revoke a teammate token\n",
+  );
+  process.exit(1);
+}
+
 // Handle gen-plugin-stub subcommand — scaffolds a new plugin directory
 if (process.argv[2] === "gen-plugin-stub") {
   const argv = process.argv.slice(3);
