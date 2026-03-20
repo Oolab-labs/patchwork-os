@@ -176,6 +176,122 @@ describe("prompts/get", () => {
     expect(result.messages.length).toBeGreaterThan(0);
   });
 
+  // ── Dispatch prompts ──────────────────────────────────────────────────────
+
+  it("project-status: returns tool-calling instructions", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 20,
+      method: "prompts/get",
+      params: { name: "project-status", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 20);
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as {
+      description: string;
+      messages: Array<{ content: { text: string } }>;
+    };
+    expect(result.messages.length).toBeGreaterThan(0);
+    const text = result.messages[0].content.text;
+    expect(text).toContain("getGitStatus");
+    expect(text).toContain("getDiagnostics");
+  });
+
+  it("quick-tests: returns messages with optional filter", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 21,
+      method: "prompts/get",
+      params: { name: "quick-tests", arguments: { filter: "auth" } },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 21);
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as {
+      messages: Array<{ content: { text: string } }>;
+    };
+    expect(result.messages[0].content.text).toContain("auth");
+  });
+
+  it("quick-review: returns review instructions", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 22,
+      method: "prompts/get",
+      params: { name: "quick-review", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 22);
+    expect(resp.error).toBeUndefined();
+  });
+
+  it("build-check: returns build check instructions", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 23,
+      method: "prompts/get",
+      params: { name: "build-check", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 23);
+    expect(resp.error).toBeUndefined();
+  });
+
+  it("recent-activity: returns git log instructions", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 24,
+      method: "prompts/get",
+      params: { name: "recent-activity", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 24);
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as {
+      messages: Array<{ content: { text: string } }>;
+    };
+    expect(result.messages[0].content.text).toContain("getGitLog");
+  });
+
+  // ── Agent Teams & Scheduled Tasks prompts ────────────────────────────────
+
+  it("team-status: returns coordination instructions", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 30,
+      method: "prompts/get",
+      params: { name: "team-status", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 30);
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as {
+      messages: Array<{ content: { text: string } }>;
+    };
+    expect(result.messages[0].content.text).toContain("getGitStatus");
+    expect(result.messages[0].content.text).toContain("listClaudeTasks");
+  });
+
+  it("health-check: returns comprehensive check instructions", async () => {
+    const { ws } = await setup();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 31,
+      method: "prompts/get",
+      params: { name: "health-check", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 31);
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as {
+      messages: Array<{ content: { text: string } }>;
+    };
+    const text = result.messages[0].content.text;
+    expect(text).toContain("runTests");
+    expect(text).toContain("getSecurityAdvisories");
+    expect(text).toContain("HEALTHY");
+  });
+
   it("cowork: appears in prompts/list", async () => {
     const { ws } = await setup();
     send(ws, { jsonrpc: "2.0", id: 10, method: "prompts/list", params: {} });

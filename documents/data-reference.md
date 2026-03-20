@@ -158,15 +158,25 @@ Resolution:
   └─ Returns JSON-RPC error -32601 if prompt name not found
 ```
 
-**Registered prompts:**
+**Registered prompts (15):**
 
-| Name | Required Args | Optional Args |
-|------|--------------|---------------|
-| `review-file` | `file` | — |
-| `explain-diagnostics` | `file` | — |
-| `generate-tests` | `file` | — |
-| `debug-context` | — | — |
-| `git-review` | — | `base` (default: `main`) |
+| Name | Required Args | Optional Args | Category |
+|------|--------------|---------------|----------|
+| `review-file` | `file` | — | Core |
+| `explain-diagnostics` | `file` | — | Core |
+| `generate-tests` | `file` | — | Core |
+| `debug-context` | — | — | Core |
+| `git-review` | — | `base` (default: `main`) | Core |
+| `cowork` | — | `task` | Core |
+| `set-effort` | — | `level` (default: `medium`) | Core |
+| `gen-claude-md` | — | — | Core |
+| `project-status` | — | — | Dispatch |
+| `quick-tests` | — | `filter` | Dispatch |
+| `quick-review` | — | — | Dispatch |
+| `build-check` | — | — | Dispatch |
+| `recent-activity` | — | `count` (default: `10`) | Dispatch |
+| `team-status` | — | — | Teams |
+| `health-check` | — | — | Scheduled |
 
 **Transport state additions:**
 - `prompts` registry (`Map<string, RegisteredPrompt>`) stored on the transport alongside `tools`

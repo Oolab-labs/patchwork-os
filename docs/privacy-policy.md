@@ -27,7 +27,7 @@ The bridge processes the following categories of data **locally on your machine*
 
 **Local mode (default):** The bridge binds to `127.0.0.1` only. No data leaves your machine. Your AI assistant connects over localhost.
 
-**Remote mode (ngrok / VPS):** When you start the bridge with `--issuer-url` or expose it via a tunnel, your editor data travels through that tunnel to the remote client. You control the tunnel — Anthropic does not operate any relay servers.
+**Remote mode (VPS / reverse proxy):** When you start the bridge with `--bind 0.0.0.0` and expose it via a reverse proxy (nginx, Caddy), your editor data travels through that proxy to the remote client. You control the proxy — Anthropic does not operate any relay servers.
 
 ---
 
@@ -45,9 +45,13 @@ The bridge processes the following categories of data **locally on your machine*
 
 The bridge writes two categories of data to disk:
 
-**Lock files** (`~/.claude-ide-bridge/` or the OS temp dir): Contain the bridge port number and auth token. Used to reconnect the editor extension after a restart. Readable only by the current user (mode `0600`).
+**Lock files** (`~/.claude/ide/<port>.lock`): Contain the bridge port number and auth token. Used to reconnect the editor extension after a restart. Readable only by the current user (mode `0600`).
 
-**Handoff notes** (`.claude-handoff.json` in the workspace): A single small JSON file written when you call `setHandoffNote`. Contains only the string you provide. Not transmitted anywhere.
+**Handoff notes** (`~/.claude/ide/handoff-note.json`): A single small JSON file written when you call `setHandoffNote`. Contains only the string you provide. Not transmitted anywhere.
+
+**Activity log** (`~/.claude/ide/activity-<port>.jsonl`): Tool call history in JSONL format. Rotated at 1 MB / 10K lines. Stays local — never transmitted.
+
+**Session checkpoint** (`~/.claude/ide/checkpoint-<port>.json`): Tracks open files and terminal state for session restoration after bridge restart. Cleaned up on graceful shutdown.
 
 ---
 

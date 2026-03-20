@@ -90,13 +90,9 @@ sudo apt update && sudo apt install caddy
 **2. Configure Caddy** (`Caddyfile`):
 ```
 bridge.yourdomain.com {
-    # Only expose the /mcp endpoint — not the full bridge WebSocket
-    handle /mcp* {
-        reverse_proxy 127.0.0.1:{$BRIDGE_PORT}
-    }
-
-    # Optional: block all other paths
-    respond 404
+    # Proxy all paths — OAuth endpoints (/.well-known/*, /oauth/*)
+    # must be reachable alongside /mcp for claude.ai connectors.
+    reverse_proxy 127.0.0.1:{$BRIDGE_PORT}
 }
 ```
 
@@ -139,7 +135,7 @@ server {
         # Required for SSE streaming — disable buffering
         proxy_buffering off;
         proxy_cache off;
-        proxy_read_timeout 3600s;
+        proxy_read_timeout 86400s;
 
         # Forward auth header
         proxy_set_header Authorization $http_authorization;
