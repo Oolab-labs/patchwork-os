@@ -75,6 +75,7 @@ export const VPS_ALLOWLIST_EXTRAS = [
   "rsync",
   "dig",
   "openssl",
+  "prisma",
 ];
 
 /**

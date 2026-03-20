@@ -11,7 +11,7 @@ import {
 } from "./utils.js";
 
 const MAX_ARGS = 100;
-const MAX_ARG_LENGTH = 4096;
+const MAX_ARG_LENGTH = 16_384;
 
 /** Flags that allow interpreter commands to execute arbitrary code */
 const DANGEROUS_INTERPRETER_FLAGS = new Set([

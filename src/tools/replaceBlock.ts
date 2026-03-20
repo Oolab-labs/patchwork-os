@@ -56,8 +56,8 @@ export function createReplaceBlockTool(
 
     async handler(args: Record<string, unknown>) {
       const rawPath = requireString(args, "filePath");
-      const oldContent = requireString(args, "oldContent");
-      const newContent = requireString(args, "newContent");
+      const oldContent = requireString(args, "oldContent", 65_536);
+      const newContent = requireString(args, "newContent", 65_536);
       const save = optionalBool(args, "save") ?? true;
 
       if (oldContent.length === 0) {

@@ -158,8 +158,8 @@ server {
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_cache off;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
         proxy_connect_timeout 10s;
         proxy_set_header Authorization \$http_authorization;
         proxy_pass_header Authorization;
