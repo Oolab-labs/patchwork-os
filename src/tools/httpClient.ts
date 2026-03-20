@@ -71,7 +71,10 @@ function isPrivateHost(hostname: string): boolean {
   return false;
 }
 
-export function createSendHttpRequestTool() {
+export function createSendHttpRequestTool(options?: {
+  allowPrivateHttp?: boolean;
+}) {
+  const allowPrivateHttp = options?.allowPrivateHttp ?? false;
   return {
     schema: {
       name: "sendHttpRequest",
@@ -147,9 +150,9 @@ export function createSendHttpRequestTool() {
           `URL must use http:// or https://, got "${parsedUrl.protocol}"`,
         );
       }
-      if (isPrivateHost(parsedUrl.hostname)) {
+      if (!allowPrivateHttp && isPrivateHost(parsedUrl.hostname)) {
         return error(
-          `Requests to private/loopback addresses are not allowed ("${parsedUrl.hostname}"). Only public hosts are permitted.`,
+          `Requests to private/loopback addresses are not allowed ("${parsedUrl.hostname}"). Only public hosts are permitted. Use --allow-private-http to enable.`,
         );
       }
 
@@ -167,7 +170,7 @@ export function createSendHttpRequestTool() {
       let resolvedIp: string | null = null;
       try {
         const { address } = await dns.lookup(parsedUrl.hostname);
-        if (isPrivateHost(address)) {
+        if (!allowPrivateHttp && isPrivateHost(address)) {
           return error(
             `Hostname "${parsedUrl.hostname}" resolves to a private address (${address}) — request blocked`,
           );
@@ -293,7 +296,7 @@ export function createSendHttpRequestTool() {
               `Redirect to non-http(s) protocol blocked: "${nextUrl.protocol}"`,
             );
           }
-          if (isPrivateHost(nextUrl.hostname)) {
+          if (!allowPrivateHttp && isPrivateHost(nextUrl.hostname)) {
             cleanup();
             return error(
               `Redirect to private/loopback address blocked ("${nextUrl.hostname}")`,
@@ -304,7 +307,7 @@ export function createSendHttpRequestTool() {
           // DNS failures fall through — fetch will report the error naturally.
           try {
             const { address: redirectIp } = await dns.lookup(nextUrl.hostname);
-            if (isPrivateHost(redirectIp)) {
+            if (!allowPrivateHttp && isPrivateHost(redirectIp)) {
               cleanup();
               return error(
                 `Redirect hostname "${nextUrl.hostname}" resolves to a private address (${redirectIp}) — blocked`,

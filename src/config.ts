@@ -29,6 +29,8 @@ export interface Config {
   plugins: string[];
   pluginWatch: boolean;
   vps: boolean;
+  db: boolean;
+  allowPrivateHttp: boolean;
   fixedToken: string | null;
   issuerUrl: string | null;
   corsOrigins: string[];
@@ -60,6 +62,36 @@ export const VPS_ALLOWLIST_EXTRAS = [
   "nginx",
   "pm2",
   "docker",
+  "docker-compose",
+  "certbot",
+  "ufw",
+  "htop",
+  "top",
+  "ss",
+  "lsof",
+  "tar",
+  "gzip",
+  "gunzip",
+  "rsync",
+  "dig",
+  "openssl",
+];
+
+/**
+ * Extra commands enabled by --db flag for database development.
+ * Not interpreter commands — safe to allowlist for DB workflows.
+ */
+export const DB_ALLOWLIST_EXTRAS = [
+  "psql",
+  "pg_dump",
+  "pg_restore",
+  "createdb",
+  "dropdb",
+  "mysql",
+  "mysqldump",
+  "sqlite3",
+  "redis-cli",
+  "mongosh",
 ];
 
 /** Commands that can execute arbitrary code via flags like -e, -c, --eval.
@@ -263,6 +295,8 @@ export function parseConfig(argv: string[]): Config {
   let autoTmux = fileConfig.autoTmux ?? false;
   let watch = false;
   let vps = false;
+  let db = false;
+  let allowPrivateHttp = false;
   let pluginWatch = fileConfig.pluginWatch ?? false;
   let fixedToken: string | null = fileConfig.fixedToken ?? null;
   let issuerUrl: string | null = fileConfig.issuerUrl ?? null;
@@ -347,10 +381,10 @@ export function parseConfig(argv: string[]): Config {
         if (
           !Number.isInteger(commandTimeout) ||
           commandTimeout < 1000 ||
-          commandTimeout > 120_000
+          commandTimeout > 600_000
         ) {
           throw new Error(
-            `Invalid timeout: ${tStr}. Must be between 1000 and 120000 ms.`,
+            `Invalid timeout: ${tStr}. Must be between 1000 and 600000 ms.`,
           );
         }
         break;
@@ -362,6 +396,13 @@ export function parseConfig(argv: string[]): Config {
       case "--vps":
         vps = true;
         commandAllowlist.push(...VPS_ALLOWLIST_EXTRAS);
+        break;
+      case "--db":
+        db = true;
+        commandAllowlist.push(...DB_ALLOWLIST_EXTRAS);
+        break;
+      case "--allow-private-http":
+        allowPrivateHttp = true;
         break;
       case "--watch":
         watch = true;
@@ -491,11 +532,13 @@ Options:
   --linter <name>           Enable specific linter (repeatable; default: auto-detect)
   --allow-command <cmd>     Add command to execution allowlist (repeatable)
   --vscode-allow-command <cmd>  Add VS Code command to invocation allowlist (repeatable)
-  --timeout <ms>            Command timeout in ms (default: 30000, max: 120000)
+  --timeout <ms>            Command timeout in ms (default: 30000, max: 600000)
   --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
   --grace-period <ms>       Reconnect grace period in ms (default: 30000, max: 600000)
   --watch                   Supervisor mode: auto-restart bridge on crash (exponential backoff, max 30s)
-  --vps                     VPS/headless mode: expands runCommand allowlist with curl, systemctl, journalctl, nginx, pm2, docker
+  --vps                     VPS/headless mode: expands allowlist with curl, systemctl, docker, tar, dig, openssl, etc.
+  --db                      Database mode: expands allowlist with psql, pg_dump, mysql, sqlite3, redis-cli, mongosh, etc.
+  --allow-private-http      Allow sendHttpRequest to reach localhost/private IPs (for VPS where bridge runs alongside services)
   --auto-tmux               Auto-wrap in tmux session if not already inside one
   --config <path>           Load config file (default: ./claude-ide-bridge.config.json)
   --verbose                 Enable debug logging
@@ -583,13 +626,13 @@ Environment Variables:
     if (
       Number.isInteger(envTimeout) &&
       envTimeout >= 1000 &&
-      envTimeout <= 120_000
+      envTimeout <= 600_000
     ) {
       commandTimeout = envTimeout;
     } else {
       // console.warn rather than logger — Logger is constructed after parseConfig() returns
       console.warn(
-        `Warning: CLAUDE_IDE_BRIDGE_TIMEOUT=${process.env.CLAUDE_IDE_BRIDGE_TIMEOUT} is invalid (must be 1000-120000). Using default ${commandTimeout}.`,
+        `Warning: CLAUDE_IDE_BRIDGE_TIMEOUT=${process.env.CLAUDE_IDE_BRIDGE_TIMEOUT} is invalid (must be 1000-600000). Using default ${commandTimeout}.`,
       );
     }
   }
@@ -657,6 +700,8 @@ Environment Variables:
     issuerUrl,
     corsOrigins,
     vps,
+    db,
+    allowPrivateHttp,
     auditLogPath,
   };
 }

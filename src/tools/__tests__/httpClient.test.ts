@@ -126,6 +126,89 @@ describe("sendHttpRequest — timeout error message (AbortError / TimeoutError)"
   });
 });
 
+describe("sendHttpRequest — allowPrivateHttp flag", () => {
+  const privateTool = createSendHttpRequestTool({ allowPrivateHttp: true });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("allows localhost when allowPrivateHttp is true", async () => {
+    // Mock DNS + fetch to avoid real I/O — we only test the guard is skipped
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "127.0.0.1",
+      family: 4,
+    } as any);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("ok", { status: 200 }),
+    );
+
+    const result = await privateTool.handler({
+      method: "GET",
+      url: "http://localhost:5432/",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(parse(result).status).toBe(200);
+  });
+
+  it("allows 127.0.0.1 when allowPrivateHttp is true", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "127.0.0.1",
+      family: 4,
+    } as any);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("ok", { status: 200 }),
+    );
+
+    const result = await privateTool.handler({
+      method: "GET",
+      url: "http://127.0.0.1:6379/",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(parse(result).status).toBe(200);
+  });
+
+  it("allows 10.x private network when allowPrivateHttp is true", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "10.0.0.5",
+      family: 4,
+    } as any);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("ok", { status: 200 }),
+    );
+
+    const result = await privateTool.handler({
+      method: "GET",
+      url: "http://10.0.0.5:9090/",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("still blocks private IPs when allowPrivateHttp is false (default)", async () => {
+    const defaultTool = createSendHttpRequestTool();
+    const result = await defaultTool.handler({
+      method: "GET",
+      url: "http://localhost:5432/",
+    });
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toMatch(/private|loopback/i);
+  });
+
+  it("allows DNS-resolved private IPs when allowPrivateHttp is true", async () => {
+    vi.spyOn(dns, "lookup").mockResolvedValue({
+      address: "192.168.1.100",
+      family: 4,
+    } as any);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("ok", { status: 200 }),
+    );
+
+    const result = await privateTool.handler({
+      method: "GET",
+      url: "http://my-internal-host.local:3000/",
+    });
+    expect(result.isError).toBeUndefined();
+  });
+});
+
 describe("sendHttpRequest — Host header SSRF bypass prevention", () => {
   it("does not allow caller-supplied Host header to override the pinned hostname", async () => {
     // The tool sets Host = parsedUrl.hostname when IP-pinning.

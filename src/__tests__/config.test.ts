@@ -5,7 +5,13 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { execFileSync } from "node:child_process";
-import { findEditor, ideNameFromEditor, parseConfig } from "../config.js";
+import {
+  DB_ALLOWLIST_EXTRAS,
+  VPS_ALLOWLIST_EXTRAS,
+  findEditor,
+  ideNameFromEditor,
+  parseConfig,
+} from "../config.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -184,8 +190,12 @@ describe("parseConfig flags", () => {
     expect(() => cfg("--timeout", "500")).toThrow(/Invalid timeout/);
   });
 
-  it("throws on --timeout above 120000", () => {
-    expect(() => cfg("--timeout", "200000")).toThrow(/Invalid timeout/);
+  it("accepts --timeout up to 600000", () => {
+    expect(cfg("--timeout", "600000").commandTimeout).toBe(600000);
+  });
+
+  it("throws on --timeout above 600000", () => {
+    expect(() => cfg("--timeout", "700000")).toThrow(/Invalid timeout/);
   });
 
   it("sets autoTmux from --auto-tmux", () => {
@@ -279,5 +289,84 @@ describe("ideNameFromEditor", () => {
 
   it("falls back to the editor command for unknown editors", () => {
     expect(ideNameFromEditor("myeditor")).toBe("myeditor");
+  });
+});
+
+describe("parseConfig --db flag", () => {
+  it("adds all DB commands to the allowlist when --db is set", () => {
+    const config = cfg("--db");
+    for (const cmd of DB_ALLOWLIST_EXTRAS) {
+      expect(config.commandAllowlist).toContain(cmd);
+    }
+  });
+
+  it("sets db to true when --db is set", () => {
+    expect(cfg("--db").db).toBe(true);
+  });
+
+  it("defaults db to false", () => {
+    expect(cfg().db).toBe(false);
+  });
+
+  it("does not include DB commands by default", () => {
+    const config = cfg();
+    expect(config.commandAllowlist).not.toContain("psql");
+    expect(config.commandAllowlist).not.toContain("pg_dump");
+    expect(config.commandAllowlist).not.toContain("mysql");
+  });
+
+  it("combines with --vps", () => {
+    const config = cfg("--vps", "--db");
+    expect(config.commandAllowlist).toContain("psql");
+    expect(config.commandAllowlist).toContain("curl");
+    expect(config.commandAllowlist).toContain("docker");
+  });
+});
+
+describe("parseConfig --allow-private-http flag", () => {
+  it("sets allowPrivateHttp to true when --allow-private-http is set", () => {
+    expect(cfg("--allow-private-http").allowPrivateHttp).toBe(true);
+  });
+
+  it("defaults allowPrivateHttp to false", () => {
+    expect(cfg().allowPrivateHttp).toBe(false);
+  });
+});
+
+describe("parseConfig expanded VPS extras", () => {
+  it("includes new diagnostic/admin tools in VPS allowlist", () => {
+    const config = cfg("--vps");
+    for (const cmd of [
+      "docker-compose",
+      "certbot",
+      "ufw",
+      "htop",
+      "top",
+      "ss",
+      "lsof",
+      "tar",
+      "gzip",
+      "gunzip",
+      "rsync",
+      "dig",
+      "openssl",
+    ]) {
+      expect(config.commandAllowlist).toContain(cmd);
+    }
+  });
+
+  it("still includes original VPS commands", () => {
+    const config = cfg("--vps");
+    for (const cmd of [
+      "curl",
+      "systemctl",
+      "journalctl",
+      "service",
+      "nginx",
+      "pm2",
+      "docker",
+    ]) {
+      expect(config.commandAllowlist).toContain(cmd);
+    }
   });
 });

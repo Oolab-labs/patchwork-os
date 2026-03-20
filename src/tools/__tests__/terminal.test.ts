@@ -222,6 +222,59 @@ describe("sendTerminalCommand - metacharacter blocking", () => {
   });
 });
 
+describe("sendTerminalCommand - PATH_FLAG_EXEMPTIONS", () => {
+  it("blocks --config for npm (not exempt)", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["npm"]);
+    const result = (await tool.handler({
+      text: "npm --config=evil.js",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("not allowed");
+  });
+
+  it("allows --config for psql (exempt command)", async () => {
+    const client = mockExtensionClient();
+    const tool = createSendTerminalCommandTool(client, ["psql"]);
+    const result = (await tool.handler({
+      text: "psql --config=myservice",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("allows --config for pg_dump (exempt command)", async () => {
+    const client = mockExtensionClient();
+    const tool = createSendTerminalCommandTool(client, ["pg_dump"]);
+    const result = (await tool.handler({
+      text: "pg_dump --config=myservice",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("still blocks --prefix for psql (not in exemptions)", async () => {
+    const tool = createSendTerminalCommandTool(mockExtensionClient(), ["psql"]);
+    const result = (await tool.handler({
+      text: "psql --prefix=/evil",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("not allowed");
+  });
+
+  it("still blocks --config for pg_restore with equals form", async () => {
+    // pg_restore IS exempt for --config, so this should pass
+    const client = mockExtensionClient();
+    const tool = createSendTerminalCommandTool(client, ["pg_restore"]);
+    const result = (await tool.handler({
+      text: "pg_restore --config=myservice",
+      name: "test",
+    })) as any;
+    expect(result.isError).toBeUndefined();
+  });
+});
+
 describe("runInTerminal - metacharacter blocking", () => {
   function mockRunInTerminalClient(connected = true) {
     return {
@@ -270,5 +323,33 @@ describe("runInTerminal - metacharacter blocking", () => {
     })) as any;
     expect(result.isError).toBe(true);
     expect(parseResult(result)).toContain("metacharacter");
+  });
+});
+
+describe("runInTerminal - PATH_FLAG_EXEMPTIONS", () => {
+  function mockClient(connected = true) {
+    return {
+      isConnected: () => connected,
+      executeInTerminal: vi.fn().mockResolvedValue({ exitCode: 0, stdout: "" }),
+    } as any;
+  }
+
+  it("blocks --config for npm via runInTerminal", async () => {
+    const tool = createRunInTerminalTool("/tmp", mockClient(), ["npm"]);
+    const result = (await tool.handler({
+      command: "npm --config=evil.js",
+    })) as any;
+    expect(result.isError).toBe(true);
+    expect(parseResult(result)).toContain("not allowed");
+  });
+
+  it("allows --config for psql via runInTerminal", async () => {
+    const tool = createRunInTerminalTool("/tmp", mockClient(), ["psql"]);
+    const result = (await tool.handler({
+      command: "psql --config=myservice",
+    })) as any;
+    // Should not be an error from validation — may fail from execution
+    // but that's OK, we're testing the flag exemption path
+    expect(parseResult(result)).not.toContain("not allowed");
   });
 });

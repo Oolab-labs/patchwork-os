@@ -187,10 +187,60 @@ describe("runCommand", () => {
       ).rejects.toThrow("blocked");
     });
 
-    it("rejects --config=path (equals-sign form) for all commands", async () => {
+    it("rejects --config=path (equals-sign form) for non-exempt commands", async () => {
       const tool = createRunCommandTool(tmpDir, config);
       await expect(
         tool.handler({ command: "echo", args: ["--config=/etc/evil"] }),
+      ).rejects.toThrow("blocked");
+    });
+
+    it("allows --config for psql (exempt command)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "psql"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      // psql won't be installed in test env, so it will fail to execute
+      // but it should NOT throw a validation error about --config being blocked
+      const result = await tool.handler({
+        command: "psql",
+        args: ["--config=myservice"],
+      });
+      // If we got here without a "blocked" error, the exemption works.
+      // The handler returns an error result (psql not found) rather than throwing.
+      const data = parse(result);
+      expect(data).toBeDefined();
+    });
+
+    it("allows --config for pg_dump (exempt command)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "pg_dump"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      const result = await tool.handler({
+        command: "pg_dump",
+        args: ["--config=myservice"],
+      });
+      const data = parse(result);
+      expect(data).toBeDefined();
+    });
+
+    it("still blocks --prefix for psql (not in exemptions)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "psql"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      await expect(
+        tool.handler({ command: "psql", args: ["--prefix=/evil"] }),
+      ).rejects.toThrow("blocked");
+    });
+
+    it("still blocks --config for echo (not exempt)", async () => {
+      const tool = createRunCommandTool(tmpDir, config);
+      await expect(
+        tool.handler({ command: "echo", args: ["--config=evil.js"] }),
       ).rejects.toThrow("blocked");
     });
   });
