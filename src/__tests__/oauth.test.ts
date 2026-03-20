@@ -97,6 +97,7 @@ async function issueCode(
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
     code_challenge: challenge,
+    bridge_token: BRIDGE_TOKEN,
     scope: "mcp",
     state: "s1",
     ...overrides,
@@ -176,7 +177,7 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
     expect(res.body).toContain(CLIENT_ID);
   });
 
-  it("returns 401 without bridge token", () => {
+  it("returns 200 approval page on GET (token entered via form)", () => {
     const oauth = makeOAuth();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
@@ -190,7 +191,8 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
     const req = makeGetReq(`/oauth/authorize?${params}`);
     const res = new MockResponse();
     oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
-    expect(res.statusCode).toBe(401);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("bridge_token");
   });
 
   it("returns 400 when response_type is not code", () => {

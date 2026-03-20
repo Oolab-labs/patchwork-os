@@ -566,7 +566,9 @@ Environment Variables:
     issuerUrl = process.env.CLAUDE_IDE_BRIDGE_ISSUER_URL;
   }
   if (process.env.CLAUDE_IDE_BRIDGE_CORS_ORIGINS) {
-    corsOrigins = process.env.CLAUDE_IDE_BRIDGE_CORS_ORIGINS.split(",").map((s) => s.trim());
+    corsOrigins = process.env.CLAUDE_IDE_BRIDGE_CORS_ORIGINS.split(",").map(
+      (s) => s.trim(),
+    );
   }
   if (process.env.CLAUDE_IDE_BRIDGE_LINTERS) {
     linters = process.env.CLAUDE_IDE_BRIDGE_LINTERS.split(",").map((s) =>
