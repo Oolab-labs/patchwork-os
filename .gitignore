@@ -24,3 +24,7 @@ claude-ide-bridge.config.json
 smoke-stash-test.ts
 smoke-test-temp.ts
 scripts/test-rg.mjs
+
+# Demo recording
+demo-script.md
+demo-project/
