@@ -15,8 +15,18 @@ Your Phone / Laptop                    Your Computer
 │  (CLI)        │◄── remote control ──│    ↕ WebSocket              │
 └──────────────┘                      │  IDE Extension (VS Code)    │
                                       │    ↕ Real-time state        │
-       ┌──────────────────────────────│  Your Code & Editor         │
-       │   runClaudeTask              └─────────────────────────────┘
+Remote Teammates (new in v2.5.0)      │  Your Code & Editor         │
+┌──────────────┐                      └─────────────────────────────┘
+│  alice        │──Bearer cib_...────►│  (same bridge)
+│  Claude Code  │                     │  token create alice
+└──────────────┘                      │  token create bob --scope read-only
+┌──────────────┐                      │
+│  bob          │──Bearer cib_...────►│  Identities visible in activity log
+│  Claude Code  │    (read-only)      │  and /team-status prompt
+└──────────────┘
+
+       ┌──────────────────────────────┘
+       │   runClaudeTask
        ▼
 ┌──────────────┐
 │  claude -p   │  Autonomous subprocess — full tools, no approval loop
@@ -509,6 +519,112 @@ Available tools in headless mode: file operations, git, terminals, search, CLI l
 
 ---
 
+## Multi-Teammate Remote Access *(new in v2.5.0)*
+
+Give each teammate their own named token so you can see who is connected, revoke access per person, and enforce read-only scopes — all without touching your admin token.
+
+**This is a remote-only feature.** Local single-user mode (`--fixed-token`) is unchanged.
+
+### How it works
+
+```
+alice (Claude Code, Berlin) ──Bearer cib_a1b2c3d4_...──► Bridge
+bob   (Claude Code, Tokyo)  ──Bearer cib_e5f6a7b8_...──► Bridge
+                                                          │
+                                              team-status prompt
+                                              shows names + activity
+```
+
+Each token encodes an 8-char identifier and a 32-char secret. The bridge stores only a SHA-256 hash — raw secrets are shown once at creation and never stored. Auth is O(1): identifier lookup → timing-safe hash compare.
+
+### Setup
+
+```bash
+# On the bridge server — create tokens for each teammate
+claude-ide-bridge token create alice
+# → cib_a1b2c3d4_<32-char-secret>   (display once, store securely)
+
+claude-ide-bridge token create bob --scope read-only
+# → cib_e5f6a7b8_<32-char-secret>
+
+# Manage tokens
+claude-ide-bridge token list
+claude-ide-bridge token revoke bob
+
+# Start the bridge — tokens load automatically
+claude-ide-bridge --bind 0.0.0.0 --port 4747 --fixed-token <admin-uuid> --watch
+```
+
+Send each teammate their token over a secure channel (1Password, Signal, etc.). They add it to their MCP config:
+
+```json
+{
+  "mcpServers": {
+    "bridge": {
+      "type": "http",
+      "url": "http://your-vps-ip:4747/mcp",
+      "headers": {
+        "Authorization": "Bearer cib_a1b2c3d4_<alice-secret>"
+      }
+    }
+  }
+}
+```
+
+Or generate the config automatically on their machine:
+
+```bash
+bash scripts/gen-mcp-config.sh remote \
+  --host your-vps-ip:4747 \
+  --token cib_a1b2c3d4_<alice-secret> \
+  --write
+```
+
+### Scopes
+
+| Scope | Access |
+|-------|--------|
+| `full` (default) | All tools |
+| `read-only` | Read-only tools only (diagnostics, search, git log, etc.) — write tools are blocked |
+
+```bash
+claude-ide-bridge token create reviewer --scope read-only
+```
+
+### Monitoring
+
+The `/mcp__bridge__team-status` prompt shows connected teammates by name:
+
+```
+## Active Sessions
+alice (s3f8a2c1) — connected 12m ago, 23 tool calls
+bob   (h7b9e4d2) — connected 5m ago, 8 tool calls [read-only]
+```
+
+### Hot reload
+
+Token changes take effect within ~200ms — no bridge restart needed:
+
+```bash
+# Revoke access immediately
+claude-ide-bridge token revoke bob
+# Bob's next request returns 401
+```
+
+You can also trigger a manual reload: `kill -HUP <bridge-pid>`
+
+### Custom token file path
+
+```bash
+# Flag
+claude-ide-bridge --teammate-tokens /etc/bridge/tokens.json
+
+# Environment variable
+CLAUDE_IDE_BRIDGE_TOKENS_PATH=/etc/bridge/tokens.json claude-ide-bridge
+```
+
+---
+
 ## Supported Editors
 
 | Editor | Status |
@@ -700,11 +816,19 @@ Team Lead (Claude Code)
 
 All teammates share the same IDE and workspace. Each gets full access to all 124+ bridge tools.
 
+For **remote teams** (teammates on different machines), use [named tokens](#multi-teammate-remote-access-new-in-v250) so each teammate has a distinct identity visible in activity logs and the `team-status` prompt.
+
 ### Setup
 
+**Local teams (same machine):**
 1. Enable agent teams: set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in your environment
 2. Bridge running: `claude-ide-bridge --watch`
 3. Ask Claude to create a team: *"Create an agent team to review and fix all TypeScript errors"*
+
+**Remote teams (different machines):**
+1. Create a named token for each teammate: `claude-ide-bridge token create alice`
+2. Start bridge with `--bind 0.0.0.0`: `claude-ide-bridge --bind 0.0.0.0 --port 4747 --watch`
+3. Each teammate connects with their token — see [Multi-Teammate Remote Access](#multi-teammate-remote-access-new-in-v250)
 
 ### Bridge prompts for team leads
 
@@ -914,6 +1038,11 @@ claude-ide-bridge start-all [options]          Full tmux orchestrator (bridge + 
 claude-ide-bridge install-extension [editor]   Install VS Code extension into your IDE
 claude-ide-bridge gen-claude-md [--write] [--workspace <path>]
                                                Print bridge workflow guidance (or write to CLAUDE.md)
+claude-ide-bridge token create <name> [--scope read-only]
+                                               Generate a named teammate token (displayed once)
+claude-ide-bridge token list                   List all tokens (name, identifier, scope, last used)
+claude-ide-bridge token revoke <name|id>       Revoke a token immediately
+claude-ide-bridge print-token [--port N]       Print auth token from active lock file
 ```
 
 ### Bridge options (default mode)
@@ -921,6 +1050,7 @@ claude-ide-bridge gen-claude-md [--write] [--workspace <path>]
 ```
 --bind <addr>             Bind address (default: 127.0.0.1)
 --fixed-token <uuid>      Stable auth token across restarts (default: random UUID)
+--teammate-tokens <path>  Path to named teammate tokens file (default: ~/.claude/ide/tokens.json)
 --issuer-url <url>        Public HTTPS URL — activates OAuth 2.0 for remote clients
 --cors-origin <url>       Allow cross-origin requests from this origin (repeatable)
 --workspace <path>        Workspace folder (default: cwd)
