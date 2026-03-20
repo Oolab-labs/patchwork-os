@@ -103,6 +103,8 @@ export class McpTransport {
   private notifWindowStart = 0;
 
   public sessionId: string | null = null;
+  public teammateName: string | null = null;
+  public scopes: string[] | null = null;
   private activityLog: ActivityLog | null = null;
   private isExtensionConnectedFn: (() => boolean) | null = null;
   private readonly ajv = new Ajv({ strict: false, allErrors: true });
@@ -779,6 +781,30 @@ export class McpTransport {
                   };
                   break;
                 }
+                // Enforce read-only scope: block mutating tools for read-only teammates.
+                // Tools that declare readOnlyHint: true in annotations are safe to call.
+                if (
+                  this.scopes?.includes("read-only") &&
+                  !this.scopes.includes("full") &&
+                  !tool.schema.annotations?.readOnlyHint
+                ) {
+                  this.callCount++;
+                  this.errorCount++;
+                  response = {
+                    jsonrpc: "2.0",
+                    id: msg.id,
+                    result: {
+                      content: [
+                        {
+                          type: "text",
+                          text: `Tool "${params.name}" requires full access. Your token has read-only scope.`,
+                        },
+                      ],
+                      isError: true,
+                    },
+                  };
+                  break;
+                }
                 this.callCount++; // Count after validation — only real execution attempts
                 callLog.debug(`Calling tool: ${params.name}`);
                 this.logger.event("tool_call", { tool: params.name, callId });
@@ -837,7 +863,16 @@ export class McpTransport {
                     timeoutPromise,
                   ]);
                   const durationMs = Date.now() - startTime;
-                  this.activityLog?.record(params.name, durationMs, "success");
+                  this.activityLog?.record(
+                    params.name,
+                    durationMs,
+                    "success",
+                    undefined,
+                    {
+                      sessionId: this.sessionId?.slice(0, 8),
+                      teammateName: this.teammateName ?? undefined,
+                    },
+                  );
                   callLog.debug(`Tool completed in ${durationMs}ms`);
                   response = { jsonrpc: "2.0", id: msg.id, result };
                 } finally {
@@ -873,6 +908,10 @@ export class McpTransport {
                   Date.now() - startTime,
                   "error",
                   message,
+                  {
+                    sessionId: this.sessionId?.slice(0, 8),
+                    teammateName: this.teammateName ?? undefined,
+                  },
                 );
                 const errPayload: Record<string, string> = { error: message };
                 if (errCode !== undefined) errPayload.code = errCode;

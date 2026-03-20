@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { defaultTokensPath } from "./teammateTokens.js";
 
 export interface Config {
   workspace: string;
@@ -35,6 +36,7 @@ export interface Config {
   issuerUrl: string | null;
   corsOrigins: string[];
   auditLogPath: string | null;
+  teammateTokensPath: string;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -166,6 +168,7 @@ interface ConfigFile {
   fixedToken?: string;
   issuerUrl?: string;
   corsOrigins?: string[];
+  teammateTokensPath?: string;
 }
 
 const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
@@ -190,6 +193,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "pluginWatch",
   "fixedToken",
   "corsOrigins",
+  "teammateTokensPath",
 ]);
 
 /**
@@ -311,6 +315,7 @@ export function parseConfig(argv: string[]): Config {
   let toolRateLimit = 60;
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
   let auditLogPath: string | null = null;
+  let teammateTokensPath: string = fileConfig.teammateTokensPath ?? "";
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -517,6 +522,13 @@ export function parseConfig(argv: string[]): Config {
         }
         break;
       }
+      case "--teammate-tokens": {
+        const tp = requireArg(args, ++i, "--teammate-tokens");
+        if (tp.length > 4096)
+          throw new Error("--teammate-tokens path too long (max 4096 chars)");
+        teammateTokensPath = path.resolve(tp);
+        break;
+      }
       case "--help": {
         console.log(`claude-ide-bridge - Standalone MCP bridge for Claude Code IDE integration
 
@@ -529,6 +541,7 @@ Options:
   --port <number>           Force specific port (default: random)
   --bind <addr>             Bind address (default: 127.0.0.1, env: BRIDGE_BIND_ADDRESS)
   --fixed-token <uuid>      Use a stable auth token (default: random UUID on each start)
+  --teammate-tokens <path>  Path to teammate tokens file (default: ~/.claude/ide/tokens.json)
   --issuer-url <url>        Public URL for OAuth 2.0 (e.g. https://abc.ngrok-free.app)
   --linter <name>           Enable specific linter (repeatable; default: auto-detect)
   --allow-command <cmd>     Add command to execution allowlist (repeatable)
@@ -565,6 +578,9 @@ Subcommands:
                               Options: --write [--workspace <path>]
   print-token                 Print the auth token from the active bridge lock file.
                               Options: --port <port>
+  token create <name>         Generate a teammate token. Options: --scope read-only
+  token list                  Show all teammate tokens (name, prefix, scopes, dates)
+  token revoke <name|id>      Revoke a teammate token by name or identifier
   install-extension [editor]  Install the VS Code extension into the given editor.
 
 Environment Variables:
@@ -704,5 +720,9 @@ Environment Variables:
     db,
     allowPrivateHttp,
     auditLogPath,
+    teammateTokensPath:
+      teammateTokensPath ||
+      process.env.CLAUDE_IDE_BRIDGE_TOKENS_PATH ||
+      defaultTokensPath(),
   };
 }

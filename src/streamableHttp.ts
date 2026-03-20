@@ -25,7 +25,7 @@ import type { Logger } from "./logger.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import type { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
-import { corsOrigin } from "./server.js";
+import { corsOrigin, getHttpRequestContext } from "./server.js";
 import { registerAllTools } from "./tools/index.js";
 import { McpTransport } from "./transport.js";
 
@@ -201,6 +201,7 @@ interface HttpSession {
   openedFiles: Set<string>;
   terminalPrefix: string;
   lastActivity: number;
+  teammateName: string | null;
 }
 
 /** Handles POST/GET/DELETE /mcp for all HTTP sessions. */
@@ -341,7 +342,7 @@ export class StreamableHttpHandler {
           return;
         }
       }
-      session = this.createSession();
+      session = this.createSession(req);
       sessionIsNew = true;
       res.setHeader("Mcp-Session-Id", session.id);
     } else {
@@ -488,8 +489,10 @@ export class StreamableHttpHandler {
     res.end();
   }
 
-  private createSession(): HttpSession {
+  private createSession(req?: http.IncomingMessage): HttpSession {
     const id = crypto.randomUUID();
+    const reqCtx = req ? getHttpRequestContext(req) : undefined;
+    const teammateName = reqCtx?.teammateName ?? null;
     const session = {
       id,
       adapter: null as unknown,
@@ -497,6 +500,7 @@ export class StreamableHttpHandler {
       openedFiles: new Set<string>(),
       terminalPrefix: `http-${id.slice(0, 8)}`,
       lastActivity: Date.now(),
+      teammateName,
     } as HttpSession;
     const adapter = new HttpAdapter(
       (msg) => this.logger.warn(msg),
@@ -507,6 +511,8 @@ export class StreamableHttpHandler {
     const transport = new McpTransport(this.logger);
     transport.workspace = this.config.workspace;
     transport.sessionId = id;
+    transport.teammateName = teammateName;
+    transport.scopes = reqCtx?.scopes ?? null;
     transport.setActivityLog(this.activityLog);
     transport.setToolRateLimit(this.config.toolRateLimit);
     // Share one rate-limit bucket across all HTTP sessions to prevent bypass via cycling.
@@ -565,7 +571,7 @@ export class StreamableHttpHandler {
 
     this.sessions.set(id, session);
     this.logger.info(
-      `HTTP session created (${id.slice(0, 8)}) — ${this.sessions.size} HTTP sessions`,
+      `HTTP session created${teammateName ? ` [${teammateName}]` : ""} (${id.slice(0, 8)}) — ${this.sessions.size} HTTP sessions`,
     );
     return session;
   }
