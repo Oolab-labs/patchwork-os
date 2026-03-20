@@ -161,11 +161,20 @@ export class Server extends EventEmitter<ServerEvents> {
       res.setHeader("Cache-Control", "no-store");
 
       // CORS — set on every response so browsers can read 401s and initiate OAuth
-      const allowedOrigin = corsOrigin(req.headers.origin, this.extraCorsOrigins);
+      const allowedOrigin = corsOrigin(
+        req.headers.origin,
+        this.extraCorsOrigins,
+      );
       if (allowedOrigin) {
         res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-        res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id");
+        res.setHeader(
+          "Access-Control-Allow-Methods",
+          "GET, POST, DELETE, OPTIONS",
+        );
+        res.setHeader(
+          "Access-Control-Allow-Headers",
+          "Content-Type, Authorization, Mcp-Session-Id",
+        );
         res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
       }
 
@@ -193,14 +202,21 @@ export class Server extends EventEmitter<ServerEvents> {
       if (
         req.method === "GET" &&
         (parsedUrl.pathname === "/.well-known/oauth-protected-resource" ||
-          parsedUrl.pathname.startsWith("/.well-known/oauth-protected-resource/"))
+          parsedUrl.pathname.startsWith(
+            "/.well-known/oauth-protected-resource/",
+          ))
       ) {
         if (this.oauthServer && this.oauthIssuerUrl) {
-          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-          res.end(JSON.stringify({
-            resource: this.oauthIssuerUrl,
-            authorization_servers: [this.oauthIssuerUrl],
-          }));
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          });
+          res.end(
+            JSON.stringify({
+              resource: this.oauthIssuerUrl,
+              authorization_servers: [this.oauthIssuerUrl],
+            }),
+          );
         } else {
           res.writeHead(404, { "Content-Type": "text/plain" });
           res.end("OAuth not configured");
@@ -209,7 +225,10 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       // Authorization endpoint
-      if (parsedUrl.pathname === "/oauth/authorize" && (req.method === "GET" || req.method === "POST")) {
+      if (
+        parsedUrl.pathname === "/oauth/authorize" &&
+        (req.method === "GET" || req.method === "POST")
+      ) {
         if (this.oauthServer) {
           this.oauthServer.handleAuthorize(req, res);
         } else {
@@ -348,10 +367,10 @@ export class Server extends EventEmitter<ServerEvents> {
       if (!isStaticToken && !oauthResolved) {
         // RFC 6750: only include error= when a token was actually presented but invalid
         const tokenPresented = bearer.length > 0;
-        const wwwAuth = this.oauthServer && this.oauthIssuerUrl
-          ? `Bearer realm="claude-ide-bridge", resource_metadata="${this.oauthIssuerUrl}/.well-known/oauth-protected-resource"` +
-            (tokenPresented ? `, error="invalid_token"` : "")
-          : `Bearer realm="claude-ide-bridge"` + (tokenPresented ? `, error="invalid_token"` : "");
+        const wwwAuth =
+          this.oauthServer && this.oauthIssuerUrl
+            ? `Bearer realm="claude-ide-bridge", resource_metadata="${this.oauthIssuerUrl}/.well-known/oauth-protected-resource"${tokenPresented ? `, error="invalid_token"` : ""}`
+            : `Bearer realm="claude-ide-bridge"${tokenPresented ? `, error="invalid_token"` : ""}`;
         res.writeHead(401, {
           "Content-Type": "text/plain",
           "WWW-Authenticate": wwwAuth,

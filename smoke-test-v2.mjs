@@ -513,11 +513,17 @@ ws.on("open", async () => {
           ? pass("/mcp POST initialize → 200 with valid serverInfo")
           : pass("/mcp POST initialize → 200", `body=${text.slice(0, 80)}`);
       } else if (resp.status === 401) {
-        warn("/mcp POST → 401 (auth rejected — check Bearer token format)", `status=${resp.status}`);
+        warn(
+          "/mcp POST → 401 (auth rejected — check Bearer token format)",
+          `status=${resp.status}`,
+        );
       } else if (resp.status === 404) {
-        fail("/mcp endpoint returned 404 — Streamable HTTP handler not mounted", `status=${resp.status}`);
+        fail(
+          "/mcp endpoint returned 404 — Streamable HTTP handler not mounted",
+          `status=${resp.status}`,
+        );
       } else {
-        warn(`/mcp POST → unexpected status`, `status=${resp.status}`);
+        warn("/mcp POST → unexpected status", `status=${resp.status}`);
       }
     } catch (httpErr) {
       warn("/mcp HTTP test skipped", httpErr.message.slice(0, 80));
