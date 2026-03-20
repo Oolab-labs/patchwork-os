@@ -33,11 +33,13 @@ Dossiers for each type of developer who uses Claude IDE Bridge. Validate and ref
 
 ## Persona 2: Remote/Mobile Developer
 
-**Background**: Developer who controls Claude Code sessions from their phone, tablet, or a different machine via claude.ai or the Claude mobile app. Uses the remote control feature for long-running tasks.
+**Background**: Developer who controls Claude Code sessions from their phone, tablet, or a different machine via claude.ai, Claude mobile app, or Dispatch. Uses remote control and Dispatch for check-ins and long-running tasks.
 
-**Workflow**: Starts bridge + remote control on server/desktop → connects from mobile → issues high-level instructions → monitors progress via terminal output and diagnostics.
+**Workflow**: Starts bridge on desktop → pairs phone via Dispatch → sends terse instructions from phone ("how's the build?", "run tests") → receives concise status reports → handles detailed work when back at desk.
 
 **Key Features Used**:
+- **Dispatch prompts** (`project-status`, `quick-tests`, `quick-review`, `build-check`, `recent-activity`) — phone-optimized, concise output
+- **Scheduled Tasks** — nightly-review and health-check templates run autonomously while away
 - Remote control auto-restart wrapper
 - Terminal operations (runInTerminal, getTerminalOutput, waitForTerminalOutput)
 - Activity log (track session progress)
@@ -45,16 +47,18 @@ Dossiers for each type of developer who uses Claude IDE Bridge. Validate and ref
 - start-all.sh orchestrator (manages full stack)
 
 **Pain Points Addressed**:
+- Having to be at the desk to check build status
 - Connection drops on mobile networks
 - Needing terminal access from any device
 - Monitoring long-running AI tasks
 
 **Configuration Preferences**:
+- Dispatch paired via Claude Desktop QR code
+- Keeps computer awake for Dispatch access
 - Uses `--notify <topic>` for ntfy push notifications
 - Relies on auto-restart for connection stability
-- May use Docker deployment
 
-**Success Metrics**: Uptime despite connection drops, successful remote task completion, low notification noise
+**Success Metrics**: Uptime despite connection drops, successful remote task completion, useful Dispatch check-ins, low notification noise
 
 ---
 
@@ -87,11 +91,15 @@ Dossiers for each type of developer who uses Claude IDE Bridge. Validate and ref
 
 ## Persona 4: Team Lead / Code Reviewer
 
-**Background**: Reviews pull requests, manages issues, monitors CI/CD. Uses Claude Code to assist with code review and issue triage. Needs GitHub integration.
+**Background**: Reviews pull requests, manages issues, monitors CI/CD. Uses Claude Code to assist with code review and issue triage. May coordinate Agent Teams for parallel work across modules. Needs GitHub integration.
 
-**Workflow**: Opens PR → asks Claude to analyze changes → reviews diff → posts review comments. Also: triages issues, monitors workflow runs.
+**Workflow**: Opens PR → asks Claude to analyze changes → reviews diff → posts review comments. For large tasks: creates Agent Team → assigns modules to teammates → monitors via `team-status` prompt → synthesizes results. Also: triages issues, monitors workflow runs, runs scheduled health checks.
 
 **Key Features Used**:
+- **Agent Teams** — parallel multi-agent coordination for large refactors or cross-module reviews
+- **`team-status` prompt** — overview of workspace state, active tasks, and recent activity across sessions
+- **`health-check` prompt** — comprehensive project health for ad-hoc or scheduled runs
+- **Scheduled Tasks** — nightly-review and dependency-audit templates for recurring oversight
 - GitHub PR tools (listPRs, viewPR, getPRDiff, createPR, postPRReview)
 - GitHub Issues (listIssues, getIssue, createIssue, commentIssue)
 - GitHub Actions (listRuns, getRunLogs)
@@ -102,13 +110,17 @@ Dossiers for each type of developer who uses Claude IDE Bridge. Validate and ref
 - Jumping between GitHub UI, editor, and terminal
 - Understanding impact of changes across codebase
 - Writing thorough review comments efficiently
+- Coordinating parallel work across team members
+- Maintaining project health visibility without manual checks
 
 **Configuration Preferences**:
 - Needs `gh` CLI installed and authenticated
+- Agent Teams: `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`
 - May work across multiple repositories
 - Read-heavy usage (fewer write operations)
+- Scheduled tasks configured for daily/weekly health checks
 
-**Success Metrics**: Faster PR review cycles, more thorough reviews, fewer context switches
+**Success Metrics**: Faster PR review cycles, more thorough reviews, fewer context switches, proactive issue detection via scheduled checks
 
 ---
 

@@ -73,6 +73,87 @@ describe("getPrompt", () => {
     expect(text).toContain("develop");
   });
 
+  // ── Dispatch prompts ──────────────────────────────────────────────────────
+
+  it("returns messages for project-status with no args", () => {
+    const result = getPrompt("project-status", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getGitStatus");
+    expect(text).toContain("getDiagnostics");
+    expect(text).toContain("runTests");
+  });
+
+  it("returns messages for quick-tests with no args", () => {
+    const result = getPrompt("quick-tests", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("runTests");
+  });
+
+  it("returns messages for quick-tests with filter arg", () => {
+    const result = getPrompt("quick-tests", { filter: "auth" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("auth");
+  });
+
+  it("returns messages for quick-review with no args", () => {
+    const result = getPrompt("quick-review", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getGitDiff");
+    expect(text).toContain("getDiagnostics");
+  });
+
+  it("returns messages for build-check with no args", () => {
+    const result = getPrompt("build-check", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getProjectInfo");
+    expect(text).toContain("getDiagnostics");
+  });
+
+  it("returns messages for recent-activity with no args (default count)", () => {
+    const result = getPrompt("recent-activity", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getGitLog");
+    expect(text).toContain("10");
+  });
+
+  it("returns messages for recent-activity with custom count", () => {
+    const result = getPrompt("recent-activity", { count: "5" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("5");
+  });
+
+  // ── Agent Teams & Scheduled Tasks prompts ────────────────────────────────
+
+  it("returns messages for team-status with no args", () => {
+    const result = getPrompt("team-status", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getGitStatus");
+    expect(text).toContain("getDiagnostics");
+    expect(text).toContain("getOpenEditors");
+    expect(text).toContain("listClaudeTasks");
+    expect(text).toContain("getActivityLog");
+  });
+
+  it("returns messages for health-check with no args", () => {
+    const result = getPrompt("health-check", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getGitStatus");
+    expect(text).toContain("getDiagnostics");
+    expect(text).toContain("runTests");
+    expect(text).toContain("getSecurityAdvisories");
+    expect(text).toContain("auditDependencies");
+    expect(text).toContain("HEALTHY");
+  });
+
   it("all returned messages have correct shape", () => {
     for (const prompt of PROMPTS) {
       const args: Record<string, string> = {};

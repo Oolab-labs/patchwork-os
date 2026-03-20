@@ -29,7 +29,7 @@ import { corsOrigin } from "./server.js";
 import { registerAllTools } from "./tools/index.js";
 import { McpTransport } from "./transport.js";
 
-const SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes idle TTL
+const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour idle TTL
 const MAX_HTTP_SESSIONS = 5;
 const BODY_SIZE_LIMIT = 1_048_576; // 1 MB
 const MAX_PENDING_SENDS = 100; // per-session response queue cap
@@ -489,14 +489,14 @@ export class StreamableHttpHandler {
 
   private createSession(): HttpSession {
     const id = crypto.randomUUID();
-    const session: HttpSession = {
+    const session = {
       id,
-      adapter: null!, // filled in below once adapter is created
-      transport: null!,
-      openedFiles: new Set(),
+      adapter: null as unknown,
+      transport: null as unknown,
+      openedFiles: new Set<string>(),
       terminalPrefix: `http-${id.slice(0, 8)}`,
       lastActivity: Date.now(),
-    };
+    } as HttpSession;
     const adapter = new HttpAdapter(
       (msg) => this.logger.warn(msg),
       () => {

@@ -273,7 +273,9 @@ Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering whil
 
 ## MCP Prompts
 
-The bridge serves 7 built-in prompts via `prompts/list` + `prompts/get`. These appear as `/mcp__bridge__<name>` in any MCP client that supports the MCP prompts protocol. No extension required.
+The bridge serves 15 built-in prompts via `prompts/list` + `prompts/get`. These appear as `/mcp__bridge__<name>` in any MCP client that supports the MCP prompts protocol. No extension required.
+
+### Core prompts
 
 | Prompt | Argument | Description |
 |--------|----------|-------------|
@@ -284,6 +286,26 @@ The bridge serves 7 built-in prompts via `prompts/list` + `prompts/get`. These a
 | `git-review` | `base` (optional, default: `main`) | Review all changes since a git base branch |
 | `set-effort` | `level` (optional: `low`/`medium`/`high`, default: `medium`) | Prepend an effort-level instruction to tune Claude's thoroughness for the next task |
 | `cowork` | `task` (optional) | **Load full IDE context and propose a Cowork action plan.** Calls `getHandoffNote`, `getOpenEditors`, `getDiagnostics`, `getGitStatus`, `getProjectInfo` automatically — user only needs to describe the goal. |
+| `gen-claude-md` | _(none)_ | Generate a CLAUDE.md bridge workflow section for the project |
+
+### Dispatch prompts (mobile)
+
+Optimized for terse phone triggers via Claude Desktop's Dispatch feature. Each instructs Claude to call specific bridge tools and return concise, phone-screen-friendly output (under 20 lines).
+
+| Prompt | Argument | Description |
+|--------|----------|-------------|
+| `project-status` | _(none)_ | Git status + diagnostics + test summary ("How's the build?") |
+| `quick-tests` | `filter` (optional) | Run tests, pass/fail summary with failure details |
+| `quick-review` | _(none)_ | Diff summary + diagnostics for changed files |
+| `build-check` | _(none)_ | Build/compile check with error summary |
+| `recent-activity` | `count` (optional, default: 10) | Recent git log + uncommitted changes |
+
+### Agent Teams & Scheduled Tasks prompts
+
+| Prompt | Argument | Description |
+|--------|----------|-------------|
+| `team-status` | _(none)_ | Workspace state, active tasks, recent activity for team leads coordinating parallel agents |
+| `health-check` | _(none)_ | Comprehensive project health (tests, diagnostics, security) with HEALTHY/DEGRADED/FAILING grading. Designed for scheduled nightly/hourly runs. |
 
 Implementation: `src/prompts.ts`. Tests: `src/__tests__/prompts.test.ts`, `src/__tests__/transport-prompts.test.ts`.
 

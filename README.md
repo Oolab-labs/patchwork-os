@@ -243,7 +243,7 @@ Text editing · Workspace settings · File watchers · Decorations · `executeVS
 
 ## MCP Prompts (Slash Commands)
 
-The bridge exposes 7 built-in slash commands via the MCP `prompts/list` + `prompts/get` protocol. These appear as `/mcp__bridge__<name>` in any MCP client that supports prompts.
+The bridge exposes 15 built-in slash commands via the MCP `prompts/list` + `prompts/get` protocol. These appear as `/mcp__bridge__<name>` in any MCP client that supports prompts.
 
 | Prompt | Argument | Description |
 |--------|----------|-------------|
@@ -254,6 +254,13 @@ The bridge exposes 7 built-in slash commands via the MCP `prompts/list` + `promp
 | `/mcp__bridge__git-review` | `base` (optional, default: `main`) | Review all changes since a git base branch |
 | `/mcp__bridge__cowork` | `task` (optional) | Gather full IDE context and propose a Cowork action plan — run this **before** opening a Cowork session |
 | `/mcp__bridge__set-effort` | `level` (optional: `low`/`medium`/`high`, default: `medium`) | Prepend an effort-level instruction to tune Claude's thoroughness for the next task |
+| `/mcp__bridge__project-status` | _(none)_ | Quick project health: git status + diagnostics + test summary (Dispatch) |
+| `/mcp__bridge__quick-tests` | `filter` (optional) | Run tests and return concise pass/fail summary (Dispatch) |
+| `/mcp__bridge__quick-review` | _(none)_ | Review uncommitted changes with diff summary and diagnostics (Dispatch) |
+| `/mcp__bridge__build-check` | _(none)_ | Check if the project builds successfully (Dispatch) |
+| `/mcp__bridge__recent-activity` | `count` (optional, default: `10`) | Recent git log and uncommitted changes (Dispatch) |
+| `/mcp__bridge__team-status` | _(none)_ | Workspace state, active tasks, and recent activity for team leads (Agent Teams) |
+| `/mcp__bridge__health-check` | _(none)_ | Comprehensive project health: tests, diagnostics, security (Scheduled Tasks) |
 
 > **Cowork sessions and MCP tools:** MCP tools (including all bridge tools) are **not available inside a Cowork session**. Use a two-step workflow: run `/mcp__bridge__cowork` in a regular Claude Code chat first — it gathers full IDE context and produces an action plan — then open a Cowork session armed with that context.
 
@@ -574,6 +581,176 @@ bash scripts/gen-mcp-config.sh claude-desktop --write
 Config location:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+## Dispatch (Mobile Remote Control)
+
+[Dispatch](https://docs.anthropic.com) is a Claude Desktop feature that lets you send instructions from your phone to your desktop Claude session. Combined with the bridge, you can check on your project, run tests, and review changes — all from a phone message.
+
+### How it works
+
+```
+Your Phone (Claude App)
+    │
+    ▼  terse instruction
+Claude Desktop (main conversation)
+    │
+    ▼  MCP tool calls
+Bridge Server ──► IDE Extension ──► Your Code
+    │
+    ▼  results
+Claude Desktop
+    │
+    ▼  concise summary
+Your Phone
+```
+
+Dispatch messages land in Claude Desktop's **main conversation**, which has full MCP bridge access. Claude calls the bridge tools, gathers results, and sends a summary back to your phone.
+
+> **Not Cowork:** Dispatch routes through the main conversation, not a Cowork session. All 124+ bridge tools are available. The Cowork tool-access limitation does not apply here.
+
+### Setup
+
+1. **Bridge running** — `claude-ide-bridge --watch` in your project directory
+2. **Claude Desktop connected** — stdio shim configured (see [Use with Claude Desktop](#use-with-claude-desktop))
+3. **Dispatch paired** — open Claude Desktop → Cowork → Dispatch → scan QR code with Claude mobile app
+4. **Computer awake** — your desktop must be powered on and not sleeping
+
+### Phone-friendly prompts
+
+The bridge includes 5 Dispatch-optimized prompts designed for terse phone triggers. Each instructs Claude to call specific bridge tools and return concise, phone-screen-friendly output:
+
+| Prompt | Phone message | What it does |
+|--------|--------------|--------------|
+| `project-status` | "How's the build?" | Git status + diagnostics + test summary |
+| `quick-tests` | "Run the tests" | Pass/fail summary with failure details |
+| `quick-review` | "Review my changes" | Diff summary + diagnostics for changed files |
+| `build-check` | "Does it build?" | Build/compile check with error summary |
+| `recent-activity` | "What changed?" | Recent git log + uncommitted changes |
+
+You can also type any natural-language instruction — the prompts above are shortcuts that produce consistently formatted output.
+
+### Example Dispatch session
+
+From your phone:
+> "How's the build?"
+
+Claude checks git status, diagnostics, and tests, then responds:
+```
+Branch: feature/oauth (3 uncommitted)
+Diagnostics: 0 errors, 2 warnings
+Tests: 142 passed, 0 failed (12s)
+```
+
+From your phone:
+> "Review my changes"
+
+Claude diffs your uncommitted work and responds with a file-by-file summary and an overall assessment.
+
+### Cowork context template
+
+For better Dispatch results, copy `templates/dispatch-context.md` into your Cowork context folder. It maps terse phone commands to bridge tools and sets response formatting guidelines for mobile output.
+
+### Limitations
+
+- **One conversation thread** — Dispatch uses a single persistent thread
+- **Computer must be awake** — if your desktop sleeps, Dispatch goes dark
+- **No push notifications** — check the phone app manually for responses
+- **Best for reads, not writes** — information retrieval (status, tests, review) is highly reliable; multi-file edits from phone messages are not recommended
+
+---
+
+## Agent Teams (Parallel Multi-Agent)
+
+[Agent Teams](https://code.claude.com/docs/en/agent-teams) let multiple Claude Code instances work in parallel on the same project. A team lead assigns tasks, teammates execute them independently, and results are synthesized.
+
+### How it works with the bridge
+
+Each teammate is an independent Claude Code session that connects to the bridge via its own WebSocket/MCP session. The bridge already supports multiple concurrent sessions (`MAX_SESSIONS = 5`), so **agent teams work out of the box** — no additional configuration needed.
+
+```
+Team Lead (Claude Code)
+    ├── Teammate A ──► Bridge Session 1 ──► IDE
+    ├── Teammate B ──► Bridge Session 2 ──► IDE
+    └── Teammate C ──► Bridge Session 3 ──► IDE
+```
+
+All teammates share the same IDE and workspace. Each gets full access to all 124+ bridge tools.
+
+### Setup
+
+1. Enable agent teams: set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in your environment
+2. Bridge running: `claude-ide-bridge --watch`
+3. Ask Claude to create a team: *"Create an agent team to review and fix all TypeScript errors"*
+
+### Bridge prompts for team leads
+
+| Prompt | What it does |
+|--------|-------------|
+| `/mcp__bridge__team-status` | Workspace state, active tasks, recent activity across sessions |
+| `/mcp__bridge__health-check` | Full project health: tests, diagnostics, security |
+
+### Best practices
+
+- **Pre-approve tools** — teammates block on permission prompts. Use `--dangerously-skip-permissions` in sandboxed environments or pre-approve common tools.
+- **Avoid file conflicts** — assign teammates to different files/modules. The bridge doesn't lock files across sessions.
+- **Use the team-status prompt** — the lead can call `/mcp__bridge__team-status` to see workspace state and recent activity across all sessions.
+
+---
+
+## Scheduled Tasks (Recurring Workflows)
+
+Claude Desktop's [Scheduled Tasks](https://code.claude.com/docs/en/scheduled-tasks) run recurring autonomous workflows on a cron schedule. Each run fires a fresh Claude session with full MCP access — including all bridge tools.
+
+### How it works with the bridge
+
+When a scheduled task fires, Claude Desktop loads your MCP servers from config. If the bridge's stdio shim is configured (see [Use with Claude Desktop](#use-with-claude-desktop)), the task gets full access to all bridge tools.
+
+```
+Cron trigger (e.g., daily 9am)
+    │
+    ▼
+Claude Desktop (fresh session)
+    │
+    ▼  loads MCP servers
+Bridge Server ──► IDE Extension ──► Your Code
+    │
+    ▼  structured report
+Task history (viewable in Desktop sidebar)
+```
+
+### Ready-made task templates
+
+Copy any of these into `~/.claude/scheduled-tasks/` to set up a recurring workflow:
+
+| Template | Schedule | What it does |
+|----------|----------|-------------|
+| `nightly-review` | Daily | Review uncommitted changes, diagnostics, test status |
+| `health-check` | Hourly/Daily | Full project health: tests, diagnostics, security advisories |
+| `dependency-audit` | Weekly | Scan dependencies for CVEs and outdated packages |
+
+```bash
+# Install a scheduled task template
+cp -r templates/scheduled-tasks/health-check ~/.claude/scheduled-tasks/
+```
+
+Then open Claude Desktop → Schedule → configure the frequency and permissions for the task.
+
+### Bridge prompts for scheduled contexts
+
+The `health-check` MCP prompt (`/mcp__bridge__health-check`) produces the same structured report as the scheduled task template — useful for ad-hoc runs from any MCP client.
+
+### Bridge automation vs. Desktop scheduled tasks
+
+The bridge has its own event-driven automation system (`--automation --automation-policy`). Here's when to use which:
+
+| Feature | Trigger | Persistence | Best for |
+|---------|---------|-------------|----------|
+| **Desktop Scheduled Tasks** | Time-based (cron) | Survives restarts | Nightly reviews, weekly audits, periodic checks |
+| **Bridge Automation Hooks** | Event-driven (file save, diagnostic error) | Requires bridge running | Immediate reactions: auto-fix on error, lint on save |
+
+They're complementary — use scheduled tasks for periodic health checks and bridge automation for real-time reactions.
+
+---
 
 ## Use with Claude.ai Web
 

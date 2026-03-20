@@ -4,24 +4,39 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.4.10 — 2026-03-19)
+## Current State (v2.4.11 — 2026-03-20)
 
-- 124+ MCP tools; 1265+ bridge tests + 394 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- 124+ MCP tools; 1263+ bridge tests + 394 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
 - Extension v1.0.9 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.4.10`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
+- **Four client surfaces**: Claude Code CLI, Claude Desktop (Cowork + Dispatch), Agent Teams (parallel), Scheduled Tasks (recurring)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
 - Multi-linter and multi-test-runner support (auto-detected)
 - GitHub integration (PRs, issues, actions, releases)
-- Remote control support via `start-all.sh` orchestrator (tmux, health monitor, exponential backoff)
+- Remote control support via `start-all.sh` orchestrator (tmux, health monitor, exponential backoff) or systemd service (`deploy/install-vps-service.sh`)
 - Activity logging with Prometheus metrics; session checkpoint every 30s
 - Claude Code Platform Integration fully shipped (6 skills, 3 subagents, plugin, hooks, `/ide-monitor`)
 - MCP resources (`resources/list` + `resources/read`): workspace-confined, 1 MB cap, cursor-paginated
 - MCP elicitation (`elicitation: {}` capability): `McpTransport.elicit()` sends `elicitation/create` to Claude Code 2.1.76+
 - Deep security hardening: SSRF three-layer defense, Origin validation, rate limiting, lstatSync everywhere, TOCTOU mitigations, structured error codes
-- Claude Desktop + Cowork integration documented; `setHandoffNote`/`getHandoffNote` for cross-session context
+- Claude Desktop + Cowork + Dispatch integration documented; `setHandoffNote`/`getHandoffNote` for cross-session context; 5 Dispatch-optimized prompts for phone triggers
 - Remote Desktop IDE support: extension runs in remote extension host (SSH/Cursor SSH); `print-token` CLI subcommand for headless VPS setup
+- Agent Teams support: multi-session architecture serves parallel teammates out of the box; `team-status` prompt for coordination
+- Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.4.11 shipped (2026-03-20) — Dispatch, Agent Teams, and Scheduled Tasks integration:**
+- 7 new MCP prompts (15 total): 5 Dispatch-optimized (`project-status`, `quick-tests`, `quick-review`, `build-check`, `recent-activity`) + 2 team/schedule (`team-status`, `health-check`)
+- Dispatch prompts: read-only information retrieval with phone-screen-friendly output (under 20 lines)
+- `team-status`: workspace state, active tasks, recent activity for team leads coordinating parallel agents
+- `health-check`: comprehensive project health with HEALTHY/DEGRADED/FAILING grading (tests, diagnostics, security)
+- 3 scheduled task SKILL.md templates in `templates/scheduled-tasks/` (nightly-review, health-check, dependency-audit)
+- Cowork context template: `templates/dispatch-context.md` maps terse phone commands → bridge tools
+- README: 3 new sections (Dispatch, Agent Teams, Scheduled Tasks) with architecture diagrams and setup guides
+- `templates/CLAUDE.bridge.md` updated with Dispatch + team/schedule quick-reference tables
+- 16 new prompt tests (38 total in prompt suite); build + lint clean
 
 **v2.4.10 shipped (2026-03-19) — Full OAuth 2.0 for claude.ai custom connectors:**
 - `--issuer-url <url>` flag: activates OAuth 2.0 mode; sets issuer in all discovery documents

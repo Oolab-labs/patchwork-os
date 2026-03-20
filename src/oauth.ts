@@ -54,7 +54,7 @@ interface AccessToken {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CODE_TTL_MS = 5 * 60 * 1_000; // 5 min
-const TOKEN_TTL_MS = 60 * 60 * 1_000; // 1 hour
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1_000; // 24 hours
 const DEFAULT_SCOPE = "mcp";
 const SUPPORTED_SCOPES = ["mcp"];
 
@@ -119,7 +119,10 @@ export class OAuthServerImpl implements OAuthServer {
     try {
       const raw = await new Promise<string>((resolve, reject) => {
         let data = "";
-        req.on("data", (c: Buffer) => { data += c.toString(); if (data.length > 8192) reject(new Error("too large")); });
+        req.on("data", (c: Buffer) => {
+          data += c.toString();
+          if (data.length > 8192) reject(new Error("too large"));
+        });
         req.on("end", () => resolve(data));
         req.on("error", reject);
       });
@@ -128,7 +131,7 @@ export class OAuthServerImpl implements OAuthServer {
       this.sendJson(res, 400, { error: "invalid_client_metadata" });
       return;
     }
-    const redirectUris = body["redirect_uris"];
+    const redirectUris = body.redirect_uris;
     if (!Array.isArray(redirectUris) || redirectUris.length === 0) {
       this.sendJson(res, 400, { error: "invalid_redirect_uri" });
       return;
@@ -142,7 +145,7 @@ export class OAuthServerImpl implements OAuthServer {
       grant_types: ["authorization_code"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
-      ...(body["client_name"] ? { client_name: body["client_name"] } : {}),
+      ...(body.client_name ? { client_name: body.client_name } : {}),
     });
   }
 
@@ -178,9 +181,9 @@ export class OAuthServerImpl implements OAuthServer {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(
       this.approvalPage({
-        clientId: clientId!,
-        redirectUri: redirectUri!,
-        codeChallenge: codeChallenge!,
+        clientId: clientId as string,
+        redirectUri: redirectUri as string,
+        codeChallenge: codeChallenge as string,
         scope: scope ?? DEFAULT_SCOPE,
         state: state ?? "",
       }),

@@ -60,3 +60,26 @@ Path globs on rule files mean Claude only loads them when working on matching fi
 | Lint / format | `fixAllLintErrors`, `formatDocument` |
 | Security audit | `getSecurityAdvisories`, `auditDependencies` |
 | Unused code | `detectUnusedCode` |
+
+### Dispatch prompts (mobile)
+
+When responding to terse Dispatch messages from a phone, use these prompts for consistent, concise output:
+
+| Phone message | Prompt | Tools called |
+|---|---|---|
+| "How's the build?" | `project-status` | `getGitStatus`, `getDiagnostics`, `runTests` |
+| "Run the tests" | `quick-tests` | `runTests` |
+| "Review my changes" | `quick-review` | `getGitStatus`, `getGitDiff`, `getDiagnostics` |
+| "Does it build?" | `build-check` | `getProjectInfo`, `getDiagnostics`, `runCommand` |
+| "What changed?" | `recent-activity` | `getGitLog`, `getGitStatus` |
+
+Keep responses concise (under 20 lines) when the conversation arrives via Dispatch.
+
+### Agent Teams & Scheduled Tasks
+
+| Context | Prompt | What it does |
+|---|---|---|
+| Team lead checking on parallel agents | `team-status` | Workspace state, active tasks, recent activity across sessions |
+| Scheduled nightly/hourly health check | `health-check` | Tests + diagnostics + security advisories + git status |
+
+Ready-made scheduled task templates are available in `templates/scheduled-tasks/` — copy to `~/.claude/scheduled-tasks/` for recurring autonomous workflows (nightly-review, health-check, dependency-audit).
