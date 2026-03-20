@@ -44,6 +44,18 @@ const DANGEROUS_PATH_FLAGS = new Set([
   "--makefile", // make Makefile path
 ]);
 
+/**
+ * Per-command exemptions from DANGEROUS_PATH_FLAGS.
+ * Some commands use flag names that collide with the blocklist but have
+ * harmless semantics (e.g. psql --config selects a libpq service entry,
+ * not an arbitrary file to execute).
+ */
+const PATH_FLAG_EXEMPTIONS: Record<string, Set<string>> = {
+  psql: new Set(["--config"]),
+  pg_dump: new Set(["--config"]),
+  pg_restore: new Set(["--config"]),
+};
+
 function validateCommand(command: string, allowlist: string[]): void {
   if (
     command.includes("/") ||
@@ -88,8 +100,9 @@ function validateArgs(args: unknown, command: string): string[] {
         `Flag "${flag}" is blocked for interpreter command "${command}" — it allows arbitrary code execution`,
       );
     }
-    // Block config/path-override flags for all commands
-    if (DANGEROUS_PATH_FLAGS.has(flag)) {
+    // Block config/path-override flags for all commands (unless exempted)
+    const exemptions = PATH_FLAG_EXEMPTIONS[command];
+    if (DANGEROUS_PATH_FLAGS.has(flag) && !exemptions?.has(flag)) {
       throw new Error(
         `Flag "${flag}" is blocked — it can redirect command execution outside the workspace`,
       );
@@ -125,7 +138,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
           },
           timeout: {
             type: "integer",
-            description: `Timeout in milliseconds (default: ${config.commandTimeout}, max: 120000)`,
+            description: `Timeout in milliseconds (default: ${config.commandTimeout}, max: 600000)`,
           },
         },
         required: ["command"],
@@ -142,7 +155,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
       const cmdArgs = validateArgs(args.args, command);
       const cwdRaw = optionalString(args, "cwd");
       const timeout =
-        optionalInt(args, "timeout", 1000, 120_000) ?? config.commandTimeout;
+        optionalInt(args, "timeout", 1000, 600_000) ?? config.commandTimeout;
 
       const cwd = cwdRaw ? resolveFilePath(cwdRaw, workspace) : workspace;
 

@@ -53,6 +53,16 @@ const TERMINAL_DANGEROUS_PATH_FLAGS = new Set([
   "--makefile",
 ]);
 
+/**
+ * Per-command exemptions from TERMINAL_DANGEROUS_PATH_FLAGS.
+ * Mirrors PATH_FLAG_EXEMPTIONS in runCommand.ts.
+ */
+const TERMINAL_PATH_FLAG_EXEMPTIONS: Record<string, Set<string>> = {
+  psql: new Set(["--config"]),
+  pg_dump: new Set(["--config"]),
+  pg_restore: new Set(["--config"]),
+};
+
 /** Environment variable names that could enable privilege escalation */
 const DANGEROUS_ENV_VARS = new Set([
   "PATH",
@@ -107,7 +117,8 @@ function validateTerminalCommandFlags(command: string): string | undefined {
     if (isInterpreter && TERMINAL_DANGEROUS_INTERPRETER_FLAGS.has(flag)) {
       return `Flag "${flag}" is not allowed for interpreter command "${cmd}" (code execution risk)`;
     }
-    if (TERMINAL_DANGEROUS_PATH_FLAGS.has(flag)) {
+    const exemptions = TERMINAL_PATH_FLAG_EXEMPTIONS[cmd];
+    if (TERMINAL_DANGEROUS_PATH_FLAGS.has(flag) && !exemptions?.has(flag)) {
       return `Flag "${flag}" is not allowed in terminal commands (config redirect risk)`;
     }
   }
@@ -739,7 +750,7 @@ export function createSendTerminalCommandTool(
           isCommand: {
             type: "boolean" as const,
             description:
-              "Set to false when sending REPL input or raw keystrokes (e.g. typing into a Python/Node REPL, pasting text) — skips shell-command validation. Default: true.",
+              "Set to false when sending REPL input, raw keystrokes, or shell commands with pipes/redirects (|, >, <) — skips shell-command validation. Default: true.",
           },
         },
         additionalProperties: false as const,

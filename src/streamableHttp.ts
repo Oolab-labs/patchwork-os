@@ -29,7 +29,7 @@ import { corsOrigin } from "./server.js";
 import { registerAllTools } from "./tools/index.js";
 import { McpTransport } from "./transport.js";
 
-const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour idle TTL
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hour idle TTL (matches OAuth token lifetime)
 const MAX_HTTP_SESSIONS = 5;
 const BODY_SIZE_LIMIT = 1_048_576; // 1 MB
 const MAX_PENDING_SENDS = 100; // per-session response queue cap

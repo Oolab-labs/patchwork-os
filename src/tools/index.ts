@@ -310,7 +310,9 @@ export function registerAllTools(
     createSetEditorDecorationsTool(workspace, extensionClient),
     createClearEditorDecorationsTool(extensionClient),
     createSetActiveWorkspaceFolderTool(config),
-    createSendHttpRequestTool(),
+    createSendHttpRequestTool({
+      allowPrivateHttp: config.allowPrivateHttp,
+    }),
     createParseHttpFileTool(workspace),
     // Dependency & security tools
     createGetDependencyTreeTool(workspace, probes),

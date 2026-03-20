@@ -15,7 +15,7 @@
  *   Refresh tokens are not issued.
  *
  * Security
- *   PKCE S256 mandatory. Auth codes single-use, 5 min TTL. Access tokens 1 h TTL.
+ *   PKCE S256 mandatory. Auth codes single-use, 5 min TTL. Access tokens 24 h TTL.
  *   All string comparisons via crypto.timingSafeEqual. HTML output attribute-escaped.
  */
 
