@@ -86,6 +86,8 @@ Keep responses concise (under 20 lines) when the conversation arrives via Dispat
 
 > Prerequisite for `team-status`: multiple Claude Code sessions must be connected simultaneously. Solo sessions will show empty team activity.
 
+> **Claude Code ≥ v2.1.77**: `SendMessage` auto-resumes stopped agents — no need to check whether a teammate is running before sending to it.
+
 Ready-made scheduled task templates are available in `templates/scheduled-tasks/` — copy to `~/.claude/scheduled-tasks/` for recurring autonomous workflows (nightly-review, health-check, dependency-audit):
 
 ```bash
