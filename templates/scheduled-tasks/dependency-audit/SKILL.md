@@ -1,3 +1,18 @@
+## Installation
+
+Copy this template to your Claude Desktop scheduled-tasks directory:
+
+```bash
+mkdir -p ~/.claude/scheduled-tasks/dependency-audit
+cp /path/to/claude-ide-bridge/templates/scheduled-tasks/dependency-audit/SKILL.md \
+   ~/.claude/scheduled-tasks/dependency-audit/SKILL.md
+```
+
+Then restart Claude Desktop to detect the new scheduled task. Configure the schedule in Claude Desktop settings under "Scheduled Tasks".
+
+> The bridge must be running when this task fires. Start it with `claude-ide-bridge --watch` or `npm run start-all`.
+
+---
 ---
 name: dependency-audit
 description: Scan dependencies for security vulnerabilities and outdated packages. Run weekly via Claude Desktop scheduled tasks.

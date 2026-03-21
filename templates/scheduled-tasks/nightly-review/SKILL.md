@@ -1,3 +1,18 @@
+## Installation
+
+Copy this template to your Claude Desktop scheduled-tasks directory:
+
+```bash
+mkdir -p ~/.claude/scheduled-tasks/nightly-review
+cp /path/to/claude-ide-bridge/templates/scheduled-tasks/nightly-review/SKILL.md \
+   ~/.claude/scheduled-tasks/nightly-review/SKILL.md
+```
+
+Then restart Claude Desktop to detect the new scheduled task. Configure the schedule in Claude Desktop settings under "Scheduled Tasks".
+
+> The bridge must be running when this task fires. Start it with `claude-ide-bridge --watch` or `npm run start-all`.
+
+---
 ---
 name: nightly-review
 description: Review uncommitted changes, check diagnostics, and summarize test status. Run nightly via Claude Desktop scheduled tasks.

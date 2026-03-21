@@ -775,6 +775,8 @@ const TEMPLATES: Record<
           content: {
             type: "text" as const,
             text: [
+              "**Context check:** If bridge tools (getHandoffNote, getOpenEditors, etc.) are not in your available tools list, you are inside a Cowork session where MCP is unavailable. Exit Cowork, run this prompt in regular Claude Code or Desktop chat to collect context and set a handoff note, then return to Cowork.",
+              "",
               "## Step 1 of 2 — Gather IDE context (you are here)",
               "",
               "⚠️  **Important:** Cowork (computer-use) sessions do NOT have access to MCP bridge tools.",

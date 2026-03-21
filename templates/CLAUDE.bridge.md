@@ -83,3 +83,23 @@ Keep responses concise (under 20 lines) when the conversation arrives via Dispat
 | Scheduled nightly/hourly health check | `health-check` | Tests + diagnostics + security advisories + git status |
 
 Ready-made scheduled task templates are available in `templates/scheduled-tasks/` — copy to `~/.claude/scheduled-tasks/` for recurring autonomous workflows (nightly-review, health-check, dependency-audit).
+
+### Cowork (computer-use)
+
+**MCP bridge tools are NOT available inside Cowork sessions.** Always run `/mcp__bridge__cowork` in a regular Claude Code or Claude Desktop chat first to gather context and write a handoff note, then open Cowork.
+
+Workflow:
+1. Regular chat: run `/mcp__bridge__cowork` → Claude collects IDE state → calls `setHandoffNote`
+2. Open Cowork (Cmd+2 on Mac) → Cowork reads the handoff note for context
+
+**If bridge tools are missing from your tool list inside Cowork:** you're in the wrong context. Exit, run the prompt in regular chat, then return.
+
+### Session continuity
+
+| Scenario | Action |
+|---|---|
+| Switching CLI → Desktop | Call `setHandoffNote` before switching; bridge auto-snapshots if note is stale |
+| Session just started | Call `getHandoffNote` to pick up prior context (workspace-scoped) |
+| Bridge restarted | First connected client receives a "restored from checkpoint" notification |
+| Preparing for Cowork | Run `/mcp__bridge__cowork` in regular chat first — Cowork has no MCP access |
+| Multi-workspace | Notes are workspace-scoped; switching workspaces won't overwrite each other's notes |

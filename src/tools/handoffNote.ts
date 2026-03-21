@@ -1,30 +1,93 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { error, success } from "./utils.js";
 
-function getNotePath(): string {
-  const configDir =
-    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+function getGlobalNotePath(configDir: string): string {
   return path.join(configDir, "ide", "handoff-note.json");
+}
+
+function workspaceScopedNotePath(workspace: string, configDir: string): string {
+  const hash = crypto
+    .createHash("sha256")
+    .update(workspace)
+    .digest("hex")
+    .slice(0, 12);
+  return path.join(configDir, "ide", `handoff-note-${hash}.json`);
+}
+
+function resolveConfigDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 }
 
 interface HandoffNote {
   note: string;
   updatedAt: number;
   updatedBy: string; // "desktop" | "cli" | "unknown"
+  auto?: boolean;
 }
 
-function readNote(): HandoffNote | null {
+function readNoteFromPath(notePath: string): HandoffNote | null {
   try {
-    const raw = fs.readFileSync(getNotePath(), "utf-8");
+    const raw = fs.readFileSync(notePath, "utf-8");
     return JSON.parse(raw) as HandoffNote;
   } catch {
     return null;
   }
 }
 
-export function createSetHandoffNoteTool(_sessionId: string) {
+export async function readNote(
+  workspace?: string,
+  configDir?: string,
+): Promise<HandoffNote | null> {
+  const dir = configDir ?? resolveConfigDir();
+  if (workspace) {
+    const scoped = readNoteFromPath(workspaceScopedNotePath(workspace, dir));
+    if (scoped !== null) return scoped;
+  }
+  return readNoteFromPath(getGlobalNotePath(dir));
+}
+
+export async function writeNote(
+  note: string,
+  workspace?: string,
+  configDir?: string,
+  _auto?: boolean,
+): Promise<void> {
+  const dir = configDir ?? resolveConfigDir();
+  const content: HandoffNote = {
+    note,
+    updatedAt: Date.now(),
+    updatedBy: "cli",
+    ...(_auto === true ? { auto: true } : {}),
+  };
+  const contentJson = JSON.stringify(content, null, 2);
+
+  // Determine primary write path
+  const primaryPath = workspace
+    ? workspaceScopedNotePath(workspace, dir)
+    : getGlobalNotePath(dir);
+
+  fs.mkdirSync(path.dirname(primaryPath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(primaryPath, contentJson, { mode: 0o600 });
+
+  // Dual-write to global path (best-effort) when writing to a scoped path
+  if (workspace) {
+    const globalPath = getGlobalNotePath(dir);
+    try {
+      fs.mkdirSync(path.dirname(globalPath), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(globalPath, contentJson, { mode: 0o600 });
+    } catch {
+      // best-effort — ignore failures on global write
+    }
+  }
+}
+
+export function createSetHandoffNoteTool(
+  _sessionId: string,
+  deps: { workspace?: string; configDir?: string } = {},
+) {
   return {
     schema: {
       name: "setHandoffNote",
@@ -51,28 +114,21 @@ export function createSetHandoffNoteTool(_sessionId: string) {
           `Note exceeds maximum length of 10,000 characters (got ${note.length}).`,
         );
       }
-      const notePath = getNotePath();
-      const content: HandoffNote = {
-        note,
-        updatedAt: Date.now(),
-        updatedBy: "cli",
-      };
       try {
-        fs.mkdirSync(path.dirname(notePath), { recursive: true, mode: 0o700 });
-        fs.writeFileSync(notePath, JSON.stringify(content, null, 2), {
-          mode: 0o600,
-        });
+        await writeNote(note, deps.workspace, deps.configDir);
       } catch (err) {
         return error(
           `Failed to write handoff note: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-      return success({ saved: true, updatedAt: content.updatedAt });
+      return success({ saved: true, updatedAt: Date.now() });
     },
   };
 }
 
-export function createGetHandoffNoteTool() {
+export function createGetHandoffNoteTool(
+  deps: { workspace?: string; configDir?: string } = {},
+) {
   return {
     schema: {
       name: "getHandoffNote",
@@ -86,7 +142,7 @@ export function createGetHandoffNoteTool() {
       },
     },
     handler: async (_args: Record<string, unknown>) => {
-      const note = readNote();
+      const note = await readNote(deps.workspace, deps.configDir);
       if (!note) {
         return success({
           note: null,
