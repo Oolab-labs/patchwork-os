@@ -5,6 +5,17 @@
 
 A standalone MCP bridge that gives Claude Code full IDE integration with Windsurf (or any editor). Opens files, shows diffs, gets diagnostics — without needing the VS Code extension.
 
+## Prerequisites
+
+- Node.js 18+
+- A supported IDE: VS Code, Windsurf, Cursor, or Google Antigravity
+- `tmux` (for `start-all.sh`): `brew install tmux` (macOS) or `apt install tmux` (Linux)
+- **Required env var** — Claude Code won't discover the bridge without this:
+  ```bash
+  export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true
+  ```
+  Add to your `~/.zshrc` or `~/.bashrc` to make it permanent.
+
 ## Quick Start
 
 From the `claude-ide-bridge` directory:
@@ -82,9 +93,9 @@ npm run remote
 4. Claude Code can now call IDE tools (open files, get diagnostics, etc.)
 5. The lock file is automatically cleaned up when the bridge stops
 
-## Available Tools (124+)
+## Available Tools (136+)
 
-The bridge exposes 124+ MCP tools across file ops, LSP, git, GitHub, terminals, debugging, diagnostics, planning, and more. See the full reference in [documents/platform-docs.md](documents/platform-docs.md).
+The bridge exposes 136+ MCP tools across file ops, LSP, git, GitHub, terminals, debugging, diagnostics, planning, and more. See the full reference in [documents/platform-docs.md](documents/platform-docs.md).
 
 **Without extension** (25 tools hidden): Terminal, debug, file watching, tasks, and advanced LSP tools require the VS Code extension. All other tools work with native filesystem/CLI fallbacks.
 
@@ -152,7 +163,7 @@ This runs `claude remote-control` inside tmux with:
 - **Circuit breaker** — stops after 50 rapid consecutive failures
 - **Session persistence** — tmux keeps it running if your terminal closes
 
-Detach: `Ctrl+B, D` — Reattach: `tmux attach -t claude-remote`
+Detach: `Ctrl+B then D` — Reattach: `tmux attach -t claude-remote`
 
 ### Manual alternative
 
@@ -182,7 +193,7 @@ This creates a tmux session with four panes:
 If the bridge crashes, all processes are automatically restarted in the correct order. Claude Code resumes the previous conversation via `--resume`.
 
 Controls:
-- `Ctrl+B, D` — detach (everything keeps running)
+- `Ctrl+B then D` — detach (everything keeps running)
 - `tmux attach -t claude-all` — reattach
 - `tmux kill-session -t claude-all` — stop everything
 
@@ -238,6 +249,21 @@ Claude Desktop's Cowork (computer-use) mode operates in an isolated git worktree
 - `git status` on main won't show Cowork's changes until the worktree branch is merged
 - Add **"write all files to the workspace root, not a subdirectory"** as the first instruction in your `CLAUDE.md` when using Cowork on a synced workspace, to prevent files landing in unexpected subdirectory paths within the worktree
 - After a Cowork session, review the worktree branch and merge it back manually
+
+See [docs/cowork-workflow.md](docs/cowork-workflow.md) for the full workflow.
+
+**Bridge exits immediately on startup:**
+- Check for a stale lock file: `ls ~/.claude/ide/` — delete any `.lock` files from processes that are no longer running
+- Run with `--verbose` to see startup errors
+- Check Node.js version: `node --version` (requires 18+)
+
+**Port already in use:**
+- Another bridge instance may already be running. Check: `ls ~/.claude/ide/*.lock`
+- Stop the existing bridge or use `--port <different-port>`
+
+**Lock file not cleaned up:**
+- If the bridge crashed, delete stale lock files: `rm ~/.claude/ide/<port>.lock`
+- The bridge cleans up lock files on graceful exit (SIGTERM/SIGINT) but not on crash (SIGKILL)
 
 **Claude Code doesn't see the bridge:**
 - Start Claude Code with `CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude`

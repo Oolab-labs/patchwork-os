@@ -4,13 +4,15 @@
 
 Read and comply with all documents in `/documents/`. Consult the relevant doc before making changes:
 
-- **[documents/platform-docs.md](documents/platform-docs.md)** — Complete feature reference (124+ tools). Consult before adding or modifying features.
+- **[documents/platform-docs.md](documents/platform-docs.md)** — Complete feature reference (136+ tools). Consult before adding or modifying features.
 - **[documents/ICPs.md](documents/ICPs.md)** — Developer personas. Consider impact on all personas when making changes.
 - **[documents/styleguide.md](documents/styleguide.md)** — Code conventions, UI patterns, output formats. Follow all patterns for new tools, handlers, and responses.
 - **[documents/roadmap.md](documents/roadmap.md)** — Development direction. Check before starting exploratory work.
 - **[documents/data-reference.md](documents/data-reference.md)** — Data flows, state management, protocol details. Consult before modifying connection, auth, or state logic.
 - **[documents/plugin-authoring.md](documents/plugin-authoring.md)** — Plugin manifest schema, entrypoint API, and distribution.
 - **[docs/adr/](docs/adr/)** — Architecture Decision Records. Read before touching version numbers, lock files, error codes, session management, or reconnect logic.
+
+> **Cowork (computer-use) sessions:** MCP bridge tools are NOT available inside Cowork. Always run `/mcp__bridge__cowork` in regular Desktop chat first to capture IDE context, then switch to Cowork. Cowork runs in an isolated git worktree — output won't appear in `git status` on main until merged. (see [docs/cowork-workflow.md](docs/cowork-workflow.md))
 
 ### CLI Subcommands
 
@@ -21,6 +23,7 @@ Read and comply with all documents in `/documents/`. Consult the relevant doc be
 - `gen-claude-md` — Generate a starter CLAUDE.md for the current workspace
 - `print-token [--port N]` — Print the auth token from the active lock file
 - `gen-plugin-stub <dir> --name <org/name> --prefix <prefix>` — Scaffold a new plugin
+- `--watch` — Auto-restart supervisor with exponential backoff (2s → 30s). Safe for production use.
 
 ## Bug Fix Protocol
 
@@ -86,7 +89,7 @@ For remote deployments where claude.ai custom connectors need authenticated acce
 - **Design**: PKCE S256 mandatory. Auth codes are single-use with 5-min TTL. Access tokens are opaque base64url strings with 24-hour TTL. No refresh tokens — clients re-authorize.
 - **Bridge token**: the resource owner credential. Entered in the `/oauth/authorize` approval page. All string comparisons are timing-safe.
 - **CORS env var**: `CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai,https://other.example.com` (comma-separated alternative to `--cors-origin`).
-- **Never** include the bridge token, `--fixed-token` values, or real domain names in documentation or config checked into version control.
+- **Never** include the bridge token, `--fixed-token` values, or real domain names in documentation or config checked into version control. Also never commit real domain names, `--issuer-url` values, or `--cors-origin` values to version control.
 
 ## Remote Deployment
 

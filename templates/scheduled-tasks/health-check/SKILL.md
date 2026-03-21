@@ -65,5 +65,7 @@ Advisories: <N critical, M high, K moderate | None>
 ## Guidelines
 
 - If `getSecurityAdvisories` or `auditDependencies` are unavailable, note "Security: not checked (tools unavailable)"
+- For security advisories, report only HIGH and CRITICAL severity. Moderate/low can be logged but don't affect the grade.
 - This runs unattended — no interactive prompts, no questions
 - Keep the report structured and scannable
+- Avoid emojis in automated reports for clarity.

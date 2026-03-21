@@ -15,10 +15,12 @@
 #
 # Controls:
 #   Ctrl+C in any pane — stops that process only
-#   Ctrl+B, D          — detach (everything keeps running)
+#   Ctrl+B then D (press Ctrl+B, release, then press D) — detach (everything keeps running)
 #   tmux kill-session -t claude-all — stop everything
 
 set -uo pipefail
+
+trap 'echo "[orchestrator] Caught signal, stopping all panes..."; tmux kill-session -t "${SESSION:-claude-all}" 2>/dev/null; exit 0' SIGINT SIGTERM
 
 SESSION="claude-all"
 SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -26,7 +28,7 @@ BRIDGE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORKSPACE="."
 NTFY_TOPIC=""
 IDE_NAME=""
-BRIDGE_READY_TIMEOUT=30
+BRIDGE_READY_TIMEOUT="${BRIDGE_READY_TIMEOUT:-30}"
 LAST_CLAUDE_RESTART=0
 RESTART_COUNT=0
 RESTART_DELAY=5
@@ -42,6 +44,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 WORKSPACE="$(cd "$WORKSPACE" && pwd)" || { echo "Error: workspace directory not found" >&2; exit 1; }
+if [ ! -d "$WORKSPACE" ]; then
+  echo "Error: workspace directory does not exist: $WORKSPACE" >&2
+  exit 1
+fi
 
 # --- Dependency checks ---
 command -v tmux >/dev/null 2>&1 || {
@@ -72,7 +78,7 @@ fi
 # --- We're inside tmux now (running in pane 0) ---
 echo "=== Claude IDE Bridge Full Orchestrator ==="
 echo "  Ctrl+C in any pane — stops that process"
-echo "  Ctrl+B, D — detach (keeps running)"
+echo "  Ctrl+B then D (press Ctrl+B, release, then press D) — detach (keeps running)"
 echo "  tmux kill-session -t $SESSION — stop everything"
 [[ -n "$NTFY_TOPIC" ]] && echo "  Push notifications: ntfy.sh/$NTFY_TOPIC"
 echo ""

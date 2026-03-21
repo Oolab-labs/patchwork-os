@@ -63,6 +63,8 @@ Path globs on rule files mean Claude only loads them when working on matching fi
 
 ### Dispatch prompts (mobile)
 
+When a terse message arrives via Claude Desktop Dispatch (phone/Siri), Claude automatically routes it to the appropriate bridge prompt. You can also invoke these prompts directly by name in any chat.
+
 When responding to terse Dispatch messages from a phone, use these prompts for consistent, concise output:
 
 | Phone message | Prompt | Tools called |
@@ -82,7 +84,15 @@ Keep responses concise (under 20 lines) when the conversation arrives via Dispat
 | Team lead checking on parallel agents | `team-status` | Workspace state, active tasks, recent activity across sessions |
 | Scheduled nightly/hourly health check | `health-check` | Tests + diagnostics + security advisories + git status |
 
-Ready-made scheduled task templates are available in `templates/scheduled-tasks/` — copy to `~/.claude/scheduled-tasks/` for recurring autonomous workflows (nightly-review, health-check, dependency-audit).
+> Prerequisite for `team-status`: multiple Claude Code sessions must be connected simultaneously. Solo sessions will show empty team activity.
+
+Ready-made scheduled task templates are available in `templates/scheduled-tasks/` — copy to `~/.claude/scheduled-tasks/` for recurring autonomous workflows (nightly-review, health-check, dependency-audit):
+
+```bash
+cp templates/scheduled-tasks/health-check/SKILL.md ~/.claude/scheduled-tasks/health-check.md
+```
+
+(And restart Claude Desktop to detect it.)
 
 ### Cowork (computer-use)
 
@@ -94,13 +104,15 @@ Workflow:
 
 **If bridge tools are missing from your tool list inside Cowork:** you're in the wrong context. Exit, run the prompt in regular chat, then return.
 
+Full details: [docs/cowork-workflow.md](docs/cowork-workflow.md)
+
 **Cowork uses git worktrees:** Cowork sessions operate in an isolated git worktree (separate branch/working copy), not the main workspace root. Files written by Cowork land in the worktree. Always add "write all files to the workspace root, not a subdirectory" as the first instruction in your CLAUDE.md when using Cowork with a synced workspace. After Cowork finishes, review and merge the worktree branch back to main.
 
 ### Session continuity
 
 | Scenario | Action |
 |---|---|
-| Switching CLI → Desktop | Call `setHandoffNote` before switching; bridge auto-snapshots if note is stale |
+| Switching CLI → Desktop | Call `setHandoffNote` before switching; bridge auto-snapshots if note is >5 min stale |
 | Session just started | Call `getHandoffNote` to pick up prior context (workspace-scoped) |
 | Bridge restarted | First connected client receives a "restored from checkpoint" notification |
 | Preparing for Cowork | Run `/mcp__bridge__cowork` in regular chat first — Cowork has no MCP access |

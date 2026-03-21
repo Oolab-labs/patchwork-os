@@ -86,6 +86,10 @@ if $DO_BUILD; then
 fi
 
 # --- Find the VSIX ---
+VSIX_COUNT=$(ls "$VSIX_DIR"/*.vsix 2>/dev/null | wc -l | tr -d ' ')
+if [ "$VSIX_COUNT" -gt 1 ]; then
+  echo "Warning: Found $VSIX_COUNT .vsix files — using newest. Run with --build to rebuild." >&2
+fi
 VSIX=$(ls -t "$VSIX_DIR"/*.vsix 2>/dev/null | head -1)
 if [[ -z "$VSIX" ]]; then
   echo "Error: No .vsix file found in $VSIX_DIR" >&2
@@ -94,8 +98,9 @@ if [[ -z "$VSIX" ]]; then
 fi
 
 echo "Installing $(basename "$VSIX") into $IDE..."
+# --force reinstalls even if already installed (needed for upgrades)
 "$INSTALL_CMD" --install-extension "$VSIX" --force
 
 echo ""
-echo "Done. Restart $IDE (or reload window) for the extension to activate."
+echo "Done. To activate: restart your IDE, or open the Command Palette (Cmd+Shift+P on Mac / Ctrl+Shift+P on Windows/Linux) and run 'Developer: Reload Window'."
 echo "The extension will auto-connect to any running bridge."
