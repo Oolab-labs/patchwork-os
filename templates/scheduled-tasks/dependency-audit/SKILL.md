@@ -50,7 +50,8 @@ Scan all project dependencies for known security vulnerabilities.
 <package@version — description>
 
 ## Outdated Packages
-<package — current → latest>  (only if significantly behind)
+<package — current → latest>  (only packages ≥1 major version OR ≥3 minor versions behind)
+Direct: listed in package.json. Transitive: pulled in by direct dependencies.
 
 ## Recommended Actions
 1. <specific upgrade command or action>
@@ -59,9 +60,16 @@ Scan all project dependencies for known security vulnerabilities.
 ## Overall: SECURE | REVIEW NEEDED | ACTION REQUIRED
 ```
 
+## Grading Criteria
+
+- **SECURE** — 0 vulnerabilities + ≤2 patch-level outdated packages
+- **REVIEW NEEDED** — 1-2 moderate advisories OR ≥3 outdated packages
+- **ACTION REQUIRED** — any critical/high vulnerability
+
 ## Guidelines
 
 - Focus on actionable findings — skip informational-only advisories
+- Report only packages ≥1 major version OR ≥3 minor versions behind as "outdated"
+- Direct dependencies: listed in package.json. Transitive: pulled in by direct dependencies. Flag transitive dependencies separately.
 - For each vulnerability, include the fix command if one exists (e.g., `npm install package@version`)
 - If no vulnerabilities found, report "All clear — 0 vulnerabilities across N dependencies"
-- Flag transitive dependencies separately from direct dependencies

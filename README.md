@@ -4,7 +4,7 @@
 [![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **124+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, code analysis, screen capture, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
+A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **136+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, code analysis, screen capture, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
 
 ## How It Works
 
@@ -44,6 +44,12 @@ Claude Code connects to the bridge, which connects to your IDE extension. Claude
 
 **Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20, tmux (`brew install tmux`)
 
+> **Required env var:** Claude Code will not discover the bridge without this:
+> ```bash
+> export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true
+> ```
+> Add to your `~/.zshrc` or `~/.bashrc` to make it permanent. After that, `claude --ide` is all you need.
+
 **Step 1 — Install the VS Code extension**
 
 Search `oolab-labs.claude-ide-bridge-extension` in the VS Code / Windsurf / Cursor extension marketplace, or install from the command line:
@@ -62,7 +68,7 @@ cd /your/project
 claude-ide-bridge
 ```
 
-The bridge starts, writes a lock file to `~/.claude/ide/`, and waits for connections. Your editor extension connects automatically.
+The bridge starts, writes a lock file to `~/.claude/ide/`, and waits for connections. Your editor extension connects automatically. The lock file is removed automatically when the bridge exits cleanly.
 
 > **One bridge per workspace.** Each project directory needs its own bridge instance. If you work across multiple repos, start a separate `claude-ide-bridge` in each workspace.
 
@@ -130,7 +136,7 @@ Launches four tmux panes: health monitor, bridge, Claude Code, and remote contro
 
 | Doc | What it covers |
 |-----|----------------|
-| **[Platform Docs](documents/platform-docs.md)** | Complete tool reference (124+ tools), parameters, examples |
+| **[Platform Docs](documents/platform-docs.md)** | Complete tool reference (136+ tools), parameters, examples |
 | **[Data Reference](documents/data-reference.md)** | Data flows, state management, protocol details |
 | **[Plugin Authoring](documents/plugin-authoring.md)** | Writing custom plugins — manifest schema, entrypoint API |
 | **[Use Cases](documents/use-cases.md)** | Real-world workflows and scenarios |
@@ -153,6 +159,8 @@ When the bridge restarts within 5 minutes of the previous run, it automatically 
 1. **CLI session:** work normally; bridge tracks opened files
 2. **Switching to Desktop:** call `setHandoffNote` first, or run `/mcp__bridge__cowork` to auto-collect context
 3. **Cowork:** MCP tools are NOT available inside Cowork — the handoff note is the bridge. Always run `/mcp__bridge__cowork` in regular chat before opening Cowork (Cmd+2).
+
+> **Cowork sessions (Claude Desktop computer-use):** MCP bridge tools are NOT available inside Cowork. Run `/mcp__bridge__cowork` in a regular Desktop chat first to capture context, then open Cowork. Cowork also operates in an isolated git worktree — files won't appear in your main `git status` until merged.
 
 ## Full Orchestrator
 
@@ -224,7 +232,7 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 | `WorktreeCreate` | Reports bridge ↔ worktree relationship; warns about LSP limitations |
 | `SubagentStart` | Verifies bridge is alive before IDE subagents run |
 
-## 124+ MCP Tools
+## 136+ MCP Tools
 
 ### File Operations (8)
 `openFile` · `openDiff` · `saveDocument` · `closeTab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors` · `searchWorkspace`
@@ -291,7 +299,7 @@ Text editing · Workspace settings · File watchers · Decorations · `executeVS
 | Clipboard | 2 | Mixed |
 | HTTP | 2 | No |
 | VS Code Integration | 10 | Yes |
-| **Total** | **~124** | |
+| **Total** | **~136+** | |
 
 ## MCP Prompts (Slash Commands)
 
@@ -764,7 +772,7 @@ Your Phone
 
 Dispatch messages land in Claude Desktop's **main conversation**, which has full MCP bridge access. Claude calls the bridge tools, gathers results, and sends a summary back to your phone.
 
-> **Not Cowork:** Dispatch routes through the main conversation, not a Cowork session. All 124+ bridge tools are available. The Cowork tool-access limitation does not apply here.
+> **Not Cowork:** Dispatch routes through the main conversation, not a Cowork session. All 136+ bridge tools are available. The Cowork tool-access limitation does not apply here.
 
 ### Setup
 
@@ -832,7 +840,7 @@ Team Lead (Claude Code)
     └── Teammate C ──► Bridge Session 3 ──► IDE
 ```
 
-All teammates share the same IDE and workspace. Each gets full access to all 124+ bridge tools.
+All teammates share the same IDE and workspace. Each gets full access to all 136+ bridge tools.
 
 For **remote teams** (teammates on different machines), use [named tokens](#multi-teammate-remote-access-new-in-v250) so each teammate has a distinct identity visible in activity logs and the `team-status` prompt.
 
@@ -990,7 +998,7 @@ claude-ide-bridge \
 
 > The bridge token is entered once during authorization. After that, claude.ai holds a short-lived OAuth access token that it refreshes automatically — you don't need to update the connector URL when the bridge restarts.
 
-> **Tool availability:** All 124+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~74 CLI tools still work (file ops, git, terminal, search, HTTP client).
+> **Tool availability:** All 136+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~74 CLI tools still work (file ops, git, terminal, search, HTTP client).
 
 ### Alternatives
 

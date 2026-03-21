@@ -40,6 +40,7 @@ Uncommitted: <N files changed, M insertions, K deletions>
 
 ## Changes Summary
 <file-by-file summary, 1 line per file: what changed and why it looks correct or concerning>
+Example: `src/bridge.ts: Added error handling for stale connections (+12 lines)`
 
 ## Diagnostics
 <N errors, M warnings — list files with errors>
@@ -52,6 +53,12 @@ Uncommitted: <N files changed, M insertions, K deletions>
 <CLEAN | NEEDS ATTENTION | BROKEN>
 <1-3 sentences summarizing the overall state and any recommended actions>
 ```
+
+## Action Matrix
+
+- **CLEAN** — no action needed
+- **NEEDS ATTENTION** — leave a note for the next session
+- **BROKEN** — flag immediately
 
 ## Guidelines
 

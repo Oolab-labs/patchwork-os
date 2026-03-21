@@ -118,8 +118,8 @@ fi
 # --- Remote target: no lock file needed — caller supplies host and token ---
 if [[ "$TARGET" == "remote" ]]; then
   if [[ -z "$REMOTE_HOST" || -z "$REMOTE_TOKEN" ]]; then
-    echo "Error: remote target requires --host <host:port> and --token <token>" >&2
-    echo "  Get the token with: claude-ide-bridge print-token" >&2
+    echo "Error: 'remote' target requires --host <host:port> and --token <token>" >&2
+    echo "  Example: bash gen-mcp-config.sh remote --host mybridge.example.com:8080 --token abc123 --write" >&2
     exit 1
   fi
   OUTPUT_PATH="${HOME}/.claude/mcp.json"
@@ -137,7 +137,9 @@ if [[ "$TARGET" == "remote" ]]; then
 }
 EOF
 )
-  # Warn when using an ephemeral trycloudflare.com tunnel
+  # WARNING: Ephemeral tunnels (trycloudflare.com) generate a new URL on every restart.
+  # Any MCP config using this URL will break when the tunnel restarts.
+  # For stable remote access, use a fixed domain with --fixed-token.
   if [[ "$REMOTE_HOST" == *".trycloudflare.com"* ]]; then
     echo "⚠️  WARNING: trycloudflare.com tunnels are ephemeral — the URL changes every time" >&2
     echo "   cloudflared restarts. Your MCP config will break on the next restart." >&2
@@ -271,7 +273,9 @@ PYEOF
   elif command -v jq >/dev/null 2>&1; then
     jq -r --arg f "$field" '.[$f]' "$LOCK_FILE"
   else
-    echo "Error: python3 or jq is required to parse lock file" >&2
+    echo "Error: python3 or jq is required to parse the bridge lock file." >&2
+    echo "  Install python3: brew install python3 (macOS) or apt install python3 (Linux)" >&2
+    echo "  Install jq: brew install jq (macOS) or apt install jq (Linux)" >&2
     exit 1
   fi
 }
@@ -369,6 +373,8 @@ if $WRITE; then
       echo "Backed up existing config to $(basename "$BACKUP")"
     fi
     # Atomic write via tmp file to prevent partial writes on interrupt
+    TMP_FILE="$(mktemp)"
+    trap 'rm -f "$TMP_FILE"' EXIT
     TMP_PATH="${OUTPUT_PATH}.tmp"
     printf '%s\n' "$CONFIG" > "$TMP_PATH"
     mv "$TMP_PATH" "$OUTPUT_PATH"
