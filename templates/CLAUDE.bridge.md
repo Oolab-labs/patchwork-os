@@ -94,6 +94,8 @@ Workflow:
 
 **If bridge tools are missing from your tool list inside Cowork:** you're in the wrong context. Exit, run the prompt in regular chat, then return.
 
+**Cowork uses git worktrees:** Cowork sessions operate in an isolated git worktree (separate branch/working copy), not the main workspace root. Files written by Cowork land in the worktree. Always add "write all files to the workspace root, not a subdirectory" as the first instruction in your CLAUDE.md when using Cowork with a synced workspace. After Cowork finishes, review and merge the worktree branch back to main.
+
 ### Session continuity
 
 | Scenario | Action |

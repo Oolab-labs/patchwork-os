@@ -230,6 +230,15 @@ When the bridge restarts (new port), the stdio shim subprocess in Claude Desktop
 
 Each Claude Code CLI session and Desktop chat session is independent. Context is not automatically shared. Use `setHandoffNote` before switching contexts to persist your working state. The bridge also auto-snapshots a handoff note when a new session connects and the existing note is stale (>5 min).
 
+### Cowork sessions use git worktrees
+
+Claude Desktop's Cowork (computer-use) mode operates in an isolated git worktree — a separate branch and working copy, not your main workspace root. This means:
+
+- Files written by Cowork land in the worktree, not your main working tree
+- `git status` on main won't show Cowork's changes until the worktree branch is merged
+- Add **"write all files to the workspace root, not a subdirectory"** as the first instruction in your `CLAUDE.md` when using Cowork on a synced workspace, to prevent files landing in unexpected subdirectory paths within the worktree
+- After a Cowork session, review the worktree branch and merge it back manually
+
 **Claude Code doesn't see the bridge:**
 - Start Claude Code with `CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude`
 - Make sure the bridge is running before typing `/ide` in Claude Code
