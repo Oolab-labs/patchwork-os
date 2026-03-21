@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -5,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createGetHandoffNoteTool,
   createSetHandoffNoteTool,
+  readNote,
+  writeNote,
 } from "../handoffNote.js";
 
 describe("handoffNote tools", () => {
@@ -106,6 +109,140 @@ describe("handoffNote tools", () => {
       const content = JSON.parse((result.content[0] as { text: string }).text);
       expect(content.updatedBy).toBe("cli");
       expect(content.updatedBy).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/); // not a UUID
+    });
+  });
+
+  describe("workspace-scoped note helpers", () => {
+    const workspace = "/home/user/my-project";
+
+    function scopedPath(ws: string, dir: string): string {
+      const hash = crypto
+        .createHash("sha256")
+        .update(ws)
+        .digest("hex")
+        .slice(0, 12);
+      return path.join(dir, "ide", `handoff-note-${hash}.json`);
+    }
+
+    it("writeNote with workspace writes to scoped path", async () => {
+      await writeNote("scoped note", workspace, tmpDir);
+      const sp = scopedPath(workspace, tmpDir);
+      expect(fs.existsSync(sp)).toBe(true);
+      const parsed = JSON.parse(fs.readFileSync(sp, "utf-8"));
+      expect(parsed.note).toBe("scoped note");
+    });
+
+    it("writeNote with workspace also dual-writes to global path", async () => {
+      await writeNote("dual write test", workspace, tmpDir);
+      const globalPath = path.join(tmpDir, "ide", "handoff-note.json");
+      expect(fs.existsSync(globalPath)).toBe(true);
+      const parsed = JSON.parse(fs.readFileSync(globalPath, "utf-8"));
+      expect(parsed.note).toBe("dual write test");
+    });
+
+    it("readNote with workspace reads scoped path first", async () => {
+      // Write different notes to scoped and global
+      const sp = scopedPath(workspace, tmpDir);
+      fs.writeFileSync(
+        sp,
+        JSON.stringify({
+          note: "scoped",
+          updatedAt: Date.now(),
+          updatedBy: "cli",
+        }),
+        { mode: 0o600 },
+      );
+      const globalPath = path.join(tmpDir, "ide", "handoff-note.json");
+      fs.writeFileSync(
+        globalPath,
+        JSON.stringify({
+          note: "global",
+          updatedAt: Date.now(),
+          updatedBy: "cli",
+        }),
+        { mode: 0o600 },
+      );
+      const result = await readNote(workspace, tmpDir);
+      expect(result?.note).toBe("scoped");
+    });
+
+    it("readNote with workspace falls back to global when scoped path missing", async () => {
+      const globalPath = path.join(tmpDir, "ide", "handoff-note.json");
+      fs.writeFileSync(
+        globalPath,
+        JSON.stringify({
+          note: "fallback note",
+          updatedAt: Date.now(),
+          updatedBy: "cli",
+        }),
+        { mode: 0o600 },
+      );
+      const result = await readNote(workspace, tmpDir);
+      expect(result?.note).toBe("fallback note");
+    });
+
+    it("readNote without workspace reads global path", async () => {
+      const globalPath = path.join(tmpDir, "ide", "handoff-note.json");
+      fs.writeFileSync(
+        globalPath,
+        JSON.stringify({
+          note: "global only",
+          updatedAt: Date.now(),
+          updatedBy: "cli",
+        }),
+        { mode: 0o600 },
+      );
+      const result = await readNote(undefined, tmpDir);
+      expect(result?.note).toBe("global only");
+    });
+
+    it("readNote returns null when no files exist", async () => {
+      const result = await readNote(workspace, tmpDir);
+      expect(result).toBeNull();
+    });
+
+    it("scoped note path differs per workspace", async () => {
+      const ws1 = "/home/user/project-a";
+      const ws2 = "/home/user/project-b";
+      await writeNote("note for a", ws1, tmpDir);
+      await writeNote("note for b", ws2, tmpDir);
+
+      const r1 = await readNote(ws1, tmpDir);
+      const r2 = await readNote(ws2, tmpDir);
+      expect(r1?.note).toBe("note for a");
+      expect(r2?.note).toBe("note for b");
+    });
+
+    it("writeNote with _auto=true sets auto flag in stored note", async () => {
+      await writeNote("auto snapshot", workspace, tmpDir, true);
+      const sp = scopedPath(workspace, tmpDir);
+      const parsed = JSON.parse(fs.readFileSync(sp, "utf-8"));
+      expect(parsed.auto).toBe(true);
+    });
+
+    it("tool with workspace dep reads scoped note", async () => {
+      await writeNote("workspace-specific", workspace, tmpDir);
+      const getter = createGetHandoffNoteTool({
+        workspace,
+        configDir: tmpDir,
+      });
+      const result = await getter.handler({});
+      expect(result.isError).toBeFalsy();
+      const content = JSON.parse((result.content[0] as { text: string }).text);
+      expect(content.note).toBe("workspace-specific");
+    });
+
+    it("tool with workspace dep writes scoped note", async () => {
+      const setter = createSetHandoffNoteTool("s1", {
+        workspace,
+        configDir: tmpDir,
+      });
+      await setter.handler({ note: "tool scoped write" });
+
+      const sp = scopedPath(workspace, tmpDir);
+      expect(fs.existsSync(sp)).toBe(true);
+      const parsed = JSON.parse(fs.readFileSync(sp, "utf-8"));
+      expect(parsed.note).toBe("tool scoped write");
     });
   });
 });

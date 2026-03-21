@@ -220,6 +220,16 @@ npm start -- --workspace /path/to/project
 
 ## Troubleshooting
 
+### Claude Desktop: bridge tools unavailable after bridge restart
+
+When the bridge restarts (new port), the stdio shim subprocess in Claude Desktop still points to the old port. The **Reconnect** button in Claude Desktop settings does NOT fix this — it retries the existing shim process.
+
+**Fix:** Fully quit Claude Desktop (`Cmd+Q` on Mac, not just closing the window) and relaunch it. The new shim will discover the updated lock file.
+
+### Switching between CLI and Desktop sessions
+
+Each Claude Code CLI session and Desktop chat session is independent. Context is not automatically shared. Use `setHandoffNote` before switching contexts to persist your working state. The bridge also auto-snapshots a handoff note when a new session connects and the existing note is stale (>5 min).
+
 **Claude Code doesn't see the bridge:**
 - Start Claude Code with `CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude`
 - Make sure the bridge is running before typing `/ide` in Claude Code

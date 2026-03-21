@@ -1,3 +1,18 @@
+## Installation
+
+Copy this template to your Claude Desktop scheduled-tasks directory:
+
+```bash
+mkdir -p ~/.claude/scheduled-tasks/health-check
+cp /path/to/claude-ide-bridge/templates/scheduled-tasks/health-check/SKILL.md \
+   ~/.claude/scheduled-tasks/health-check/SKILL.md
+```
+
+Then restart Claude Desktop to detect the new scheduled task. Configure the schedule in Claude Desktop settings under "Scheduled Tasks".
+
+> The bridge must be running when this task fires. Start it with `claude-ide-bridge --watch` or `npm run start-all`.
+
+---
 ---
 name: health-check
 description: Comprehensive project health — tests, diagnostics, security, and git status. Run hourly or daily via Claude Desktop scheduled tasks.

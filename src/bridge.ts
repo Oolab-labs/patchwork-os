@@ -22,6 +22,7 @@ import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
 import { loadTokens, watchTokensFile } from "./teammateTokens.js";
 import { initTelemetry, shutdownTelemetry } from "./telemetry.js";
+import { readNote, writeNote } from "./tools/handoffNote.js";
 import { registerAllTools } from "./tools/index.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
 import { resolveFilePath } from "./tools/utils.js";
@@ -91,6 +92,8 @@ export class Bridge {
   private orchestrator: ClaudeOrchestrator | null = null;
   /** openedFiles restored from the previous-run checkpoint; consumed by the first connecting session. */
   private restoredOpenedFiles: Set<string> | null = null;
+  private checkpointRestored: { fileCount: number; ageSec: number } | null =
+    null;
   private port = 0;
   private pluginTools: LoadedPluginTool[] = [];
   private pluginWatcher: PluginWatcher | null = null;
@@ -162,6 +165,10 @@ export class Bridge {
         return;
       }
 
+      if (this.sessions.size === 0) {
+        void this.maybeAutoSnapshotHandoff();
+      }
+
       const sessionId = randomUUID();
       const transport = new McpTransport(this.logger);
       transport.workspace = this.config.workspace;
@@ -187,6 +194,22 @@ export class Bridge {
               this.pendingListChanged = false;
             }
           }, 200);
+        }
+        if (this.checkpointRestored) {
+          const { fileCount, ageSec } = this.checkpointRestored;
+          this.checkpointRestored = null;
+          if (ws.readyState === WebSocket.OPEN) {
+            McpTransport.sendNotification(
+              ws,
+              "notifications/message",
+              {
+                level: "info",
+                logger: "bridge",
+                data: `Session restored from checkpoint: ${fileCount} file(s) tracked (${ageSec}s ago).`,
+              },
+              this.logger,
+            );
+          }
         }
       };
 
@@ -411,6 +434,20 @@ export class Bridge {
       this.logger.event("debug_session_changed");
       this.sendListChanged();
     };
+  }
+
+  /** Write an auto-snapshot handoff note when a new first session connects, unless one was recently written. */
+  private async maybeAutoSnapshotHandoff(): Promise<void> {
+    try {
+      const existing = await readNote(this.config.workspace);
+      if (existing && Date.now() - existing.updatedAt < 5 * 60_000) {
+        return;
+      }
+      const summary = `[auto-snapshot ${new Date().toISOString()}] Workspace: ${this.config.workspace}. Active bridge sessions: ${this.sessions.size}. Use getOpenEditors and getDiagnostics to inspect current state.`;
+      await writeNote(summary, this.config.workspace, undefined, true);
+    } catch {
+      // best-effort — never let this crash the connection handler
+    }
   }
 
   /** Debounced tools/list_changed notification — max one per 2 seconds. */
@@ -746,6 +783,7 @@ export class Bridge {
       );
       if (allFiles.size > 0) {
         this.restoredOpenedFiles = allFiles;
+        this.checkpointRestored = { fileCount: allFiles.size, ageSec };
         this.logger.info(
           `Restored ${allFiles.size} tracked file(s) from previous session (${ageSec}s ago, port ${prevCheckpoint.port})`,
         );

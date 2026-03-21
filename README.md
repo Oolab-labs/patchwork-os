@@ -136,6 +136,24 @@ Launches four tmux panes: health monitor, bridge, Claude Code, and remote contro
 | **[Use Cases](documents/use-cases.md)** | Real-world workflows and scenarios |
 | **[Roadmap](documents/roadmap.md)** | Planned features and development direction |
 
+## Session Continuity
+
+The bridge persists state across restarts and context switches (CLI ↔ Desktop ↔ Cowork).
+
+### Handoff Notes
+Use `setHandoffNote` to save context before switching sessions. Notes are **workspace-scoped** — switching workspaces won't overwrite each other's context. `getHandoffNote` retrieves the most recent note for your current workspace.
+
+The bridge also auto-snapshots a basic handoff note whenever a new session connects and the existing note is stale (>5 minutes old).
+
+### Checkpoint Restore
+When the bridge restarts within 5 minutes of the previous run, it automatically restores the list of open files from the last session checkpoint. The first connecting client receives a notification:
+> `Session restored from checkpoint: N file(s) tracked (checkpoint was Xs old)`
+
+### CLI → Desktop → Cowork Workflow
+1. **CLI session:** work normally; bridge tracks opened files
+2. **Switching to Desktop:** call `setHandoffNote` first, or run `/mcp__bridge__cowork` to auto-collect context
+3. **Cowork:** MCP tools are NOT available inside Cowork — the handoff note is the bridge. Always run `/mcp__bridge__cowork` in regular chat before opening Cowork (Cmd+2).
+
 ## Full Orchestrator
 
 The `start-all` command launches everything in a tmux session: bridge + Claude Code + remote control, with automatic health monitoring and process restart.

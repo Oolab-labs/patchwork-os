@@ -73,6 +73,7 @@ Plugins register additional MCP tools without forking the bridge. They run in-pr
 - **Entrypoint**: exports `register(ctx)` where `ctx` provides `workspace`, `workspaceFolders`, `config`, `logger`.
 - **Distribution**: publish to npm with keyword `claude-ide-bridge-plugin`; install via package name.
 - **Lifecycle**: plugins are loaded after CLI probes, before sessions are accepted. On hot-reload, tools are re-registered atomically.
+- **No symlinks for plugin copies**: Files in `claude-ide-bridge-plugin/` are standalone copies, not symlinks. After modifying plugin source, manually sync the copies — they will NOT auto-update.
 
 Full reference: [documents/plugin-authoring.md](documents/plugin-authoring.md)
 
@@ -94,6 +95,8 @@ For remote deployments where claude.ai custom connectors need authenticated acce
 - **VS Code Remote-SSH / Cursor SSH**: extension has `extensionKind: ["workspace"]` — loads on the VPS side automatically. Full tool support.
 - **Reverse proxy**: required for remote access (nginx or Caddy with TLS). See [docs/remote-access.md](docs/remote-access.md).
 - **Systemd + deploy scripts**: `deploy/bootstrap-new-vps.sh` (full provisioning), `deploy/install-vps-service.sh` (idempotent service install). See [deploy/README.md](deploy/README.md).
+
+- **Scheduled task templates not auto-installed**: Copy templates from `templates/scheduled-tasks/` to `~/.claude/scheduled-tasks/` manually, then restart Claude Desktop for the task to be detected.
 
 ## Claude Orchestration
 

@@ -290,8 +290,8 @@ export function registerAllTools(
     // Phase 4: Additional features
     createReadClipboardTool(extensionClient),
     createWriteClipboardTool(extensionClient),
-    createGetHandoffNoteTool(),
-    createSetHandoffNoteTool(sessionId),
+    createGetHandoffNoteTool({ workspace: config.workspace }),
+    createSetHandoffNoteTool(sessionId, { workspace: config.workspace }),
     createGetWorkspaceSettingsTool(extensionClient),
     createSetWorkspaceSettingTool(extensionClient),
     createCaptureScreenshotTool(extensionClient),
