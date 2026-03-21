@@ -12,6 +12,8 @@ Then restart Claude Desktop to detect the new scheduled task. Configure the sche
 
 > The bridge must be running when this task fires. Start it with `claude-ide-bridge --watch` or `npm run start-all`.
 
+> **Emergency stop**: Set `CLAUDE_CODE_DISABLE_CRON=1` in your environment to immediately halt all scheduled cron jobs mid-session. Useful if a task runs amok or you need to suppress scheduled runs temporarily.
+
 ---
 ---
 name: nightly-review

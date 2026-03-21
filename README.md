@@ -868,6 +868,7 @@ For **remote teams** (teammates on different machines), use [named tokens](#mult
 - **Pre-approve tools** — teammates block on permission prompts. Use `--dangerously-skip-permissions` in sandboxed environments or pre-approve common tools.
 - **Avoid file conflicts** — assign teammates to different files/modules. The bridge doesn't lock files across sessions.
 - **Use the team-status prompt** — the lead can call `/mcp__bridge__team-status` to see workspace state and recent activity across all sessions.
+- **SendMessage auto-resume (≥ v2.1.77)** — As of Claude Code v2.1.77, `SendMessage` automatically resumes stopped agents instead of returning an error. You no longer need to check whether a teammate agent is running before sending it a message.
 
 ---
 
@@ -1258,6 +1259,16 @@ This tends to happen after the phone has been in the background for a while or a
 Occasionally a running agent or tool call hangs — the bridge is active, the extension is connected, but Claude isn't advancing. This usually means the subprocess or agent has stalled internally.
 
 **Fix:** Stop the current process (interrupt the Claude Code session or cancel the running task), then try again. In most cases the task resumes cleanly on the second attempt. If it happens repeatedly on the same prompt, try breaking the task into smaller steps.
+
+### Tool parameters rejected with type errors in long sessions
+
+After conversation compaction, deferred tools (loaded via ToolSearch) lose their input schemas, causing array/number parameters to be rejected with type errors. This is a known Claude Code bug fixed in v2.1.76.
+
+**Fix:** Update Claude Code to ≥ 2.1.76:
+
+```bash
+npm update -g @anthropic-ai/claude-code
+```
 
 ### `start-all` launched from inside a Claude Code session
 

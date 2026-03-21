@@ -27,3 +27,7 @@ When the user message is short (< 20 words), assume it's from Dispatch (phone) a
 ## Available tools
 
 124+ MCP tools across: file ops, git, GitHub, LSP, diagnostics, testing, debugging, terminals, security audits, and more. Call `getToolCapabilities` if unsure what's available.
+
+## Scripted / automated `-p` calls
+
+For non-interactive scripted invocations using `-p`, pass `--bare` (Claude Code ≥ 2.1.81) to skip hooks, LSP initialization, and plugin sync. This reduces startup overhead significantly for fast one-shot automation.
