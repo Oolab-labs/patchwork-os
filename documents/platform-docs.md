@@ -168,9 +168,32 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `getTerminalOutput` | Get recent output (ring buffer, up to 5000 lines) |
 | `createTerminal` | Create new terminal with optional name/cwd/env |
 | `disposeTerminal` | Close a terminal |
-| `sendTerminalCommand` | Send text to terminal (allowlist enforced) |
+| `sendTerminalCommand` | Send text to terminal (allowlist enforced); use `isCommand: false` to send raw stdin to a running process |
 | `runInTerminal` | Execute command and capture output (allowlist enforced) |
 | `waitForTerminalOutput` | Wait for pattern match in terminal output |
+
+**Long-running processes and interactive prompts**
+
+The bridge can start, monitor, and interact with long-running processes without any manual terminal input.
+
+Starting a dev server and waiting for it to be ready:
+```
+1. createTerminal       → name: "dev-server"
+2. sendTerminalCommand  → "npm run dev", name: "dev-server"
+3. waitForTerminalOutput → pattern: "ready|listening|Local:", timeout: 60
+4. ✅ Server is up — proceed with other tasks
+5. getTerminalOutput    → check logs at any point later
+```
+
+Responding to an interactive prompt mid-execution (e.g. `prisma migrate dev`):
+```
+1. sendTerminalCommand  → "prisma migrate dev", isCommand: true
+2. waitForTerminalOutput → pattern: "Enter a name"
+3. sendTerminalCommand  → "add_user_table", isCommand: false, addNewline: true
+4. waitForTerminalOutput → pattern: "migrations applied|Your database"
+```
+
+The VS Code terminal persists independently — processes keep running after tool calls return. `isCommand: false` bypasses allowlist validation and sends raw text directly to the PTY, making it suitable for stdin responses to interactive prompts.
 
 ### File Watching
 | Tool | Description |

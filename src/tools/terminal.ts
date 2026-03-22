@@ -726,6 +726,9 @@ export function createSendTerminalCommandTool(
         "Send text or a command to a VS Code integrated terminal. " +
         "Identify the terminal by name or index (from listTerminals). " +
         "Note: sendText is fire-and-forget — use getTerminalOutput afterward to check results. " +
+        "To respond to an interactive prompt mid-execution (e.g. a migration tool asking for a name), " +
+        "set isCommand: false to bypass command validation and send raw stdin input to the running process. " +
+        "Pair with waitForTerminalOutput to detect when the prompt appears before sending the response. " +
         "Requires the VS Code extension.",
       inputSchema: {
         type: "object" as const,
