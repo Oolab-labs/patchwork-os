@@ -160,6 +160,11 @@ EOF
   echo "Tip:  Claude Code supports \${VAR:-default} in .mcp.json. Replace the token value"
   echo "      with \${BRIDGE_TOKEN} and set BRIDGE_TOKEN in your shell profile to avoid"
   echo "      storing the token in the config file. See docs/remote-access.md for details."
+  echo ""
+  echo "⚠️  IMPORTANT: Start your bridge with --fixed-token <uuid> (or CLAUDE_IDE_BRIDGE_TOKEN=<uuid>)"
+  echo "   to keep this token stable across restarts. Without it, the bridge generates a new"
+  echo "   token on every restart and this MCP config will stop working immediately."
+  echo "   Example: claude-ide-bridge --bind 0.0.0.0 --fixed-token \$BRIDGE_TOKEN --workspace /path/to/project"
   if $WRITE; then
     # Find the nearest .mcp.json (walk up from cwd, fallback to ~/.claude/mcp.json)
     _find_mcp_json() {

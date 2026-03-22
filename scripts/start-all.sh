@@ -17,6 +17,17 @@
 #   ./scripts/start-all.sh [--workspace <path>] [--notify <ntfy-topic>] [--vps <user@host:port>]
 #   npm run start-all -- --workspace /path/to/project
 #
+# Options:
+#   --workspace <path>    Directory to open in Claude (default: current directory)
+#   --notify <topic>      Push notifications via ntfy.sh when remote-control connects or
+#                         the bridge restarts. Free, no account needed — pick any topic
+#                         name and subscribe at ntfy.sh/<topic> or in the ntfy mobile app.
+#                         Example: --notify my-claude-alerts
+#                         The session URL is pushed automatically on each (re)connect,
+#                         so Dispatch always has the current link without manual copy/paste.
+#   --vps <user@host>     SSH reverse tunnel: forward a VPS port back to the local bridge,
+#                         enabling a stable public URL for claude.ai integrations.
+#
 # Controls:
 #   Ctrl+C in any pane — stops that process only
 #   Ctrl+B then D (press Ctrl+B, release, then press D) — detach (everything keeps running)
@@ -162,7 +173,7 @@ while true; do
   echo \"[\$(date +%H:%M:%S)] Opening SSH tunnel: ${VPS_HOST} port ${VPS_PORT} -> localhost:\$LOCAL_PORT\"
   ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
       -o ExitOnForwardFailure=yes -o BatchMode=yes \
-      -R ${VPS_PORT}:localhost:\$LOCAL_PORT -N ${VPS_HOST}
+      -R 0.0.0.0:${VPS_PORT}:localhost:\$LOCAL_PORT -N ${VPS_HOST}
   code=\$?
   [ \$code -eq 130 ] && { echo \"Exited by Ctrl+C.\"; exit 0; }
   failures=\$((failures+1))
