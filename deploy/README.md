@@ -18,6 +18,7 @@ Production VPS deployment files for claude-ide-bridge.
 | `nginx-claude-bridge.conf.template` | nginx config reference (domain + port injected by scripts) |
 | `claude-ide-bridge.service.template` | systemd unit reference (paths + user injected by scripts) |
 | `claude-ide-bridge@.service` | Template unit for multi-user demo instances (alternate pattern) |
+| `ecosystem.config.js.example` | PM2 ecosystem config template (alternative to systemd) |
 
 ## First-time setup (new VPS)
 
@@ -80,6 +81,66 @@ npm run build && systemctl restart claude-ide-bridge
 
 # Stop (won't restart until manually started)
 systemctl stop claude-ide-bridge
+```
+
+## Using PM2 instead of systemd
+
+PM2 is a simpler alternative when you're running as root, already have PM2 installed, or prefer not to configure systemd manually.
+
+> **Important:** The bridge picks a **random port** by default. The port in your PM2 start command **must match** the port in your nginx `proxy_pass` directive, or every restart will cause a 502 Bad Gateway.
+
+### Quick start with PM2
+
+```bash
+# Replace 4748 and YOUR_TOKEN_HERE with your nginx proxy_pass port and auth token
+pm2 delete claude-bridge 2>/dev/null || true
+pm2 start /root/claude-ide-bridge/dist/index.js \
+  --name claude-bridge \
+  -- --port 4748 --bind 0.0.0.0 --vps --fixed-token YOUR_TOKEN_HERE
+pm2 save
+```
+
+Retrieve your token anytime:
+```bash
+cat ~/.claude/ide/*.lock | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8').trim(); console.log(JSON.parse(d).authToken)"
+# or if you have a .env.vps:
+grep FIXED_TOKEN /root/claude-ide-bridge/.env.vps
+```
+
+### Persist across reboots
+
+```bash
+# Generate and run the startup command PM2 prints
+pm2 startup
+# (run the command it outputs, then:)
+pm2 save
+```
+
+### Using an ecosystem file
+
+For repeatable deployments, use the included example:
+
+```bash
+cp deploy/ecosystem.config.js.example ecosystem.config.js
+# Edit ecosystem.config.js: set cwd, port, and fixed-token
+pm2 start ecosystem.config.js
+pm2 save
+```
+
+### Day-to-day management with PM2
+
+```bash
+# View live logs
+pm2 logs claude-bridge
+
+# Check status
+pm2 status
+
+# Restart after code change
+npm run build && pm2 restart claude-bridge
+
+# Stop
+pm2 stop claude-bridge
 ```
 
 ## MCP endpoint

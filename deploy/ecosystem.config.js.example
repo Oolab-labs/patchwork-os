@@ -1,0 +1,36 @@
+// PM2 ecosystem config for claude-ide-bridge.
+// Copy to the repo root and edit before use:
+//   cp deploy/ecosystem.config.js.example ecosystem.config.js
+//
+// Usage:
+//   pm2 start ecosystem.config.js
+//   pm2 save
+//
+// IMPORTANT: The --port value below must match the port in your nginx proxy_pass.
+// The bridge defaults to a random port if --port is not set, which breaks nginx.
+
+module.exports = {
+  apps: [
+    {
+      name: "claude-bridge",
+      script: "dist/index.js",
+      cwd: "/root/claude-ide-bridge", // adjust to your INSTALL_DIR
+
+      // All bridge flags go here — NOT in env (PORT env var is not read by the bridge)
+      args: [
+        "--port", "4748",             // must match nginx proxy_pass port
+        "--bind", "0.0.0.0",          // expose to all interfaces (nginx handles TLS)
+        "--vps",                       // expands command allowlist for server use
+        "--fixed-token", "YOUR_TOKEN_HERE", // stable token; prevents rotation on restart
+      ].join(" "),
+
+      restart_delay: 5000,  // wait 5s before restart on crash
+      max_restarts: 20,     // give up after 20 consecutive crashes
+      min_uptime: "10s",    // don't count a restart as a crash if up for <10s
+
+      env: {
+        NODE_ENV: "production",
+      },
+    },
+  ],
+};
