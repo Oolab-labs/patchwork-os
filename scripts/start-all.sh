@@ -8,9 +8,13 @@
 #   2 — claude --ide (Claude Code CLI, connects to bridge for IDE tools)
 #   3 — claude remote-control --spawn=session (exposes the workspace to claude.ai;
 #         spawned sessions auto-discover the bridge via ~/.claude/ide/*.lock)
+#   4 — SSH reverse tunnel to VPS (optional, enabled with --vps <user@host:port>)
+#         Forwards VPS_PORT on the remote host back to the local bridge port.
+#         Allows claude.ai integrations to use a static VPS URL instead of a
+#         rotating remote-control session URL.
 #
 # Usage:
-#   ./scripts/start-all.sh [--workspace <path>] [--notify <ntfy-topic>]
+#   ./scripts/start-all.sh [--workspace <path>] [--notify <ntfy-topic>] [--vps <user@host:port>]
 #   npm run start-all -- --workspace /path/to/project
 #
 # Controls:
@@ -28,6 +32,7 @@ BRIDGE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORKSPACE="."
 NTFY_TOPIC=""
 IDE_NAME=""
+VPS=""
 BRIDGE_READY_TIMEOUT="${BRIDGE_READY_TIMEOUT:-30}"
 LAST_CLAUDE_RESTART=0
 RESTART_COUNT=0
@@ -40,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --workspace) WORKSPACE="$2"; shift 2 ;;
     --notify)    NTFY_TOPIC="$2"; shift 2 ;;
     --ide)       IDE_NAME="$2"; shift 2 ;;
+    --vps)       VPS="$2"; shift 2 ;;
     *)           echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -71,7 +77,7 @@ if [[ -z "${TMUX:-}" ]]; then
   fi
   # Create session detached, re-run this script inside it, then attach
   tmux new-session -d -s "$SESSION" -x 200 -y 50
-  tmux send-keys -t "$SESSION" "\"$SCRIPT_PATH\" --workspace \"$WORKSPACE\"$([ -n "$NTFY_TOPIC" ] && echo " --notify \"$NTFY_TOPIC\"")$([ -n "$IDE_NAME" ] && echo " --ide \"$IDE_NAME\"")" Enter
+  tmux send-keys -t "$SESSION" "\"$SCRIPT_PATH\" --workspace \"$WORKSPACE\"$([ -n "$NTFY_TOPIC" ] && echo " --notify \"$NTFY_TOPIC\"")$([ -n "$IDE_NAME" ] && echo " --ide \"$IDE_NAME\"")$([ -n "$VPS" ] && echo " --vps \"$VPS\"")" Enter
   exec tmux attach -t "$SESSION"
 fi
 
@@ -130,6 +136,43 @@ SESSION_DISPLAY_NAME="bridge:${WS_BASENAME}"
 # Ensures PostToolUse/SessionEnd hook payloads are delivered even during graceful shutdown.
 CLAUDE_CMD="cd $(printf '%q' "$WORKSPACE") && unset CLAUDECODE && CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=10000 claude --ide --name $(printf '%q' "$SESSION_DISPLAY_NAME")"
 
+# --- SSH reverse tunnel command (pane 4, only when --vps is set) ---
+# Format: --vps user@host:remote_port  (e.g. root@185.220.204.65:9000)
+# The tunnel forwards remote_port on the VPS back to the local bridge port,
+# so a static MCP URL on the VPS proxies directly to the local bridge.
+TUNNEL_CMD=""
+if [[ -n "$VPS" ]]; then
+  VPS_HOST="${VPS%:*}"   # everything before the last colon
+  VPS_PORT="${VPS##*:}"  # everything after the last colon
+  # Derive local bridge port from lock file at startup time (resolved later after bridge starts)
+  # We use a wrapper that reads the port dynamically so restarts pick up new ports automatically.
+  TUNNEL_CMD="bash -c '
+delay=5; max_delay=60; failures=0
+while true; do
+  # Read current bridge port from the newest lock file
+  LOCAL_PORT=\$(ls -t ~/.claude/ide/*.lock 2>/dev/null | head -1 | xargs -I{} python3 -c \"import json,sys; d=json.load(open(sys.argv[1])); print(d.get(\\\"port\\\", \\\"\\\"))\" {} 2>/dev/null || echo \"\")
+  # Fall back to basename of lock file (port is the filename)
+  if [[ -z \"\$LOCAL_PORT\" ]]; then
+    LOCAL_PORT=\$(ls -t ~/.claude/ide/*.lock 2>/dev/null | head -1 | xargs basename 2>/dev/null | sed \"s/.lock//\")
+  fi
+  if [[ -z \"\$LOCAL_PORT\" ]]; then
+    echo \"[\$(date +%H:%M:%S)] No bridge lock file found, retrying in \${delay}s...\"
+    sleep \$delay; continue
+  fi
+  echo \"[\$(date +%H:%M:%S)] Opening SSH tunnel: ${VPS_HOST} port ${VPS_PORT} -> localhost:\$LOCAL_PORT\"
+  ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+      -o ExitOnForwardFailure=yes -o BatchMode=yes \
+      -R ${VPS_PORT}:localhost:\$LOCAL_PORT -N ${VPS_HOST}
+  code=\$?
+  [ \$code -eq 130 ] && { echo \"Exited by Ctrl+C.\"; exit 0; }
+  failures=\$((failures+1))
+  [ \$failures -ge 20 ] && { echo \"Too many tunnel failures. Giving up.\"; exit 1; }
+  echo \"[\$(date +%H:%M:%S)] Tunnel disconnected (exit \$code). Reconnecting in \${delay}s...\"
+  sleep \$delay
+  [ \$delay -lt \$max_delay ] && delay=\$((delay*2))
+done'"
+fi
+
 # Export for subshell access
 export NTFY_TOPIC
 
@@ -163,10 +206,11 @@ while true; do
   sleep \$delay
 done'"
 
-# --- Create 3 additional panes (pane 0 = orchestrator, 1 = bridge, 2 = claude, 3 = remote-control) ---
+# --- Create additional panes (pane 0 = orchestrator, 1 = bridge, 2 = claude, 3 = remote-control, 4 = ssh tunnel) ---
 tmux split-window -v -t "$SESSION"    # pane 1 for bridge
 tmux split-window -v -t "$SESSION"    # pane 2 for claude --ide
 tmux split-window -v -t "$SESSION"    # pane 3 for claude remote-control
+[[ -n "$TUNNEL_CMD" ]] && tmux split-window -v -t "$SESSION"  # pane 4 for ssh tunnel (optional)
 tmux select-layout -t "$SESSION" even-vertical
 
 # --- Helper: wait for a NEW lock file (ignores pre-existing ones) ---
@@ -245,6 +289,12 @@ sleep 3
 # Pane 3: Remote control with auto-restart loop
 tmux send-keys -t "${SESSION}:0.3" "$REMOTE_CMD" Enter
 
+# Pane 4: SSH reverse tunnel (only if --vps was set)
+if [[ -n "$TUNNEL_CMD" ]]; then
+  notify "Starting SSH tunnel to ${VPS}..."
+  tmux send-keys -t "${SESSION}:0.4" "$TUNNEL_CMD" Enter
+fi
+
 # --- Health monitor (runs in pane 0 — the orchestrator pane) ---
 echo ""
 echo "Health monitor active. Watching: $(basename "$LOCK_FILE")"
@@ -257,22 +307,27 @@ cleanup() {
   tmux send-keys -t "${SESSION}:0.1" C-c 2>/dev/null
   tmux send-keys -t "${SESSION}:0.2" C-c 2>/dev/null
   tmux send-keys -t "${SESSION}:0.3" C-c 2>/dev/null
+  [[ -n "$TUNNEL_CMD" ]] && tmux send-keys -t "${SESSION}:0.4" C-c 2>/dev/null
   # Wait up to 5s for panes to exit gracefully, then force-kill
+  local panes=(1 2 3)
+  [[ -n "$TUNNEL_CMD" ]] && panes=(1 2 3 4)
   for _ in $(seq 1 5); do
     sleep 1
     all_idle=true
-    for pane in 1 2 3; do
+    for pane in "${panes[@]}"; do
       cmd=$(tmux display-message -t "${SESSION}:0.${pane}" -p '#{pane_current_command}' 2>/dev/null || echo "")
       [[ "$cmd" != "bash" && "$cmd" != "zsh" && -n "$cmd" ]] && { all_idle=false; break; }
     done
     $all_idle && break
   done
   # Force-kill any remaining panes
-  for pane in 1 2 3; do
+  for pane in "${panes[@]}"; do
     tmux send-keys -t "${SESSION}:0.${pane}" C-c 2>/dev/null || true
   done
   sleep 1
-  for pane in 3 2 1; do
+  local rpanes=(3 2 1)
+  [[ -n "$TUNNEL_CMD" ]] && rpanes=(4 3 2 1)
+  for pane in "${rpanes[@]}"; do
     tmux kill-pane -t "${SESSION}:0.${pane}" 2>/dev/null || true
   done
 }
@@ -288,6 +343,7 @@ while true; do
     tmux send-keys -t "${SESSION}:0.1" C-c
     tmux send-keys -t "${SESSION}:0.2" C-c
     tmux send-keys -t "${SESSION}:0.3" C-c
+    [[ -n "$TUNNEL_CMD" ]] && tmux send-keys -t "${SESSION}:0.4" C-c
     # Wait for bridge (pane 1) and claude (pane 2) to actually stop
     for _ in $(seq 1 10); do
       pane1_cmd=$(tmux display-message -t "${SESSION}:0.1" -p '#{pane_current_command}' 2>/dev/null || echo "")
@@ -350,6 +406,10 @@ while true; do
     sleep 3
     # Restart remote-control
     tmux send-keys -t "${SESSION}:0.3" "$REMOTE_CMD" Enter
+    # Restart SSH tunnel (port may have changed — tunnel cmd reads lock file dynamically)
+    if [[ -n "$TUNNEL_CMD" ]]; then
+      tmux send-keys -t "${SESSION}:0.4" "$TUNNEL_CMD" Enter
+    fi
     notify "All processes restarted"
   else
     # Bridge is alive — check if Claude CLI (pane 2) has exited
