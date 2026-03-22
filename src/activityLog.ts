@@ -163,7 +163,6 @@ export class ActivityLog {
     durationMs: number,
     status: "success" | "error",
     errorMessage?: string,
-    context?: { sessionId?: string; teammateName?: string },
   ): void {
     const entry: ActivityEntry = {
       id: this.nextId++,
@@ -172,8 +171,6 @@ export class ActivityLog {
       durationMs,
       status,
       errorMessage,
-      sessionId: context?.sessionId,
-      teammateName: context?.teammateName,
     };
     this.entries.push(entry);
     this._appendToDisk("tool", entry);
@@ -190,18 +187,12 @@ export class ActivityLog {
     }
   }
 
-  recordEvent(
-    event: string,
-    metadata?: Record<string, unknown>,
-    context?: { sessionId?: string; teammateName?: string },
-  ): void {
+  recordEvent(event: string, metadata?: Record<string, unknown>): void {
     const entry: LifecycleEntry = {
       id: this.nextId++,
       timestamp: new Date().toISOString(),
       event,
       metadata,
-      sessionId: context?.sessionId,
-      teammateName: context?.teammateName,
     };
     this.lifecycleEntries.push(entry);
     this._appendToDisk("lifecycle", entry);

@@ -4,18 +4,9 @@ import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { Logger } from "./logger.js";
 import type { OAuthServer } from "./oauth.js";
-import type { StoredToken, VerifiedToken } from "./teammateTokens.js";
-import { parseToken, touchLastUsed, verifyToken } from "./teammateTokens.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
-
-/** Identity context attached to HTTP/WS requests after teammate token verification. */
-export interface RequestContext {
-  teammateName: string | null;
-  sessionId: string | null;
-  scopes: string[];
-}
+const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 import type { ActivityListener } from "./activityTypes.js";
 
@@ -35,7 +26,7 @@ function enableTcpKeepalive(ws: WebSocket): void {
 }
 
 interface ServerEvents {
-  connection: [ws: WebSocket, request: http.IncomingMessage];
+  connection: [ws: WebSocket];
   extension: [ws: WebSocket];
 }
 
@@ -103,26 +94,6 @@ function setupPongHandler(ws: AliveWebSocket): void {
 
 const MIN_CONNECTION_INTERVAL_MS = 50; // Allow multiple agents to connect within same second
 
-/**
- * WeakMap to propagate teammate identity from the HTTP/WS upgrade auth check
- * to the session creation in bridge.ts. The request object is the key — GC-safe.
- */
-const upgradeContext = new WeakMap<http.IncomingMessage, RequestContext>();
-
-/** Read the teammate identity attached during auth for a given upgrade request. */
-export function getUpgradeContext(
-  req: http.IncomingMessage,
-): RequestContext | undefined {
-  return upgradeContext.get(req);
-}
-
-/** Read the teammate identity attached during auth for a given HTTP request. */
-export function getHttpRequestContext(
-  req: http.IncomingMessage,
-): RequestContext | undefined {
-  return upgradeContext.get(req);
-}
-
 export class Server extends EventEmitter<ServerEvents> {
   private httpServer: http.Server;
   private wss: WsServer;
@@ -133,16 +104,6 @@ export class Server extends EventEmitter<ServerEvents> {
   /** OAuth 2.0 Authorization Server — set via setOAuthServer() when running in remote mode */
   private oauthServer: OAuthServer | null = null;
   private oauthIssuerUrl: string | null = null;
-  /** Teammate tokens — set via setTeammateTokens() */
-  private teammateTokens: Map<string, StoredToken> = new Map();
-  private teammateTokensPath: string | null = null;
-  /**
-   * Allowed Host header values for WebSocket upgrade (DNS rebinding defense).
-   * Loopback hosts are always allowed. When --bind 0.0.0.0 is used, the check
-   * is disabled (all hosts accepted) because the bridge is intentionally exposed
-   * and auth tokens are the primary security layer.
-   */
-  private allowedHosts: Set<string> | null = new Set(LOOPBACK_HOSTS);
 
   /** Set by bridge to provide health data */
   public healthDataFn: (() => Record<string, unknown>) | null = null;
@@ -176,29 +137,6 @@ export class Server extends EventEmitter<ServerEvents> {
   setOAuthServer(oauth: OAuthServer, issuerUrl: string): void {
     this.oauthServer = oauth;
     this.oauthIssuerUrl = issuerUrl;
-  }
-
-  /** Update the teammate tokens map (supports hot-reload). */
-  setTeammateTokens(
-    tokens: Map<string, StoredToken>,
-    tokensPath?: string,
-  ): void {
-    this.teammateTokens = tokens;
-    if (tokensPath) this.teammateTokensPath = tokensPath;
-  }
-
-  /**
-   * Configure Host header validation for WebSocket upgrades.
-   * When the bridge is bound to a non-loopback address (e.g. --bind 0.0.0.0),
-   * set allowedHosts to null to disable the check — the bridge is intentionally
-   * exposed and auth tokens are the primary security layer.
-   */
-  setAllowRemoteHosts(allow: boolean): void {
-    if (allow) {
-      this.allowedHosts = null; // Accept any Host header
-    } else {
-      this.allowedHosts = new Set(LOOPBACK_HOSTS);
-    }
   }
 
   constructor(
@@ -421,16 +359,12 @@ export class Server extends EventEmitter<ServerEvents> {
       const bearer = bearerFromHeader || bearerFromQuery;
 
       const isStaticToken = timingSafeTokenCompare(bearer, this.authToken);
-      // Check teammate tokens (O(1) via identifier prefix lookup + hash compare)
-      const teammateVerified: VerifiedToken | null = !isStaticToken
-        ? verifyToken(bearer, this.teammateTokens)
-        : null;
       const oauthResolved =
-        !isStaticToken && !teammateVerified && this.oauthServer
+        !isStaticToken && this.oauthServer
           ? this.oauthServer.resolveBearerToken(bearer)
           : null;
       // oauthResolved is the bridge token if the OAuth token is valid; null otherwise
-      if (!isStaticToken && !teammateVerified && !oauthResolved) {
+      if (!isStaticToken && !oauthResolved) {
         // RFC 6750: only include error= when a token was actually presented but invalid
         const tokenPresented = bearer.length > 0;
         const wwwAuth =
@@ -443,21 +377,6 @@ export class Server extends EventEmitter<ServerEvents> {
         });
         res.end("Unauthorized");
         return;
-      }
-
-      // Attach teammate identity to the request for downstream consumers
-      // (streamableHttp, bridge session creation, etc.)
-      if (teammateVerified) {
-        upgradeContext.set(req, {
-          teammateName: teammateVerified.name,
-          sessionId: null,
-          scopes: teammateVerified.scopes,
-        });
-        // Update lastUsedAt for audit trail (debounced, fire-and-forget)
-        if (this.teammateTokensPath) {
-          const parsed = parseToken(bearer);
-          if (parsed) touchLastUsed(this.teammateTokensPath, parsed.identifier);
-        }
       }
 
       if (parsedUrl.pathname === "/metrics" && req.method === "GET") {
@@ -647,10 +566,7 @@ export class Server extends EventEmitter<ServerEvents> {
       const host = rawHost.startsWith("[")
         ? rawHost.slice(0, rawHost.indexOf("]") + 1) // [::1]:port → [::1]
         : rawHost.replace(/:\d+$/, ""); // host:port → host
-      if (
-        !host ||
-        (this.allowedHosts !== null && !this.allowedHosts.has(host))
-      ) {
+      if (!host || !ALLOWED_HOSTS.has(host)) {
         this.logger.warn(
           `Rejected connection with invalid Host header: ${host}`,
         );
@@ -716,34 +632,14 @@ export class Server extends EventEmitter<ServerEvents> {
 
       // Check for Claude Code connection
       const token = request.headers["x-claude-code-ide-authorization"];
-      if (typeof token !== "string") {
+      if (
+        typeof token !== "string" ||
+        !timingSafeTokenCompare(token, this.authToken)
+      ) {
         this.logger.warn("Rejected unauthorized WebSocket upgrade");
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
-      }
-      const wsIsStatic = timingSafeTokenCompare(token, this.authToken);
-      const wsTeammate: VerifiedToken | null = !wsIsStatic
-        ? verifyToken(token, this.teammateTokens)
-        : null;
-      if (!wsIsStatic && !wsTeammate) {
-        this.logger.warn("Rejected unauthorized WebSocket upgrade");
-        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-        socket.destroy();
-        return;
-      }
-      // Attach teammate identity to the upgrade request
-      if (wsTeammate) {
-        upgradeContext.set(request, {
-          teammateName: wsTeammate.name,
-          sessionId: null,
-          scopes: wsTeammate.scopes,
-        });
-        // Update lastUsedAt for audit trail (debounced, fire-and-forget)
-        if (this.teammateTokensPath) {
-          const parsed = parseToken(token);
-          if (parsed) touchLastUsed(this.teammateTokensPath, parsed.identifier);
-        }
       }
 
       // Rate limit per client type to prevent connection-storm DoS
@@ -759,7 +655,7 @@ export class Server extends EventEmitter<ServerEvents> {
       });
     });
 
-    this.wss.on("connection", (raw, request: http.IncomingMessage) => {
+    this.wss.on("connection", (raw) => {
       const ws = raw as AliveWebSocket;
       this.logger.debug("Claude Code connected");
       ws.isAlive = true;
@@ -770,7 +666,7 @@ export class Server extends EventEmitter<ServerEvents> {
       ws.on("error", (err) => {
         this.logger.error(`WebSocket client error: ${err.message}`);
       });
-      this.emit("connection", ws, request);
+      this.emit("connection", ws);
     });
   }
 

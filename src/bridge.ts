@@ -17,10 +17,9 @@ import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
-import { Server, getUpgradeContext } from "./server.js";
+import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
-import { loadTokens, watchTokensFile } from "./teammateTokens.js";
 import { initTelemetry, shutdownTelemetry } from "./telemetry.js";
 import { readNote, writeNote } from "./tools/handoffNote.js";
 import { registerAllTools } from "./tools/index.js";
@@ -68,7 +67,6 @@ interface AgentSession {
   terminalPrefix: string;
   graceTimer: ReturnType<typeof setTimeout> | null;
   connectedAt: number;
-  teammateName: string | null;
 }
 
 export class Bridge {
@@ -114,30 +112,6 @@ export class Bridge {
       );
       this.logger.info(`OAuth 2.0 enabled — issuer: ${config.issuerUrl}`);
     }
-    // Allow remote WebSocket Host headers when binding to non-loopback address
-    if (
-      config.bindAddress !== "127.0.0.1" &&
-      config.bindAddress !== "localhost" &&
-      config.bindAddress !== "::1"
-    ) {
-      this.server.setAllowRemoteHosts(true);
-    }
-
-    // Load teammate tokens and set up hot-reload
-    const initialTokens = loadTokens(config.teammateTokensPath);
-    this.server.setTeammateTokens(initialTokens, config.teammateTokensPath);
-    if (initialTokens.size > 0) {
-      this.logger.info(
-        `Loaded ${initialTokens.size} teammate token(s) from ${config.teammateTokensPath}`,
-      );
-    }
-    watchTokensFile(config.teammateTokensPath, (reloaded) => {
-      this.server.setTeammateTokens(reloaded);
-      this.logger.info(
-        `Reloaded ${reloaded.size} teammate token(s) from ${config.teammateTokensPath}`,
-      );
-    });
-
     this.activityLog = new ActivityLog();
     if (config.auditLogPath) {
       this.activityLog.setPersistPath(config.auditLogPath);
@@ -146,7 +120,7 @@ export class Bridge {
     this.extensionClient = new ExtensionClient(this.logger);
 
     // Handle new Claude Code connections
-    this.server.on("connection", (ws: WebSocket, request) => {
+    this.server.on("connection", (ws: WebSocket) => {
       // Reject connections before probes are ready
       if (!this.ready) {
         this.logger.warn("Connection rejected — bridge not ready yet");
@@ -224,12 +198,6 @@ export class Bridge {
         openedFiles = new Set<string>();
       }
 
-      // Read teammate identity from the upgrade request (set by server.ts auth)
-      const upgradeCtx = getUpgradeContext(request);
-      const teammateName = upgradeCtx?.teammateName ?? null;
-      transport.teammateName = teammateName;
-      transport.scopes = upgradeCtx?.scopes ?? null;
-
       const session: AgentSession = {
         id: sessionId,
         ws,
@@ -238,7 +206,6 @@ export class Bridge {
         terminalPrefix: `s${sessionId.slice(0, 8)}-`,
         graceTimer: null,
         connectedAt: Date.now(),
-        teammateName,
       };
 
       // Register tools for this session — probes guaranteed non-null due to ready guard above
@@ -264,28 +231,17 @@ export class Bridge {
 
       transport.attach(ws);
       this.sessions.set(sessionId, session);
-      const nameLabel = teammateName ? ` [${teammateName}]` : "";
       this.logger.info(
-        `Claude Code connected${nameLabel} (session ${sessionId.slice(0, 8)}) — ${this.sessions.size} active session${this.sessions.size === 1 ? "" : "s"}`,
+        `Claude Code connected (session ${sessionId.slice(0, 8)}) — ${this.sessions.size} active session${this.sessions.size === 1 ? "" : "s"}`,
       );
       this.lastConnectAt = new Date().toISOString();
-      const sessionCtx = {
+      this.activityLog.recordEvent("claude_connected", {
         sessionId: sessionId.slice(0, 8),
-        teammateName: teammateName ?? undefined,
-      };
-      this.activityLog.recordEvent(
-        "claude_connected",
-        {
-          sessionId: sessionId.slice(0, 8),
-          activeSessions: this.sessions.size,
-          ...(teammateName ? { teammateName } : {}),
-        },
-        sessionCtx,
-      );
+        activeSessions: this.sessions.size,
+      });
       this.logger.event("claude_connected", {
         sessionId,
         activeSessions: this.sessions.size,
-        ...(teammateName ? { teammateName } : {}),
       });
       // Only notify on the first active session — subsequent agents don't need to re-signal
       if (this.sessions.size === 1) {
@@ -297,18 +253,10 @@ export class Bridge {
         this.logger.info(
           `Claude Code disconnected (session ${sessionId.slice(0, 8)})`,
         );
-        this.activityLog.recordEvent(
-          "claude_disconnected",
-          {
-            sessionId: sessionId.slice(0, 8),
-            ...(teammateName ? { teammateName } : {}),
-          },
-          sessionCtx,
-        );
-        this.logger.event("claude_disconnected", {
-          sessionId,
-          ...(teammateName ? { teammateName } : {}),
+        this.activityLog.recordEvent("claude_disconnected", {
+          sessionId: sessionId.slice(0, 8),
         });
+        this.logger.event("claude_disconnected", { sessionId });
         const s = this.sessions.get(sessionId);
         if (s && !s.graceTimer) {
           s.graceTimer = setTimeout(() => {
