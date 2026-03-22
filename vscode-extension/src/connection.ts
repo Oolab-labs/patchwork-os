@@ -324,6 +324,17 @@ export class BridgeConnection {
               ? " — too many connections; another VS Code window may already be connected"
               : "";
       this.logError(`Upgrade rejected: HTTP ${res.statusCode}${hint}`);
+      if (res.statusCode === 401) {
+        vscode.window
+          .showWarningMessage(
+            "Claude IDE Bridge: Auth token mismatch — the bridge may have restarted with a new token. Reloading the window should fix this.",
+            "Reload Window",
+          )
+          .then((choice) => {
+            if (choice === "Reload Window")
+              vscode.commands.executeCommand("workbench.action.reloadWindow");
+          });
+      }
       // Use handleDisconnect() for full cleanup (heartbeat, pending handlers,
       // listener removal, status bar). Must call BEFORE setting DISCONNECTING
       // state so the re-entrancy guard doesn't skip cleanup.

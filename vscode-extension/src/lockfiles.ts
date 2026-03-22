@@ -94,6 +94,12 @@ export async function readLockFilesAsync(
   const currentWorkspace =
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
   const candidates = await readValidLockFiles(lockDir);
+  if (candidates.length > 1) {
+    const ports = candidates.map((c) => c.port).join(", ");
+    vscode.window.showWarningMessage(
+      `Claude IDE Bridge: Multiple bridge instances found (ports ${ports}). Connecting to port ${candidates[0]!.port}. Stop other instances if this is wrong.`,
+    );
+  }
   for (const candidate of candidates) {
     if (currentWorkspace && candidate.workspace) {
       if (path.resolve(candidate.workspace) !== path.resolve(currentWorkspace))

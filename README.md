@@ -531,6 +531,8 @@ Available tools in headless mode: file operations, git, terminals, search, CLI l
 
 > **Stable tokens:** Use `--fixed-token <uuid>` (or `CLAUDE_IDE_BRIDGE_TOKEN=<uuid>`) to keep the same token across restarts. Without it, a new token is generated each time the bridge starts, requiring a config update.
 
+> **VPS filesystem scope:** A bridge running on a VPS serves **that VPS's filesystem only**. File tools (`readFile`, `writeFile`, `searchWorkspace`, etc.) read and write files on the VPS — not on your local Mac. If you want Claude to work on files on your local machine, run the bridge locally (or use VS Code Remote-SSH, which runs both the extension and bridge on the VPS alongside your remote files).
+
 > **Security:** `--bind 0.0.0.0` exposes the bridge to the network. Put nginx or Caddy in front with TLS before exposing to the internet. See [docs/remote-access.md](docs/remote-access.md) for a production Caddy setup.
 
 ---
