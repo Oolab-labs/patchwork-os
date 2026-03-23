@@ -1,7 +1,7 @@
-import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
+import { timingSafeStringEqual } from "./crypto.js";
 import type { Logger } from "./logger.js";
 import type { OAuthServer } from "./oauth.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
@@ -57,26 +57,9 @@ export function corsOrigin(
   return null;
 }
 
-function timingSafeTokenCompare(a: string, b: string): boolean {
-  const bA = Buffer.from(a);
-  const bB = Buffer.from(b);
-  const len = Math.max(bA.length, bB.length);
-  const padA = Buffer.alloc(len);
-  const padB = Buffer.alloc(len);
-  bA.copy(padA);
-  bB.copy(padB);
-  // Use timingSafeEqual for the length comparison too so an attacker on a
-  // remote deployment cannot distinguish "wrong length" from "right length,
-  // wrong bytes" via timing.  Encode each length as a fixed-width 4-byte BE
-  // integer before comparing.
-  const lenA = Buffer.allocUnsafe(4);
-  const lenB = Buffer.allocUnsafe(4);
-  lenA.writeUInt32BE(bA.length, 0);
-  lenB.writeUInt32BE(bB.length, 0);
-  return (
-    crypto.timingSafeEqual(padA, padB) && crypto.timingSafeEqual(lenA, lenB)
-  );
-}
+// Re-export canonical constant-time comparison for use in this module.
+// Implementation lives in src/crypto.ts — see there for security notes.
+const timingSafeTokenCompare = timingSafeStringEqual;
 
 function setupPongHandler(ws: AliveWebSocket): void {
   ws.on("pong", (data: Buffer) => {

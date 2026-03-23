@@ -149,8 +149,13 @@ export function resolveFilePath(
         }
       }
       if (realAncestor === null) {
-        // Reached filesystem root without finding a real ancestor — trust path.resolve check
-        return resolved;
+        // Reached filesystem root without finding any real ancestor on disk.
+        // This means the entire path (including the workspace root) doesn't
+        // exist or is inaccessible. Fail closed rather than open — returning
+        // `resolved` here would skip the symlink containment check entirely.
+        throw new Error(
+          `Cannot verify path "${filePath}" is within workspace: no real ancestor found`,
+        );
       }
       realTarget = path.join(realAncestor, ...suffix);
     }

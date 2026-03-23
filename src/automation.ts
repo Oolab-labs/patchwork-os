@@ -343,7 +343,6 @@ export class AutomationHooks {
       return;
     }
 
-    this.lastTrigger.set(key, now);
     this._pruneLastTrigger(now);
 
     try {
@@ -351,6 +350,9 @@ export class AutomationHooks {
         prompt: cfg.prompt,
         sessionId: "",
       });
+      // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
+      // impose a spurious cooldown on the next trigger attempt.
+      this.lastTrigger.set(key, now);
       this.log(`[automation] triggered PostCompact task ${taskId.slice(0, 8)}`);
     } catch (err) {
       this.log(
@@ -424,7 +426,6 @@ export class AutomationHooks {
       return;
     }
 
-    this.lastTrigger.set(key, now);
     this._pruneLastTrigger(now);
 
     // Truncate file path and wrap in delimiters to prevent prompt injection
@@ -436,6 +437,9 @@ export class AutomationHooks {
     );
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
+      // impose a spurious cooldown on the next trigger attempt.
+      this.lastTrigger.set(key, now);
       this.activeSaveTasks.set(normalizedFile, taskId);
       this.log(
         `[automation] triggered save task ${taskId.slice(0, 8)} for ${normalizedFile}`,
