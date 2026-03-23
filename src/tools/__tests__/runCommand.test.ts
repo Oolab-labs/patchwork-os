@@ -243,6 +243,110 @@ describe("runCommand", () => {
         tool.handler({ command: "echo", args: ["--config=evil.js"] }),
       ).rejects.toThrow("blocked");
     });
+
+    // -f and -r: per-command blocks (DANGEROUS_FLAGS_FOR_COMMAND)
+    it("blocks make -f (arbitrary Makefile path)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "make"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      await expect(
+        tool.handler({ command: "make", args: ["-f", "/tmp/evil.mk"] }),
+      ).rejects.toThrow("blocked");
+    });
+
+    it("blocks make --file (long form of -f)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "make"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      await expect(
+        tool.handler({ command: "make", args: ["--file=/tmp/evil.mk"] }),
+      ).rejects.toThrow("blocked");
+    });
+
+    it("blocks node -r (pre-require arbitrary module)", async () => {
+      const cfg: Config = { ...config, commandAllowlist: ["node"] };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      await expect(
+        tool.handler({ command: "node", args: ["-r", "evil-module"] }),
+      ).rejects.toThrow("blocked");
+    });
+
+    it("allows grep -r (recursive search — harmless for grep)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "grep"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      // grep -r will run (may or may not find matches) — should NOT throw "blocked"
+      const result = await tool.handler({
+        command: "grep",
+        args: ["-r", "nonexistent-string-xyz", tmpDir],
+      });
+      const data = parse(result);
+      // exit 1 means no matches — that is fine; what matters is no validation error
+      expect([0, 1]).toContain(data.exitCode);
+    });
+
+    it("allows docker -f (compose file flag — harmless for docker)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "docker"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      // docker may not be installed; result is an error content block, not a throw
+      const result = await tool.handler({
+        command: "docker",
+        args: ["-f", "docker-compose.yml", "ps"],
+      });
+      // If we reach here without a "blocked" throw, the fix works
+      expect(result).toBeDefined();
+    });
+
+    it("allows sort -f (case-insensitive sort flag — harmless)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "sort"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      const result = await tool.handler({
+        command: "sort",
+        args: ["-f"],
+      });
+      const data = parse(result);
+      expect(data).toBeDefined(); // no validation error thrown
+    });
+
+    it("blocks curl -o (output to file — path write risk)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "curl"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      await expect(
+        tool.handler({
+          command: "curl",
+          args: ["-o", "/tmp/evil", "http://example.com"],
+        }),
+      ).rejects.toThrow("blocked");
+    });
+
+    it("blocks curl --output (long form of -o)", async () => {
+      const cfg: Config = {
+        ...config,
+        commandAllowlist: [...config.commandAllowlist, "curl"],
+      };
+      const tool = createRunCommandTool(tmpDir, cfg);
+      await expect(
+        tool.handler({
+          command: "curl",
+          args: ["--output=/tmp/evil", "http://example.com"],
+        }),
+      ).rejects.toThrow("blocked");
+    });
   });
 
   it("runs command in a subdirectory cwd", async () => {
