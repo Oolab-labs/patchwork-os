@@ -4,9 +4,9 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.5.7 — 2026-03-23)
+## Current State (v2.5.8 — 2026-03-23)
 
-- 124+ MCP tools; 1349 bridge tests + 406 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- 136+ MCP tools; 1349 bridge tests + 406 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
 - Extension v1.0.12 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.5.7`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
@@ -26,6 +26,11 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.5.8 shipped (2026-03-23) — security hardening + onboarding fixes:**
+- 7 security findings resolved: unbounded `registeredClients` DoS cap + GC (HIGH), duplicate `timingSafeEqual` consolidated into `src/crypto.ts` (HIGH), curl `--unix-socket`/`--netrc-file`/`-w` blocked in `runCommand` (MEDIUM), `lastTrigger` set after enqueue in `handleFileSaved`/`handlePostCompact` (MEDIUM), WS Host header allowlist extended to `--cors-origin` hostnames (MEDIUM), `resolveFilePath` fails closed on ancestor walk exhaustion (LOW)
+- Onboarding docs: plugin README Quick Start, extension install step, env var, `--watch` default; SETUP.md Remote Control sections removed; `install-extension` positional arg fixed; CHANGELOG gaps filled
+- `source: 'settings'` plugin support documented (Option 3 in plugin README)
 
 **v2.5.7 shipped (2026-03-23) — agent frontmatter tightening (Claude Code 2.1.78):**
 - All 3 subagents: `maxTurns` limits (30/20/15) + `disallowedTools: deleteFile`; code-reviewer also blocks Edit/Write
@@ -452,9 +457,8 @@ Research (2026-03-17) against current Claude Code docs revealed gaps between the
 
 ## Near-Term Exploration Areas
 
-### `source: 'settings'` Plugin Support *(complete — v2.5.8)*
-- Documented `enabledPlugins` settings.json approach in `claude-ide-bridge-plugin/README.md` as Option 3 — no CLI flags needed
-- `plugin.json` version bumped to 2.5.7; tool count updated to 136+ across README and plugin manifest
+### `source: 'settings'` Plugin Support *(shipped — v2.5.8)*
+- Documented `enabledPlugins` settings.json approach in `claude-ide-bridge-plugin/README.md` as Option 3 — no CLI flags needed; Claude Code loads the plugin automatically from the project root on startup
 
 ### Visual Output Skills *(medium-term)*
 - Skills generating interactive HTML from bridge data (dependency graphs, test heatmaps, diagnostic dashboards)
