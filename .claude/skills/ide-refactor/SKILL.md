@@ -2,6 +2,7 @@
 name: ide-refactor
 description: Safe refactoring with snapshot rollback. Creates a checkpoint, performs the refactoring using LSP rename and code actions, runs tests, and rolls back automatically if anything breaks.
 disable-model-invocation: true
+effort: high
 argument-hint: "[description of refactoring]"
 ---
 

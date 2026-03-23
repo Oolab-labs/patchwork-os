@@ -2,6 +2,7 @@
 name: ide-quality
 description: Multi-language code quality sweep using IDE bridge tools. Runs diagnostics across all languages, auto-fixes lint errors, organizes imports, formats code, runs tests, and optionally commits the cleanup.
 disable-model-invocation: true
+effort: high
 argument-hint: "[file or directory path]"
 ---
 
