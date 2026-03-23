@@ -35,7 +35,7 @@ if [ -z "$LOCK_FILE" ]; then
   jq -n --arg rate "$RATE_SUFFIX" '{
     hookSpecificOutput: {
       hookEventName: "SessionStart",
-      message: ("IDE Bridge: No bridge instance detected. Start the bridge with `npm start` or `npm run start-all` to enable IDE tools." + $rate)
+      message: ("IDE Bridge: No bridge instance detected. Start the bridge with `claude-ide-bridge --watch` to enable IDE tools." + $rate)
     }
   }'
   exit 0

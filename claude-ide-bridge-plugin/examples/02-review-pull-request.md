@@ -59,7 +59,7 @@ Identifies whether the changed lines are covered by the test suite.
 
 **Step 6 — Post review**
 ```
-githubCreateReview({
+githubPostPRReview({
   prNumber: 42,
   event: "REQUEST_CHANGES",
   body: "## Review\n\n**Critical:** Missing input validation on `amount` field ..."

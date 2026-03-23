@@ -1,6 +1,6 @@
 ## Claude IDE Bridge
 
-The bridge is connected via MCP. Call `getToolCapabilities` at the start of each session to confirm which tools are available and note any that require the VS Code extension.
+The bridge is connected via MCP. The session-start hook reports connection status, tool count, and extension state automatically — check that summary before proceeding. If tools appear missing, call `getBridgeStatus` to diagnose.
 
 ### Bug fix methodology
 
@@ -88,13 +88,7 @@ Keep responses concise (under 20 lines) when the conversation arrives via Dispat
 
 > **Claude Code ≥ v2.1.77**: `SendMessage` auto-resumes stopped agents — no need to check whether a teammate is running before sending to it.
 
-Ready-made scheduled task templates are available in `templates/scheduled-tasks/` — copy to `~/.claude/scheduled-tasks/` for recurring autonomous workflows (nightly-review, health-check, dependency-audit):
-
-```bash
-cp templates/scheduled-tasks/health-check/SKILL.md ~/.claude/scheduled-tasks/health-check.md
-```
-
-(And restart Claude Desktop to detect it.)
+Ready-made scheduled task templates (nightly-review, health-check, dependency-audit) are included with the bridge package. Copy the ones you want to `~/.claude/scheduled-tasks/` and restart Claude Desktop to activate them. Find them in the `templates/scheduled-tasks/` directory of the `claude-ide-bridge` npm package (typically `$(npm root -g)/claude-ide-bridge/templates/scheduled-tasks/`).
 
 ### Cowork (computer-use)
 

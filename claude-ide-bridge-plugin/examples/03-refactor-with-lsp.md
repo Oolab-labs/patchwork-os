@@ -69,12 +69,14 @@ replaceBlock({
 
 **Step 6 — Rename the internal helper across the codebase**
 ```
-searchAndReplace({
-  pattern: "_calcTotal",
-  replacement: "calculateOrderTotal",
-  glob: "src/**/*.ts"
+renameSymbol({
+  filePath: "src/services/UserService.ts",
+  line: 112,   // line of _calcTotal definition
+  column: 10,
+  newName: "calculateOrderTotal"
 })
 ```
+Uses the language server to rename atomically — finds all references including re-exports and indirect callers, which a text search would miss.
 
 **Step 7 — Verify no type errors**
 ```
@@ -99,4 +101,4 @@ Claude creates `PaymentService.ts` with the extracted methods, updates all impor
 - Start with `getDocumentSymbols` before any edits — it gives you the full map of what's in a file so Claude doesn't miss anything.
 - For large refactors, ask Claude to do one step at a time and confirm diagnostics are clean before moving to the next.
 - Use `getGitDiff` at the end to review everything Claude changed before committing.
-- If a rename is risky, ask Claude to use `findReferences` first and list all affected files for your approval.
+- If a rename is risky, ask Claude to call `findReferences` first and list all affected files for your approval before calling `renameSymbol`.

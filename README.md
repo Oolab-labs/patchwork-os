@@ -55,28 +55,20 @@ code --install-extension oolab-labs.claude-ide-bridge-extension
 ```bash
 npm install -g claude-ide-bridge
 cd /your/project
-claude-ide-bridge
+claude-ide-bridge --watch
 ```
 
-The bridge starts, writes a lock file to `~/.claude/ide/`, and waits for connections. Your editor extension connects automatically. The lock file is removed automatically when the bridge exits cleanly.
+The bridge starts, writes a lock file to `~/.claude/ide/`, and waits for connections. Your editor extension connects automatically. `--watch` auto-restarts the bridge if it crashes (exponential backoff 2s → 30s); safe to leave running indefinitely.
 
-> **One bridge per workspace.** Each project directory needs its own bridge instance. If you work across multiple repos, start a separate `claude-ide-bridge` in each workspace.
-
-> **For long-running use**, add `--watch` to auto-restart the bridge if it crashes:
-> ```bash
-> claude-ide-bridge --watch
-> ```
-> The supervisor uses exponential backoff (2s → 30s) and is safe to leave running indefinitely.
+> **One bridge per workspace.** Each project directory needs its own bridge instance. If you work across multiple repos, start a separate `claude-ide-bridge --watch` in each workspace.
 
 **Step 3 — Connect Claude Code**
 
 In a new terminal in your project directory:
 
 ```bash
-CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide
+claude --ide
 ```
-
-> **Tip:** Add `export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true` to your `~/.zshrc` or `~/.bashrc` to make it permanent — after that, `claude --ide` is all you need.
 
 Claude Code connects to the bridge. Type `/ide` to confirm — you'll see your open files, diagnostics, and editor state.
 

@@ -2,11 +2,43 @@
 
 A Claude Code plugin that provides full IDE integration — 136+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth 2.0, and more.
 
+## Quick Start
+
+The fastest path from zero to working:
+
+```bash
+# 1. Install the bridge
+npm install -g claude-ide-bridge
+
+# 2. Install the VS Code extension (auto-installs, or use the command below)
+claude-ide-bridge install-extension
+
+# 3. Add the required env var (add to ~/.zshrc or ~/.bashrc to make permanent)
+export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true
+
+# 4. Start the bridge (supervised, auto-restarts on crash)
+claude-ide-bridge --watch --workspace /path/to/your/project
+
+# 5. In a new terminal, open Claude Code with the plugin
+claude --plugin-dir $(npm root -g)/claude-ide-bridge/claude-ide-bridge-plugin
+```
+
+### Verify it's working
+
+Inside Claude Code, type `/ide` and select the bridge from the list. You should see a confirmation with the tool count (136+ tools when the extension is connected, ~111 without it).
+
+The session start hook also prints bridge status automatically — look for a summary line at the top of each new conversation.
+
+---
+
 ## Prerequisites
 
 - [Claude Code](https://code.claude.com) v1.0.33+
-- The bridge server available via npm global install or from source (see [Bridge Setup](#bridge-setup))
-- A VS Code-compatible editor (VS Code, Windsurf, Cursor) with the companion extension installed
+- Node.js 18+
+- A VS Code-compatible editor: VS Code, Windsurf, Cursor, or Google Antigravity
+- The companion VS Code extension (installed via `claude-ide-bridge install-extension` or from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=oolab-labs.claude-ide-bridge-extension))
+
+---
 
 ## Installation
 
@@ -40,25 +72,53 @@ Copy the plugin directory into your project and reference it in `.claude/setting
 
 No CLI flags needed — Claude Code loads the plugin from the project root on startup.
 
+---
+
 ## Bridge Setup
 
-The plugin's `.mcp.json` auto-discovers the bridge via the `claude-ide-bridge` binary. Install globally:
+### Install the extension
+
+The VS Code extension provides LSP, debugging, terminal, and editor tools. Without it, ~25 tools are unavailable.
 
 ```bash
-npm install -g claude-ide-bridge
+# Install via subcommand (detects your IDE automatically)
+claude-ide-bridge install-extension
+
+# Or specify the IDE explicitly (positional argument):
+claude-ide-bridge install-extension windsurf
+claude-ide-bridge install-extension cursor
+claude-ide-bridge install-extension antigravity
+
+# Or install from the marketplace manually:
+# VS Code Marketplace: search "Claude IDE Bridge" (oolab-labs.claude-ide-bridge-extension)
+# Open VSX: oolab-labs.claude-ide-bridge-extension
 ```
 
-The bridge must be running before Claude Code starts. Start it in a separate terminal:
+### Start the bridge
+
+The bridge must be running before Claude Code starts. Use `--watch` for supervised auto-restart:
 
 ```bash
-claude-ide-bridge --workspace /path/to/your/project
+claude-ide-bridge --watch --workspace /path/to/your/project
 ```
 
-Or use the full orchestrator (tmux + auto-restart + optional ngrok):
+Or use the full orchestrator (tmux + all processes managed together):
 
 ```bash
 npm run start-all -- --workspace /path/to/your/project
 ```
+
+### Required env var
+
+Claude Code requires this env var to discover the bridge:
+
+```bash
+export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true
+```
+
+Add it to your `~/.zshrc` or `~/.bashrc` to make it permanent. Without it, Claude Code's internal validation will silently filter out the bridge.
+
+---
 
 ## What's Included
 
@@ -116,6 +176,8 @@ The plugin configures the bridge as an MCP server, providing 136+ tools:
 - **VS Code Integration** (8 tools): executeVSCodeCommand, getWorkspaceSettings, setWorkspaceSetting, ...
 - And more: decorations, notebooks, clipboard, snapshots, OAuth, activity log
 
+---
+
 ## Scheduled Monitoring
 
 Use `/loop` with the monitor skill for continuous checks:
@@ -125,6 +187,8 @@ Use `/loop` with the monitor skill for continuous checks:
 /loop 10m /claude-ide-bridge:ide-monitor tests auth
 /loop 2m /claude-ide-bridge:ide-monitor terminal dev-server
 ```
+
+---
 
 ## Headless / Agent SDK Usage
 
@@ -157,6 +221,8 @@ Create `mcp-bridge.json`:
 }
 ```
 
+---
+
 ## Tool Categories Quick Reference
 
 | Category | Count | Extension Required |
@@ -180,6 +246,8 @@ Create `mcp-bridge.json`:
 | Activity & OAuth | 4 | No |
 | **Total** | **~138** | |
 
+---
+
 ## Remote Access
 
 The bridge supports remote access via Streamable HTTP for use with Claude Desktop, Cowork, or the Claude.ai web interface:
@@ -187,12 +255,11 @@ The bridge supports remote access via Streamable HTTP for use with Claude Deskto
 ```bash
 # Generate MCP config for remote access
 npm run remote -- --host your-server.example.com --token your-token
-
-# Or expose via ngrok
-ngrok http 9000
 ```
 
 See [docs/remote-access.md](../docs/remote-access.md) for full setup instructions.
+
+---
 
 ## Links
 
