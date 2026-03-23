@@ -24,7 +24,7 @@ PORT=$(basename "$LOCK_FILE" .lock)
 WORKSPACE=$(jq -r '.workspace // "unknown"' "$LOCK_FILE" 2>/dev/null)
 IDE_NAME=$(jq -r '.ideName // "External"' "$LOCK_FILE" 2>/dev/null)
 
-HEALTH=$(curl -sf --max-time 2 "http://127.0.0.1:$PORT/health" 2>/dev/null)
+READY=$(curl -sf --max-time 2 "http://127.0.0.1:$PORT/ready" 2>/dev/null)
 if [ $? -ne 0 ]; then
   jq -n --arg port "$PORT" '{
     hookSpecificOutput: {
@@ -35,8 +35,8 @@ if [ $? -ne 0 ]; then
   exit 0
 fi
 
-EXTENSION=$(echo "$HEALTH" | jq -r '.extensionConnected // false')
-TOOL_COUNT=$(echo "$HEALTH" | jq -r '.toolCount // "unknown"')
+EXTENSION=$(echo "$READY" | jq -r '.extensionConnected // false')
+TOOL_COUNT=$(echo "$READY" | jq -r '.toolCount // "unknown"')
 
 jq -n \
   --arg port "$PORT" \

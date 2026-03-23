@@ -44,12 +44,20 @@ if [ -z "$FILE_FIELD" ]; then
   exit 0  # No file-like field — let Claude ask normally
 fi
 
-# Query the bridge for the active editor
+# Query the bridge /ready endpoint for the active editor path.
+# The /ready response includes extensionConnected but not the active file directly.
+# Fall back to the lock file workspace as a last resort so the pre-fill is still useful
+# when Claude asks for a path but no specific file is open.
 CONTEXT=$(curl -sf --max-time 2 \
   -H "Authorization: Bearer $AUTH_TOKEN" \
-  "http://127.0.0.1:$PORT/health" 2>/dev/null)
+  "http://127.0.0.1:$PORT/ready" 2>/dev/null)
 
+# /ready does not include activeFile — use workspace root as fallback hint
 ACTIVE_FILE=$(echo "$CONTEXT" | jq -r '.activeFile // ""' 2>/dev/null)
+if [ -z "$ACTIVE_FILE" ] || [ "$ACTIVE_FILE" = "null" ]; then
+  WORKSPACE=$(jq -r '.workspace // ""' "$LOCK_FILE" 2>/dev/null)
+  ACTIVE_FILE="$WORKSPACE"
+fi
 
 if [ -z "$ACTIVE_FILE" ] || [ "$ACTIVE_FILE" = "null" ]; then
   exit 0  # No active file — let Claude ask normally
