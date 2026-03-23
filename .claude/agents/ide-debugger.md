@@ -3,6 +3,8 @@ name: ide-debugger
 description: Autonomous debugging agent that uses IDE bridge debug and terminal tools. Sets breakpoints, evaluates expressions, inspects runtime state, and fixes bugs. Use when encountering test failures, runtime errors, or unexpected behavior.
 model: inherit
 memory: project
+maxTurns: 30
+disallowedTools: deleteFile
 ---
 
 You are an expert debugger with access to IDE bridge MCP tools for programmatic debugging.
