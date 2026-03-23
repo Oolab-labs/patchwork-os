@@ -49,6 +49,11 @@ const DANGEROUS_PATH_FLAGS = new Set([
   "--dump-header",
   "-K",
   // --config already in list above (covers curl -K alias too)
+  // curl socket/proxy flags — would bypass SSRF hostname checks
+  "--unix-socket",
+  "--abstract-unix-socket",
+  // curl credential file — arbitrary path read
+  "--netrc-file",
 ]);
 
 /**
@@ -59,6 +64,9 @@ const DANGEROUS_PATH_FLAGS = new Set([
 const DANGEROUS_FLAGS_FOR_COMMAND: Record<string, Set<string>> = {
   // make -f <path> / --file <path> redirects which Makefile is executed
   make: new Set(["-f", "--file"]),
+  // curl -w / --write-out can write to files via %output{/path} (curl 8.3+)
+  // Scoped to curl only — -w has harmless meanings in many other tools
+  curl: new Set(["-w", "--write-out"]),
   // node/ts-node -r <module> pre-requires arbitrary code
   node: new Set(["-r"]),
   "ts-node": new Set(["-r"]),

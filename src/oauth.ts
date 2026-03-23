@@ -22,6 +22,7 @@
 import crypto from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { URL } from "node:url";
+import { timingSafeStringEqual } from "./crypto.js";
 
 // ── Public interface (consumed by server.ts) ──────────────────────────────────
 
@@ -55,6 +56,7 @@ interface AccessToken {
 
 const CODE_TTL_MS = 5 * 60 * 1_000; // 5 min
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1_000; // 24 hours
+const CLIENT_TTL_MS = 7 * 24 * 60 * 60 * 1_000; // 7 days — GC registered clients after a week
 const DEFAULT_SCOPE = "mcp";
 const SUPPORTED_SCOPES = ["mcp"];
 
@@ -65,8 +67,11 @@ export class OAuthServerImpl implements OAuthServer {
   private readonly issuerUrl: string;
   private readonly authCodes = new Map<string, AuthCode>();
   private readonly accessTokens = new Map<string, AccessToken>();
-  /** client_id → registered redirect_uris (populated by handleRegister) */
-  private readonly registeredClients = new Map<string, string[]>();
+  /** client_id → { redirectUris, issuedAt } (populated by handleRegister) */
+  private readonly registeredClients = new Map<
+    string,
+    { redirectUris: string[]; issuedAt: number }
+  >();
   private readonly gcTimer: ReturnType<typeof setInterval>;
 
   constructor(bridgeToken: string, issuerUrl: string) {
@@ -79,6 +84,9 @@ export class OAuthServerImpl implements OAuthServer {
           if (v.expiresAt < now) this.authCodes.delete(k);
         for (const [k, v] of this.accessTokens)
           if (v.expiresAt < now) this.accessTokens.delete(k);
+        for (const [k, v] of this.registeredClients)
+          if (now - v.issuedAt > CLIENT_TTL_MS)
+            this.registeredClients.delete(k);
       },
       10 * 60 * 1_000,
     );
@@ -172,9 +180,22 @@ export class OAuthServerImpl implements OAuthServer {
       }
     }
 
+    // Cap registered clients to prevent memory exhaustion via pre-auth DoS.
+    // /oauth/register requires no bearer token, so any caller can POST freely.
+    if (this.registeredClients.size >= 500) {
+      this.sendJson(res, 429, {
+        error: "too_many_requests",
+        error_description: "client registration limit reached",
+      });
+      return;
+    }
+
     // Public clients only — no client secret issued
     const clientId = this.randomToken(16);
-    this.registeredClients.set(clientId, redirectUris as string[]);
+    this.registeredClients.set(clientId, {
+      redirectUris: redirectUris as string[],
+      issuedAt: Date.now(),
+    });
     this.sendJson(res, 201, {
       client_id: clientId,
       client_id_issued_at: Math.floor(Date.now() / 1000),
@@ -247,7 +268,7 @@ export class OAuthServerImpl implements OAuthServer {
 
     // Validate redirect_uri against registered URIs to prevent open redirect
     const registered = this.registeredClients.get(clientId);
-    if (!registered || !registered.includes(redirectUri)) {
+    if (!registered || !registered.redirectUris.includes(redirectUri)) {
       res.writeHead(400, { "Content-Type": "text/plain" });
       res.end("invalid redirect_uri");
       return;
@@ -270,7 +291,7 @@ export class OAuthServerImpl implements OAuthServer {
 
     // Verify bridge token on approve
     const presentedToken = body.get("bridge_token") ?? "";
-    if (!this.safeEqual(presentedToken, this.bridgeToken)) {
+    if (!timingSafeStringEqual(presentedToken, this.bridgeToken)) {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(
         this.approvalPage({
@@ -351,11 +372,11 @@ export class OAuthServerImpl implements OAuthServer {
       this.sendError(res, 400, "invalid_grant", "authorization code expired");
       return;
     }
-    if (!this.safeEqual(record.clientId, clientId)) {
+    if (!timingSafeStringEqual(record.clientId, clientId)) {
       this.sendError(res, 400, "invalid_grant", "client_id mismatch");
       return;
     }
-    if (!this.safeEqual(record.redirectUri, redirectUri)) {
+    if (!timingSafeStringEqual(record.redirectUri, redirectUri)) {
       this.sendError(res, 400, "invalid_grant", "redirect_uri mismatch");
       return;
     }
@@ -419,28 +440,12 @@ export class OAuthServerImpl implements OAuthServer {
     return crypto.randomBytes(bytes).toString("base64url");
   }
 
-  private safeEqual(a: string, b: string): boolean {
-    const ab = Buffer.from(a);
-    const bb = Buffer.from(b);
-    const lenA = Buffer.allocUnsafe(4);
-    const lenB = Buffer.allocUnsafe(4);
-    lenA.writeUInt32BE(ab.length, 0);
-    lenB.writeUInt32BE(bb.length, 0);
-    const lenOk = crypto.timingSafeEqual(lenA, lenB);
-    const len = Math.max(ab.length, bb.length);
-    const padA = Buffer.alloc(len);
-    const padB = Buffer.alloc(len);
-    ab.copy(padA);
-    bb.copy(padB);
-    return crypto.timingSafeEqual(padA, padB) && lenOk;
-  }
-
   private pkceVerify(verifier: string, challenge: string): boolean {
     const hash = crypto
       .createHash("sha256")
       .update(verifier)
       .digest("base64url");
-    return this.safeEqual(hash, challenge);
+    return timingSafeStringEqual(hash, challenge);
   }
 
   private readBody(req: IncomingMessage): Promise<URLSearchParams> {
@@ -502,7 +507,7 @@ export class OAuthServerImpl implements OAuthServer {
 
     // Validate redirect_uri against registered URIs to prevent open redirect
     const registered = this.registeredClients.get(clientId);
-    if (!registered || !registered.includes(redirectUri)) {
+    if (!registered || !registered.redirectUris.includes(redirectUri)) {
       return { error: "invalid_redirect_uri" };
     }
 

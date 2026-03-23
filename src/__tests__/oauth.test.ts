@@ -29,7 +29,10 @@ function makeOAuthWithClient(): OAuthServerImpl {
   const oauth = new OAuthServerImpl(BRIDGE_TOKEN, ISSUER);
   // Seed the registered client directly (test-only private access)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (oauth as any).registeredClients.set(CLIENT_ID, [REDIRECT_URI]);
+  (oauth as any).registeredClients.set(CLIENT_ID, {
+    redirectUris: [REDIRECT_URI],
+    issuedAt: Date.now(),
+  });
   return oauth;
 }
 
