@@ -141,8 +141,8 @@ export class McpTransport {
     this.toolBucket = bucket;
   }
 
-  /** Token-bucket check. Returns true if the call is allowed. */
-  private checkToolRateLimit(): boolean {
+  /** Refill the token bucket and return whether at least one token is available (does NOT consume). */
+  private peekToolRateLimit(): boolean {
     if (this.toolRateLimit <= 0) return true;
     const now = Date.now();
     const elapsed = now - this.toolBucket.lastRefill;
@@ -152,9 +152,13 @@ export class McpTransport {
       this.toolBucket.tokens + refill,
     );
     this.toolBucket.lastRefill = now;
-    if (this.toolBucket.tokens < 1) return false;
+    return this.toolBucket.tokens >= 1;
+  }
+
+  /** Consume one token. Call only after peekToolRateLimit() returned true. */
+  private consumeToolRateLimitToken(): void {
+    if (this.toolRateLimit <= 0) return;
     this.toolBucket.tokens -= 1;
-    return true;
   }
 
   private getValidator(toolName: string): ValidateFunction | null {
@@ -602,9 +606,14 @@ export class McpTransport {
               };
               break;
             }
-            const allTools = Array.from(this.tools.values()).map(
-              (t) => t.schema,
-            );
+            const extensionConnected = this.isExtensionConnectedFn?.() ?? true;
+            const allTools = Array.from(this.tools.values())
+              .filter((t) => !t.schema.extensionRequired || extensionConnected)
+              .map((t) => {
+                // Strip internal-only fields before sending on the wire
+                const { extensionRequired: _ext, ...wireSchema } = t.schema;
+                return wireSchema;
+              });
 
             // Parse cursor (opaque base64-encoded decimal offset)
             const listParams = msg.params as { cursor?: unknown } | undefined;
@@ -660,8 +669,8 @@ export class McpTransport {
               };
               break;
             }
-            // Per-session token-bucket rate limit
-            if (!this.checkToolRateLimit()) {
+            // Per-session token-bucket rate limit — peek only; token consumed after validation
+            if (!this.peekToolRateLimit()) {
               response = {
                 jsonrpc: "2.0",
                 id: msg.id,
@@ -780,6 +789,7 @@ export class McpTransport {
                   break;
                 }
                 this.callCount++; // Count after validation — only real execution attempts
+                this.consumeToolRateLimitToken(); // Consume rate limit token only for real calls
                 callLog.debug(`Calling tool: ${params.name}`);
                 this.logger.event("tool_call", { tool: params.name, callId });
                 const controller = new AbortController();
