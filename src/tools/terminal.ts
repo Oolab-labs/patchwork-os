@@ -594,7 +594,7 @@ export function createRunInTerminalTool(
       const command = requireString(args, "command", 10_000);
       const name = optionalString(args, "name", 256);
       const index = optionalInt(args, "index", 0, 100);
-      const timeoutSec = optionalInt(args, "timeout", 1, 600) ?? 30;
+      const timeoutSec = optionalInt(args, "timeout", 1, 300) ?? 30;
       const show = optionalBool(args, "show") ?? true;
       const timeoutMs = timeoutSec * 1_000;
 
@@ -637,6 +637,16 @@ export function createRunInTerminalTool(
       // The command has already passed validateCommand so first-token allowlist
       // and metacharacter checks are satisfied. Split on whitespace for execSafe
       // which takes argv-style args rather than a raw shell string.
+      // Reject quoted arguments — naive whitespace splitting cannot handle them
+      // correctly and would corrupt the argv array (e.g. "npm run 'my script'"
+      // becomes ["npm", "run", "'my", "script'"]). Use runCommand with an
+      // explicit args array for commands with space-containing arguments.
+      if (/"/.test(command) || /'/.test(command)) {
+        return error(
+          "runInTerminal does not support quoted arguments in the fallback (headless) path. " +
+            "Use runCommand with an explicit args array for arguments containing spaces.",
+        );
+      }
       const tokens = command.trim().split(/\s+/);
       const cmd = tokens[0] ?? command;
       const cmdArgs = tokens.slice(1);
@@ -727,7 +737,7 @@ export function createSendTerminalCommandTool(
         "Identify the terminal by name or index (from listTerminals). " +
         "Note: sendText is fire-and-forget — use getTerminalOutput afterward to check results. " +
         "To respond to an interactive prompt mid-execution (e.g. a migration tool asking for a name), " +
-        "set isCommand: false to bypass command validation and send raw stdin input to the running process. " +
+        "set isCommand: false to send a short stdin response to the running process (max 512 chars). " +
         "Pair with waitForTerminalOutput to detect when the prompt appears before sending the response. " +
         "Requires the VS Code extension.",
       inputSchema: {
@@ -753,7 +763,7 @@ export function createSendTerminalCommandTool(
           isCommand: {
             type: "boolean" as const,
             description:
-              "Set to false when sending REPL input, raw keystrokes, or shell commands with pipes/redirects (|, >, <) — skips shell-command validation. Default: true.",
+              "Set to false when sending a short stdin response to an interactive prompt (e.g. answering a name prompt). Limited to 512 chars and must not contain shell metacharacters. Default: true.",
           },
         },
         additionalProperties: false as const,
@@ -780,6 +790,20 @@ export function createSendTerminalCommandTool(
       if (isCommand) {
         const cmdErr = validateCommand(text, commandAllowlist);
         if (cmdErr) return error(cmdErr);
+      } else {
+        // isCommand:false is for short stdin responses to interactive prompts only.
+        // Enforce a tight length cap and block shell metacharacters to prevent
+        // this path from being used as an allowlist bypass for arbitrary shell commands.
+        if (text.length > 512) {
+          return error(
+            "isCommand:false input must be 512 characters or fewer (stdin prompt responses only)",
+          );
+        }
+        if (/[|&;<>`$(){}[\]\n\r]/.test(text)) {
+          return error(
+            "isCommand:false input must not contain shell metacharacters (|, &, ;, <, >, `, $, (, ), {, }, [, ], newlines). Use isCommand:true for shell commands.",
+          );
+        }
       }
 
       try {

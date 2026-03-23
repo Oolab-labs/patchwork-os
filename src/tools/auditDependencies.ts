@@ -338,17 +338,20 @@ export function createAuditDependenciesTool(
         return success(result);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
+        // Cap error messages to the first line to avoid leaking internal paths,
+        // proxy configs, or env vars that may appear in multi-line stderr output.
+        const safeMsg = msg.split("\n")[0]?.trim() ?? msg;
         if (msg.includes("ENOENT") || msg.includes("not found")) {
           return success({
             available: false,
             packageManager: detected,
-            error: `${detected} not found. ${msg}`,
+            error: `${detected} not found. ${safeMsg}`,
           });
         }
         return success({
           available: false,
           packageManager: detected,
-          error: msg,
+          error: safeMsg,
         });
       }
     },
