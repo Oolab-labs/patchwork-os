@@ -353,10 +353,10 @@ export class Server extends EventEmitter<ServerEvents> {
       const bearerFromHeader = authHeader.startsWith("Bearer ")
         ? authHeader.slice(7)
         : "";
-      // Also accept token via ?token= query param for clients that cannot set
-      // Authorization headers (e.g. claude.ai Custom Connectors UI).
-      const bearerFromQuery = parsedUrl.searchParams.get("token") ?? "";
-      const bearer = bearerFromHeader || bearerFromQuery;
+      // ?token= query param support was removed — tokens in URLs appear in
+      // HTTP access logs, proxy logs, and Referrer headers. Use the
+      // Authorization: Bearer header exclusively.
+      const bearer = bearerFromHeader;
 
       const isStaticToken = timingSafeTokenCompare(bearer, this.authToken);
       const oauthResolved =

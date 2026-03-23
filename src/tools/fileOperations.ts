@@ -6,6 +6,7 @@ import {
 } from "../extensionClient.js";
 import {
   error,
+  makeRelative,
   optionalBool,
   optionalString,
   requireString,
@@ -120,7 +121,7 @@ export function createCreateFileTool(
         }
         return success({
           created: true,
-          filePath,
+          filePath: makeRelative(filePath, workspace),
           isDirectory,
           source: extensionClient.isConnected()
             ? "native-fs (extension timed out)"
@@ -211,7 +212,7 @@ export function createDeleteFileTool(
         await fs.promises.rm(filePath, { recursive, force: false });
         return success({
           deleted: true,
-          filePath,
+          filePath: makeRelative(filePath, workspace),
           source: extensionClient.isConnected()
             ? "native-fs (extension timed out)"
             : "native-fs",
@@ -334,8 +335,8 @@ export function createRenameFileTool(
         }
         return success({
           renamed: true,
-          oldPath,
-          newPath,
+          oldPath: makeRelative(oldPath, workspace),
+          newPath: makeRelative(newPath, workspace),
           source: extensionClient.isConnected()
             ? "native-fs (extension timed out)"
             : "native-fs",

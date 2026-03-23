@@ -92,20 +92,12 @@ export function optionalArray(
   return val;
 }
 
-// Cache for workspace realpath — short TTL to limit the TOCTOU window if the workspace
-// directory itself is replaced with a symlink while the bridge is running.
-const REALPATH_CACHE_TTL_MS = 5_000;
-const realpathCache = new Map<string, { value: string; expiresAt: number }>();
-
+// No caching for workspace realpath — a stale cache creates a TOCTOU window
+// where a symlink swap of the workspace directory could allow path traversal
+// outside the workspace. The overhead of realpathSync is negligible relative
+// to the file I/O that follows each resolveFilePath call.
 function cachedRealpathSync(p: string): string {
-  const now = Date.now();
-  const entry = realpathCache.get(p);
-  if (entry !== undefined && now < entry.expiresAt) {
-    return entry.value;
-  }
-  const value = fs.realpathSync(p);
-  realpathCache.set(p, { value, expiresAt: now + REALPATH_CACHE_TTL_MS });
-  return value;
+  return fs.realpathSync(p);
 }
 
 export function resolveFilePath(
@@ -313,9 +305,37 @@ export async function execSafe(
   const maxBuffer = opts.maxBuffer ?? 512 * 1024;
   const start = Date.now();
   try {
+    // Use a minimal environment by default to prevent subprocess access to
+    // secrets inherited from the bridge process (ANTHROPIC_API_KEY, DB creds, etc.).
+    // Callers may pass opts.env to extend or override specific vars.
+    const minimalEnv: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      USER: process.env.USER,
+      LOGNAME: process.env.LOGNAME,
+      LANG: process.env.LANG,
+      LC_ALL: process.env.LC_ALL,
+      TMPDIR: process.env.TMPDIR,
+      TEMP: process.env.TEMP,
+      TMP: process.env.TMP,
+      // Node/npm toolchain vars needed by most build commands
+      NVM_DIR: process.env.NVM_DIR,
+      NPM_CONFIG_PREFIX: process.env.NPM_CONFIG_PREFIX,
+      NODE_PATH: process.env.NODE_PATH,
+      CARGO_HOME: process.env.CARGO_HOME,
+      RUSTUP_HOME: process.env.RUSTUP_HOME,
+      GOPATH: process.env.GOPATH,
+      GOROOT: process.env.GOROOT,
+      // Allow caller to extend with additional vars
+      ...opts.env,
+    };
+    // Strip undefined values (env keys with undefined values cause spawn errors)
+    for (const k of Object.keys(minimalEnv)) {
+      if (minimalEnv[k] === undefined) delete minimalEnv[k];
+    }
     const { stdout, stderr } = await execFileAsync(cmd, args, {
       cwd: opts.cwd,
-      env: opts.env ?? process.env,
+      env: minimalEnv,
       timeout,
       maxBuffer,
       signal: opts.signal,

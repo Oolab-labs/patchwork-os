@@ -86,6 +86,18 @@ export function createSearchAndReplaceTool(workspace: string) {
       // Compile regex once (used for both counting matches and replacement)
       let regex: RegExp | null = null;
       if (isRegex) {
+        // Reject patterns with nested quantifiers — these can cause catastrophic
+        // backtracking (ReDoS) when applied to large files. Same guard as waitForTerminalOutput.
+        if (
+          /\([^)]*[+*]\)[+*?]/.test(pattern) ||
+          /\([^)]*\{[^}]+\}\)[+*{?]/.test(pattern) ||
+          /[+*][+*]|\{[^}]+\}[+*]/.test(pattern)
+        ) {
+          return error(
+            "Pattern contains nested quantifiers (e.g. (a+)+) which can cause catastrophic backtracking. " +
+              "Simplify the regex — use a literal string match or a non-nested quantifier.",
+          );
+        }
         try {
           regex = new RegExp(pattern, caseSensitive ? "gm" : "gim");
         } catch (e) {

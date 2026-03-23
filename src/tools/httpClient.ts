@@ -426,13 +426,29 @@ function parseHttpFileContent(content: string): ParsedRequest[] {
     i++;
 
     // Parse headers: non-blank lines immediately following the request line
+    // Credential headers are redacted to prevent token leakage into MCP responses
+    // and the activity log.
+    const CREDENTIAL_HEADERS = new Set([
+      "authorization",
+      "x-api-key",
+      "x-auth-token",
+      "cookie",
+      "set-cookie",
+      "proxy-authorization",
+      "x-amz-security-token",
+      "x-goog-api-key",
+    ]);
     const headers: Record<string, string> = {};
     while (i < lines.length) {
       const line = (lines[i] ?? "").trim();
       if (!line) break; // blank line separates headers from body
       const colonIdx = line.indexOf(":");
       if (colonIdx === -1) break; // not a header line
-      headers[line.slice(0, colonIdx).trim()] = line.slice(colonIdx + 1).trim();
+      const headerName = line.slice(0, colonIdx).trim();
+      const headerValue = line.slice(colonIdx + 1).trim();
+      headers[headerName] = CREDENTIAL_HEADERS.has(headerName.toLowerCase())
+        ? "[REDACTED]"
+        : headerValue;
       i++;
     }
 
