@@ -452,11 +452,9 @@ Research (2026-03-17) against current Claude Code docs revealed gaps between the
 
 ## Near-Term Exploration Areas
 
-### `source: 'settings'` Plugin Support *(undocumented — Claude Code 2.1.80)*
-- Claude Code 2.1.80 added `source: 'settings'` — inline plugin config in `settings.json` instead of `--plugin-dir`
-- Useful for users who can't pass CLI flags (Claude Desktop, systemd service without CLI args)
-- Bridge plugin already works with `--plugin-dir`; needs testing + docs for the settings.json approach
-- Candidate addition to `documents/plugin-authoring.md` and README
+### `source: 'settings'` Plugin Support *(complete — v2.5.8)*
+- Documented `enabledPlugins` settings.json approach in `claude-ide-bridge-plugin/README.md` as Option 3 — no CLI flags needed
+- `plugin.json` version bumped to 2.5.7; tool count updated to 136+ across README and plugin manifest
 
 ### Visual Output Skills *(medium-term)*
 - Skills generating interactive HTML from bridge data (dependency graphs, test heatmaps, diagnostic dashboards)
