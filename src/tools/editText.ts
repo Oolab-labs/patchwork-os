@@ -40,6 +40,25 @@ export function applyEditsToContent(
         `edits[${i}]: delete/replace requires endLine and endColumn`,
       );
     }
+    if (
+      (e.type === "delete" || e.type === "replace") &&
+      e.endLine !== undefined &&
+      e.endLine < e.line
+    ) {
+      throw new Error(
+        `edits[${i}]: endLine (${e.endLine}) must be >= line (${e.line})`,
+      );
+    }
+    if (
+      (e.type === "delete" || e.type === "replace") &&
+      e.endLine === e.line &&
+      e.endColumn !== undefined &&
+      e.endColumn < e.column
+    ) {
+      throw new Error(
+        `edits[${i}]: endColumn (${e.endColumn}) must be >= column (${e.column}) when endLine === line`,
+      );
+    }
   }
 
   const lines = content.split("\n");

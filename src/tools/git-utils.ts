@@ -1,9 +1,21 @@
 import { execSafe } from "./utils.js";
 
-// `..` in a ref is interpreted as a range by git (e.g. main..HEAD) and must not
-// appear in a single ref name. Leading `-` would be interpreted by git as a flag.
+// Validates a git ref name / revision argument. Rejects refs that would be
+// interpreted as git flags (leading `-`) or that contain shell metacharacters.
+// Allows:
+//   - branch/tag names: main, feature/foo, v1.0.0
+//   - relative refs: HEAD~3, HEAD^, HEAD^2
+//   - stash refs: stash@{0}, refs/stash
+//   - SHA-like strings: abc1234
+// Rejects:
+//   - leading `-` (git flag injection)
+//   - `..` (range syntax — not a single ref)
+//   - shell metacharacters: space, ;, |, &, $, >, <, `, (, ), \, "
 export function isValidRef(ref: string): boolean {
-  return /^[\w.\-/]+$/.test(ref) && !ref.includes("..") && !ref.startsWith("-");
+  if (ref.startsWith("-")) return false;
+  if (ref.includes("..")) return false;
+  // Allow word chars, dot, dash, slash, caret, tilde, @, braces — block shell metas
+  return /^[\w.\-/^~@{}]+$/.test(ref);
 }
 
 export async function runGit(

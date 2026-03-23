@@ -59,15 +59,20 @@ export class LockFileManager {
       if ((err as NodeJS.ErrnoException).code === "EEXIST") {
         // Force-remove whatever is at lockPath (regular file or stale symlink).
         // We do NOT lstat+check first — that introduces a TOCTOU race.
-        // The subsequent O_EXCL|O_NOFOLLOW open guarantees we create a new regular
-        // file and refuse to follow any symlink an attacker may have placed after rm.
+        // After rmSync, O_EXCL ensures we fail if a new file/symlink appears in the
+        // race window. On POSIX, O_NOFOLLOW provides defence-in-depth against a
+        // symlink placed in that window (kernel rejects the open rather than
+        // following it). On Windows, O_NOFOLLOW is undefined so we fall back to 0 —
+        // O_EXCL alone still prevents double-create; symlink attacks are not a
+        // practical concern on Windows without junction-point exploit chains.
+        const O_NOFOLLOW = fs.constants.O_NOFOLLOW ?? 0;
         fs.rmSync(lockPath, { force: true });
         const fd = fs.openSync(
           lockPath,
           fs.constants.O_WRONLY |
             fs.constants.O_CREAT |
             fs.constants.O_EXCL |
-            (fs.constants.O_NOFOLLOW ?? 0),
+            O_NOFOLLOW,
           0o600,
         );
         try {

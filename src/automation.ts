@@ -281,7 +281,8 @@ export class AutomationHooks {
       return;
     }
 
-    this.lastTrigger.set(key, now);
+    // Note: lastTrigger is set AFTER successful enqueue (below) so a failed
+    // enqueue does not impose a spurious cooldown on the next trigger attempt.
     this._pruneLastTrigger(now);
 
     // Truncate file path and each diagnostic message to prevent prompt injection
@@ -305,6 +306,7 @@ export class AutomationHooks {
 
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
       this.activeDiagnosticsTasks.set(normalizedFile, taskId);
       this.log(
         `[automation] triggered diagnostics task ${taskId.slice(0, 8)} for ${normalizedFile}`,
