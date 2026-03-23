@@ -24,6 +24,15 @@ function makeOAuth() {
   return new OAuthServerImpl(BRIDGE_TOKEN, ISSUER);
 }
 
+/** Pre-register CLIENT_ID with REDIRECT_URI so authorize flows succeed */
+function makeOAuthWithClient(): OAuthServerImpl {
+  const oauth = new OAuthServerImpl(BRIDGE_TOKEN, ISSUER);
+  // Seed the registered client directly (test-only private access)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (oauth as any).registeredClients.set(CLIENT_ID, [REDIRECT_URI]);
+  return oauth;
+}
+
 function makeVerifier() {
   const verifier = crypto.randomBytes(32).toString("base64url");
   const challenge = crypto
@@ -157,7 +166,7 @@ describe("OAuthServerImpl — discovery", () => {
 
 describe("OAuthServerImpl — GET /oauth/authorize", () => {
   it("renders 200 HTML approval page with valid params and bridge token", () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
       response_type: "code",
@@ -178,7 +187,7 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
   });
 
   it("returns 200 approval page on GET (token entered via form)", () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
       response_type: "code",
@@ -251,7 +260,7 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
   });
 
   it("accepts bridge token via ?bridge_token= query param", () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
       response_type: "code",
@@ -273,14 +282,14 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
 
 describe("OAuthServerImpl — POST /oauth/authorize", () => {
   it("issues code via 302 redirect on approve", async () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { code } = await issueCode(oauth);
     expect(typeof code).toBe("string");
     expect(code.length).toBeGreaterThan(16);
   });
 
   it("redirects with error=access_denied on deny", async () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
     const form = new URLSearchParams({
       action: "deny",
@@ -311,7 +320,7 @@ describe("OAuthServerImpl — POST /oauth/authorize", () => {
 
 describe("OAuthServerImpl — POST /oauth/token", () => {
   it("issues access token for valid code + verifier", async () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { code, verifier } = await issueCode(oauth);
     const { res, data } = await issueToken(oauth, code, verifier);
     expect(res.statusCode).toBe(200);
@@ -322,7 +331,7 @@ describe("OAuthServerImpl — POST /oauth/token", () => {
   });
 
   it("rejects wrong code_verifier", async () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { code } = await issueCode(oauth);
     const { res, data } = await issueToken(
       oauth,
@@ -334,7 +343,7 @@ describe("OAuthServerImpl — POST /oauth/token", () => {
   });
 
   it("rejects code reuse — single-use enforcement", async () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { code, verifier } = await issueCode(oauth);
     const first = await issueToken(oauth, code, verifier);
     expect(first.res.statusCode).toBe(200);
@@ -364,7 +373,7 @@ describe("OAuthServerImpl — POST /oauth/token", () => {
   });
 
   it("rejects client_id mismatch", async () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { code, verifier } = await issueCode(oauth);
     const { res, data } = await issueToken(oauth, code, verifier, {
       client_id: "wrong-client",
@@ -389,7 +398,7 @@ describe("OAuthServerImpl — POST /oauth/token", () => {
 
 describe("OAuthServerImpl — POST /oauth/revoke", () => {
   it("revokes a valid token and it becomes unusable", async () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { code, verifier } = await issueCode(oauth);
     const { data } = await issueToken(oauth, code, verifier);
     const token = data.access_token as string;
@@ -424,7 +433,7 @@ describe("OAuthServerImpl — resolveBearerToken", () => {
   });
 
   it("returns bridge token for a valid issued access token", async () => {
-    const oauth = makeOAuth();
+    const oauth = makeOAuthWithClient();
     const { code, verifier } = await issueCode(oauth);
     const { data } = await issueToken(oauth, code, verifier);
     expect(oauth.resolveBearerToken(data.access_token as string)).toBe(

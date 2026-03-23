@@ -42,6 +42,15 @@ const DANGEROUS_PATH_FLAGS = new Set([
   "--globalconfig", // npm config redirection
   "-f",
   "--makefile", // make Makefile path
+  // curl output flags — would allow writing files to arbitrary paths
+  "-o",
+  "--output",
+  "-O",
+  "--remote-name",
+  "-D",
+  "--dump-header",
+  "-K",
+  // --config already in list above (covers curl -K alias too)
 ]);
 
 /**

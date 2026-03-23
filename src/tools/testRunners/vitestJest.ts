@@ -205,6 +205,13 @@ export const vitestRunner: TestRunner = {
       maxBuffer: MAX_BUFFER,
       signal,
     });
+    // exitCode 127 = command not found; null = killed by signal
+    if (result.exitCode === 127 || result.exitCode === null) {
+      const detail = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        `vitest runner failed (exit ${result.exitCode ?? "signal"})${detail ? `: ${detail.slice(0, 300)}` : ""}`,
+      );
+    }
     return parseJsonReport(result.stdout, cwd, "vitest");
   },
 };
@@ -243,6 +250,13 @@ export const jestRunner: TestRunner = {
       maxBuffer: MAX_BUFFER,
       signal,
     });
+    // exitCode 127 = command not found; null = killed by signal
+    if (result.exitCode === 127 || result.exitCode === null) {
+      const detail = result.stderr.trim() || result.stdout.trim();
+      throw new Error(
+        `jest runner failed (exit ${result.exitCode ?? "signal"})${detail ? `: ${detail.slice(0, 300)}` : ""}`,
+      );
+    }
     return parseJsonReport(result.stdout, cwd, "jest");
   },
 };

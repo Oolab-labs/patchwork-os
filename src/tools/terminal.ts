@@ -621,10 +621,17 @@ export function createRunInTerminalTool(
           // — fall through to subprocess fallback below
         } catch (err) {
           if (err instanceof ExtensionTimeoutError) {
-            // Timeout also means shell integration stalled — fall through to fallback
-          } else {
-            throw err;
+            // The command was already dispatched to the VS Code terminal but shell
+            // integration did not return output in time. Do NOT fall through to the
+            // subprocess fallback — the command may have already started running and
+            // re-executing it would double-invoke non-idempotent operations.
+            return error(
+              "runInTerminal timed out waiting for shell integration output. " +
+                "The command may still be running in the VS Code terminal. " +
+                "Use runCommand for non-interactive commands that need reliable output capture.",
+            );
           }
+          throw err;
         }
       }
 

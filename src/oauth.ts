@@ -65,6 +65,8 @@ export class OAuthServerImpl implements OAuthServer {
   private readonly issuerUrl: string;
   private readonly authCodes = new Map<string, AuthCode>();
   private readonly accessTokens = new Map<string, AccessToken>();
+  /** client_id → registered redirect_uris (populated by handleRegister) */
+  private readonly registeredClients = new Map<string, string[]>();
   private readonly gcTimer: ReturnType<typeof setInterval>;
 
   constructor(bridgeToken: string, issuerUrl: string) {
@@ -136,8 +138,43 @@ export class OAuthServerImpl implements OAuthServer {
       this.sendJson(res, 400, { error: "invalid_redirect_uri" });
       return;
     }
+    // Validate each redirect_uri is a well-formed absolute HTTPS (or localhost) URL
+    for (const uri of redirectUris as unknown[]) {
+      if (typeof uri !== "string") {
+        this.sendJson(res, 400, { error: "invalid_redirect_uri" });
+        return;
+      }
+      try {
+        const u = new URL(uri);
+        const isLocalhost =
+          u.hostname === "localhost" || u.hostname === "127.0.0.1";
+        if (!isLocalhost && u.protocol !== "https:") {
+          this.sendJson(res, 400, { error: "invalid_redirect_uri" });
+          return;
+        }
+      } catch {
+        this.sendJson(res, 400, { error: "invalid_redirect_uri" });
+        return;
+      }
+    }
+
+    // Validate scope if provided
+    if (body.scope !== undefined) {
+      const requestedScopes = String(body.scope).split(" ");
+      for (const s of requestedScopes) {
+        if (!SUPPORTED_SCOPES.includes(s)) {
+          this.sendJson(res, 400, {
+            error: "invalid_client_metadata",
+            error_description: `unsupported scope: ${s}`,
+          });
+          return;
+        }
+      }
+    }
+
     // Public clients only — no client secret issued
     const clientId = this.randomToken(16);
+    this.registeredClients.set(clientId, redirectUris as string[]);
     this.sendJson(res, 201, {
       client_id: clientId,
       client_id_issued_at: Math.floor(Date.now() / 1000),
@@ -205,6 +242,14 @@ export class OAuthServerImpl implements OAuthServer {
     if (!clientId || !redirectUri || !codeChallenge) {
       res.writeHead(400, { "Content-Type": "text/plain" });
       res.end("missing parameters");
+      return;
+    }
+
+    // Validate redirect_uri against registered URIs to prevent open redirect
+    const registered = this.registeredClients.get(clientId);
+    if (!registered || !registered.includes(redirectUri)) {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("invalid redirect_uri");
       return;
     }
 
@@ -454,6 +499,12 @@ export class OAuthServerImpl implements OAuthServer {
     if (!clientId || !redirectUri || !codeChallenge)
       return { error: "invalid_request" };
     if (codeChallengeMethod !== "S256") return { error: "invalid_request" };
+
+    // Validate redirect_uri against registered URIs to prevent open redirect
+    const registered = this.registeredClients.get(clientId);
+    if (!registered || !registered.includes(redirectUri)) {
+      return { error: "invalid_redirect_uri" };
+    }
 
     return {
       clientId,
