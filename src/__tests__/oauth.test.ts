@@ -445,3 +445,108 @@ describe("OAuthServerImpl — resolveBearerToken", () => {
     expect(makeOAuth().resolveBearerToken(BRIDGE_TOKEN)).toBeNull();
   });
 });
+
+// ── OAuthServerImpl — redirect_uri validation ─────────────────────────────────
+
+describe("OAuthServerImpl — redirect_uri validation", () => {
+  function makeRegisterReq(
+    body: Record<string, unknown>,
+  ): http.IncomingMessage {
+    const stream = Readable.from([Buffer.from(JSON.stringify(body), "utf-8")]);
+    return Object.assign(stream, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    }) as unknown as http.IncomingMessage;
+  }
+
+  it("handleRegister rejects non-https, non-localhost URI with 400", async () => {
+    const oauth = makeOAuth();
+    const req = makeRegisterReq({ redirect_uris: ["http://evil.com/cb"] });
+    const res = new MockResponse();
+    await oauth.handleRegister(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as Record<string, unknown>).error).toBe(
+      "invalid_redirect_uri",
+    );
+  });
+
+  it("handleRegister accepts https:// URIs", async () => {
+    const oauth = makeOAuth();
+    const req = makeRegisterReq({
+      redirect_uris: ["https://myapp.example.com/callback"],
+    });
+    const res = new MockResponse();
+    await oauth.handleRegister(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("handleRegister accepts http://localhost/ URIs", async () => {
+    const oauth = makeOAuth();
+    const req = makeRegisterReq({
+      redirect_uris: ["http://localhost:4000/callback"],
+    });
+    const res = new MockResponse();
+    await oauth.handleRegister(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("handleRegister accepts http://127.0.0.1/ URIs", async () => {
+    const oauth = makeOAuth();
+    const req = makeRegisterReq({
+      redirect_uris: ["http://127.0.0.1:8080/cb"],
+    });
+    const res = new MockResponse();
+    await oauth.handleRegister(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("handleRegister rejects unsupported scope with 400", async () => {
+    const oauth = makeOAuth();
+    const req = makeRegisterReq({
+      redirect_uris: ["https://myapp.example.com/callback"],
+      scope: "mcp admin",
+    });
+    const res = new MockResponse();
+    await oauth.handleRegister(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as Record<string, unknown>;
+    expect(body.error).toBe("invalid_client_metadata");
+    expect(String(body.error_description)).toContain("admin");
+  });
+
+  it("handleAuthorize GET returns 400 for unregistered client_id", () => {
+    const oauth = makeOAuth(); // no registered clients
+    const { challenge } = makeVerifier();
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: "unregistered-client",
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    });
+    const req = makeGetReq(`/oauth/authorize?${params}`, {
+      authorization: `Bearer ${BRIDGE_TOKEN}`,
+    });
+    const res = new MockResponse();
+    oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("handleAuthorize POST (deny) returns 400 for unregistered redirect_uri", async () => {
+    const oauth = makeOAuth(); // no registered clients
+    const { challenge } = makeVerifier();
+    const form = new URLSearchParams({
+      action: "deny",
+      client_id: CLIENT_ID,
+      redirect_uri: "http://unregistered.example.com/cb",
+      code_challenge: challenge,
+      scope: "mcp",
+      state: "s1",
+    });
+    const req = makePostReq(form.toString());
+    const res = new MockResponse();
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(400);
+  });
+});

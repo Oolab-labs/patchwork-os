@@ -150,6 +150,29 @@ describe("applyEditsToContent — endLine/endColumn validation", () => {
       ]),
     ).toThrow(/endLine.*endColumn|endColumn.*endLine/i);
   });
+
+  it("throws when endLine < line", () => {
+    expect(() =>
+      applyEditsToContent("line1\nline2\nline3\n", [
+        { type: "delete", line: 3, column: 1, endLine: 1, endColumn: 5 },
+      ]),
+    ).toThrow(/endLine/i);
+  });
+
+  it("throws when endLine === line and endColumn < column", () => {
+    expect(() =>
+      applyEditsToContent("hello world\n", [
+        {
+          type: "replace",
+          line: 1,
+          column: 8,
+          endLine: 1,
+          endColumn: 3,
+          text: "x",
+        },
+      ]),
+    ).toThrow(/endColumn/i);
+  });
 });
 
 describe("applyEditsToContent — overlap detection", () => {

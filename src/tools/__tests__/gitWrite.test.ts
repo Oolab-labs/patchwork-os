@@ -30,6 +30,38 @@ describe("isValidRef", () => {
   it("rejects refs containing ..", () => {
     expect(isValidRef("main..HEAD")).toBe(false);
   });
+
+  it("accepts HEAD~3 (relative ancestor)", () => {
+    expect(isValidRef("HEAD~3")).toBe(true);
+  });
+
+  it("accepts HEAD^ (parent shorthand)", () => {
+    expect(isValidRef("HEAD^")).toBe(true);
+  });
+
+  it("accepts HEAD^2 (second parent)", () => {
+    expect(isValidRef("HEAD^2")).toBe(true);
+  });
+
+  it("accepts stash@{0}", () => {
+    expect(isValidRef("stash@{0}")).toBe(true);
+  });
+
+  it("accepts refs/stash", () => {
+    expect(isValidRef("refs/stash")).toBe(true);
+  });
+
+  it("rejects -HEAD (leading dash)", () => {
+    expect(isValidRef("-HEAD")).toBe(false);
+  });
+
+  it("rejects main..HEAD (range syntax)", () => {
+    expect(isValidRef("main..HEAD")).toBe(false);
+  });
+
+  it("rejects refs with spaces (shell metachar)", () => {
+    expect(isValidRef("main HEAD")).toBe(false);
+  });
 });
 
 function parse(result: { content: Array<{ type: string; text: string }> }) {
