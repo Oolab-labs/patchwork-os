@@ -4,11 +4,11 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.4.11 — 2026-03-20)
+## Current State (v2.5.7 — 2026-03-23)
 
-- 124+ MCP tools; 1263+ bridge tests + 394 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- 124+ MCP tools; 1349 bridge tests + 406 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
-- Extension v1.0.9 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.4.10`)
+- Extension v1.0.12 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.5.7`)
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - **Four client surfaces**: Claude Code CLI, Claude Desktop (Cowork + Dispatch), Agent Teams (parallel), Scheduled Tasks (recurring)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
@@ -26,6 +26,39 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.5.7 shipped (2026-03-23) — agent frontmatter tightening (Claude Code 2.1.78):**
+- All 3 subagents: `maxTurns` limits (30/20/15) + `disallowedTools: deleteFile`; code-reviewer also blocks Edit/Write
+- Prevents runaway loops and accidental file deletion
+
+**v2.5.6 shipped (2026-03-23) — regression tests + docs:**
+- Bridge: 1349 tests (+8 runCommand tests for -f/-r per-command flag blocking and curl output flags)
+- Extension: 406 tests (+12: `httpProbe.test.ts` new, 4 multi-bridge lockfiles tests)
+- docs: `platform-docs.md` + `styleguide.md` updated for v2.5.x behavioral changes
+
+**v2.5.5 shipped (2026-03-23) — Claude Code 2.1.80/81 alignment:**
+- `-f`/`-r` flags moved from global `DANGEROUS_PATH_FLAGS` to per-command `DANGEROUS_FLAGS_FOR_COMMAND` table
+- `effort` frontmatter added to all 9 skills (low/high)
+- `session-info.sh`: reads `rate_limits` from hook payload; shows 5h/7d quota when above threshold
+- `CHANGELOG.md`: documented all v2.5.x changes
+
+**v2.5.4 shipped (2026-03-23) — Claude Code 2.1.81 hooks:**
+- `ElicitationResult` hook + `elicitation-result.sh` script — silent on submit, warns on cancel/timeout
+- `SubprocessDriver`: `--bare` flag added to suppress hook loops in scripted `-p` calls
+- `effort` frontmatter research + planning
+
+**v2.5.2–2.5.3 shipped (2026-03-23) — security hardening:**
+- CRITICAL: OAuth open redirect fixed — `redirect_uri` validated against registered client map
+- HIGH: `handleRegister` validates https/localhost + scope against `SUPPORTED_SCOPES`
+- HIGH: curl `-o`/`--output`/`-O`/`--remote-name`/`-D`/`--dump-header`/`-K` added to `DANGEROUS_PATH_FLAGS`
+- HIGH: `runInTerminal` extension timeout now returns error (no subprocess fallback / double-execute)
+- MEDIUM: `isValidRef` now allows `HEAD~3`, `HEAD^`, `stash@{0}`; `applyEditsToContent` validates endLine/endColumn
+- MEDIUM: `vitestJest` throws on exitCode 127/null; automation `lastTrigger.set` moved after successful enqueue
+
+**v2.5.1 shipped (2026-03-22) — UX hardening:**
+- 401 token mismatch → VS Code notification with "Reload Window" button
+- Multiple bridge instances at connect → VS Code warning with port list
+- `gen-mcp-config.sh`: `--fixed-token` warning after generating remote config
 
 **v2.4.11 shipped (2026-03-20) — Dispatch, Agent Teams, and Scheduled Tasks integration:**
 - 7 new MCP prompts (15 total): 5 Dispatch-optimized (`project-status`, `quick-tests`, `quick-review`, `build-check`, `recent-activity`) + 2 team/schedule (`team-status`, `health-check`)
@@ -418,6 +451,17 @@ Research (2026-03-17) against current Claude Code docs revealed gaps between the
 ---
 
 ## Near-Term Exploration Areas
+
+### `source: 'settings'` Plugin Support *(undocumented — Claude Code 2.1.80)*
+- Claude Code 2.1.80 added `source: 'settings'` — inline plugin config in `settings.json` instead of `--plugin-dir`
+- Useful for users who can't pass CLI flags (Claude Desktop, systemd service without CLI args)
+- Bridge plugin already works with `--plugin-dir`; needs testing + docs for the settings.json approach
+- Candidate addition to `documents/plugin-authoring.md` and README
+
+### Visual Output Skills *(medium-term)*
+- Skills generating interactive HTML from bridge data (dependency graphs, test heatmaps, diagnostic dashboards)
+- Uses `getCallHierarchy` + `findReferences` + `getCodeCoverage` output → D3 or similar
+- No bridge code changes needed — skill-only
 
 ### Multi-Editor Support *(baselined)*
 - Architecture is editor-agnostic (bridge doesn't import vscode)
