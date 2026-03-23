@@ -20,6 +20,7 @@ vi.mock("../constants", () => ({
 }));
 
 import * as fsp from "node:fs/promises";
+import * as vscode from "vscode";
 import { readLockFilesAsync } from "../lockfiles";
 
 const NOW = 1_700_000_000_000; // fixed "now" in ms
@@ -98,5 +99,80 @@ describe("readLockFilesAsync — PID reuse guards", () => {
     // With the old 24h window this would have been accepted; with the new 2h
     // window it must be rejected.
     expect(result).toBeNull();
+  });
+});
+
+// ── Multi-bridge warning + optional-chaining fix ──────────────────────────────
+
+describe("readLockFilesAsync — multiple bridges", () => {
+  it("returns the first valid candidate when multiple lock files exist", async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue([
+      "11111.lock",
+      "22222.lock",
+    ] as any);
+    vi.mocked(fsp.stat).mockResolvedValue({ mtimeMs: NOW } as any);
+    vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+      if (String(p).includes("11111"))
+        return makeLockContent({ authToken: "first-tok" }) as any;
+      return makeLockContent({ authToken: "second-tok" }) as any;
+    });
+    // Both workspace fields match current workspace ("/some/workspace" set in mock)
+    const result = await readLockFilesAsync();
+    expect(result).not.toBeNull();
+    // Must not throw — the ?. guard prevents crashing when candidates[0] exists
+    expect(result?.port).toBe(11111);
+    expect(result?.authToken).toBe("first-tok");
+  });
+
+  it("shows a warning message listing both ports when two bridges are found", async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue([
+      "33333.lock",
+      "44444.lock",
+    ] as any);
+    vi.mocked(fsp.stat).mockResolvedValue({ mtimeMs: NOW } as any);
+    vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+      if (String(p).includes("33333"))
+        return makeLockContent({ authToken: "tok-a" }) as any;
+      return makeLockContent({ authToken: "tok-b" }) as any;
+    });
+    const warnSpy = vi.spyOn(vscode.window, "showWarningMessage");
+    await readLockFilesAsync();
+    expect(warnSpy).toHaveBeenCalledOnce();
+    const msg = warnSpy.mock.calls[0][0] as string;
+    expect(msg).toContain("33333");
+    expect(msg).toContain("44444");
+    expect(msg).toContain("Multiple bridge instances");
+  });
+
+  it("does NOT show a warning when exactly one bridge is found", async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue(["55555.lock"] as any);
+    vi.mocked(fsp.stat).mockResolvedValue({ mtimeMs: NOW } as any);
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      makeLockContent({ authToken: "solo-tok" }) as any,
+    );
+    const warnSpy = vi.spyOn(vscode.window, "showWarningMessage");
+    await readLockFilesAsync();
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("the warning message includes candidates[0]?.port safely (no throw even if entry is borderline)", async () => {
+    // This guards the ?.port optional-chain fix: if for any reason the first
+    // candidate were undefined, the old candidates[0]!.port would throw.
+    // We test that the call completes and the warning port is present in the message.
+    vi.mocked(fsp.readdir).mockResolvedValue([
+      "66666.lock",
+      "77777.lock",
+    ] as any);
+    vi.mocked(fsp.stat).mockResolvedValue({ mtimeMs: NOW } as any);
+    vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+      if (String(p).includes("66666"))
+        return makeLockContent({ authToken: "tok-c" }) as any;
+      return makeLockContent({ authToken: "tok-d" }) as any;
+    });
+    const warnSpy = vi.spyOn(vscode.window, "showWarningMessage");
+    // Must not throw
+    await expect(readLockFilesAsync()).resolves.not.toThrow();
+    const msg = warnSpy.mock.calls[0]?.[0] as string;
+    expect(msg).toContain("66666");
   });
 });

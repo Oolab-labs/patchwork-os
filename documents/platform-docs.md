@@ -58,7 +58,7 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 ### Command Execution
 | Tool | Description |
 |------|-------------|
-| `runCommand` | Execute allowlisted shell commands with configurable timeout (default 30s, max 120s) |
+| `runCommand` | Execute allowlisted shell commands with configurable timeout (default 30s, max 120s). Dangerous flags are blocked: some flags (e.g. `curl -o`/`--output`/`-O`/`--remote-name`/`-D`/`--dump-header`/`-K`) are blocked globally via `DANGEROUS_PATH_FLAGS`; others are blocked only per-command via a `DANGEROUS_FLAGS_FOR_COMMAND` table (e.g. `make -f`/`--file` and `node`/`ts-node`/`tsx -r`). Common uses like `grep -r`, `docker -f`, and `sort -f` are unaffected. |
 
 ### HTTP
 | Tool | Description |
@@ -171,6 +171,8 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `sendTerminalCommand` | Send text to terminal (allowlist enforced); use `isCommand: false` to send raw stdin to a running process |
 | `runInTerminal` | Execute command and capture output (allowlist enforced) |
 | `waitForTerminalOutput` | Wait for pattern match in terminal output |
+
+> **`runInTerminal` timeout behavior**: when the VS Code extension times out waiting for shell integration output, the tool returns an error (`runInTerminal timed out waiting for shell integration output`) instead of falling through to a subprocess fallback. If you need reliable output capture for non-interactive commands, use `runCommand` instead.
 
 **Long-running processes and interactive prompts**
 
@@ -354,6 +356,17 @@ Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket
 - `isBridge: true` lets the stdio shim distinguish bridge lock files from IDE-owned lock files (e.g. Windsurf writes its own lock); shim always prefers a bridge lock over a non-bridge lock when auto-discovering
 - Claude Code reads lock file and connects with token in WebSocket upgrade headers
 - Extension authenticates via `x-claude-ide-extension` header
+
+### OAuth 2.0 (remote deployments)
+
+Activated with `--issuer-url <public-https-url>`. Endpoints: `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `/oauth/register`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`.
+
+**`POST /oauth/register` validation** (RFC 7591 dynamic client registration):
+- Each `redirect_uri` must use `https` scheme, or `http` with `localhost`/`127.0.0.1` as host. Other URIs are rejected.
+- `scope` must be a subset of `SUPPORTED_SCOPES` (currently `["mcp"]`). Unknown scopes are rejected.
+- Registered `redirect_uri` values are stored per `client_id` and validated at the `/oauth/authorize` endpoint — the `redirect_uri` in the authorization request must exactly match a registered one, preventing open redirect attacks.
+
+PKCE S256 is mandatory. Auth codes are single-use with 5-min TTL. Access tokens are opaque with 24-hour TTL. No refresh tokens.
 
 ### Tool Filtering
 - Tools with `extensionRequired: true` are **always visible** in `tools/list` regardless of extension state (changed in v2.1.33)

@@ -213,3 +213,16 @@ const settle = (fn: () => void) => {
   fn();
 };
 ```
+
+---
+
+## Security Patterns
+
+### Flag Blocking in `runCommand`
+
+Two complementary mechanisms block dangerous CLI flags:
+
+- **`DANGEROUS_PATH_FLAGS`** (global set in `src/tools/runCommand.ts`): flags that are dangerous for any command (e.g. `curl -o`/`--output`/`-O`/`--remote-name`/`-D`/`--dump-header`/`-K`). Blocked regardless of which command is being run.
+- **`DANGEROUS_FLAGS_FOR_COMMAND`** (per-command map): flags that are only dangerous for specific commands. Preferred when a flag is safe for most commands but dangerous for one (e.g. `-r` is fine for `grep -r` but dangerous for `node -r`). Add new per-command restrictions here rather than expanding the global set.
+
+When adding a flag restriction, use `DANGEROUS_FLAGS_FOR_COMMAND` unless the flag is dangerous for every allowlisted command.
