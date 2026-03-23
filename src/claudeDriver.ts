@@ -42,6 +42,10 @@ export class SubprocessDriver implements IClaudeDriver {
       // Suppress .mcp.json auto-discovery — avoids MCP server init overhead and
       // prevents the subprocess from connecting back to the bridge that spawned it.
       "--strict-mcp-config",
+      // --bare disables hooks, LSP, plugin sync, and auto-memory for scripted -p
+      // calls. Prevents hook loops when the subprocess shares the same config dir
+      // as the parent Claude Code session.
+      "--bare",
     ];
     if (input.model) args.push("--model", input.model);
     // workspace is set as cwd in spawn() — claude -p has no --workspace flag

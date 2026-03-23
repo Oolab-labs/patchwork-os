@@ -174,6 +174,32 @@ describe("vitestRunner", () => {
     expect(results[0]?.name).toBe("ok");
   });
 
+  it("run() throws when exitCode is 127 (command not found)", async () => {
+    mockExecSafe.mockResolvedValue({
+      stdout: "",
+      stderr: "vitest: command not found",
+      exitCode: 127,
+      timedOut: false,
+      durationMs: 10,
+    });
+    await expect(vitestRunner.run("/ws")).rejects.toThrow(
+      /vitest runner failed/,
+    );
+  });
+
+  it("run() throws when exitCode is null (killed by signal)", async () => {
+    mockExecSafe.mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      exitCode: null,
+      timedOut: false,
+      durationMs: 10,
+    });
+    await expect(vitestRunner.run("/ws")).rejects.toThrow(
+      /vitest runner failed/,
+    );
+  });
+
   it("run() extracts line from stack trace when location is default", async () => {
     const report = {
       testResults: [
