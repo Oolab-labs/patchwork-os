@@ -37,10 +37,8 @@ const DANGEROUS_PATH_FLAGS = new Set([
   "--config",
   "--rcfile",
   "--require",
-  "-r",
   "--userconfig", // npm config redirection
   "--globalconfig", // npm config redirection
-  "-f",
   "--makefile", // make Makefile path
   // curl output flags — would allow writing files to arbitrary paths
   "-o",
@@ -52,6 +50,20 @@ const DANGEROUS_PATH_FLAGS = new Set([
   "-K",
   // --config already in list above (covers curl -K alias too)
 ]);
+
+/**
+ * Per-command blocklist additions — short flags that are dangerous only for
+ * specific commands. Using a per-command approach avoids false positives on
+ * common short flags (-f, -r) that have harmless meanings in most tools.
+ */
+const DANGEROUS_FLAGS_FOR_COMMAND: Record<string, Set<string>> = {
+  // make -f <path> / --file <path> redirects which Makefile is executed
+  make: new Set(["-f", "--file"]),
+  // node/ts-node -r <module> pre-requires arbitrary code
+  node: new Set(["-r"]),
+  "ts-node": new Set(["-r"]),
+  tsx: new Set(["-r"]),
+};
 
 /**
  * Per-command exemptions from DANGEROUS_PATH_FLAGS.
@@ -114,6 +126,12 @@ function validateArgs(args: unknown, command: string): string[] {
     if (DANGEROUS_PATH_FLAGS.has(flag) && !exemptions?.has(flag)) {
       throw new Error(
         `Flag "${flag}" is blocked — it can redirect command execution outside the workspace`,
+      );
+    }
+    // Block per-command dangerous short flags (e.g. make -f, node -r)
+    if (DANGEROUS_FLAGS_FOR_COMMAND[command]?.has(flag)) {
+      throw new Error(
+        `Flag "${flag}" is blocked for command "${command}" — it can redirect command execution outside the workspace`,
       );
     }
   }

@@ -2,6 +2,7 @@
 name: ide-coverage
 description: Test coverage heatmap from lcov or JSON coverage data. Finds coverage reports, parses line coverage per file, and renders a color-coded file-tree heatmap as HTML. Opens in the system browser.
 argument-hint: "[path to coverage file or directory]"
+effort: low
 ---
 
 Generate a visual test coverage heatmap and open it in the browser.
