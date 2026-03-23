@@ -65,7 +65,7 @@ npm run build
 bash deploy/install-vps-service.sh
 ```
 
-`install-vps-service.sh` re-generates the systemd unit and nginx config from the current state of `.env.vps`, then restarts the service. It auto-detects the domain and service user from the existing installation — no config needed.
+`install-vps-service.sh` re-generates the systemd unit and nginx config from the current state of `.env.vps`, then restarts the service automatically. It auto-detects the domain and service user from the existing installation — no config needed.
 
 ## Day-to-day management
 
