@@ -6,7 +6,7 @@ import type { Logger } from "./logger.js";
 import type { OAuthServer } from "./oauth.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
 
-const ALLOWED_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 import type { ActivityListener } from "./activityTypes.js";
 
@@ -122,6 +122,9 @@ export class Server extends EventEmitter<ServerEvents> {
     this.oauthIssuerUrl = issuerUrl;
   }
 
+  /** Hosts accepted in the WebSocket upgrade Host header (DNS-rebinding guard). */
+  private readonly allowedHosts: Set<string>;
+
   constructor(
     private authToken: string,
     private logger: Logger,
@@ -132,6 +135,18 @@ export class Server extends EventEmitter<ServerEvents> {
     // cannot accept a blank Authorization header against an empty token.
     if (authToken.length === 0) {
       throw new Error("authToken must not be empty");
+    }
+
+    // Build the WS Host allowlist: loopback always allowed, plus hostnames
+    // extracted from --cors-origin values so remote reverse-proxy deployments
+    // (where the proxy forwards the real Host header) are not rejected.
+    this.allowedHosts = new Set(LOOPBACK_HOSTS);
+    for (const origin of extraCorsOrigins) {
+      try {
+        this.allowedHosts.add(new URL(origin).hostname);
+      } catch {
+        // ignore malformed origins — already validated at startup
+      }
     }
     if (authToken.length < 32) {
       logger.warn(
@@ -549,7 +564,7 @@ export class Server extends EventEmitter<ServerEvents> {
       const host = rawHost.startsWith("[")
         ? rawHost.slice(0, rawHost.indexOf("]") + 1) // [::1]:port → [::1]
         : rawHost.replace(/:\d+$/, ""); // host:port → host
-      if (!host || !ALLOWED_HOSTS.has(host)) {
+      if (!host || !this.allowedHosts.has(host)) {
         this.logger.warn(
           `Rejected connection with invalid Host header: ${host}`,
         );
