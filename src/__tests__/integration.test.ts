@@ -338,7 +338,7 @@ const EXTENSION_REQUIRED_TOOLS = [
   "getTerminalOutput",
   "createTerminal",
   "waitForTerminalOutput",
-  "runInTerminal",
+  // runInTerminal intentionally has NO extensionRequired — it falls back to subprocess
   "disposeTerminal",
   "sendTerminalCommand",
   "getDebugState",
@@ -361,7 +361,7 @@ const EXTENSION_REQUIRED_TOOLS = [
 ];
 
 describe("Integration: extensionRequired full-registry filter", () => {
-  it("tools/list shows all tools including extensionRequired when extension is disconnected", async () => {
+  it("tools/list hides extensionRequired tools when extension is disconnected", async () => {
     const bridge = await setupBridge(true);
     bridge.transport.setExtensionConnectedFn(() =>
       bridge.extensionClient.isConnected(),
@@ -378,12 +378,12 @@ describe("Integration: extensionRequired full-registry filter", () => {
     const tools = (resp.result as { tools: Array<{ name: string }> }).tools;
     const names = new Set(tools.map((t) => t.name));
 
-    // extensionRequired tools are always visible regardless of extension state
+    // extensionRequired tools must be hidden when extension is disconnected
     for (const toolName of EXTENSION_REQUIRED_TOOLS) {
       expect(
         names.has(toolName),
-        `${toolName} should be visible even when extension disconnected`,
-      ).toBe(true);
+        `${toolName} should be hidden when extension disconnected`,
+      ).toBe(false);
     }
     // Pure tools must still be present
     expect(names.has("getGitStatus")).toBe(true);
@@ -391,11 +391,15 @@ describe("Integration: extensionRequired full-registry filter", () => {
     expect(names.has("getGitLog")).toBe(true);
     // Registry must not be vacuously empty
     expect(tools.length).toBeGreaterThanOrEqual(15);
+    // extensionRequired must not leak onto the wire schema
+    for (const tool of tools) {
+      expect(tool).not.toHaveProperty("extensionRequired");
+    }
   });
 });
 
 describe("Integration: extensionRequired tools/call isError", () => {
-  it("calling extensionRequired tools without extension returns isError:true for tools across different modules", async () => {
+  it("calling extensionRequired tools by name while extension disconnected returns isError:true (tool is in registry but filtered from list)", async () => {
     const bridge = await setupBridge(true);
     bridge.transport.setExtensionConnectedFn(() =>
       bridge.extensionClient.isConnected(),
