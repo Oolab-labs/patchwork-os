@@ -1,23 +1,64 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#1a1a2e"/>
-      <stop offset="100%" style="stop-color:#16213e"/>
+      <stop offset="0%" stop-color="#0f0f1a"/>
+      <stop offset="100%" stop-color="#1a0f2e"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#cc785c"/>
-      <stop offset="100%" style="stop-color:#a855f7"/>
+    <linearGradient id="line-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#cc785c"/>
+      <stop offset="100%" stop-color="#a855f7"/>
     </linearGradient>
+    <linearGradient id="node-left" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8855e"/>
+      <stop offset="100%" stop-color="#cc785c"/>
+    </linearGradient>
+    <linearGradient id="node-right" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b06ef5"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <filter id="glow-left" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-right" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
 
-  <!-- Background rounded square -->
-  <rect width="64" height="64" rx="14" ry="14" fill="url(#bg)"/>
+  <!-- Background -->
+  <rect width="64" height="64" rx="13" ry="13" fill="url(#bg)"/>
 
-  <!-- Terminal prompt > -->
-  <text x="8" y="38" font-family="monospace" font-size="22" font-weight="bold" fill="url(#accent)">&#62;_</text>
+  <!-- Subtle inner glow on bg -->
+  <rect width="64" height="64" rx="13" ry="13" fill="none"
+        stroke="#a855f7" stroke-width="0.5" opacity="0.25"/>
 
-  <!-- Bridge connector dots — top right -->
-  <circle cx="50" cy="14" r="3.5" fill="#a855f7" opacity="0.9"/>
-  <circle cx="50" cy="25" r="2.5" fill="#cc785c" opacity="0.7"/>
-  <line x1="50" y1="17.5" x2="50" y2="22.5" stroke="#a855f7" stroke-width="1.5" opacity="0.5"/>
+  <!-- Bridge connection line (gradient, thick, centered vertically) -->
+  <line x1="20" y1="32" x2="44" y2="32"
+        stroke="url(#line-grad)" stroke-width="2.5"
+        stroke-linecap="round" opacity="0.9"/>
+
+  <!-- Left node: IDE side (orange) -->
+  <!-- Outer ring -->
+  <circle cx="16" cy="32" r="9.5" fill="none"
+          stroke="#cc785c" stroke-width="1.5" opacity="0.35"/>
+  <!-- Inner filled circle -->
+  <circle cx="16" cy="32" r="6" fill="url(#node-left)" filter="url(#glow-left)"/>
+  <!-- Center dot -->
+  <circle cx="16" cy="32" r="2" fill="#fff" opacity="0.9"/>
+
+  <!-- Right node: Claude side (purple) -->
+  <!-- Outer ring -->
+  <circle cx="48" cy="32" r="9.5" fill="none"
+          stroke="#a855f7" stroke-width="1.5" opacity="0.35"/>
+  <!-- Inner filled circle -->
+  <circle cx="48" cy="32" r="6" fill="url(#node-right)" filter="url(#glow-right)"/>
+  <!-- Center dot -->
+  <circle cx="48" cy="32" r="2" fill="#fff" opacity="0.9"/>
+
+  <!-- Terminal chevron tick marks above the line — subtle depth -->
+  <polyline points="29,26 32,29 35,26"
+            fill="none" stroke="url(#line-grad)"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+            opacity="0.55"/>
 </svg>
