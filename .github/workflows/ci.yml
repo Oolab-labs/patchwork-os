@@ -25,7 +25,7 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Test (1265 unit tests)
+      - name: Test (1349 unit tests)
         run: npm test -- --reporter=dot
         timeout-minutes: 5
       - name: Coverage (enforce 75% lines / 70% branches / 75% functions)
@@ -178,3 +178,17 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  sync-oolab:
+    name: Sync to Oolab-labs
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.repository == 'kungfuk3nnyyy/claude-ide-bridge'
+    needs: [ci, extension]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push to Oolab-labs
+        run: |
+          git remote add oolab https://x-access-token:${{ secrets.OOLAB_PAT }}@github.com/Oolab-labs/claude-ide-bridge.git
+          git push oolab main
