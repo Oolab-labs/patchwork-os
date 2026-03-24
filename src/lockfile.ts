@@ -27,6 +27,7 @@ export class LockFileManager {
     authToken: string,
     workspaceFolders: string[],
     ideName: string,
+    opts?: { orchestrator?: boolean },
   ): string {
     const dir = this.getLockDir();
     const lockPath = path.join(dir, `${port}.lock`);
@@ -41,6 +42,7 @@ export class LockFileManager {
       workspaceFolders,
       ideName,
       isBridge: true,
+      orchestrator: opts?.orchestrator ?? false,
       transport: "ws",
       runningInWindows: process.platform === "win32",
       authToken,

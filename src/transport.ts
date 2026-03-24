@@ -70,6 +70,18 @@ export class McpTransport {
     string,
     { schema: ToolSchema; handler: ToolHandler; timeoutMs?: number }
   >();
+  /** Optional fallback for tool names not found in the static registry. Used by the orchestrator. */
+  private dynamicToolDispatch: ToolHandler | null = null;
+  /** Optional instructions string injected into the MCP initialize response. */
+  private instructions: string | null = null;
+
+  setDynamicToolDispatch(fn: ToolHandler): void {
+    this.dynamicToolDispatch = fn;
+  }
+
+  setInstructions(text: string): void {
+    this.instructions = text;
+  }
   private readonly serverInfo = {
     name: "claude-ide-bridge",
     version: BRIDGE_PROTOCOL_VERSION,
@@ -600,6 +612,9 @@ export class McpTransport {
                   elicitation: {},
                 },
                 serverInfo: this.serverInfo,
+                ...(this.instructions !== null && {
+                  instructions: this.instructions,
+                }),
               },
             };
             break;
@@ -715,6 +730,53 @@ export class McpTransport {
               _meta?: { progressToken?: string | number };
             };
             const tool = this.tools.get(params.name);
+            if (!tool && this.dynamicToolDispatch) {
+              // Delegate to orchestrator proxy handler for unknown tool names
+              const dynDispatch = this.dynamicToolDispatch;
+              const dynId = msg.id;
+              const dynGen = this.generation;
+              const dynArgs = (
+                typeof params.arguments === "object" &&
+                params.arguments !== null
+                  ? params.arguments
+                  : {}
+              ) as Record<string, unknown>;
+              this.activeToolCalls++;
+              setImmediate(async () => {
+                try {
+                  const result = await dynDispatch(dynArgs);
+                  if (dynGen !== this.generation || !this.activeWs) return;
+                  const dynResponse: JsonRpcResponse = {
+                    jsonrpc: "2.0",
+                    id: dynId ?? 0,
+                    result,
+                  };
+                  safeSend(
+                    this.activeWs,
+                    JSON.stringify(dynResponse),
+                    this.logger,
+                  );
+                } catch (err) {
+                  if (dynGen !== this.generation || !this.activeWs) return;
+                  const dynErrResponse: JsonRpcResponse = {
+                    jsonrpc: "2.0",
+                    id: dynId ?? 0,
+                    error: {
+                      code: -32603,
+                      message: err instanceof Error ? err.message : String(err),
+                    },
+                  };
+                  safeSend(
+                    this.activeWs,
+                    JSON.stringify(dynErrResponse),
+                    this.logger,
+                  );
+                } finally {
+                  this.activeToolCalls--;
+                }
+              });
+              break;
+            }
             if (!tool) {
               response = {
                 jsonrpc: "2.0",

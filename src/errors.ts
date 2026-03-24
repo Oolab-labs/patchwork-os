@@ -10,6 +10,7 @@ export const ErrorCodes = {
   // Bridge-specific server codes (within reserved -32000 to -32099 range)
   TOOL_NOT_FOUND: -32003,
   RATE_LIMIT_EXCEEDED: -32004,
+  BRIDGE_UNAVAILABLE: -32001,
 } as const;
 
 /**

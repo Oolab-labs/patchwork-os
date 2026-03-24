@@ -306,8 +306,21 @@ export function register(ctx) {
   process.exit(0);
 }
 
-// Handle install-extension subcommand before parseConfig (avoids unknown-flag error)
-if (process.argv[2] === "install-extension") {
+// Handle orchestrator subcommand — starts the meta-bridge that coordinates multiple IDEs
+if (process.argv[2] === "orchestrator") {
+  const { parseOrchestratorArgs, OrchestratorBridge } = await import(
+    "./orchestrator/index.js"
+  );
+  const orchConfig = parseOrchestratorArgs(process.argv);
+  const orch = new OrchestratorBridge(orchConfig);
+  await orch.start().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`Orchestrator error: ${message}\n`);
+    process.exit(1);
+  });
+  // Stay alive serving connections — do not fall through to parseConfig
+  await new Promise<never>(() => {});
+} else if (process.argv[2] === "install-extension") {
   const KNOWN_EDITORS = new Set([
     "code",
     "windsurf",

@@ -222,3 +222,43 @@ child.on('exit', () => {
     10_000,
   );
 });
+
+// ── Regression: orchestrator subcommand must not fall through to parseConfig ──
+//
+// Bug (fixed): the orchestrator block used fire-and-forget async, so parseConfig()
+// at the bottom of index.ts still ran and started a second bridge on port 4746,
+// causing EADDRINUSE on the very same port the orchestrator was already using.
+// Fix: `await orch.start()` + `await new Promise<never>(() => {})` to park the
+// process permanently inside the orchestrator branch.
+//
+// This test verifies the fix by spawning `node dist/index.js orchestrator` and
+// checking that the process does NOT exit on its own within 2 seconds (meaning
+// it is parked, not falling through and exiting after a parseConfig error).
+
+describe("orchestrator subcommand — no fall-through to parseConfig", () => {
+  // vitest runs from the project root, so cwd() is reliable here
+  const distIndex = path.resolve(process.cwd(), "dist", "index.js");
+
+  it("process stays alive and does not exit after orchestrator starts", async () => {
+    // Use an unlikely port to avoid colliding with any running bridge.
+    const port = "19876";
+    const proc = spawn("node", [distIndex, "orchestrator", "--port", port], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    // Race: did the process exit within 2s, or did it stay alive?
+    const exitedEarly = await Promise.race([
+      new Promise<boolean>((resolve) => proc.on("exit", () => resolve(true))),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000)),
+    ]);
+
+    // Clean up
+    if (!exitedEarly) {
+      proc.kill("SIGTERM");
+      await new Promise<void>((resolve) => proc.on("exit", resolve));
+    }
+
+    // If it exited within 2s the orchestrator branch fell through to parseConfig
+    expect(exitedEarly).toBe(false);
+  }, 10_000);
+});

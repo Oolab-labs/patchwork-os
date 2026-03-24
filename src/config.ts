@@ -566,6 +566,13 @@ Plugins:
   --plugin-watch         Re-load plugins automatically on file change (requires --plugin)
 
 Subcommands:
+  orchestrator                Start the orchestrator bridge — discovers all running IDE bridge
+                              instances and exposes them as a single MCP server. Claude can then
+                              work across multiple IDEs / workspaces in one session.
+                              Options: --port <port> (default 4746)
+                                       --bind <address> (default 127.0.0.1)
+                                       --lock-dir <dir> (default ~/.claude/ide)
+                                       --health-interval <ms> (default 10000)
   gen-plugin-stub <dir>       Scaffold a new plugin directory with manifest + entrypoint.
                               Options: --name <org/name>  --prefix <toolPrefix>
   gen-claude-md               Generate a CLAUDE.md bridge workflow section.
