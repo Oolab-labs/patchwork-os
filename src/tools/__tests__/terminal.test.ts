@@ -304,7 +304,8 @@ describe("runInTerminal - metacharacter blocking", () => {
       command: "echo hi\u2028malicious",
     })) as any;
     expect(result.isError).toBe(true);
-    expect(parseResult(result)).toContain("newline");
+    // \u2028 is in the non-ASCII whitespace set — caught by that check first
+    expect(parseResult(result)).toContain("non-ASCII whitespace");
   });
 
   it("blocks Unicode paragraph separator \\u2029", async () => {
@@ -313,7 +314,8 @@ describe("runInTerminal - metacharacter blocking", () => {
       command: "echo hi\u2029malicious",
     })) as any;
     expect(result.isError).toBe(true);
-    expect(parseResult(result)).toContain("newline");
+    // \u2029 is in the non-ASCII whitespace set — caught by that check first
+    expect(parseResult(result)).toContain("non-ASCII whitespace");
   });
 
   it("blocks semicolon (existing)", async () => {

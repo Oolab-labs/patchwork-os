@@ -282,6 +282,13 @@ export function parseConfig(argv: string[]): Config {
   let verbose = false;
   let jsonl = false;
   let linters: string[] = fileConfig.linters ?? [];
+  for (const cmd of fileConfig.commandAllowlist ?? []) {
+    if (INTERPRETER_COMMANDS.has(cmd)) {
+      throw new Error(
+        `"${cmd}" is an interpreter and cannot be added via commandAllowlist in config file (arbitrary code execution risk)`,
+      );
+    }
+  }
   const commandAllowlist: string[] = [
     ...DEFAULT_ALLOWLIST,
     ...(fileConfig.commandAllowlist ?? []),

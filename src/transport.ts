@@ -103,6 +103,8 @@ export class McpTransport {
   private notifWindowStart = 0;
 
   public sessionId: string | null = null;
+  /** OAuth scope for this session. null = full access (static bridge token). "mcp:read" = read-only. */
+  private sessionScope: string | null = null;
   private activityLog: ActivityLog | null = null;
   private isExtensionConnectedFn: (() => boolean) | null = null;
   private readonly ajv = new Ajv({ strict: false, allErrors: true });
@@ -120,6 +122,15 @@ export class McpTransport {
   };
 
   constructor(private logger: Logger) {}
+
+  /**
+   * Set the OAuth scope for this session.
+   * - null / "mcp"  → full access (all tools allowed)
+   * - "mcp:read"    → read-only access (only readOnlyHint:true tools allowed)
+   */
+  setSessionScope(scope: string | null): void {
+    this.sessionScope = scope;
+  }
 
   /** Configure per-session tool call rate limiting (calls/minute, 0 = disabled). */
   setToolRateLimit(limit: number): void {
@@ -710,6 +721,27 @@ export class McpTransport {
                   code: ErrorCodes.TOOL_NOT_FOUND,
                   message: "Tool not found",
                   data: params.name,
+                },
+              };
+            } else if (
+              this.sessionScope === "mcp:read" &&
+              (tool.schema.annotations?.destructiveHint ||
+                tool.schema.annotations?.openWorldHint ||
+                !tool.schema.annotations?.readOnlyHint)
+            ) {
+              this.callCount++;
+              this.errorCount++;
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                result: {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Tool "${params.name}" requires full mcp scope. This session has mcp:read (read-only) scope.`,
+                    },
+                  ],
+                  isError: true,
                 },
               };
             } else if (

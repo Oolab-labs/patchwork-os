@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +7,8 @@ import type { Logger } from "./logger.js";
 export class LockFileManager {
   private lockFilePath: string | null = null;
   private cleanedUp = false;
+  /** In-memory nonce written into the lock file — used to detect PID reuse in cleanStale(). */
+  private ownNonce: string | null = null;
 
   constructor(private logger: Logger) {}
 
@@ -28,9 +31,12 @@ export class LockFileManager {
     const dir = this.getLockDir();
     const lockPath = path.join(dir, `${port}.lock`);
 
+    const nonce = crypto.randomBytes(8).toString("hex");
+    this.ownNonce = nonce;
     const content = {
       pid: process.pid,
       startedAt: Date.now(),
+      nonce,
       workspace: workspaceFolders[0] ?? null,
       workspaceFolders,
       ideName,
@@ -135,12 +141,22 @@ export class LockFileManager {
           ) {
             try {
               process.kill(content.pid, 0); // check if alive — throws if dead
-              // PID appears alive — guard against PID reuse: if the lock has a
-              // startedAt timestamp and it is >24h old, the original process
-              // almost certainly died and its PID was recycled by an unrelated
-              // process. Only apply when startedAt is present (old lock format
-              // without the field is left alone).
-              if (typeof content.startedAt === "number") {
+              // PID appears alive — check nonce to detect PID reuse.
+              // If the lock file has a nonce that matches our own in-memory nonce,
+              // it is our own lock file — leave it alone.
+              // If nonces differ (or our nonce is unset), the PID was reused by
+              // another process and this lock is stale.
+              if (
+                typeof content.nonce === "string" &&
+                this.ownNonce !== null &&
+                content.nonce !== this.ownNonce
+              ) {
+                this.logger.warn(
+                  `Removing stale lock file: ${file} (PID ${content.pid} alive but nonce mismatch — likely PID reuse)`,
+                );
+                fs.unlinkSync(filePath);
+              } else if (typeof content.startedAt === "number") {
+                // Fallback for lock files without a nonce: use the 24h age heuristic.
                 const lockAgeMs = Date.now() - content.startedAt;
                 if (lockAgeMs > 24 * 60 * 60 * 1000) {
                   this.logger.warn(

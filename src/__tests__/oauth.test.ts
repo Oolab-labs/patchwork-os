@@ -98,12 +98,36 @@ function makePostReq(
   }) as unknown as http.IncomingMessage;
 }
 
+/** GET /oauth/authorize to prime the CSRF nonce, then return it. */
+function primeCsrfNonce(oauth: OAuthServerImpl, challenge: string): string {
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    scope: "mcp",
+    state: "s1",
+  });
+  const req = makeGetReq(`/oauth/authorize?${params}`);
+  const res = new MockResponse();
+  oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+  // Extract nonce from internal map (test-only access)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const entry = (oauth as any).csrfNonces.get(CLIENT_ID) as
+    | { nonce: string }
+    | undefined;
+  if (!entry) throw new Error("CSRF nonce not stored after GET");
+  return entry.nonce;
+}
+
 /** POST to /oauth/authorize with action=approve, returns the issued code */
 async function issueCode(
   oauth: OAuthServerImpl,
   overrides: Record<string, string> = {},
 ): Promise<{ code: string; verifier: string }> {
   const { verifier, challenge } = makeVerifier();
+  const csrfNonce = primeCsrfNonce(oauth, challenge);
   const form = new URLSearchParams({
     action: "approve",
     client_id: CLIENT_ID,
@@ -112,6 +136,7 @@ async function issueCode(
     bridge_token: BRIDGE_TOKEN,
     scope: "mcp",
     state: "s1",
+    csrf_nonce: csrfNonce,
     ...overrides,
   });
   const req = makePostReq(form.toString());
@@ -294,6 +319,7 @@ describe("OAuthServerImpl — POST /oauth/authorize", () => {
   it("redirects with error=access_denied on deny", async () => {
     const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
+    const csrfNonce = primeCsrfNonce(oauth, challenge);
     const form = new URLSearchParams({
       action: "deny",
       client_id: CLIENT_ID,
@@ -301,6 +327,7 @@ describe("OAuthServerImpl — POST /oauth/authorize", () => {
       code_challenge: challenge,
       scope: "mcp",
       state: "s1",
+      csrf_nonce: csrfNonce,
     });
     const req = makePostReq(form.toString());
     const res = new MockResponse();
@@ -539,6 +566,7 @@ describe("OAuthServerImpl — redirect_uri validation", () => {
   it("handleAuthorize POST (deny) returns 400 for unregistered redirect_uri", async () => {
     const oauth = makeOAuth(); // no registered clients
     const { challenge } = makeVerifier();
+    // No CSRF nonce provided — CSRF check fires first (403), before redirect_uri check (400)
     const form = new URLSearchParams({
       action: "deny",
       client_id: CLIENT_ID,
@@ -550,6 +578,7 @@ describe("OAuthServerImpl — redirect_uri validation", () => {
     const req = makePostReq(form.toString());
     const res = new MockResponse();
     await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
-    expect(res.statusCode).toBe(400);
+    // CSRF check fires before redirect_uri validation — 403 is the correct response
+    expect(res.statusCode).toBe(403);
   });
 });

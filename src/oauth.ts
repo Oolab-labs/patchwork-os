@@ -33,6 +33,8 @@ export interface OAuthServer {
   handleToken(req: IncomingMessage, res: ServerResponse): Promise<void>;
   handleRevoke(req: IncomingMessage, res: ServerResponse): Promise<void>;
   resolveBearerToken(token: string): string | null;
+  /** Resolve the scope string for an OAuth bearer token, or null if invalid/expired. */
+  resolveBearerScope(token: string): string | null;
 }
 
 // ── Internal types ────────────────────────────────────────────────────────────
@@ -72,7 +74,20 @@ export class OAuthServerImpl implements OAuthServer {
     string,
     { redirectUris: string[]; issuedAt: number }
   >();
+  /** Per-IP registration rate limit: IP → { count, windowStart } */
+  private readonly registerIpCounts = new Map<
+    string,
+    { count: number; windowStart: number }
+  >();
+  private static readonly REGISTER_IP_MAX = 10; // max registrations per IP per minute
+  private static readonly REGISTER_IP_WINDOW_MS = 60 * 1_000;
   private readonly gcTimer: ReturnType<typeof setInterval>;
+  /** CSRF nonces: client_id → { nonce, expiresAt } */
+  private readonly csrfNonces = new Map<
+    string,
+    { nonce: string; expiresAt: number }
+  >();
+  private static readonly CSRF_TTL_MS = 10 * 60 * 1_000; // 10 minutes
 
   constructor(bridgeToken: string, issuerUrl: string) {
     this.bridgeToken = bridgeToken;
@@ -87,6 +102,11 @@ export class OAuthServerImpl implements OAuthServer {
         for (const [k, v] of this.registeredClients)
           if (now - v.issuedAt > CLIENT_TTL_MS)
             this.registeredClients.delete(k);
+        for (const [k, v] of this.csrfNonces)
+          if (v.expiresAt < now) this.csrfNonces.delete(k);
+        for (const [k, v] of this.registerIpCounts)
+          if (now - v.windowStart > OAuthServerImpl.REGISTER_IP_WINDOW_MS)
+            this.registerIpCounts.delete(k);
       },
       10 * 60 * 1_000,
     );
@@ -180,6 +200,26 @@ export class OAuthServerImpl implements OAuthServer {
       }
     }
 
+    // Per-IP rate limit: max 10 registrations per minute per IP
+    const remoteIp = (req.socket?.remoteAddress ?? "unknown").slice(0, 64);
+    const now = Date.now();
+    const ipEntry = this.registerIpCounts.get(remoteIp);
+    if (
+      ipEntry &&
+      now - ipEntry.windowStart < OAuthServerImpl.REGISTER_IP_WINDOW_MS
+    ) {
+      ipEntry.count++;
+      if (ipEntry.count > OAuthServerImpl.REGISTER_IP_MAX) {
+        this.sendJson(res, 429, {
+          error: "too_many_requests",
+          error_description: "per-IP client registration limit reached",
+        });
+        return;
+      }
+    } else {
+      this.registerIpCounts.set(remoteIp, { count: 1, windowStart: now });
+    }
+
     // Cap registered clients to prevent memory exhaustion via pre-auth DoS.
     // /oauth/register requires no bearer token, so any caller can POST freely.
     if (this.registeredClients.size >= 500) {
@@ -236,7 +276,19 @@ export class OAuthServerImpl implements OAuthServer {
       return;
     }
 
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    // Generate CSRF nonce, keyed by client_id (one nonce per client per auth flow)
+    const csrfNonce = crypto.randomBytes(16).toString("hex");
+    this.csrfNonces.set(clientId as string, {
+      nonce: csrfNonce,
+      expiresAt: Date.now() + OAuthServerImpl.CSRF_TTL_MS,
+    });
+
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy":
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+      "X-Frame-Options": "DENY",
+    });
     res.end(
       this.approvalPage({
         clientId: clientId as string,
@@ -244,6 +296,7 @@ export class OAuthServerImpl implements OAuthServer {
         codeChallenge: codeChallenge as string,
         scope: scope ?? DEFAULT_SCOPE,
         state: state ?? "",
+        csrfNonce,
       }),
     );
   }
@@ -260,11 +313,27 @@ export class OAuthServerImpl implements OAuthServer {
     const scope = body.get("scope") ?? DEFAULT_SCOPE;
     const state = body.get("state") ?? "";
 
+    const csrfNonce = body.get("csrf_nonce") ?? "";
+
     if (!clientId || !redirectUri || !codeChallenge) {
       res.writeHead(400, { "Content-Type": "text/plain" });
       res.end("missing parameters");
       return;
     }
+
+    // Verify CSRF nonce before any further processing
+    const storedCsrf = this.csrfNonces.get(clientId);
+    if (
+      !storedCsrf ||
+      storedCsrf.expiresAt < Date.now() ||
+      !timingSafeStringEqual(csrfNonce, storedCsrf.nonce)
+    ) {
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      res.end("invalid or expired CSRF token");
+      return;
+    }
+    // Consume the nonce (one-time use)
+    this.csrfNonces.delete(clientId);
 
     // Validate redirect_uri against registered URIs to prevent open redirect
     const registered = this.registeredClients.get(clientId);
@@ -434,6 +503,16 @@ export class OAuthServerImpl implements OAuthServer {
     return this.bridgeToken;
   }
 
+  resolveBearerScope(token: string): string | null {
+    const record = this.accessTokens.get(token);
+    if (!record) return null;
+    if (record.expiresAt < Date.now()) {
+      this.accessTokens.delete(token);
+      return null;
+    }
+    return record.scope;
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private randomToken(bytes: number): string {
@@ -529,6 +608,7 @@ export class OAuthServerImpl implements OAuthServer {
     scope: string;
     state: string;
     tokenError?: boolean;
+    csrfNonce?: string;
   }): string {
     const e = (s: string) =>
       s
@@ -588,6 +668,7 @@ export class OAuthServerImpl implements OAuthServer {
       <input type="hidden" name="code_challenge" value="${e(opts.codeChallenge)}">
       <input type="hidden" name="scope"          value="${e(opts.scope)}">
       <input type="hidden" name="state"          value="${e(opts.state)}">
+      <input type="hidden" name="csrf_nonce"     value="${e(opts.csrfNonce ?? "")}">
       <div class="token-field">
         <label for="bridge_token">Bridge Token</label>
         <input id="bridge_token" type="password" name="bridge_token" placeholder="Paste your bridge token"

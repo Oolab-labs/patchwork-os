@@ -133,6 +133,11 @@ function validateCommand(
   text: string,
   commandAllowlist: string[],
 ): string | undefined {
+  // Reject non-ASCII whitespace (U+00A0, etc.) — these bypass quote guard but
+  // pass whitespace-splitting checks, potentially corrupting the argv array.
+  if (/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/.test(text)) {
+    return "Command must not contain non-ASCII whitespace characters.";
+  }
   // Also block Unicode line/paragraph separators (\u2028, \u2029) which act
   // as line terminators in JavaScript and some shell contexts.
   if (/[\n\r\u2028\u2029]/.test(text)) {
@@ -809,6 +814,13 @@ export function createSendTerminalCommandTool(
         if (/[|&;<>`$(){}[\]\n\r]/.test(text)) {
           return error(
             "isCommand:false input must not contain shell metacharacters (|, &, ;, <, >, `, $, (, ), {, }, [, ], newlines). Use isCommand:true for shell commands.",
+          );
+        }
+        // Reject ASCII control characters (below 0x20, excluding tab)
+        // to prevent terminal injection via Ctrl-C (0x03), Ctrl-D (0x04), etc.
+        if (/[\x00-\x08\x0b-\x1f\x7f]/.test(text)) {
+          return error(
+            "isCommand:false input must not contain ASCII control characters (Ctrl-C, Ctrl-D, ESC, etc.).",
           );
         }
       }

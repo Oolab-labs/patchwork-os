@@ -156,7 +156,8 @@ describe("pendingListChanged flag", () => {
     // Disconnect clientA — session enters grace period, WS closed
     clientA.close();
     await new Promise<void>((res) => clientA.once("close", res));
-    await new Promise((r) => setTimeout(r, 50)); // let server-side close handler fire
+    // Wait past 500ms connection rate limit before connecting clientB
+    await new Promise((r) => setTimeout(r, 510));
 
     // sendListChanged while no sessions have open WS — should mark pendingListChanged
     sendListChangedToAll();
@@ -216,7 +217,8 @@ describe("pendingListChanged flag", () => {
     // Disconnect clientA
     clientA.close();
     await new Promise<void>((res) => clientA.once("close", res));
-    await new Promise((r) => setTimeout(r, 50));
+    // Wait past 500ms connection rate limit before connecting clientB
+    await new Promise((r) => setTimeout(r, 510));
 
     // Connect clientB — pendingListChanged should be false, so NO extra list_changed
     const clientB = new WebSocket(`ws://127.0.0.1:${port}`, {

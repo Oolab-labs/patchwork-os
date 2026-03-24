@@ -1,5 +1,7 @@
 # Claude IDE Bridge Plugin
 
+If you're using this, a star helps more people find it — [github.com/Oolab-labs/claude-ide-bridge](https://github.com/Oolab-labs/claude-ide-bridge)
+
 A Claude Code plugin that provides full IDE integration — 136+ tools for LSP, debugging, terminals, Git, GitHub, diagnostics, OAuth 2.0, and more.
 
 ## Quick Start
