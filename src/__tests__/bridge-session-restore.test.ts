@@ -216,7 +216,7 @@ describe("Bridge session restore: first-session seeding", () => {
     const port = await server.findAndListen(null);
 
     const ws1 = await connect(port, authToken);
-    await new Promise((r) => setTimeout(r, 60)); // respect MIN_CONNECTION_INTERVAL_MS
+    await new Promise((r) => setTimeout(r, 510)); // respect MIN_CONNECTION_INTERVAL_MS (500ms)
     const ws2 = await connect(port, authToken);
     await new Promise((r) => setTimeout(r, 20));
 

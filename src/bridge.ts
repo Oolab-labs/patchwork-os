@@ -97,6 +97,7 @@ export class Bridge {
   private pluginWatcher: PluginWatcher | null = null;
   private automationHooks: AutomationHooks | null = null;
   private httpMcpHandler: StreamableHttpHandler | null = null;
+  private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
   private extensionConnectionGeneration = 0;
 
@@ -106,10 +107,8 @@ export class Bridge {
     this.authToken = config.fixedToken ?? randomUUID();
     this.server = new Server(this.authToken, this.logger, config.corsOrigins);
     if (config.issuerUrl) {
-      this.server.setOAuthServer(
-        new OAuthServerImpl(this.authToken, config.issuerUrl),
-        config.issuerUrl,
-      );
+      this.oauthServer = new OAuthServerImpl(this.authToken, config.issuerUrl);
+      this.server.setOAuthServer(this.oauthServer, config.issuerUrl);
       this.logger.info(`OAuth 2.0 enabled — issuer: ${config.issuerUrl}`);
     }
     this.activityLog = new ActivityLog();
@@ -675,6 +674,9 @@ export class Bridge {
       this.logger,
       () => this.pluginWatcher?.getTools() ?? this.pluginTools,
       () => this.pluginWatcher,
+      this.oauthServer
+        ? (token) => this.oauthServer?.resolveBearerScope(token) ?? null
+        : null,
     );
     this.server.httpMcpHandler = (req, res) =>
       this.httpMcpHandler?.handle(req, res) ?? Promise.resolve();

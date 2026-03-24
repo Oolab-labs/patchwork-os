@@ -229,6 +229,8 @@ export class StreamableHttpHandler {
     private logger: Logger,
     private getPluginTools: () => LoadedPluginTool[] = () => [],
     private getPluginWatcher: () => PluginWatcher | null = () => null,
+    /** Optional: resolves the OAuth scope string for a bearer token, or null for full access. */
+    private resolveScopeFn: ((token: string) => string | null) | null = null,
   ) {
     // Prune idle sessions every 2 minutes.
     // .unref() prevents this timer from keeping the Node process alive when
@@ -341,7 +343,16 @@ export class StreamableHttpHandler {
           return;
         }
       }
-      session = this.createSession();
+      // Resolve OAuth scope from bearer token (if a resolver is configured)
+      let sessionScope: string | null = null;
+      if (this.resolveScopeFn) {
+        const authHeader = req.headers.authorization ?? "";
+        const bearer = authHeader.startsWith("Bearer ")
+          ? authHeader.slice(7)
+          : "";
+        if (bearer) sessionScope = this.resolveScopeFn(bearer);
+      }
+      session = this.createSession(sessionScope);
       sessionIsNew = true;
       res.setHeader("Mcp-Session-Id", session.id);
     } else {
@@ -488,7 +499,7 @@ export class StreamableHttpHandler {
     res.end();
   }
 
-  private createSession(): HttpSession {
+  private createSession(scope: string | null = null): HttpSession {
     const id = crypto.randomUUID();
     const session = {
       id,
@@ -520,6 +531,7 @@ export class StreamableHttpHandler {
       transport.setSharedToolRateLimitBucket(this.sharedHttpRateLimitBucket);
     }
     transport.setExtensionConnectedFn(() => this.extensionClient.isConnected());
+    if (scope) transport.setSessionScope(scope);
 
     const terminalPrefix = `h${id.slice(0, 8)}-`; // "h" prefix distinguishes HTTP sessions
 

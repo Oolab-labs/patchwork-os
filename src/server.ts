@@ -4,7 +4,11 @@ import { WebSocket, WebSocketServer as WsServer } from "ws";
 import { timingSafeStringEqual } from "./crypto.js";
 import type { Logger } from "./logger.js";
 import type { OAuthServer } from "./oauth.js";
-import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
+import {
+  BRIDGE_PROTOCOL_VERSION,
+  PACKAGE_LICENSE,
+  PACKAGE_VERSION,
+} from "./version.js";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -75,7 +79,11 @@ function setupPongHandler(ws: AliveWebSocket): void {
   });
 }
 
-const MIN_CONNECTION_INTERVAL_MS = 50; // Allow multiple agents to connect within same second
+// 500ms minimum between connections per client type.
+// Tradeoff: multi-agent scenarios where two agents connect simultaneously may
+// hit this limit; they will retry and connect successfully on the next attempt.
+// Raised from 50ms to reduce connection-storm DoS surface in public deployments.
+const MIN_CONNECTION_INTERVAL_MS = 500;
 
 export class Server extends EventEmitter<ServerEvents> {
   private httpServer: http.Server;
@@ -87,6 +95,8 @@ export class Server extends EventEmitter<ServerEvents> {
   /** OAuth 2.0 Authorization Server — set via setOAuthServer() when running in remote mode */
   private oauthServer: OAuthServer | null = null;
   private oauthIssuerUrl: string | null = null;
+  private sseSubscriberCount = 0;
+  private static readonly MAX_SSE_SUBSCRIBERS = 20;
 
   /** Set by bridge to provide health data */
   public healthDataFn: (() => Record<string, unknown>) | null = null;
@@ -305,7 +315,7 @@ export class Server extends EventEmitter<ServerEvents> {
             elicitation: true,
           },
           author: "Oolab Labs",
-          license: "MIT",
+          license: PACKAGE_LICENSE,
           repository: "https://github.com/Oolab-labs/claude-ide-bridge",
         };
         res.writeHead(200, {
@@ -468,6 +478,14 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
       if (req.url === "/stream" && req.method === "GET") {
+        if (this.sseSubscriberCount >= Server.MAX_SSE_SUBSCRIBERS) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({ error: "Too many SSE subscribers (max 20)" }),
+          );
+          return;
+        }
+        this.sseSubscriberCount++;
         // Disable socket timeout — SSE connections are long-lived by design
         res.socket?.setTimeout(0);
         res.writeHead(200, {
@@ -499,6 +517,7 @@ export class Server extends EventEmitter<ServerEvents> {
         ping.unref();
 
         req.on("close", () => {
+          this.sseSubscriberCount--;
           clearInterval(ping);
           unsub();
         });

@@ -123,7 +123,14 @@ export class ActivityLog {
             );
           }
         }
-        await fs.promises.appendFile(persistPath, line);
+        // Ensure file exists with restrictive permissions (0o600) before appending
+        try {
+          const fd = await fs.promises.open(persistPath, "a", 0o600);
+          await fd.close();
+        } catch {
+          // ignore — appendFile below will create the file if needed
+        }
+        await fs.promises.appendFile(persistPath, line, { mode: 0o600 });
       } catch (err) {
         process.stderr.write(
           `[activityLog] Disk persistence failed (best-effort): ${err instanceof Error ? err.message : String(err)}\n`,

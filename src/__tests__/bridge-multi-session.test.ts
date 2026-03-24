@@ -85,6 +85,9 @@ describe("Bridge multi-session: notifyClaudeConnectionState (Bug 3)", () => {
     expect(notifySpy).toHaveBeenLastCalledWith(true);
     notifySpy.mockClear();
 
+    // Wait past the 500ms connection rate limit before connecting agent 2
+    await new Promise((r) => setTimeout(r, 510));
+
     // Connect agent 2 — should NOT trigger another notifyClaudeConnectionState(true)
     const ws2 = new WebSocket(`ws://127.0.0.1:${port}`, {
       headers: { "x-claude-code-ide-authorization": authToken },
@@ -115,7 +118,7 @@ describe("Bridge multi-session: notifyClaudeConnectionState (Bug 3)", () => {
       ws1.on("error", reject);
     });
     openedClients.push(ws1);
-    await new Promise((r) => setTimeout(r, 60)); // past 50ms rate limit
+    await new Promise((r) => setTimeout(r, 510)); // past 500ms rate limit
 
     const ws2 = new WebSocket(`ws://127.0.0.1:${port}`, {
       headers: { "x-claude-code-ide-authorization": authToken },
