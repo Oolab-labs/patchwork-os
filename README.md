@@ -30,6 +30,38 @@ Claude Code connects to the bridge, which connects to your IDE extension. Claude
 
 **Autonomous task mode**: With `--claude-driver subprocess`, the bridge can spawn Claude subprocesses on demand via the `runClaudeTask` MCP tool. Tasks run in parallel (up to 10 concurrent), stream output to VS Code in real time, and can be triggered automatically by diagnostics or file saves via an automation policy.
 
+## Multi-IDE Orchestrator
+
+Run multiple bridges simultaneously — one per IDE/workspace — with a meta-orchestrator routing between them. This unlocks **independent parallel agent verification**: each agent starts with a completely fresh context (separate LSP cache, git state, open files, terminal history), so their findings are genuinely independent rather than anchored to each other's analysis.
+
+```
+Claude Code (coordinator)
+    ↓ stdio shim → prefers orchestrator lock
+Meta-Orchestrator (port 4746)
+    ├── Bridge A (Windsurf, port 55000) — dev workspace
+    └── Bridge B (Windsurf, port 55001) — clean baseline
+         ↓                    ↓
+   VS Code Extension    VS Code Extension
+```
+
+**Start the orchestrator:**
+
+```bash
+# Each IDE needs its own bridge on a fixed port (set claudeIdeBridge.port in workspace settings)
+node dist/index.js orchestrator --port 4746
+```
+
+The stdio shim auto-discovers the orchestrator lock (three-tier preference: orchestrator > bridge > fallback). Tools from both IDEs are available with `__Windsurf_55000` / `__Windsurf_55001` suffixes when names conflict.
+
+**What this enables:**
+- **Parallel implementation**: two agents work on different branches simultaneously with zero interference
+- **Independent code review**: Agent A reviews logic, Agent B reviews security — neither sees the other's findings
+- **Self-hosting dev loop**: modify the bridge in IDE A, validate behavior through IDE B without downtime
+- **Clean baseline diffing**: compare tool outputs between a dev copy and a stable reference version
+- **Meta-orchestration**: top-level Claude dispatches `runClaudeTask` to both IDEs for fully autonomous parallel work
+
+See [docs/orchestrator-testing-walkthrough.md](docs/orchestrator-testing-walkthrough.md) for setup and verification steps, and [docs/multi-ide-review.md](docs/multi-ide-review.md) for the staged review workflow (ws1 implements, ws2 reviews).
+
 ## Quick Start
 
 **Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20, tmux (`brew install tmux`)
