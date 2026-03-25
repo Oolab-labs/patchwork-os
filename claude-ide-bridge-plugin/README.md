@@ -80,7 +80,7 @@ No CLI flags needed — Claude Code loads the plugin from the project root on st
 
 ### Install the extension
 
-The VS Code extension provides LSP, debugging, terminal, and editor tools. Without it, ~25 tools are unavailable.
+The VS Code extension provides LSP, debugging, terminal, and editor tools. Without it, ~27 tools are unavailable.
 
 ```bash
 # Install via subcommand (detects your IDE automatically)
@@ -148,7 +148,7 @@ Add it to your `~/.zshrc` or `~/.bashrc` to make it permanent. Without it, Claud
 
 All agents have `memory: project` enabled — they learn codebase patterns across sessions.
 
-### Hooks (7 lifecycle automations)
+### Hooks (16 lifecycle automations)
 
 | Hook | Event | What it does |
 |------|-------|--------------|
@@ -157,8 +157,17 @@ All agents have `memory: project` enabled — they learn codebase patterns acros
 | Session info | `SessionStart` | Reports bridge status, connection state, and tool count |
 | Instructions loaded | `InstructionsLoaded` | Re-injects live bridge status each time CLAUDE.md reloads |
 | Elicitation pre-fill | `Elicitation` | Pre-answers file/path/uri fields using the active editor |
+| Elicitation result | `ElicitationResult` | Logs user responses (or cancellations) to MCP elicitation dialogs |
+| Post-compact re-inject | `PostCompact` | Re-injects bridge status after Claude compacts context |
 | Worktree create | `WorktreeCreate` | Reports bridge ↔ worktree relationship; warns about LSP tool limitations |
+| Worktree remove | `WorktreeRemove` | Warns that IDE state (open files, diagnostics) may be stale after worktree removal |
 | Bridge health check | `SubagentStart` on ide-* agents | Verifies bridge is alive before IDE subagents run |
+| Subagent stop | `SubagentStop` | Surfaces subagent final response summary for parent agent awareness |
+| Teammate idle | `TeammateIdle` | Reports bridge health when a team agent finishes and waits for coordination |
+| Task completed | `TaskCompleted` | Logs task completion summary and confirms bridge availability for follow-up |
+| Config change | `ConfigChange` | Warns if changed config files (MCP, permissions) require a bridge restart |
+| Stop | `Stop` | Logs session end and surfaces final response summary for automated workflows |
+| Stop failure | `StopFailure` | Logs API errors (rate limits, auth) that ended the turn; checks bridge health |
 
 ### MCP Server
 
@@ -176,7 +185,13 @@ The plugin configures the bridge as an MCP server, providing 136+ tools:
 - **Planning** (5 tools): createPlan, updatePlan, getPlan, deletePlan, listPlans
 - **HTTP** (2 tools): sendHttpRequest, parseHttpFile
 - **VS Code Integration** (8 tools): executeVSCodeCommand, getWorkspaceSettings, setWorkspaceSetting, ...
-- And more: decorations, notebooks, clipboard, snapshots, OAuth, activity log
+- **AI Comments** (1 tool): `createIssueFromAIComment` — files a GitHub issue from an `// AI: fix/todo/question/warn` annotation in code
+- **File Watching** (2 tools): `watchFiles`, `unwatchFiles` — register glob patterns and receive notifications when matching files change
+- **Inlay Hints** (1 tool): `getInlayHints` — returns LSP inlay hints (inferred types, parameter names) for a file range
+- **Type Hierarchy** (1 tool): `getTypeHierarchy` — walks class/interface inheritance trees up and down
+- **Decorations** (2 tools): `setDecorations`, `clearDecorations` — render inline editor annotations and highlights
+- **Clipboard** (2 tools): `readClipboard`, `writeClipboard` — read and write the system clipboard (1 MB cap)
+- **Snapshots, notebooks, OAuth, activity log**: see [Platform Docs](../documents/platform-docs.md) for full reference
 
 ---
 

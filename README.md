@@ -4,33 +4,53 @@
 [![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) real IDE integration — not just file access, but **live editor state**: diagnostics as you type, go-to-definition, find-all-references, hover types, rename-symbol, set breakpoints, evaluate in the debugger, and capture what's on screen. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) via a companion extension.
+**Claude Code, but with your IDE's eyes.**
 
-It also exposes Git, GitHub, terminals, and code analysis tools — but the core value is the LSP and debugger integration that Claude has no other way to access.
+A WebSocket bridge that connects Claude Code to VS Code (and Windsurf, Cursor) so Claude can see what your IDE sees: live diagnostics, go-to-definition, find references, hover types, open files, breakpoints, debugger state. Not file access — actual IDE context, the same signals a developer reads while working.
 
-## How It Works
+Install the companion extension, start the bridge, open Claude. That's it. Claude can now navigate your codebase the way you do, run tests, check diagnostics, commit, and create PRs — without you copy-pasting anything.
 
 ```
-Your Phone / Laptop                    Your Computer
-┌──────────────┐                      ┌─────────────────────────────┐
-│  Claude Code  │───── SSH/local ─────│  Bridge Server              │
-│  (CLI)        │◄── remote control ──│    ↕ WebSocket              │
-└──────────────┘                      │  IDE Extension (VS Code)    │
-                                      │    ↕ Real-time state        │
-       ┌──────────────────────────────│  Your Code & Editor         │
-       │   runClaudeTask              └─────────────────────────────┘
-       ▼
-┌──────────────┐
-│  claude -p   │  Autonomous subprocess — full tools, no approval loop
-│  subprocess  │  Output streams back to VS Code output channel
-└──────────────┘
+Claude Code ──── bridge ──── VS Code extension ──── your editor state
 ```
 
-Claude Code connects to the bridge, which connects to your IDE extension. Claude can then open files, run tests, set breakpoints, check diagnostics, commit to Git, create PRs — everything a developer at the keyboard can do.
+**Works from your phone.** SSH into your dev machine, send a message, watch Claude fix bugs and run tests on your home machine while you're away.
 
-**Use it from your phone**: SSH into your dev machine, send a message via remote control, and delegate autonomous work to a `claude -p` subprocess running on your home machine. Watch it fix bugs, run tests, and commit — then go back to sleep.
+## Pick your path
 
-**Autonomous task mode**: With `--claude-driver subprocess`, the bridge can spawn Claude subprocesses on demand via the `runClaudeTask` MCP tool. Tasks run in parallel (up to 10 concurrent), stream output to VS Code in real time, and can be triggered automatically by diagnostics or file saves via an automation policy.
+| I want to… | Go to |
+|---|---|
+| Get started (5 min setup) | [Quick Start](#quick-start) |
+| Understand what tools are available | [Platform Docs](documents/platform-docs.md) |
+| Run two IDEs in parallel | [Multi-IDE Orchestrator](#multi-ide-orchestrator) |
+| Access from remote / phone | [Remote Access](docs/remote-access.md) |
+| Deploy to a VPS | [Deploy](deploy/README.md) |
+| Write a plugin | [Plugin Authoring](documents/plugin-authoring.md) |
+| Use with Claude Desktop / Dispatch | [Session Continuity](#session-continuity) |
+| Use with claude.ai web | [Custom Connector](#use-with-claudeai-web) |
+
+## Quick Start
+
+**Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20
+
+```bash
+npm install -g claude-ide-bridge
+cd /your/project
+claude-ide-bridge init
+```
+
+`init` installs the VS Code extension, writes a `## Claude IDE Bridge` section to your `CLAUDE.md`, and prints the two remaining steps (env var + how to start). That's the entire setup.
+
+**Then start the bridge and open Claude:**
+
+```bash
+claude-ide-bridge --watch   # terminal 1 — keeps running, auto-restarts on crash
+claude --ide                # terminal 2 — Claude Code with IDE tools active
+```
+
+Type `/ide` in Claude to confirm — you'll see open files, diagnostics, and editor state.
+
+> **One bridge per workspace.** Each project needs its own bridge instance on its own port. If you work across multiple repos, start a separate `claude-ide-bridge --watch` in each directory.
 
 ## Multi-IDE Orchestrator
 
@@ -66,29 +86,6 @@ Use `switchWorkspace ws1` / `switchWorkspace ws2` in Claude to pin to a specific
 
 See [docs/multi-ide-review.md](docs/multi-ide-review.md) for the staged review workflow.
 
-## Quick Start
-
-**Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20
-
-```bash
-npm install -g claude-ide-bridge
-cd /your/project
-claude-ide-bridge init
-```
-
-`init` installs the VS Code extension, writes a `## Claude IDE Bridge` section to your `CLAUDE.md`, and prints the two remaining steps (env var + how to start). That's the entire setup.
-
-**Then start the bridge and open Claude:**
-
-```bash
-claude-ide-bridge --watch   # terminal 1 — keeps running, auto-restarts on crash
-claude --ide                # terminal 2 — Claude Code with IDE tools active
-```
-
-Type `/ide` in Claude to confirm — you'll see open files, diagnostics, and editor state.
-
-> **One bridge per workspace.** Each project needs its own bridge instance on its own port. If you work across multiple repos, start a separate `claude-ide-bridge --watch` in each directory.
-
 ## Documentation
 
 > **These guides are essential for setup and deployment** — not optional reading. Each covers a specific scenario you'll encounter when running the bridge beyond localhost.
@@ -102,6 +99,7 @@ Type `/ide` in Claude to confirm — you'll see open files, diagnostics, and edi
 | **[Privacy Policy](docs/privacy-policy.md)** | What data the bridge handles, stores, and never transmits |
 | **[Demo Setup](docs/demo-setup.md)** | Standing up a persistent demo instance for review/testing |
 | **[Architecture Decisions](docs/adr/)** | ADRs for version numbers, reconnect guards, lock files, error model, session eviction |
+| **[Release Checklist](docs/release-checklist.md)** | Pre-release gate: hardcoded count audit, doc completeness, publish steps |
 
 **Reference docs** (in [`documents/`](documents/)):
 
@@ -160,7 +158,7 @@ Requires `tmux` and the `claude` CLI to be on `PATH`.
 
 ## Claude Code Plugin
 
-The bridge ships as a **Claude Code plugin** with 9 skills, 3 subagents, and 7 hook events — available on the [Claude Code plugin directory](https://claude.com/plugins):
+The bridge ships as a **Claude Code plugin** with 9 skills, 3 subagents, and 16 hook events — available on the [Claude Code plugin directory](https://claude.com/plugins):
 
 ```bash
 # Load the plugin
@@ -195,13 +193,22 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 
 | Event | What it does |
 |-------|-------------|
-| `PreToolUse` on Edit/Write | Resolves relative path args to absolute before bridge tools execute |
+| `PreToolUse` | Resolves relative path args to absolute before bridge tools execute |
 | `PostToolUse` on Edit/Write | Reminds Claude to check diagnostics after file edits |
 | `SessionStart` | Reports bridge status, connection, and tool count |
 | `InstructionsLoaded` | Injects live bridge status each time CLAUDE.md loads |
 | `Elicitation` | Pre-fills file/path/uri fields using the active editor |
+| `ElicitationResult` | Logs user responses (or cancellations) to MCP elicitation dialogs |
+| `PostCompact` | Re-injects bridge status after Claude compacts context |
 | `WorktreeCreate` | Reports bridge ↔ worktree relationship; warns about LSP limitations |
+| `WorktreeRemove` | Warns that IDE state may be stale after worktree removal |
 | `SubagentStart` | Verifies bridge is alive before IDE subagents run |
+| `SubagentStop` | Surfaces subagent final response summary for parent agent awareness |
+| `TeammateIdle` | Reports bridge health when a team agent finishes and awaits coordination |
+| `TaskCompleted` | Logs task completion summary and confirms bridge availability |
+| `ConfigChange` | Warns if changed config files require a bridge restart |
+| `Stop` | Logs session end and surfaces final response for automated workflows |
+| `StopFailure` | Logs API errors that ended the turn; checks bridge health |
 
 ## MCP Tools
 
