@@ -427,8 +427,8 @@ describe("OrchestratorBridge integration: single child bridge", () => {
     const resp = await waitFor(ws, (m) => m.id === 5, 8000);
     const text = (resp.result as { content: [{ text: string }] }).content[0]
       .text;
-    const json = JSON.parse(text) as { childBridges: unknown[] };
-    expect(json.childBridges).toHaveLength(1);
+    expect(text).toContain("bridges: 1 total");
+    expect(text).toContain("healthy");
   });
 });
 
@@ -535,8 +535,7 @@ describe("OrchestratorBridge integration: two child bridges", () => {
     const statusResp = await waitFor(ws, (m) => m.id === 2, 8000);
     const statusText = (statusResp.result as { content: [{ text: string }] })
       .content[0].text;
-    const status = JSON.parse(statusText) as { childBridges: unknown[] };
-    expect(status.childBridges).toHaveLength(2);
+    expect(statusText).toContain("bridges: 2 total");
 
     // listWorkspaces should show both
     send(ws, {
