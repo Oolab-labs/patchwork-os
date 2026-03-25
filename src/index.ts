@@ -306,6 +306,124 @@ export function register(ctx) {
   process.exit(0);
 }
 
+// Handle init subcommand — one-command setup: install extension + write CLAUDE.md + print next steps
+if (process.argv[2] === "init") {
+  const argv = process.argv.slice(3);
+  const workspaceIdx = argv.indexOf("--workspace");
+  const workspace =
+    workspaceIdx !== -1 && argv[workspaceIdx + 1]
+      ? path.resolve(argv[workspaceIdx + 1] as string)
+      : process.cwd();
+
+  process.stderr.write("Claude IDE Bridge — setup\n\n");
+
+  // Step 1: Install extension
+  const editor = findEditor();
+  if (!editor) {
+    process.stderr.write(
+      "  [skip] Extension install — no supported editor found on PATH.\n" +
+        "         Install manually: code --install-extension oolab-labs.claude-ide-bridge-extension\n\n",
+    );
+  } else {
+    process.stderr.write(`  Installing extension into ${editor}...\n`);
+    const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
+    const vsixDir = path.resolve(__dirname2, "..", "vscode-extension");
+    const MARKETPLACE_ID = "oolab-labs.claude-ide-bridge-extension";
+    let extensionArg = MARKETPLACE_ID;
+    if (existsSync(vsixDir)) {
+      const vsixFiles = readdirSync(vsixDir)
+        .filter((f) => f.endsWith(".vsix"))
+        .sort()
+        .reverse();
+      if (vsixFiles.length > 0)
+        extensionArg = path.join(vsixDir, vsixFiles[0] as string);
+    }
+    try {
+      execFileSync(editor, ["--install-extension", extensionArg], {
+        stdio: "pipe",
+        timeout: 30000,
+      });
+      process.stderr.write(`  ✓ Extension installed via ${editor}\n\n`);
+    } catch {
+      process.stderr.write(
+        `  [warn] Extension install failed — try manually:\n         ${editor} --install-extension ${MARKETPLACE_ID}\n\n`,
+      );
+    }
+  }
+
+  // Step 2: Write CLAUDE.md
+  const templatePath = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "templates",
+    "CLAUDE.bridge.md",
+  );
+  if (!existsSync(templatePath)) {
+    process.stderr.write(
+      "  [skip] CLAUDE.md — template not found. Run gen-claude-md manually.\n\n",
+    );
+  } else {
+    const content = readFileSync(templatePath, "utf-8");
+    const targetPath = path.join(workspace, "CLAUDE.md");
+    const marker = "## Claude IDE Bridge";
+    if (
+      existsSync(targetPath) &&
+      readFileSync(targetPath, "utf-8").includes(marker)
+    ) {
+      process.stderr.write(
+        "  ✓ CLAUDE.md — bridge section already present\n\n",
+      );
+    } else {
+      const updated = existsSync(targetPath)
+        ? `${readFileSync(targetPath, "utf-8").trimEnd()}\n\n${content.trimEnd()}\n`
+        : content;
+      writeFileSync(`${targetPath}.tmp`, updated, "utf-8");
+      if (existsSync(targetPath)) {
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        renameSync(targetPath, `${targetPath}.${ts}.bak`);
+      } else {
+        mkdirSync(workspace, { recursive: true });
+      }
+      renameSync(`${targetPath}.tmp`, targetPath);
+      process.stderr.write(
+        `  ✓ CLAUDE.md — bridge section written to ${targetPath}\n\n`,
+      );
+    }
+  }
+
+  // Step 3: Env var check + next steps
+  const envSet = process.env.CLAUDE_CODE_IDE_SKIP_VALID_CHECK === "true";
+  process.stdout.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  process.stdout.write("Setup complete. Next:\n\n");
+  if (!envSet) {
+    process.stdout.write(
+      "  1. Add to your shell profile (~/.zshrc or ~/.bashrc):\n\n" +
+        "       export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true\n\n" +
+        "     Then reload: source ~/.zshrc\n\n",
+    );
+    process.stdout.write(
+      "  2. Start the bridge (run in your project directory):\n\n" +
+        "       claude-ide-bridge --watch\n\n",
+    );
+    process.stdout.write(
+      "  3. Open Claude Code:\n\n" + "       claude --ide\n\n",
+    );
+  } else {
+    process.stdout.write(
+      "  1. Start the bridge (run in your project directory):\n\n" +
+        "       claude-ide-bridge --watch\n\n",
+    );
+    process.stdout.write(
+      "  2. Open Claude Code:\n\n" + "       claude --ide\n\n",
+    );
+  }
+  process.stdout.write(
+    "Type /ide in Claude Code to confirm the connection.\n" +
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+  );
+  process.exit(0);
+}
+
 // Handle orchestrator subcommand — starts the meta-bridge that coordinates multiple IDEs
 if (process.argv[2] === "orchestrator") {
   const { parseOrchestratorArgs, OrchestratorBridge } = await import(

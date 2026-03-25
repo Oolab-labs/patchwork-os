@@ -4,7 +4,9 @@
 [![CI](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/Oolab-labs/claude-ide-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) full IDE integration — **136+ tools** for LSP, debugging, terminals, Git, GitHub, diagnostics, code analysis, screen capture, and more. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) and pairs with a companion extension for real-time editor state.
+A standalone MCP bridge that gives [Claude Code](https://claude.ai/code) real IDE integration — not just file access, but **live editor state**: diagnostics as you type, go-to-definition, find-all-references, hover types, rename-symbol, set breakpoints, evaluate in the debugger, and capture what's on screen. Works with any VS Code-compatible editor (VS Code, Windsurf, Cursor) via a companion extension.
+
+It also exposes Git, GitHub, terminals, and code analysis tools — but the core value is the LSP and debugger integration that Claude has no other way to access.
 
 ## How It Works
 
@@ -32,105 +34,60 @@ Claude Code connects to the bridge, which connects to your IDE extension. Claude
 
 ## Multi-IDE Orchestrator
 
-Run multiple bridges simultaneously — one per IDE/workspace — with a meta-orchestrator routing between them. This unlocks **independent parallel agent verification**: each agent starts with a completely fresh context (separate LSP cache, git state, open files, terminal history), so their findings are genuinely independent rather than anchored to each other's analysis.
+> **When to use this:** Large projects (50k+ lines) where a single Claude session runs out of context mid-task, or where you're running genuinely parallel workstreams — one agent implementing while another reviews, or one exploring the backend while another works on the frontend. For most projects, a single bridge is sufficient.
+
+Run two bridges simultaneously — one per IDE window — with a meta-orchestrator routing between them. Each agent gets a completely independent context (separate LSP cache, open files, terminal history), so their work doesn't interfere.
 
 ```
-Claude Code (coordinator)
-    ↓ stdio shim → prefers orchestrator lock
+Claude Code
+    │
 Meta-Orchestrator (port 4746)
-    ├── Bridge A (Windsurf, port 55000) — dev workspace
-    └── Bridge B (Windsurf, port 55001) — clean baseline
-         ↓                    ↓
-   VS Code Extension    VS Code Extension
+    ├── Bridge A (port 55000) — e.g. backend work, active changes
+    └── Bridge B (port 55001) — e.g. frontend work, or clean reviewer
 ```
 
-**Start the orchestrator:**
+**Setup (each IDE needs a fixed port):**
+
+In each VS Code/Windsurf workspace settings, set `claudeIdeBridge.port` to `55000` and `55001` respectively. Then:
 
 ```bash
-# Each IDE needs its own bridge on a fixed port (set claudeIdeBridge.port in workspace settings)
-node dist/index.js orchestrator --port 4746
+claude-ide-bridge orchestrator --port 4746
+claude --ide   # auto-discovers orchestrator, exposes both workspaces' tools
 ```
 
-The stdio shim auto-discovers the orchestrator lock (three-tier preference: orchestrator > bridge > fallback). Tools from both IDEs are available with `__Windsurf_55000` / `__Windsurf_55001` suffixes when names conflict.
+Use `switchWorkspace ws1` / `switchWorkspace ws2` in Claude to pin to a specific IDE. Tools from both are available; conflicting names get a `__<IDE>_<port>` suffix.
 
-**What this enables:**
-- **Parallel implementation**: two agents work on different branches simultaneously with zero interference
-- **Independent code review**: Agent A reviews logic, Agent B reviews security — neither sees the other's findings
-- **Self-hosting dev loop**: modify the bridge in IDE A, validate behavior through IDE B without downtime
-- **Clean baseline diffing**: compare tool outputs between a dev copy and a stable reference version
-- **Meta-orchestration**: top-level Claude dispatches `runClaudeTask` to both IDEs for fully autonomous parallel work
+**Concrete use cases where it pays off:**
+- **Large monorepo**: database layer in one IDE, API layer in another — each agent stays focused without context bleed
+- **Implement + review**: one agent writes, the other reviews the diff with fresh eyes (no anchoring bias)
+- **Self-hosting dev loop**: modify the bridge itself in IDE A, validate through IDE B without downtime
 
-See [docs/orchestrator-testing-walkthrough.md](docs/orchestrator-testing-walkthrough.md) for setup and verification steps, and [docs/multi-ide-review.md](docs/multi-ide-review.md) for the staged review workflow (ws1 implements, ws2 reviews).
+**Where it's not worth the overhead:** projects under ~50k lines, tasks that need to touch both workspaces frequently (handoff cost dominates), or anything a single `runClaudeTask` subprocess handles adequately.
+
+See [docs/multi-ide-review.md](docs/multi-ide-review.md) for the staged review workflow.
 
 ## Quick Start
 
-**Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20, tmux (`brew install tmux`)
-
-> **Required env var:** Claude Code will not discover the bridge without this:
-> ```bash
-> export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true
-> ```
-> Add to your `~/.zshrc` or `~/.bashrc` to make it permanent. After that, `claude --ide` is all you need.
-
-**Step 1 — Install the VS Code extension**
-
-Search `oolab-labs.claude-ide-bridge-extension` in the VS Code / Windsurf / Cursor extension marketplace, or install from the command line:
-
-```bash
-code --install-extension oolab-labs.claude-ide-bridge-extension
-# Windsurf: windsurf --install-extension oolab-labs.claude-ide-bridge-extension
-# Cursor:   cursor --install-extension oolab-labs.claude-ide-bridge-extension
-```
-
-**Step 2 — Install and start the bridge**
+**Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20
 
 ```bash
 npm install -g claude-ide-bridge
 cd /your/project
-claude-ide-bridge --watch
+claude-ide-bridge init
 ```
 
-The bridge starts, writes a lock file to `~/.claude/ide/`, and waits for connections. Your editor extension connects automatically. `--watch` auto-restarts the bridge if it crashes (exponential backoff 2s → 30s); safe to leave running indefinitely.
+`init` installs the VS Code extension, writes a `## Claude IDE Bridge` section to your `CLAUDE.md`, and prints the two remaining steps (env var + how to start). That's the entire setup.
 
-> **One bridge per workspace.** Each project directory needs its own bridge instance. If you work across multiple repos, start a separate `claude-ide-bridge --watch` in each workspace.
-
-**Step 3 — Connect Claude Code**
-
-In a new terminal in your project directory:
+**Then start the bridge and open Claude:**
 
 ```bash
-claude --ide
+claude-ide-bridge --watch   # terminal 1 — keeps running, auto-restarts on crash
+claude --ide                # terminal 2 — Claude Code with IDE tools active
 ```
 
-Claude Code connects to the bridge. Type `/ide` to confirm — you'll see your open files, diagnostics, and editor state.
+Type `/ide` in Claude to confirm — you'll see open files, diagnostics, and editor state.
 
-**That's it.** Claude can now read your diagnostics, navigate your code, run tests, commit to Git, and more.
-
-**Step 4 — Add bridge guidance to your project's CLAUDE.md (recommended)**
-
-```bash
-claude-ide-bridge gen-claude-md --write
-```
-
-This appends a `## Claude IDE Bridge` section to your `CLAUDE.md` (creating it if absent) with:
-- **Bug-fix methodology** — write a failing test first, fix, confirm the test passes
-- **Documentation practices** — when to update CLAUDE.md and save decisions to Claude's memory
-- **Workflow rules** — use bridge tools instead of shell fallbacks
-- **Quick-reference tool table** — 14 common tasks mapped to the right tool
-
-Idempotent — safe to re-run; won't duplicate the section if it already exists. When appending to an existing file, a timestamped `.bak` backup is created.
-
-> **Why this matters for existing projects:** Claude Code has no built-in awareness of bridge tools. Without this section, Claude may fall back to raw shell commands for git, testing, and diagnostics — missing structured output, error codes, and IDE integration. Running `gen-claude-md` once teaches Claude how to work in your project from the first message of every session.
-
----
-
-**Optional — full orchestrator with health monitoring:**
-
-```bash
-claude-ide-bridge start-all --workspace /your/project
-```
-
-Launches four tmux panes: health monitor, bridge, Claude Code, and remote control — with automatic restart on failure. Requires `tmux`.
+> **One bridge per workspace.** Each project needs its own bridge instance on its own port. If you work across multiple repos, start a separate `claude-ide-bridge --watch` in each directory.
 
 ## Documentation
 
@@ -963,6 +920,7 @@ For remote access over the internet, see [docs/remote-access.md](docs/remote-acc
 ### Subcommands
 
 ```
+claude-ide-bridge init [--workspace <path>]    One-command setup: install extension + write CLAUDE.md + print next steps
 claude-ide-bridge start-all [options]          Full tmux orchestrator (bridge + Claude + remote)
 claude-ide-bridge install-extension [editor]   Install VS Code extension into your IDE
 claude-ide-bridge gen-claude-md [--write] [--workspace <path>]
