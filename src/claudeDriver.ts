@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export interface ClaudeTaskInput {
   prompt: string;
@@ -29,27 +32,60 @@ const OUTPUT_CAP = 50 * 1024; // 50KB
 
 export class SubprocessDriver implements IClaudeDriver {
   readonly name = "subprocess";
+  private readonly settingsPath: string;
+  private readonly settingsContent: string;
 
   constructor(
     private readonly binary: string,
     private readonly log: (msg: string) => void,
-  ) {}
+  ) {
+    // Use a minimal settings file that disables hooks without using --bare.
+    // --bare sets CLAUDE_CODE_SIMPLE=1 which skips OAuth auth — incompatible with
+    // Claude Max and other OAuth-based auth. --settings with empty hooks achieves
+    // the same hook-suppression goal while preserving normal auth flows.
+    this.settingsPath = join(
+      tmpdir(),
+      "claude-ide-bridge-subprocess-settings.json",
+    );
+    this.settingsContent = JSON.stringify({ hooks: {} });
+    this._writeSettings();
+  }
+
+  private _writeSettings(): void {
+    try {
+      writeFileSync(this.settingsPath, this.settingsContent, "utf-8");
+    } catch (err) {
+      this.log(
+        `[SubprocessDriver] WARN: could not write settings file at ${this.settingsPath}: ${err instanceof Error ? err.message : String(err)} — subprocess hooks may fire`,
+      );
+    }
+  }
 
   async run(input: ClaudeTaskInput): Promise<ClaudeTaskOutput> {
+    // Re-write the settings file before each run — /tmp may be cleared by the OS
+    // on long-running servers (e.g. systemd-tmpfiles), causing --settings to point
+    // at a missing file and allowing hook loops to fire.
+    this._writeSettings();
+
     const args = [
       "-p",
       input.prompt,
       // Suppress .mcp.json auto-discovery — avoids MCP server init overhead and
       // prevents the subprocess from connecting back to the bridge that spawned it.
       "--strict-mcp-config",
-      // --bare disables hooks, LSP, plugin sync, and auto-memory for scripted -p
-      // calls. Prevents hook loops when the subprocess shares the same config dir
-      // as the parent Claude Code session.
-      "--bare",
+      // Disable hooks via settings file instead of --bare. --bare skips OAuth auth
+      // which breaks Claude Max accounts. Empty hooks: {} suppresses hook loops
+      // while preserving normal auth flows.
+      "--settings",
+      this.settingsPath,
     ];
     if (input.model) args.push("--model", input.model);
     // workspace is set as cwd in spawn() — claude -p has no --workspace flag
-    for (const f of input.contextFiles ?? []) args.push("--add-dir", f);
+    for (const f of input.contextFiles ?? []) {
+      if (typeof f === "string" && f.length > 0 && !f.startsWith("-")) {
+        args.push("--add-dir", f);
+      }
+    }
 
     // CRITICAL: strip vars that would cause the subprocess to attach to or authenticate
     // as the parent Claude Code session, which causes hangs when cwd contains a .claude/ dir.

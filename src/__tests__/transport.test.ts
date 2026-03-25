@@ -657,7 +657,7 @@ describe("McpTransport", () => {
     expect(progressMsgs).toHaveLength(0);
   });
 
-  it("extensionRequired tools hidden from tools/list when extension disconnected; visible when connected", async () => {
+  it("extensionRequired tools always visible in tools/list; dispatch returns error when extension disconnected", async () => {
     const { ws } = await setup("ext-required-test", (t) => {
       t.registerTool(
         {
@@ -679,12 +679,12 @@ describe("McpTransport", () => {
       t.setExtensionConnectedFn(() => false);
     });
 
-    // When extension is disconnected: only non-extension tools visible
+    // When extension is disconnected: ALL tools are visible (dispatch-error design)
     send(ws, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
     const resp1 = await waitFor(ws, (m) => m.id === 1);
     const tools1 = (resp1.result as { tools: Array<{ name: string }> }).tools;
     expect(tools1.map((t) => t.name)).toContain("alwaysAvailable");
-    expect(tools1.map((t) => t.name)).not.toContain("extensionOnly");
+    expect(tools1.map((t) => t.name)).toContain("extensionOnly");
 
     // extensionRequired field is stripped from wire schema (internal-only)
     const wireSchema = tools1.find(
@@ -692,8 +692,7 @@ describe("McpTransport", () => {
     ) as Record<string, unknown>;
     expect(wireSchema).not.toHaveProperty("extensionRequired");
 
-    // Calling extensionOnly while disconnected still returns isError content
-    // (tool is in the registry; listing filters it but direct calls still hit the extensionRequired guard)
+    // Calling extensionOnly while disconnected returns isError content
     send(ws, {
       jsonrpc: "2.0",
       id: 2,
@@ -709,7 +708,7 @@ describe("McpTransport", () => {
     expect(callResult.isError).toBe(true);
     expect(callResult.content[0].text).toMatch(/extension is not connected/i);
 
-    // Simulate extension connecting — extensionOnly now appears in tools/list
+    // Simulate extension connecting — extensionOnly still in tools/list (always was)
     transport?.setExtensionConnectedFn(() => true);
     send(ws, { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} });
     const resp3 = await waitFor(ws, (m) => m.id === 3);

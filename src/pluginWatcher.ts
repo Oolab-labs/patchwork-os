@@ -144,9 +144,12 @@ export class PluginWatcher {
         this.logger.warn(
           `[plugin-watch] Failed to patch transport for "${fresh.manifest.name}": ${err instanceof Error ? err.message : String(err)}; attempting rollback`,
         );
-        // Rollback: re-register old tools on this transport
+        // Rollback: remove any partially-registered tools and restore old ones.
+        // Uses old prefix — if the plugin renamed its prefix between reloads the
+        // orphaned fresh-prefix tools will remain until the next successful reload.
+        // Prefix renames are uncommon and self-heal on the next save.
         try {
-          transport.deregisterToolsByPrefix(fresh.manifest.toolNamePrefix);
+          transport.deregisterToolsByPrefix(old.manifest.toolNamePrefix);
           for (const t of old.tools) {
             transport.replaceTool(t.schema, t.handler, t.timeoutMs);
           }

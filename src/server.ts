@@ -330,16 +330,18 @@ export class Server extends EventEmitter<ServerEvents> {
       // OPTIONS before POST. Respond without requiring auth so the preflight succeeds.
       if (req.method === "OPTIONS" && parsedUrl.pathname === "/mcp") {
         const origin = corsOrigin(req.headers.origin, this.extraCorsOrigins);
-        if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
-        res.setHeader(
-          "Access-Control-Allow-Methods",
-          "GET, POST, DELETE, OPTIONS",
-        );
-        res.setHeader(
-          "Access-Control-Allow-Headers",
-          "Content-Type, Authorization, Mcp-Session-Id",
-        );
-        res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+        if (origin) {
+          res.setHeader("Access-Control-Allow-Origin", origin);
+          res.setHeader(
+            "Access-Control-Allow-Methods",
+            "GET, POST, DELETE, OPTIONS",
+          );
+          res.setHeader(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Authorization, Mcp-Session-Id",
+          );
+          res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+        }
         res.writeHead(204);
         res.end();
         return;

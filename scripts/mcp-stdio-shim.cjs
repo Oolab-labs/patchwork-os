@@ -83,6 +83,7 @@ function parseLock(lockPath) {
 // --- State ---
 let ws = null;
 let currentPort = null;
+let hasConnectedSuccessfully = false; // true after first successful ws open
 let buffer = "";
 const pendingLines = [];
 let reconnectTimer = null;
@@ -103,6 +104,7 @@ function flushPending() {
 }
 
 function connect(port, authToken) {
+  const isReconnect = currentPort !== null;
   if (ws) {
     try {
       ws.terminate();
@@ -142,6 +144,12 @@ function connect(port, authToken) {
   ws.on("open", () => {
     process.stderr.write("mcp-stdio-shim: Connected.\n");
     stopPoll();
+    // On reconnect (after a prior successful connection), drop stale pending messages —
+    // they reference old session state (e.g. the previous initialize handshake) and must
+    // not be replayed. A failed first attempt does NOT count — pendingLines must be kept
+    // so the initialize message can be flushed to the new bridge session.
+    if (isReconnect && hasConnectedSuccessfully) pendingLines.length = 0;
+    hasConnectedSuccessfully = true;
     flushPending();
   });
 }

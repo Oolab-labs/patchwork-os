@@ -360,8 +360,8 @@ const EXTENSION_REQUIRED_TOOLS = [
   "getCallHierarchy",
 ];
 
-describe("Integration: extensionRequired full-registry filter", () => {
-  it("tools/list hides extensionRequired tools when extension is disconnected", async () => {
+describe("Integration: extensionRequired tools always visible in tools/list", () => {
+  it("tools/list shows ALL tools (including extensionRequired) regardless of extension connection state", async () => {
     const bridge = await setupBridge(true);
     bridge.transport.setExtensionConnectedFn(() =>
       bridge.extensionClient.isConnected(),
@@ -378,12 +378,13 @@ describe("Integration: extensionRequired full-registry filter", () => {
     const tools = (resp.result as { tools: Array<{ name: string }> }).tools;
     const names = new Set(tools.map((t) => t.name));
 
-    // extensionRequired tools must be hidden when extension is disconnected
+    // extensionRequired tools must be visible even when extension is disconnected
+    // (dispatch-error design: tools always listed, calling returns reconnect error)
     for (const toolName of EXTENSION_REQUIRED_TOOLS) {
       expect(
         names.has(toolName),
-        `${toolName} should be hidden when extension disconnected`,
-      ).toBe(false);
+        `${toolName} should be visible even when extension disconnected`,
+      ).toBe(true);
     }
     // Pure tools must still be present
     expect(names.has("getGitStatus")).toBe(true);
@@ -399,7 +400,7 @@ describe("Integration: extensionRequired full-registry filter", () => {
 });
 
 describe("Integration: extensionRequired tools/call isError", () => {
-  it("calling extensionRequired tools by name while extension disconnected returns isError:true (tool is in registry but filtered from list)", async () => {
+  it("calling extensionRequired tools by name while extension disconnected returns isError:true", async () => {
     const bridge = await setupBridge(true);
     bridge.transport.setExtensionConnectedFn(() =>
       bridge.extensionClient.isConnected(),

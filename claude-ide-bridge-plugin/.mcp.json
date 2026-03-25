@@ -2,7 +2,7 @@
   "mcpServers": {
     "claude-ide-bridge": {
       "command": "npx",
-      "args": ["claude-ide-bridge@latest", "--workspace", "."],
+      "args": ["claude-ide-bridge@latest", "--workspace", ".."],
       "env": {}
     }
   }
