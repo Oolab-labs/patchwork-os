@@ -151,6 +151,35 @@ Dossiers for each type of developer who uses Claude IDE Bridge. Validate and ref
 
 ---
 
+## Persona 6: Multi-IDE Orchestrator User
+
+**Background**: Developer running multiple IDE instances simultaneously — one per workspace/branch — coordinated by the meta-orchestrator. Uses the multi-IDE setup for independent parallel agent verification, self-hosting dev loops, and baseline diffing.
+
+**Workflow**: Starts N bridges on fixed ports (configured via `claudeIdeBridge.port` per workspace) → starts orchestrator → starts Claude Code (shim auto-discovers orchestrator) → dispatches parallel agents to each IDE with `__Windsurf_55000` / `__Windsurf_55001` tool suffixes.
+
+**Key Features Used**:
+- **Orchestrator**: `listBridges`, `switchWorkspace`, `getOrchestratorStatus`
+- **Parallel dispatch**: `runClaudeTask__Windsurf_55000` + `runClaudeTask__Windsurf_55001` simultaneously
+- **Independent verification**: `getDiagnostics`, `findReferences`, `getCallHierarchy` on separate IDEs for the same code change
+- **Baseline diffing**: `getDiffBetweenRefs`, `getGitLog` against stable reference IDE
+- **Tool suffixes**: any tool with `__Windsurf_55000` / `__Windsurf_55001` to target a specific IDE explicitly
+
+**Pain Points Addressed**:
+- Single-perspective AI review (one agent anchors on its own previous analysis)
+- Context contamination between implementation and review phases
+- Long CI feedback loops when multiple test suites must run in parallel
+- Risky changes to self-hosted tooling (modify in one IDE, validate through another)
+
+**Configuration Preferences**:
+- `claudeIdeBridge.port: 55000` / `55001` in per-workspace VS Code settings (fixed ports required)
+- `Auto Start Bridge` disabled in IDE settings (start manually for control over order)
+- Different `fixedToken` per bridge instance in `claude-ide-bridge.config.json`
+- Startup order is critical: each bridge → wait for "Extension hello" → then start orchestrator → then `claude`
+
+**Success Metrics**: Genuinely independent findings from parallel agents, zero cross-contamination between IDE contexts, orchestrator routes correctly by workspace path
+
+---
+
 ## Cross-Cutting Needs
 
 All personas benefit from:
