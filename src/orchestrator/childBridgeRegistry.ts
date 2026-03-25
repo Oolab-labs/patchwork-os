@@ -328,14 +328,19 @@ export class ChildBridgeRegistry {
     );
   }
 
-  /** Pick the most recently started healthy bridge (fallback when no workspace context). */
+  /** Pick the healthiest, most recently started bridge (fallback when no workspace context).
+   * Tie-breaks on consecutiveFailures ascending to match pickForWorkspace() behavior. */
   pickBest(): ChildBridge | null {
-    let best: ChildBridge | null = null;
-    for (const b of this.bridges.values()) {
-      if (!b.healthy) continue;
-      if (!best || b.startedAt > best.startedAt) best = b;
-    }
-    return best;
+    const healthy = [...this.bridges.values()].filter((b) => b.healthy);
+    if (healthy.length === 0) return null;
+    return (
+      healthy.sort((a, b) => {
+        if (a.consecutiveFailures !== b.consecutiveFailures) {
+          return a.consecutiveFailures - b.consecutiveFailures;
+        }
+        return b.startedAt - a.startedAt;
+      })[0] ?? null
+    );
   }
 
   /** Edge case 2: return workspace paths shared by 2+ bridges. */
