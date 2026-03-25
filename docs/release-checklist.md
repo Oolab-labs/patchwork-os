@@ -30,7 +30,7 @@ grep -rn "\b[0-9]\+ tools\b\|\b[0-9]\+ hook\|\b[0-9]\+ skill\|\b[0-9]\+ test\|\b
 Verify each number found against actual code:
 
 - [ ] Slim tool count (`SLIM_TOOL_NAMES.size`) — currently **27**
-- [ ] Full mode tool count — currently **~95**
+- [ ] Full mode tool count — currently **~96**
 - [ ] Hook event count (keys in `claude-ide-bridge-plugin/hooks/hooks.json`) — currently **16**
 - [ ] Plugin skill count (entries in `claude-ide-bridge-plugin/skills/`) — currently **9**
 - [ ] Plugin subagent count (entries in `claude-ide-bridge-plugin/agents/`) — currently **3**
