@@ -34,6 +34,11 @@ function findLockFile() {
     process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"),
     "ide",
   );
+  // Three-tier preference: orchestrator > bridge > any lock (each by newest mtime).
+  // Orchestrator locks win because child bridge restarts produce newer lock files,
+  // which would hijack the shim away from the orchestrator if we only used mtime.
+  let orchestratorLock = null;
+  let orchestratorMtime = 0;
   let bridgeLock = null;
   let bridgeMtime = 0;
   let fallbackLock = null;
@@ -45,13 +50,20 @@ function findLockFile() {
       try {
         const stat = fs.statSync(fullPath);
         let isBridge = false;
+        let isOrchestrator = false;
         try {
           const data = JSON.parse(fs.readFileSync(fullPath, "utf8"));
           isBridge = data.isBridge === true;
+          isOrchestrator = data.orchestrator === true;
         } catch {
           // unparseable — treat as non-bridge
         }
-        if (isBridge) {
+        if (isOrchestrator) {
+          if (stat.mtimeMs > orchestratorMtime) {
+            orchestratorMtime = stat.mtimeMs;
+            orchestratorLock = fullPath;
+          }
+        } else if (isBridge) {
           if (stat.mtimeMs > bridgeMtime) {
             bridgeMtime = stat.mtimeMs;
             bridgeLock = fullPath;
@@ -69,14 +81,17 @@ function findLockFile() {
   } catch {
     // lock dir doesn't exist
   }
-  // Prefer a lock explicitly written by the bridge; fall back to mtime winner
-  return bridgeLock ?? fallbackLock;
+  // Prefer orchestrator > bridge > fallback (each newest mtime within tier)
+  return orchestratorLock ?? bridgeLock ?? fallbackLock;
 }
 
 function parseLock(lockPath) {
   const raw = fs.readFileSync(lockPath, "utf8");
   const data = JSON.parse(raw);
   const port = Number(path.basename(lockPath, ".lock"));
+  // Note: lock type (orchestrator / bridge / fallback) is not returned here —
+  // findLockFile() already enforces tier priority before this is called.
+  // If parseLock is ever called independently, the caller is blind to lock type.
   return { port, authToken: data.authToken };
 }
 

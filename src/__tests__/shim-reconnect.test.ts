@@ -38,6 +38,21 @@ function writelock(
   return lockFile;
 }
 
+function writelockOrchestrator(lockDir: string, port: number, token: string) {
+  const lockFile = path.join(lockDir, `${port}.lock`);
+  fs.writeFileSync(
+    lockFile,
+    JSON.stringify({
+      pid: process.pid,
+      authToken: token,
+      isBridge: true,
+      orchestrator: true,
+    }),
+    { mode: 0o600 },
+  );
+  return lockFile;
+}
+
 function startMockBridge(port: number, token: string): WebSocketServer {
   const wss = new WebSocketServer({ port, host: "127.0.0.1" });
   wss.on("connection", (ws, req) => {
@@ -240,5 +255,110 @@ describe("reconnection after bridge restart", () => {
     // BUG: without a polling loop, if the watch event is missed this FAILS
     // (We can't guarantee the watch event fires in all macOS CI environments)
     expect(reconnected).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Three-tier lock preference: orchestrator > bridge > fallback
+// ---------------------------------------------------------------------------
+describe("orchestrator lock preference", () => {
+  it("prefers orchestrator lock over a bridge lock with a newer mtime", async () => {
+    // The core race: a child bridge restart produces a newer lock file.
+    // Without tier priority, the shim would connect to the child bridge
+    // instead of the orchestrator.
+    const orchPort = 19810;
+    const bridgePort = 19811;
+    const orchToken = "token-orch-1";
+    const bridgeToken = "token-bridge-newer";
+    const lockDir = path.join(tmpDir, "ide");
+
+    const orchWss = startMockBridge(orchPort, orchToken);
+    const bridgeWss = startMockBridge(bridgePort, bridgeToken);
+
+    // Write orchestrator lock first, then bridge lock with a newer mtime.
+    writelockOrchestrator(lockDir, orchPort, orchToken);
+    await new Promise((r) => setTimeout(r, 20)); // ensure bridge lock is newer
+    writelock(lockDir, bridgePort, bridgeToken);
+
+    const proc = spawnShim();
+    const stderrLines: string[] = [];
+    proc.stderr?.setEncoding("utf8");
+    proc.stderr?.on("data", (d: string) => stderrLines.push(d));
+
+    const connected = await waitFor(
+      () => stderrLines.some((l) => l.includes("Connected")),
+      3000,
+    );
+    expect(connected).toBe(true);
+
+    // Shim must have connected to the orchestrator port, not the newer bridge port.
+    const connectLine = stderrLines.find((l) =>
+      l.includes("Connecting to bridge at"),
+    );
+    expect(connectLine).toContain(`:${orchPort}`);
+    expect(connectLine).not.toContain(`:${bridgePort}`);
+
+    await Promise.all([closeServer(orchWss), closeServer(bridgeWss)]);
+  });
+
+  it("picks the newest orchestrator lock when multiple orchestrator locks exist", async () => {
+    const orchPort1 = 19812;
+    const orchPort2 = 19813;
+    const orchToken1 = "token-orch-old";
+    const orchToken2 = "token-orch-new";
+    const lockDir = path.join(tmpDir, "ide");
+
+    const wss1 = startMockBridge(orchPort1, orchToken1);
+    const wss2 = startMockBridge(orchPort2, orchToken2);
+
+    writelockOrchestrator(lockDir, orchPort1, orchToken1);
+    await new Promise((r) => setTimeout(r, 20)); // ensure port2 lock is newer
+    writelockOrchestrator(lockDir, orchPort2, orchToken2);
+
+    const proc = spawnShim();
+    const stderrLines: string[] = [];
+    proc.stderr?.setEncoding("utf8");
+    proc.stderr?.on("data", (d: string) => stderrLines.push(d));
+
+    const connected = await waitFor(
+      () => stderrLines.some((l) => l.includes("Connected")),
+      3000,
+    );
+    expect(connected).toBe(true);
+
+    const connectLine = stderrLines.find((l) =>
+      l.includes("Connecting to bridge at"),
+    );
+    expect(connectLine).toContain(`:${orchPort2}`);
+    expect(connectLine).not.toContain(`:${orchPort1}`);
+
+    await Promise.all([closeServer(wss1), closeServer(wss2)]);
+  });
+
+  it("connects to orchestrator lock when no bridge lock exists (no fallback regression)", async () => {
+    const orchPort = 19814;
+    const orchToken = "token-orch-solo";
+    const lockDir = path.join(tmpDir, "ide");
+
+    const wss = startMockBridge(orchPort, orchToken);
+    writelockOrchestrator(lockDir, orchPort, orchToken);
+
+    const proc = spawnShim();
+    const stderrLines: string[] = [];
+    proc.stderr?.setEncoding("utf8");
+    proc.stderr?.on("data", (d: string) => stderrLines.push(d));
+
+    const connected = await waitFor(
+      () => stderrLines.some((l) => l.includes("Connected")),
+      3000,
+    );
+    expect(connected).toBe(true);
+
+    const connectLine = stderrLines.find((l) =>
+      l.includes("Connecting to bridge at"),
+    );
+    expect(connectLine).toContain(`:${orchPort}`);
+
+    await closeServer(wss);
   });
 });
