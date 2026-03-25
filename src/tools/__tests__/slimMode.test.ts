@@ -5,8 +5,8 @@ import { SLIM_TOOL_NAMES, registerAllTools } from "../index.js";
 // ── SLIM_TOOL_NAMES invariants ─────────────────────────────────────────────
 
 describe("SLIM_TOOL_NAMES", () => {
-  it("contains exactly 25 entries", () => {
-    expect(SLIM_TOOL_NAMES.size).toBe(25);
+  it("contains exactly 27 entries", () => {
+    expect(SLIM_TOOL_NAMES.size).toBe(27);
   });
 
   it("all names match the valid tool name pattern", () => {
@@ -24,6 +24,8 @@ describe("SLIM_TOOL_NAMES", () => {
     expect(SLIM_TOOL_NAMES.has("evaluateInDebugger")).toBe(true);
     expect(SLIM_TOOL_NAMES.has("executeVSCodeCommand")).toBe(true);
     expect(SLIM_TOOL_NAMES.has("captureScreenshot")).toBe(true);
+    expect(SLIM_TOOL_NAMES.has("getBridgeStatus")).toBe(true);
+    expect(SLIM_TOOL_NAMES.has("getToolCapabilities")).toBe(true);
   });
 
   it("does not contain tools that duplicate Claude native capabilities", () => {

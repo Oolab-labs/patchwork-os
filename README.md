@@ -203,74 +203,40 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 | `WorktreeCreate` | Reports bridge ↔ worktree relationship; warns about LSP limitations |
 | `SubagentStart` | Verifies bridge is alive before IDE subagents run |
 
-## 136+ MCP Tools
+## MCP Tools
 
-### File Operations (8)
-`openFile` · `openDiff` · `saveDocument` · `closeTab` · `closeAllDiffTabs` · `checkDocumentDirty` · `getOpenEditors` · `searchWorkspace`
+The bridge exposes tools in two modes:
 
-### LSP / Code Intelligence (13)
-`goToDefinition` · `findReferences` · `getHover` · `getHoverAtCursor` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchWorkspaceSymbols` · `getDocumentSymbols` · `getCallHierarchy` · `getTypeHierarchy` · `getInlayHints` · `getTypeSignature`
+- **Slim mode (default)** — 27 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
+- **Full mode (`--full`)** — all ~95 tools, adding git, terminal, file ops, HTTP, and GitHub. Use this for large projects or workflows that rely on those integrations.
 
-### Debugging (5)
-`setDebugBreakpoints` · `startDebugging` · `evaluateInDebugger` · `getDebugState` · `stopDebugging`
+### Slim mode — 27 IDE tools (default)
 
-### Terminal (8)
-`createTerminal` · `runInTerminal` · `sendTerminalCommand` · `waitForTerminalOutput` · `getTerminalOutput` · `listTerminals` · `disposeTerminal` · `runCommand`
+| Category | Tools |
+|----------|-------|
+| LSP / Code Intelligence | `getDiagnostics` · `watchDiagnostics` · `goToDefinition` · `findReferences` · `getHover` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchWorkspaceSymbols` · `getDocumentSymbols` · `getCallHierarchy` |
+| Debugger | `startDebugging` · `stopDebugging` · `setDebugBreakpoints` · `evaluateInDebugger` · `getDebugState` |
+| Editor State | `getOpenEditors` · `getCurrentSelection` · `getLatestSelection` · `checkDocumentDirty` · `saveDocument` · `openFile` · `closeTab` · `captureScreenshot` |
+| VS Code | `executeVSCodeCommand` |
+| Bridge | `getBridgeStatus` · `getToolCapabilities` |
 
-### Git (16)
-`getGitStatus` · `getGitDiff` · `getGitLog` · `gitAdd` · `gitCommit` · `gitPush` · `gitPull` · `gitFetch` · `gitListBranches` · `gitCheckout` · `gitStash` · `gitStashList` · `gitStashPop` · `gitBlame` · `getCommitDetails` · `getDiffBetweenRefs`
+### Full mode (`--full`) adds
 
-### GitHub (12)
-`githubCreatePR` · `githubViewPR` · `githubGetPRDiff` · `githubPostPRReview` · `githubListPRs` · `githubCreateIssue` · `githubListIssues` · `githubGetIssue` · `githubCommentIssue` · `githubListRuns` · `githubGetRunLogs` · `createGithubIssueFromAIComment`
-
-### Diagnostics & Testing (4)
-`getDiagnostics` · `watchDiagnostics` · `runTests` · `getCodeCoverage`
-
-### Code Quality (3)
-`fixAllLintErrors` · `formatDocument` · `organizeImports`
-
-### Snapshots & Plans (5)
-`createPlan` · `updatePlan` · `getPlan` · `listPlans` · `deletePlan`
-
-### Editor State (6)
-`getCurrentSelection` · `getLatestSelection` · `getOpenEditors` · `getBufferContent` · `setEditorDecorations` · `clearEditorDecorations`
-
-### Code Analysis & Security (9)
-`auditDependencies` · `getSecurityAdvisories` · `detectUnusedCode` · `refactorExtractFunction` · `generateAPIDocumentation` · `getDependencyTree` · `getGitHotspots` · `getImportTree` · `getActivityLog`
-
-### Bridge & Session (3)
-`getBridgeStatus` · `getHandoffNote` · `setHandoffNote`
-
-### Clipboard (2)
-`readClipboard` · `writeClipboard`
-
-### Screen Capture (1)
-`captureScreenshot`
-
-### VS Code Integration (10)
-Text editing · Workspace settings · File watchers · Decorations · `executeVSCodeCommand` · `listVSCodeCommands` · `getWorkspaceSettings` · `updateWorkspaceSetting` · `openInBrowser`
-
-| Category | Count | Extension Required |
-|----------|------:|:-:|
-| File Operations | 8 | No |
-| Git | 16 | No |
-| GitHub | 12 | No (requires `gh`) |
-| LSP / Code Intelligence | 13 | Yes (with fallbacks) |
-| Editor State | 6 | Yes |
-| Text Editing | 5 | Yes |
-| Terminal | 8 | Yes |
-| Diagnostics & Testing | 4 | Mixed |
-| Code Analysis & Security | 9 | No |
-| Code Quality | 3 | Yes |
-| Debug | 5 | Yes |
-| Decorations | 2 | Yes |
-| Screen Capture | 1 | Yes |
-| Snapshots & Plans | 5 | No |
-| Bridge & Session | 3 | No |
-| Clipboard | 2 | Mixed |
-| HTTP | 2 | No |
-| VS Code Integration | 10 | Yes |
-| **Total** | **~136+** | |
+| Category | Count | Tools (sample) |
+|----------|------:|----------------|
+| Git | 16 | `getGitStatus` · `getGitDiff` · `gitCommit` · `gitPush` · `gitBlame` · … |
+| Terminal | 8 | `runCommand` · `createTerminal` · `sendTerminalCommand` · … |
+| File ops | 8 | `createFile` · `editText` · `searchWorkspace` · `getFileTree` · … |
+| GitHub | 12 | `githubCreatePR` · `githubListIssues` · `githubPostPRReview` · … |
+| HTTP | 2 | `sendHttpRequest` · `parseHttpFile` |
+| Code analysis | 9 | `auditDependencies` · `detectUnusedCode` · `getImportTree` · … |
+| Code quality | 3 | `fixAllLintErrors` · `formatDocument` · `organizeImports` |
+| Diagnostics+ | 2 | `runTests` · `getCodeCoverage` |
+| Plans | 5 | `createPlan` · `updatePlan` · `getPlan` · … |
+| Clipboard | 2 | `readClipboard` · `writeClipboard` |
+| LSP extras | 4 | `getHoverAtCursor` · `getTypeSignature` · `getInlayHints` · `getTypeHierarchy` |
+| More editor | 4 | `openDiff` · `getBufferContent` · `setEditorDecorations` · `refactorExtractFunction` |
+| Session | 2 | `getHandoffNote` · `setHandoffNote` |
 
 ## MCP Prompts (Slash Commands)
 
