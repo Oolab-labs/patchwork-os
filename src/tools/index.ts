@@ -41,6 +41,7 @@ import { createFixAllLintErrorsTool } from "./fixAllLintErrors.js";
 import { createFormatDocumentTool } from "./formatDocument.js";
 import { createGenerateAPIDocumentationTool } from "./generateAPIDocumentation.js";
 import { createGenerateTestsTool } from "./generateTests.js";
+import { createGetAICommentsTool } from "./getAIComments.js";
 import { createGetBufferContentTool } from "./getBufferContent.js";
 import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
 import { createGetCodeCoverageTool } from "./getCodeCoverage.js";
@@ -382,6 +383,7 @@ export function registerAllTools(
           createGithubGetRunLogsTool(workspace),
           createGithubGetPRDiffTool(workspace),
           createGithubPostPRReviewTool(workspace),
+          createGetAICommentsTool(extensionClient),
           createCreateIssueFromAICommentTool(
             workspace,
             extensionClient.latestAIComments,
