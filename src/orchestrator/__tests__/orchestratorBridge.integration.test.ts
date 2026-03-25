@@ -339,6 +339,10 @@ async function startOrchestrator(
     }
 
     transport.attach(ws);
+    // Mirror OrchestratorBridge.ts: auth was validated at upgrade time,
+    // so mark the transport ready immediately for clients that reconnect
+    // without re-sending the MCP initialize handshake.
+    transport.markInitialized();
     ws.on("close", () => sessions.delete(sessionId));
   });
 
@@ -582,5 +586,82 @@ describe("OrchestratorBridge integration: two child bridges", () => {
       .text;
     expect(wsText).toContain(childA.workspace);
     expect(wsText).toContain(childB.workspace);
+  });
+});
+
+describe("OrchestratorBridge integration: markInitialized reconnect path", () => {
+  let lockDir: string;
+  let child: ChildScaffold;
+  let orchPort: number;
+  let orchToken: string;
+
+  beforeEach(async () => {
+    lockDir = fs.mkdtempSync(path.join(os.tmpdir(), "orch-integ-reinit-"));
+    child = await startChildBridge(
+      `/projects/reinit-${randomUUID().slice(0, 8)}`,
+    );
+    writeBridgeLock(lockDir, child.port, child.authToken, child.workspace);
+    ({ orchPort, orchToken } = await startOrchestrator(lockDir, child.port));
+  });
+
+  it("tools/call succeeds without sending initialize first (markInitialized path)", async () => {
+    // Simulates Claude Code reconnecting after a session drop:
+    // the WebSocket upgrade auth is sufficient — no initialize handshake needed.
+    const ws = await connectMcpClient(orchPort, orchToken);
+
+    // Skip initialize entirely — go straight to tools/call
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "echo", arguments: { message: "no handshake" } },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 1, 8000);
+
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as {
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(result.content[0]?.text).toBe("echo: no handshake");
+  });
+
+  it("initialize after markInitialized does not break subsequent tool calls", async () => {
+    // Simulates a client that reconnects, skips initialize, calls a tool,
+    // then sends initialize anyway (e.g. MCP client re-negotiating mid-session).
+    // The transport should handle it gracefully and tools must still work after.
+    const ws = await connectMcpClient(orchPort, orchToken);
+
+    // First: call a tool without initialize
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "echo", arguments: { message: "before reinit" } },
+    });
+    const resp1 = await waitFor(ws, (m) => m.id === 1, 8000);
+    expect(resp1.error).toBeUndefined();
+    expect(
+      (resp1.result as { content: Array<{ text: string }> }).content[0]?.text,
+    ).toBe("echo: before reinit");
+
+    // Then: send initialize (client re-negotiating)
+    send(ws, { jsonrpc: "2.0", id: 2, method: "initialize", params: {} });
+    const initResp = await waitFor(ws, (m) => m.id === 2, 4000);
+    expect(initResp.error).toBeUndefined();
+    send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Finally: call another tool — must still work
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "echo", arguments: { message: "after reinit" } },
+    });
+    const resp3 = await waitFor(ws, (m) => m.id === 3, 8000);
+    expect(resp3.error).toBeUndefined();
+    expect(
+      (resp3.result as { content: Array<{ text: string }> }).content[0]?.text,
+    ).toBe("echo: after reinit");
   });
 });
