@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.5.17] — 2026-03-25
+
+### Changed
+- **`switchWorkspace` response** — Now reports the `wsN` alias (`Active workspace: ws1 — /path (IDE)`) so Claude knows which alias prefix corresponds to the active bridge. Disambiguation message condensed; error messages use tighter phrasing.
+- **`getOrchestratorStatus` output** — Replaced pretty-printed JSON blob with a compact line-oriented format (`sessions=N`, `[healthy]`/`[warming]`/`[unhealthy]` per bridge). Saves ~500–800 bytes per call.
+
+---
+
 ## [2.5.16] — 2026-03-25
 
 ### Changed

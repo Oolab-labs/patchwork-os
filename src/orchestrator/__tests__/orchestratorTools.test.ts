@@ -112,8 +112,7 @@ describe("getOrchestratorStatus", () => {
     const tool = tools.find((t) => t.schema.name === "getOrchestratorStatus")!;
     const result = await tool.handler({});
     const text = (result as { content: [{ text: string }] }).content[0].text;
-    const json = JSON.parse(text) as { skippedLockFiles: number };
-    expect(json.skippedLockFiles).toBe(2);
+    expect(text).toContain("skipped lock files: 2");
   });
 
   it("includes activeSessions from getActiveSessions", async () => {
@@ -122,8 +121,7 @@ describe("getOrchestratorStatus", () => {
     const tool = tools.find((t) => t.schema.name === "getOrchestratorStatus")!;
     const result = await tool.handler({});
     const text = (result as { content: [{ text: string }] }).content[0].text;
-    const json = JSON.parse(text) as { activeSessions: number };
-    expect(json.activeSessions).toBe(2);
+    expect(text).toContain("sessions=2");
   });
 
   it("includes warmingUp flag per bridge", async () => {
@@ -133,10 +131,7 @@ describe("getOrchestratorStatus", () => {
     const tool = tools.find((t) => t.schema.name === "getOrchestratorStatus")!;
     const result = await tool.handler({});
     const text = (result as { content: [{ text: string }] }).content[0].text;
-    const json = JSON.parse(text) as {
-      childBridges: Array<{ warmingUp: boolean }>;
-    };
-    expect(json.childBridges[0]!.warmingUp).toBe(true);
+    expect(text).toContain("[warming]");
   });
 });
 
@@ -205,7 +200,8 @@ describe("switchWorkspace", () => {
       workspace: "/projects/alpha",
     });
     const text = (result as { content: [{ text: string }] }).content[0].text;
-    expect(text).toContain("Switched");
+    expect(text).toContain("Active workspace");
+    expect(text).toContain("/projects/alpha");
     expect(deps.setStickyBridge).toHaveBeenCalledWith(4001);
   });
 
@@ -227,9 +223,7 @@ describe("switchWorkspace", () => {
     const tool = tools.find((t) => t.schema.name === "switchWorkspace")!;
     const result = await tool.handler({ workspace: "/projects/shared" });
     const text = (result as { content: [{ text: string }] }).content[0].text;
-    expect(text).toContain("open in 2 IDE instances");
-    expect(text).toContain("port");
-    expect(text).toContain("switchWorkspace");
+    expect(text).toContain("open in 2 IDEs");
     expect(text).toContain("port");
   });
 
@@ -247,7 +241,7 @@ describe("switchWorkspace", () => {
       port: 4005,
     });
     const text = (result as { content: [{ text: string }] }).content[0].text;
-    expect(text).toContain("Switched");
+    expect(text).toContain("Active workspace");
     expect(deps.setStickyBridge).toHaveBeenCalledWith(4005);
   });
 

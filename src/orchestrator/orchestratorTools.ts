@@ -43,31 +43,32 @@ function createGetOrchestratorStatusTool(
     },
     handler: async () => {
       const uptimeSeconds = Math.floor((Date.now() - deps.startedAt) / 1000);
-      const bridges = deps.registry.getAll().map((b) => ({
-        port: b.port,
-        ideName: b.ideName,
-        workspace: b.workspace,
-        healthy: b.healthy,
-        warmingUp: b.warmingUp,
-        toolCount: b.tools.length,
-        lastCheckedAt: b.lastCheckedAt,
-        consecutiveFailures: b.consecutiveFailures,
-        discoveredAt: b.discoveredAt,
-      }));
+      const all = deps.registry.getAll();
+      const healthy = deps.registry.getHealthy();
+      const warming = deps.registry.getWarmingUp();
 
-      const text = JSON.stringify(
-        {
-          orchestratorPort: deps.config.port,
-          uptimeSeconds,
-          activeSessions: deps.getActiveSessions(),
-          childBridges: bridges,
-          skippedLockFiles: deps.registry.getRejected().length,
-        },
-        null,
-        2,
-      );
+      const lines = [
+        `orchestrator port=${deps.config.port} uptime=${uptimeSeconds}s sessions=${deps.getActiveSessions()}`,
+        `bridges: ${all.length} total, ${healthy.length} healthy, ${warming.length} warming`,
+      ];
 
-      return { content: [{ type: "text", text }] };
+      for (const b of all) {
+        const state = b.warmingUp
+          ? "warming"
+          : b.healthy
+            ? "healthy"
+            : "unhealthy";
+        const failures =
+          b.consecutiveFailures > 0 ? ` failures=${b.consecutiveFailures}` : "";
+        lines.push(
+          `  [${state}] ${b.ideName} port=${b.port} tools=${b.tools.length} workspace=${b.workspace}${failures}`,
+        );
+      }
+
+      const skipped = deps.registry.getRejected().length;
+      if (skipped > 0) lines.push(`skipped lock files: ${skipped}`);
+
+      return { content: [{ type: "text", text: lines.join("\n") }] };
     },
   };
 }
@@ -137,7 +138,7 @@ function createSwitchWorkspaceTool(
     schema: {
       name: "switchWorkspace",
       description:
-        "Switch the current session to target a specific workspace. All subsequent tool calls will be routed to the IDE bridge that owns that workspace. Use listBridges to see available workspaces.",
+        "Switch the active workspace for this session. Tool descriptions prefixed [ws1]/[ws2] show which workspace each tool belongs to; after switching, the tool list refreshes to show the new workspace's tools. Use listWorkspaces to see available options.",
       inputSchema: {
         type: "object",
         required: ["workspace"],
@@ -150,7 +151,7 @@ function createSwitchWorkspaceTool(
           port: {
             type: "number",
             description:
-              "Port number of a specific bridge to target — required when the same workspace is open in multiple IDEs simultaneously",
+              "Port number of a specific bridge — required when the same workspace is open in multiple IDEs simultaneously",
           },
         },
       },
@@ -159,6 +160,12 @@ function createSwitchWorkspaceTool(
     handler: async (args) => {
       const workspace = args.workspace as string;
       const port = args.port as number | undefined;
+      const healthy = deps.registry.getHealthy();
+
+      const wsAlias = (b: { port: number }) => {
+        const idx = healthy.findIndex((h) => h.port === b.port);
+        return idx >= 0 ? `ws${idx + 1}` : `port ${b.port}`;
+      };
 
       // If a specific port was provided, bypass workspace routing entirely
       if (port !== undefined) {
@@ -168,7 +175,7 @@ function createSwitchWorkspaceTool(
             content: [
               {
                 type: "text",
-                text: `No bridge found on port ${port}. Call listBridges to see available bridges.`,
+                text: `No bridge found on port ${port}. Call listWorkspaces to see available workspaces.`,
               },
             ],
           };
@@ -178,7 +185,7 @@ function createSwitchWorkspaceTool(
             content: [
               {
                 type: "text",
-                text: `Bridge on port ${port} (${bridge.ideName}) is not healthy (${bridge.consecutiveFailures} consecutive failures). Try a different bridge.`,
+                text: `Bridge on port ${port} (${bridge.ideName}) is not healthy (${bridge.consecutiveFailures} failures). Try a different bridge.`,
               },
             ],
           };
@@ -188,7 +195,7 @@ function createSwitchWorkspaceTool(
           content: [
             {
               type: "text",
-              text: `Switched to: ${bridge.workspace}\nIDE: ${bridge.ideName} (port ${bridge.port})\nTools available: ${bridge.tools.length}`,
+              text: `Active workspace: ${wsAlias(bridge)} — ${bridge.workspace} (${bridge.ideName})\nTool list updated (${bridge.tools.length} tools).`,
             },
           ],
         };
@@ -199,17 +206,15 @@ function createSwitchWorkspaceTool(
       const ambiguous = dupes.get(workspace);
       if (ambiguous && ambiguous.length > 1) {
         const options = ambiguous
-          .map((b) => `  port ${b.port}: ${b.ideName}`)
+          .map((b) => `  port ${b.port}: ${b.ideName} (${wsAlias(b)})`)
           .join("\n");
         return {
           content: [
             {
               type: "text",
               text: [
-                `Workspace "${workspace}" is open in ${ambiguous.length} IDE instances:`,
+                `"${workspace}" is open in ${ambiguous.length} IDEs — specify port:`,
                 options,
-                "",
-                `Call switchWorkspace again with the "port" argument to specify which one.`,
               ].join("\n"),
             },
           ],
@@ -218,21 +223,20 @@ function createSwitchWorkspaceTool(
 
       const bridge = deps.registry.pickForWorkspace(workspace);
       if (!bridge) {
-        const healthy = deps.registry.getHealthy();
         const warming = deps.registry.getWarmingUp();
         let hint: string;
         if (warming.length > 0) {
-          hint = `Some bridges are still starting up: ${warming.map((b) => `${b.ideName} port ${b.port}`).join(", ")}. Try again in a moment.`;
+          hint = `Bridges starting up: ${warming.map((b) => `${b.ideName} port ${b.port}`).join(", ")}. Retry in a moment.`;
         } else if (healthy.length > 0) {
-          hint = `Available workspaces: ${healthy.map((b) => b.workspace).join(", ")}`;
+          hint = `Available: ${healthy.map((b, i) => `ws${i + 1} ${b.workspace}`).join(", ")}`;
         } else {
-          hint = "No healthy bridges are currently connected.";
+          hint = "No healthy bridges connected.";
         }
         return {
           content: [
             {
               type: "text",
-              text: `No bridge found for workspace: ${workspace}\n${hint}`,
+              text: `Workspace not found: ${workspace}\n${hint}`,
             },
           ],
         };
@@ -244,7 +248,7 @@ function createSwitchWorkspaceTool(
         content: [
           {
             type: "text",
-            text: `Switched to workspace: ${bridge.workspace}\nIDE: ${bridge.ideName} (port ${bridge.port})\nTools available: ${bridge.tools.length}`,
+            text: `Active workspace: ${wsAlias(bridge)} — ${bridge.workspace} (${bridge.ideName})\nTool list updated (${bridge.tools.length} tools).`,
           },
         ],
       };
