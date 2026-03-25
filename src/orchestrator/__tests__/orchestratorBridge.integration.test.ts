@@ -18,6 +18,7 @@
 
 import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -28,6 +29,7 @@ import { Server } from "../../server.js";
 import { McpTransport } from "../../transport.js";
 import { ChildBridgeClient } from "../childBridgeClient.js";
 import { ChildBridgeRegistry } from "../childBridgeRegistry.js";
+import { OrchestratorBridge } from "../orchestratorBridge.js";
 import type { OrchestratorConfig } from "../orchestratorConfig.js";
 import { createOrchestratorTools } from "../orchestratorTools.js";
 
@@ -657,3 +659,288 @@ describe("OrchestratorBridge: registerProxiedTools upsert (replaceTool regressio
     ).not.toThrow();
   });
 });
+
+// ── McpTransport.deregisterTool ───────────────────────────────────────────────
+
+describe("McpTransport.deregisterTool", () => {
+  it("returns true when tool existed, false when already gone, and allows re-register", async () => {
+    const logger = new Logger(false);
+    const transport = new McpTransport(logger);
+    const schema = {
+      name: "tempTool",
+      description: "temp",
+      inputSchema: { type: "object" as const, properties: {} },
+    };
+    transport.registerTool(schema, async () => ({
+      content: [{ type: "text", text: "ok" }],
+    }));
+
+    expect(transport.deregisterTool("tempTool")).toBe(true);
+    expect(transport.deregisterTool("tempTool")).toBe(false);
+    // Re-registering after deregister must not throw (no duplicate)
+    expect(() =>
+      transport.registerTool(schema, async () => ({ content: [] })),
+    ).not.toThrow();
+  });
+
+  it("deregistered tool is absent from tools/list response", async () => {
+    const logger = new Logger(false);
+    const orchServer = new Server(randomUUID(), logger);
+    orchServers.push(orchServer);
+    const port = await orchServer.findAndListen(null);
+    const token = randomUUID();
+    // Re-create a server with the right token for auth
+    const authServer = new Server(token, logger);
+    orchServers.push(authServer);
+    const authPort = await authServer.findAndListen(null);
+
+    const transport = new McpTransport(logger);
+    transport.registerTool(
+      {
+        name: "keepMe",
+        description: "stays",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+      async () => ({ content: [] }),
+    );
+    transport.registerTool(
+      {
+        name: "removeMe",
+        description: "goes away",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+      async () => ({ content: [] }),
+    );
+
+    authServer.on("connection", (ws: WebSocket) => {
+      transport.attach(ws);
+      transport.markInitialized();
+    });
+
+    const ws = await connectMcpClient(authPort, token);
+    await mcpHandshake(ws);
+
+    // Deregister the tool
+    transport.deregisterTool("removeMe");
+
+    send(ws, { jsonrpc: "2.0", id: 99, method: "tools/list", params: {} });
+    const resp = await waitFor(ws, (m) => m.id === 99, 4000);
+    const names = (resp.result as { tools: Array<{ name: string }> }).tools.map(
+      (t) => t.name,
+    );
+
+    expect(names).toContain("keepMe");
+    expect(names).not.toContain("removeMe");
+  });
+});
+
+// ── Lazy tool exposure: switchWorkspace swaps tool list ───────────────────────
+
+describe("OrchestratorBridge lazy tool exposure: switchWorkspace swaps tool list", () => {
+  it("exposes only active bridge tools at connect; switchWorkspace replaces tool list", async () => {
+    const lockDir = fs.mkdtempSync(path.join(os.tmpdir(), "orch-lazy-swap-"));
+
+    // Child A has "alphaOnlyTool", child B has "betaOnlyTool"
+    const childA = await startChildBridgeWithTools("/ws/alpha", [
+      {
+        name: "alphaOnlyTool",
+        description: "alpha",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+    ]);
+    const childB = await startChildBridgeWithTools("/ws/beta", [
+      {
+        name: "betaOnlyTool",
+        description: "beta",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+    ]);
+
+    writeBridgeLock(lockDir, childA.port, childA.authToken, childA.workspace);
+    writeBridgeLock(lockDir, childB.port, childB.authToken, childB.workspace);
+
+    // Use the manual scaffold (startOrchestrator) extended to use the real
+    // OrchestratorBridge class for handleConnection/refreshProxiedToolsForSession.
+    // We wire a real OrchestratorBridge via its internal components (same
+    // pattern as other tests — bypass start() to avoid signal handlers).
+    const orchToken = randomUUID();
+    const orchLogger = new Logger(false);
+    const orchSrv = new Server(orchToken, orchLogger);
+    orchServers.push(orchSrv);
+    const orchPort = await orchSrv.findAndListen(null);
+
+    const registry = new ChildBridgeRegistry(lockDir, 60_000, orchPort);
+    registries.push(registry);
+    registry.start();
+
+    const clientMap = new Map<number, ChildBridgeClient>();
+    for (const b of registry.getAll()) {
+      const client = new ChildBridgeClient(b.port, b.authToken);
+      clients.push(client);
+      clientMap.set(b.port, client);
+      const alive = await client.ping();
+      if (alive) {
+        registry.markHealthy(b.port, await client.listTools());
+      }
+    }
+
+    // Use the real OrchestratorBridge connection handler via the internal bridge
+    // We instantiate with a config that points at our already-listening orchSrv.
+    // Instead of calling start(), we replicate its server.on("connection") wiring
+    // using the real OrchestratorBridge class by constructing it with the same
+    // config and calling its handleConnection indirectly via the orchSrv event.
+    //
+    // Since handleConnection is private, we use OrchestratorBridge.start() on a
+    // fresh server that re-uses our lockDir. We accept the SIGTERM handler side
+    // effect (process.once — harmless in vitest).
+    const orchConfig: OrchestratorConfig = {
+      port: orchPort,
+      bindAddress: "127.0.0.1",
+      lockDir,
+      healthIntervalMs: 60_000,
+      verbose: false,
+      jsonl: false,
+      fixedToken: orchToken,
+    };
+
+    // Pre-allocate a free port for the OrchestratorBridge so the lock file
+    // uses a known filename (<port>.lock).
+    const freshPort = await new Promise<number>((resolve, reject) => {
+      const tmp = net.createServer();
+      tmp.listen(0, "127.0.0.1", () => {
+        const addr = tmp.address() as net.AddressInfo;
+        tmp.close((err) => (err ? reject(err) : resolve(addr.port)));
+      });
+    });
+
+    const freshToken = randomUUID();
+    const freshConfig: OrchestratorConfig = {
+      ...orchConfig,
+      port: freshPort,
+      fixedToken: freshToken,
+    };
+    const orch = new OrchestratorBridge(freshConfig);
+    await orch.start();
+
+    const ws = await connectMcpClient(freshPort, freshToken);
+    await mcpHandshake(ws);
+
+    // tools/list — only one bridge's unique tool should appear
+    send(ws, { jsonrpc: "2.0", id: 10, method: "tools/list", params: {} });
+    const listResp1 = await waitFor(ws, (m) => m.id === 10, 8000);
+    const tools1 = (
+      listResp1.result as { tools: Array<{ name: string }> }
+    ).tools.map((t) => t.name);
+
+    const hasAlpha1 = tools1.includes("alphaOnlyTool");
+    const hasBeta1 = tools1.includes("betaOnlyTool");
+    expect(hasAlpha1 !== hasBeta1).toBe(true); // exactly one bridge active
+
+    const switchTarget = hasAlpha1 ? childB.workspace : childA.workspace;
+    const expectedAfter = hasAlpha1 ? "betaOnlyTool" : "alphaOnlyTool";
+    const removedAfter = hasAlpha1 ? "alphaOnlyTool" : "betaOnlyTool";
+
+    // switchWorkspace
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 11,
+      method: "tools/call",
+      params: {
+        name: "switchWorkspace",
+        arguments: { workspace: switchTarget },
+      },
+    });
+    const switchResp = await waitFor(ws, (m) => m.id === 11, 8000);
+    expect(switchResp.error).toBeUndefined();
+    expect(
+      (switchResp.result as { content: [{ text: string }] }).content[0].text,
+    ).toContain("Active workspace");
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // tools/list after switch
+    send(ws, { jsonrpc: "2.0", id: 12, method: "tools/list", params: {} });
+    const listResp2 = await waitFor(ws, (m) => m.id === 12, 8000);
+    const tools2 = (
+      listResp2.result as { tools: Array<{ name: string }> }
+    ).tools.map((t) => t.name);
+
+    expect(tools2).toContain(expectedAfter);
+    expect(tools2).not.toContain(removedAfter);
+  });
+});
+
+/**
+ * Spin up a child bridge that serves a custom tool list (no echo fallback).
+ */
+async function startChildBridgeWithTools(
+  workspace: string,
+  toolSchemas: Array<{
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+  }>,
+): Promise<ChildScaffold> {
+  const authToken = randomUUID();
+  const logger = new Logger(false);
+  const server = new Server(authToken, logger);
+  const mcpSessionId = randomUUID();
+
+  server.httpMcpHandler = async (req, res) => {
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve) => {
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", resolve);
+    });
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      res.writeHead(400).end();
+      return;
+    }
+    const method = body.method as string;
+    const id = body.id;
+    if (method === "initialize") {
+      res.setHeader("mcp-session-id", mcpSessionId);
+      res.writeHead(200, { "content-type": "application/json" }).end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          result: {
+            protocolVersion: "2025-11-25",
+            capabilities: { tools: {} },
+            serverInfo: { name: "child", version: "1.0.0" },
+          },
+        }),
+      );
+    } else if (method === "notifications/initialized") {
+      res.writeHead(204).end();
+    } else if (method === "tools/list") {
+      res.writeHead(200, { "content-type": "application/json" }).end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          result: { tools: toolSchemas },
+        }),
+      );
+    } else {
+      res
+        .writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify({ jsonrpc: "2.0", id, result: {} }));
+    }
+  };
+
+  const port = await server.findAndListen(null);
+  servers.push(server);
+  return {
+    server,
+    transport: new McpTransport(logger),
+    port,
+    authToken,
+    workspace,
+  };
+}
