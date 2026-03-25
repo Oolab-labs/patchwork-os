@@ -215,7 +215,7 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 The bridge exposes tools in two modes:
 
 - **Slim mode (default)** — 27 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
-- **Full mode (`--full`)** — all ~95 tools, adding git, terminal, file ops, HTTP, and GitHub. Use this for large projects or workflows that rely on those integrations.
+- **Full mode (`--full`)** — all ~96 tools, adding git, terminal, file ops, HTTP, and GitHub. Use this for large projects or workflows that rely on those integrations.
 
 ### Slim mode — 27 IDE tools (default)
 

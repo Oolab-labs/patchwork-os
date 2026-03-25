@@ -185,7 +185,7 @@ The plugin configures the bridge as an MCP server, providing 136+ tools:
 - **Planning** (5 tools): createPlan, updatePlan, getPlan, deletePlan, listPlans
 - **HTTP** (2 tools): sendHttpRequest, parseHttpFile
 - **VS Code Integration** (8 tools): executeVSCodeCommand, getWorkspaceSettings, setWorkspaceSetting, ...
-- **AI Comments** (1 tool): `createIssueFromAIComment` — files a GitHub issue from an `// AI: fix/todo/question/warn` annotation in code
+- **AI Comments** (2 tools): `getAIComments` — scans open documents for `// AI: fix/todo/question/warn` annotations and caches them; `createGithubIssueFromAIComment` — files a GitHub issue from a specific cached comment (call `getAIComments` first)
 - **File Watching** (2 tools): `watchFiles`, `unwatchFiles` — register glob patterns and receive notifications when matching files change
 - **Inlay Hints** (1 tool): `getInlayHints` — returns LSP inlay hints (inferred types, parameter names) for a file range
 - **Type Hierarchy** (1 tool): `getTypeHierarchy` — walks class/interface inheritance trees up and down
