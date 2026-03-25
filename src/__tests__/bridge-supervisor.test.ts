@@ -238,27 +238,37 @@ child.on('exit', () => {
 describe("orchestrator subcommand — no fall-through to parseConfig", () => {
   // vitest runs from the project root, so cwd() is reliable here
   const distIndex = path.resolve(process.cwd(), "dist", "index.js");
+  // CI runs tests before the build step — skip when dist is not present rather
+  // than failing with a misleading "exited early" assertion (node exits immediately
+  // with "Cannot find module" which looks identical to the fall-through regression).
+  const distExists = fs.existsSync(distIndex);
 
-  it("process stays alive and does not exit after orchestrator starts", async () => {
-    // Use an unlikely port to avoid colliding with any running bridge.
-    const port = "19876";
-    const proc = spawn("node", [distIndex, "orchestrator", "--port", port], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+  it.skipIf(!distExists)(
+    "process stays alive and does not exit after orchestrator starts",
+    async () => {
+      // Use an unlikely port to avoid colliding with any running bridge.
+      const port = "19876";
+      const proc = spawn("node", [distIndex, "orchestrator", "--port", port], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
 
-    // Race: did the process exit within 2s, or did it stay alive?
-    const exitedEarly = await Promise.race([
-      new Promise<boolean>((resolve) => proc.on("exit", () => resolve(true))),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000)),
-    ]);
+      // Race: did the process exit within 2s, or did it stay alive?
+      const exitedEarly = await Promise.race([
+        new Promise<boolean>((resolve) => proc.on("exit", () => resolve(true))),
+        new Promise<boolean>((resolve) =>
+          setTimeout(() => resolve(false), 2000),
+        ),
+      ]);
 
-    // Clean up
-    if (!exitedEarly) {
-      proc.kill("SIGTERM");
-      await new Promise<void>((resolve) => proc.on("exit", resolve));
-    }
+      // Clean up
+      if (!exitedEarly) {
+        proc.kill("SIGTERM");
+        await new Promise<void>((resolve) => proc.on("exit", resolve));
+      }
 
-    // If it exited within 2s the orchestrator branch fell through to parseConfig
-    expect(exitedEarly).toBe(false);
-  }, 10_000);
+      // If it exited within 2s the orchestrator branch fell through to parseConfig
+      expect(exitedEarly).toBe(false);
+    },
+    10_000,
+  );
 });
