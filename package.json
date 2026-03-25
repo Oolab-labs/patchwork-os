@@ -1,6 +1,6 @@
 {
   "name": "claude-ide-bridge",
-  "version": "2.5.8",
+  "version": "2.5.9",
   "description": "Standalone MCP bridge for Claude Code IDE integration with any editor — 124+ tools for LSP, debugging, terminals, Git, GitHub, and more",
   "type": "module",
   "main": "dist/index.js",
@@ -50,6 +50,8 @@
     "scripts/start-remote.sh",
     "scripts/install-extension.sh",
     "scripts/gen-mcp-config.sh",
+    "scripts/mcp-stdio-shim.cjs",
+    "scripts/start-vps.sh",
     "templates",
     "LICENSE",
     "README.md"

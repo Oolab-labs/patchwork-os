@@ -617,14 +617,11 @@ export class McpTransport {
               };
               break;
             }
-            const extensionConnected = this.isExtensionConnectedFn?.() ?? true;
-            const allTools = Array.from(this.tools.values())
-              .filter((t) => !t.schema.extensionRequired || extensionConnected)
-              .map((t) => {
-                // Strip internal-only fields before sending on the wire
-                const { extensionRequired: _ext, ...wireSchema } = t.schema;
-                return wireSchema;
-              });
+            const allTools = Array.from(this.tools.values()).map((t) => {
+              // Strip internal-only fields before sending on the wire
+              const { extensionRequired: _ext, ...wireSchema } = t.schema;
+              return wireSchema;
+            });
 
             // Parse cursor (opaque base64-encoded decimal offset)
             const listParams = msg.params as { cursor?: unknown } | undefined;
@@ -635,7 +632,12 @@ export class McpTransport {
                   Buffer.from(listParams.cursor, "base64").toString("utf-8"),
                   10,
                 );
-                if (Number.isFinite(decoded) && decoded >= 0) offset = decoded;
+                if (
+                  Number.isFinite(decoded) &&
+                  decoded >= 0 &&
+                  decoded < 1_000_000 // sanity cap: no realistic registry exceeds 1M tools
+                )
+                  offset = decoded;
               } catch {
                 // malformed cursor — start from beginning
               }
