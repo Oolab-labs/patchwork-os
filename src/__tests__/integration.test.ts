@@ -39,6 +39,9 @@ function makeMinimalConfig(workspace: string): Config {
     maxResultSize: 512 * 1024,
     vscodeCommandAllowlist: [],
     activeWorkspaceFolder: workspace,
+    // Integration tests exercise transport and session behavior, not the slim filter.
+    // Use full mode so all tools (getWorkspaceFolders, readClipboard, terminals, etc.) are available.
+    fullMode: true,
   };
 }
 

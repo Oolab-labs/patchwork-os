@@ -152,6 +152,47 @@ import {
 } from "./workspaceSettings.js";
 
 /**
+ * The 25 IDE-exclusive tools registered in slim mode (the default).
+ *
+ * Slim mode exposes only tools that require a live IDE extension — tools that
+ * Claude cannot replicate via its native Read/Write/Bash capabilities. Everything
+ * else (git, terminal, file ops, HTTP, GitHub) is available in full mode (--full).
+ *
+ * To move a tool between modes: add or remove its name from this set.
+ */
+export const SLIM_TOOL_NAMES = new Set<string>([
+  // Editor state
+  "getOpenEditors",
+  "getCurrentSelection",
+  "getLatestSelection",
+  "checkDocumentDirty",
+  "saveDocument",
+  "openFile",
+  "closeTab",
+  "captureScreenshot",
+  // LSP / code intelligence
+  "getDiagnostics",
+  "watchDiagnostics",
+  "getDocumentSymbols",
+  "goToDefinition",
+  "findReferences",
+  "getHover",
+  "getCodeActions",
+  "applyCodeAction",
+  "renameSymbol",
+  "searchWorkspaceSymbols",
+  "getCallHierarchy",
+  // Debugger
+  "getDebugState",
+  "evaluateInDebugger",
+  "setDebugBreakpoints",
+  "startDebugging",
+  "stopDebugging",
+  // VS Code escape hatch
+  "executeVSCodeCommand",
+]);
+
+/**
  * Context object for all tool factories.
  *
  * Currently tools receive individual parameters via registerAllTools — this
@@ -355,7 +396,12 @@ export function registerAllTools(
       : []),
   ];
 
-  for (const tool of [...tools, ...pluginTools]) {
+  const activeTools = config.fullMode
+    ? tools
+    : tools.filter((t) => SLIM_TOOL_NAMES.has(t.schema.name));
+
+  // Plugin tools always bypass the slim filter — they are opt-in by definition.
+  for (const tool of [...activeTools, ...pluginTools]) {
     transport.registerTool(
       tool.schema,
       tool.handler,
