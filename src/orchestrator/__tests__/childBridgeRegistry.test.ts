@@ -507,3 +507,57 @@ describe("ChildBridgeRegistry: lock file validation", () => {
     expect(registry.getAll()).toHaveLength(0);
   });
 });
+
+// ── pickBest() ────────────────────────────────────────────────────────────────
+
+describe("ChildBridgeRegistry.pickBest()", () => {
+  let lockDir: string;
+
+  beforeEach(() => {
+    lockDir = makeLockDir();
+  });
+
+  afterEach(() => {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  });
+
+  it("returns null when no healthy bridges exist", () => {
+    writeLock(lockDir, 5100);
+    const registry = new ChildBridgeRegistry(lockDir, 10_000, 9999);
+    registry.refresh();
+    // No markHealthy call → no healthy bridges
+    expect(registry.pickBest()).toBeNull();
+  });
+
+  it("returns the only healthy bridge", () => {
+    writeLock(lockDir, 5101);
+    const registry = new ChildBridgeRegistry(lockDir, 10_000, 9999);
+    registry.refresh();
+    registry.markHealthy(5101, []);
+    expect(registry.pickBest()?.port).toBe(5101);
+  });
+
+  it("prefers the more recently started bridge when failure counts are equal", () => {
+    const now = Date.now();
+    writeLock(lockDir, 5102, { startedAt: now - 2000 });
+    writeLock(lockDir, 5103, { startedAt: now - 500 });
+    const registry = new ChildBridgeRegistry(lockDir, 10_000, 9999);
+    registry.refresh();
+    registry.markHealthy(5102, []);
+    registry.markHealthy(5103, []);
+    // 5103 is newer → should win
+    expect(registry.pickBest()?.port).toBe(5103);
+  });
+
+  it("excludes unhealthy bridges — older healthy bridge wins over newer unhealthy one", () => {
+    const now = Date.now();
+    writeLock(lockDir, 5104, { startedAt: now - 100 }); // newer but will be unhealthy
+    writeLock(lockDir, 5105, { startedAt: now - 2000 }); // older but healthy
+    const registry = new ChildBridgeRegistry(lockDir, 10_000, 9999);
+    registry.refresh();
+    registry.markHealthy(5104, []);
+    registry.markHealthy(5105, []);
+    registry.markUnhealthy(5104); // healthy=false → excluded from pickBest
+    expect(registry.pickBest()?.port).toBe(5105);
+  });
+});

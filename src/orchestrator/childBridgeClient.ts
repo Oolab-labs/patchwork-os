@@ -134,12 +134,30 @@ export class ChildBridgeClient {
     });
 
     try {
-      const res = await this.post(
+      let res = await this.post(
         body,
         TOOL_CALL_TIMEOUT_MS,
         this.sessionId,
         signal,
       );
+
+      // 404 means the child's HTTP session expired (2-hour idle TTL).
+      // Re-initialize the session and retry once — this is not a bridge failure.
+      if (res.status === 404) {
+        this.sessionId = null;
+        const ok = await this.initSession();
+        if (!ok)
+          throw bridgeUnavailableError(
+            this.port,
+            "session reinit failed after 404",
+          );
+        res = await this.post(
+          body,
+          TOOL_CALL_TIMEOUT_MS,
+          this.sessionId,
+          signal,
+        );
+      }
 
       if (!res.ok) {
         this.onFailure();
@@ -294,13 +312,26 @@ export class ChildBridgeClient {
           res.on("end", () => {
             try {
               const text = Buffer.concat(chunks).toString("utf-8");
-              // Handle SSE responses — extract first data: line
+              // Handle SSE responses — take the last data: line that parses as a
+              // JSON-RPC response (has `result` or `error`). Progress notifications
+              // arrive before the final result and must be skipped; using the first
+              // data: line would return the progress notification as the tool result.
               let json: unknown;
               if (text.startsWith("data:")) {
-                const line = text
-                  .split("\n")
-                  .find((l) => l.startsWith("data:"));
-                json = JSON.parse((line ?? "data:{}").slice(5).trim());
+                let last: unknown = {};
+                for (const line of text.split("\n")) {
+                  if (!line.startsWith("data:")) continue;
+                  try {
+                    const parsed = JSON.parse(line.slice(5).trim()) as Record<
+                      string,
+                      unknown
+                    >;
+                    if ("result" in parsed || "error" in parsed) last = parsed;
+                  } catch {
+                    // skip unparseable lines
+                  }
+                }
+                json = last;
               } else {
                 json = JSON.parse(text || "{}");
               }
