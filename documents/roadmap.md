@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.5.8 — 2026-03-23)
+## Current State (v2.5.11 — 2026-03-25)
 
 - 136+ MCP tools; 1349 bridge tests + 406 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
@@ -26,6 +26,17 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.5.9–2.5.11 shipped (2026-03-25) — dispatch-error restore + CI migration to Oolab-labs:**
+- Restored dispatch-error design for `extensionRequired` tools (regression from orchestrator work): tools always visible in `tools/list`; calling while disconnected returns `isError: true`
+- CORS OPTIONS preflight now only sends headers when origin validates (server.ts)
+- `SubprocessDriver`: settings file re-written before each `run()` to survive `/tmp` cleanup on long-running servers
+- `mcp-stdio-shim.cjs`: removed leftover debug comment; `hasConnectedSuccessfully` flag prevents stale message replay on reconnect
+- `pluginWatcher.ts`: rollback comment clarifies prefix-rename edge case
+- `package.json`: `scripts/start-vps.sh` added to npm `files` array (was missing from published package)
+- CI migrated from `kungfuk3nnyyy/claude-ide-bridge` to `Oolab-labs/claude-ide-bridge` as primary repo
+- Oolab sync job removed from CI workflow; all secrets (`OOLAB_PAT`, `NPM_TOKEN`, `VSCE_PAT`, `OVSX_PAT`) moved to Oolab repo
+- Extension `v1.0.12` published to VS Code Marketplace + Open VSX
 
 **v2.5.8 shipped (2026-03-23) — security hardening + onboarding fixes:**
 - 7 security findings resolved: unbounded `registeredClients` DoS cap + GC (HIGH), duplicate `timingSafeEqual` consolidated into `src/crypto.ts` (HIGH), curl `--unix-socket`/`--netrc-file`/`-w` blocked in `runCommand` (MEDIUM), `lastTrigger` set after enqueue in `handleFileSaved`/`handlePostCompact` (MEDIUM), WS Host header allowlist extended to `--cors-origin` hostnames (MEDIUM), `resolveFilePath` fails closed on ancestor walk exhaustion (LOW)
