@@ -52,6 +52,13 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically install or upgrade claude-ide-bridge via npm when a newer version is bundled with the extension."
+        },
+        "claudeIdeBridge.port": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Port for the bridge to listen on. 0 = auto-select a free port. Set a fixed port (e.g. 55000) when running multiple IDEs so each uses a distinct port."
         }
       }
     },

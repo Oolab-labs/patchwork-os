@@ -53,6 +53,8 @@ export class BridgeProcess {
     private readonly lockDir: string = LOCK_DIR,
     /** Override poll timeout (ms) — for tests only. */
     private readonly lockPollTimeoutMs: number = LOCK_POLL_TIMEOUT_MS,
+    /** Fixed port to pass as --port. 0 = let the bridge auto-select. */
+    private readonly port: number = 0,
   ) {
     // Sentinel file prevents two VS Code windows from racing to spawn a bridge
     // for the same workspace. Uses a hash of the workspace path as the filename.
@@ -297,11 +299,13 @@ export class BridgeProcess {
       return;
     }
 
-    this.log(`Spawning: ${binary} --workspace ${this.workspacePath}`);
+    const spawnArgs = ["--workspace", this.workspacePath];
+    if (this.port > 0) spawnArgs.push("--port", String(this.port));
+    this.log(`Spawning: ${binary} ${spawnArgs.join(" ")}`);
     this.spawnedAt = Date.now();
     this.stderrTail = ""; // reset stderr tail from any previous spawn attempt
 
-    const child = spawn(binary, ["--workspace", this.workspacePath], {
+    const child = spawn(binary, spawnArgs, {
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
     });

@@ -368,3 +368,45 @@ describe("BridgeProcess — stderr captured in failure message", () => {
     expect(failedMessages[0]).not.toContain("OLD ERROR from attempt 1");
   }, 5_000);
 });
+
+// ── Fixed-port flag ───────────────────────────────────────────────────────────
+
+describe("BridgeProcess — fixed port", () => {
+  it("passes --port flag to spawn args when port > 0", async () => {
+    const { spawn } = await import("node:child_process");
+    const ws = "/home/user/project-port";
+    const proc = new BridgeProcess(
+      output as unknown as import("vscode").OutputChannel,
+      ws,
+      tmpDir,
+      500,
+      55000,
+    );
+
+    const spawnPromise = proc.spawn();
+    await new Promise((r) => setTimeout(r, 50));
+    await writeLockFile(tmpDir, 55000, ws);
+    await spawnPromise;
+
+    const spawnCalls = vi.mocked(spawn).mock.calls;
+    expect(spawnCalls.length).toBeGreaterThan(0);
+    const args = spawnCalls[spawnCalls.length - 1]![1] as string[];
+    expect(args).toContain("--port");
+    expect(args).toContain("55000");
+  });
+
+  it("omits --port flag when port is 0 (auto-select)", async () => {
+    const { spawn } = await import("node:child_process");
+    const ws = "/home/user/project-port-zero";
+    const proc = makeProc(ws, 500); // makeProc uses default port=0
+
+    const spawnPromise = proc.spawn();
+    await new Promise((r) => setTimeout(r, 50));
+    await writeLockFile(tmpDir, 12345, ws);
+    await spawnPromise;
+
+    const spawnCalls = vi.mocked(spawn).mock.calls;
+    const args = spawnCalls[spawnCalls.length - 1]![1] as string[];
+    expect(args).not.toContain("--port");
+  });
+});
