@@ -233,11 +233,15 @@ export class OrchestratorBridge {
         // replaceTool (upsert) works for both initial registration and refresh
         // after a child bridge plugin hot-reload — registerTool would throw on
         // duplicate names when this is called on an existing session.
+        // Single-bridge: no prefix (saves ~15 KB per tools/list).
+        // Multi-bridge: short alias prefix [ws1] instead of full path.
+        const wsIndex = healthy.indexOf(b);
+        const descPrefix = healthy.length === 1 ? "" : `[ws${wsIndex + 1}] `;
         transport.replaceTool(
           {
             ...tool,
             name: proxyName,
-            description: `[${b.ideName}: ${b.workspace}] ${tool.description}`,
+            description: `${descPrefix}${tool.description}`,
           },
           async (args, signal) => {
             return this.routeToolCall(
@@ -364,54 +368,45 @@ export class OrchestratorBridge {
     const healthy = this.registry.getHealthy();
     const warming = this.registry.getWarmingUp();
     const dupes = this.registry.getDuplicateWorkspaces();
-    const lines = [
-      `You are connected to the claude-ide-bridge orchestrator (v${PACKAGE_VERSION}).`,
-      "",
-    ];
+    const lines = [`claude-ide-bridge orchestrator v${PACKAGE_VERSION}`];
 
     if (healthy.length === 0 && warming.length === 0) {
       lines.push(
-        "No IDE workspaces are currently connected. Call listWorkspaces to check for newly connected IDEs.",
+        "STATUS: no IDE workspaces connected. Call listWorkspaces to check.",
       );
     } else {
       if (healthy.length > 0) {
-        lines.push("Available IDE workspaces:");
+        lines.push("WORKSPACES:");
         healthy.forEach((b, i) => {
-          lines.push(
-            `  ws${i + 1}: ${b.workspace} (${b.ideName}, port ${b.port})`,
-          );
+          lines.push(`  ws${i + 1}: ${b.workspace} (${b.ideName})`);
         });
       }
       if (warming.length > 0) {
-        lines.push("Starting up (not yet ready):");
+        lines.push("STARTING:");
         for (const b of warming) {
           const elapsed = Math.round((Date.now() - b.discoveredAt) / 1000);
-          lines.push(
-            `  ${b.workspace} (${b.ideName}, port ${b.port}) — ${elapsed}s elapsed`,
-          );
+          lines.push(`  ${b.workspace} (${b.ideName}) — ${elapsed}s`);
         }
       }
-      lines.push("");
-      lines.push(
-        "Tools from each workspace are available with the IDE name as a suffix when names conflict.",
-      );
-      lines.push(
-        "Call listWorkspaces to refresh this list. Call switchWorkspace to explicitly target a workspace.",
-      );
-      if (dupes.size > 0) {
-        lines.push("");
+      if (healthy.length > 1) {
         lines.push(
-          "[CAUTION] The following workspaces are open in multiple IDEs simultaneously:",
+          "MULTI-IDE: conflicting tool names have a __<IDE> suffix. Tools prefixed [ws1]/[ws2] belong to that workspace.",
+        );
+        lines.push("Use switchWorkspace to pin a workspace for a session.");
+      }
+      if (dupes.size > 0) {
+        lines.push(
+          "CAUTION: duplicate workspaces — use switchWorkspace(port) to target a specific IDE:",
         );
         for (const [ws, bridges] of dupes) {
           lines.push(
-            `  ${ws} → ${bridges.map((b) => `${b.ideName} (port ${b.port})`).join(", ")}`,
+            `  ${ws} → ${bridges.map((b) => `${b.ideName}:${b.port}`).join(", ")}`,
           );
         }
-        lines.push(
-          "Use switchWorkspace with the port argument to target a specific IDE.",
-        );
       }
+      lines.push(
+        "RULE: this summary is current — do NOT call getOrchestratorStatus/listWorkspaces/listBridges at session start.",
+      );
     }
 
     return lines.join("\n");
