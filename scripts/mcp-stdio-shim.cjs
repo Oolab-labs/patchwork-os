@@ -89,9 +89,12 @@ function parseLock(lockPath) {
   const raw = fs.readFileSync(lockPath, "utf8");
   const data = JSON.parse(raw);
   const port = Number(path.basename(lockPath, ".lock"));
-  // Note: lock type (orchestrator / bridge / fallback) is not returned here —
-  // findLockFile() already enforces tier priority before this is called.
-  // If parseLock is ever called independently, the caller is blind to lock type.
+  // Note: lock type (orchestrator / bridge / fallback) is NOT returned here —
+  // only { port, authToken } are extracted. findLockFile() enforces tier priority
+  // before this is called, so all three call sites (startPoll, scheduleReconnect,
+  // initial startup) are safe. If parseLock is ever called on an arbitrary path
+  // the caller will be blind to whether it is connecting to an orchestrator, a
+  // child bridge, or an IDE-owned lock — and will connect regardless.
   return { port, authToken: data.authToken };
 }
 

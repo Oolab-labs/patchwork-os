@@ -28,29 +28,22 @@ function writelock(
   port: number,
   token: string,
   isBridge = true,
+  orchestrator = false,
 ) {
   const lockFile = path.join(lockDir, `${port}.lock`);
-  fs.writeFileSync(
-    lockFile,
-    JSON.stringify({ pid: process.pid, authToken: token, isBridge }),
-    { mode: 0o600 },
-  );
+  const data: Record<string, unknown> = {
+    pid: process.pid,
+    authToken: token,
+    isBridge,
+  };
+  if (orchestrator) data.orchestrator = true;
+  fs.writeFileSync(lockFile, JSON.stringify(data), { mode: 0o600 });
   return lockFile;
 }
 
+/** Convenience wrapper — writes an orchestrator lock (isBridge + orchestrator both true). */
 function writelockOrchestrator(lockDir: string, port: number, token: string) {
-  const lockFile = path.join(lockDir, `${port}.lock`);
-  fs.writeFileSync(
-    lockFile,
-    JSON.stringify({
-      pid: process.pid,
-      authToken: token,
-      isBridge: true,
-      orchestrator: true,
-    }),
-    { mode: 0o600 },
-  );
-  return lockFile;
+  return writelock(lockDir, port, token, true, true);
 }
 
 function startMockBridge(port: number, token: string): WebSocketServer {
@@ -333,6 +326,51 @@ describe("orchestrator lock preference", () => {
     expect(connectLine).not.toContain(`:${orchPort1}`);
 
     await Promise.all([closeServer(wss1), closeServer(wss2)]);
+  });
+
+  it("stays connected to orchestrator after a child bridge lock appears with a newer mtime (watcher stability)", async () => {
+    // Regression: after the shim connects to the orchestrator, a child bridge
+    // restart writes a newer lock file. scheduleReconnect should call findLockFile()
+    // which returns the orchestrator lock — so the shim does NOT reconnect away.
+    const orchPort = 19815;
+    const bridgePort = 19816;
+    const orchToken = "token-orch-stable";
+    const bridgeToken = "token-bridge-newer2";
+    const lockDir = path.join(tmpDir, "ide");
+
+    const orchWss = startMockBridge(orchPort, orchToken);
+    writelockOrchestrator(lockDir, orchPort, orchToken);
+
+    const proc = spawnShim();
+    const stderrLines: string[] = [];
+    proc.stderr?.setEncoding("utf8");
+    proc.stderr?.on("data", (d: string) => stderrLines.push(d));
+
+    // Wait for initial connection to orchestrator
+    const connected = await waitFor(
+      () => stderrLines.some((l) => l.includes("Connected")),
+      3000,
+    );
+    expect(connected).toBe(true);
+    const connectCountBefore = stderrLines.filter((l) =>
+      l.includes("Connected"),
+    ).length;
+
+    // Simulate child bridge restart: write a newer bridge lock, triggering the watcher
+    const bridgeWss = startMockBridge(bridgePort, bridgeToken);
+    await new Promise((r) => setTimeout(r, 20));
+    writelock(lockDir, bridgePort, bridgeToken);
+
+    // Give the watcher + debounce time to fire (RECONNECT_DEBOUNCE_MS = 500ms)
+    await new Promise((r) => setTimeout(r, 800));
+
+    // Shim should NOT have reconnected — orchestrator lock still wins
+    const connectCountAfter = stderrLines.filter((l) =>
+      l.includes("Connected"),
+    ).length;
+    expect(connectCountAfter).toBe(connectCountBefore);
+
+    await Promise.all([closeServer(orchWss), closeServer(bridgeWss)]);
   });
 
   it("connects to orchestrator lock when no bridge lock exists (no fallback regression)", async () => {

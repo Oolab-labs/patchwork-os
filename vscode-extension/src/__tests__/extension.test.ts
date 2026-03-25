@@ -235,6 +235,22 @@ describe("activate() — config flags", () => {
     expect(mockEnsureInstalled).not.toHaveBeenCalled();
   });
 
+  it("passes claudeIdeBridge.port to BridgeProcess when set", async () => {
+    const { BridgeProcess } = await import("../bridgeProcess");
+    mockReadLockFileForWorkspace.mockResolvedValue(null);
+    (vscode.workspace as any).getConfiguration = vi.fn(() => ({
+      get: (key: string, def: any) => (key === "port" ? 55000 : def),
+    }));
+
+    activate(makeMockContext());
+    await flushAsync();
+
+    const calls = vi.mocked(BridgeProcess).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    // 5th argument (index 4) is the port
+    expect(calls[calls.length - 1]![4]).toBe(55000);
+  });
+
   it("installer failure is non-fatal — still calls syncConnections", async () => {
     mockEnsureInstalled.mockRejectedValue(new Error("npm not found"));
 
