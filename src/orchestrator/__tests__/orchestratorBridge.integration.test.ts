@@ -270,42 +270,6 @@ async function startOrchestrator(
     const sessions = new Map<string, { stickyBridgePort: number | null }>();
     sessions.set(sessionId, { stickyBridgePort: null });
 
-    transport.setDynamicToolDispatch(async (args, signal) => {
-      const toolName = (args as Record<string, unknown>).__toolName as string;
-      const realArgs = { ...(args as Record<string, unknown>) };
-      realArgs.__toolName = undefined;
-
-      const session = sessions.get(sessionId) ?? null;
-      let targetPort = session?.stickyBridgePort ?? null;
-
-      if (!targetPort) {
-        const best = registry.pickBest();
-        if (best) {
-          targetPort = best.port;
-          if (session && !session.stickyBridgePort) {
-            session.stickyBridgePort = best.port;
-          }
-        }
-      }
-
-      if (!targetPort) {
-        return {
-          content: [
-            { type: "text", text: "[ORCHESTRATOR ERROR] No healthy bridge" },
-          ],
-        };
-      }
-
-      const client = clientMap.get(targetPort);
-      if (!client) {
-        return {
-          content: [{ type: "text", text: "[ORCHESTRATOR ERROR] No client" }],
-        };
-      }
-
-      return client.callTool(toolName, realArgs, signal);
-    });
-
     const orchTools = createOrchestratorTools({
       registry,
       config,
