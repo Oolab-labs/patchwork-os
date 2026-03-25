@@ -2,7 +2,7 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "Companion extension for claude-ide-bridge — provides real-time editor state to Claude Code",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "extensionKind": ["workspace"],
   "publisher": "oolab-labs",
   "license": "MIT",
