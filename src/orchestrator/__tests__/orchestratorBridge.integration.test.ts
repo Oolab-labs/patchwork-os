@@ -629,3 +629,32 @@ describe("OrchestratorBridge integration: markInitialized reconnect path", () =>
     ).toBe("echo: after reinit");
   });
 });
+
+describe("OrchestratorBridge: registerProxiedTools upsert (replaceTool regression)", () => {
+  it("re-registering proxied tools on the same transport does not throw", () => {
+    // Regression: registerProxiedTools previously called registerTool, which throws
+    // on duplicate names. probeAll() calls registerProxiedTools on existing sessions
+    // after a tool list change — if registerTool is used, the second call throws.
+    // replaceTool is an upsert and must not throw.
+    const logger = new Logger(false);
+    const transport = new McpTransport(logger);
+
+    const schema = {
+      name: "echo",
+      description: "Echo",
+      inputSchema: { type: "object" as const, properties: {} },
+    };
+    const handler = async () => ({ content: [{ type: "text", text: "ok" }] });
+
+    // First registration (session connect)
+    expect(() => transport.replaceTool(schema, handler)).not.toThrow();
+
+    // Second registration (probeAll refresh) — must not throw
+    expect(() => transport.replaceTool(schema, handler)).not.toThrow();
+
+    // Third, with updated description (simulates tool list change in child bridge)
+    expect(() =>
+      transport.replaceTool({ ...schema, description: "Echo v2" }, handler),
+    ).not.toThrow();
+  });
+});
