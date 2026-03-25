@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.5.16] — 2026-03-25
+
+### Changed
+- **Lazy tool exposure in multi-bridge mode** — When two or more IDE bridges are healthy, the orchestrator now exposes only the active bridge's tools at session connect time (instead of all bridges' tools combined). The active bridge is pre-selected via `pickBest()` and stored as the session's sticky bridge. Calling `switchWorkspace` swaps the exposed tools to the new bridge and sends `notifications/tools/list_changed`. This reduces tool count from `N × 136` to `136` in all cases.
+- **`McpTransport.deregisterTool(name)`** added — removes a single tool by name (used by the lazy swap path to drop tools exclusive to the previous bridge).
+
+---
+
 ## [2.5.15] — 2026-03-25
 
 ### Changed

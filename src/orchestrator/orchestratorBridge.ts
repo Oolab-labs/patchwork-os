@@ -17,6 +17,8 @@ interface OrchestratorSession {
   ws: WebSocket;
   transport: McpTransport;
   stickyBridgePort: number | null;
+  /** Tool names currently registered as proxied tools for this session. */
+  registeredProxyNames: Set<string>;
   connectedAt: number;
 }
 
@@ -113,7 +115,7 @@ export class OrchestratorBridge {
               `Tool list changed for bridge port ${b.port} — refreshing ${this.sessions.size} session(s)`,
             );
             for (const session of this.sessions.values()) {
-              this.registerProxiedTools(session.transport, session.id);
+              this.refreshProxiedToolsForSession(session);
               if (session.ws.readyState === 1 /* OPEN */) {
                 McpTransport.sendNotification(
                   session.ws,
@@ -148,6 +150,12 @@ export class OrchestratorBridge {
     const instructions = this.buildInstructions();
     transport.setInstructions(instructions);
 
+    // In multi-bridge mode, pre-pin to the best bridge so we only expose
+    // that bridge's tools at connection time (lazy tool exposure).
+    const healthy = this.registry.getHealthy();
+    const initialStickyPort =
+      healthy.length > 1 ? (this.registry.pickBest()?.port ?? null) : null;
+
     // Register orchestrator-native tools
     const tools = createOrchestratorTools({
       registry: this.registry,
@@ -156,7 +164,19 @@ export class OrchestratorBridge {
       getActiveSessions: () => this.sessions.size,
       setStickyBridge: (port) => {
         const s = this.sessions.get(sessionId);
-        if (s) s.stickyBridgePort = port;
+        if (s) {
+          s.stickyBridgePort = port;
+          // Swap exposed tools to match the new active bridge.
+          this.refreshProxiedToolsForSession(s);
+          if (s.ws.readyState === 1 /* OPEN */) {
+            McpTransport.sendNotification(
+              s.ws,
+              "notifications/tools/list_changed",
+              undefined,
+              this.logger,
+            );
+          }
+        }
       },
     });
 
@@ -164,17 +184,18 @@ export class OrchestratorBridge {
       transport.registerTool(tool.schema, tool.handler);
     }
 
-    // Register proxied tools from all healthy child bridges
-    this.registerProxiedTools(transport, sessionId);
-
     const session: OrchestratorSession = {
       id: sessionId,
       ws,
       transport,
-      stickyBridgePort: null,
+      stickyBridgePort: initialStickyPort,
+      registeredProxyNames: new Set(),
       connectedAt: Date.now(),
     };
     this.sessions.set(sessionId, session);
+
+    // Register proxied tools (filtered to active bridge when multi-bridge)
+    this.refreshProxiedToolsForSession(session);
 
     transport.attach(ws);
     // Auth was already validated at WebSocket upgrade time (server.ts).
@@ -191,70 +212,106 @@ export class OrchestratorBridge {
     this.logger.info(`Client connected: session ${sessionId.slice(0, 8)}`);
   }
 
-  private registerProxiedTools(
-    transport: McpTransport,
-    sessionId: string,
-  ): void {
+  /**
+   * Recompute proxied tools for a session and update the transport in-place.
+   *
+   * Multi-bridge mode (session has a stickyBridgePort): expose only the active
+   * bridge's tools, no suffix/prefix needed. Tools exclusive to the previous
+   * bridge are deregistered so the tool list stays lean.
+   *
+   * Single-bridge mode (one healthy bridge): expose all tools with no prefix.
+   * All-bridges mode (multi-bridge but no sticky yet): expose all bridges with
+   * [wsN] prefix and __IDE suffix on conflicts.
+   */
+  private refreshProxiedToolsForSession(session: OrchestratorSession): void {
     const healthy = this.registry.getHealthy();
-    const toolNameCount = new Map<string, number>();
+    const filterPort = healthy.length > 1 ? session.stickyBridgePort : null;
 
-    // Count tool name occurrences to detect cross-bridge conflicts
-    for (const b of healthy) {
-      for (const tool of b.tools) {
-        toolNameCount.set(tool.name, (toolNameCount.get(tool.name) ?? 0) + 1);
+    const newNames = new Set<string>();
+
+    if (filterPort !== null) {
+      // Lazy mode: expose only the active bridge's tools
+      const b = healthy.find((h) => h.port === filterPort);
+      if (b) {
+        for (const tool of b.tools) {
+          if (!/^[a-zA-Z0-9_]+$/.test(tool.name)) continue;
+          newNames.add(tool.name);
+          const capturedPort = b.port;
+          const capturedToolName = tool.name;
+          session.transport.replaceTool(
+            { ...tool, description: tool.description },
+            async (args, signal) =>
+              this.routeToolCall(
+                capturedToolName,
+                args,
+                session,
+                signal,
+                capturedPort,
+              ),
+          );
+        }
       }
-    }
+    } else {
+      // Full mode: all bridges with [wsN] prefix and __IDE suffix on conflicts
+      const toolNameCount = new Map<string, number>();
+      for (const b of healthy) {
+        for (const tool of b.tools) {
+          toolNameCount.set(tool.name, (toolNameCount.get(tool.name) ?? 0) + 1);
+        }
+      }
 
-    // Count ideName occurrences — if two bridges share the same IDE name
-    // (e.g. two VS Code windows), add port to the suffix for disambiguation
-    const ideNameCount = new Map<string, number>();
-    for (const b of healthy) {
-      ideNameCount.set(b.ideName, (ideNameCount.get(b.ideName) ?? 0) + 1);
-    }
+      const ideNameCount = new Map<string, number>();
+      for (const b of healthy) {
+        ideNameCount.set(b.ideName, (ideNameCount.get(b.ideName) ?? 0) + 1);
+      }
 
-    for (const b of healthy) {
-      const ideTag = b.ideName.replace(/[^a-zA-Z0-9]/g, "");
-      const ideNameAmbiguous = (ideNameCount.get(b.ideName) ?? 0) > 1;
-      // Use port suffix only when two bridges share the same ideName
-      const suffix =
-        healthy.length > 1
-          ? `__${ideTag}${ideNameAmbiguous ? `_${b.port}` : ""}`
-          : "";
+      for (const b of healthy) {
+        const ideTag = b.ideName.replace(/[^a-zA-Z0-9]/g, "");
+        const ideNameAmbiguous = (ideNameCount.get(b.ideName) ?? 0) > 1;
+        const suffix =
+          healthy.length > 1
+            ? `__${ideTag}${ideNameAmbiguous ? `_${b.port}` : ""}`
+            : "";
 
-      for (const tool of b.tools) {
-        const hasConflict = (toolNameCount.get(tool.name) ?? 0) > 1;
-        const proxyName = hasConflict ? `${tool.name}${suffix}` : tool.name;
-
-        if (!/^[a-zA-Z0-9_]+$/.test(proxyName)) continue;
-
-        const capturedPort = b.port;
-        const capturedToolName = tool.name;
-
-        // replaceTool (upsert) works for both initial registration and refresh
-        // after a child bridge plugin hot-reload — registerTool would throw on
-        // duplicate names when this is called on an existing session.
-        // Single-bridge: no prefix (saves ~15 KB per tools/list).
-        // Multi-bridge: short alias prefix [ws1] instead of full path.
         const wsIndex = healthy.indexOf(b);
         const descPrefix = healthy.length === 1 ? "" : `[ws${wsIndex + 1}] `;
-        transport.replaceTool(
-          {
-            ...tool,
-            name: proxyName,
-            description: `${descPrefix}${tool.description}`,
-          },
-          async (args, signal) => {
-            return this.routeToolCall(
-              capturedToolName,
-              args,
-              this.sessions.get(sessionId) ?? null,
-              signal,
-              capturedPort,
-            );
-          },
-        );
+
+        for (const tool of b.tools) {
+          const hasConflict = (toolNameCount.get(tool.name) ?? 0) > 1;
+          const proxyName = hasConflict ? `${tool.name}${suffix}` : tool.name;
+          if (!/^[a-zA-Z0-9_]+$/.test(proxyName)) continue;
+
+          newNames.add(proxyName);
+          const capturedPort = b.port;
+          const capturedToolName = tool.name;
+
+          session.transport.replaceTool(
+            {
+              ...tool,
+              name: proxyName,
+              description: `${descPrefix}${tool.description}`,
+            },
+            async (args, signal) =>
+              this.routeToolCall(
+                capturedToolName,
+                args,
+                session,
+                signal,
+                capturedPort,
+              ),
+          );
+        }
       }
     }
+
+    // Deregister tools that belonged to the previous active bridge but are no
+    // longer in the new set (e.g. after switchWorkspace or bridge going away).
+    for (const oldName of session.registeredProxyNames) {
+      if (!newNames.has(oldName)) {
+        session.transport.deregisterTool(oldName);
+      }
+    }
+    session.registeredProxyNames = newNames;
   }
 
   private async routeToolCall(
