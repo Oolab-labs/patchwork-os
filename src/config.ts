@@ -35,6 +35,7 @@ export interface Config {
   issuerUrl: string | null;
   corsOrigins: string[];
   auditLogPath: string | null;
+  fullMode: boolean;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -166,6 +167,7 @@ interface ConfigFile {
   fixedToken?: string;
   issuerUrl?: string;
   corsOrigins?: string[];
+  fullMode?: boolean;
 }
 
 const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
@@ -190,6 +192,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "pluginWatch",
   "fixedToken",
   "corsOrigins",
+  "fullMode",
 ]);
 
 /**
@@ -318,6 +321,7 @@ export function parseConfig(argv: string[]): Config {
   let toolRateLimit = 60;
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
   let auditLogPath: string | null = null;
+  let fullMode = fileConfig.fullMode ?? false;
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -472,6 +476,9 @@ export function parseConfig(argv: string[]): Config {
         corsOrigins.push(origin);
         break;
       }
+      case "--full":
+        fullMode = true;
+        break;
       case "--plugin-watch":
         pluginWatch = true;
         break;
@@ -544,6 +551,8 @@ Options:
   --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
   --grace-period <ms>       Reconnect grace period in ms (default: 30000, max: 600000)
   --watch                   Supervisor mode: auto-restart bridge on crash (exponential backoff, max 30s)
+  --full                    Register all ~95 tools including git, terminal, file ops, HTTP, and GitHub.
+                            Default is slim mode (25 IDE-exclusive tools). Use --full to restore the complete tool set.
   --vps                     VPS/headless mode: expands allowlist with curl, systemctl, docker, tar, dig, openssl, etc.
   --db                      Database mode: expands allowlist with psql, pg_dump, mysql, sqlite3, redis-cli, mongosh, etc.
   --allow-private-http      Allow sendHttpRequest to reach localhost/private IPs (for VPS where bridge runs alongside services)
@@ -718,5 +727,6 @@ Environment Variables:
     db,
     allowPrivateHttp,
     auditLogPath,
+    fullMode,
   };
 }
