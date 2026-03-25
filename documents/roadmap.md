@@ -4,11 +4,13 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.5.11 — 2026-03-25)
+## Current State (v2.6.0 — 2026-03-25)
 
-- 136+ MCP tools; 1349 bridge tests + 406 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **Slim mode default**: 27 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
+- 1436 bridge tests + 406 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
-- Extension v1.0.12 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.5.7`)
+- Extension v1.0.12 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.5.12`)
+- **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - **Four client surfaces**: Claude Code CLI, Claude Desktop (Cowork + Dispatch), Agent Teams (parallel), Scheduled Tasks (recurring)
 - Production-grade connection hardening (circuit breaker, backoff, heartbeat, grace period, generation counter)
@@ -26,6 +28,17 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.6.0 shipped (2026-03-25) — slim mode default + `init` subcommand:**
+- Default tool set narrowed to 27 IDE-exclusive tools; `--full` restores git/terminal/file ops/HTTP/GitHub (~95 total)
+- `SLIM_TOOL_NAMES` exported Set drives both registration filter and tests
+- `init` subcommand: one-command setup (install extension + write CLAUDE.md + print next steps)
+- `start-all.sh`: `--full` passthrough flag + slim mode warning in pane 0
+- Startup banner now prints tool mode (slim/full) with `--full` hint
+- 9 new tests in `slimMode.test.ts`; integration tests get `fullMode: true` so they exercise full transport surface
+- README Quick Start reduced to 3 lines using `init`; MCP Tools section replaced with two-table slim/full layout
+- Multi-IDE Orchestrator: added "when to use" gate (50k+ lines) and "where not worth it" guidance
+- Persona 6 (Multi-IDE Orchestrator User) added to ICPs.md
 
 **v2.5.9–2.5.11 shipped (2026-03-25) — dispatch-error restore + CI migration to Oolab-labs:**
 - Restored dispatch-error design for `extensionRequired` tools (regression from orchestrator work): tools always visible in `tools/list`; calling while disconnected returns `isError: true`

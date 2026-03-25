@@ -14,11 +14,14 @@
 #         rotating remote-control session URL.
 #
 # Usage:
-#   ./scripts/start-all.sh [--workspace <path>] [--notify <ntfy-topic>] [--vps <user@host:port>]
+#   ./scripts/start-all.sh [--workspace <path>] [--notify <ntfy-topic>] [--vps <user@host:port>] [--full]
 #   npm run start-all -- --workspace /path/to/project
 #
 # Options:
 #   --workspace <path>    Directory to open in Claude (default: current directory)
+#   --full                Register all ~95 bridge tools (git, terminal, file ops, HTTP, GitHub).
+#                         Default is slim mode (27 IDE-exclusive tools). Add --full if your
+#                         workflow requires git/terminal/file tools.
 #   --notify <topic>      Push notifications via ntfy.sh when remote-control connects or
 #                         the bridge restarts. Free, no account needed — pick any topic
 #                         name and subscribe at ntfy.sh/<topic> or in the ntfy mobile app.
@@ -44,6 +47,7 @@ WORKSPACE="."
 NTFY_TOPIC=""
 IDE_NAME=""
 VPS=""
+FULL_MODE=""
 BRIDGE_READY_TIMEOUT="${BRIDGE_READY_TIMEOUT:-30}"
 LAST_CLAUDE_RESTART=0
 RESTART_COUNT=0
@@ -57,6 +61,7 @@ while [[ $# -gt 0 ]]; do
     --notify)    NTFY_TOPIC="$2"; shift 2 ;;
     --ide)       IDE_NAME="$2"; shift 2 ;;
     --vps)       VPS="$2"; shift 2 ;;
+    --full)      FULL_MODE="--full"; shift ;;
     *)           echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -88,7 +93,7 @@ if [[ -z "${TMUX:-}" ]]; then
   fi
   # Create session detached, re-run this script inside it, then attach
   tmux new-session -d -s "$SESSION" -x 200 -y 50
-  tmux send-keys -t "$SESSION" "\"$SCRIPT_PATH\" --workspace \"$WORKSPACE\"$([ -n "$NTFY_TOPIC" ] && echo " --notify \"$NTFY_TOPIC\"")$([ -n "$IDE_NAME" ] && echo " --ide \"$IDE_NAME\"")$([ -n "$VPS" ] && echo " --vps \"$VPS\"")" Enter
+  tmux send-keys -t "$SESSION" "\"$SCRIPT_PATH\" --workspace \"$WORKSPACE\"$([ -n "$NTFY_TOPIC" ] && echo " --notify \"$NTFY_TOPIC\"")$([ -n "$IDE_NAME" ] && echo " --ide \"$IDE_NAME\"")$([ -n "$VPS" ] && echo " --vps \"$VPS\"")$([ -n "$FULL_MODE" ] && echo " --full")" Enter
   exec tmux attach -t "$SESSION"
 fi
 
@@ -98,6 +103,12 @@ echo "  Ctrl+C in any pane — stops that process"
 echo "  Ctrl+B then D (press Ctrl+B, release, then press D) — detach (keeps running)"
 echo "  tmux kill-session -t $SESSION — stop everything"
 [[ -n "$NTFY_TOPIC" ]] && echo "  Push notifications: ntfy.sh/$NTFY_TOPIC"
+if [[ -z "$FULL_MODE" ]]; then
+  echo ""
+  echo "  ⚠  Slim mode: 27 IDE tools (LSP, debugger, editor state)."
+  echo "     Git, terminal, file ops, HTTP, GitHub NOT registered."
+  echo "     Add --full to restore all ~95 tools."
+fi
 echo ""
 
 # Detect caffeinate (macOS-only)
@@ -138,7 +149,7 @@ if [[ -f "$BRIDGE_DIR/src/index.ts" ]]; then
 else
   BRIDGE_BIN="node dist/index.js"
 fi
-BRIDGE_CMD="cd $(printf '%q' "$BRIDGE_DIR") && $BRIDGE_BIN --workspace $(printf '%q' "$WORKSPACE")${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}"
+BRIDGE_CMD="cd $(printf '%q' "$BRIDGE_DIR") && $BRIDGE_BIN --workspace $(printf '%q' "$WORKSPACE")${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}${FULL_MODE:+ $FULL_MODE}"
 # Derive a short display name for the Claude session from the workspace directory name.
 # This appears in Claude Code's session list, making multi-workspace tmux setups identifiable.
 WS_BASENAME=$(basename "$WORKSPACE")
