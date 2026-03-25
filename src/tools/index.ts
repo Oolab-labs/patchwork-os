@@ -190,6 +190,9 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "stopDebugging",
   // VS Code escape hatch
   "executeVSCodeCommand",
+  // Bridge introspection — Claude needs these to understand bridge state and discover --full
+  "getBridgeStatus",
+  "getToolCapabilities",
 ]);
 
 /**
