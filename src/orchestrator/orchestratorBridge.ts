@@ -5,6 +5,7 @@ import { LockFileManager } from "../lockfile.js";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 import { McpTransport } from "../transport.js";
+import type { ToolSchema } from "../transport.js";
 import { PACKAGE_VERSION } from "../version.js";
 import { ChildBridgeClient } from "./childBridgeClient.js";
 import { ChildBridgeRegistry } from "./childBridgeRegistry.js";
@@ -99,12 +100,29 @@ export class OrchestratorBridge {
           if (b.warmingUp) {
             client.resetCircuit();
           }
-          // Fetch tools if we don't have them yet
-          if (b.tools.length === 0) {
-            const tools = await client.listTools();
-            this.registry.markHealthy(b.port, tools);
-          } else {
-            this.registry.markHealthy(b.port, b.tools);
+          // Always re-fetch tools so plugin hot-reloads are reflected in new sessions.
+          // For existing sessions, re-register proxied tools and notify clients if the
+          // tool list changed (e.g., after a plugin reload in the child bridge).
+          const prevToolNames = b.tools.map((t) => t.name).join(",");
+          const tools = await client.listTools();
+          const nextToolNames = tools.map((t: ToolSchema) => t.name).join(",");
+          this.registry.markHealthy(b.port, tools);
+
+          if (prevToolNames !== nextToolNames && this.sessions.size > 0) {
+            this.logger.info(
+              `Tool list changed for bridge port ${b.port} — refreshing ${this.sessions.size} session(s)`,
+            );
+            for (const session of this.sessions.values()) {
+              this.registerProxiedTools(session.transport, session.id);
+              if (session.ws.readyState === 1 /* OPEN */) {
+                McpTransport.sendNotification(
+                  session.ws,
+                  "notifications/tools/list_changed",
+                  undefined,
+                  this.logger,
+                );
+              }
+            }
           }
         } else if (inGrace) {
           // Still within startup grace window — don't penalise, just wait
@@ -129,17 +147,6 @@ export class OrchestratorBridge {
     // Build the workspace-aware instructions string
     const instructions = this.buildInstructions();
     transport.setInstructions(instructions);
-
-    // Set up dynamic tool dispatch for proxied calls
-    transport.setDynamicToolDispatch(async (args, signal) => {
-      // The tool name is passed via a special __toolName key injected by the proxy handler
-      const toolName = (args as Record<string, unknown>).__toolName as string;
-      const realArgs = { ...(args as Record<string, unknown>) };
-      realArgs.__toolName = undefined;
-
-      const session = this.sessions.get(sessionId) ?? null;
-      return this.routeToolCall(toolName, realArgs, session, signal);
-    });
 
     // Register orchestrator-native tools
     const tools = createOrchestratorTools({
@@ -170,6 +177,11 @@ export class OrchestratorBridge {
     this.sessions.set(sessionId, session);
 
     transport.attach(ws);
+    // Auth was already validated at WebSocket upgrade time (server.ts).
+    // Mark the transport ready immediately so tool calls work even when
+    // the MCP client reconnects without re-sending the initialize handshake
+    // (e.g. after an orchestrator restart or dropped connection).
+    transport.markInitialized();
 
     ws.on("close", () => {
       this.sessions.delete(sessionId);
