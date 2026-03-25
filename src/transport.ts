@@ -203,6 +203,15 @@ export class McpTransport {
     return this.initialized;
   }
 
+  /**
+   * Mark the transport as initialized without requiring the MCP handshake.
+   * Use this when the caller has already authenticated the client at a higher
+   * level (e.g. the orchestrator validates auth at WebSocket upgrade time).
+   */
+  markInitialized(): void {
+    this.initialized = true;
+  }
+
   /** Number of tools currently registered (useful for /ready endpoint). */
   get toolCount(): number {
     return this.tools.size;
@@ -314,6 +323,11 @@ export class McpTransport {
   }
 
   /** Remove all tools whose name starts with `prefix`. Returns count removed. */
+  deregisterTool(name: string): boolean {
+    this.schemaValidators.delete(name);
+    return this.tools.delete(name);
+  }
+
   deregisterToolsByPrefix(prefix: string): number {
     if (!prefix) return 0;
     let count = 0;
