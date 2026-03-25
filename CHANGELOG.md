@@ -5,6 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.6.0] — 2026-03-25
+
+### Breaking Change
+- **Slim mode is now the default** — The bridge registers 27 IDE-exclusive tools by default instead of all ~95. Pass `--full` to restore git, terminal, file ops, HTTP, and GitHub tools. Plugin tools always bypass the slim filter. Existing users who rely on git/terminal/file tools via the bridge must add `--full` to their startup command (or in `start-all.sh`).
+
+### Added
+- **`init` subcommand** — One-command setup: auto-detects editor, installs the VS Code extension, writes/appends to `CLAUDE.md`, and prints numbered next steps. Replaces the 4-step manual Quick Start.
+- **`SLIM_TOOL_NAMES` export** — `Set<string>` of the 27 slim tools exported from `src/tools/index.ts` for introspection and testing.
+- **`--full` flag** — Opt-in to register all ~95 tools (git, terminal, file ops, HTTP, GitHub).
+- **`start-all.sh --full`** — Passthrough flag; also prints a prominent slim mode warning in pane 0 when running without `--full`.
+- **Startup banner** — Now prints tool mode (slim/full) with `--full` hint when in slim mode.
+- **9 new tests** in `src/tools/__tests__/slimMode.test.ts` covering `SLIM_TOOL_NAMES` invariants, `parseConfig --full`, registration filtering, and plugin bypass.
+
+### Changed
+- **README Quick Start** — Reduced from 4 manual steps to 3 lines using `init`.
+- **README MCP Tools section** — Replaced 70-line wall-of-text with two-table slim/full layout.
+- **Multi-IDE Orchestrator section** — Added "when to use" gate (50k+ lines) and "where not worth it" guidance.
+- **ICPs.md** — Added Persona 6: Multi-IDE Orchestrator User.
+- **`package.json` repository URL** — Normalized to `git+https://...git` form.
+
+---
+
 ## [2.5.17] — 2026-03-25
 
 ### Changed
