@@ -230,7 +230,10 @@ export class OrchestratorBridge {
         const capturedPort = b.port;
         const capturedToolName = tool.name;
 
-        transport.registerTool(
+        // replaceTool (upsert) works for both initial registration and refresh
+        // after a child bridge plugin hot-reload — registerTool would throw on
+        // duplicate names when this is called on an existing session.
+        transport.replaceTool(
           {
             ...tool,
             name: proxyName,
