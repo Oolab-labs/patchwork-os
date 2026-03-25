@@ -179,16 +179,3 @@ jobs:
       - name: Build
         run: npm run build
 
-  sync-oolab:
-    name: Sync to Oolab-labs
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.repository == 'kungfuk3nnyyy/claude-ide-bridge'
-    needs: [ci, extension]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Push to Oolab-labs
-        run: |
-          git remote add oolab https://x-access-token:${{ secrets.OOLAB_PAT }}@github.com/Oolab-labs/claude-ide-bridge.git
-          git push oolab main
