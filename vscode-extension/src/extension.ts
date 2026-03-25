@@ -114,6 +114,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const lockFileDir = config.get<string>("lockFileDir", "");
   const autoInstallBridge = config.get<boolean>("autoInstallBridge", true);
   const autoStartBridge = config.get<boolean>("autoStartBridge", true);
+  const bridgePort = config.get<number>("port", 0);
 
   // ── Handler factories (shared across all connections) ──────────────────────
   // Handlers use the VS Code API which is process-global; they don't need to
@@ -320,6 +321,8 @@ export function activate(context: vscode.ExtensionContext): void {
                     output,
                     fsPath,
                     lockFileDir || undefined,
+                    undefined,
+                    bridgePort,
                   );
                   processes.set(fsPath, proc);
                   proc.onStarted = ({ port, authToken, pid }) => {
