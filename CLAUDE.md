@@ -18,6 +18,7 @@ Read and comply with all documents in `/documents/`. Consult the relevant doc be
 
 `claude-ide-bridge` has several subcommands beyond the default server mode:
 
+- `init [--workspace <path>]` — One-command setup: install extension + write CLAUDE.md + print next steps
 - `start-all` — Launch tmux session with bridge + extension watcher panes
 - `install-extension` — Install the companion VS Code extension
 - `gen-claude-md` — Generate a starter CLAUDE.md for the current workspace
