@@ -107,6 +107,18 @@ export class OrchestratorBridge {
           // tool list changed (e.g., after a plugin reload in the child bridge).
           const prevToolNames = b.tools.map((t) => t.name).join(",");
           const tools = await client.listTools();
+
+          // If listTools() returned empty, the HTTP session init likely failed silently.
+          // Don't mark the bridge healthy yet — keep it warming so the next probe retries.
+          // A real bridge always has at least one tool registered.
+          if (tools.length === 0 && !b.healthy) {
+            this.logger.debug(
+              `Bridge port ${b.port} (${b.ideName}) pinged alive but returned 0 tools — retrying next cycle`,
+            );
+            this.registry.keepWarm(b.port);
+            return;
+          }
+
           const nextToolNames = tools.map((t: ToolSchema) => t.name).join(",");
           this.registry.markHealthy(b.port, tools);
 
