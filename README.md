@@ -39,7 +39,7 @@ cd /your/project
 claude-ide-bridge init
 ```
 
-`init` installs the VS Code extension, writes a `## Claude IDE Bridge` section to your `CLAUDE.md`, and prints the two remaining steps (env var + how to start). That's the entire setup.
+`init` installs the VS Code extension, writes a `## Claude IDE Bridge` section to your `CLAUDE.md`, and registers the bridge as a global MCP server in `~/.claude.json` — so bridge tools are available in **every** `claude` session (any directory, any IDE). That's the entire setup.
 
 **Then start the bridge and open Claude:**
 
