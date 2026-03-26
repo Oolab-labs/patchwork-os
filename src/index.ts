@@ -391,7 +391,46 @@ if (process.argv[2] === "init") {
     }
   }
 
-  // Step 3: Env var check + next steps
+  // Step 3: Register shim in ~/.claude.json so bridge tools appear in every claude session
+  const claudeJsonPath = path.join(
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+    "..",
+    "claude.json",
+  );
+  const claudeJsonAbs = path.resolve(claudeJsonPath);
+  try {
+    let claudeJson: Record<string, unknown> = {};
+    if (existsSync(claudeJsonAbs)) {
+      claudeJson = JSON.parse(readFileSync(claudeJsonAbs, "utf-8")) as Record<
+        string,
+        unknown
+      >;
+    }
+    const mcpServers = (claudeJson.mcpServers ?? {}) as Record<string, unknown>;
+    if (mcpServers["claude-ide-bridge"]) {
+      process.stderr.write(
+        "  ✓ MCP shim — already registered in ~/.claude.json\n\n",
+      );
+    } else {
+      mcpServers["claude-ide-bridge"] = {
+        command: "claude-ide-bridge",
+        args: ["shim"],
+        type: "stdio",
+      };
+      claudeJson.mcpServers = mcpServers;
+      writeFileSync(claudeJsonAbs, `${JSON.stringify(claudeJson, null, 2)}\n`);
+      process.stderr.write(
+        "  ✓ MCP shim — registered in ~/.claude.json (bridge tools available in all sessions)\n\n",
+      );
+    }
+  } catch {
+    process.stderr.write(
+      "  [warn] Could not update ~/.claude.json — add manually:\n" +
+        '         { "mcpServers": { "claude-ide-bridge": { "command": "claude-ide-bridge", "args": ["shim"] } } }\n\n',
+    );
+  }
+
+  // Step 4: Env var check + next steps
   const envSet = process.env.CLAUDE_CODE_IDE_SKIP_VALID_CHECK === "true";
   process.stdout.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
   process.stdout.write("Setup complete. Next:\n\n");
@@ -422,6 +461,30 @@ if (process.argv[2] === "init") {
       "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
   );
   process.exit(0);
+}
+
+// Handle shim subcommand — stdio relay that auto-discovers the running bridge/orchestrator.
+// Intended use: add to ~/.claude.json mcpServers so bridge tools are available everywhere.
+//   { "command": "claude-ide-bridge", "args": ["shim"] }
+if (process.argv[2] === "shim") {
+  const shimPath = path.resolve(
+    __dirnameTop,
+    "..",
+    "scripts",
+    "mcp-stdio-shim.cjs",
+  );
+  // Pass remaining args (e.g. explicit port + token for testing)
+  const shimArgs = [shimPath, ...process.argv.slice(3)];
+  const child = spawn(process.execPath, shimArgs, { stdio: "inherit" });
+  child.on("exit", (code, signal) => {
+    process.exit(code ?? (signal ? 1 : 0));
+  });
+  // Forward signals so the shim can clean up
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.once(sig, () => child.kill(sig));
+  }
+  // Prevent fall-through — keep alive until child exits
+  await new Promise<never>(() => {});
 }
 
 // Handle orchestrator subcommand — starts the meta-bridge that coordinates multiple IDEs

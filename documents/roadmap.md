@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.6.0 — 2026-03-25)
+## Current State (v2.6.1 — 2026-03-26)
 
 - **Slim mode default**: 27 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
 - 1436 bridge tests + 406 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
@@ -28,6 +28,12 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.6.1 shipped (2026-03-26) — `shim` subcommand + init MCP auto-config + orchestrator fix:**
+- `shim` subcommand: `claude-ide-bridge shim` replaces the hardcoded `mcp-stdio-shim.cjs` path in MCP configs; stable across npm updates
+- `init` now registers the shim in `~/.claude.json` automatically (step 3 of setup)
+- Orchestrator 0-tools bug fixed: bridge no longer marked healthy when `listTools()` returns empty; stays warming and retries next cycle
+- Help text updated with `shim` subcommand docs
 
 **v2.6.0 shipped (2026-03-25) — slim mode default + `init` subcommand:**
 - Default tool set narrowed to 27 IDE-exclusive tools; `--full` restores git/terminal/file ops/HTTP/GitHub (~95 total)
@@ -598,6 +604,15 @@ Research (2026-03-17) against current Claude Code docs revealed gaps between the
 - Activity log entries are type-validated on load from disk; `handoffNote.updatedBy` is always `"cli"` (stable, not a session UUID)
 - Activity log already persisted to disk (v2.0.x); diagnostics are live from extension/CLI (no cache to restore)
 - Task queue already persisted (v2.1.8)
+
+### Spawn-a-Bridge *(exploration)*
+- `spawnWorkspace(path)` tool: programmatically launch a bridge + IDE for a given path, block until extension handshake completes, return a ws handle
+- Removes the manual two-IDE setup step — Claude could autonomously spin up a fresh reviewer workspace for a task
+- **Target environment:** headless `code-server` deployments (VPS/CI) — desktop IDE spawn is too platform-specific and fragile
+- **Prerequisite:** `code-server` installed with the extension pre-loaded; `--fixed-token` so the spawned bridge is discoverable
+- **Mechanism:** bridge subprocess + lock file polling with timeout; orchestrator adopts the new lock file once extension connects
+- **CI use case:** spin up a `code-server` + bridge per PR review, run staged LSP review via ws2, tear down after — no other tool offers this
+- **Implement when:** there's a concrete CI/VPS workflow that needs it; the `init` subcommand already covers the setup half
 
 ### Multi-Workspace Bridging
 - One bridge instance serving multiple workspaces

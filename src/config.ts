@@ -575,6 +575,11 @@ Plugins:
   --plugin-watch         Re-load plugins automatically on file change (requires --plugin)
 
 Subcommands:
+  shim                        stdio relay that auto-discovers the running bridge/orchestrator
+                              and connects Claude Code to it. Add to ~/.claude.json once and
+                              bridge tools are available in every claude session:
+                                { "mcpServers": { "claude-ide-bridge":
+                                    { "command": "claude-ide-bridge", "args": ["shim"] } } }
   orchestrator                Start the orchestrator bridge — discovers all running IDE bridge
                               instances and exposes them as a single MCP server. Claude can then
                               work across multiple IDEs / workspaces in one session.

@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.6.1] — 2026-03-26
+
+### Added
+- **`shim` subcommand** — `claude-ide-bridge shim` is an stdio relay that auto-discovers the running bridge or orchestrator via lock file and connects Claude Code to it. Replaces the hardcoded path to `scripts/mcp-stdio-shim.cjs`. Add once to `~/.claude.json` and bridge tools are available in every `claude` session regardless of working directory:
+  ```json
+  { "mcpServers": { "claude-ide-bridge": { "command": "claude-ide-bridge", "args": ["shim"] } } }
+  ```
+
+### Changed
+- **`init` subcommand** — Now automatically registers the `claude-ide-bridge shim` MCP server in `~/.claude.json` as step 3. After running `init`, bridge tools are available in all `claude` sessions without any manual config.
+
+### Fixed
+- **Orchestrator 0-tools bug** — When a child bridge responded to `/ping` but `listTools()` returned empty (HTTP session init failed silently), the bridge was incorrectly marked healthy with 0 tools, causing the orchestrator to expose no proxied tools to Claude. The bridge now stays in the warming state and retries on the next health cycle.
+
+---
+
 ## [2.6.0] — 2026-03-25
 
 ### Breaking Change
