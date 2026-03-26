@@ -14,6 +14,11 @@ coverage/
 
 # Claude Code runtime (agent-memory is auto-generated, skills/agents/commands are intentional)
 .claude/agent-memory/
+.claude/settings.json
+
+# Local MCP config and project memory (machine-specific, not for version control)
+.mcp.json
+memory/
 
 # macOS
 .DS_Store
