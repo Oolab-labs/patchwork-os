@@ -15,7 +15,10 @@ import {
 
 const MAX_RUN_LOG_BYTES = 100 * 1024; // 100 KB — gh run logs can be enormous
 
-export function createGithubListRunsTool(workspace: string) {
+export function createGithubListRunsTool(
+  workspace: string,
+  defaultRepo: string | null = null,
+) {
   return {
     schema: {
       name: "githubListRuns",
@@ -69,6 +72,7 @@ export function createGithubListRunsTool(workspace: string) {
       if (branch) listArgs.push("--branch", branch);
       if (workflow) listArgs.push("--workflow", workflow);
       if (status) listArgs.push("--status", status);
+      if (defaultRepo) listArgs.push("--repo", defaultRepo);
 
       const result = await execSafe("gh", listArgs, {
         cwd: workspace,
@@ -95,7 +99,10 @@ export function createGithubListRunsTool(workspace: string) {
   };
 }
 
-export function createGithubGetRunLogsTool(workspace: string) {
+export function createGithubGetRunLogsTool(
+  workspace: string,
+  defaultRepo: string | null = null,
+) {
   return {
     schema: {
       name: "githubGetRunLogs",
@@ -134,6 +141,7 @@ export function createGithubGetRunLogsTool(workspace: string) {
         String(runId),
         failedOnly ? "--log-failed" : "--log",
       ];
+      if (defaultRepo) viewArgs.push("--repo", defaultRepo);
 
       const result = await execSafe("gh", viewArgs, {
         cwd: workspace,
