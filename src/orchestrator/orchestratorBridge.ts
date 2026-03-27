@@ -478,6 +478,19 @@ export class OrchestratorBridge {
       );
     }
 
+    lines.push("");
+    lines.push("CONTEXT PLATFORM:");
+    lines.push(
+      "  Use ctx tools for issue/PR/error context — not gh or githubViewPR.",
+    );
+    lines.push(
+      "  ctxGetTaskContext(ref) — unified context for any issue, PR, commit, or error",
+    );
+    lines.push("  ctxQueryTraces(query) — search past decisions");
+    lines.push(
+      "  ctxSaveTrace(ref, problem, solution) — record fix after resolving a task",
+    );
+
     return lines.join("\n");
   }
 
