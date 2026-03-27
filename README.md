@@ -48,9 +48,13 @@ claude-ide-bridge --watch   # terminal 1 — keeps running, auto-restarts on cra
 claude --ide                # terminal 2 — Claude Code with IDE tools active
 ```
 
-Type `/ide` in Claude to confirm — you'll see open files, diagnostics, and editor state.
+Type `/mcp` in Claude to confirm the server is connected, then `/ide` to see open files, diagnostics, and editor state.
 
 > **One bridge per workspace.** Each project needs its own bridge instance on its own port. If you work across multiple repos, start a separate `claude-ide-bridge --watch` in each directory.
+
+> **Why `~/.claude.json` and not `.mcp.json`?** When VS Code, Windsurf, or Cursor launches Claude Code, it injects `--mcp-config` which overrides any project `.mcp.json`. Only `~/.claude.json` is loaded in every session regardless of how Claude Code is started. `init` writes there by design — you don't need to touch `.mcp.json`.
+
+**Tools not showing up?** See the [troubleshooting guide](docs/troubleshooting.md).
 
 ## Multi-IDE Orchestrator
 
@@ -92,6 +96,7 @@ See [docs/multi-ide-review.md](docs/multi-ide-review.md) for the staged review w
 
 | Guide | What it covers |
 |-------|----------------|
+| **[Troubleshooting](docs/troubleshooting.md)** | Tools not showing up, wrong config file, WSL/Windows PATH, port conflicts |
 | **[Remote Access](docs/remote-access.md)** | Production reverse proxy setup (Caddy/nginx), TLS, Streamable HTTP transport |
 | **[SSH Resilience](docs/ssh-resilience.md)** | Surviving SSH drops, tmux strategies, phone-to-VPS workflows |
 | **[IP Allowlist](docs/ip-allowlist.md)** | Firewall rules, network access control for remote bridge instances |
