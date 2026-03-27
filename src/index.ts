@@ -13,7 +13,9 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline";
 import { fileURLToPath } from "node:url";
+import { getAnalyticsPref, setAnalyticsPref } from "./analyticsPrefs.js";
 import { Bridge } from "./bridge.js";
 import { findEditor, parseConfig } from "./config.js";
 
@@ -499,6 +501,41 @@ if (process.argv[2] === "init") {
     "  Tools not showing up? Run /mcp in Claude to see the connection state.\n",
   );
   process.stdout.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+  // Analytics opt-in prompt — only ask once; skip if preference already set
+  const existingPref = getAnalyticsPref();
+  if (existingPref === null) {
+    process.stdout.write("\n");
+    process.stdout.write(
+      "Optional: send anonymous usage statistics to help prioritize features?\n" +
+        "  Tool names, success/error counts, and durations only.\n" +
+        "  No file paths, code, error messages, or personal data. Ever.\n" +
+        "  Change anytime: claude-ide-bridge --analytics on|off\n\n",
+    );
+    const answer = await new Promise<string>((resolve) => {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      rl.question("Send anonymous usage stats? [y/N]: ", (ans) => {
+        rl.close();
+        resolve(ans.trim().toLowerCase());
+      });
+      // If stdin is not a TTY (e.g. piped), default to no
+      if (!process.stdin.isTTY) {
+        rl.close();
+        resolve("n");
+      }
+    });
+    const opted = answer === "y" || answer === "yes";
+    setAnalyticsPref(opted);
+    process.stdout.write(
+      opted
+        ? "  ✓ Analytics enabled — thank you.\n"
+        : "  ✓ Analytics disabled — no data will be sent.\n",
+    );
+  }
+
   process.exit(0);
 }
 
@@ -603,7 +640,26 @@ if (process.argv[2] === "orchestrator") {
   process.exit(0);
 }
 
+// Handle --analytics on|off subcommand — update stored preference
+if (process.argv[2] === "--analytics") {
+  const val = process.argv[3];
+  if (val !== "on" && val !== "off") {
+    process.stderr.write("Usage: claude-ide-bridge --analytics on|off\n");
+    process.exit(1);
+  }
+  setAnalyticsPref(val === "on");
+  process.stdout.write(
+    `Analytics ${val === "on" ? "enabled" : "disabled"}. Preference saved to ~/.claude/ide/analytics.json\n`,
+  );
+  process.exit(0);
+}
+
 const config = parseConfig(process.argv);
+
+// If --analytics flag was passed, persist the preference immediately
+if (config.analyticsEnabled !== null) {
+  setAnalyticsPref(config.analyticsEnabled);
+}
 
 // Auto-tmux: if requested and not already inside tmux or screen, re-exec inside a tmux session
 if (

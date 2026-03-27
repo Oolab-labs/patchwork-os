@@ -36,6 +36,7 @@ export interface Config {
   corsOrigins: string[];
   auditLogPath: string | null;
   fullMode: boolean;
+  analyticsEnabled: boolean | null; // null = not set via CLI (use stored pref)
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -322,6 +323,7 @@ export function parseConfig(argv: string[]): Config {
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
   let auditLogPath: string | null = null;
   let fullMode = fileConfig.fullMode ?? false;
+  let analyticsEnabled: boolean | null = null;
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -487,6 +489,13 @@ export function parseConfig(argv: string[]): Config {
         if (logPath.length > 4096)
           throw new Error("--audit-log path too long (max 4096 chars)");
         auditLogPath = path.resolve(logPath);
+        break;
+      }
+      case "--analytics": {
+        const val = requireArg(args, ++i, "--analytics");
+        if (val !== "on" && val !== "off")
+          throw new Error('--analytics must be "on" or "off"');
+        analyticsEnabled = val === "on";
         break;
       }
       case "--tool-rate-limit": {
@@ -733,5 +742,6 @@ Environment Variables:
     allowPrivateHttp,
     auditLogPath,
     fullMode,
+    analyticsEnabled,
   };
 }
