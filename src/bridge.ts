@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
 import { ActivityLog } from "./activityLog.js";
+import { buildSummary } from "./analyticsAggregator.js";
+import { getAnalyticsPref } from "./analyticsPrefs.js";
+import { sendAnalytics } from "./analyticsSend.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { createDriver } from "./claudeDriver.js";
 import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
@@ -26,6 +29,7 @@ import { registerAllTools } from "./tools/index.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
 import { resolveFilePath } from "./tools/utils.js";
 import { McpTransport } from "./transport.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 const MAX_SESSIONS = 5;
@@ -884,6 +888,24 @@ export class Bridge {
     this.logger.info(
       `Shutdown complete — ${totalSessions} session${totalSessions === 1 ? "" : "s"}, ${totalCalls} tool call${totalCalls === 1 ? "" : "s"}${shutdownErrorPart}`,
     );
+
+    // Send analytics if opted in — awaited with 2s timeout so it completes before process.exit()
+    const analyticsOn =
+      this.config.analyticsEnabled !== null
+        ? this.config.analyticsEnabled
+        : getAnalyticsPref();
+    if (analyticsOn === true && totalSessions > 0) {
+      try {
+        const entries = this.activityLog.query({ last: 500 });
+        const summary = buildSummary(entries, maxDurationMs, PACKAGE_VERSION);
+        await Promise.race([
+          sendAnalytics(summary),
+          new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+        ]);
+      } catch {
+        // Swallow all errors — analytics must never affect shutdown
+      }
+    }
     // Send aggregate session-end notification to the extension before disconnecting
     if (totalSessions > 0) {
       this.extensionClient.notifyClaudeConnectionState(false, {
