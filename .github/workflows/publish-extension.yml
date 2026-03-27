@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.OOLAB_PAT }}
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -23,6 +25,21 @@ jobs:
         run: npm ci
       - name: Build bridge
         run: npm run build
+      - name: Bump extension version
+        working-directory: vscode-extension
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npm version ${{ inputs.bump }} --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      - name: Commit and tag extension version bump
+        run: |
+          git add vscode-extension/package.json
+          git commit -m "chore: bump extension to ${{ env.VERSION }}"
+          git tag "ext-v${{ env.VERSION }}"
+          git push origin main
+          git push origin "ext-v${{ env.VERSION }}"
       - name: Install extension deps
         working-directory: vscode-extension
         run: npm ci
