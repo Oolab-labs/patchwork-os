@@ -317,12 +317,31 @@ if (process.argv[2] === "init") {
 
   process.stderr.write("Claude IDE Bridge — setup\n\n");
 
+  // WSL detection: warn early if running in WSL without a detected editor
+  const isWsl =
+    process.platform === "linux" &&
+    (process.env.WSL_DISTRO_NAME !== undefined ||
+      process.env.WSLENV !== undefined ||
+      (() => {
+        try {
+          return readFileSync("/proc/version", "utf-8")
+            .toLowerCase()
+            .includes("microsoft");
+        } catch {
+          return false;
+        }
+      })());
+
   // Step 1: Install extension
   const editor = findEditor();
   if (!editor) {
+    const wslHint = isWsl
+      ? "\n         WSL detected: ensure VS Code is installed on the Windows host and\n" +
+        "         the Remote - WSL extension is active. Then re-run init.\n" +
+        "         Alternatively, pass the editor explicitly: claude-ide-bridge install-extension code\n"
+      : "";
     process.stderr.write(
-      "  [skip] Extension install — no supported editor found on PATH.\n" +
-        "         Install manually: code --install-extension oolab-labs.claude-ide-bridge-extension\n\n",
+      `  [skip] Extension install — no supported editor found on PATH.\n         Install manually: code --install-extension oolab-labs.claude-ide-bridge-extension\n${wslHint}\n`,
     );
   } else {
     process.stderr.write(`  Installing extension into ${editor}...\n`);
@@ -409,7 +428,7 @@ if (process.argv[2] === "init") {
     const mcpServers = (claudeJson.mcpServers ?? {}) as Record<string, unknown>;
     if (mcpServers["claude-ide-bridge"]) {
       process.stderr.write(
-        "  ✓ MCP shim — already registered in ~/.claude.json\n\n",
+        `  ✓ MCP shim — already registered in ${claudeJsonAbs}\n\n`,
       );
     } else {
       mcpServers["claude-ide-bridge"] = {
@@ -420,46 +439,66 @@ if (process.argv[2] === "init") {
       claudeJson.mcpServers = mcpServers;
       writeFileSync(claudeJsonAbs, `${JSON.stringify(claudeJson, null, 2)}\n`);
       process.stderr.write(
-        "  ✓ MCP shim — registered in ~/.claude.json (bridge tools available in all sessions)\n\n",
+        `  ✓ MCP shim — registered in ${claudeJsonAbs}\n     Note: bridge tools are wired via ~/.claude.json (global), not .mcp.json.\n     This is intentional — when VS Code/Windsurf/Cursor launches Claude Code it\n     injects --mcp-config which overrides any project .mcp.json. Only ~/.claude.json\n     is always loaded. You do not need to add anything to .mcp.json.\n\n`,
       );
     }
   } catch {
     process.stderr.write(
-      "  [warn] Could not update ~/.claude.json — add manually:\n" +
-        '         { "mcpServers": { "claude-ide-bridge": { "command": "claude-ide-bridge", "args": ["shim"] } } }\n\n',
+      `  [warn] Could not update ${claudeJsonAbs} — add manually:\n         { "mcpServers": { "claude-ide-bridge": { "command": "claude-ide-bridge", "args": ["shim"] } } }\n\n`,
     );
   }
 
-  // Step 4: Env var check + next steps
+  // Step 4: Verify shim can be found on PATH
+  let shimOnPath = false;
+  try {
+    execFileSync("claude-ide-bridge", ["--version"], {
+      stdio: "pipe",
+      timeout: 5000,
+    });
+    shimOnPath = true;
+  } catch {
+    // not on PATH or version flag not supported — non-fatal
+    shimOnPath = existsSync(
+      path.resolve(__dirnameTop, "..", "scripts", "mcp-stdio-shim.cjs"),
+    );
+  }
+
+  if (!shimOnPath) {
+    process.stderr.write(
+      "  [warn] claude-ide-bridge not found on PATH.\n" +
+        "         If you installed locally, ensure your npm global bin is in PATH:\n" +
+        "           npm config get prefix  # add <prefix>/bin to PATH\n\n",
+    );
+  } else {
+    process.stderr.write("  ✓ Shim — claude-ide-bridge found on PATH\n\n");
+  }
+
+  // Step 5: Env var check + next steps
   const envSet = process.env.CLAUDE_CODE_IDE_SKIP_VALID_CHECK === "true";
+  let step = 1;
   process.stdout.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
   process.stdout.write("Setup complete. Next:\n\n");
   if (!envSet) {
     process.stdout.write(
-      "  1. Add to your shell profile (~/.zshrc or ~/.bashrc):\n\n" +
-        "       export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true\n\n" +
-        "     Then reload: source ~/.zshrc\n\n",
-    );
-    process.stdout.write(
-      "  2. Start the bridge (run in your project directory):\n\n" +
-        "       claude-ide-bridge --watch\n\n",
-    );
-    process.stdout.write(
-      "  3. Open Claude Code:\n\n" + "       claude --ide\n\n",
-    );
-  } else {
-    process.stdout.write(
-      "  1. Start the bridge (run in your project directory):\n\n" +
-        "       claude-ide-bridge --watch\n\n",
-    );
-    process.stdout.write(
-      "  2. Open Claude Code:\n\n" + "       claude --ide\n\n",
+      `  ${step++}. Add to your shell profile (~/.zshrc or ~/.bashrc):\n\n       export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true\n\n     Then reload: source ~/.zshrc\n\n`,
     );
   }
   process.stdout.write(
-    "Type /ide in Claude Code to confirm the connection.\n" +
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n",
+    `  ${step++}. Start the bridge (run in your project directory):\n\n       claude-ide-bridge --watch\n\n`,
   );
+  process.stdout.write(
+    `  ${step++}. Open Claude Code:\n\n       claude --ide\n\n`,
+  );
+  process.stdout.write(
+    `  ${step++}. Confirm the connection — type inside Claude:\n\n       /mcp          (shows server status — claude-ide-bridge should be green)\n       /ide          (shows open files, diagnostics, editor state)\n\n`,
+  );
+  process.stdout.write(
+    "  Troubleshooting: https://github.com/Oolab-labs/claude-ide-bridge/blob/main/docs/troubleshooting.md\n",
+  );
+  process.stdout.write(
+    "  Tools not showing up? Run /mcp in Claude to see the connection state.\n",
+  );
+  process.stdout.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
   process.exit(0);
 }
 
