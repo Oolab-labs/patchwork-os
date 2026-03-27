@@ -37,6 +37,7 @@ export interface Config {
   auditLogPath: string | null;
   fullMode: boolean;
   analyticsEnabled: boolean | null; // null = not set via CLI (use stored pref)
+  githubDefaultRepo: string | null;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -169,6 +170,7 @@ interface ConfigFile {
   issuerUrl?: string;
   corsOrigins?: string[];
   fullMode?: boolean;
+  githubDefaultRepo?: string;
 }
 
 const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
@@ -194,6 +196,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "fixedToken",
   "corsOrigins",
   "fullMode",
+  "githubDefaultRepo",
 ]);
 
 /**
@@ -324,6 +327,7 @@ export function parseConfig(argv: string[]): Config {
   let auditLogPath: string | null = null;
   let fullMode = fileConfig.fullMode ?? false;
   let analyticsEnabled: boolean | null = null;
+  const githubDefaultRepo: string | null = fileConfig.githubDefaultRepo ?? null;
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -743,5 +747,6 @@ Environment Variables:
     auditLogPath,
     fullMode,
     analyticsEnabled,
+    githubDefaultRepo,
   };
 }
