@@ -9,6 +9,7 @@ import {
   readdirSync,
   renameSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -20,6 +21,49 @@ import { Bridge } from "./bridge.js";
 import { findEditor, parseConfig } from "./config.js";
 
 const __dirnameTop = path.dirname(fileURLToPath(import.meta.url));
+
+const OPEN_VSX_PUBLISHER = "oolab-labs";
+const OPEN_VSX_NAME = "claude-ide-bridge-extension";
+
+/**
+ * Downloads the latest VSIX from Open VSX Registry to a temp file.
+ * Returns the temp file path (caller is responsible for deleting it).
+ * Throws on network or API errors.
+ */
+async function downloadVsixFromOpenVsx(): Promise<string> {
+  const metaUrl = `https://open-vsx.org/api/${OPEN_VSX_PUBLISHER}/${OPEN_VSX_NAME}`;
+  const metaRes = await fetch(metaUrl);
+  if (!metaRes.ok) {
+    throw new Error(
+      `Open VSX metadata request failed: ${metaRes.status} ${metaRes.statusText}`,
+    );
+  }
+  const meta = (await metaRes.json()) as {
+    files?: { download?: string };
+    version?: string;
+  };
+  const downloadUrl = meta?.files?.download;
+  if (typeof downloadUrl !== "string" || !downloadUrl.startsWith("https://")) {
+    throw new Error("Open VSX response missing files.download URL");
+  }
+  const version = meta?.version ?? "unknown";
+  process.stderr.write(
+    `  Downloading extension v${version} from Open VSX...\n`,
+  );
+  const vsixRes = await fetch(downloadUrl);
+  if (!vsixRes.ok) {
+    throw new Error(
+      `Open VSX download failed: ${vsixRes.status} ${vsixRes.statusText}`,
+    );
+  }
+  const tmpPath = path.join(
+    os.tmpdir(),
+    `${OPEN_VSX_NAME}-${version}-${Date.now()}.vsix`,
+  );
+  const buf = await vsixRes.arrayBuffer();
+  writeFileSync(tmpPath, Buffer.from(buf));
+  return tmpPath;
+}
 
 // Handle start-all subcommand — launches the full 3-pane tmux orchestrator.
 // Also triggered when invoked as `claude-ide-bridge-start` directly.
@@ -343,31 +387,56 @@ if (process.argv[2] === "init") {
         "         Alternatively, pass the editor explicitly: claude-ide-bridge install-extension code\n"
       : "";
     process.stderr.write(
-      `  [skip] Extension install — no supported editor found on PATH.\n         Install manually: code --install-extension oolab-labs.claude-ide-bridge-extension\n${wslHint}\n`,
+      `  [skip] Extension install — no supported editor found on PATH.\n         Install manually: https://open-vsx.org/extension/${OPEN_VSX_PUBLISHER}/${OPEN_VSX_NAME}\n${wslHint}\n`,
     );
   } else {
     process.stderr.write(`  Installing extension into ${editor}...\n`);
     const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
     const vsixDir = path.resolve(__dirname2, "..", "vscode-extension");
-    const MARKETPLACE_ID = "oolab-labs.claude-ide-bridge-extension";
-    let extensionArg = MARKETPLACE_ID;
+    let localVsix2: string | undefined;
     if (existsSync(vsixDir)) {
       const vsixFiles = readdirSync(vsixDir)
         .filter((f) => f.endsWith(".vsix"))
         .sort()
         .reverse();
       if (vsixFiles.length > 0)
-        extensionArg = path.join(vsixDir, vsixFiles[0] as string);
+        localVsix2 = path.join(vsixDir, vsixFiles[0] as string);
     }
-    try {
-      execFileSync(editor, ["--install-extension", extensionArg], {
-        stdio: "pipe",
-        timeout: 30000,
-      });
-      process.stderr.write(`  ✓ Extension installed via ${editor}\n\n`);
-    } catch {
+    let tmpVsix2: string | undefined;
+    let extensionArg2: string | undefined;
+    if (localVsix2) {
+      extensionArg2 = localVsix2;
+    } else {
+      try {
+        tmpVsix2 = await downloadVsixFromOpenVsx();
+        extensionArg2 = tmpVsix2;
+      } catch {
+        // Download failed — warn but don't abort init
+      }
+    }
+    if (extensionArg2) {
+      try {
+        execFileSync(editor, ["--install-extension", extensionArg2], {
+          stdio: "pipe",
+          timeout: 30000,
+        });
+        process.stderr.write(`  ✓ Extension installed via ${editor}\n\n`);
+      } catch {
+        process.stderr.write(
+          `  [warn] Extension install failed — download manually from:\n         https://open-vsx.org/extension/${OPEN_VSX_PUBLISHER}/${OPEN_VSX_NAME}\n\n`,
+        );
+      } finally {
+        if (tmpVsix2) {
+          try {
+            unlinkSync(tmpVsix2);
+          } catch {
+            /* best effort */
+          }
+        }
+      }
+    } else {
       process.stderr.write(
-        `  [warn] Extension install failed — try manually:\n         ${editor} --install-extension ${MARKETPLACE_ID}\n\n`,
+        `  [warn] Could not download extension — install manually from:\n         https://open-vsx.org/extension/${OPEN_VSX_PUBLISHER}/${OPEN_VSX_NAME}\n\n`,
       );
     }
   }
@@ -607,22 +676,36 @@ if (process.argv[2] === "orchestrator") {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const vsixDir = path.resolve(__dirname, "..", "vscode-extension");
 
-  // Prefer a local .vsix (source checkout / dev build). Fall back to the
-  // marketplace extension ID when installed via `npm install -g` (no vscode-extension/ dir).
-  let extensionArg: string;
-  const MARKETPLACE_ID = "oolab-labs.claude-ide-bridge-extension";
+  // Prefer a local .vsix (source checkout / dev build). When installed via
+  // `npm install -g` there is no vscode-extension/ dir, so download from Open VSX.
+  let localVsix: string | undefined;
   if (existsSync(vsixDir)) {
-    // Pick the newest .vsix dynamically — avoids hardcoding a version that goes stale
     const vsixFiles = readdirSync(vsixDir)
       .filter((f) => f.endsWith(".vsix"))
       .sort()
       .reverse();
-    extensionArg =
-      vsixFiles.length > 0
-        ? path.join(vsixDir, vsixFiles[0] as string)
-        : MARKETPLACE_ID;
+    if (vsixFiles.length > 0)
+      localVsix = path.join(vsixDir, vsixFiles[0] as string);
+  }
+
+  let tmpVsix: string | undefined;
+  let extensionArg: string;
+  if (localVsix) {
+    extensionArg = localVsix;
   } else {
-    extensionArg = MARKETPLACE_ID;
+    try {
+      tmpVsix = await downloadVsixFromOpenVsx();
+      extensionArg = tmpVsix;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(
+        `Error downloading extension from Open VSX: ${msg}\n`,
+      );
+      process.stderr.write(
+        `Install manually: download from https://open-vsx.org/extension/${OPEN_VSX_PUBLISHER}/${OPEN_VSX_NAME}\n`,
+      );
+      process.exit(1);
+    }
   }
 
   try {
@@ -636,6 +719,14 @@ if (process.argv[2] === "orchestrator") {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`Error installing extension: ${message}\n`);
     process.exit(1);
+  } finally {
+    if (tmpVsix) {
+      try {
+        unlinkSync(tmpVsix);
+      } catch {
+        /* best effort */
+      }
+    }
   }
   process.exit(0);
 }
