@@ -231,6 +231,8 @@ export class StreamableHttpHandler {
     private getPluginWatcher: () => PluginWatcher | null = () => null,
     /** Optional: resolves the OAuth scope string for a bearer token, or null for full access. */
     private resolveScopeFn: ((token: string) => string | null) | null = null,
+    /** Optional: instructions string injected into the MCP initialize response. */
+    private instructions: string | null = null,
   ) {
     // Prune idle sessions every 2 minutes.
     // .unref() prevents this timer from keeping the Node process alive when
@@ -531,6 +533,8 @@ export class StreamableHttpHandler {
       transport.setSharedToolRateLimitBucket(this.sharedHttpRateLimitBucket);
     }
     transport.setExtensionConnectedFn(() => this.extensionClient.isConnected());
+    if (this.instructions !== null)
+      transport.setInstructions(this.instructions);
     if (scope) transport.setSessionScope(scope);
 
     const terminalPrefix = `h${id.slice(0, 8)}-`; // "h" prefix distinguishes HTTP sessions

@@ -155,6 +155,7 @@ export class Bridge {
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
       );
+      transport.setInstructions(this.buildInstructions());
       transport.onInitialized = () => {
         if (this.pendingListChanged && ws.readyState === WebSocket.OPEN) {
           McpTransport.sendNotification(
@@ -449,6 +450,23 @@ export class Bridge {
     };
   }
 
+  private buildInstructions(): string {
+    const lines = [`claude-ide-bridge v${PACKAGE_VERSION}`];
+    lines.push("");
+    lines.push("CONTEXT PLATFORM:");
+    lines.push(
+      "  Use ctx tools for issue/PR/error context — not gh or githubViewPR.",
+    );
+    lines.push(
+      "  ctxGetTaskContext(ref) — unified context for any issue, PR, commit, or error",
+    );
+    lines.push("  ctxQueryTraces(query) — search past decisions");
+    lines.push(
+      "  ctxSaveTrace(ref, problem, solution) — record fix after resolving a task",
+    );
+    return lines.join("\n");
+  }
+
   private cleanupSession(id: string): void {
     const session = this.sessions.get(id);
     if (!session) return;
@@ -681,6 +699,7 @@ export class Bridge {
       this.oauthServer
         ? (token) => this.oauthServer?.resolveBearerScope(token) ?? null
         : null,
+      this.buildInstructions(),
     );
     this.server.httpMcpHandler = (req, res) =>
       this.httpMcpHandler?.handle(req, res) ?? Promise.resolve();
