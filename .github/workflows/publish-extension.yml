@@ -34,6 +34,8 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
       - name: Commit and tag extension version bump
+        env:
+          HUSKY: "0"
         run: |
           git add vscode-extension/package.json
           git commit -m "chore: bump extension to ${{ env.VERSION }}"
