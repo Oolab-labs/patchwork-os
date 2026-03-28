@@ -450,4 +450,30 @@ export class AutomationHooks {
       );
     }
   }
+
+  /** Summary of automation policy for getBridgeStatus. */
+  getStatus(): {
+    onPostCompact: { enabled: boolean; cooldownMs: number } | null;
+    onDiagnosticsError: { enabled: boolean } | null;
+    onFileSave: { enabled: boolean; patternCount: number } | null;
+  } {
+    const p = this.policy;
+    return {
+      onPostCompact: p.onPostCompact
+        ? {
+            enabled: p.onPostCompact.enabled,
+            cooldownMs: p.onPostCompact.cooldownMs,
+          }
+        : null,
+      onDiagnosticsError: p.onDiagnosticsError
+        ? { enabled: p.onDiagnosticsError.enabled }
+        : null,
+      onFileSave: p.onFileSave
+        ? {
+            enabled: p.onFileSave.enabled,
+            patternCount: p.onFileSave.patterns.length,
+          }
+        : null,
+    };
+  }
 }

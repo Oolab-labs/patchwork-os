@@ -201,6 +201,8 @@ interface HttpSession {
   openedFiles: Set<string>;
   terminalPrefix: string;
   lastActivity: number;
+  /** X-Claude-Code-Session-Id from the initialize request, if present. */
+  claudeCodeSessionId: string | null;
 }
 
 /** Handles POST/GET/DELETE /mcp for all HTTP sessions. */
@@ -356,6 +358,11 @@ export class StreamableHttpHandler {
       }
       session = this.createSession(sessionScope);
       sessionIsNew = true;
+      const ccSessionId = req.headers["x-claude-code-session-id"];
+      if (typeof ccSessionId === "string" && ccSessionId.length > 0) {
+        session.claudeCodeSessionId = ccSessionId;
+        session.transport.claudeCodeSessionId = ccSessionId;
+      }
       res.setHeader("Mcp-Session-Id", session.id);
     } else {
       if (typeof sessionId !== "string") {
@@ -510,6 +517,7 @@ export class StreamableHttpHandler {
       openedFiles: new Set<string>(),
       terminalPrefix: `http-${id.slice(0, 8)}`,
       lastActivity: Date.now(),
+      claudeCodeSessionId: null,
     } as HttpSession;
     const adapter = new HttpAdapter(
       (msg) => this.logger.warn(msg),

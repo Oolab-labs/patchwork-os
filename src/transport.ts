@@ -115,6 +115,8 @@ export class McpTransport {
   private notifWindowStart = 0;
 
   public sessionId: string | null = null;
+  /** X-Claude-Code-Session-Id from the HTTP initialize request, for proxy-level correlation. */
+  public claudeCodeSessionId: string | null = null;
   /** OAuth scope for this session. null = full access (static bridge token). "mcp:read" = read-only. */
   private sessionScope: string | null = null;
   private activityLog: ActivityLog | null = null;
@@ -943,6 +945,9 @@ export class McpTransport {
                     {
                       "mcp.tool.name": params.name,
                       "mcp.session.id": this.sessionId ?? "unknown",
+                      ...(this.claudeCodeSessionId && {
+                        "claude.session.id": this.claudeCodeSessionId,
+                      }),
                     },
                     async () =>
                       tool.handler(

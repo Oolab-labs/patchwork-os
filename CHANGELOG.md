@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.6.3] — 2026-03-28
+
+### Added
+- **Jujutsu (`.jj`) and Sapling (`.sl`) VCS exclusions** — `getFileTree` and `findFiles` now skip `.jj` and `.sl` directories alongside `.git`, preventing descent into VCS internals for repos using these newer version control systems.
+- **`X-Claude-Code-Session-Id` header correlation** — HTTP sessions (Streamable HTTP transport) now read the `X-Claude-Code-Session-Id` header sent by Claude Code 2.1.86+. The value is stored on the session and propagated to the transport's tool-call spans as `claude.session.id`, so proxy logs and bridge logs can be correlated by session without parsing request bodies.
+- **Automation policy summary in `getBridgeStatus`** — When automation is enabled, `getBridgeStatus` now includes an `automation` field reporting the enabled/disabled state of `onPostCompact`, `onDiagnosticsError`, and `onFileSave` hooks. For `onPostCompact` the configured `cooldownMs` is also surfaced, useful for diagnosing unexpected compaction behavior given Claude Code's new configurable `autoCompactThreshold`.
+
+---
+
 ## [2.6.1] — 2026-03-26
 
 ### Added

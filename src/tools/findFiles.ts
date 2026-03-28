@@ -116,6 +116,12 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
         "-not",
         "-path",
         "*/.git/*",
+        "-not",
+        "-path",
+        "*/.jj/*",
+        "-not",
+        "-path",
+        "*/.sl/*",
       ];
       const result = await execSafe("find", findArgs, {
         timeout: 10000,

@@ -13,6 +13,8 @@ import {
 const IGNORED_DIRS = new Set([
   "node_modules",
   ".git",
+  ".jj", // Jujutsu VCS
+  ".sl", // Sapling VCS
   "dist",
   "__pycache__",
   ".next",
@@ -28,7 +30,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
     schema: {
       name: "getFileTree",
       description:
-        "List files and directories in the workspace tree. Respects .gitignore when available. The fallback fs walker always skips: node_modules, .git, dist, __pycache__, .next, .nuxt, build, coverage, .cache.",
+        "List files and directories in the workspace tree. Respects .gitignore when available. The fallback fs walker always skips: node_modules, .git, .jj, .sl, dist, __pycache__, .next, .nuxt, build, coverage, .cache.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
