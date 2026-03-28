@@ -1,4 +1,5 @@
 import type { ActivityLog } from "../activityLog.js";
+import type { AutomationHooks } from "../automation.js";
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import type { Config } from "../config.js";
 import type { ExtensionClient } from "../extensionClient.js";
@@ -231,6 +232,7 @@ export function registerAllTools(
   orchestrator: ClaudeOrchestrator | null = null,
   sessionId = "",
   pluginTools: LoadedPluginTool[] = [],
+  automationHooks: AutomationHooks | null = null,
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -298,7 +300,12 @@ export function registerAllTools(
     ...createPlanTools(workspace),
     testsTool,
     ...(activityLog ? [createGetActivityLogTool(activityLog)] : []),
-    createBridgeStatusTool(extensionClient, sessions, orchestrator),
+    createBridgeStatusTool(
+      extensionClient,
+      sessions,
+      orchestrator,
+      automationHooks,
+    ),
     createWatchFilesTool(extensionClient),
     createUnwatchFilesTool(extensionClient),
     createListTerminalsTool(extensionClient, terminalPrefix),

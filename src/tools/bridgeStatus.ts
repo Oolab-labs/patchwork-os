@@ -1,3 +1,4 @@
+import type { AutomationHooks } from "../automation.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import { success } from "./utils.js";
@@ -8,6 +9,7 @@ export function createBridgeStatusTool(
   extensionClient: ExtensionClient,
   sessions?: Map<string, unknown>,
   orchestrator?: ClaudeOrchestrator | null,
+  automationHooks?: AutomationHooks | null,
 ) {
   return {
     schema: {
@@ -49,6 +51,7 @@ export function createBridgeStatusTool(
               maxTokenBudget: ClaudeOrchestrator.MAX_TOKEN_BUDGET,
             },
           }),
+        ...(automationHooks && { automation: automationHooks.getStatus() }),
         hint: extensionConnected
           ? "All tools available."
           : "Extension disconnected — extension-dependent tools (LSP, terminal, debugging, etc.) are temporarily unavailable. " +

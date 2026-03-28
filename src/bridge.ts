@@ -231,6 +231,7 @@ export class Bridge {
         this.orchestrator,
         sessionId,
         pluginTools,
+        this.automationHooks,
       );
 
       transport.attach(ws);
