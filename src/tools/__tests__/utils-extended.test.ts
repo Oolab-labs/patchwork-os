@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { execSafe, requireInt, toFileUri, truncateOutput } from "../utils.js";
+import {
+  execSafe,
+  requireInt,
+  successStructured,
+  toFileUri,
+  truncateOutput,
+} from "../utils.js";
 
 describe("requireInt", () => {
   it("returns a valid integer", () => {
@@ -89,6 +95,49 @@ describe("truncateOutput", () => {
     const result = truncateOutput("", 100);
     expect(result.text).toBe("");
     expect(result.truncated).toBe(false);
+  });
+});
+
+describe("successStructured", () => {
+  it("returns content array with JSON-stringified text", () => {
+    const data = { foo: 1, bar: "baz" };
+    const result = successStructured(data);
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0]?.type).toBe("text");
+    expect(result.content[0]?.text).toBe(JSON.stringify(data));
+  });
+
+  it("returns structuredContent equal to the original data", () => {
+    const data = { symbols: [], count: 0, source: "lsp" };
+    const result = successStructured(data);
+    expect(result.structuredContent).toEqual(data);
+  });
+
+  it("structuredContent is the same reference as the data", () => {
+    const data = { entries: [1, 2, 3] };
+    const result = successStructured(data);
+    expect(result.structuredContent).toBe(data);
+  });
+
+  it("handles null data", () => {
+    const result = successStructured(null);
+    expect(result.content[0]?.text).toBe("null");
+    expect(result.structuredContent).toBeNull();
+  });
+
+  it("handles arrays", () => {
+    const data = [{ id: 1 }, { id: 2 }];
+    const result = successStructured(data);
+    expect(result.content[0]?.text).toBe(JSON.stringify(data));
+    expect(result.structuredContent).toEqual(data);
+  });
+
+  it("text and structuredContent are consistent (structuredContent round-trips through JSON)", () => {
+    const data = { available: true, count: 42, tags: ["a", "b"] };
+    const result = successStructured(data);
+    expect(JSON.parse(result.content[0]?.text ?? "{}")).toEqual(
+      result.structuredContent,
+    );
   });
 });
 
