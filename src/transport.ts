@@ -566,7 +566,7 @@ export class McpTransport {
         const now = Date.now();
         // biome-ignore lint/style/noNonNullAssertion: ring buffer is pre-filled with 0s, index always valid
         const oldest = this.rateLimitBuf[this.rateLimitHead]!;
-        if (oldest > now - RATE_LIMIT_WINDOW_MS) {
+        if (oldest >= now - RATE_LIMIT_WINDOW_MS) {
           this.logger.warn(
             `Rate limit exceeded: ${RATE_LIMIT_MAX} requests in ${RATE_LIMIT_WINDOW_MS}ms`,
           );
