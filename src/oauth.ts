@@ -54,6 +54,32 @@ interface AccessToken {
   expiresAt: number;
 }
 
+// ── CIMD SSRF guard ───────────────────────────────────────────────────────────
+
+/**
+ * Blocks private/loopback hostnames for CIMD fetches.
+ * CIMD URLs must be public HTTPS — rejecting private addresses prevents
+ * SSRF via a crafted client_id URL.
+ */
+function isPrivateCimdHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|]$/g, ""); // strip IPv6 brackets
+  if (
+    h === "localhost" ||
+    h.startsWith("127.") ||
+    h.startsWith("10.") ||
+    h.startsWith("192.168.") ||
+    h === "::1" ||
+    h.startsWith("fc") ||
+    h.startsWith("fd") ||
+    h.startsWith("169.254.")
+  )
+    return true;
+  // 172.16.0.0/12
+  const m = /^172\.(\d+)\./.exec(h);
+  if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
+  return false;
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CODE_TTL_MS = 5 * 60 * 1_000; // 5 min
@@ -88,6 +114,17 @@ export class OAuthServerImpl implements OAuthServer {
     { nonce: string; clientId: string; expiresAt: number }
   >();
   private static readonly CSRF_TTL_MS = 10 * 60 * 1_000; // 10 minutes
+  /**
+   * CIMD cache: client_id URL → { redirectUris, fetchedAt }
+   * Short TTL (5 min) — avoids re-fetching on every authorize request while
+   * staying fresh enough for clients that rotate their metadata.
+   */
+  private readonly cimdCache = new Map<
+    string,
+    { redirectUris: string[]; fetchedAt: number }
+  >();
+  private static readonly CIMD_CACHE_TTL_MS = 5 * 60 * 1_000; // 5 min
+  private static readonly CIMD_MAX_BYTES = 8_192; // 8 KB max for metadata doc
 
   constructor(bridgeToken: string, issuerUrl: string) {
     this.bridgeToken = bridgeToken;
@@ -107,6 +144,9 @@ export class OAuthServerImpl implements OAuthServer {
         for (const [k, v] of this.registerIpCounts)
           if (now - v.windowStart > OAuthServerImpl.REGISTER_IP_WINDOW_MS)
             this.registerIpCounts.delete(k);
+        for (const [k, v] of this.cimdCache)
+          if (now - v.fetchedAt > OAuthServerImpl.CIMD_CACHE_TTL_MS)
+            this.cimdCache.delete(k);
       },
       10 * 60 * 1_000,
     );
@@ -262,7 +302,7 @@ export class OAuthServerImpl implements OAuthServer {
   ): Promise<void> {
     const method = req.method ?? "GET";
     if (method === "GET") {
-      this.authorizeGet(req, res);
+      await this.authorizeGet(req, res);
     } else if (method === "POST") {
       await this.authorizePost(req, res);
     } else {
@@ -271,11 +311,14 @@ export class OAuthServerImpl implements OAuthServer {
     }
   }
 
-  private authorizeGet(req: IncomingMessage, res: ServerResponse): void {
+  private async authorizeGet(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
     const url = new URL(req.url ?? "/", this.issuerUrl);
 
     const { error, clientId, redirectUri, codeChallenge, scope, state } =
-      this.parseAuthorizeParams(url);
+      await this.parseAuthorizeParams(url);
 
     if (error) {
       res.writeHead(400, { "Content-Type": "text/plain" });
@@ -588,14 +631,86 @@ export class OAuthServerImpl implements OAuthServer {
     });
   }
 
-  private parseAuthorizeParams(url: URL): {
+  /**
+   * Fetch and cache a Client ID Metadata Document (CIMD / SEP-991).
+   * Called when client_id is an HTTPS URL instead of an opaque registered ID.
+   * Returns the redirect_uris from the document, or null on any error.
+   *
+   * Security: only public HTTPS URLs are allowed (isPrivateCimdHost blocks
+   * RFC 1918 / loopback). Response size capped at CIMD_MAX_BYTES.
+   */
+  private async fetchCimd(clientIdUrl: string): Promise<string[] | null> {
+    const cached = this.cimdCache.get(clientIdUrl);
+    if (
+      cached &&
+      Date.now() - cached.fetchedAt < OAuthServerImpl.CIMD_CACHE_TTL_MS
+    ) {
+      return cached.redirectUris;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(clientIdUrl);
+    } catch {
+      return null;
+    }
+    if (parsed.protocol !== "https:") return null;
+    if (isPrivateCimdHost(parsed.hostname)) return null;
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5_000);
+      let body: string;
+      try {
+        const resp = await fetch(clientIdUrl, {
+          signal: controller.signal,
+          headers: { Accept: "application/json" },
+          redirect: "follow",
+        });
+        if (!resp.ok) return null;
+        // Stream with size cap to prevent OOM
+        const reader = resp.body?.getReader();
+        if (!reader) return null;
+        const chunks: Uint8Array[] = [];
+        let total = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.length;
+          if (total > OAuthServerImpl.CIMD_MAX_BYTES) {
+            reader.cancel().catch(() => {});
+            return null;
+          }
+          chunks.push(value);
+        }
+        body = Buffer.concat(chunks).toString("utf8");
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      const doc = JSON.parse(body) as Record<string, unknown>;
+      const uris = doc.redirect_uris;
+      if (!Array.isArray(uris) || uris.length === 0) return null;
+      const redirectUris = uris.filter(
+        (u) => typeof u === "string",
+      ) as string[];
+      if (redirectUris.length === 0) return null;
+
+      this.cimdCache.set(clientIdUrl, { redirectUris, fetchedAt: Date.now() });
+      return redirectUris;
+    } catch {
+      return null;
+    }
+  }
+
+  private async parseAuthorizeParams(url: URL): Promise<{
     error?: string;
     clientId?: string;
     redirectUri?: string;
     codeChallenge?: string;
     scope?: string;
     state?: string;
-  } {
+  }> {
     const responseType = url.searchParams.get("response_type");
     const clientId = url.searchParams.get("client_id");
     const redirectUri = url.searchParams.get("redirect_uri");
@@ -608,9 +723,27 @@ export class OAuthServerImpl implements OAuthServer {
       return { error: "invalid_request" };
     if (codeChallengeMethod !== "S256") return { error: "invalid_request" };
 
-    // Validate redirect_uri against registered URIs to prevent open redirect
-    const registered = this.registeredClients.get(clientId);
-    if (!registered?.redirectUris.includes(redirectUri)) {
+    // CIMD: if client_id is an HTTPS URL, fetch its metadata document to get
+    // redirect_uris dynamically (SEP-991 / Claude Code v2.1.81+).
+    // Otherwise fall back to the pre-registered client map.
+    let allowedRedirectUris: string[] | undefined;
+    if (clientId.startsWith("https://")) {
+      const cimdUris = await this.fetchCimd(clientId);
+      if (!cimdUris) return { error: "invalid_client" };
+      allowedRedirectUris = cimdUris;
+      // Register the client dynamically so the POST handler can look it up
+      if (!this.registeredClients.has(clientId)) {
+        this.registeredClients.set(clientId, {
+          redirectUris: cimdUris,
+          issuedAt: Date.now(),
+        });
+      }
+    } else {
+      const registered = this.registeredClients.get(clientId);
+      allowedRedirectUris = registered?.redirectUris;
+    }
+
+    if (!allowedRedirectUris?.includes(redirectUri)) {
       return { error: "invalid_redirect_uri" };
     }
 
