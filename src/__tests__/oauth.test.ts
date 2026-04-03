@@ -99,10 +99,10 @@ function makePostReq(
 }
 
 /** GET /oauth/authorize to prime the CSRF nonce, then return it. */
-function primeCsrfNonce(
+async function primeCsrfNonce(
   oauth: OAuthServerImpl,
   challenge: string,
-): { nonce: string; flowId: string } {
+): Promise<{ nonce: string; flowId: string }> {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: CLIENT_ID,
@@ -114,7 +114,7 @@ function primeCsrfNonce(
   });
   const req = makeGetReq(`/oauth/authorize?${params}`);
   const res = new MockResponse();
-  oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+  await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
   // Extract nonce from internal map (test-only access).
   // Map is now keyed by flowId, so find the entry matching CLIENT_ID.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,7 +135,7 @@ async function issueCode(
   overrides: Record<string, string> = {},
 ): Promise<{ code: string; verifier: string }> {
   const { verifier, challenge } = makeVerifier();
-  const { nonce: csrfNonce, flowId } = primeCsrfNonce(oauth, challenge);
+  const { nonce: csrfNonce, flowId } = await primeCsrfNonce(oauth, challenge);
   const form = new URLSearchParams({
     action: "approve",
     client_id: CLIENT_ID,
@@ -202,7 +202,7 @@ describe("OAuthServerImpl — discovery", () => {
 // ── GET /oauth/authorize ──────────────────────────────────────────────────────
 
 describe("OAuthServerImpl — GET /oauth/authorize", () => {
-  it("renders 200 HTML approval page with valid params and bridge token", () => {
+  it("renders 200 HTML approval page with valid params and bridge token", async () => {
     const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
@@ -217,13 +217,13 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
       authorization: `Bearer ${BRIDGE_TOKEN}`,
     });
     const res = new MockResponse();
-    oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain("Authorize");
     expect(res.body).toContain(CLIENT_ID);
   });
 
-  it("returns 200 approval page on GET (token entered via form)", () => {
+  it("returns 200 approval page on GET (token entered via form)", async () => {
     const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
@@ -236,12 +236,12 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
     });
     const req = makeGetReq(`/oauth/authorize?${params}`);
     const res = new MockResponse();
-    oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain("bridge_token");
   });
 
-  it("returns 400 when response_type is not code", () => {
+  it("returns 400 when response_type is not code", async () => {
     const oauth = makeOAuth();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
@@ -256,11 +256,11 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
       authorization: `Bearer ${BRIDGE_TOKEN}`,
     });
     const res = new MockResponse();
-    oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(400);
   });
 
-  it("returns 400 when code_challenge is missing", () => {
+  it("returns 400 when code_challenge is missing", async () => {
     const oauth = makeOAuth();
     const params = new URLSearchParams({
       response_type: "code",
@@ -273,11 +273,11 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
       authorization: `Bearer ${BRIDGE_TOKEN}`,
     });
     const res = new MockResponse();
-    oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(400);
   });
 
-  it("returns 400 when code_challenge_method is plain", () => {
+  it("returns 400 when code_challenge_method is plain", async () => {
     const oauth = makeOAuth();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
@@ -292,11 +292,11 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
       authorization: `Bearer ${BRIDGE_TOKEN}`,
     });
     const res = new MockResponse();
-    oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(400);
   });
 
-  it("accepts bridge token via ?bridge_token= query param", () => {
+  it("accepts bridge token via ?bridge_token= query param", async () => {
     const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
@@ -310,7 +310,7 @@ describe("OAuthServerImpl — GET /oauth/authorize", () => {
     });
     const req = makeGetReq(`/oauth/authorize?${params}`);
     const res = new MockResponse();
-    oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(200);
   });
 });
@@ -328,7 +328,7 @@ describe("OAuthServerImpl — POST /oauth/authorize", () => {
   it("redirects with error=access_denied on deny", async () => {
     const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
-    const { nonce: csrfNonce, flowId } = primeCsrfNonce(oauth, challenge);
+    const { nonce: csrfNonce, flowId } = await primeCsrfNonce(oauth, challenge);
     const form = new URLSearchParams({
       action: "deny",
       client_id: CLIENT_ID,
@@ -554,7 +554,7 @@ describe("OAuthServerImpl — redirect_uri validation", () => {
     expect(String(body.error_description)).toContain("admin");
   });
 
-  it("handleAuthorize GET returns 400 for unregistered client_id", () => {
+  it("handleAuthorize GET returns 400 for unregistered client_id", async () => {
     const oauth = makeOAuth(); // no registered clients
     const { challenge } = makeVerifier();
     const params = new URLSearchParams({
@@ -569,7 +569,48 @@ describe("OAuthServerImpl — redirect_uri validation", () => {
       authorization: `Bearer ${BRIDGE_TOKEN}`,
     });
     const res = new MockResponse();
-    oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("CIMD: returns 400 for private/loopback client_id URL (SSRF guard)", async () => {
+    const oauth = makeOAuth();
+    const { challenge } = makeVerifier();
+    for (const privateUrl of [
+      "https://localhost/client.json",
+      "https://127.0.0.1/client.json",
+      "https://192.168.1.1/client.json",
+      "https://10.0.0.1/client.json",
+    ]) {
+      const params = new URLSearchParams({
+        response_type: "code",
+        client_id: privateUrl,
+        redirect_uri: REDIRECT_URI,
+        state: "abc",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+      });
+      const req = makeGetReq(`/oauth/authorize?${params}`);
+      const res = new MockResponse();
+      await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
+      expect(res.statusCode, `expected 400 for ${privateUrl}`).toBe(400);
+    }
+  });
+
+  it("CIMD: returns 400 for http:// client_id URL (must be HTTPS)", async () => {
+    const oauth = makeOAuth();
+    const { challenge } = makeVerifier();
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: "http://example.com/client.json",
+      redirect_uri: REDIRECT_URI,
+      state: "abc",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    });
+    const req = makeGetReq(`/oauth/authorize?${params}`);
+    const res = new MockResponse();
+    await oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
     expect(res.statusCode).toBe(400);
   });
 
