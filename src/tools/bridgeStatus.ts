@@ -52,6 +52,20 @@ export function createBridgeStatusTool(
             },
           }),
         ...(automationHooks && { automation: automationHooks.getStatus() }),
+        tier: extensionConnected ? "full" : "basic",
+        tierDescription: extensionConnected
+          ? "All tools available including LSP, debugger, and terminal integration"
+          : "File operations, Git, GitHub, and CLI tools available. Connect the VS Code extension for LSP, debugger, and terminal tools.",
+        suggestedActions: extensionConnected
+          ? [
+              "Use explainSymbol to understand any function in one call",
+              "Use refactorPreview to see what a refactoring would change before applying",
+              "Use setEditorDecorations to highlight code review findings inline",
+            ]
+          : [
+              "Connect the VS Code extension for LSP, debugger, and terminal tools",
+              "File operations, Git, GitHub, and CLI tools are available without the extension",
+            ],
         hint: extensionConnected
           ? "All tools available."
           : "Extension disconnected — extension-dependent tools (LSP, terminal, debugging, etc.) are temporarily unavailable. " +

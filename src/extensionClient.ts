@@ -879,6 +879,23 @@ export class ExtensionClient {
     );
   }
 
+  async previewCodeAction(
+    file: string,
+    startLine: number,
+    startColumn: number,
+    endLine: number,
+    endColumn: number,
+    actionTitle: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/previewCodeAction",
+      { file, startLine, startColumn, endLine, endColumn, actionTitle },
+      15_000,
+      signal,
+    );
+  }
+
   async renameSymbol(
     file: string,
     line: number,
@@ -1130,7 +1147,7 @@ export class ExtensionClient {
     return this.requestOrNull(
       "extension/evaluateInDebugger",
       { expression, frameId, context },
-      undefined,
+      15_000,
       signal,
     );
   }

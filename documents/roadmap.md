@@ -6,7 +6,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ## Current State (v2.6.1 — 2026-03-26)
 
-- **Slim mode default**: 27 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
+- **Slim mode default**: 29 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
 - 1436 bridge tests + 406 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
 - Extension v1.0.12 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.5.12`)
@@ -36,7 +36,7 @@ Development direction and exploration guidance. Living document — update as pr
 - Help text updated with `shim` subcommand docs
 
 **v2.6.0 shipped (2026-03-25) — slim mode default + `init` subcommand:**
-- Default tool set narrowed to 27 IDE-exclusive tools; `--full` restores git/terminal/file ops/HTTP/GitHub (~95 total)
+- Default tool set narrowed to 29 IDE-exclusive tools; `--full` restores git/terminal/file ops/HTTP/GitHub (~95 total)
 - `SLIM_TOOL_NAMES` exported Set drives both registration filter and tests
 - `init` subcommand: one-command setup (install extension + write CLAUDE.md + print next steps)
 - `start-all.sh`: `--full` passthrough flag + slim mode warning in pane 0

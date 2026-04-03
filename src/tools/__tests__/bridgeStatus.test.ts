@@ -78,6 +78,20 @@ describe("createBridgeStatusTool", () => {
     expect(data.circuitBreaker.resumesInMs).toBe(0);
   });
 
+  it("returns tier 'full' when extension is connected", async () => {
+    const tool = createBridgeStatusTool(makeClient(true));
+    const data = parse(await tool.handler());
+    expect(data.tier).toBe("full");
+    expect(data.tierDescription).toContain("All tools available");
+  });
+
+  it("returns tier 'basic' when extension is disconnected", async () => {
+    const tool = createBridgeStatusTool(makeClient(false));
+    const data = parse(await tool.handler());
+    expect(data.tier).toBe("basic");
+    expect(data.tierDescription).toContain("Connect the VS Code extension");
+  });
+
   it("returns uptimeSeconds as a non-negative integer", async () => {
     const tool = createBridgeStatusTool(makeClient(true));
     const data = parse(await tool.handler());

@@ -50,6 +50,17 @@ npm run package        # create .vsix
 
 Run `npx biome check .` before committing.
 
+## Code Review with Decorations
+
+When reviewing code, use `setEditorDecorations` to show findings inline in the editor:
+
+1. Read the file and analyze it
+2. Call `setEditorDecorations` with `id: "code-review"`, style `"warning"` or `"error"`, and `hoverMessage` containing the explanation
+3. Use `message` for short inline annotations (e.g., `"// potential null deref"`)
+4. Call `clearEditorDecorations` with `id: "code-review"` when done
+
+This gives the developer a visual overview of issues without leaving their editor.
+
 ## Architecture Rules
 
 - **Tools**: factory pattern `createXxxTool(deps)` returning `{ schema, handler }`. Register in `src/tools/index.ts`.

@@ -23,6 +23,10 @@ export function createGetToolCapabilitiesTool(
     handler: async () => {
       return success({
         extensionConnected: extensionClient.isConnected(),
+        tier: extensionClient.isConnected() ? "full" : "basic",
+        tierDescription: extensionClient.isConnected()
+          ? "All tools available including LSP, debugger, and terminal integration"
+          : "File operations, Git, GitHub, and CLI tools available. Connect the VS Code extension for LSP, debugger, and terminal tools.",
         editor: config.editorCommand ?? "none",
         cliTools: {
           rg: probes.rg,
@@ -159,6 +163,8 @@ export function createGetToolCapabilitiesTool(
                 "getTypeHierarchy",
                 "getInlayHints",
                 "getHoverAtCursor",
+                "explainSymbol",
+                "refactorPreview",
               ]
             : [],
           planning: [

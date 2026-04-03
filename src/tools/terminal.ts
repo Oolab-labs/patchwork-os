@@ -219,7 +219,9 @@ export function createListTerminalsTool(
     },
     handler: async () => {
       if (!extensionClient.isConnected()) {
-        return extensionRequired("terminal features");
+        return extensionRequired("terminal features", [
+          "Use runCommand to execute shell commands directly",
+        ]);
       }
       try {
         const result = await extensionClient.listTerminals();

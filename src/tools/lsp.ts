@@ -117,7 +117,10 @@ export function createGoToDefinitionTool(
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features");
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
       }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
@@ -174,7 +177,10 @@ export function createFindReferencesTool(
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features");
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
       }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
@@ -228,7 +234,10 @@ export function createGetHoverTool(
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features");
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
       }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
@@ -299,7 +308,10 @@ export function createGetCodeActionsTool(
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features");
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
       }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
@@ -383,7 +395,10 @@ export function createApplyCodeActionTool(
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features");
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
       }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
@@ -461,7 +476,10 @@ export function createRenameSymbolTool(
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features");
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
       }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
@@ -623,7 +641,10 @@ export function createSearchWorkspaceSymbolsTool(
         return error("query must not be empty");
       }
       if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features");
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
       }
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
       const result = await lspWithRetry(
