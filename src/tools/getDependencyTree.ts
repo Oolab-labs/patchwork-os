@@ -5,7 +5,7 @@ import {
   execSafe,
   optionalInt,
   optionalString,
-  successStructured,
+  successStructuredLarge,
 } from "./utils.js";
 
 const CACHE_TTL = 30_000;
@@ -250,12 +250,12 @@ export function createGetDependencyTreeTool(
       const now = Date.now();
       const cached = cache.get(cacheKey);
       if (cached && now - cached.timestamp < CACHE_TTL) {
-        return successStructured(cached.data);
+        return successStructuredLarge(cached.data);
       }
 
       const detected = detectPackageManager(workspace, pm);
       if (!detected) {
-        return successStructured({
+        return successStructuredLarge({
           available: false,
           packageManager: null,
           error:
@@ -279,7 +279,7 @@ export function createGetDependencyTreeTool(
             result = await runPip(workspace, signal);
             break;
           default:
-            return successStructured({
+            return successStructuredLarge({
               available: false,
               packageManager: detected,
               error: `Unsupported package manager: ${detected}`,
@@ -287,10 +287,10 @@ export function createGetDependencyTreeTool(
         }
 
         cache.set(cacheKey, { data: result, timestamp: Date.now() });
-        return successStructured({ available: true, ...result });
+        return successStructuredLarge({ available: true, ...result });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        return successStructured({
+        return successStructuredLarge({
           available: false,
           packageManager: detected,
           error: msg,

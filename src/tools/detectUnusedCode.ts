@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, optionalArray, optionalInt, success } from "./utils.js";
+import { execSafe, optionalArray, optionalInt, successLarge } from "./utils.js";
 
 interface UnusedItem {
   file: string;
@@ -42,7 +42,7 @@ export function createDetectUnusedCodeTool(
     async handler(
       args: Record<string, unknown>,
       signal?: AbortSignal,
-    ): Promise<ReturnType<typeof success>> {
+    ): Promise<ReturnType<typeof successLarge>> {
       const maxResults = optionalInt(args, "maxResults", 1, 10_000) ?? 50;
       // includePatterns stored for future filtering — currently unused
       optionalArray(args, "includePatterns");
@@ -62,7 +62,7 @@ export function createDetectUnusedCodeTool(
         if (output) {
           const items = parseTsPruneOutput(output, workspace);
           const truncated = items.length > maxResults;
-          return success({
+          return successLarge({
             available: true,
             detector: "ts-prune",
             total: items.length,
@@ -93,7 +93,7 @@ export function createDetectUnusedCodeTool(
         (result.stderr.includes("ENOENT") ||
           result.stderr.includes("not found"))
       ) {
-        return success({
+        return successLarge({
           available: false,
           error:
             "No unused code detector available. Install ts-prune: npm install -D ts-prune",
@@ -102,7 +102,7 @@ export function createDetectUnusedCodeTool(
 
       const items = parseTscOutput(output, workspace);
       if (items.length === 0 && result.exitCode !== 0 && !output) {
-        return success({
+        return successLarge({
           available: false,
           error:
             "No unused code detector available. Install ts-prune: npm install -D ts-prune",
@@ -110,7 +110,7 @@ export function createDetectUnusedCodeTool(
       }
 
       const truncated = items.length > maxResults;
-      return success({
+      return successLarge({
         available: true,
         detector: "tsc",
         total: items.length,

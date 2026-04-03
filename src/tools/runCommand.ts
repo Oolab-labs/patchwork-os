@@ -6,7 +6,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successLarge,
   truncateOutput,
 } from "./utils.js";
 
@@ -207,7 +207,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
       const stderrResult = truncateOutput(result.stderr, maxBytes);
       const anyTruncated = stdoutResult.truncated || stderrResult.truncated;
 
-      return success({
+      return successLarge({
         exitCode: result.exitCode,
         stdout: stdoutResult.text,
         stderr: stderrResult.text,

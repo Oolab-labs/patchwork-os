@@ -236,6 +236,60 @@ export function successStructured(data: unknown): {
   };
 }
 
+/**
+ * Maximum chars that Claude Code will persist for a tool result when annotated.
+ * Without the annotation, results may be silently truncated by the client.
+ * See Claude Code v2.1.91 changelog: `_meta["anthropic/maxResultSizeChars"]`.
+ */
+const MAX_RESULT_SIZE_CHARS = 500_000;
+
+/**
+ * Like `success()` but annotates the content block with
+ * `_meta["anthropic/maxResultSizeChars"]` so Claude Code persists up to 500K
+ * chars instead of applying its default truncation. Use for tools that return
+ * large outputs (file contents, diffs, search results, dependency trees).
+ */
+export function successLarge(data: unknown): {
+  content: Array<{
+    type: string;
+    text: string;
+    _meta?: Record<string, unknown>;
+  }>;
+} {
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(data),
+        _meta: { "anthropic/maxResultSizeChars": MAX_RESULT_SIZE_CHARS },
+      },
+    ],
+  };
+}
+
+/**
+ * Like `successStructured()` but with the large-result `_meta` annotation.
+ */
+export function successStructuredLarge(data: unknown): {
+  content: Array<{
+    type: string;
+    text: string;
+    _meta?: Record<string, unknown>;
+  }>;
+  structuredContent: unknown;
+} {
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(data),
+        _meta: { "anthropic/maxResultSizeChars": MAX_RESULT_SIZE_CHARS },
+      },
+    ],
+    structuredContent: data,
+  };
+}
+
 export function error(
   data: string | Record<string, unknown>,
   code?: string,

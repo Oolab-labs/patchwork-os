@@ -7,7 +7,7 @@ import {
   optionalInt,
   optionalString,
   resolveFilePath,
-  successStructured,
+  successStructuredLarge,
 } from "./utils.js";
 
 const IGNORED_DIRS = new Set([
@@ -99,7 +99,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
             return rel.split("/").length <= maxDepth;
           });
           entries = entries.slice(0, MAX_ENTRIES);
-          return successStructured({
+          return successStructuredLarge({
             entries,
             total: entries.length,
             truncated: entries.length >= MAX_ENTRIES,
@@ -129,7 +129,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
         }
       }
       await walk(targetDir, 1);
-      return successStructured({
+      return successStructuredLarge({
         entries,
         total: entries.length,
         truncated: entries.length >= MAX_ENTRIES,
