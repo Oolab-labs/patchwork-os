@@ -50,16 +50,54 @@ npm run package        # create .vsix
 
 Run `npx biome check .` before committing.
 
-## Code Review with Decorations
+## LSP Workflows
 
-When reviewing code, use `setEditorDecorations` to show findings inline in the editor:
+All LSP tools are available in default slim mode. Use these sequences for the most common tasks.
 
-1. Read the file and analyze it
-2. Call `setEditorDecorations` with `id: "code-review"`, style `"warning"` or `"error"`, and `hoverMessage` containing the explanation
-3. Use `message` for short inline annotations (e.g., `"// potential null deref"`)
-4. Call `clearEditorDecorations` with `id: "code-review"` when done
+**Adding a new tool**
+1. `searchWorkspaceSymbols` — confirm similar tool doesn't exist
+2. `getDocumentSymbols` on `src/extensionClient.ts` — see available methods
+3. `getHover { filePath, line, column }` — verify method signature before writing
+4. `getDiagnostics { uri: "src/tools/myTool.ts" }` — catch type errors before `npm run build`
+5. `getDiagnostics { uri: "src/tools/index.ts" }` — confirm no import errors after registering
 
-This gives the developer a visual overview of issues without leaving their editor.
+> Note: `getDiagnostics` uses `uri`, not `filePath`. Passing the wrong key silently returns all-workspace diagnostics.
+
+**Code review**
+1. `getCallHierarchy { direction: "incoming" }` on each changed symbol — blast radius
+2. `findReferences` on changed interfaces/types — find all implementation sites including test mocks
+3. `getCodeActions` on flagged ranges — surface language server suggestions
+4. `setEditorDecorations { id: "code-review", style: "warning"|"error", hoverMessage, message }` — annotate inline
+5. `clearEditorDecorations { id: "code-review" }` when done
+
+**Refactoring**
+1. `refactorAnalyze` — returns `risk` (low/medium/high), `referenceCount`, `callerCount`. High risk (>20 refs or >10 callers) → write tests first per Bug Fix Protocol.
+2. `refactorPreview` — see exact edits before committing
+3. `renameSymbol` — execute; or `refactorExtractFunction { file, ... }` (note: param is `file`, not `filePath`)
+4. `getDiagnostics` with no `uri` — workspace-wide type check (uses CLI/tsc path when extension not connected, more complete)
+
+**Debugging**
+1. `searchWorkspaceSymbols` — jump to a symbol from a stack trace
+2. `getCallHierarchy { direction: "outgoing" }` on the failing handler — trace data flow
+3. `getDocumentSymbols` on `src/extensionClient.ts` vs test mock — catch interface drift
+4. `setDebugBreakpoints` + `evaluateInDebugger` — inspect runtime state
+
+**Onboarding to unfamiliar code**
+1. `getDocumentSymbols` — instant file outline
+2. `explainSymbol` on the primary export — richer than hover alone
+3. `getCallHierarchy { direction: "incoming" }` — what depends on this module
+4. `getImportTree` — full downstream dependency chain
+
+**Quick reference**
+
+| Situation | Tool |
+|---|---|
+| Does a tool for X exist? | `searchWorkspaceSymbols` |
+| What does this method accept? | `getHover` |
+| Is this change breaking? | `getDiagnostics` + `findReferences` |
+| How many callers does this have? | `getCallHierarchy { direction: "incoming" }` |
+| Safe to rename? | `refactorAnalyze` → `refactorPreview` → `renameSymbol` |
+| What does this file export? | `getDocumentSymbols` |
 
 ## Architecture Rules
 
