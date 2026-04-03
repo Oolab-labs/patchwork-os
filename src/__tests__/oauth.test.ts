@@ -99,7 +99,10 @@ function makePostReq(
 }
 
 /** GET /oauth/authorize to prime the CSRF nonce, then return it. */
-function primeCsrfNonce(oauth: OAuthServerImpl, challenge: string): string {
+function primeCsrfNonce(
+  oauth: OAuthServerImpl,
+  challenge: string,
+): { nonce: string; flowId: string } {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: CLIENT_ID,
@@ -112,13 +115,18 @@ function primeCsrfNonce(oauth: OAuthServerImpl, challenge: string): string {
   const req = makeGetReq(`/oauth/authorize?${params}`);
   const res = new MockResponse();
   oauth.handleAuthorize(req, res as unknown as http.ServerResponse);
-  // Extract nonce from internal map (test-only access)
+  // Extract nonce from internal map (test-only access).
+  // Map is now keyed by flowId, so find the entry matching CLIENT_ID.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const entry = (oauth as any).csrfNonces.get(CLIENT_ID) as
-    | { nonce: string }
-    | undefined;
+  const nonces = (oauth as any).csrfNonces as Map<
+    string,
+    { nonce: string; clientId: string; expiresAt: number }
+  >;
+  const entry = [...nonces.values()].find((v) => v.clientId === CLIENT_ID);
   if (!entry) throw new Error("CSRF nonce not stored after GET");
-  return entry.nonce;
+  const flowId =
+    [...nonces.entries()].find(([, v]) => v.clientId === CLIENT_ID)?.[0] ?? "";
+  return { nonce: entry.nonce, flowId };
 }
 
 /** POST to /oauth/authorize with action=approve, returns the issued code */
@@ -127,7 +135,7 @@ async function issueCode(
   overrides: Record<string, string> = {},
 ): Promise<{ code: string; verifier: string }> {
   const { verifier, challenge } = makeVerifier();
-  const csrfNonce = primeCsrfNonce(oauth, challenge);
+  const { nonce: csrfNonce, flowId } = primeCsrfNonce(oauth, challenge);
   const form = new URLSearchParams({
     action: "approve",
     client_id: CLIENT_ID,
@@ -137,6 +145,7 @@ async function issueCode(
     scope: "mcp",
     state: "s1",
     csrf_nonce: csrfNonce,
+    flow_id: flowId,
     ...overrides,
   });
   const req = makePostReq(form.toString());
@@ -319,7 +328,7 @@ describe("OAuthServerImpl — POST /oauth/authorize", () => {
   it("redirects with error=access_denied on deny", async () => {
     const oauth = makeOAuthWithClient();
     const { challenge } = makeVerifier();
-    const csrfNonce = primeCsrfNonce(oauth, challenge);
+    const { nonce: csrfNonce, flowId } = primeCsrfNonce(oauth, challenge);
     const form = new URLSearchParams({
       action: "deny",
       client_id: CLIENT_ID,
@@ -328,6 +337,7 @@ describe("OAuthServerImpl — POST /oauth/authorize", () => {
       scope: "mcp",
       state: "s1",
       csrf_nonce: csrfNonce,
+      flow_id: flowId,
     });
     const req = makePostReq(form.toString());
     const res = new MockResponse();

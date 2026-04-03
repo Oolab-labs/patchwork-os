@@ -807,9 +807,11 @@ export class McpTransport {
               };
             } else if (
               this.sessionScope === "mcp:read" &&
-              (tool.schema.annotations?.destructiveHint ||
-                tool.schema.annotations?.openWorldHint ||
-                !tool.schema.annotations?.readOnlyHint)
+              !(
+                tool.schema.annotations?.readOnlyHint === true &&
+                !tool.schema.annotations?.destructiveHint &&
+                !tool.schema.annotations?.openWorldHint
+              )
             ) {
               this.callCount++;
               this.errorCount++;
@@ -966,7 +968,46 @@ export class McpTransport {
                   const durationMs = Date.now() - startTime;
                   this.activityLog?.record(params.name, durationMs, "success");
                   callLog.debug(`Tool completed in ${durationMs}ms`);
-                  response = { jsonrpc: "2.0", id: msg.id, result };
+                  // Validate structuredContent against outputSchema before sending.
+                  // Strips structuredContent rather than forwarding non-conforming data
+                  // to MCP clients (prevents plugin tools leaking out-of-schema fields).
+                  const toolResult = result as {
+                    content: Array<{ type: string; text: string }>;
+                    structuredContent?: unknown;
+                    isError?: boolean;
+                  };
+                  if (
+                    tool.schema.outputSchema !== undefined &&
+                    toolResult.structuredContent !== undefined
+                  ) {
+                    const outValidator = this.ajv.compile(
+                      tool.schema.outputSchema as object,
+                    );
+                    if (!outValidator(toolResult.structuredContent)) {
+                      callLog.warn(
+                        `structuredContent failed outputSchema validation for tool "${params.name}" — stripping`,
+                      );
+                      const { structuredContent: _dropped, ...safeResult } =
+                        toolResult as Record<string, unknown>;
+                      response = {
+                        jsonrpc: "2.0",
+                        id: msg.id,
+                        result: safeResult,
+                      };
+                    } else {
+                      response = {
+                        jsonrpc: "2.0",
+                        id: msg.id,
+                        result: toolResult,
+                      };
+                    }
+                  } else {
+                    response = {
+                      jsonrpc: "2.0",
+                      id: msg.id,
+                      result: toolResult,
+                    };
+                  }
                 } finally {
                   if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
                   // Only touch shared state if we're still on the same generation.

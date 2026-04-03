@@ -603,7 +603,6 @@ export class Server extends EventEmitter<ServerEvents> {
       const origin = request.headers.origin;
       if (
         origin !== undefined &&
-        origin !== "null" &&
         !origin.startsWith("vscode-file://") &&
         !origin.startsWith("vscode-webview://") &&
         !origin.startsWith("vscode-app://")

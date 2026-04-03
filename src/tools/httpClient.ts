@@ -346,14 +346,38 @@ export function createSendHttpRequestTool(options?: {
           }
         }
 
-        // Read body with size cap — use truncateOutput for correct UTF-8 boundary handling
-        const arrayBuf = await resp.arrayBuffer();
-        const fullBytes = arrayBuf.byteLength;
-        const rawBody = Buffer.from(arrayBuf).toString("utf-8");
-        const { text: responseBody, truncated } = truncateOutput(
-          rawBody,
-          maxBytes,
-        );
+        // Read body with size cap enforced during streaming so a chunked response
+        // with no Content-Length cannot exhaust the bridge process heap.
+        const reader = resp.body?.getReader();
+        const chunks: Uint8Array[] = [];
+        let totalBytes = 0;
+        let streamTruncated = false;
+        if (reader) {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done || value === undefined) break;
+              if (totalBytes + value.byteLength > maxBytes) {
+                chunks.push(value.slice(0, maxBytes - totalBytes));
+                totalBytes = maxBytes;
+                streamTruncated = true;
+                await reader.cancel();
+                break;
+              }
+              chunks.push(value);
+              totalBytes += value.byteLength;
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        }
+        const fullBytes = totalBytes;
+        const rawBody = Buffer.concat(
+          chunks.map((c) => Buffer.from(c)),
+        ).toString("utf-8");
+        const { text: responseBody, truncated } = streamTruncated
+          ? { text: rawBody, truncated: true }
+          : truncateOutput(rawBody, maxBytes);
 
         return success({
           status: resp.status,
