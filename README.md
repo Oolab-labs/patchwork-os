@@ -124,7 +124,7 @@ See [docs/multi-ide-review.md](docs/multi-ide-review.md) for the staged review w
 
 | Doc | What it covers |
 |-----|----------------|
-| **[Platform Docs](documents/platform-docs.md)** | Complete tool reference (136+ tools), parameters, examples |
+| **[Platform Docs](documents/platform-docs.md)** | Complete tool reference (130+ tools), parameters, examples |
 | **[Data Reference](documents/data-reference.md)** | Data flows, state management, protocol details |
 | **[Plugin Authoring](documents/plugin-authoring.md)** | Writing custom plugins — manifest schema, entrypoint API |
 | **[Use Cases](documents/use-cases.md)** | Real-world workflows and scenarios |
@@ -233,14 +233,16 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 
 The bridge exposes tools in two modes:
 
-- **Slim mode (default)** — 29 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
-- **Full mode (`--full`)** — all ~96 tools, adding git, terminal, file ops, HTTP, and GitHub. Use this for large projects or workflows that rely on those integrations.
+- **Slim mode (default)** — 38 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
+- **Full mode (`--full`)** — all ~130 tools, adding git, terminal, file ops, HTTP, and GitHub. Use this for large projects or workflows that rely on those integrations.
 
-### Slim mode — 29 IDE tools (default)
+### Slim mode — 38 IDE tools (default)
 
 | Category | Tools |
 |----------|-------|
 | LSP / Code Intelligence | `getDiagnostics` · `watchDiagnostics` · `goToDefinition` · `findReferences` · `getHover` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchWorkspaceSymbols` · `getDocumentSymbols` · `getCallHierarchy` |
+| Refactor & Navigation | `refactorAnalyze` · `refactorPreview` · `refactorExtractFunction` · `renameSymbol` · `prepareRename` · `selectionRanges` · `foldingRanges` · `signatureHelp` · `explainSymbol` · `getImportTree` |
+| Editor Decorations | `setEditorDecorations` · `clearEditorDecorations` |
 | Debugger | `startDebugging` · `stopDebugging` · `setDebugBreakpoints` · `evaluateInDebugger` · `getDebugState` |
 | Editor State | `getOpenEditors` · `getCurrentSelection` · `getLatestSelection` · `checkDocumentDirty` · `saveDocument` · `openFile` · `closeTab` · `captureScreenshot` |
 | VS Code | `executeVSCodeCommand` |
@@ -253,15 +255,15 @@ The bridge exposes tools in two modes:
 | Git | 16 | `getGitStatus` · `getGitDiff` · `gitCommit` · `gitPush` · `gitBlame` · … |
 | Terminal | 8 | `runCommand` · `createTerminal` · `sendTerminalCommand` · … |
 | File ops | 8 | `createFile` · `editText` · `searchWorkspace` · `getFileTree` · … |
-| GitHub | 12 | `githubCreatePR` · `githubListIssues` · `githubPostPRReview` · … |
+| GitHub | 13 | `githubCreatePR` · `githubListIssues` · `githubPostPRReview` · … |
 | HTTP | 2 | `sendHttpRequest` · `parseHttpFile` |
-| Code analysis | 9 | `auditDependencies` · `detectUnusedCode` · `getImportTree` · … |
+| Code analysis | 9 | `auditDependencies` · `detectUnusedCode` · `getSecurityAdvisories` · … |
 | Code quality | 3 | `fixAllLintErrors` · `formatDocument` · `organizeImports` |
 | Diagnostics+ | 2 | `runTests` · `getCodeCoverage` |
 | Plans | 5 | `createPlan` · `updatePlan` · `getPlan` · … |
 | Clipboard | 2 | `readClipboard` · `writeClipboard` |
 | LSP extras | 4 | `getHoverAtCursor` · `getTypeSignature` · `getInlayHints` · `getTypeHierarchy` |
-| More editor | 4 | `openDiff` · `getBufferContent` · `setEditorDecorations` · `refactorExtractFunction` |
+| More editor | 2 | `openDiff` · `getBufferContent` |
 | Session | 2 | `getHandoffNote` · `setHandoffNote` |
 
 ## MCP Prompts (Slash Commands)
@@ -631,7 +633,7 @@ Your Phone
 
 Dispatch messages land in Claude Desktop's **main conversation**, which has full MCP bridge access. Claude calls the bridge tools, gathers results, and sends a summary back to your phone.
 
-> **Not Cowork:** Dispatch routes through the main conversation, not a Cowork session. All 136+ bridge tools are available. The Cowork tool-access limitation does not apply here.
+> **Not Cowork:** Dispatch routes through the main conversation, not a Cowork session. All 130+ bridge tools are available. The Cowork tool-access limitation does not apply here.
 
 ### Setup
 
@@ -699,7 +701,7 @@ Team Lead (Claude Code)
     └── Teammate C ──► Bridge Session 3 ──► IDE
 ```
 
-All teammates share the same IDE and workspace. Each gets full access to all 136+ bridge tools.
+All teammates share the same IDE and workspace. Each gets full access to all 130+ bridge tools.
 
 ### Setup
 
@@ -850,7 +852,7 @@ claude-ide-bridge \
 
 > The bridge token is entered once during authorization. After that, claude.ai holds a short-lived OAuth access token that it refreshes automatically — you don't need to update the connector URL when the bridge restarts.
 
-> **Tool availability:** All 136+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~74 CLI tools still work (file ops, git, terminal, search, HTTP client).
+> **Tool availability:** All 130+ tools are available. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~90 CLI tools still work (file ops, git, terminal, search, HTTP client).
 
 ### Alternatives
 

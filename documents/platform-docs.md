@@ -4,7 +4,7 @@ Complete feature reference for the Claude IDE Bridge MCP server and VS Code exte
 
 ## Overview
 
-Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 136+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state. The extension supports remote extension hosts (VS Code Remote-SSH, Cursor SSH) via `extensionKind: ["workspace"]`.
+Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 130+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state. The extension supports remote extension hosts (VS Code Remote-SSH, Cursor SSH) via `extensionKind: ["workspace"]`.
 
 The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code CLI** via WebSocket — both sessions share the same running bridge, enabling seamless context handoff between the two clients.
 
