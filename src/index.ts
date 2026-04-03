@@ -745,6 +745,172 @@ if (process.argv[2] === "--analytics") {
   process.exit(0);
 }
 
+// Handle status subcommand — check bridge health and extension connectivity
+if (process.argv[2] === "status") {
+  const argv = process.argv.slice(3);
+  const portIdx = argv.indexOf("--port");
+  const portArg = portIdx !== -1 ? argv[portIdx + 1] : undefined;
+  const jsonFlag = argv.includes("--json");
+
+  const lockDir = path.join(
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+    "ide",
+  );
+
+  let lockFile: string | undefined;
+  let lockPort: string | undefined;
+
+  if (portArg) {
+    lockFile = path.join(lockDir, `${portArg}.lock`);
+    lockPort = portArg;
+    if (!existsSync(lockFile)) {
+      process.stderr.write(
+        `Error: No lock file found for port ${portArg} at ${lockFile}\n`,
+      );
+      process.exit(1);
+    }
+  } else {
+    let bestMtime = 0;
+    try {
+      for (const f of readdirSync(lockDir)) {
+        if (!f.endsWith(".lock")) continue;
+        const full = path.join(lockDir, f);
+        const mtime = statSync(full).mtimeMs;
+        if (mtime > bestMtime) {
+          bestMtime = mtime;
+          lockFile = full;
+          lockPort = f.replace(".lock", "");
+        }
+      }
+    } catch {
+      // lock dir doesn't exist
+    }
+  }
+
+  if (!lockFile) {
+    if (jsonFlag) {
+      process.stdout.write(`${JSON.stringify({ status: "not_running" })}\n`);
+    } else {
+      process.stderr.write(`No bridge lock file found in ${lockDir}\n`);
+      process.stderr.write(
+        "Bridge is not running. Start it with: claude-ide-bridge --watch\n",
+      );
+    }
+    process.exit(1);
+  }
+
+  let lockData: {
+    pid?: number;
+    authToken?: string;
+    workspace?: string;
+    ideName?: string;
+    startedAt?: number;
+  };
+  try {
+    lockData = JSON.parse(readFileSync(lockFile, "utf-8"));
+  } catch {
+    process.stderr.write(`Error: Could not read lock file ${lockFile}\n`);
+    process.exit(1);
+  }
+
+  // Check if PID is alive
+  let pidAlive = false;
+  if (lockData.pid) {
+    try {
+      process.kill(lockData.pid, 0);
+      pidAlive = true;
+    } catch {
+      // process not running
+    }
+  }
+
+  if (!pidAlive) {
+    if (jsonFlag) {
+      process.stdout.write(
+        `${JSON.stringify({
+          status: "stale_lock",
+          port: lockPort,
+          pid: lockData.pid,
+        })}\n`,
+      );
+    } else {
+      process.stderr.write(
+        `Bridge lock file exists (port ${lockPort}) but process ${lockData.pid} is not running.\n`,
+      );
+      process.stderr.write(
+        "The lock file is stale. Restart with: claude-ide-bridge --watch\n",
+      );
+    }
+    process.exit(1);
+  }
+
+  // Fetch /health from the running bridge
+  const healthUrl = `http://127.0.0.1:${lockPort}/health`;
+  try {
+    const resp = await fetch(healthUrl, {
+      headers: {
+        Authorization: `Bearer ${lockData.authToken}`,
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+    const health = (await resp.json()) as Record<string, unknown>;
+
+    if (jsonFlag) {
+      process.stdout.write(
+        `${JSON.stringify({
+          status: "running",
+          port: lockPort,
+          pid: lockData.pid,
+          workspace: lockData.workspace,
+          ide: lockData.ideName,
+          ...health,
+        })}\n`,
+      );
+    } else {
+      const uptimeMs = (health.uptimeMs as number) ?? 0;
+      const mins = Math.floor(uptimeMs / 60_000);
+      const secs = Math.floor((uptimeMs % 60_000) / 1_000);
+      const uptime = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+      process.stdout.write("Bridge status: running\n");
+      process.stdout.write(`  Port:       ${lockPort}\n`);
+      process.stdout.write(`  PID:        ${lockData.pid}\n`);
+      process.stdout.write(
+        `  Workspace:  ${lockData.workspace ?? "unknown"}\n`,
+      );
+      process.stdout.write(`  IDE:        ${lockData.ideName ?? "unknown"}\n`);
+      process.stdout.write(`  Uptime:     ${uptime}\n`);
+      process.stdout.write(
+        `  Extension:  ${health.extension === true ? "connected" : health.extension === false ? "disconnected" : "unknown"}\n`,
+      );
+      process.stdout.write(`  Sessions:   ${health.connections ?? 0}\n`);
+      if (health.toolCount !== undefined) {
+        process.stdout.write(`  Tools:      ${health.toolCount}\n`);
+      }
+    }
+  } catch (err) {
+    if (jsonFlag) {
+      process.stdout.write(
+        `${JSON.stringify({
+          status: "unreachable",
+          port: lockPort,
+          pid: lockData.pid,
+          error: err instanceof Error ? err.message : String(err),
+        })}\n`,
+      );
+    } else {
+      process.stderr.write(
+        `Bridge process is running (PID ${lockData.pid}) but /health endpoint is unreachable.\n`,
+      );
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 const config = parseConfig(process.argv);
 
 // If --analytics flag was passed, persist the preference immediately

@@ -565,7 +565,7 @@ Options:
   --grace-period <ms>       Reconnect grace period in ms (default: 30000, max: 600000)
   --watch                   Supervisor mode: auto-restart bridge on crash (exponential backoff, max 30s)
   --full                    Register all ~95 tools including git, terminal, file ops, HTTP, and GitHub.
-                            Default is slim mode (25 IDE-exclusive tools). Use --full to restore the complete tool set.
+                            Default is slim mode (29 IDE-exclusive tools). Use --full to restore the complete tool set.
   --vps                     VPS/headless mode: expands allowlist with curl, systemctl, docker, tar, dig, openssl, etc.
   --db                      Database mode: expands allowlist with psql, pg_dump, mysql, sqlite3, redis-cli, mongosh, etc.
   --allow-private-http      Allow sendHttpRequest to reach localhost/private IPs (for VPS where bridge runs alongside services)

@@ -15,6 +15,7 @@ export function createGetAICommentsTool(extensionClient: ExtensionClient) {
         "fix, todo, question, warn, or task. " +
         "Populates the cache used by createGithubIssueFromAIComment — call this first " +
         "before filing issues from AI comments.",
+      extensionRequired: true,
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
