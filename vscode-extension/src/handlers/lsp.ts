@@ -276,6 +276,91 @@ export function createLspHandlers(
     };
   }
 
+  async function handlePreviewCodeAction(
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    const file = requireString(params.file, "file");
+    const startLine = requireNumber(params.startLine, "startLine") - 1;
+    const startColumn = requireNumber(params.startColumn, "startColumn") - 1;
+    const endLine = requireNumber(params.endLine, "endLine") - 1;
+    const endColumn = requireNumber(params.endColumn, "endColumn") - 1;
+    const actionTitle = requireString(params.actionTitle, "actionTitle");
+    const uri = vscode.Uri.file(file);
+    // Side effect: loads document into VS Code buffer (may trigger language server activation)
+    await vscode.workspace.openTextDocument(uri);
+    const range = new vscode.Range(startLine, startColumn, endLine, endColumn);
+
+    let actions: vscode.CodeAction[] | undefined;
+    try {
+      actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+        "vscode.executeCodeActionProvider",
+        uri,
+        range,
+      );
+    } catch (err: unknown) {
+      return {
+        error: err instanceof Error ? err.message : "Command failed",
+      };
+    }
+
+    if (!actions || actions.length === 0) {
+      return { error: "No code actions available at this location" };
+    }
+
+    const action = actions.find((a) => a.title === actionTitle);
+    if (!action) {
+      return {
+        error: `Code action "${actionTitle}" not found`,
+        available: actions.map((a) => a.title),
+      };
+    }
+
+    const edit = action.edit;
+    if (!edit) {
+      return {
+        title: action.title,
+        changes: [],
+        note: action.command
+          ? "This action executes a command rather than text edits"
+          : "No edits available",
+      };
+    }
+
+    const changes: Array<{
+      file: string;
+      edits: Array<{
+        range: {
+          startLine: number;
+          startColumn: number;
+          endLine: number;
+          endColumn: number;
+        };
+        newText: string;
+      }>;
+    }> = [];
+    for (const [entryUri, textEdits] of edit.entries()) {
+      changes.push({
+        file: entryUri.fsPath,
+        edits: textEdits.map((e) => ({
+          range: {
+            startLine: e.range.start.line + 1,
+            startColumn: e.range.start.character + 1,
+            endLine: e.range.end.line + 1,
+            endColumn: e.range.end.character + 1,
+          },
+          newText: e.newText,
+        })),
+      });
+    }
+
+    return {
+      title: action.title,
+      changes,
+      totalFiles: changes.length,
+      totalEdits: changes.reduce((sum, c) => sum + c.edits.length, 0),
+    };
+  }
+
   async function handleRenameSymbol(
     params: Record<string, unknown>,
   ): Promise<unknown> {
@@ -488,6 +573,7 @@ export function createLspHandlers(
     "extension/getHover": handleGetHover,
     "extension/getCodeActions": handleGetCodeActions,
     "extension/applyCodeAction": handleApplyCodeAction,
+    "extension/previewCodeAction": handlePreviewCodeAction,
     "extension/renameSymbol": handleRenameSymbol,
     "extension/searchSymbols": handleSearchSymbols,
     "extension/getDocumentSymbols": handleGetDocumentSymbols,

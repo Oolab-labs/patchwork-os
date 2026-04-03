@@ -226,7 +226,10 @@ export function createStartDebuggingTool(extensionClient: ExtensionClient) {
     },
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
-        return extensionRequired("startDebugging");
+        return extensionRequired("startDebugging", [
+          "Use runCommand with your test runner (vitest, jest, pytest) for test debugging",
+          "Use runCommand with node --inspect for Node.js debugging",
+        ]);
       }
       const configName = optionalString(args, "configName");
       try {

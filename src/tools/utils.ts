@@ -241,11 +241,12 @@ export function error(
   };
 }
 
-export function extensionRequired(feature: string) {
-  return error(
-    `VS Code extension not connected — ${feature} requires the extension`,
-    "extension_required",
-  );
+export function extensionRequired(feature: string, alternatives?: string[]) {
+  let msg = `VS Code extension not connected — ${feature} requires the extension.\n\nTo reconnect: Cmd+Shift+P → "Claude IDE Bridge: Reconnect"`;
+  if (alternatives?.length) {
+    msg += `\n\nAlternatives that work without the extension:\n${alternatives.map((a) => `  • ${a}`).join("\n")}`;
+  }
+  return error(msg, "extension_required");
 }
 
 export function requireInt(

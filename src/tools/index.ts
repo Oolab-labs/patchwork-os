@@ -31,6 +31,7 @@ import {
 } from "./decorations.js";
 import { createDetectUnusedCodeTool } from "./detectUnusedCode.js";
 import { createEditTextTool } from "./editText.js";
+import { createExplainSymbolTool } from "./explainSymbol.js";
 import {
   createCreateFileTool,
   createDeleteFileTool,
@@ -123,6 +124,7 @@ import { createOpenInBrowserTool } from "./openInBrowser.js";
 import { createOrganizeImportsTool } from "./organizeImports.js";
 import { createPlanTools } from "./planPersistence.js";
 import { createRefactorExtractFunctionTool } from "./refactorExtractFunction.js";
+import { createRefactorPreviewTool } from "./refactorPreview.js";
 import { createReplaceBlockTool } from "./replaceBlock.js";
 import { createResumeClaudeTaskTool } from "./resumeClaudeTask.js";
 import { createRunClaudeTaskTool } from "./runClaudeTask.js";
@@ -154,7 +156,7 @@ import {
 } from "./workspaceSettings.js";
 
 /**
- * The 27 IDE-exclusive tools registered in slim mode (the default).
+ * The 29 IDE-exclusive tools registered in slim mode (the default).
  *
  * Slim mode exposes only tools that require a live IDE extension — tools that
  * Claude cannot replicate via its native Read/Write/Bash capabilities. Everything
@@ -181,9 +183,11 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "getHover",
   "getCodeActions",
   "applyCodeAction",
+  "refactorPreview",
   "renameSymbol",
   "searchWorkspaceSymbols",
   "getCallHierarchy",
+  "explainSymbol",
   // Debugger
   "getDebugState",
   "evaluateInDebugger",
@@ -293,9 +297,11 @@ export function registerAllTools(
     createGetHoverTool(workspace, extensionClient),
     createGetCodeActionsTool(workspace, extensionClient),
     createApplyCodeActionTool(workspace, extensionClient),
+    createRefactorPreviewTool(workspace, extensionClient),
     createRenameSymbolTool(workspace, extensionClient),
     createSearchWorkspaceSymbolsTool(workspace, extensionClient),
     createGetCallHierarchyTool(workspace, extensionClient),
+    createExplainSymbolTool(workspace, extensionClient),
     // The Chosen Five
     ...createPlanTools(workspace),
     testsTool,

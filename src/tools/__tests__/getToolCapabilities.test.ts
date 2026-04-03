@@ -95,6 +95,17 @@ describe("createGetToolCapabilitiesTool — extension connected", () => {
     expect(data.features.dirtyCheck).toBe("real-time");
   });
 
+  it("returns tier 'full' when extension is connected", async () => {
+    const tool = createGetToolCapabilitiesTool(
+      fullProbes,
+      makeClient(true),
+      cfg(),
+    );
+    const data = parse(await tool.handler());
+    expect(data.tier).toBe("full");
+    expect(data.tierDescription).toContain("All tools available");
+  });
+
   it("includes terminal and debug tools when connected", async () => {
     const tool = createGetToolCapabilitiesTool(
       fullProbes,
@@ -142,6 +153,17 @@ describe("createGetToolCapabilitiesTool — extension disconnected", () => {
     expect(data.features.terminalOutput).toContain("unavailable");
     expect(data.features.selection).toBe("stub-only");
     expect(data.features.dirtyCheck).toBe("mtime-heuristic");
+  });
+
+  it("returns tier 'basic' when extension is disconnected", async () => {
+    const tool = createGetToolCapabilitiesTool(
+      minimalProbes,
+      makeClient(false),
+      cfg(),
+    );
+    const data = parse(await tool.handler());
+    expect(data.tier).toBe("basic");
+    expect(data.tierDescription).toContain("Connect the VS Code extension");
   });
 
   it("returns empty terminal and debug arrays when disconnected", async () => {

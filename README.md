@@ -39,7 +39,7 @@ cd /your/project
 claude-ide-bridge init
 ```
 
-`init` installs the VS Code extension, writes a `## Claude IDE Bridge` section to your `CLAUDE.md`, and registers the bridge as a global MCP server in `~/.claude.json` — so bridge tools are available in **every** `claude` session (any directory, any IDE). That's the entire setup.
+`init` auto-detects your editor (VS Code, Cursor, or Windsurf), installs the companion extension, writes a `## Claude IDE Bridge` section to your `CLAUDE.md`, and registers the bridge as a global MCP server in `~/.claude.json` — so bridge tools are available in **every** `claude` session (any directory, any IDE). That's the entire setup.
 
 **Then start the bridge and open Claude:**
 
@@ -48,6 +48,8 @@ claude-ide-bridge --watch   # terminal 1 — keeps running, auto-restarts on cra
 claude --ide                # terminal 2 — Claude Code with IDE tools active
 ```
 
+> **`--watch`** restarts the bridge automatically if it crashes, with exponential backoff (2s → 30s). Safe for long-running sessions.
+
 Type `/mcp` in Claude to confirm the server is connected, then `/ide` to see open files, diagnostics, and editor state.
 
 > **One bridge per workspace.** Each project needs its own bridge instance on its own port. If you work across multiple repos, start a separate `claude-ide-bridge --watch` in each directory.
@@ -55,6 +57,18 @@ Type `/mcp` in Claude to confirm the server is connected, then `/ide` to see ope
 > **Why `~/.claude.json` and not `.mcp.json`?** When VS Code, Windsurf, or Cursor launches Claude Code, it injects `--mcp-config` which overrides any project `.mcp.json`. Only `~/.claude.json` is loaded in every session regardless of how Claude Code is started. `init` writes there by design — you don't need to touch `.mcp.json`.
 
 **Tools not showing up?** See the [troubleshooting guide](docs/troubleshooting.md).
+
+## What Can Claude Do?
+
+With the bridge connected, try these prompts in Claude:
+
+- **"Explain the function at src/server.ts:140"** — uses `explainSymbol` to get type info, docs, callers, and references in one call
+- **"Preview what renaming `handleRequest` to `processRequest` would change"** — uses `refactorPreview` to show affected files without applying
+- **"Review this file and highlight issues inline"** — Claude uses `setEditorDecorations` to annotate your editor with findings
+- **"Fix all errors in open files"** — uses `getDiagnostics` to find errors, then `editText` to fix them
+- **"Show me who calls this function"** — uses `getCallHierarchy` to trace callers and callees
+- **"Run the tests and fix failures"** — uses `runTests` or `runCommand` to execute tests, reads output, and applies fixes
+- **"Create a PR for these changes"** — uses `getGitDiff`, `gitCommit`, and `githubCreatePR` to commit and open a pull request
 
 ## Multi-IDE Orchestrator
 
@@ -219,10 +233,10 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 
 The bridge exposes tools in two modes:
 
-- **Slim mode (default)** — 27 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
+- **Slim mode (default)** — 29 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
 - **Full mode (`--full`)** — all ~96 tools, adding git, terminal, file ops, HTTP, and GitHub. Use this for large projects or workflows that rely on those integrations.
 
-### Slim mode — 27 IDE tools (default)
+### Slim mode — 29 IDE tools (default)
 
 | Category | Tools |
 |----------|-------|
@@ -577,7 +591,7 @@ bash scripts/gen-claude-desktop-config.sh --write
 
 Then restart Claude Desktop once to load the new config. After that, the bridge's **stdio shim** handles everything automatically — it discovers the running bridge via lock files, buffers requests until connected, and reconnects transparently when the bridge restarts. No port or token needs to be hard-coded, and no further Desktop restarts are needed when the bridge restarts.
 
-> **Tool availability:** Without the VS Code extension connected, ~25 tools (terminal, debug, LSP intelligence, editor state, file watchers) are unavailable. Claude Desktop works best alongside the running extension. You can verify connectivity by asking *"What tools do you have available?"* — the response will list what's active.
+> **Tool availability:** Without the VS Code extension connected, ~29 tools (terminal, debug, LSP intelligence, editor state, file watchers) are unavailable. Claude Desktop works best alongside the running extension. You can verify connectivity by asking *"What tools do you have available?"* — the response will list what's active.
 
 > **Debugging the shim:** If the connection seems stuck, the shim logs to stderr. In Claude Desktop, check **Settings → Developer → MCP Logs** to see shim output. Common cause: bridge not running — start it with `claude-ide-bridge --watch` first.
 

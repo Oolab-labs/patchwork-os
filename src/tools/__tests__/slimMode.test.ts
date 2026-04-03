@@ -5,8 +5,8 @@ import { SLIM_TOOL_NAMES, registerAllTools } from "../index.js";
 // ── SLIM_TOOL_NAMES invariants ─────────────────────────────────────────────
 
 describe("SLIM_TOOL_NAMES", () => {
-  it("contains exactly 27 entries", () => {
-    expect(SLIM_TOOL_NAMES.size).toBe(27);
+  it("contains exactly 29 entries", () => {
+    expect(SLIM_TOOL_NAMES.size).toBe(29);
   });
 
   it("all names match the valid tool name pattern", () => {
