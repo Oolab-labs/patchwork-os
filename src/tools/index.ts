@@ -197,6 +197,13 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "prepareRename",
   "signatureHelp",
   "refactorAnalyze",
+  "selectionRanges",
+  "foldingRanges",
+  "refactorExtractFunction",
+  "getImportTree",
+  // Editor decorations — needed for code review workflows
+  "setEditorDecorations",
+  "clearEditorDecorations",
   // Debugger
   "getDebugState",
   "evaluateInDebugger",
