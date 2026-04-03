@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AutomationHooks, loadPolicy } from "../automation.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Diagnostic } from "../automation.js";
+import { AutomationHooks, loadPolicy } from "../automation.js";
 import type { IClaudeDriver } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 

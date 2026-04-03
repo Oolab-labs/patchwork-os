@@ -10,9 +10,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { Logger } from "../logger.js";
@@ -90,7 +87,7 @@ function setupGracePeriodScaffold() {
       }
     });
 
-    ws.on("error", (err) => {
+    ws.on("error", (_err) => {
       if (currentWs === ws) {
         currentWs = null;
         startClaudeDisconnectGrace();

@@ -487,7 +487,7 @@ describe("Streamable HTTP: GET SSE", () => {
     const { status, contentType } = await new Promise<{
       status: number;
       contentType: string;
-    }>((resolve, reject) => {
+    }>((resolve, _reject) => {
       const req = http.request(
         {
           hostname: "127.0.0.1",
@@ -554,7 +554,7 @@ describe("Streamable HTTP: body size limit", () => {
   it("rejects bodies larger than 1MB with 413", async () => {
     const largeBody = "x".repeat(1_048_577); // 1 byte over limit
 
-    const res = await new Promise<{ status: number }>((resolve, reject) => {
+    const res = await new Promise<{ status: number }>((resolve, _reject) => {
       const req = http.request(
         {
           hostname: "127.0.0.1",

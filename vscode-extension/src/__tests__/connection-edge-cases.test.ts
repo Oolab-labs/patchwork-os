@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as vscode from "vscode";
 import { __reset } from "./__mocks__/vscode";
 
 // Mock the ws module

@@ -7,6 +7,7 @@ import { join, resolve as resolvePath } from "node:path";
 function getConfigDir(): string {
   return process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
 }
+
 import type { IClaudeDriver } from "./claudeDriver.js";
 
 export type TaskStatus =

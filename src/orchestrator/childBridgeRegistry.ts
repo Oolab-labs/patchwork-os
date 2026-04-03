@@ -1,6 +1,5 @@
 import fs from "node:fs";
-import path from "node:path";
-import { sep } from "node:path";
+import path, { sep } from "node:path";
 import type { ToolSchema } from "../transport.js";
 
 // Edge case 3: IDEs known to write lock files without a bridge extension

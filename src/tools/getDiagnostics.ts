@@ -11,7 +11,7 @@ import { pyrightLinter } from "./linters/pyright.js";
 import { ruffLinter } from "./linters/ruff.js";
 import type { LintDiagnostic, LinterRunner } from "./linters/types.js";
 import { typescriptLinter } from "./linters/typescript.js";
-import { optionalString, success, toFileUri } from "./utils.js";
+import { optionalString, successStructured, toFileUri } from "./utils.js";
 
 // Cap diagnostic message length and strip control characters to prevent
 // prompt injection from malicious LSP servers or linters.
@@ -164,6 +164,39 @@ export function createGetDiagnosticsTool(
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          available: { type: "boolean" },
+          source: { type: "string" },
+          linters: { type: "array", items: { type: "string" } },
+          linterErrors: { type: "object" },
+          diagnostics: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                severity: {
+                  type: "string",
+                  enum: ["error", "warning", "information", "hint"],
+                },
+                message: { type: "string" },
+                rule: { type: "string" },
+                line: { type: "integer" },
+                column: { type: "integer" },
+                endLine: { type: "integer" },
+                endColumn: { type: "integer" },
+                source: { type: "string" },
+              },
+              required: ["file", "severity", "message"],
+            },
+          },
+          summary: { type: "object" },
+          truncated: { type: "boolean" },
+        },
+        required: ["available", "source", "diagnostics"],
+      },
     },
 
     // 30s: CLI linters (tsc, biome) can be slow on cold start over VPS disk
@@ -245,7 +278,7 @@ export function createGetDiagnosticsTool(
               return d;
             });
             const filtered = applyFilters(sanitized);
-            return success({
+            return successStructured({
               available: true,
               source: "extension",
               linters: ["vscode-lsp"],
@@ -270,7 +303,7 @@ export function createGetDiagnosticsTool(
 
       // Fallback to CLI linters — run all in parallel
       if (availableLinters.length === 0) {
-        return success({
+        return successStructured({
           available: false,
           source: "cli",
           linters: [],
@@ -319,7 +352,7 @@ export function createGetDiagnosticsTool(
         if (err) errors[l.name] = err;
       }
 
-      return success({
+      return successStructured({
         available: true,
         source: "cli",
         linters: availableLinters.map((l) => l.name),

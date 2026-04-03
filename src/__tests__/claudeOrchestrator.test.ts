@@ -1,14 +1,13 @@
 import {
-  type MockInstance,
   afterEach,
   beforeEach,
   describe,
   expect,
   it,
+  type MockInstance,
   vi,
 } from "vitest";
-import type { IClaudeDriver } from "../claudeDriver.js";
-import type { ClaudeTaskInput } from "../claudeDriver.js";
+import type { ClaudeTaskInput, IClaudeDriver } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 
 // ── Mock driver helpers ───────────────────────────────────────────────────────
@@ -130,7 +129,7 @@ describe("ClaudeOrchestrator", () => {
     let current = 0;
     const driver: IClaudeDriver = {
       name: "counter",
-      async run(input: ClaudeTaskInput) {
+      async run(_input: ClaudeTaskInput) {
         current++;
         maxSeen = Math.max(maxSeen, current);
         await new Promise((r) => setTimeout(r, 5));
@@ -257,8 +256,8 @@ describe("ClaudeOrchestrator", () => {
       makeInstantDriver(0, "hello"),
       "/tmp",
       noop,
-      (taskId, chunk) => notifiedChunks.push(chunk),
-      (taskId, status) => notifiedDone.push(status),
+      (_taskId, chunk) => notifiedChunks.push(chunk),
+      (_taskId, status) => notifiedDone.push(status),
     );
     await orch.runAndWait({ prompt: "test" });
     expect(notifiedChunks).toContain("hello");

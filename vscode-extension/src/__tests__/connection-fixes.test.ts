@@ -88,7 +88,7 @@ describe("heartbeat — sleep/wake threshold", () => {
     const now = Date.now();
     // Set lastTickTime to 51 seconds ago
     (conn as any).lastTickTime = now - 51_000;
-    const handleDisconnectSpy = vi
+    const _handleDisconnectSpy = vi
       .spyOn(conn as any, "handleDisconnect")
       .mockImplementation(() => {});
     // Simulate the heartbeat callback firing
@@ -228,7 +228,7 @@ describe("heartbeat — sleep/wake active probe", () => {
     (conn as any).lastBridgePong = Date.now();
 
     // Invoke the internal heartbeat callback directly
-    const intervalCb = (conn as any).startHeartbeat.toString();
+    const _intervalCb = (conn as any).startHeartbeat.toString();
     // Instead of parsing the closure, just invoke startHeartbeat and advance the timer
     (conn as any).stopHeartbeat();
     (conn as any).startHeartbeat();

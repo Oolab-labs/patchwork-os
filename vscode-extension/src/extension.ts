@@ -11,10 +11,7 @@ import { createFileWatcherHandlers } from "./handlers/fileWatcher";
 import { baseHandlers } from "./handlers/index";
 import { createLspHandlers } from "./handlers/lsp";
 import { clearAllTerminalBuffers } from "./handlers/terminal";
-import {
-  readAllMatchingLockFiles,
-  readLockFileForWorkspace,
-} from "./lockfiles";
+import { readLockFileForWorkspace } from "./lockfiles";
 
 /**
  * SecretStorage key for a given workspace path.

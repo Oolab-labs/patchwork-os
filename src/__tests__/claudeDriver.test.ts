@@ -145,7 +145,6 @@ describe("ApiDriver", () => {
 
   afterEach(() => {
     if (origKey === undefined) {
-      // biome-ignore lint/performance/noDelete: must fully remove key, setting to undefined leaves it as the string "undefined"
       delete process.env.ANTHROPIC_API_KEY;
     } else {
       process.env.ANTHROPIC_API_KEY = origKey;
@@ -153,7 +152,6 @@ describe("ApiDriver", () => {
   });
 
   it("throws if ANTHROPIC_API_KEY is missing", () => {
-    // biome-ignore lint/performance/noDelete: must fully remove key, setting to undefined leaves it as the string "undefined"
     delete process.env.ANTHROPIC_API_KEY;
     expect(() => new ApiDriver(log)).toThrow("ANTHROPIC_API_KEY");
   });

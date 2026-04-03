@@ -1,7 +1,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, optionalInt, optionalString, success } from "./utils.js";
+import {
+  execSafe,
+  optionalInt,
+  optionalString,
+  successStructured,
+} from "./utils.js";
 
 const CACHE_TTL = 30_000;
 
@@ -223,6 +228,17 @@ export function createGetDependencyTreeTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          available: { type: "boolean" },
+          packageManager: { type: ["string", "null"] },
+          count: { type: "integer" },
+          tree: { anyOf: [{ type: "object" }, { type: "null" }] },
+          error: { type: "string" },
+        },
+        required: ["available", "packageManager"],
+      },
     },
     timeoutMs: 35_000,
 
@@ -234,12 +250,12 @@ export function createGetDependencyTreeTool(
       const now = Date.now();
       const cached = cache.get(cacheKey);
       if (cached && now - cached.timestamp < CACHE_TTL) {
-        return success(cached.data);
+        return successStructured(cached.data);
       }
 
       const detected = detectPackageManager(workspace, pm);
       if (!detected) {
-        return success({
+        return successStructured({
           available: false,
           packageManager: null,
           error:
@@ -263,7 +279,7 @@ export function createGetDependencyTreeTool(
             result = await runPip(workspace, signal);
             break;
           default:
-            return success({
+            return successStructured({
               available: false,
               packageManager: detected,
               error: `Unsupported package manager: ${detected}`,
@@ -271,10 +287,10 @@ export function createGetDependencyTreeTool(
         }
 
         cache.set(cacheKey, { data: result, timestamp: Date.now() });
-        return success({ available: true, ...result });
+        return successStructured({ available: true, ...result });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        return success({
+        return successStructured({
           available: false,
           packageManager: detected,
           error: msg,

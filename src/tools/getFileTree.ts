@@ -7,7 +7,7 @@ import {
   optionalInt,
   optionalString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 const IGNORED_DIRS = new Set([
@@ -53,6 +53,16 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          entries: { type: "array", items: { type: "string" } },
+          total: { type: "integer" },
+          truncated: { type: "boolean" },
+          tool: { type: "string", enum: ["git", "fd", "fs"] },
+        },
+        required: ["entries", "total", "truncated", "tool"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const directory = optionalString(args, "directory", 500);
@@ -89,7 +99,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
             return rel.split("/").length <= maxDepth;
           });
           entries = entries.slice(0, MAX_ENTRIES);
-          return success({
+          return successStructured({
             entries,
             total: entries.length,
             truncated: entries.length >= MAX_ENTRIES,
@@ -119,7 +129,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
         }
       }
       await walk(targetDir, 1);
-      return success({
+      return successStructured({
         entries,
         total: entries.length,
         truncated: entries.length >= MAX_ENTRIES,

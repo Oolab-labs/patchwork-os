@@ -1,7 +1,7 @@
 import type { AutomationHooks } from "../automation.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import type { ExtensionClient } from "../extensionClient.js";
-import { success } from "./utils.js";
+import { successStructured } from "./utils.js";
 
 const startTime = Date.now();
 
@@ -24,13 +24,41 @@ export function createBridgeStatusTool(
         properties: {},
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          extensionConnected: { type: "boolean" },
+          activeSessions: { type: "integer" },
+          circuitBreaker: {
+            type: "object",
+            properties: {
+              suspended: { type: "boolean" },
+              consecutiveFailures: { type: "integer" },
+              resumesInMs: { type: "integer" },
+            },
+            required: ["suspended", "consecutiveFailures"],
+          },
+          uptimeSeconds: { type: "integer" },
+          tier: { type: "string", enum: ["full", "basic"] },
+          tierDescription: { type: "string" },
+          hint: { type: "string" },
+          suggestedActions: { type: "array", items: { type: "string" } },
+        },
+        required: [
+          "extensionConnected",
+          "activeSessions",
+          "circuitBreaker",
+          "uptimeSeconds",
+          "tier",
+        ],
+      },
     },
     handler: async () => {
       const extensionConnected = extensionClient.isConnected();
       const circuitBreaker = extensionClient.getCircuitBreakerState();
       const uptimeMs = Date.now() - startTime;
 
-      return success({
+      return successStructured({
         extensionConnected,
         activeSessions: sessions?.size ?? 1,
         circuitBreaker: {

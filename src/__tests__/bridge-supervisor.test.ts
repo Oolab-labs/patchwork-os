@@ -13,7 +13,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 // Write a temporary Node.js helper script and return its path.
-function writeTmpScript(code: string): string {
+function _writeTmpScript(code: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-sup-"));
   const file = path.join(dir, "helper.mjs");
   fs.writeFileSync(file, code, "utf-8");
@@ -33,7 +33,9 @@ function collectStderr(
         .toString()
         .split("\n")
         .filter(Boolean)
-        .forEach((l) => lines.push(l));
+        .forEach((l) => {
+          lines.push(l);
+        });
     });
     proc.on("exit", () => {
       clearTimeout(timer);
@@ -194,7 +196,9 @@ child.on('exit', () => {
           .toString()
           .split("\n")
           .filter(Boolean)
-          .forEach((l) => allLines.push(l));
+          .forEach((l) => {
+            allLines.push(l);
+          });
       });
 
       // Wait for supervisor to report it started the child, then give the

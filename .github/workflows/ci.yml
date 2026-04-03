@@ -26,10 +26,10 @@ jobs:
       - name: Lint
         run: npm run lint
       - name: Test (1349 unit tests)
-        run: npm test -- --reporter=dot
+        run: npm test -- --reporter=dot --reporter=github-actions
         timeout-minutes: 5
       - name: Coverage (enforce 75% lines / 70% branches / 75% functions)
-        run: npm run test:coverage -- --reporter=dot
+        run: npm run test:coverage -- --reporter=dot --reporter=github-actions
         timeout-minutes: 8
       - name: Build
         run: npm run build

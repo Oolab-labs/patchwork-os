@@ -12,7 +12,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { ActivityLog } from "../activityLog.js";
 import type { Config } from "../config.js";
@@ -272,7 +272,7 @@ describe("Tool dispatch E2E — WebSocket", () => {
 
 describe("Streamable HTTP — session lifecycle", () => {
   it("creates a session via POST initialize and closes via DELETE", async () => {
-    const { server, transport, extensionClient, port, authToken, workspace } =
+    const { server, extensionClient, port, authToken, workspace } =
       await setupBridge();
 
     // Attach StreamableHttpHandler to the server
@@ -331,7 +331,7 @@ describe("Streamable HTTP — session lifecycle", () => {
   });
 
   it("returns 503 when session capacity is exceeded (MAX_HTTP_SESSIONS = 5)", async () => {
-    const { server, transport, extensionClient, port, authToken, workspace } =
+    const { server, extensionClient, port, authToken, workspace } =
       await setupBridge();
 
     const activityLog = new ActivityLog();

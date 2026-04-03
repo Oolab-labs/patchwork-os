@@ -221,6 +221,21 @@ export function success(data: unknown): {
   return { content: [{ type: "text", text: JSON.stringify(data) }] };
 }
 
+/**
+ * Like `success()` but also emits `structuredContent` per MCP 2025-06-18 spec.
+ * Use for tools that declare `outputSchema` — enables reliable tool chaining
+ * without clients having to parse text blobs.
+ */
+export function successStructured(data: unknown): {
+  content: Array<{ type: string; text: string }>;
+  structuredContent: unknown;
+} {
+  return {
+    content: [{ type: "text", text: JSON.stringify(data) }],
+    structuredContent: data,
+  };
+}
+
 export function error(
   data: string | Record<string, unknown>,
   code?: string,

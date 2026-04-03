@@ -102,7 +102,7 @@ describe("setDecorations", () => {
       },
     );
 
-    const applyCallsWithFirstType: any[][] = [];
+    const _applyCallsWithFirstType: any[][] = [];
     const newEditor = {
       document: { uri: { fsPath: "/test.ts" } },
       setDecorations: vi.fn(),

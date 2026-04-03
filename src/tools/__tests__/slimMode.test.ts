@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseConfig } from "../../config.js";
-import { SLIM_TOOL_NAMES, registerAllTools } from "../index.js";
+import { registerAllTools, SLIM_TOOL_NAMES } from "../index.js";
 
 // ── SLIM_TOOL_NAMES invariants ─────────────────────────────────────────────
 

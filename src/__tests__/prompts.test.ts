@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PROMPTS, getPrompt } from "../prompts.js";
+import { getPrompt, PROMPTS } from "../prompts.js";
 
 describe("PROMPTS list", () => {
   it("is non-empty", () => {

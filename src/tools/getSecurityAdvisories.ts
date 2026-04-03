@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, optionalString, success } from "./utils.js";
+import { execSafe, optionalString, successStructured } from "./utils.js";
 
 const CACHE_TTL = 60_000;
 
@@ -418,6 +418,44 @@ export function createGetSecurityAdvisoriesTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          available: { type: "boolean" },
+          packageManager: { type: "string" },
+          totalVulnerabilities: { type: "integer" },
+          bySeverity: {
+            type: "object",
+            properties: {
+              info: { type: "integer" },
+              low: { type: "integer" },
+              moderate: { type: "integer" },
+              high: { type: "integer" },
+              critical: { type: "integer" },
+            },
+          },
+          advisories: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                package: { type: "string" },
+                severity: {
+                  type: "string",
+                  enum: ["info", "low", "moderate", "high", "critical"],
+                },
+                title: { type: "string" },
+                fix: { type: "string" },
+                url: { type: "string" },
+              },
+              required: ["id", "package", "severity", "title"],
+            },
+          },
+          error: { type: "string" },
+        },
+        required: ["available"],
+      },
     },
     timeoutMs: 65_000,
 
@@ -432,7 +470,7 @@ export function createGetSecurityAdvisoriesTool(
       // npm workspace (same fix applied to auditDependencies.ts in v2.1.14).
       const detected = detectAuditor(workspace, pm);
       if (!detected) {
-        return success({
+        return successStructured({
           available: false,
           packageManager: null,
           error:
@@ -449,7 +487,7 @@ export function createGetSecurityAdvisoriesTool(
       const cached = cache.get(cacheKey);
       if (cached && now - cached.timestamp < CACHE_TTL) {
         const result = filterBySeverity(cached.data, minSeverity);
-        return success({ available: true, ...result });
+        return successStructured({ available: true, ...result });
       }
 
       try {
@@ -471,7 +509,7 @@ export function createGetSecurityAdvisoriesTool(
             result = await runPipAudit(workspace, signal);
             break;
           default:
-            return success({
+            return successStructured({
               available: false,
               packageManager: detected,
               error: `Unsupported auditor: ${detected}`,
@@ -480,7 +518,7 @@ export function createGetSecurityAdvisoriesTool(
 
         cache.set(cacheKey, { data: result, timestamp: Date.now() });
         const filtered = filterBySeverity(result, minSeverity);
-        return success({ available: true, ...filtered });
+        return successStructured({ available: true, ...filtered });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         // Cap error messages to the first line to avoid leaking internal paths,
@@ -498,13 +536,13 @@ export function createGetSecurityAdvisoriesTool(
                   : detected === "cargo"
                     ? "cargo-audit (install: cargo install cargo-audit)"
                     : "pip-audit (install: pip install pip-audit)";
-          return success({
+          return successStructured({
             available: false,
             packageManager: detected,
             error: `${tool} not found. ${safeMsg}`,
           });
         }
-        return success({
+        return successStructured({
           available: false,
           packageManager: detected,
           error: safeMsg,

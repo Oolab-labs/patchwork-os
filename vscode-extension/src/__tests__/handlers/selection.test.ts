@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
 import { handleGetSelection } from "../../handlers/selection";
 import {
-  Position,
   __reset,
   _mockTextDocument,
   _mockTextEditor,
+  Position,
 } from "../__mocks__/vscode";
 
 beforeEach(() => {

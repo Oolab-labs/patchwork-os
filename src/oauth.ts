@@ -337,7 +337,7 @@ export class OAuthServerImpl implements OAuthServer {
 
     // Validate redirect_uri against registered URIs to prevent open redirect
     const registered = this.registeredClients.get(clientId);
-    if (!registered || !registered.redirectUris.includes(redirectUri)) {
+    if (!registered?.redirectUris.includes(redirectUri)) {
       res.writeHead(400, { "Content-Type": "text/plain" });
       res.end("invalid redirect_uri");
       return;
@@ -586,7 +586,7 @@ export class OAuthServerImpl implements OAuthServer {
 
     // Validate redirect_uri against registered URIs to prevent open redirect
     const registered = this.registeredClients.get(clientId);
-    if (!registered || !registered.redirectUris.includes(redirectUri)) {
+    if (!registered?.redirectUris.includes(redirectUri)) {
       return { error: "invalid_redirect_uri" };
     }
 

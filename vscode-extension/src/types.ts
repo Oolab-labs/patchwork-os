@@ -1,5 +1,3 @@
-import type * as vscode from "vscode";
-
 export interface LockFileData {
   port: number;
   authToken: string;

@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { optionalBool, optionalInt, requireString, success } from "./utils.js";
+import {
+  optionalBool,
+  optionalInt,
+  requireString,
+  successStructured,
+} from "./utils.js";
 
 interface TreeNode {
   file: string;
@@ -91,6 +96,18 @@ export function createGetImportTreeTool(workspace: string) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          file: { type: "string" },
+          tree: { anyOf: [{ type: "object" }, { type: "null" }] },
+          cycles: { type: "array", items: { type: "string" } },
+          totalFiles: { type: "integer" },
+          maxDepth: { type: "integer" },
+          error: { type: "string" },
+        },
+        required: ["file", "tree", "cycles", "totalFiles", "maxDepth"],
+      },
     },
     async handler(args: Record<string, unknown>) {
       const file = requireString(args, "file");
@@ -117,7 +134,7 @@ export function createGetImportTreeTool(workspace: string) {
       try {
         source = await fs.promises.readFile(absFile, "utf-8");
       } catch {
-        return success({
+        return successStructured({
           file: absFile,
           tree: null,
           error: `Cannot read file: ${absFile}`,
@@ -214,7 +231,7 @@ export function createGetImportTreeTool(workspace: string) {
         }
       }
 
-      return success({
+      return successStructured({
         file: absFile,
         tree: rootNode,
         cycles,

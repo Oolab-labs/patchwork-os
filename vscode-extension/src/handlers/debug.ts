@@ -180,7 +180,7 @@ export const handleGetDebugState: RequestHandler = async () => {
     );
 
   let callStack: unknown[] = [];
-  let pausedAt: unknown = undefined;
+  let pausedAt: unknown;
   let scopes: unknown[] = [];
 
   try {

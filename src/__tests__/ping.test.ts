@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
  * Tests for the unauthenticated /ping endpoint.
  */
 import http from "node:http";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
 

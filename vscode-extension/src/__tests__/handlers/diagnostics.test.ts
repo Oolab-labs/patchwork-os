@@ -4,7 +4,7 @@ import {
   diagnosticToJson,
   handleGetDiagnostics,
 } from "../../handlers/diagnostics";
-import { Uri, __reset } from "../__mocks__/vscode";
+import { __reset, Uri } from "../__mocks__/vscode";
 
 beforeEach(() => {
   __reset();

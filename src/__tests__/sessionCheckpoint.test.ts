@@ -169,7 +169,7 @@ describe("SessionCheckpoint.loadLatest", () => {
   });
 
   it("picks the newest file when multiple checkpoints exist", () => {
-    const older = { ...sampleData, port: 1111, savedAt: Date.now() };
+    const _older = { ...sampleData, port: 1111, savedAt: Date.now() };
     const newer = { ...sampleData, port: 2222, savedAt: Date.now() };
     mockFs.readdirSync = vi.fn(
       () => ["checkpoint-1111.json", "checkpoint-2222.json"] as any,

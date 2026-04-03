@@ -8,7 +8,7 @@
  */
 
 import http from "node:http";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ChildBridgeClient } from "../childBridgeClient.js";
 
 const AUTH_TOKEN = "test-token-abc";

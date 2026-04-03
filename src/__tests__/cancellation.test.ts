@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
@@ -122,7 +122,7 @@ describe("MCP cancellation", () => {
     server = new Server(token, logger);
     transport = new McpTransport(logger);
 
-    let toolSignal: AbortSignal | undefined;
+    let _toolSignal: AbortSignal | undefined;
 
     transport.registerTool(
       {
@@ -131,7 +131,7 @@ describe("MCP cancellation", () => {
         inputSchema: { type: "object", properties: {} },
       },
       async (_args, signal) => {
-        toolSignal = signal;
+        _toolSignal = signal;
         return { content: [{ type: "text", text: "quick result" }] };
       },
     );

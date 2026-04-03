@@ -136,11 +136,8 @@ export function createWatchDiagnosticsTool(
           // when the inner re-check triggers settle() before timer/abortHandler
           // are assigned. `let` is required: each var is assigned after its
           // declaration (in a later statement), not at declaration time.
-          // biome-ignore lint/style/useConst: assigned after cleanup is defined to avoid TDZ
           let timer: ReturnType<typeof setTimeout> | undefined;
-          // biome-ignore lint/style/useConst: assigned after cleanup is defined to avoid TDZ
           let abortHandler: (() => void) | undefined;
-          // biome-ignore lint/style/useConst: assigned after cleanup is defined to avoid TDZ
           let unsubscribe: (() => void) | undefined;
 
           const cleanup = () => {

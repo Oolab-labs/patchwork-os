@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+
 const rg = "node_modules/.bin/rg";
 console.log("symlink exists:", existsSync(rg));
 try {
