@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.9.0] — 2026-04-03
+
+### Added
+- **`_meta["anthropic/maxResultSizeChars"]` on large-result tools** — 14 tools that return potentially large outputs (file contents, git diffs, search results, dependency trees, diagnostics, security advisories, etc.) now annotate their content blocks with `_meta["anthropic/maxResultSizeChars"]: 500000`. This tells Claude Code (v2.1.91+) to persist up to 500K chars instead of silently truncating large results. New helpers `successLarge()` and `successStructuredLarge()` in `src/tools/utils.ts`.
+- **CIMD support in OAuth authorize endpoint (SEP-991 / Claude Code v2.1.81+)** — When `client_id` is an HTTPS URL, the `/oauth/authorize` endpoint now fetches the Client ID Metadata Document at that URL to obtain `redirect_uris` dynamically, without requiring pre-registration via `/oauth/register`. Results are cached for 5 minutes. SSRF protection: private/loopback addresses blocked, response capped at 8KB, 5s timeout.
+- **6 tools promoted to slim mode** — `selectionRanges`, `foldingRanges`, `refactorExtractFunction`, `getImportTree`, `setEditorDecorations`, `clearEditorDecorations` added to `SLIM_TOOL_NAMES`. Previously only available in `--full` mode, making LSP refactor, onboarding, and code-review workflows non-functional in default deployments.
+- **LSP workflow guide in CLAUDE.md** — Five concrete tool sequences (add tool, code review, refactor, debug, onboard) with correct parameter names and quick-reference table. Replaces the single "Code Review with Decorations" section.
+
+---
+
 ## [2.6.3] — 2026-03-28
 
 ### Added
