@@ -925,6 +925,71 @@ export class ExtensionClient {
     );
   }
 
+  async prepareRename(
+    file: string,
+    line: number,
+    column: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/prepareRename",
+      { file, line, column },
+      undefined,
+      signal,
+    );
+  }
+
+  async formatRange(
+    file: string,
+    startLine: number,
+    endLine: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/formatRange",
+      { file, startLine, endLine },
+      undefined,
+      signal,
+    );
+  }
+
+  async signatureHelp(
+    file: string,
+    line: number,
+    column: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/signatureHelp",
+      { file, line, column },
+      undefined,
+      signal,
+    );
+  }
+
+  async foldingRanges(file: string, signal?: AbortSignal): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/foldingRanges",
+      { file },
+      undefined,
+      signal,
+    );
+  }
+
+  async selectionRanges(
+    file: string,
+    line: number,
+    column: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/selectionRanges",
+      { file, line, column },
+      undefined,
+      signal,
+    );
+  }
+
   async watchFiles(id: string, pattern: string): Promise<unknown> {
     return this.requestOrNull("extension/watchFiles", { id, pattern });
   }

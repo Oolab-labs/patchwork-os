@@ -31,6 +31,12 @@ function makeMockClient(connected = true) {
     findReferences: vi
       .fn()
       .mockResolvedValue([{ uri: "file:///b.ts", line: 5 }]),
+    getTypeHierarchy: vi
+      .fn()
+      .mockResolvedValue({ supertypes: [], subtypes: [] }),
+    getCodeActions: vi
+      .fn()
+      .mockResolvedValue([{ title: "Rename Symbol", kind: "refactor.rename" }]),
   } as any;
 }
 
@@ -85,5 +91,94 @@ describe("explainSymbol", () => {
     expect(result.definition).toBeNull();
     expect(result.callHierarchy).toBeNull();
     expect(result.references).toBeNull();
+  });
+});
+
+describe("explainSymbol — optional flags", () => {
+  it("does not call getTypeHierarchy or getCodeActions by default", async () => {
+    const ext = makeMockClient();
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({ filePath: testFile, line: 1, column: 1 }),
+    );
+    expect(ext.getTypeHierarchy).not.toHaveBeenCalled();
+    expect(ext.getCodeActions).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty("typeHierarchy");
+    expect(result).not.toHaveProperty("codeActions");
+  });
+
+  it("calls getTypeHierarchy and includes typeHierarchy field when includeTypeHierarchy=true", async () => {
+    const ext = makeMockClient();
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({
+        filePath: testFile,
+        line: 1,
+        column: 1,
+        includeTypeHierarchy: true,
+      }),
+    );
+    expect(ext.getTypeHierarchy).toHaveBeenCalledOnce();
+    expect(ext.getCodeActions).not.toHaveBeenCalled();
+    expect(result.typeHierarchy).toEqual({ supertypes: [], subtypes: [] });
+    expect(result).not.toHaveProperty("codeActions");
+  });
+
+  it("calls getCodeActions and includes codeActions field when includeCodeActions=true", async () => {
+    const ext = makeMockClient();
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({
+        filePath: testFile,
+        line: 1,
+        column: 1,
+        includeCodeActions: true,
+      }),
+    );
+    expect(ext.getCodeActions).toHaveBeenCalledOnce();
+    expect(ext.getTypeHierarchy).not.toHaveBeenCalled();
+    expect(result.codeActions).toEqual([
+      { title: "Rename Symbol", kind: "refactor.rename" },
+    ]);
+    expect(result).not.toHaveProperty("typeHierarchy");
+  });
+
+  it("calls both methods and includes both fields when both flags are true", async () => {
+    const ext = makeMockClient();
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({
+        filePath: testFile,
+        line: 1,
+        column: 1,
+        includeTypeHierarchy: true,
+        includeCodeActions: true,
+      }),
+    );
+    expect(ext.getTypeHierarchy).toHaveBeenCalledOnce();
+    expect(ext.getCodeActions).toHaveBeenCalledOnce();
+    expect(result.typeHierarchy).toEqual({ supertypes: [], subtypes: [] });
+    expect(result.codeActions).toEqual([
+      { title: "Rename Symbol", kind: "refactor.rename" },
+    ]);
+  });
+
+  it("returns null typeHierarchy but valid codeActions when getTypeHierarchy rejects", async () => {
+    const ext = makeMockClient();
+    ext.getTypeHierarchy.mockRejectedValue(new Error("hierarchy failed"));
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({
+        filePath: testFile,
+        line: 1,
+        column: 1,
+        includeTypeHierarchy: true,
+        includeCodeActions: true,
+      }),
+    );
+    expect(result.typeHierarchy).toBeNull();
+    expect(result.codeActions).toEqual([
+      { title: "Rename Symbol", kind: "refactor.rename" },
+    ]);
   });
 });

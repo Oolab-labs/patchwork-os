@@ -34,7 +34,7 @@ import {
  */
 const LSP_RETRY_DELAYS_MS = [4_000, 8_000] as const;
 
-async function lspWithRetry<T>(
+export async function lspWithRetry<T>(
   fn: () => Promise<T | null>,
   signal?: AbortSignal,
 ): Promise<T | null | "timeout"> {
@@ -77,7 +77,7 @@ async function lspWithRetry<T>(
 }
 
 /** Standard error returned when an LSP tool exhausts its retry budget. */
-function lspColdStartError() {
+export function lspColdStartError() {
   return error(
     "Language server timed out after retries — it may still be indexing the workspace. " +
       "Wait a few seconds and try again, or open a TypeScript file in the editor to trigger indexing.",
@@ -654,6 +654,131 @@ export function createSearchWorkspaceSymbolsTool(
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
         return success({ symbols: [], count: 0 });
+      }
+      return success(result);
+    },
+  };
+}
+
+export function createPrepareRenameTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "prepareRename",
+      extensionRequired: true,
+      description:
+        "Check whether a symbol at a given position can be safely renamed before attempting the rename. " +
+        "Returns canRename:false (with reason) if the language server does not support renaming this symbol. " +
+        "Use this before calling renameSymbol to avoid failed renames. Requires the VS Code extension.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: {
+            type: "string" as const,
+            description: "Absolute or workspace-relative file path",
+          },
+          line: {
+            type: "integer" as const,
+            description: "1-based line number",
+          },
+          column: {
+            type: "integer" as const,
+            description: "1-based column number",
+          },
+        },
+        required: ["filePath", "line", "column"],
+        additionalProperties: false as const,
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
+      const line = requireInt(args, "line", 1);
+      const column = requireInt(args, "column", 1);
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("prepareRename (LSP rename check)", [
+          "Use renameSymbol directly if you are confident the symbol supports renaming",
+        ]);
+      }
+      const result = await lspWithRetry(
+        () => extensionClient.prepareRename(filePath, line, column, signal),
+        signal,
+      );
+      if (result === "timeout") return lspColdStartError();
+      return success(
+        result ?? {
+          canRename: false,
+          reason: "Symbol does not support renaming at this position",
+        },
+      );
+    },
+  };
+}
+
+export function createFormatRangeTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "formatRange",
+      extensionRequired: true,
+      description:
+        "Format a specific line range in a file using the language server formatter. " +
+        "Faster and safer than formatting the entire document for large files. " +
+        "Applies edits and saves the file. Requires the VS Code extension.",
+      annotations: { readOnlyHint: false },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: {
+            type: "string" as const,
+            description: "Absolute or workspace-relative file path",
+          },
+          startLine: {
+            type: "integer" as const,
+            description: "1-based start line (inclusive)",
+          },
+          endLine: {
+            type: "integer" as const,
+            description: "1-based end line (inclusive)",
+          },
+        },
+        required: ["filePath", "startLine", "endLine"],
+        additionalProperties: false as const,
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
+      const startLine = requireInt(args, "startLine", 1);
+      const endLine = requireInt(args, "endLine", 1);
+      if (endLine < startLine) {
+        return error("endLine must be >= startLine");
+      }
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("formatRange (LSP range formatting)", [
+          "Use formatDocument to format the entire file instead",
+          "Use runCommand with biome or prettier for CLI-based formatting",
+        ]);
+      }
+      const result = await lspWithRetry(
+        () => extensionClient.formatRange(filePath, startLine, endLine, signal),
+        signal,
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return success({
+          formatted: false,
+          reason: "No formatter available for this file type",
+        });
       }
       return success(result);
     },
