@@ -138,6 +138,16 @@ export const SymbolKind: Record<number, string> &
   Array: 17,
 };
 
+export const FoldingRangeKind: Record<number, string> &
+  Record<string, number | string> = {
+  1: "Comment",
+  Comment: 1,
+  2: "Imports",
+  Imports: 2,
+  3: "Region",
+  Region: 3,
+};
+
 export const InlayHintKind = {
   Type: 1,
   Parameter: 2,

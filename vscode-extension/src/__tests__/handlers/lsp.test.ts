@@ -578,6 +578,240 @@ describe("searchSymbols", () => {
   });
 });
 
+// ── prepareRename ─────────────────────────────────────────────
+
+describe("prepareRename", () => {
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/prepareRename"](params);
+
+  it("returns canRename:true with range and placeholder on success", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue({
+      range: new Range(0, 0, 0, 3),
+      placeholder: "foo",
+    });
+
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+    })) as any;
+    expect(result.canRename).toBe(true);
+    expect(result.placeholder).toBe("foo");
+    expect(result.range).toMatchObject({
+      startLine: 1,
+      startColumn: 1,
+      endLine: 1,
+      endColumn: 4,
+    });
+  });
+
+  it("returns canRename:false with reason when executeCommand throws", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
+      new Error("built-in symbol"),
+    );
+
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+    })) as any;
+    expect(result.canRename).toBe(false);
+    expect(result.reason).toBe("built-in symbol");
+  });
+
+  it("returns canRename:false when executeCommand resolves null", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
+
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+    })) as any;
+    expect(result.canRename).toBe(false);
+  });
+});
+
+// ── signatureHelp ─────────────────────────────────────────────
+
+describe("signatureHelp", () => {
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/signatureHelp"](params);
+
+  it("returns signature help when found", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue({
+      activeSignature: 0,
+      activeParameter: 1,
+      signatures: [{ label: "f(a)", documentation: null, parameters: [] }],
+    });
+
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 5,
+    })) as any;
+    expect(result.activeSignature).toBe(0);
+    expect(result.activeParameter).toBe(1);
+    expect(result.signatures).toHaveLength(1);
+    expect(result.signatures[0].label).toBe("f(a)");
+    expect(result.signatures[0].documentation).toBeNull();
+  });
+
+  it("returns null when executeCommand resolves null", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
+
+    const result = await call({ file: "/test.ts", line: 1, column: 1 });
+    expect(result).toBeNull();
+  });
+
+  it("returns null when signatures array is empty", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue({
+      activeSignature: 0,
+      activeParameter: 0,
+      signatures: [],
+    });
+
+    const result = await call({ file: "/test.ts", line: 1, column: 1 });
+    expect(result).toBeNull();
+  });
+});
+
+// ── foldingRanges ─────────────────────────────────────────────
+
+describe("foldingRanges", () => {
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/foldingRanges"](params);
+
+  it("converts 0-based FoldingRange lines to 1-based and maps kind", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
+      { start: 0, end: 9, kind: 1 }, // kind 1 = Comment
+      { start: 10, end: 19, kind: 2 }, // kind 2 = Imports
+    ]);
+
+    const result = (await call({ file: "/test.ts" })) as any;
+    expect(result.ranges).toHaveLength(2);
+    expect(result.ranges[0]).toEqual({
+      startLine: 1,
+      endLine: 10,
+      kind: "Comment",
+    });
+    expect(result.ranges[1]).toEqual({
+      startLine: 11,
+      endLine: 20,
+      kind: "Imports",
+    });
+  });
+
+  it("returns empty ranges array when result is empty", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
+
+    const result = (await call({ file: "/test.ts" })) as any;
+    expect(result.ranges).toEqual([]);
+  });
+
+  it("uses null kind when kind is undefined", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
+      { start: 4, end: 7 },
+    ]);
+
+    const result = (await call({ file: "/test.ts" })) as any;
+    expect(result.ranges[0].kind).toBeNull();
+  });
+});
+
+// ── selectionRanges ───────────────────────────────────────────
+
+describe("selectionRanges", () => {
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/selectionRanges"](params);
+
+  it("flattens nested parent chain into ordered array (1-based)", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([
+      {
+        range: new Range(0, 4, 0, 9),
+        parent: {
+          range: new Range(0, 0, 0, 20),
+          parent: undefined,
+        },
+      },
+    ]);
+
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 5,
+    })) as any;
+    expect(result.ranges).toHaveLength(2);
+    expect(result.ranges[0]).toEqual({
+      startLine: 1,
+      startColumn: 5,
+      endLine: 1,
+      endColumn: 10,
+    });
+    expect(result.ranges[1]).toEqual({
+      startLine: 1,
+      startColumn: 1,
+      endLine: 1,
+      endColumn: 21,
+    });
+  });
+
+  it("returns empty ranges when result is empty", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
+
+    const result = (await call({
+      file: "/test.ts",
+      line: 1,
+      column: 1,
+    })) as any;
+    expect(result.ranges).toEqual([]);
+  });
+});
+
+// ── formatRange ───────────────────────────────────────────────
+
+describe("formatRange", () => {
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/formatRange"](params);
+
+  const baseParams = { file: "/test.ts", startLine: 1, endLine: 5 };
+
+  it("applies edits and returns formatted:true with editCount", async () => {
+    const edit1 = { range: new Range(0, 0, 0, 2), newText: "  " };
+    const edit2 = { range: new Range(1, 0, 1, 3), newText: "   " };
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([edit1, edit2]);
+
+    const result = (await call(baseParams)) as any;
+    expect(result.formatted).toBe(true);
+    expect(result.editCount).toBe(2);
+    expect(vscode.workspace.applyEdit).toHaveBeenCalled();
+  });
+
+  it("returns formatted:false when no edits are returned", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
+
+    const result = (await call(baseParams)) as any;
+    expect(result.formatted).toBe(false);
+    expect(result.editCount).toBe(0);
+  });
+
+  it("returns formatted:false when executeCommand resolves null", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
+
+    const result = (await call(baseParams)) as any;
+    expect(result.formatted).toBe(false);
+  });
+
+  it("returns formatted:false with reason when executeCommand throws", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
+      new Error("no formatter"),
+    );
+
+    const result = (await call(baseParams)) as any;
+    expect(result.formatted).toBe(false);
+    expect(result.reason).toBeDefined();
+  });
+});
+
 // ── goToDefinition throw path ──────────────────────────────────
 
 describe("goToDefinition — executeCommand throw path", () => {
