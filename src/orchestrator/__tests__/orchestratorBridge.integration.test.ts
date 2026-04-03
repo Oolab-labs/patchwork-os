@@ -228,7 +228,7 @@ async function startChildBridge(workspace: string): Promise<ChildScaffold> {
  */
 async function startOrchestrator(
   lockDir: string,
-  childPort: number,
+  _childPort: number,
 ): Promise<{ orchPort: number; orchToken: string; orchServer: Server }> {
   const orchToken = randomUUID();
   const logger = new Logger(false);
@@ -687,7 +687,7 @@ describe("McpTransport.deregisterTool", () => {
     const logger = new Logger(false);
     const orchServer = new Server(randomUUID(), logger);
     orchServers.push(orchServer);
-    const port = await orchServer.findAndListen(null);
+    const _port = await orchServer.findAndListen(null);
     const token = randomUUID();
     // Re-create a server with the right token for auth
     const authServer = new Server(token, logger);

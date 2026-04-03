@@ -3,8 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createGetCommitDetailsTool } from "../gitHistory.js";
-import { createGetDiffBetweenRefsTool } from "../gitHistory.js";
+import {
+  createGetCommitDetailsTool,
+  createGetDiffBetweenRefsTool,
+} from "../gitHistory.js";
 
 function parse(result: { content: Array<{ type: string; text: string }> }) {
   return JSON.parse(result.content.at(0)?.text ?? "{}");

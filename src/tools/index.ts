@@ -72,19 +72,6 @@ import {
   createGetDiffBetweenRefsTool,
 } from "./gitHistory.js";
 import {
-  createGitAddTool,
-  createGitBlameTool,
-  createGitCheckoutTool,
-  createGitCommitTool,
-  createGitFetchTool,
-  createGitListBranchesTool,
-  createGitPullTool,
-  createGitPushTool,
-  createGitStashListTool,
-  createGitStashPopTool,
-  createGitStashTool,
-} from "./gitWrite.js";
-import {
   createGithubCommentIssueTool,
   createGithubCreateIssueTool,
   createGithubCreatePRTool,
@@ -97,6 +84,19 @@ import {
   createGithubPostPRReviewTool,
   createGithubViewPRTool,
 } from "./github/index.js";
+import {
+  createGitAddTool,
+  createGitBlameTool,
+  createGitCheckoutTool,
+  createGitCommitTool,
+  createGitFetchTool,
+  createGitListBranchesTool,
+  createGitPullTool,
+  createGitPushTool,
+  createGitStashListTool,
+  createGitStashPopTool,
+  createGitStashTool,
+} from "./gitWrite.js";
 import {
   createGetHandoffNoteTool,
   createSetHandoffNoteTool,

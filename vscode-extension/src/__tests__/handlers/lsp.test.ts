@@ -1,13 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { createLspHandlers } from "../../handlers/lsp";
-import {
-  Position,
-  Range,
-  Uri,
-  WorkspaceEdit,
-  __reset,
-} from "../__mocks__/vscode";
+import { __reset, Range, Uri, WorkspaceEdit } from "../__mocks__/vscode";
 
 let handlers: Record<
   string,

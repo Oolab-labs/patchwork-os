@@ -48,6 +48,8 @@ export interface ToolSchema {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** JSON Schema describing the structured output (MCP 2025-06-18). When present, the tool also returns `structuredContent`. */
+  outputSchema?: Record<string, unknown>;
   annotations?: ToolAnnotations;
   /** If true, this tool requires the VS Code extension. When disconnected, calling it returns an error. */
   extensionRequired?: boolean;
@@ -63,7 +65,11 @@ export type ToolHandler = (
   args: Record<string, unknown>,
   signal?: AbortSignal,
   progress?: ProgressFn,
-) => Promise<{ content: Array<{ type: string; text: string }> }>;
+) => Promise<{
+  content: Array<{ type: string; text: string }>;
+  /** Typed structured output (MCP 2025-06-18). Present when the tool declares `outputSchema`. */
+  structuredContent?: unknown;
+}>;
 
 export class McpTransport {
   private tools = new Map<
@@ -498,11 +504,7 @@ export class McpTransport {
                   typeof result === "object"
                 ) {
                   const dangerous = ["__proto__", "constructor", "prototype"];
-                  if (
-                    dangerous.some((k) =>
-                      Object.prototype.hasOwnProperty.call(result, k),
-                    )
-                  ) {
+                  if (dangerous.some((k) => Object.hasOwn(result, k))) {
                     pending.reject(
                       new Error(
                         "Elicitation result contains disallowed keys (__proto__, constructor, prototype)",

@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 
+// Enable V8 compile cache for faster cold-start on repeated restarts (Node 22.8+).
+import nodeModule from "node:module";
+
+if (typeof nodeModule.enableCompileCache === "function") {
+  nodeModule.enableCompileCache();
+}
+
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import {
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   renameSync,
   statSync,
   unlinkSync,

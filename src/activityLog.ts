@@ -5,15 +5,14 @@ export type {
   TimelineEntry,
 } from "./activityTypes.js";
 
+import fs from "node:fs";
+import path from "node:path";
 import type {
   ActivityEntry,
   ActivityListener,
   LifecycleEntry,
   TimelineEntry,
 } from "./activityTypes.js";
-
-import fs from "node:fs";
-import path from "node:path";
 
 function escapeLabelValue(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");

@@ -1,4 +1,9 @@
-import { execSafe, optionalString, resolveFilePath, success } from "./utils.js";
+import {
+  execSafe,
+  optionalString,
+  resolveFilePath,
+  successStructured,
+} from "./utils.js";
 
 export function createGetGitStatusTool(workspace: string) {
   return {
@@ -19,6 +24,21 @@ export function createGetGitStatusTool(workspace: string) {
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          available: { type: "boolean" },
+          branch: { type: "string" },
+          ahead: { type: "integer" },
+          behind: { type: "integer" },
+          staged: { type: "array", items: { type: "string" } },
+          unstaged: { type: "array", items: { type: "string" } },
+          untracked: { type: "array", items: { type: "string" } },
+          conflicts: { type: "array", items: { type: "string" } },
+          error: { type: "string" },
+        },
+        required: ["available"],
+      },
     },
 
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
@@ -33,7 +53,10 @@ export function createGetGitStatusTool(workspace: string) {
         signal,
       });
       if (checkGit.exitCode !== 0) {
-        return success({ available: false, error: "Not a git repository" });
+        return successStructured({
+          available: false,
+          error: "Not a git repository",
+        });
       }
 
       // Get branch name
@@ -103,7 +126,7 @@ export function createGetGitStatusTool(workspace: string) {
         }
       }
 
-      return success({
+      return successStructured({
         branch,
         ahead,
         behind,

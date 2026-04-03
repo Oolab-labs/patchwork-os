@@ -15,14 +15,8 @@
  * Exit 0 = all pass, Exit 1 = failures present.
  */
 
-import {
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 
@@ -82,10 +76,10 @@ let msgId = 1;
 const pending = new Map();
 
 const results = { pass: 0, warn: 0, fail: 0, sections: [] };
-let currentSection = "";
+let _currentSection = "";
 
 function section(name) {
-  currentSection = name;
+  _currentSection = name;
   console.log(`\n=== ${name} ===`);
   results.sections.push({ name, items: [] });
 }

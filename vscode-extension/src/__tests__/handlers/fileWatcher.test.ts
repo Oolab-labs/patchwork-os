@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { createFileWatcherHandlers } from "../../handlers/fileWatcher";
-import { Uri, __reset } from "../__mocks__/vscode";
+import { __reset, Uri } from "../__mocks__/vscode";
 
 function setup() {
   const sendNotification = vi.fn();

@@ -1,6 +1,6 @@
 import { existsSync, promises as fsPromises } from "node:fs";
 import path from "node:path";
-import { error, optionalString, success } from "./utils.js";
+import { error, optionalString, successStructured } from "./utils.js";
 
 interface FileCoverageEntry {
   file: string;
@@ -136,6 +136,35 @@ export function createGetCodeCoverageTool(workspace: string) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          reportFile: { type: "string" },
+          format: { type: "string" },
+          files: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                lines: { type: "number" },
+                branches: { type: ["number", "null"] },
+                functions: { type: ["number", "null"] },
+              },
+              required: ["file", "lines"],
+            },
+          },
+          summary: {
+            type: "object",
+            properties: {
+              totalFiles: { type: "integer" },
+              averageLineCoverage: { type: "number" },
+              belowThreshold: { type: "integer" },
+            },
+          },
+        },
+        required: ["reportFile", "format", "files", "summary"],
+      },
     },
     handler: async (args: Record<string, unknown>) => {
       const fileArg = optionalString(args, "file");
@@ -227,7 +256,7 @@ export function createGetCodeCoverageTool(workspace: string) {
           ? filtered.length
           : files.filter((f) => f.lines < 80).length;
 
-      return success({
+      return successStructured({
         reportFile,
         format,
         files: filtered,

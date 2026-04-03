@@ -3,7 +3,7 @@ import {
   optionalInt,
   optionalString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createGetGitLogTool(workspace: string) {
@@ -30,6 +30,26 @@ export function createGetGitLogTool(workspace: string) {
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          entries: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                hash: { type: "string" },
+                author: { type: "string" },
+                date: { type: "string" },
+                subject: { type: "string" },
+              },
+              required: ["hash", "author", "date", "subject"],
+            },
+          },
+          error: { type: "string" },
+        },
+        required: [],
+      },
     },
 
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
@@ -55,7 +75,9 @@ export function createGetGitLogTool(workspace: string) {
       });
 
       if (result.exitCode !== 0) {
-        return success({ error: result.stderr.trim() || "git log failed" });
+        return successStructured({
+          error: result.stderr.trim() || "git log failed",
+        });
       }
 
       const entries = [];
@@ -73,7 +95,7 @@ export function createGetGitLogTool(workspace: string) {
         }
       }
 
-      return success({ entries });
+      return successStructured({ entries });
     },
   };
 }

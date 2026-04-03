@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import * as vscode from "vscode";
 import { handleGetDebugState } from "../../handlers/debug";
 import { __reset, _mockDebugSession, debug } from "../__mocks__/vscode";
 

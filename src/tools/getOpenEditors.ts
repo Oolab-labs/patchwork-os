@@ -4,7 +4,11 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { languageIdFromPath, resolveFilePath, success } from "./utils.js";
+import {
+  languageIdFromPath,
+  resolveFilePath,
+  successStructured,
+} from "./utils.js";
 
 export function createGetOpenEditorsTool(
   openedFiles: Set<string>,
@@ -21,6 +25,36 @@ export function createGetOpenEditorsTool(
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object",
         additionalProperties: false,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          tabs: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                uri: { type: "string" },
+                fileName: { type: "string" },
+                label: { type: "string" },
+                languageId: { type: "string" },
+                isActive: { type: "boolean" },
+                isDirty: { type: "boolean" },
+                lineCount: { type: "integer" },
+              },
+              required: [
+                "uri",
+                "fileName",
+                "label",
+                "languageId",
+                "isActive",
+                "isDirty",
+              ],
+            },
+          },
+          source: { type: "string", enum: ["vscode", "local-tracking"] },
+        },
+        required: ["tabs", "source"],
       },
     },
 
@@ -53,7 +87,7 @@ export function createGetOpenEditorsTool(
                 };
               }),
             );
-            return success({ tabs, source: "vscode" });
+            return successStructured({ tabs, source: "vscode" });
           }
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
@@ -97,7 +131,7 @@ export function createGetOpenEditorsTool(
         }
       }
       for (const p of toEvict) openedFiles.delete(p);
-      return success({ tabs, source: "local-tracking" });
+      return successStructured({ tabs, source: "local-tracking" });
     },
   };
 }

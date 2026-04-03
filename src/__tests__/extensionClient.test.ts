@@ -426,7 +426,7 @@ describe("ExtensionClient", () => {
     client.handleExtensionConnection(serverWs);
 
     // Start req1 — will time out at REQUEST_TIMEOUT (10s)
-    const req1 = client.getDiagnostics().catch((e) => e);
+    const _req1 = client.getDiagnostics().catch((e) => e);
 
     // Advance 1s — req1 still in flight
     await vi.advanceTimersByTimeAsync(1_000);

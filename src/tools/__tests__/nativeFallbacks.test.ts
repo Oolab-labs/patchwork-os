@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { type TextEdit, applyEditsToContent } from "../editText.js";
+import { applyEditsToContent } from "../editText.js";
 import {
   createCreateFileTool,
   createDeleteFileTool,

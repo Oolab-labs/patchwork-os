@@ -106,7 +106,7 @@ describe("writeClipboard — extension path", () => {
     } as any;
     // We don't want real pbcopy to run in CI — mock nativeWriteClipboard indirectly
     // by verifying that extension was called and fallback path is entered
-    const tool = createWriteClipboardTool(ext);
+    const _tool = createWriteClipboardTool(ext);
     // Just verify it doesn't throw and extension is invoked
     expect(ext.writeClipboard).toBeDefined();
   });

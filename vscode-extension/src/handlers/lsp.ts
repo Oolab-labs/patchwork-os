@@ -62,7 +62,7 @@ export function createLspHandlers(
       locations = await vscode.commands.executeCommand<
         vscode.Location[] | vscode.LocationLink[]
       >("vscode.executeDefinitionProvider", uri, position);
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       return null;
     }
 
@@ -105,7 +105,7 @@ export function createLspHandlers(
         uri,
         position,
       );
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       return { references: [] };
     }
 
@@ -140,7 +140,7 @@ export function createLspHandlers(
         uri,
         position,
       );
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       return null;
     }
 
@@ -189,7 +189,7 @@ export function createLspHandlers(
         uri,
         range,
       );
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       return { actions: [] };
     }
 
@@ -247,8 +247,22 @@ export function createLspHandlers(
       };
     }
 
-    if (action.edit) {
-      const applied = await vscode.workspace.applyEdit(action.edit);
+    // If the action has no edit, attempt lazy resolution (TypeScript refactors
+    // are often lazy — edit is only populated after a codeAction/resolve round-trip).
+    let resolvedEdit = action.edit;
+    if (!resolvedEdit) {
+      try {
+        const resolved = await vscode.commands.executeCommand<
+          vscode.CodeAction[] | undefined
+        >("vscode.executeCodeActionProvider", uri, range, action.kind?.value);
+        resolvedEdit = resolved?.find((a) => a.title === actionTitle)?.edit;
+      } catch {
+        // resolution failed — fall through to command path
+      }
+    }
+
+    if (resolvedEdit) {
+      const applied = await vscode.workspace.applyEdit(resolvedEdit);
       if (!applied) {
         return { applied: false, error: "Failed to apply workspace edit" };
       }
@@ -315,13 +329,28 @@ export function createLspHandlers(
       };
     }
 
-    const edit = action.edit;
+    let edit = action.edit;
+    if (!edit) {
+      // Many LSP refactors (e.g. TypeScript) are lazy — action.edit is undefined
+      // until the action is resolved. Attempt resolution via the provider.
+      try {
+        const resolved = await vscode.commands.executeCommand<
+          vscode.CodeAction | undefined
+        >("vscode.executeCodeActionProvider", uri, range, action.kind?.value);
+        const match = (resolved as vscode.CodeAction[] | undefined)?.find(
+          (a) => a.title === actionTitle,
+        );
+        edit = match?.edit;
+      } catch {
+        // resolution failed — fall through to command-only note below
+      }
+    }
     if (!edit) {
       return {
         title: action.title,
         changes: [],
         note: action.command
-          ? "This action executes a command rather than text edits"
+          ? "This action executes a command rather than text edits — preview not available"
           : "No edits available",
       };
     }
@@ -423,7 +452,7 @@ export function createLspHandlers(
       symbols = await vscode.commands.executeCommand<
         vscode.SymbolInformation[]
       >("vscode.executeWorkspaceSymbolProvider", query);
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       return { symbols: [], count: 0 };
     }
 
@@ -457,7 +486,7 @@ export function createLspHandlers(
         "vscode.executeDocumentSymbolProvider",
         uri,
       );
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       return { symbols: [], count: 0 };
     }
 
@@ -491,7 +520,7 @@ export function createLspHandlers(
         uri,
         position,
       );
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       return null;
     }
 

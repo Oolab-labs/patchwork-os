@@ -27,10 +27,7 @@ afterAll(() => {
 type DiagnosticsListener = (file: string) => void;
 
 function mockConnectedClient(
-  opts: {
-    lastDiagnosticsUpdate?: number;
-    cachedDiagnostics?: unknown[];
-  } = {},
+  opts: { lastDiagnosticsUpdate?: number; cachedDiagnostics?: unknown[] } = {},
 ) {
   const listeners = new Set<DiagnosticsListener>();
   const client = {
@@ -213,7 +210,7 @@ describe("watchDiagnostics: TDZ regression — settle called before cleanup is i
         return lastUpdate;
       },
       getCachedDiagnostics: () => [],
-      addDiagnosticsListener: (cb: (file: string) => void) => {
+      addDiagnosticsListener: (_cb: (file: string) => void) => {
         // Simulate diagnostic update arriving right as we register the listener
         lastUpdate = 1100;
         const unsub = () => {};

@@ -213,7 +213,9 @@ function createMockWatcher() {
     },
     dispose: vi.fn(),
     _fire: (event: string, uri: any) =>
-      listeners[event]?.forEach((fn) => fn(uri)),
+      listeners[event]?.forEach((fn) => {
+        fn(uri);
+      }),
     _listeners: listeners,
   };
 }
@@ -241,7 +243,7 @@ export const workspace = {
   onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
   onDidChangeWorkspaceFolders: vi.fn(() => ({ dispose: vi.fn() })),
   getConfiguration: vi.fn((_section?: string) => ({
-    get: <T>(key: string, defaultValue: T): T => defaultValue,
+    get: <T>(_key: string, defaultValue: T): T => defaultValue,
   })),
 };
 

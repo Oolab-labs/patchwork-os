@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createCheckDocumentDirtyTool } from "../checkDocumentDirty.js";
 import { createCloseTabTool } from "../closeTabs.js";
 import { createGetDiagnosticsTool } from "../getDiagnostics.js";

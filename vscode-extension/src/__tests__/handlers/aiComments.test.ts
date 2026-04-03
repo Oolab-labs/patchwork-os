@@ -6,7 +6,7 @@ import {
   scanAllOpenDocuments,
   scanDocumentForAIComments,
 } from "../../handlers/aiComments";
-import { Uri, __reset, _mockTextDocument } from "../__mocks__/vscode";
+import { __reset, _mockTextDocument } from "../__mocks__/vscode";
 
 function makeDocWithLines(lines: string[], fsPath = "/workspace/file.ts") {
   return _mockTextDocument({

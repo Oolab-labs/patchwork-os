@@ -11,10 +11,10 @@ import {
   handleSaveFile,
 } from "../../handlers/files";
 import {
-  TabInputText,
-  Uri,
   __reset,
   _mockTextDocument,
+  TabInputText,
+  Uri,
 } from "../__mocks__/vscode";
 
 beforeEach(() => {

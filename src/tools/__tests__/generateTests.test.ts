@@ -12,7 +12,7 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-import { existsSync, promises as fsPromises, readFileSync } from "node:fs";
+import { existsSync, promises as fsPromises } from "node:fs";
 import path from "node:path";
 import { createGenerateTestsTool } from "../generateTests.js";
 

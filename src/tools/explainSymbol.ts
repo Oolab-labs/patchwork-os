@@ -4,7 +4,7 @@ import {
   requireInt,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createExplainSymbolTool(
@@ -36,6 +36,27 @@ export function createExplainSymbolTool(
         },
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          hover: {
+            anyOf: [
+              {
+                type: "object",
+                properties: {
+                  contents: { type: "array", items: { type: "string" } },
+                  range: { type: "object" },
+                },
+              },
+              { type: "null" },
+            ],
+          },
+          definition: { anyOf: [{ type: "array" }, { type: "null" }] },
+          callHierarchy: { anyOf: [{ type: "object" }, { type: "null" }] },
+          references: { anyOf: [{ type: "object" }, { type: "null" }] },
+        },
+        required: ["hover", "definition", "callHierarchy", "references"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -84,7 +105,12 @@ export function createExplainSymbolTool(
       const references =
         referencesResult.status === "fulfilled" ? referencesResult.value : null;
 
-      return success({ hover, definition, callHierarchy, references });
+      return successStructured({
+        hover,
+        definition,
+        callHierarchy,
+        references,
+      });
     },
   };
 }

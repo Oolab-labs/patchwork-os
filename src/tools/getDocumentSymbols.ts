@@ -6,7 +6,7 @@ import {
   languageIdFromPath,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 // Language-specific patterns to detect symbol definitions (grep fallback)
@@ -45,6 +45,32 @@ export function createGetDocumentSymbolsTool(
         required: ["filePath"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          symbols: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                kind: { type: "string" },
+                line: { type: "integer" },
+                column: { type: "integer" },
+                parent: { type: ["string", "null"] },
+              },
+              required: ["name", "kind", "line"],
+            },
+          },
+          count: { type: "integer" },
+          source: {
+            type: "string",
+            enum: ["lsp", "grep-fallback", "unavailable"],
+          },
+          note: { type: "string" },
+        },
+        required: ["symbols", "count", "source"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
@@ -59,7 +85,7 @@ export function createGetDocumentSymbolsTool(
           );
           if (result !== null && typeof result === "object") {
             const r = result as Record<string, unknown>;
-            return success({ ...r, source: "lsp" });
+            return successStructured({ ...r, source: "lsp" });
           }
           // null means LSP not ready for this file — fall through to grep
         } catch {
@@ -73,7 +99,7 @@ export function createGetDocumentSymbolsTool(
 
       if (!pattern) {
         // No pattern — just return empty with a note
-        return success({
+        return successStructured({
           symbols: [],
           count: 0,
           source: "unavailable",
@@ -96,7 +122,11 @@ export function createGetDocumentSymbolsTool(
       );
 
       if (!rgResult.stdout.trim()) {
-        return success({ symbols: [], count: 0, source: "grep-fallback" });
+        return successStructured({
+          symbols: [],
+          count: 0,
+          source: "grep-fallback",
+        });
       }
 
       const symbols: Array<{
@@ -126,7 +156,7 @@ export function createGetDocumentSymbolsTool(
         symbols.push({ name, kind, line: lineNum, parent: null });
       }
 
-      return success({
+      return successStructured({
         symbols,
         count: symbols.length,
         source: "grep-fallback",

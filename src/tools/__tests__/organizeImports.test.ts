@@ -14,6 +14,7 @@ vi.mock("../utils.js", async (importOriginal) => {
 });
 
 import { execSafe } from "../utils.js";
+
 const mockExecSafe = vi.mocked(execSafe);
 
 function parse(result: {

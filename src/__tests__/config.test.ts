@@ -7,7 +7,6 @@ vi.mock("node:child_process", () => ({
 import { execFileSync } from "node:child_process";
 import {
   DB_ALLOWLIST_EXTRAS,
-  VPS_ALLOWLIST_EXTRAS,
   findEditor,
   ideNameFromEditor,
   parseConfig,

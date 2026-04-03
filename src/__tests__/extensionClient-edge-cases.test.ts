@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
-import { ExtensionClient, ExtensionTimeoutError } from "../extensionClient.js";
+import { ExtensionClient } from "../extensionClient.js";
 import { Logger } from "../logger.js";
 
 let wss: WebSocketServer;

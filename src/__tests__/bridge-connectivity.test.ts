@@ -39,16 +39,6 @@ afterEach(async () => {
 
 // ── Scaffold that mirrors bridge.ts connection handler ─────────────────────────
 
-interface BridgeScaffold {
-  server: Server;
-  transport: McpTransport;
-  extensionClient: ExtensionClient;
-  authToken: string;
-  port: number;
-  /** Track calls to transport.detach() */
-  detachSpy: ReturnType<typeof vi.spyOn>;
-}
-
 function buildScaffold(): {
   server: Server;
   transport: McpTransport;
@@ -221,14 +211,8 @@ describe("Bridge connectivity: duplicate connection cleanup", () => {
 
 describe("Bridge connectivity: tools/list_changed debounce", () => {
   it("multiple sendListChanged calls within 2s produce exactly one notification", async () => {
-    const {
-      server,
-      transport,
-      extensionClient,
-      authToken,
-      logger,
-      graceState,
-    } = buildScaffold();
+    const { server, extensionClient, authToken, logger, graceState } =
+      buildScaffold();
     const port = await server.findAndListen(null);
 
     // Replicate the debounced sendListChanged from bridge.ts

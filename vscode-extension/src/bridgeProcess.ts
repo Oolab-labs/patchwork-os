@@ -1,8 +1,7 @@
-import { execFile, spawn } from "node:child_process";
 import type * as cp from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fsp from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import * as vscode from "vscode";
@@ -363,7 +362,7 @@ export class BridgeProcess {
     }
   }
 
-  private async handleUnexpectedExit(code: number | null): Promise<void> {
+  private async handleUnexpectedExit(_code: number | null): Promise<void> {
     if (this.stopped) return;
 
     const ranFor = Date.now() - this.spawnedAt;
