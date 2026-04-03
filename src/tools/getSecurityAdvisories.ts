@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, optionalString, successStructured } from "./utils.js";
+import { execSafe, optionalString, successStructuredLarge } from "./utils.js";
 
 const CACHE_TTL = 60_000;
 
@@ -470,7 +470,7 @@ export function createGetSecurityAdvisoriesTool(
       // npm workspace (same fix applied to auditDependencies.ts in v2.1.14).
       const detected = detectAuditor(workspace, pm);
       if (!detected) {
-        return successStructured({
+        return successStructuredLarge({
           available: false,
           packageManager: null,
           error:
@@ -487,7 +487,7 @@ export function createGetSecurityAdvisoriesTool(
       const cached = cache.get(cacheKey);
       if (cached && now - cached.timestamp < CACHE_TTL) {
         const result = filterBySeverity(cached.data, minSeverity);
-        return successStructured({ available: true, ...result });
+        return successStructuredLarge({ available: true, ...result });
       }
 
       try {
@@ -509,7 +509,7 @@ export function createGetSecurityAdvisoriesTool(
             result = await runPipAudit(workspace, signal);
             break;
           default:
-            return successStructured({
+            return successStructuredLarge({
               available: false,
               packageManager: detected,
               error: `Unsupported auditor: ${detected}`,
@@ -518,7 +518,7 @@ export function createGetSecurityAdvisoriesTool(
 
         cache.set(cacheKey, { data: result, timestamp: Date.now() });
         const filtered = filterBySeverity(result, minSeverity);
-        return successStructured({ available: true, ...filtered });
+        return successStructuredLarge({ available: true, ...filtered });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         // Cap error messages to the first line to avoid leaking internal paths,
@@ -536,13 +536,13 @@ export function createGetSecurityAdvisoriesTool(
                   : detected === "cargo"
                     ? "cargo-audit (install: cargo install cargo-audit)"
                     : "pip-audit (install: pip install pip-audit)";
-          return successStructured({
+          return successStructuredLarge({
             available: false,
             packageManager: detected,
             error: `${tool} not found. ${safeMsg}`,
           });
         }
-        return successStructured({
+        return successStructuredLarge({
           available: false,
           packageManager: detected,
           error: safeMsg,

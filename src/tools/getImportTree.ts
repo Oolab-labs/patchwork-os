@@ -4,7 +4,7 @@ import {
   optionalBool,
   optionalInt,
   requireString,
-  successStructured,
+  successStructuredLarge,
 } from "./utils.js";
 
 interface TreeNode {
@@ -134,7 +134,7 @@ export function createGetImportTreeTool(workspace: string) {
       try {
         source = await fs.promises.readFile(absFile, "utf-8");
       } catch {
-        return successStructured({
+        return successStructuredLarge({
           file: absFile,
           tree: null,
           error: `Cannot read file: ${absFile}`,
@@ -231,7 +231,7 @@ export function createGetImportTreeTool(workspace: string) {
         }
       }
 
-      return successStructured({
+      return successStructuredLarge({
         file: absFile,
         tree: rootNode,
         cycles,

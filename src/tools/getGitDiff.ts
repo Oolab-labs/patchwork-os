@@ -4,7 +4,7 @@ import {
   optionalInt,
   optionalString,
   resolveFilePath,
-  success,
+  successLarge,
   truncateOutput,
 } from "./utils.js";
 
@@ -65,11 +65,13 @@ export function createGetGitDiffTool(workspace: string) {
       });
 
       if (result.exitCode !== 0) {
-        return success({ error: result.stderr.trim() || "git diff failed" });
+        return successLarge({
+          error: result.stderr.trim() || "git diff failed",
+        });
       }
 
       const { text, truncated } = truncateOutput(result.stdout, MAX_DIFF_BYTES);
-      return success({ diff: text, truncated });
+      return successLarge({ diff: text, truncated });
     },
   };
 }

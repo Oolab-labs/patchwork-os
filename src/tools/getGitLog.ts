@@ -3,7 +3,7 @@ import {
   optionalInt,
   optionalString,
   resolveFilePath,
-  successStructured,
+  successStructuredLarge,
 } from "./utils.js";
 
 export function createGetGitLogTool(workspace: string) {
@@ -75,7 +75,7 @@ export function createGetGitLogTool(workspace: string) {
       });
 
       if (result.exitCode !== 0) {
-        return successStructured({
+        return successStructuredLarge({
           error: result.stderr.trim() || "git log failed",
         });
       }
@@ -95,7 +95,7 @@ export function createGetGitLogTool(workspace: string) {
         }
       }
 
-      return successStructured({ entries });
+      return successStructuredLarge({ entries });
     },
   };
 }

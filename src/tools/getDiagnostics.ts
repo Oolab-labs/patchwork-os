@@ -11,7 +11,7 @@ import { pyrightLinter } from "./linters/pyright.js";
 import { ruffLinter } from "./linters/ruff.js";
 import type { LintDiagnostic, LinterRunner } from "./linters/types.js";
 import { typescriptLinter } from "./linters/typescript.js";
-import { optionalString, successStructured, toFileUri } from "./utils.js";
+import { optionalString, successStructuredLarge, toFileUri } from "./utils.js";
 
 // Cap diagnostic message length and strip control characters to prevent
 // prompt injection from malicious LSP servers or linters.
@@ -278,7 +278,7 @@ export function createGetDiagnosticsTool(
               return d;
             });
             const filtered = applyFilters(sanitized);
-            return successStructured({
+            return successStructuredLarge({
               available: true,
               source: "extension",
               linters: ["vscode-lsp"],
@@ -303,7 +303,7 @@ export function createGetDiagnosticsTool(
 
       // Fallback to CLI linters — run all in parallel
       if (availableLinters.length === 0) {
-        return successStructured({
+        return successStructuredLarge({
           available: false,
           source: "cli",
           linters: [],
@@ -352,7 +352,7 @@ export function createGetDiagnosticsTool(
         if (err) errors[l.name] = err;
       }
 
-      return successStructured({
+      return successStructuredLarge({
         available: true,
         source: "cli",
         linters: availableLinters.map((l) => l.name),

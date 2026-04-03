@@ -1,6 +1,6 @@
 import { existsSync, promises as fsPromises } from "node:fs";
 import path from "node:path";
-import { error, optionalString, successStructured } from "./utils.js";
+import { error, optionalString, successStructuredLarge } from "./utils.js";
 
 interface FileCoverageEntry {
   file: string;
@@ -256,7 +256,7 @@ export function createGetCodeCoverageTool(workspace: string) {
           ? filtered.length
           : files.filter((f) => f.lines < 80).length;
 
-      return successStructured({
+      return successStructuredLarge({
         reportFile,
         format,
         files: filtered,
