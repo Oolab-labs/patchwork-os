@@ -144,6 +144,13 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `getDocumentSymbols` | List all symbols in a document |
 | `getInlayHints` | Get inlay hints for a line range |
 | `getTypeHierarchy` | Get type hierarchy (supertypes/subtypes, 15s timeout) |
+| `explainSymbol` | Composite: hover + definition + references + optional type hierarchy + code actions |
+| `prepareRename` | Check if a symbol can be renamed before attempting (rename safety check) |
+| `signatureHelp` | Function signature docs and parameter info at a call site |
+| `foldingRanges` | Foldable code regions (functions, classes, imports) for a file |
+| `selectionRanges` | Hierarchical selection boundaries at a position (innermost → outermost) |
+| `refactorAnalyze` | Composite: assess refactoring impact — refs, callers, inheritance, risk level |
+| `formatRange` | Format a specific line range via VS Code formatter |
 
 ### Text Editing
 | Tool | Description |

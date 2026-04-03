@@ -596,6 +596,186 @@ export function createLspHandlers(
     };
   }
 
+  async function handlePrepareRename(params: Record<string, unknown>) {
+    const file = requireString(params.file, "file");
+    const line = requireNumber(params.line, "line") - 1;
+    const column = requireNumber(params.column, "column") - 1;
+    const uri = vscode.Uri.file(file);
+    await vscode.workspace.openTextDocument(uri);
+    const position = new vscode.Position(line, column);
+    let result:
+      | vscode.Range
+      | { range: vscode.Range; placeholder: string }
+      | null
+      | undefined;
+    try {
+      result = await vscode.commands.executeCommand<
+        vscode.Range | { range: vscode.Range; placeholder: string }
+      >("vscode.prepareRename", uri, position);
+    } catch (err: unknown) {
+      return {
+        canRename: false,
+        reason:
+          err instanceof Error
+            ? err.message
+            : "Rename not supported at this position",
+      };
+    }
+    if (!result) {
+      return { canRename: false, reason: "No rename provider available" };
+    }
+    const range = "range" in result ? result.range : result;
+    const placeholder = "placeholder" in result ? result.placeholder : null;
+    return {
+      canRename: true,
+      range: {
+        startLine: range.start.line + 1,
+        startColumn: range.start.character + 1,
+        endLine: range.end.line + 1,
+        endColumn: range.end.character + 1,
+      },
+      placeholder,
+    };
+  }
+
+  async function handleFormatRange(params: Record<string, unknown>) {
+    const file = requireString(params.file, "file");
+    const startLine = requireNumber(params.startLine, "startLine") - 1;
+    const endLine = requireNumber(params.endLine, "endLine") - 1;
+    const uri = vscode.Uri.file(file);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const range = new vscode.Range(
+      startLine,
+      0,
+      endLine,
+      Number.MAX_SAFE_INTEGER,
+    );
+    let edits: vscode.TextEdit[] | undefined;
+    try {
+      edits = await vscode.commands.executeCommand<vscode.TextEdit[]>(
+        "vscode.executeFormatRangeProvider",
+        uri,
+        range,
+        { tabSize: 2, insertSpaces: true },
+      );
+    } catch {
+      return { formatted: false, reason: "Formatter error" };
+    }
+    if (!edits || edits.length === 0) {
+      return { formatted: false, editCount: 0 };
+    }
+    const wsEdit = new vscode.WorkspaceEdit();
+    for (const e of edits) {
+      wsEdit.replace(uri, e.range, e.newText);
+    }
+    await vscode.workspace.applyEdit(wsEdit);
+    await doc.save();
+    return { formatted: true, editCount: edits.length };
+  }
+
+  async function handleSignatureHelp(params: Record<string, unknown>) {
+    const file = requireString(params.file, "file");
+    const line = requireNumber(params.line, "line") - 1;
+    const column = requireNumber(params.column, "column") - 1;
+    const uri = vscode.Uri.file(file);
+    await vscode.workspace.openTextDocument(uri);
+    const position = new vscode.Position(line, column);
+    let result: vscode.SignatureHelp | undefined;
+    try {
+      result = await vscode.commands.executeCommand<vscode.SignatureHelp>(
+        "vscode.executeSignatureHelpProvider",
+        uri,
+        position,
+      );
+    } catch {
+      return null;
+    }
+    if (!result || result.signatures.length === 0) return null;
+    return {
+      activeSignature: result.activeSignature ?? 0,
+      activeParameter: result.activeParameter ?? 0,
+      signatures: result.signatures.map((s) => ({
+        label: s.label,
+        documentation:
+          typeof s.documentation === "string"
+            ? s.documentation
+            : (s.documentation?.value ?? null),
+        parameters: s.parameters.map((p) => ({
+          label: p.label,
+          documentation:
+            typeof p.documentation === "string"
+              ? p.documentation
+              : (p.documentation?.value ?? null),
+        })),
+      })),
+    };
+  }
+
+  async function handleFoldingRanges(params: Record<string, unknown>) {
+    const file = requireString(params.file, "file");
+    const uri = vscode.Uri.file(file);
+    await vscode.workspace.openTextDocument(uri);
+    let result: vscode.FoldingRange[] | undefined;
+    try {
+      result = await vscode.commands.executeCommand<vscode.FoldingRange[]>(
+        "vscode.executeFoldingRangeProvider",
+        uri,
+      );
+    } catch {
+      return { ranges: [] };
+    }
+    if (!result || result.length === 0) return { ranges: [] };
+    return {
+      ranges: result.map((r) => ({
+        startLine: r.start + 1, // FoldingRange uses 0-based lines
+        endLine: r.end + 1,
+        kind:
+          r.kind !== undefined
+            ? (vscode.FoldingRangeKind[r.kind] ?? String(r.kind))
+            : null,
+      })),
+    };
+  }
+
+  async function handleSelectionRanges(params: Record<string, unknown>) {
+    const file = requireString(params.file, "file");
+    const line = requireNumber(params.line, "line") - 1;
+    const column = requireNumber(params.column, "column") - 1;
+    const uri = vscode.Uri.file(file);
+    await vscode.workspace.openTextDocument(uri);
+    const position = new vscode.Position(line, column);
+    let result: vscode.SelectionRange[] | undefined;
+    try {
+      // API takes Position[] — must wrap in array
+      result = await vscode.commands.executeCommand<vscode.SelectionRange[]>(
+        "vscode.executeSelectionRangeProvider",
+        uri,
+        [position],
+      );
+    } catch {
+      return { ranges: [] };
+    }
+    if (!result || result.length === 0) return { ranges: [] };
+    // Flatten the nested parent chain into an ordered array (innermost first)
+    const ranges: Array<{
+      startLine: number;
+      startColumn: number;
+      endLine: number;
+      endColumn: number;
+    }> = [];
+    let current: vscode.SelectionRange | undefined = result[0];
+    while (current) {
+      ranges.push({
+        startLine: current.range.start.line + 1,
+        startColumn: current.range.start.character + 1,
+        endLine: current.range.end.line + 1,
+        endColumn: current.range.end.character + 1,
+      });
+      current = current.parent;
+    }
+    return { ranges };
+  }
+
   return {
     "extension/goToDefinition": handleGoToDefinition,
     "extension/findReferences": handleFindReferences,
@@ -607,5 +787,10 @@ export function createLspHandlers(
     "extension/searchSymbols": handleSearchSymbols,
     "extension/getDocumentSymbols": handleGetDocumentSymbols,
     "extension/getCallHierarchy": handleGetCallHierarchy,
+    "extension/prepareRename": handlePrepareRename,
+    "extension/formatRange": handleFormatRange,
+    "extension/signatureHelp": handleSignatureHelp,
+    "extension/foldingRanges": handleFoldingRanges,
+    "extension/selectionRanges": handleSelectionRanges,
   };
 }

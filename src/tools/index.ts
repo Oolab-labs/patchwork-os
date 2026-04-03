@@ -40,6 +40,7 @@ import {
 import { createUnwatchFilesTool, createWatchFilesTool } from "./fileWatcher.js";
 import { createFindFilesTool } from "./findFiles.js";
 import { createFixAllLintErrorsTool } from "./fixAllLintErrors.js";
+import { createFoldingRangesTool } from "./foldingRanges.js";
 import { createFormatDocumentTool } from "./formatDocument.js";
 import { createGenerateAPIDocumentationTool } from "./generateAPIDocumentation.js";
 import { createGenerateTestsTool } from "./generateTests.js";
@@ -111,10 +112,12 @@ import { createListClaudeTasksTool } from "./listClaudeTasks.js";
 import {
   createApplyCodeActionTool,
   createFindReferencesTool,
+  createFormatRangeTool,
   createGetCallHierarchyTool,
   createGetCodeActionsTool,
   createGetHoverTool,
   createGoToDefinitionTool,
+  createPrepareRenameTool,
   createRenameSymbolTool,
   createSearchWorkspaceSymbolsTool,
 } from "./lsp.js";
@@ -123,6 +126,7 @@ import { createOpenFileTool } from "./openFile.js";
 import { createOpenInBrowserTool } from "./openInBrowser.js";
 import { createOrganizeImportsTool } from "./organizeImports.js";
 import { createPlanTools } from "./planPersistence.js";
+import { createRefactorAnalyzeTool } from "./refactorAnalyze.js";
 import { createRefactorExtractFunctionTool } from "./refactorExtractFunction.js";
 import { createRefactorPreviewTool } from "./refactorPreview.js";
 import { createReplaceBlockTool } from "./replaceBlock.js";
@@ -134,7 +138,9 @@ import { createSaveDocumentTool } from "./saveDocument.js";
 import { createCaptureScreenshotTool } from "./screenshot.js";
 import { createSearchAndReplaceTool } from "./searchAndReplace.js";
 import { createSearchWorkspaceTool } from "./searchWorkspace.js";
+import { createSelectionRangesTool } from "./selectionRanges.js";
 import { createSetActiveWorkspaceFolderTool } from "./setActiveWorkspaceFolder.js";
+import { createSignatureHelpTool } from "./signatureHelp.js";
 import {
   createCreateTerminalTool,
   createDisposeTerminalTool,
@@ -156,7 +162,7 @@ import {
 } from "./workspaceSettings.js";
 
 /**
- * The 29 IDE-exclusive tools registered in slim mode (the default).
+ * The 32 IDE-exclusive tools registered in slim mode (the default).
  *
  * Slim mode exposes only tools that require a live IDE extension — tools that
  * Claude cannot replicate via its native Read/Write/Bash capabilities. Everything
@@ -188,6 +194,9 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "searchWorkspaceSymbols",
   "getCallHierarchy",
   "explainSymbol",
+  "prepareRename",
+  "signatureHelp",
+  "refactorAnalyze",
   // Debugger
   "getDebugState",
   "evaluateInDebugger",
@@ -302,6 +311,12 @@ export function registerAllTools(
     createSearchWorkspaceSymbolsTool(workspace, extensionClient),
     createGetCallHierarchyTool(workspace, extensionClient),
     createExplainSymbolTool(workspace, extensionClient),
+    createPrepareRenameTool(workspace, extensionClient),
+    createFormatRangeTool(workspace, extensionClient),
+    createSignatureHelpTool(workspace, extensionClient),
+    createRefactorAnalyzeTool(workspace, extensionClient),
+    createFoldingRangesTool(workspace, extensionClient),
+    createSelectionRangesTool(workspace, extensionClient),
     // The Chosen Five
     ...createPlanTools(workspace),
     testsTool,
