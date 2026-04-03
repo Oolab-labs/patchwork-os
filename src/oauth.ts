@@ -82,10 +82,10 @@ export class OAuthServerImpl implements OAuthServer {
   private static readonly REGISTER_IP_MAX = 10; // max registrations per IP per minute
   private static readonly REGISTER_IP_WINDOW_MS = 60 * 1_000;
   private readonly gcTimer: ReturnType<typeof setInterval>;
-  /** CSRF nonces: client_id → { nonce, expiresAt } */
+  /** CSRF nonces: flowId → { nonce, clientId, expiresAt } */
   private readonly csrfNonces = new Map<
     string,
-    { nonce: string; expiresAt: number }
+    { nonce: string; clientId: string; expiresAt: number }
   >();
   private static readonly CSRF_TTL_MS = 10 * 60 * 1_000; // 10 minutes
 
@@ -243,7 +243,14 @@ export class OAuthServerImpl implements OAuthServer {
       grant_types: ["authorization_code"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
-      ...(body.client_name ? { client_name: body.client_name } : {}),
+      ...(body.client_name
+        ? {
+            client_name:
+              typeof body.client_name === "string"
+                ? body.client_name.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 128)
+                : undefined,
+          }
+        : {}),
     });
   }
 
@@ -276,10 +283,13 @@ export class OAuthServerImpl implements OAuthServer {
       return;
     }
 
-    // Generate CSRF nonce, keyed by client_id (one nonce per client per auth flow)
+    // Generate CSRF nonce keyed by a random flowId (not client_id) so concurrent
+    // authorization flows for the same client_id cannot overwrite each other's nonce.
     const csrfNonce = crypto.randomBytes(16).toString("hex");
-    this.csrfNonces.set(clientId as string, {
+    const flowId = crypto.randomBytes(8).toString("hex");
+    this.csrfNonces.set(flowId, {
       nonce: csrfNonce,
+      clientId: clientId as string,
       expiresAt: Date.now() + OAuthServerImpl.CSRF_TTL_MS,
     });
 
@@ -297,6 +307,7 @@ export class OAuthServerImpl implements OAuthServer {
         scope: scope ?? DEFAULT_SCOPE,
         state: state ?? "",
         csrfNonce,
+        flowId,
       }),
     );
   }
@@ -314,6 +325,7 @@ export class OAuthServerImpl implements OAuthServer {
     const state = body.get("state") ?? "";
 
     const csrfNonce = body.get("csrf_nonce") ?? "";
+    const flowId = body.get("flow_id") ?? "";
 
     if (!clientId || !redirectUri || !codeChallenge) {
       res.writeHead(400, { "Content-Type": "text/plain" });
@@ -321,11 +333,13 @@ export class OAuthServerImpl implements OAuthServer {
       return;
     }
 
-    // Verify CSRF nonce before any further processing
-    const storedCsrf = this.csrfNonces.get(clientId);
+    // Verify CSRF nonce before any further processing.
+    // Look up by flowId (not clientId) to prevent concurrent-flow nonce collision attacks.
+    const storedCsrf = this.csrfNonces.get(flowId);
     if (
       !storedCsrf ||
       storedCsrf.expiresAt < Date.now() ||
+      storedCsrf.clientId !== clientId ||
       !timingSafeStringEqual(csrfNonce, storedCsrf.nonce)
     ) {
       res.writeHead(403, { "Content-Type": "text/plain" });
@@ -333,7 +347,7 @@ export class OAuthServerImpl implements OAuthServer {
       return;
     }
     // Consume the nonce (one-time use)
-    this.csrfNonces.delete(clientId);
+    this.csrfNonces.delete(flowId);
 
     // Validate redirect_uri against registered URIs to prevent open redirect
     const registered = this.registeredClients.get(clientId);
@@ -361,6 +375,14 @@ export class OAuthServerImpl implements OAuthServer {
     // Verify bridge token on approve
     const presentedToken = body.get("bridge_token") ?? "";
     if (!timingSafeStringEqual(presentedToken, this.bridgeToken)) {
+      // Issue a fresh flowId + nonce for the retry so the form remains usable.
+      const retryCsrfNonce = crypto.randomBytes(16).toString("hex");
+      const retryFlowId = crypto.randomBytes(8).toString("hex");
+      this.csrfNonces.set(retryFlowId, {
+        nonce: retryCsrfNonce,
+        clientId,
+        expiresAt: Date.now() + OAuthServerImpl.CSRF_TTL_MS,
+      });
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(
         this.approvalPage({
@@ -370,6 +392,8 @@ export class OAuthServerImpl implements OAuthServer {
           scope,
           state,
           tokenError: true,
+          csrfNonce: retryCsrfNonce,
+          flowId: retryFlowId,
         }),
       );
       return;
@@ -609,6 +633,7 @@ export class OAuthServerImpl implements OAuthServer {
     state: string;
     tokenError?: boolean;
     csrfNonce?: string;
+    flowId?: string;
   }): string {
     const e = (s: string) =>
       s
@@ -669,6 +694,7 @@ export class OAuthServerImpl implements OAuthServer {
       <input type="hidden" name="scope"          value="${e(opts.scope)}">
       <input type="hidden" name="state"          value="${e(opts.state)}">
       <input type="hidden" name="csrf_nonce"     value="${e(opts.csrfNonce ?? "")}">
+      <input type="hidden" name="flow_id"        value="${e(opts.flowId ?? "")}">
       <div class="token-field">
         <label for="bridge_token">Bridge Token</label>
         <input id="bridge_token" type="password" name="bridge_token" placeholder="Paste your bridge token"
