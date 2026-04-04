@@ -105,6 +105,7 @@ export class BridgeConnection {
     "extension/diagnosticsChanged",
     "extension/fileChanged",
     "extension/aiCommentsChanged",
+    "extension/lspReady",
   ]);
 
   setHandlers(handlers: Record<string, RequestHandler>): void {

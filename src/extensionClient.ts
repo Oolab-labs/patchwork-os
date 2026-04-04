@@ -128,6 +128,10 @@ export class ExtensionClient {
   // Debug state (pushed by extension via notifications)
   public latestDebugState: DebugState | null = null;
 
+  // LSP readiness state — pushed by extension when language servers finish indexing.
+  // Used by lspWithRetry to skip retry delays for languages known to be ready.
+  public lspReadyLanguages = new Set<string>();
+
   // Callbacks for forwarding notifications to Claude Code
   public onDiagnosticsChanged:
     | ((file: string, diagnostics: Diagnostic[]) => void)
@@ -189,6 +193,9 @@ export class ExtensionClient {
     // Don't clear cached diagnostics/selection/file state — extension pushes
     // fresh data on connect, so stale values are harmless for a few seconds.
 
+    // Clear LSP readiness — extension will re-send on reconnect
+    this.lspReadyLanguages.clear();
+
     // Reset backoff — fresh connection deserves a clean slate
     this.extensionSuspendedUntil = 0;
     this.extensionFailures = 0;
@@ -239,6 +246,8 @@ export class ExtensionClient {
       // Clear diagnostics listeners — stale watchDiagnostics closures must not
       // accumulate across reconnects (they hold references to old AbortSignals).
       this.diagnosticsListeners.clear();
+      // Clear LSP readiness — language servers may need to re-index after reconnect
+      this.lspReadyLanguages.clear();
       this.logger.info(`Extension disconnected: ${reason}`);
       this.safeCallback(this.onExtensionDisconnected);
     };
@@ -429,6 +438,16 @@ export class ExtensionClient {
             `Extension major version mismatch: bridge=${BRIDGE_PROTOCOL_VERSION}, extension=${extVer}. Consider updating.`,
           );
         }
+        break;
+      }
+      case "extension/lspReady": {
+        const languageId = p.languageId;
+        if (typeof languageId !== "string" || languageId.length > 64) {
+          this.logger.debug("Ignoring malformed lspReady notification");
+          return;
+        }
+        this.lspReadyLanguages.add(languageId);
+        this.logger.info(`LSP ready: ${languageId}`);
         break;
       }
       case "extension/fileSaved":
