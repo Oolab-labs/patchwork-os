@@ -4,12 +4,12 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.6.1 — 2026-03-26)
+## Current State (v2.11.2 — 2026-04-04)
 
 - **Slim mode default**: 29 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
-- 1436 bridge tests + 406 extension tests, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **1,579 bridge tests / 122 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
-- Extension v1.0.12 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity (npm `2.5.12`)
+- Extension v1.0.19 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - **Four client surfaces**: Claude Code CLI, Claude Desktop (Cowork + Dispatch), Agent Teams (parallel), Scheduled Tasks (recurring)
@@ -28,6 +28,27 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.2 shipped (2026-04-04) — bridge-tools enforcement hardening:**
+- `src/instructionsUtils.ts`: shared `buildEnforcementBlock()` — `bridge.ts` and `orchestratorBridge.ts` no longer maintain separate copies
+- `@import` auto-patch: `init`/`gen-claude-md --write` inserts missing `@import .claude/rules/bridge-tools.md` into existing CLAUDE.md installations
+- `isBridgeToolsFileValid()`: repairs zero-byte or corrupted `bridge-tools.md` instead of skipping
+- EACCES/write errors emit `[warn]` with remediation instructions instead of crashing
+- Scheduled-tasks nudge added to `init` Next Steps output
+- 10 new tests (instructionsUtils unit + init @import patch, repair, idempotency)
+
+**v2.11.1 shipped (2026-04-04) — enforce bridge tools via MCP instructions:**
+- `buildInstructions()` in both `bridge.ts` and `orchestratorBridge.ts` injects BRIDGE TOOL ENFORCEMENT block on every MCP handshake (zero-config)
+- LSP readiness signal: extension notifies bridge when language server finishes indexing; `lspWithRetry` skips retry delays for known-ready languages
+
+**v2.11.0 shipped (2026-04-04) — bridge-tools rules file + @import:**
+- `templates/bridge-tools.md`: mandatory substitution table (runTests/getDiagnostics/gitCommit/searchWorkspace vs shell equivalents)
+- `init`/`gen-claude-md --write` write `.claude/rules/bridge-tools.md`; `CLAUDE.bridge.md` template loads it via `@import`
+- `orient` prompt Phase 3c scaffolds the file for users who onboard via prompt
+
+**v2.7.x shipped (2026-04-03) — MCP outputSchema + security hardening:**
+- v2.7.0: 12 tools declare typed outputSchema + return `structuredContent`; Biome 2.x upgrade; `refactorPreview`/`applyCodeAction` lazy resolution fix
+- v2.7.1: OAuth CSRF flowId fix, `structuredContent` AJV validation, HTTP body streaming OOM fix, Origin: null removed
 
 **v2.6.1 shipped (2026-03-26) — `shim` subcommand + init MCP auto-config + orchestrator fix:**
 - `shim` subcommand: `claude-ide-bridge shim` replaces the hardcoded `mcp-stdio-shim.cjs` path in MCP configs; stable across npm updates
