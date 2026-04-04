@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import type { ExtensionClient } from "../extensionClient.js";
 import {
+  error,
   extensionRequired,
   requireInt,
   requireString,
@@ -49,7 +50,9 @@ export function createRefactorExtractFunctionTool(
       args: Record<string, unknown>,
       signal?: AbortSignal,
     ): Promise<
-      ReturnType<typeof success> | ReturnType<typeof extensionRequired>
+      | ReturnType<typeof success>
+      | ReturnType<typeof error>
+      | ReturnType<typeof extensionRequired>
     > {
       if (!extensionClient.isConnected()) {
         return extensionRequired("refactorExtractFunction");
@@ -60,12 +63,9 @@ export function createRefactorExtractFunctionTool(
       const endLine = requireInt(args, "endLine", 1, 1_000_000);
       const functionName = requireString(args, "functionName");
       if (/[\x00-\x1f*/]/.test(functionName)) {
-        return success({
-          refactored: false,
-          method: "none",
-          message:
-            "functionName must not contain control characters or */ characters",
-        });
+        return error(
+          "functionName must not contain control characters or */ characters",
+        );
       }
 
       let absPath: string;

@@ -76,7 +76,12 @@ export function createGetTypeHierarchyTool(
           maxResults,
           signal,
         );
-        if (result === null) return error("Failed to get type hierarchy");
+        if (result === null)
+          return success({
+            found: false,
+            message:
+              "No type hierarchy at this position — ensure a language server is active",
+          });
         return success(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {

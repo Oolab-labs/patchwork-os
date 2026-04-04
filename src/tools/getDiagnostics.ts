@@ -296,7 +296,7 @@ export function createGetDiagnosticsTool(
                     ...(extTruncated
                       ? {
                           truncatedReason:
-                            "Capped at 500 total diagnostics — pass uri to get complete diagnostics for a specific file",
+                            "Capped by extension limit — pass uri to get complete diagnostics for a specific file",
                         }
                       : {}),
                   }

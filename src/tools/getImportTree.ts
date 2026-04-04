@@ -225,7 +225,11 @@ export function createGetImportTreeTool(workspace: string) {
           visited.add(resolvedPath);
           totalFiles++;
           if (progress && totalFiles % 10 === 0) {
-            progress(totalFiles, 0, `Scanning imports… ${totalFiles} files`);
+            progress(
+              totalFiles,
+              undefined,
+              `Scanning imports… ${totalFiles} files`,
+            );
           }
 
           if (depth < maxDepth) {
