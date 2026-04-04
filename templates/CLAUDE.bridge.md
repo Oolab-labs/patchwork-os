@@ -1,5 +1,7 @@
 ## Claude IDE Bridge
 
+@import .claude/rules/bridge-tools.md
+
 The bridge is connected via MCP. The session-start hook reports connection status, tool count, and extension state automatically — check that summary before proceeding. If tools appear missing, call `getBridgeStatus` to diagnose.
 
 ### Bug fix methodology
@@ -36,11 +38,7 @@ Path globs on rule files mean Claude only loads them when working on matching fi
 
 ### Workflow rules
 
-- **After editing any file** — call `getDiagnostics` to catch errors introduced by the change
-- **Running tests** — use `runTests` instead of shell commands; output streams in real time
-- **Git operations** — use bridge git tools (`getGitStatus`, `gitAdd`, `gitCommit`, `gitPush`) for structured, auditable operations
-- **Debugging** — use `setDebugBreakpoints` → `startDebugging` → `evaluateInDebugger` for interactive debugging
-- **Navigating code** — prefer `goToDefinition`, `findReferences`, and `getCallHierarchy` over grep
+Bridge tool substitution rules are in `.claude/rules/bridge-tools.md` (loaded above). The Quick reference table below is a summary.
 
 ### Quick reference
 

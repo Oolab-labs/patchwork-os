@@ -152,6 +152,25 @@ if (process.argv[2] === "gen-claude-md") {
 
   renameSync(`${targetPath}.tmp`, targetPath);
   process.stderr.write(`✓ Bridge workflow section written to ${targetPath}\n`);
+
+  // Also write bridge-tools rules file alongside CLAUDE.md
+  const genRulesDir = path.join(workspace, ".claude", "rules");
+  const genRulesFilePath = path.join(genRulesDir, "bridge-tools.md");
+  const genBridgeToolsTemplate = path.resolve(
+    __dirnameTop,
+    "..",
+    "templates",
+    "bridge-tools.md",
+  );
+  if (!existsSync(genRulesFilePath) && existsSync(genBridgeToolsTemplate)) {
+    mkdirSync(genRulesDir, { recursive: true });
+    writeFileSync(
+      genRulesFilePath,
+      readFileSync(genBridgeToolsTemplate, "utf-8"),
+    );
+    process.stderr.write(`✓ Bridge rules written to ${genRulesFilePath}\n`);
+  }
+
   process.exit(0);
 }
 
@@ -471,6 +490,7 @@ if (process.argv[2] === "init") {
         "  ✓ CLAUDE.md — bridge section already present\n\n",
       );
     } else {
+      mkdirSync(workspace, { recursive: true });
       const updated = existsSync(targetPath)
         ? `${readFileSync(targetPath, "utf-8").trimEnd()}\n\n${content.trimEnd()}\n`
         : content;
@@ -478,14 +498,36 @@ if (process.argv[2] === "init") {
       if (existsSync(targetPath)) {
         const ts = new Date().toISOString().replace(/[:.]/g, "-");
         renameSync(targetPath, `${targetPath}.${ts}.bak`);
-      } else {
-        mkdirSync(workspace, { recursive: true });
       }
       renameSync(`${targetPath}.tmp`, targetPath);
       process.stderr.write(
         `  ✓ CLAUDE.md — bridge section written to ${targetPath}\n\n`,
       );
     }
+  }
+
+  // Step 2b: Write bridge-tools rules file to .claude/rules/bridge-tools.md
+  const rulesDir = path.join(workspace, ".claude", "rules");
+  const rulesFilePath = path.join(rulesDir, "bridge-tools.md");
+  const bridgeToolsTemplatePath = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "templates",
+    "bridge-tools.md",
+  );
+  if (existsSync(rulesFilePath)) {
+    process.stderr.write(
+      `  ✓ Bridge rules — already present at ${rulesFilePath}\n\n`,
+    );
+  } else if (existsSync(bridgeToolsTemplatePath)) {
+    mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(
+      rulesFilePath,
+      readFileSync(bridgeToolsTemplatePath, "utf-8"),
+    );
+    process.stderr.write(`  ✓ Bridge rules — written to ${rulesFilePath}\n\n`);
+  } else {
+    process.stderr.write(`  [skip] Bridge rules — template not found\n\n`);
   }
 
   // Step 3: Register shim in ~/.claude.json so bridge tools appear in every claude session

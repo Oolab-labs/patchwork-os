@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.11.0] — 2026-04-04
+
+### Added
+- **Mandatory bridge tool rules** — `claude-ide-bridge init` and `gen-claude-md --write` now write `.claude/rules/bridge-tools.md` to the workspace. This scoped rules file contains a mandatory substitution table directing Claude to call MCP tools (`runTests`, `getDiagnostics`, `gitCommit`, `searchWorkspace`, etc.) instead of shell equivalents (`npm test`, `tsc`, `git commit`, `grep`) whenever the bridge is connected.
+- **`@import` in CLAUDE.bridge.md template** — the bridge section of CLAUDE.md now auto-loads the rules file via `@import .claude/rules/bridge-tools.md`, ensuring the substitution table applies in every session without manual setup.
+- **`orient` prompt includes bridge-tools.md** — the `orient-project` MCP prompt's Phase 3c scaffolding now creates `.claude/rules/bridge-tools.md` (skipping if already present from `init`), closing the gap for users who onboard via the prompt rather than the CLI.
+
+### Fixed
+- **`init` workspace creation ordering** — `mkdirSync` is now called before `writeFileSync` for the CLAUDE.md temp file, preventing an `ENOENT` crash when `init --workspace` points to a directory that does not yet exist.
+
+---
+
 ## [2.10.0] — 2026-04-04
 
 ### Added

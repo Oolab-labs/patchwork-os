@@ -429,6 +429,31 @@ Create rule files that do NOT already exist (check Phase 1 results).
 
 ### For ALL project types, create:
 
+**.claude/rules/bridge-tools.md** (skip if already exists — written by \`claude-ide-bridge init\`):
+\`\`\`markdown
+## Bridge Tool Overrides (claude-ide-bridge)
+
+> **These rules are active when the \`claude-ide-bridge\` MCP server is connected** (green in \`/mcp\`).
+> If the bridge is not running, fall back to standard shell equivalents.
+
+### MANDATORY: Bridge MCP tools replace shell commands
+
+Do NOT run the shell command. Call the MCP tool instead.
+
+| ❌ Do NOT use | ✅ Call instead |
+|---|---|
+| \`npm test\`, \`npx vitest\`, \`npx jest\` | \`runTests\` |
+| \`tsc --noEmit\`, \`eslint .\`, \`biome check\` | \`getDiagnostics\` |
+| \`git status\` / \`git diff\` / \`git log\` | \`getGitStatus\` / \`getGitDiff\` / \`getGitLog\` |
+| \`git add\` / \`git commit\` / \`git push\` | \`gitAdd\` / \`gitCommit\` / \`gitPush\` |
+| \`grep -r\`, \`rg\` | \`searchWorkspace\` |
+| \`cat <file>\` to read content | \`getBufferContent\` |
+| \`goToDefinition\`, \`findReferences\` | (already MCP tools — use them) |
+| \`node --inspect\` / \`console.log\` debugging | \`setDebugBreakpoints\` → \`startDebugging\` → \`evaluateInDebugger\` |
+\`\`\`
+
+Also add \`@import .claude/rules/bridge-tools.md\` to the top of the \`## Claude IDE Bridge\` section in CLAUDE.md if not already present.
+
 **.claude/rules/testing.md:**
 \`\`\`markdown
 # Testing Rules
@@ -594,6 +619,7 @@ function buildOrientPhase5(style: OrientStyle): string {
       "- [ ] documents/styleguide.md — <created | already existed>",
       "- [ ] documents/roadmap.md — <created | already existed>",
       "- [ ] docs/adr/README.md — <created | already existed>",
+      "- [ ] .claude/rules/bridge-tools.md — <created | already existed>",
       "- [ ] .claude/rules/testing.md — <created | already existed>",
       "- [ ] .claude/rules/security.md — <created | already existed>",
       "- [ ] .claude/rules/workflow.md — <created | already existed>",
