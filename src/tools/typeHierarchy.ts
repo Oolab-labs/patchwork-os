@@ -55,7 +55,7 @@ export function createGetTypeHierarchyTool(
         additionalProperties: false as const,
       },
     },
-    async handler(args: Record<string, unknown>) {
+    async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
         return extensionRequired("getTypeHierarchy");
       }
@@ -63,6 +63,9 @@ export function createGetTypeHierarchyTool(
       const line = requireInt(args, "line", 1, 1_000_000);
       const column = requireInt(args, "column", 1, 100_000);
       const direction = optionalString(args, "direction") ?? "both";
+      if (!["supertypes", "subtypes", "both"].includes(direction)) {
+        return error('direction must be "supertypes", "subtypes", or "both"');
+      }
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 20;
       try {
         const result = await extensionClient.getTypeHierarchy(
@@ -71,6 +74,7 @@ export function createGetTypeHierarchyTool(
           column,
           direction,
           maxResults,
+          signal,
         );
         if (result === null) return error("Failed to get type hierarchy");
         return success(result);

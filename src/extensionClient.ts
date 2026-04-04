@@ -1341,11 +1341,13 @@ export class ExtensionClient {
     column: number,
     direction?: string,
     maxResults?: number,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     return this.requestOrNull(
       "extension/getTypeHierarchy",
       { file, line, column, direction, maxResults },
       15_000,
+      signal,
     );
   }
 

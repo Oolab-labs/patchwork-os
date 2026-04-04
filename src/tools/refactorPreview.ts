@@ -1,4 +1,7 @@
-import type { ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import {
   error,
   extensionRequired,
@@ -74,15 +77,26 @@ export function createRefactorPreviewTool(
       const endColumn = requireInt(args, "endColumn");
       const actionTitle = requireString(args, "actionTitle");
 
-      const result = await extensionClient.previewCodeAction(
-        filePath,
-        startLine,
-        startColumn,
-        endLine,
-        endColumn,
-        actionTitle,
-        signal,
-      );
+      let result: unknown;
+      try {
+        result = await extensionClient.previewCodeAction(
+          filePath,
+          startLine,
+          startColumn,
+          endLine,
+          endColumn,
+          actionTitle,
+          signal,
+        );
+      } catch (err) {
+        if (err instanceof ExtensionTimeoutError) {
+          return error(
+            "Language server timed out — it may still be indexing. " +
+              "Wait a few seconds and try again.",
+          );
+        }
+        throw err;
+      }
 
       if (!result) return error("No response from extension");
       const r = result as Record<string, unknown>;
