@@ -201,7 +201,11 @@ export function createGetDiagnosticsTool(
 
     // 30s: CLI linters (tsc, biome) can be slow on cold start over VPS disk
     timeoutMs: 30_000,
-    async handler(args: Record<string, unknown>, signal?: AbortSignal) {
+    async handler(
+      args: Record<string, unknown>,
+      signal?: AbortSignal,
+      progress?: import("../transport.js").ProgressFn,
+    ) {
       const uri = optionalString(args, "uri");
       const severityFilter = optionalString(args, "severity") as
         | "error"
@@ -317,8 +321,21 @@ export function createGetDiagnosticsTool(
         });
       }
 
+      const total = availableLinters.length;
+      let completed = 0;
+      progress?.(0, total, `Running ${total} linter${total !== 1 ? "s" : ""}…`);
       const results = await Promise.all(
-        availableLinters.map((l) => runLinter(l, signal)),
+        availableLinters.map((l) =>
+          runLinter(l, signal).then((r) => {
+            completed++;
+            progress?.(
+              completed,
+              total,
+              `${l.name} done (${completed}/${total})`,
+            );
+            return r;
+          }),
+        ),
       );
       let diagnostics = results.flat();
 

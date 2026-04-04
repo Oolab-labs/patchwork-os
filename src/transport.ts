@@ -130,6 +130,8 @@ export class McpTransport {
   private readonly ajv = new Ajv({ strict: false, allErrors: true });
   private readonly schemaValidators = new Map<string, ValidateFunction>();
   private readonly outputValidators = new Map<string, ValidateFunction>();
+  /** Cached wire-schema array for tools/list. Invalidated on any tool registration change. */
+  private wireSchemaCache: unknown[] | null = null;
   /** Per-session tool-call rate limit (calls/minute). 0 = disabled. */
   private toolRateLimit = 60;
   /**
@@ -326,9 +328,10 @@ export class McpTransport {
         `Invalid tool name "${schema.name}": must contain only letters, digits, and underscores`,
       );
     }
-    // Clear cached AJV validators so the new schema is compiled on next use
+    // Clear cached AJV validators and wire schema so the new schema takes effect
     this.schemaValidators.delete(schema.name);
     this.outputValidators.delete(schema.name);
+    this.wireSchemaCache = null;
     this.tools.set(schema.name, { schema, handler, timeoutMs });
   }
 
@@ -336,6 +339,7 @@ export class McpTransport {
   deregisterTool(name: string): boolean {
     this.schemaValidators.delete(name);
     this.outputValidators.delete(name);
+    this.wireSchemaCache = null;
     return this.tools.delete(name);
   }
 
@@ -350,6 +354,7 @@ export class McpTransport {
         count++;
       }
     }
+    if (count > 0) this.wireSchemaCache = null;
     return count;
   }
 
@@ -654,11 +659,16 @@ export class McpTransport {
               };
               break;
             }
-            const allTools = Array.from(this.tools.values()).map((t) => {
-              // Strip internal-only fields before sending on the wire
-              const { extensionRequired: _ext, ...wireSchema } = t.schema;
-              return wireSchema;
-            });
+            if (!this.wireSchemaCache) {
+              this.wireSchemaCache = Array.from(this.tools.values()).map(
+                (t) => {
+                  // Strip internal-only fields before sending on the wire
+                  const { extensionRequired: _ext, ...wireSchema } = t.schema;
+                  return wireSchema;
+                },
+              );
+            }
+            const allTools = this.wireSchemaCache;
 
             // Parse cursor (opaque base64-encoded decimal offset)
             const listParams = msg.params as { cursor?: unknown } | undefined;

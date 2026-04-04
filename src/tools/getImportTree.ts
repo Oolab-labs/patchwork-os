@@ -109,7 +109,11 @@ export function createGetImportTreeTool(workspace: string) {
         required: ["file", "tree", "cycles", "totalFiles", "maxDepth"],
       },
     },
-    async handler(args: Record<string, unknown>) {
+    async handler(
+      args: Record<string, unknown>,
+      _signal?: AbortSignal,
+      progress?: import("../transport.js").ProgressFn,
+    ) {
       const file = requireString(args, "file");
       const maxDepth = optionalInt(args, "maxDepth", 1, 10) ?? 3;
       const includeExternal = optionalBool(args, "includeExternal") ?? false;
@@ -220,6 +224,9 @@ export function createGetImportTreeTool(workspace: string) {
           nodeRef.imports.push(childNode);
           visited.add(resolvedPath);
           totalFiles++;
+          if (progress && totalFiles % 10 === 0) {
+            progress(totalFiles, 0, `Scanning imports… ${totalFiles} files`);
+          }
 
           if (depth < maxDepth) {
             queue.push({
