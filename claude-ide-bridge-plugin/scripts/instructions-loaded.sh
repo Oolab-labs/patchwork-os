@@ -47,6 +47,6 @@ jq -n \
   '{
     hookSpecificOutput: {
       hookEventName: "InstructionsLoaded",
-      message: ("IDE Bridge ready — port " + $port + " | " + $tools + " tools | Extension: " + $ext + " | IDE: " + $ide + " | Workspace: " + $ws)
+      message: ("IDE Bridge ready — port " + $port + " | " + $tools + " tools | Extension: " + $ext + " | IDE: " + $ide + " | Workspace: " + $ws + " | Use bridge MCP tools instead of shell equivalents")
     }
   }'
