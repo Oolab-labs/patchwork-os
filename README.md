@@ -39,7 +39,13 @@ cd /your/project
 claude-ide-bridge init
 ```
 
-`init` auto-detects your editor (VS Code, Cursor, or Windsurf), installs the companion extension, writes a `## Claude IDE Bridge` section to your `CLAUDE.md`, and registers the bridge as a global MCP server in `~/.claude.json` — so bridge tools are available in **every** `claude` session (any directory, any IDE). That's the entire setup.
+`init` does four things:
+1. Installs the companion VS Code/Windsurf/Cursor extension
+2. Appends a `## Claude IDE Bridge` section to your `CLAUDE.md` (creating it if needed)
+3. Writes `.claude/rules/bridge-tools.md` — a rules file that directs Claude to call MCP tools instead of shell equivalents (`runTests` instead of `npm test`, `getDiagnostics` instead of `tsc`, `gitCommit` instead of `git commit`, `searchWorkspace` instead of `grep`)
+4. Registers the bridge as a global MCP server in `~/.claude.json` so bridge tools appear in **every** `claude` session, any directory
+
+The rules file is loaded automatically via `@import` in `CLAUDE.md` on every session. No extra flags or configuration needed.
 
 **Then start the bridge and open Claude:**
 
@@ -55,6 +61,14 @@ Type `/mcp` in Claude to confirm the server is connected, then `/ide` to see ope
 > **One bridge per workspace.** Each project needs its own bridge instance on its own port. If you work across multiple repos, start a separate `claude-ide-bridge --watch` in each directory.
 
 > **Why `~/.claude.json` and not `.mcp.json`?** When VS Code, Windsurf, or Cursor launches Claude Code, it injects `--mcp-config` which overrides any project `.mcp.json`. Only `~/.claude.json` is loaded in every session regardless of how Claude Code is started. `init` writes there by design — you don't need to touch `.mcp.json`.
+
+**Adding the bridge to an existing project** (without re-running full `init`):
+
+```bash
+claude-ide-bridge gen-claude-md --write
+```
+
+This appends the bridge section to your existing `CLAUDE.md` and writes `.claude/rules/bridge-tools.md`. Run it once per project.
 
 **Tools not showing up?** See the [troubleshooting guide](docs/troubleshooting.md).
 
