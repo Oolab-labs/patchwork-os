@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { ExtensionTimeoutError } from "../../extensionClient.js";
 import { createGetDocumentSymbolsTool } from "../getDocumentSymbols.js";
 
 // Mock execSafe so grep fallback tests don't require a real rg binary
@@ -40,10 +41,13 @@ function writeFile(name: string, content: string): string {
   return p;
 }
 
-function mockConnected(symbols: unknown): any {
+function mockConnected(symbols: unknown, throwTimeout = false): any {
   return {
     isConnected: () => true,
-    getDocumentSymbols: async () => symbols,
+    getDocumentSymbols: async () => {
+      if (throwTimeout) throw new ExtensionTimeoutError("timeout");
+      return symbols;
+    },
   };
 }
 
@@ -96,6 +100,17 @@ describe("getDocumentSymbols: LSP extension path", () => {
     expect(result.isError).toBeFalsy();
     const data = parse(result);
     expect(["grep-fallback", "unavailable"]).toContain(data.source);
+  });
+
+  it("returns timeout error when extension times out (does not silently fall through)", async () => {
+    const filePath = writeFile("timeout.ts", "export function baz() {}");
+    const tool = createGetDocumentSymbolsTool(
+      workspace,
+      mockConnected(null, true),
+    );
+    const result = await tool.handler({ filePath });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("timed out");
   });
 });
 
