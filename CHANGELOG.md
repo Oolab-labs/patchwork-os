@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.11.2] — 2026-04-04
+
+### Added
+- **`src/instructionsUtils.ts`** — new shared module exporting `buildEnforcementBlock()`. Both `bridge.ts` and `orchestratorBridge.ts` now call it instead of maintaining separate copies of the enforcement text, eliminating silent drift between the two.
+- **`@import` auto-patch on existing installs** — `gen-claude-md --write` and `init` now detect when a CLAUDE.md already contains the `## Claude IDE Bridge` section but is missing the `@import .claude/rules/bridge-tools.md` line (users who installed before v2.11.0). The line is inserted automatically; the original file is backed up with a timestamp suffix.
+- **Corrupted `bridge-tools.md` repair** — both write paths now validate file content via `isBridgeToolsFileValid()` (checks for `runTests` and `getDiagnostics`) rather than checking existence only. Zero-byte, truncated, or corrupted files are replaced and logged as `[repair]`.
+- **EACCES warning on rules file write** — if `.claude/rules/bridge-tools.md` cannot be written due to a permissions error, a `[warn]` message is emitted with remediation instructions instead of crashing. All other write errors are similarly caught and logged.
+- **Scheduled-tasks nudge in `init` output** — the "Next steps" block now includes an optional step with the `cp` command for activating scheduled-task templates, gated on the templates directory being present.
+- **10 new tests** — `src/__tests__/instructionsUtils.test.ts` (4 unit tests for `buildEnforcementBlock`); expanded `src/__tests__/init.test.ts` covers `@import` patch, idempotency with `@import` present, corrupted/zero-byte repair, and valid-file preservation.
+
+---
+
 ## [2.11.1] — 2026-04-04
 
 ### Added

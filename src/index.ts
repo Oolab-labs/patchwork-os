@@ -33,6 +33,21 @@ const OPEN_VSX_PUBLISHER = "oolab-labs";
 const OPEN_VSX_NAME = "claude-ide-bridge-extension";
 
 /**
+ * Returns true if a bridge-tools.md file exists and contains the expected
+ * content (at minimum the two most important tool name references). A file
+ * that is empty, truncated, or corrupted returns false so the caller can
+ * overwrite/repair it.
+ */
+function isBridgeToolsFileValid(filePath: string): boolean {
+  try {
+    const content = readFileSync(filePath, "utf-8");
+    return content.includes("runTests") && content.includes("getDiagnostics");
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Downloads the latest VSIX from Open VSX Registry to a temp file.
  * Returns the temp file path (caller is responsible for deleting it).
  * Throws on network or API errors.
@@ -131,13 +146,30 @@ if (process.argv[2] === "gen-claude-md") {
   const targetPath = path.join(workspace, "CLAUDE.md");
   const marker = "## Claude IDE Bridge";
 
-  // Idempotent: skip if the section already exists
+  const IMPORT_LINE = "@import .claude/rules/bridge-tools.md";
+
+  // Idempotent: skip if the section already exists (with @import line)
   if (existsSync(targetPath)) {
     const existing = readFileSync(targetPath, "utf-8");
     if (existing.includes(marker)) {
-      process.stderr.write(
-        `CLAUDE.md already contains a '${marker}' section — no changes made.\n`,
-      );
+      if (!existing.includes(IMPORT_LINE)) {
+        // Patch: insert the @import line immediately after the marker heading
+        const patched = existing.replace(
+          `${marker}\n`,
+          `${marker}\n\n${IMPORT_LINE}\n`,
+        );
+        writeFileSync(`${targetPath}.tmp`, patched, "utf-8");
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        renameSync(targetPath, `${targetPath}.${ts}.bak`);
+        renameSync(`${targetPath}.tmp`, targetPath);
+        process.stderr.write(
+          `Patched existing CLAUDE.md — added missing @import line.\n`,
+        );
+      } else {
+        process.stderr.write(
+          `CLAUDE.md already contains a '${marker}' section — no changes made.\n`,
+        );
+      }
       process.exit(0);
     }
     // Write tmp first — if the write fails, the original is still intact
@@ -165,13 +197,35 @@ if (process.argv[2] === "gen-claude-md") {
     "templates",
     "bridge-tools.md",
   );
-  if (!existsSync(genRulesFilePath) && existsSync(genBridgeToolsTemplate)) {
-    mkdirSync(genRulesDir, { recursive: true });
-    writeFileSync(
-      genRulesFilePath,
-      readFileSync(genBridgeToolsTemplate, "utf-8"),
-    );
-    process.stderr.write(`✓ Bridge rules written to ${genRulesFilePath}\n`);
+  if (
+    !isBridgeToolsFileValid(genRulesFilePath) &&
+    existsSync(genBridgeToolsTemplate)
+  ) {
+    const repairing = existsSync(genRulesFilePath);
+    try {
+      mkdirSync(genRulesDir, { recursive: true });
+      writeFileSync(
+        genRulesFilePath,
+        readFileSync(genBridgeToolsTemplate, "utf-8"),
+      );
+      process.stderr.write(
+        repairing
+          ? `✓ Bridge rules repaired at ${genRulesFilePath}\n`
+          : `✓ Bridge rules written to ${genRulesFilePath}\n`,
+      );
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EACCES") {
+        process.stderr.write(
+          `[warn] Bridge rules — permission denied writing to ${genRulesFilePath}.\n` +
+            `       Run with elevated permissions or create the file manually.\n`,
+        );
+      } else {
+        process.stderr.write(
+          `[warn] Bridge rules — write failed (${code ?? String(err)})\n`,
+        );
+      }
+    }
   }
 
   process.exit(0);
@@ -485,13 +539,30 @@ if (process.argv[2] === "init") {
     const content = readFileSync(templatePath, "utf-8");
     const targetPath = path.join(workspace, "CLAUDE.md");
     const marker = "## Claude IDE Bridge";
+    const importLine = "@import .claude/rules/bridge-tools.md";
     if (
       existsSync(targetPath) &&
       readFileSync(targetPath, "utf-8").includes(marker)
     ) {
-      process.stderr.write(
-        "  ✓ CLAUDE.md — bridge section already present\n\n",
-      );
+      const existing = readFileSync(targetPath, "utf-8");
+      if (!existing.includes(importLine)) {
+        // Patch: insert the @import line immediately after the marker heading
+        const patched = existing.replace(
+          `${marker}\n`,
+          `${marker}\n\n${importLine}\n`,
+        );
+        writeFileSync(`${targetPath}.tmp`, patched, "utf-8");
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        renameSync(targetPath, `${targetPath}.${ts}.bak`);
+        renameSync(`${targetPath}.tmp`, targetPath);
+        process.stderr.write(
+          "  ✓ CLAUDE.md — patched with missing @import line\n\n",
+        );
+      } else {
+        process.stderr.write(
+          "  ✓ CLAUDE.md — bridge section already present\n\n",
+        );
+      }
     } else {
       mkdirSync(workspace, { recursive: true });
       const updated = existsSync(targetPath)
@@ -518,17 +589,36 @@ if (process.argv[2] === "init") {
     "templates",
     "bridge-tools.md",
   );
-  if (existsSync(rulesFilePath)) {
+  if (isBridgeToolsFileValid(rulesFilePath)) {
     process.stderr.write(
       `  ✓ Bridge rules — already present at ${rulesFilePath}\n\n`,
     );
   } else if (existsSync(bridgeToolsTemplatePath)) {
-    mkdirSync(rulesDir, { recursive: true });
-    writeFileSync(
-      rulesFilePath,
-      readFileSync(bridgeToolsTemplatePath, "utf-8"),
-    );
-    process.stderr.write(`  ✓ Bridge rules — written to ${rulesFilePath}\n\n`);
+    const repairing = existsSync(rulesFilePath);
+    try {
+      mkdirSync(rulesDir, { recursive: true });
+      writeFileSync(
+        rulesFilePath,
+        readFileSync(bridgeToolsTemplatePath, "utf-8"),
+      );
+      process.stderr.write(
+        repairing
+          ? `  ✓ Bridge rules — repaired at ${rulesFilePath}\n\n`
+          : `  ✓ Bridge rules — written to ${rulesFilePath}\n\n`,
+      );
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EACCES") {
+        process.stderr.write(
+          `  [warn] Bridge rules — permission denied writing to ${rulesFilePath}.\n` +
+            `         Run with elevated permissions or create the file manually.\n\n`,
+        );
+      } else {
+        process.stderr.write(
+          `  [warn] Bridge rules — write failed (${code ?? String(err)})\n\n`,
+        );
+      }
+    }
   } else {
     process.stderr.write(`  [skip] Bridge rules — template not found\n\n`);
   }
@@ -615,6 +705,18 @@ if (process.argv[2] === "init") {
   process.stdout.write(
     `  ${step++}. Confirm the connection — type inside Claude:\n\n       /mcp          (shows server status — claude-ide-bridge should be green)\n       /ide          (shows open files, diagnostics, editor state)\n\n`,
   );
+  const scheduledTasksDir = path.resolve(
+    __dirnameTop,
+    "..",
+    "templates",
+    "scheduled-tasks",
+  );
+  if (existsSync(scheduledTasksDir)) {
+    process.stdout.write(
+      `  ${step++}. Optional: activate scheduled task templates (nightly-review, health-check, dependency-audit):\n\n` +
+        `       cp -r $(npm root -g)/claude-ide-bridge/templates/scheduled-tasks/* ~/.claude/scheduled-tasks/\n\n`,
+    );
+  }
   process.stdout.write(
     "  Troubleshooting: https://github.com/Oolab-labs/claude-ide-bridge/blob/main/docs/troubleshooting.md\n",
   );

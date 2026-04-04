@@ -190,3 +190,160 @@ describe("init --workspace", () => {
     expect(content.split("## Claude IDE Bridge").length - 1).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fix 2: @import patch for existing CLAUDE.md without @import line
+// ---------------------------------------------------------------------------
+
+describe("gen-claude-md --write @import patch", () => {
+  it("inserts @import line into existing CLAUDE.md that has the bridge section but no @import", () => {
+    const ws = makeTmpDir();
+    const claudeMd = path.join(ws, "CLAUDE.md");
+
+    // Write a CLAUDE.md that has the marker but no @import line
+    fs.writeFileSync(
+      claudeMd,
+      "# My Project\n\n## Claude IDE Bridge\n\nSome old content without @import.\n",
+    );
+
+    const result = spawnSync(
+      "node",
+      [distIndex, "gen-claude-md", "--write", "--workspace", ws],
+      {
+        encoding: "utf-8",
+        env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("Patched");
+
+    const content = fs.readFileSync(claudeMd, "utf-8");
+    expect(content).toContain("@import .claude/rules/bridge-tools.md");
+    // Must not duplicate the section
+    expect(content.split("## Claude IDE Bridge").length - 1).toBe(1);
+    // Original content preserved
+    expect(content).toContain("Some old content without @import.");
+  });
+
+  it("does not modify CLAUDE.md when @import is already present", () => {
+    const ws = makeTmpDir();
+    const claudeMd = path.join(ws, "CLAUDE.md");
+    const original =
+      "# My Project\n\n## Claude IDE Bridge\n\n@import .claude/rules/bridge-tools.md\n\nContent here.\n";
+    fs.writeFileSync(claudeMd, original);
+
+    const result = spawnSync(
+      "node",
+      [distIndex, "gen-claude-md", "--write", "--workspace", ws],
+      {
+        encoding: "utf-8",
+        env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("no changes made");
+    expect(fs.readFileSync(claudeMd, "utf-8")).toBe(original);
+  });
+});
+
+describe("init --workspace @import patch", () => {
+  it("patches existing CLAUDE.md with bridge section but no @import", () => {
+    const ws = makeTmpDir();
+    const claudeMd = path.join(ws, "CLAUDE.md");
+
+    fs.mkdirSync(ws, { recursive: true });
+    fs.writeFileSync(
+      claudeMd,
+      "# My Project\n\n## Claude IDE Bridge\n\nOld content.\n",
+    );
+
+    const result = spawnSync("node", [distIndex, "init", "--workspace", ws], {
+      input: "n\n",
+      encoding: "utf-8",
+      env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      timeout: 30_000,
+    });
+
+    expect(result.status).toBe(0);
+    const content = fs.readFileSync(claudeMd, "utf-8");
+    expect(content).toContain("@import .claude/rules/bridge-tools.md");
+    expect(content.split("## Claude IDE Bridge").length - 1).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 4: Corrupted bridge-tools.md is repaired
+// ---------------------------------------------------------------------------
+
+describe("bridge-tools.md repair", () => {
+  it("replaces a zero-byte bridge-tools.md on gen-claude-md --write", () => {
+    const ws = makeTmpDir();
+    const rulesDir = path.join(ws, ".claude", "rules");
+    fs.mkdirSync(rulesDir, { recursive: true });
+    fs.writeFileSync(path.join(rulesDir, "bridge-tools.md"), ""); // zero bytes
+
+    const result = spawnSync(
+      "node",
+      [distIndex, "gen-claude-md", "--write", "--workspace", ws],
+      {
+        encoding: "utf-8",
+        env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const repaired = fs.readFileSync(
+      path.join(rulesDir, "bridge-tools.md"),
+      "utf-8",
+    );
+    expect(repaired).toContain("runTests");
+    expect(repaired).toContain("getDiagnostics");
+  });
+
+  it("replaces a corrupted bridge-tools.md on gen-claude-md --write", () => {
+    const ws = makeTmpDir();
+    const rulesDir = path.join(ws, ".claude", "rules");
+    fs.mkdirSync(rulesDir, { recursive: true });
+    fs.writeFileSync(path.join(rulesDir, "bridge-tools.md"), "# corrupted");
+
+    const result = spawnSync(
+      "node",
+      [distIndex, "gen-claude-md", "--write", "--workspace", ws],
+      {
+        encoding: "utf-8",
+        env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const repaired = fs.readFileSync(
+      path.join(rulesDir, "bridge-tools.md"),
+      "utf-8",
+    );
+    expect(repaired).toContain("runTests");
+  });
+
+  it("does not overwrite a valid bridge-tools.md", () => {
+    const ws = makeTmpDir();
+    const rulesDir = path.join(ws, ".claude", "rules");
+    fs.mkdirSync(rulesDir, { recursive: true });
+    const validContent = "# Bridge Tools\nrunTests\ngetDiagnostics\n";
+    fs.writeFileSync(path.join(rulesDir, "bridge-tools.md"), validContent);
+
+    spawnSync(
+      "node",
+      [distIndex, "gen-claude-md", "--write", "--workspace", ws],
+      {
+        encoding: "utf-8",
+        env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      },
+    );
+
+    // Content should be unchanged (valid file kept as-is)
+    expect(
+      fs.readFileSync(path.join(rulesDir, "bridge-tools.md"), "utf-8"),
+    ).toBe(validContent);
+  });
+});
