@@ -44,10 +44,9 @@ const BRIDGE_TOOLS_MIN_BYTES = 200;
  */
 function isBridgeToolsFileValid(filePath: string): boolean {
   try {
-    const stat = statSync(filePath);
-    if (stat.size > 512 * 1024) return false; // > 512 KB is not a valid rules file
-    if (stat.size < BRIDGE_TOOLS_MIN_BYTES) return false;
     const content = readFileSync(filePath, "utf-8");
+    if (content.length > 512 * 1024) return false; // > 512 KB is not a valid rules file
+    if (content.length < BRIDGE_TOOLS_MIN_BYTES) return false;
     return (
       content.includes("runTests") &&
       content.includes("getDiagnostics") &&
@@ -72,11 +71,21 @@ function patchClaudeMdImport(
   const existing = readFileSync(targetPath, "utf-8");
   if (!existing.includes(marker)) return "no-section";
   if (existing.includes(importLine)) return "already-present";
-  const patched = existing.replace(
+  // Normalise: ensure marker is followed by a newline so the replace has a target.
+  // If marker is at EOF with no trailing newline, append one before patching.
+  const normalised = existing.endsWith("\n") ? existing : `${existing}\n`;
+  const patched = normalised.replace(
     `${marker}\n`,
     `${marker}\n\n${importLine}\n`,
   );
+  if (patched === normalised) return "no-section"; // replace had no effect — safety guard
   const tmpPath = `${targetPath}.tmp`;
+  // Clean up a stale .tmp from a previous crash before exclusive-create.
+  try {
+    unlinkSync(tmpPath);
+  } catch {
+    /* not present — expected */
+  }
   writeFileSync(tmpPath, patched, { encoding: "utf-8", flag: "wx" });
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   try {
@@ -114,8 +123,10 @@ function writeRulesFileAtomic(rulesFilePath: string, content: string): void {
 
 /**
  * Handles errors from rules file write operations. EACCES → warning + instructions.
- * ELOOP/EEXIST → hard error (indicates a symlink condition). Others → warning.
- * Returns the exit code to use (0 for warnings, 1 for hard errors).
+ * ELOOP → hard error (symlink cycle — indicates possible symlink attack).
+ * EEXIST → hard error (wx exclusive-create failed — indicates a symlink was placed
+ *   at the .tmp path, since we pre-clean stale .tmp files before every wx write).
+ * Others → warning. Returns the exit code to use (0 for warnings, 1 for hard errors).
  */
 function handleRulesWriteError(
   err: unknown,
