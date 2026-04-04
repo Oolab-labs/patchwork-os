@@ -12,6 +12,7 @@ import { baseHandlers } from "./handlers/index";
 import { createLspHandlers } from "./handlers/lsp";
 import { clearAllTerminalBuffers } from "./handlers/terminal";
 import { readLockFileForWorkspace } from "./lockfiles";
+import { createLspReadinessTracker } from "./lspReadiness";
 
 /**
  * SecretStorage key for a given workspace path.
@@ -227,10 +228,24 @@ export function activate(context: vscode.ExtensionContext): void {
       ...decorationHandlers.handlers,
     });
 
+    // LSP readiness tracker — notifies bridge when language servers finish indexing
+    const readinessTracker = createLspReadinessTracker(() => bridge, output);
+    context.subscriptions.push(readinessTracker);
+
+    // Re-send readiness state after each successful reconnect
+    const origOnConnected = bridge.onConnected;
+    bridge.onConnected = (lockData) => {
+      origOnConnected?.(lockData);
+      (
+        readinessTracker as ReturnType<typeof createLspReadinessTracker>
+      ).resendAll();
+    };
+
     bridge.setOnDispose(() => {
       fileWatcherHandlers.disposeAll();
       debugHandlers.disposeAll();
       decorationHandlers.disposeAll();
+      readinessTracker.dispose();
     });
 
     return bridge;

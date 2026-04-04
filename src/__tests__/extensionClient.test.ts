@@ -450,4 +450,109 @@ describe("ExtensionClient", () => {
     ws.close();
     vi.useRealTimers();
   });
+
+  it("tracks lspReady notifications per language", async () => {
+    const serverConn = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws);
+    const serverWs = await serverConn;
+    client.handleExtensionConnection(serverWs);
+
+    expect(client.lspReadyLanguages.size).toBe(0);
+
+    ws.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/lspReady",
+        params: { languageId: "typescript", timestamp: Date.now() },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(client.lspReadyLanguages.has("typescript")).toBe(true);
+    expect(client.lspReadyLanguages.has("python")).toBe(false);
+
+    ws.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/lspReady",
+        params: { languageId: "python", timestamp: Date.now() },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(client.lspReadyLanguages.has("python")).toBe(true);
+    expect(client.lspReadyLanguages.size).toBe(2);
+
+    ws.close();
+  });
+
+  it("clears lspReadyLanguages on reconnect", async () => {
+    // First connection
+    const conn1 = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+    const ws1 = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws1);
+    const serverWs1 = await conn1;
+    client.handleExtensionConnection(serverWs1);
+
+    ws1.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/lspReady",
+        params: { languageId: "typescript", timestamp: Date.now() },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(client.lspReadyLanguages.has("typescript")).toBe(true);
+
+    // Reconnect — should clear
+    const conn2 = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws2);
+    const serverWs2 = await conn2;
+    client.handleExtensionConnection(serverWs2);
+
+    expect(client.lspReadyLanguages.size).toBe(0);
+
+    ws1.close();
+    ws2.close();
+  });
+
+  it("ignores malformed lspReady notifications", async () => {
+    const serverConn = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws);
+    const serverWs = await serverConn;
+    client.handleExtensionConnection(serverWs);
+
+    // Missing languageId
+    ws.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/lspReady",
+        params: { timestamp: Date.now() },
+      }),
+    );
+    // Non-string languageId
+    ws.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/lspReady",
+        params: { languageId: 42, timestamp: Date.now() },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(client.lspReadyLanguages.size).toBe(0);
+
+    ws.close();
+  });
 });

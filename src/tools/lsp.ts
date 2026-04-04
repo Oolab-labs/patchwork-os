@@ -5,6 +5,7 @@ import {
 import {
   error,
   extensionRequired,
+  languageIdFromPath,
   optionalInt,
   requireInt,
   requireString,
@@ -37,12 +38,16 @@ const LSP_RETRY_DELAYS_MS = [4_000, 8_000] as const;
 export async function lspWithRetry<T>(
   fn: () => Promise<T | null>,
   signal?: AbortSignal,
+  isLspReady?: () => boolean,
 ): Promise<T | null | "timeout"> {
   // Attempt 1 — no wait
   try {
     return await fn();
   } catch (err) {
     if (!(err instanceof ExtensionTimeoutError)) throw err;
+    // If the language server is already known-ready, a timeout is a real problem
+    // (not a cold-start). Skip retries — they won't help.
+    if (isLspReady?.()) return "timeout";
   }
 
   // Retry attempts with increasing backoff
@@ -74,6 +79,15 @@ export async function lspWithRetry<T>(
   }
 
   return "timeout";
+}
+
+/** Returns a readiness checker for a given file path and extension client. */
+function readinessChecker(
+  extensionClient: ExtensionClient,
+  filePath: string,
+): () => boolean {
+  const langId = languageIdFromPath(filePath);
+  return () => extensionClient.lspReadyLanguages?.has(langId) ?? false;
 }
 
 /** Standard error returned when an LSP tool exhausts its retry budget. */
@@ -131,6 +145,7 @@ export function createGoToDefinitionTool(
       const result = await lspWithRetry(
         () => extensionClient.goToDefinition(filePath, line, column, signal),
         signal,
+        readinessChecker(extensionClient, filePath),
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
@@ -208,6 +223,7 @@ export function createFindReferencesTool(
       const result = await lspWithRetry(
         () => extensionClient.findReferences(filePath, line, column, signal),
         signal,
+        readinessChecker(extensionClient, filePath),
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
@@ -265,6 +281,7 @@ export function createGetHoverTool(
       const result = await lspWithRetry(
         () => extensionClient.getHover(filePath, line, column, signal),
         signal,
+        readinessChecker(extensionClient, filePath),
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
@@ -367,6 +384,7 @@ export function createGetCodeActionsTool(
             signal,
           ),
         signal,
+        readinessChecker(extensionClient, filePath),
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
@@ -635,6 +653,7 @@ export function createGetCallHierarchyTool(
             signal,
           ),
         signal,
+        readinessChecker(extensionClient, filePath),
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
@@ -753,6 +772,7 @@ export function createPrepareRenameTool(
       const result = await lspWithRetry(
         () => extensionClient.prepareRename(filePath, line, column, signal),
         signal,
+        readinessChecker(extensionClient, filePath),
       );
       if (result === "timeout") return lspColdStartError();
       return success(
@@ -817,6 +837,7 @@ export function createFormatRangeTool(
       const result = await lspWithRetry(
         () => extensionClient.formatRange(filePath, startLine, endLine, signal),
         signal,
+        readinessChecker(extensionClient, filePath),
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
