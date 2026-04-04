@@ -150,9 +150,11 @@ describe("createGetImportTreeTool", () => {
         includeExternal: true,
       }),
     );
-    expect(Array.isArray(data.tree.external)).toBe(true);
-    expect(data.tree.external).toContain("react");
-    expect(data.tree.external).toContain("node:fs/promises");
+    // external is now a flat root-level array, not per-node
+    expect(Array.isArray(data.external)).toBe(true);
+    expect(data.external).toContain("react");
+    expect(data.external).toContain("node:fs/promises");
+    expect(data.tree.external).toBeUndefined();
   });
 
   it("includes both local and external when includeExternal: true", async () => {
@@ -169,6 +171,8 @@ describe("createGetImportTreeTool", () => {
       }),
     );
     expect(data.tree.imports).toHaveLength(1);
-    expect(data.tree.external).toContain("express");
+    // external is now flat at root level
+    expect(data.external).toContain("express");
+    expect(data.tree.external).toBeUndefined();
   });
 });

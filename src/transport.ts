@@ -129,6 +129,7 @@ export class McpTransport {
   private isExtensionConnectedFn: (() => boolean) | null = null;
   private readonly ajv = new Ajv({ strict: false, allErrors: true });
   private readonly schemaValidators = new Map<string, ValidateFunction>();
+  private readonly outputValidators = new Map<string, ValidateFunction>();
   /** Per-session tool-call rate limit (calls/minute). 0 = disabled. */
   private toolRateLimit = 60;
   /**
@@ -325,14 +326,16 @@ export class McpTransport {
         `Invalid tool name "${schema.name}": must contain only letters, digits, and underscores`,
       );
     }
-    // Clear cached AJV validator so the new schema is compiled on next use
+    // Clear cached AJV validators so the new schema is compiled on next use
     this.schemaValidators.delete(schema.name);
+    this.outputValidators.delete(schema.name);
     this.tools.set(schema.name, { schema, handler, timeoutMs });
   }
 
   /** Remove all tools whose name starts with `prefix`. Returns count removed. */
   deregisterTool(name: string): boolean {
     this.schemaValidators.delete(name);
+    this.outputValidators.delete(name);
     return this.tools.delete(name);
   }
 
@@ -343,6 +346,7 @@ export class McpTransport {
       if (name.startsWith(prefix)) {
         this.tools.delete(name);
         this.schemaValidators.delete(name);
+        this.outputValidators.delete(name);
         count++;
       }
     }
@@ -980,9 +984,13 @@ export class McpTransport {
                     tool.schema.outputSchema !== undefined &&
                     toolResult.structuredContent !== undefined
                   ) {
-                    const outValidator = this.ajv.compile(
-                      tool.schema.outputSchema as object,
-                    );
+                    let outValidator = this.outputValidators.get(params.name);
+                    if (!outValidator) {
+                      outValidator = this.ajv.compile(
+                        tool.schema.outputSchema as object,
+                      );
+                      this.outputValidators.set(params.name, outValidator);
+                    }
                     if (!outValidator(toolResult.structuredContent)) {
                       callLog.warn(
                         `structuredContent failed outputSchema validation for tool "${params.name}" — stripping`,

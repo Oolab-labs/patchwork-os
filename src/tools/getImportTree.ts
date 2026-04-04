@@ -11,7 +11,6 @@ interface TreeNode {
   file: string;
   relativePath: string;
   imports: TreeNode[];
-  external?: string[];
   cycle?: boolean;
 }
 
@@ -104,6 +103,7 @@ export function createGetImportTreeTool(workspace: string) {
           cycles: { type: "array", items: { type: "string" } },
           totalFiles: { type: "integer" },
           maxDepth: { type: "integer" },
+          external: { type: "array", items: { type: "string" } },
           error: { type: "string" },
         },
         required: ["file", "tree", "cycles", "totalFiles", "maxDepth"],
@@ -120,6 +120,7 @@ export function createGetImportTreeTool(workspace: string) {
 
       const visited = new Set<string>();
       const cycles: string[] = [];
+      const allExternal = new Set<string>();
       let totalFiles = 0;
 
       // BFS queue: { absPath, parentNode, depth }
@@ -153,7 +154,6 @@ export function createGetImportTreeTool(workspace: string) {
         relativePath: relPath,
         imports: [],
       };
-      if (includeExternal) rootNode.external = [];
 
       visited.add(absFile);
       totalFiles++;
@@ -180,10 +180,8 @@ export function createGetImportTreeTool(workspace: string) {
 
         const { local, external } = parseImports(src);
 
-        if (includeExternal && nodeRef.external !== undefined) {
-          nodeRef.external.push(...external);
-        } else if (includeExternal) {
-          nodeRef.external = [...external];
+        if (includeExternal) {
+          for (const e of external) allExternal.add(e);
         }
 
         for (const spec of local) {
@@ -218,7 +216,6 @@ export function createGetImportTreeTool(workspace: string) {
             relativePath: childRel,
             imports: [],
           };
-          if (includeExternal) childNode.external = [];
 
           nodeRef.imports.push(childNode);
           visited.add(resolvedPath);
@@ -240,6 +237,7 @@ export function createGetImportTreeTool(workspace: string) {
         cycles,
         totalFiles,
         maxDepth,
+        ...(includeExternal ? { external: [...allExternal].sort() } : {}),
       });
     },
   };
