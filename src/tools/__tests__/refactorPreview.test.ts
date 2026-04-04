@@ -2,12 +2,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { ExtensionTimeoutError } from "../../extensionClient.js";
 import { createRefactorPreviewTool } from "../refactorPreview.js";
 
-function mockClient(connected: boolean, previewResult: unknown = null) {
+function mockClient(
+  connected: boolean,
+  previewResult: unknown = null,
+  throwTimeout = false,
+) {
   return {
     isConnected: () => connected,
-    previewCodeAction: vi.fn().mockResolvedValue(previewResult),
+    previewCodeAction: vi.fn(async () => {
+      if (throwTimeout) throw new ExtensionTimeoutError("timeout");
+      return previewResult;
+    }),
   } as any;
 }
 
@@ -91,5 +99,22 @@ describe("refactorPreview", () => {
       actionTitle: "Extract function",
     });
     expect(result.isError).toBe(true);
+  });
+
+  it("returns timeout error on ExtensionTimeoutError", async () => {
+    const tool = createRefactorPreviewTool(
+      workspace,
+      mockClient(true, null, true),
+    );
+    const result = await tool.handler({
+      filePath: "foo.ts",
+      startLine: 1,
+      startColumn: 1,
+      endLine: 1,
+      endColumn: 10,
+      actionTitle: "Extract function",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("timed out");
   });
 });

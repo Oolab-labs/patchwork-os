@@ -354,6 +354,7 @@ describe("getTypeHierarchy — extension required", () => {
       7,
       "both",
       20,
+      undefined,
     );
   });
 
@@ -376,6 +377,7 @@ describe("getTypeHierarchy — extension required", () => {
       7,
       "supertypes",
       5,
+      undefined,
     );
   });
 });

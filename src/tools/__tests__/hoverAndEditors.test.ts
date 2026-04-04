@@ -24,10 +24,17 @@ function parse(r: { content: Array<{ text: string }> }) {
 
 // ── searchWorkspaceSymbols ────────────────────────────────────────────────────
 
-function makeSymbolClient(opts: { connected: boolean }) {
+function makeSymbolClient(opts: {
+  connected: boolean;
+  result?: unknown;
+  throwTimeout?: boolean;
+}) {
   return {
     isConnected: vi.fn(() => opts.connected),
-    searchSymbols: vi.fn(async () => ({ symbols: [], count: 0 })),
+    searchSymbols: vi.fn(async () => {
+      if (opts.throwTimeout) throw new ExtensionTimeoutError("timeout");
+      return opts.result ?? { symbols: [], count: 0 };
+    }),
   } as any;
 }
 
@@ -50,6 +57,32 @@ describe("createSearchWorkspaceSymbolsTool", () => {
     const result = await tool.handler({ query: "MyClass" });
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("extension");
+  });
+
+  it("returns symbols on success", async () => {
+    const symbols = {
+      symbols: [{ name: "MyClass", kind: "Class", file: "/ws/foo.ts" }],
+      count: 1,
+    };
+    const tool = createSearchWorkspaceSymbolsTool(
+      "/ws",
+      makeSymbolClient({ connected: true, result: symbols }),
+    );
+    const result = await tool.handler({ query: "MyClass" });
+    expect(result.isError).toBeFalsy();
+    const data = JSON.parse(result.content[0]?.text ?? "{}");
+    expect(data.symbols).toHaveLength(1);
+    expect(data.symbols[0].name).toBe("MyClass");
+  });
+
+  it("returns cold-start error on timeout", async () => {
+    const tool = createSearchWorkspaceSymbolsTool(
+      "/ws",
+      makeSymbolClient({ connected: true, throwTimeout: true }),
+    );
+    const result = await tool.handler({ query: "MyClass" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("timed out");
   });
 });
 
