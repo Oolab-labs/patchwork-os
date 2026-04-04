@@ -32,19 +32,114 @@ const __dirnameTop = path.dirname(fileURLToPath(import.meta.url));
 const OPEN_VSX_PUBLISHER = "oolab-labs";
 const OPEN_VSX_NAME = "claude-ide-bridge-extension";
 
+// Minimum byte length a valid bridge-tools.md must exceed. The real template
+// is several hundred bytes; anything shorter is empty, truncated, or a stub.
+const BRIDGE_TOOLS_MIN_BYTES = 200;
+
 /**
- * Returns true if a bridge-tools.md file exists and contains the expected
- * content (at minimum the two most important tool name references). A file
- * that is empty, truncated, or corrupted returns false so the caller can
- * overwrite/repair it.
+ * Returns true if a bridge-tools.md file is present and appears to contain the
+ * real template content. Checks size, two required tool names, and the
+ * MANDATORY section heading that only the real template contains.
+ * Returns false on any read error so the caller can overwrite/repair.
  */
 function isBridgeToolsFileValid(filePath: string): boolean {
   try {
+    const stat = statSync(filePath);
+    if (stat.size > 512 * 1024) return false; // > 512 KB is not a valid rules file
+    if (stat.size < BRIDGE_TOOLS_MIN_BYTES) return false;
     const content = readFileSync(filePath, "utf-8");
-    return content.includes("runTests") && content.includes("getDiagnostics");
+    return (
+      content.includes("runTests") &&
+      content.includes("getDiagnostics") &&
+      content.includes("MANDATORY")
+    );
   } catch {
     return false;
   }
+}
+
+/**
+ * Patches an existing CLAUDE.md that has the bridge section but is missing the
+ * @import line. Writes atomically via a .tmp file with exclusive-create, then
+ * renames. Returns "patched", "already-present", or "no-section".
+ */
+function patchClaudeMdImport(
+  targetPath: string,
+  marker: string,
+  importLine: string,
+): "patched" | "already-present" | "no-section" {
+  if (!existsSync(targetPath)) return "no-section";
+  const existing = readFileSync(targetPath, "utf-8");
+  if (!existing.includes(marker)) return "no-section";
+  if (existing.includes(importLine)) return "already-present";
+  const patched = existing.replace(
+    `${marker}\n`,
+    `${marker}\n\n${importLine}\n`,
+  );
+  const tmpPath = `${targetPath}.tmp`;
+  writeFileSync(tmpPath, patched, { encoding: "utf-8", flag: "wx" });
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  try {
+    renameSync(targetPath, `${targetPath}.${ts}.bak`);
+    renameSync(tmpPath, targetPath);
+  } catch (err) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      /* best-effort cleanup */
+    }
+    throw err;
+  }
+  return "patched";
+}
+
+/**
+ * Writes rules file content atomically with exclusive-create on the .tmp path,
+ * then renames into place. Throws on failure; caller handles the error.
+ */
+function writeRulesFileAtomic(rulesFilePath: string, content: string): void {
+  const tmpPath = `${rulesFilePath}.tmp`;
+  writeFileSync(tmpPath, content, { encoding: "utf-8", flag: "wx" });
+  try {
+    renameSync(tmpPath, rulesFilePath);
+  } catch (err) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      /* best-effort cleanup */
+    }
+    throw err;
+  }
+}
+
+/**
+ * Handles errors from rules file write operations. EACCES → warning + instructions.
+ * ELOOP/EEXIST → hard error (indicates a symlink condition). Others → warning.
+ * Returns the exit code to use (0 for warnings, 1 for hard errors).
+ */
+function handleRulesWriteError(
+  err: unknown,
+  rulesFilePath: string,
+  indent: string,
+): number {
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === "EACCES") {
+    process.stderr.write(
+      `${indent}[warn] Bridge rules — permission denied writing to ${rulesFilePath}.\n` +
+        `${indent}       Run with elevated permissions or create the file manually.\n\n`,
+    );
+    return 0;
+  }
+  if (code === "ELOOP" || code === "EEXIST") {
+    process.stderr.write(
+      `${indent}[error] Bridge rules — suspicious path condition (${code}): ${rulesFilePath}\n\n`,
+    );
+    return 1;
+  }
+  process.stderr.write(
+    `${indent}[warn] Bridge rules — write failed (${code ?? String(err)})\n\n`,
+  );
+  return 0;
 }
 
 /**
@@ -149,43 +244,49 @@ if (process.argv[2] === "gen-claude-md") {
   const IMPORT_LINE = "@import .claude/rules/bridge-tools.md";
 
   // Idempotent: skip if the section already exists (with @import line)
+  const patchResult = patchClaudeMdImport(targetPath, marker, IMPORT_LINE);
+  if (patchResult === "patched") {
+    process.stderr.write(
+      `Patched existing CLAUDE.md — added missing @import line.\n`,
+    );
+    process.exit(0);
+  }
+  if (patchResult === "already-present") {
+    process.stderr.write(
+      `CLAUDE.md already contains a '${marker}' section — no changes made.\n`,
+    );
+    process.exit(0);
+  }
   if (existsSync(targetPath)) {
     const existing = readFileSync(targetPath, "utf-8");
-    if (existing.includes(marker)) {
-      if (!existing.includes(IMPORT_LINE)) {
-        // Patch: insert the @import line immediately after the marker heading
-        const patched = existing.replace(
-          `${marker}\n`,
-          `${marker}\n\n${IMPORT_LINE}\n`,
-        );
-        writeFileSync(`${targetPath}.tmp`, patched, "utf-8");
-        const ts = new Date().toISOString().replace(/[:.]/g, "-");
-        renameSync(targetPath, `${targetPath}.${ts}.bak`);
-        renameSync(`${targetPath}.tmp`, targetPath);
-        process.stderr.write(
-          `Patched existing CLAUDE.md — added missing @import line.\n`,
-        );
-      } else {
-        process.stderr.write(
-          `CLAUDE.md already contains a '${marker}' section — no changes made.\n`,
-        );
-      }
-      process.exit(0);
-    }
-    // Write tmp first — if the write fails, the original is still intact
+    // Write tmp first with exclusive-create — if the write fails, the original is intact
     const updated = `${existing.trimEnd()}\n\n${content.trimEnd()}\n`;
-    writeFileSync(`${targetPath}.tmp`, updated, "utf-8");
+    const tmpPath = `${targetPath}.tmp`;
+    writeFileSync(tmpPath, updated, { encoding: "utf-8", flag: "wx" });
     // Backup existing file before replacing
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     const backupPath = `${targetPath}.${ts}.bak`;
-    renameSync(targetPath, backupPath);
+    try {
+      renameSync(targetPath, backupPath);
+      renameSync(tmpPath, targetPath);
+    } catch (err) {
+      try {
+        unlinkSync(tmpPath);
+      } catch {
+        /* best-effort cleanup */
+      }
+      throw err;
+    }
     process.stderr.write(`Backed up existing CLAUDE.md to ${backupPath}\n`);
   } else {
     mkdirSync(workspace, { recursive: true });
-    writeFileSync(`${targetPath}.tmp`, content, "utf-8");
+    writeFileSync(`${targetPath}.tmp`, content, {
+      encoding: "utf-8",
+      flag: "wx",
+    });
+    renameSync(`${targetPath}.tmp`, targetPath);
   }
 
-  renameSync(`${targetPath}.tmp`, targetPath);
   process.stderr.write(`✓ Bridge workflow section written to ${targetPath}\n`);
 
   // Also write bridge-tools rules file alongside CLAUDE.md
@@ -204,7 +305,7 @@ if (process.argv[2] === "gen-claude-md") {
     const repairing = existsSync(genRulesFilePath);
     try {
       mkdirSync(genRulesDir, { recursive: true });
-      writeFileSync(
+      writeRulesFileAtomic(
         genRulesFilePath,
         readFileSync(genBridgeToolsTemplate, "utf-8"),
       );
@@ -214,17 +315,8 @@ if (process.argv[2] === "gen-claude-md") {
           : `✓ Bridge rules written to ${genRulesFilePath}\n`,
       );
     } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "EACCES") {
-        process.stderr.write(
-          `[warn] Bridge rules — permission denied writing to ${genRulesFilePath}.\n` +
-            `       Run with elevated permissions or create the file manually.\n`,
-        );
-      } else {
-        process.stderr.write(
-          `[warn] Bridge rules — write failed (${code ?? String(err)})\n`,
-        );
-      }
+      const exitCode = handleRulesWriteError(err, genRulesFilePath, "");
+      if (exitCode !== 0) process.exit(exitCode);
     }
   }
 
@@ -540,40 +632,43 @@ if (process.argv[2] === "init") {
     const targetPath = path.join(workspace, "CLAUDE.md");
     const marker = "## Claude IDE Bridge";
     const importLine = "@import .claude/rules/bridge-tools.md";
-    if (
-      existsSync(targetPath) &&
-      readFileSync(targetPath, "utf-8").includes(marker)
-    ) {
-      const existing = readFileSync(targetPath, "utf-8");
-      if (!existing.includes(importLine)) {
-        // Patch: insert the @import line immediately after the marker heading
-        const patched = existing.replace(
-          `${marker}\n`,
-          `${marker}\n\n${importLine}\n`,
-        );
-        writeFileSync(`${targetPath}.tmp`, patched, "utf-8");
-        const ts = new Date().toISOString().replace(/[:.]/g, "-");
-        renameSync(targetPath, `${targetPath}.${ts}.bak`);
-        renameSync(`${targetPath}.tmp`, targetPath);
-        process.stderr.write(
-          "  ✓ CLAUDE.md — patched with missing @import line\n\n",
-        );
-      } else {
-        process.stderr.write(
-          "  ✓ CLAUDE.md — bridge section already present\n\n",
-        );
-      }
+    const initPatchResult = patchClaudeMdImport(targetPath, marker, importLine);
+    if (initPatchResult === "patched") {
+      process.stderr.write(
+        "  ✓ CLAUDE.md — patched with missing @import line\n\n",
+      );
+    } else if (initPatchResult === "already-present") {
+      process.stderr.write(
+        "  ✓ CLAUDE.md — bridge section already present\n\n",
+      );
     } else {
+      // no-section: append or create
       mkdirSync(workspace, { recursive: true });
-      const updated = existsSync(targetPath)
-        ? `${readFileSync(targetPath, "utf-8").trimEnd()}\n\n${content.trimEnd()}\n`
-        : content;
-      writeFileSync(`${targetPath}.tmp`, updated, "utf-8");
-      if (existsSync(targetPath)) {
+      const existing = existsSync(targetPath)
+        ? readFileSync(targetPath, "utf-8")
+        : null;
+      const updated =
+        existing !== null
+          ? `${existing.trimEnd()}\n\n${content.trimEnd()}\n`
+          : content;
+      const tmpPath = `${targetPath}.tmp`;
+      writeFileSync(tmpPath, updated, { encoding: "utf-8", flag: "wx" });
+      if (existing !== null) {
         const ts = new Date().toISOString().replace(/[:.]/g, "-");
-        renameSync(targetPath, `${targetPath}.${ts}.bak`);
+        try {
+          renameSync(targetPath, `${targetPath}.${ts}.bak`);
+          renameSync(tmpPath, targetPath);
+        } catch (err) {
+          try {
+            unlinkSync(tmpPath);
+          } catch {
+            /* best-effort cleanup */
+          }
+          throw err;
+        }
+      } else {
+        renameSync(tmpPath, targetPath);
       }
-      renameSync(`${targetPath}.tmp`, targetPath);
       process.stderr.write(
         `  ✓ CLAUDE.md — bridge section written to ${targetPath}\n\n`,
       );
@@ -597,7 +692,7 @@ if (process.argv[2] === "init") {
     const repairing = existsSync(rulesFilePath);
     try {
       mkdirSync(rulesDir, { recursive: true });
-      writeFileSync(
+      writeRulesFileAtomic(
         rulesFilePath,
         readFileSync(bridgeToolsTemplatePath, "utf-8"),
       );
@@ -607,17 +702,8 @@ if (process.argv[2] === "init") {
           : `  ✓ Bridge rules — written to ${rulesFilePath}\n\n`,
       );
     } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "EACCES") {
-        process.stderr.write(
-          `  [warn] Bridge rules — permission denied writing to ${rulesFilePath}.\n` +
-            `         Run with elevated permissions or create the file manually.\n\n`,
-        );
-      } else {
-        process.stderr.write(
-          `  [warn] Bridge rules — write failed (${code ?? String(err)})\n\n`,
-        );
-      }
+      const exitCode = handleRulesWriteError(err, rulesFilePath, "  ");
+      if (exitCode !== 0) process.exit(exitCode);
     }
   } else {
     process.stderr.write(`  [skip] Bridge rules — template not found\n\n`);

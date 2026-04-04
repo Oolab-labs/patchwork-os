@@ -184,7 +184,7 @@ describe("init --workspace", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("already present");
+    expect(result.stderr).toContain("bridge section already present");
 
     const content = fs.readFileSync(path.join(ws, "CLAUDE.md"), "utf-8");
     expect(content.split("## Claude IDE Bridge").length - 1).toBe(1);
@@ -267,6 +267,7 @@ describe("init --workspace @import patch", () => {
     });
 
     expect(result.status).toBe(0);
+    expect(result.stderr).toContain("patched with missing @import line");
     const content = fs.readFileSync(claudeMd, "utf-8");
     expect(content).toContain("@import .claude/rules/bridge-tools.md");
     expect(content.split("## Claude IDE Bridge").length - 1).toBe(1);
@@ -329,7 +330,21 @@ describe("bridge-tools.md repair", () => {
     const ws = makeTmpDir();
     const rulesDir = path.join(ws, ".claude", "rules");
     fs.mkdirSync(rulesDir, { recursive: true });
-    const validContent = "# Bridge Tools\nrunTests\ngetDiagnostics\n";
+    // Must satisfy the strengthened check: >200 bytes, contains runTests,
+    // getDiagnostics, and MANDATORY (the section heading in the real template).
+    const validContent = [
+      "# Bridge Tools — MANDATORY substitution table",
+      "",
+      "When the bridge is connected, ALWAYS use MCP tools instead of shell commands.",
+      "",
+      "| Shell command | MCP tool to use instead |",
+      "|---|---|",
+      "| npm test | runTests |",
+      "| tsc / eslint | getDiagnostics |",
+      "| git commit | gitCommit |",
+      "| grep / rg | searchWorkspace |",
+      "",
+    ].join("\n");
     fs.writeFileSync(path.join(rulesDir, "bridge-tools.md"), validContent);
 
     spawnSync(
