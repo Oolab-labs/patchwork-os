@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.11.1] — 2026-04-04
+
+### Added
+- **Session-start tool enforcement via MCP instructions** — `buildInstructions()` in both `bridge.ts` and `orchestratorBridge.ts` now appends a `BRIDGE TOOL ENFORCEMENT` block to the MCP initialize response. Every Claude session receives an active reminder to use bridge MCP tools instead of shell commands — zero configuration required.
+- **Plugin hook reminders** — `session-info.sh` (SessionStart) and `instructions-loaded.sh` (InstructionsLoaded) append a tool enforcement reminder to their status messages for users with the Claude Code plugin loaded.
+- **`orient` prompt reads template at runtime** — the `orient-project` Phase 3c bridge-tools content is now loaded from `templates/bridge-tools.md` at module initialization, eliminating a static inline copy that would drift from the template on future edits.
+- **Integration tests for `init` and `gen-claude-md`** — 6 new tests covering file placement, idempotency, ENOENT fix, and dry-run output.
+
+### Changed
+- **`gen-claude-md` dry-run note** — running without `--write` now prints a stderr notice explaining that `--write` will also create `.claude/rules/bridge-tools.md`.
+
+---
+
 ## [2.11.0] — 2026-04-04
 
 ### Added
