@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
 import { ErrorCodes } from "../errors.js";
+import { buildEnforcementBlock } from "../instructionsUtils.js";
 import { LockFileManager } from "../lockfile.js";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
@@ -491,16 +492,7 @@ export class OrchestratorBridge {
       "  ctxSaveTrace(ref, problem, solution) — record fix after resolving a task",
     );
     lines.push("");
-    lines.push("BRIDGE TOOL ENFORCEMENT:");
-    lines.push(
-      "  When this bridge is connected, ALWAYS call bridge MCP tools instead of shell commands:",
-    );
-    lines.push(
-      "  runTests (not npm test) · getDiagnostics (not tsc/eslint) · gitCommit (not git commit) · searchWorkspace (not grep)",
-    );
-    lines.push(
-      "  Full substitution table: .claude/rules/bridge-tools.md (loaded via @import in CLAUDE.md)",
-    );
+    lines.push(...buildEnforcementBlock());
 
     return lines.join("\n");
   }
