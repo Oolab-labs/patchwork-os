@@ -49,16 +49,16 @@ export async function lspWithRetry<T>(
   for (const delayMs of LSP_RETRY_DELAYS_MS) {
     if (signal?.aborted) return "timeout";
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, delayMs);
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new Error("aborted"));
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, delayMs);
       if (signal) {
-        signal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            reject(new Error("aborted"));
-          },
-          { once: true },
-        );
+        signal.addEventListener("abort", onAbort, { once: true });
       }
     }).catch(() => {
       /* aborted — loop will exit on next iteration */
