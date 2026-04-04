@@ -2,10 +2,23 @@
 name: ide-monitor
 description: Continuous IDE monitoring using bridge tools. Checks diagnostics, test results, or terminal output. Designed for use with /loop for recurring checks.
 disable-model-invocation: true
+effort: low
 argument-hint: "diagnostics | tests [filter] | terminal <name>"
 ---
 
 # IDE Monitor
+
+## Prerequisites
+
+1. Check if the `getToolCapabilities` MCP tool is available to you.
+   - **Not available** (no MCP tool by that name): stop and tell the user:
+     "This skill requires the Claude IDE Bridge. It uses `getDiagnostics` and `runTests` which have no CLI equivalent.
+
+     To use this skill:
+     1. Start the bridge: `npm run start-all` (in claude-ide-bridge/)
+     2. Ensure the Claude IDE Bridge extension is installed in your IDE
+     3. Use the `claude --ide` session (not remote-control)"
+   - **Available**: call it. If `extensionConnected` is `false`: show the same message. If `true`: proceed.
 
 Monitor your IDE workspace continuously. Use with `/loop` for recurring checks.
 

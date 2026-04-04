@@ -3,6 +3,7 @@ name: ide-explore
 description: Deep codebase exploration using IDE bridge LSP tools. Maps architecture, traces call chains, discovers entry points, and builds a mental model of unfamiliar code. Use when onboarding to a new codebase or understanding a module.
 context: fork
 agent: Explore
+effort: high
 argument-hint: "[module, file, or question about the codebase]"
 ---
 

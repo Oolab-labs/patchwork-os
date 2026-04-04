@@ -2,6 +2,7 @@
 name: ide-debug
 description: Full debug workflow using IDE bridge tools. Runs tests to find failures, sets conditional breakpoints, evaluates expressions in the debugger, identifies root causes, applies fixes, and verifies. Use when debugging test failures or runtime issues.
 disable-model-invocation: true
+effort: high
 argument-hint: "[test filter or file path]"
 ---
 

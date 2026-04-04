@@ -1,6 +1,7 @@
 ---
 name: ide-diagnostics-board
 description: Diagnostic dashboard across the workspace. Calls getDiagnostics, groups results by severity and file, and renders a sortable color-coded HTML table. Opens in the system browser.
+effort: low
 argument-hint: "[error|warning|all]"
 ---
 
