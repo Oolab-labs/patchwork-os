@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.10.0] — 2026-04-04
+
+### Added
+- **LSP readiness signal** — The VS Code extension now notifies the bridge when a language server finishes indexing via a new `extension/lspReady { languageId, timestamp }` notification. The bridge tracks ready language IDs per session (`ExtensionClient.lspReadyLanguages`) and `lspWithRetry` skips the 4s + 8s cold-start retry delays for known-ready languages, returning `"timeout"` immediately instead. Detection uses `onDidChangeDiagnostics` — first diagnostic per language ID signals readiness. A 30s fallback timer fires for error-free workspaces. Fully backwards-compatible: old extensions keep the existing 3-attempt retry behavior unchanged.
+
+### Changed
+- **Extension v1.0.19** — ships `lspReadiness.ts` tracker; `extension/lspReady` added to `BUFFERABLE_METHODS` so it survives transient disconnects; re-sends all ready states on reconnect.
+
+---
+
 ## [2.9.0] — 2026-04-03
 
 ### Added
