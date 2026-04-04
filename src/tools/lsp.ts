@@ -174,6 +174,23 @@ export function createFindReferencesTool(
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          found: { type: "boolean" },
+          references: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                uri: { type: "string" },
+                range: { type: "object" },
+              },
+            },
+          },
+        },
+        required: ["found"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
@@ -304,6 +321,24 @@ export function createGetCodeActionsTool(
           "endColumn",
         ],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          actions: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                kind: { type: "string" },
+                id: { type: "string" },
+              },
+              required: ["title"],
+            },
+          },
+        },
+        required: ["actions"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -561,6 +596,16 @@ export function createGetCallHierarchyTool(
         },
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          found: { type: "boolean" },
+          message: { type: "string" },
+          incoming: { type: "array", items: { type: "object" } },
+          outgoing: { type: "array", items: { type: "object" } },
+        },
+        required: ["found"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {

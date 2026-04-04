@@ -286,11 +286,15 @@ export function createGetDiagnosticsTool(
               diagnostics: filtered,
               ...(severityFilter ? { severityFilter } : {}),
               ...(extTruncated || filtered.length < extDiagsArr.length
-                ? { truncated: true, totalBeforeFilter: extDiagsArr.length }
-                : {}),
-              ...(extTruncated
                 ? {
-                    note: "Capped at 500 total diagnostics — use uri filter to get complete diagnostics for a specific file",
+                    truncated: true,
+                    totalBeforeFilter: extDiagsArr.length,
+                    ...(extTruncated
+                      ? {
+                          truncatedReason:
+                            "Capped at 500 total diagnostics — pass uri to get complete diagnostics for a specific file",
+                        }
+                      : {}),
                   }
                 : {}),
             });
