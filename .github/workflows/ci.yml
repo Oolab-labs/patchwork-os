@@ -25,14 +25,14 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Test (1349 unit tests)
+      - name: Build
+        run: npm run build
+      - name: Test
         run: npm test -- --reporter=dot --reporter=github-actions
         timeout-minutes: 5
       - name: Coverage (enforce 75% lines / 70% branches / 75% functions)
         run: npm run test:coverage -- --reporter=dot --reporter=github-actions
         timeout-minutes: 8
-      - name: Build
-        run: npm run build
 
   plugin-validate:
     name: Validate plugin manifest
