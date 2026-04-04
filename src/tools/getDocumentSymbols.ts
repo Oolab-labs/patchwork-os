@@ -1,5 +1,8 @@
 import fs from "node:fs";
-import type { ExtensionClient } from "../extensionClient.js";
+import {
+  type ExtensionClient,
+  ExtensionTimeoutError,
+} from "../extensionClient.js";
 import {
   error,
   execSafe,
@@ -88,8 +91,14 @@ export function createGetDocumentSymbolsTool(
             return successStructured({ ...r, source: "lsp" });
           }
           // null means LSP not ready for this file — fall through to grep
-        } catch {
-          // fall through
+        } catch (err) {
+          if (err instanceof ExtensionTimeoutError) {
+            return error(
+              "Language server timed out getting document symbols — it may still be indexing. " +
+                "Wait a few seconds and try again, or use the grep-based fallback by disconnecting the extension.",
+            );
+          }
+          // other errors (disconnect mid-call) — fall through to grep
         }
       }
 

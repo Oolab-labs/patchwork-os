@@ -47,7 +47,7 @@ export function createRefactorExtractFunctionTool(
 
     async handler(
       args: Record<string, unknown>,
-      _signal?: AbortSignal,
+      signal?: AbortSignal,
     ): Promise<
       ReturnType<typeof success> | ReturnType<typeof extensionRequired>
     > {
@@ -59,6 +59,14 @@ export function createRefactorExtractFunctionTool(
       const startLine = requireInt(args, "startLine", 1, 1_000_000);
       const endLine = requireInt(args, "endLine", 1, 1_000_000);
       const functionName = requireString(args, "functionName");
+      if (/[\x00-\x1f*/]/.test(functionName)) {
+        return success({
+          refactored: false,
+          method: "none",
+          message:
+            "functionName must not contain control characters or */ characters",
+        });
+      }
 
       let absPath: string;
       try {
@@ -79,6 +87,7 @@ export function createRefactorExtractFunctionTool(
           1,
           endLine,
           9999,
+          signal,
         );
 
         const actionsArray = Array.isArray(actions)
@@ -102,6 +111,7 @@ export function createRefactorExtractFunctionTool(
             endLine,
             9999,
             actionTitle,
+            signal,
           );
           return success({
             refactored: true,

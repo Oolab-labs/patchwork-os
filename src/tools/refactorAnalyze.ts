@@ -111,7 +111,14 @@ export function createRefactorAnalyzeTool(
           50,
           compositeSignal,
         ),
-        extensionClient.getTypeHierarchy(filePath, line, column),
+        extensionClient.getTypeHierarchy(
+          filePath,
+          line,
+          column,
+          undefined,
+          undefined,
+          compositeSignal,
+        ),
       ]);
 
       // Rename safety

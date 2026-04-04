@@ -190,6 +190,9 @@ export function createGetImportTreeTool(workspace: string) {
           const resolvedPath = resolveLocalImport(spec, path.dirname(absPath));
           if (!resolvedPath) continue;
 
+          // Skip imports that resolve outside the workspace boundary
+          if (!resolvedPath.startsWith(workspace + path.sep)) continue;
+
           if (visited.has(resolvedPath)) {
             // Cycle detected
             const cycleRel = resolvedPath.startsWith(workspace + path.sep)
