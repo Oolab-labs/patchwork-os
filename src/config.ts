@@ -194,6 +194,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "plugins",
   "pluginWatch",
   "fixedToken",
+  "issuerUrl",
   "corsOrigins",
   "fullMode",
   "githubDefaultRepo",
