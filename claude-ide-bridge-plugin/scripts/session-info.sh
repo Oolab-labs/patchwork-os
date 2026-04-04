@@ -71,6 +71,6 @@ jq -n \
   '{
     hookSpecificOutput: {
       hookEventName: "SessionStart",
-      message: ("IDE Bridge: Connected on port " + $port + " | IDE: " + $ide + " | Extension: " + $ext + " | Tools: " + $tools + " | Workspace: " + $ws + $rate)
+      message: ("IDE Bridge: Connected on port " + $port + " | IDE: " + $ide + " | Extension: " + $ext + " | Tools: " + $tools + " | Workspace: " + $ws + $rate + " | Use bridge MCP tools (runTests, getDiagnostics, gitCommit) instead of shell commands")
     }
   }'
