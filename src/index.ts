@@ -122,6 +122,9 @@ if (process.argv[2] === "gen-claude-md") {
 
   if (!writeToDisk) {
     process.stdout.write(`${content}\n`);
+    process.stderr.write(
+      "Note: run with --write to append this section to CLAUDE.md and also write .claude/rules/bridge-tools.md\n",
+    );
     process.exit(0);
   }
 

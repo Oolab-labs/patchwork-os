@@ -1,6 +1,23 @@
 // MCP Prompts — reusable IDE workflow templates surfaced as slash commands
 // in Claude Code chat: /mcp__bridge__<name>
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Load the bridge-tools rules template so the orient prompt always stays in sync.
+const _promptsDir = path.dirname(fileURLToPath(import.meta.url));
+let _bridgeToolsTemplate: string;
+try {
+  _bridgeToolsTemplate = readFileSync(
+    path.resolve(_promptsDir, "..", "templates", "bridge-tools.md"),
+    "utf-8",
+  ).trim();
+} catch {
+  _bridgeToolsTemplate =
+    "See `.claude/rules/bridge-tools.md` for bridge tool override rules (run `claude-ide-bridge init` to generate it).";
+}
+
 export interface McpPromptArgument {
   name: string;
   description: string;
@@ -431,25 +448,7 @@ Create rule files that do NOT already exist (check Phase 1 results).
 
 **.claude/rules/bridge-tools.md** (skip if already exists — written by \`claude-ide-bridge init\`):
 \`\`\`markdown
-## Bridge Tool Overrides (claude-ide-bridge)
-
-> **These rules are active when the \`claude-ide-bridge\` MCP server is connected** (green in \`/mcp\`).
-> If the bridge is not running, fall back to standard shell equivalents.
-
-### MANDATORY: Bridge MCP tools replace shell commands
-
-Do NOT run the shell command. Call the MCP tool instead.
-
-| ❌ Do NOT use | ✅ Call instead |
-|---|---|
-| \`npm test\`, \`npx vitest\`, \`npx jest\` | \`runTests\` |
-| \`tsc --noEmit\`, \`eslint .\`, \`biome check\` | \`getDiagnostics\` |
-| \`git status\` / \`git diff\` / \`git log\` | \`getGitStatus\` / \`getGitDiff\` / \`getGitLog\` |
-| \`git add\` / \`git commit\` / \`git push\` | \`gitAdd\` / \`gitCommit\` / \`gitPush\` |
-| \`grep -r\`, \`rg\` | \`searchWorkspace\` |
-| \`cat <file>\` to read content | \`getBufferContent\` |
-| \`goToDefinition\`, \`findReferences\` | (already MCP tools — use them) |
-| \`node --inspect\` / \`console.log\` debugging | \`setDebugBreakpoints\` → \`startDebugging\` → \`evaluateInDebugger\` |
+${_bridgeToolsTemplate}
 \`\`\`
 
 Also add \`@import .claude/rules/bridge-tools.md\` to the top of the \`## Claude IDE Bridge\` section in CLAUDE.md if not already present.
