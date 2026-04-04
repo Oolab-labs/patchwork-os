@@ -2,6 +2,7 @@
 name: ide-review
 description: Deep PR review using IDE bridge LSP and GitHub tools. Analyzes diffs with code intelligence — follows definitions, checks references, inspects types, runs diagnostics, and posts structured review comments.
 disable-model-invocation: true
+effort: high
 argument-hint: "[PR number]"
 ---
 

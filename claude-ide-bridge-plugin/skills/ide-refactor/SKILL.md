@@ -2,6 +2,7 @@
 name: ide-refactor
 description: Safe refactoring with snapshot rollback. Creates a checkpoint, performs the refactoring using LSP rename and code actions, runs tests, and rolls back automatically if anything breaks.
 disable-model-invocation: true
+effort: high
 argument-hint: "[description of refactoring]"
 ---
 
@@ -39,7 +40,13 @@ Perform refactoring with a safety net. Uses snapshots for instant rollback if te
 ### Phase 3: Execute the refactoring
 
 For symbol renames:
-8. Use `renameSymbol` — this handles all references across the workspace via LSP
+8. Use `refactorAnalyze` on the target symbol first:
+   - Returns `risk` (low/medium/high), `referenceCount`, and `callerCount`
+   - If `risk` is **high** (>20 refs or >10 callers): write tests covering the symbol before proceeding, then confirm with the user
+   - If `risk` is **medium**: note the reference count in your confirmation message
+   - If `risk` is **low**: proceed directly
+9. Use `refactorPreview` to show the exact edits that will be made — confirm with the user before applying
+10. Use `renameSymbol` — this handles all references across the workspace via LSP
 
 For structural changes:
 9. Use `getCodeActions` to check if VS Code has automated refactorings available
