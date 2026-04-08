@@ -129,6 +129,7 @@ import {
   createRenameSymbolTool,
   createSearchWorkspaceSymbolsTool,
 } from "./lsp.js";
+import { createNotifyCwdChangedTool } from "./notifyCwdChanged.js";
 import { createOpenDiffTool } from "./openDiff.js";
 import { createOpenFileTool } from "./openFile.js";
 import { createOpenInBrowserTool } from "./openInBrowser.js";
@@ -456,6 +457,9 @@ export function registerAllTools(
           createListClaudeTasksTool(orchestrator, sessionId),
           createResumeClaudeTaskTool(orchestrator, sessionId),
         ]
+      : []),
+    ...(automationHooks !== null
+      ? [createNotifyCwdChangedTool(automationHooks)]
       : []),
   ];
 

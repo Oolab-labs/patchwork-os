@@ -63,11 +63,25 @@ export interface OnInstructionsLoadedPolicy {
   prompt: string;
 }
 
+export interface OnCwdChangedPolicy {
+  enabled: boolean;
+  /**
+   * Prompt to enqueue when Claude Code's working directory changes (Claude Code 2.1.83+).
+   * Useful for re-initialising workspace context when CC switches projects.
+   * Placeholder: {{cwd}}
+   */
+  prompt: string;
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
   /** Fired by Claude Code 2.1.83+ FileChanged hook — reacts to any file edit, not just explicit saves. */
   onFileChanged?: OnFileChangedPolicy;
+  /** Fired by Claude Code 2.1.83+ CwdChanged hook — fires when CC's working directory changes. */
+  onCwdChanged?: OnCwdChangedPolicy;
   /** Fired by Claude Code 2.1.76+ PostCompact hook — re-injects IDE context after compaction. */
   onPostCompact?: OnPostCompactPolicy;
   /** Fired by Claude Code 2.1.76+ InstructionsLoaded hook — injects bridge status at session start. */
@@ -205,6 +219,31 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
     if (fc.cooldownMs < MIN_COOLDOWN_MS) {
       fc.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
+  // Validate onCwdChanged
+  if (policy.onCwdChanged !== undefined) {
+    const cw = policy.onCwdChanged;
+    if (typeof cw !== "object" || cw === null) {
+      throw new Error(`"onCwdChanged" must be an object`);
+    }
+    if (typeof cw.enabled !== "boolean") {
+      throw new Error(`"onCwdChanged.enabled" must be a boolean`);
+    }
+    if (typeof cw.prompt !== "string" || cw.prompt.trim() === "") {
+      throw new Error(`"onCwdChanged.prompt" must be a non-empty string`);
+    }
+    if (cw.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(
+        `"onCwdChanged.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
+    }
+    if (typeof cw.cooldownMs !== "number" || !Number.isFinite(cw.cooldownMs)) {
+      throw new Error(`"onCwdChanged.cooldownMs" must be a number`);
+    }
+    if (cw.cooldownMs < MIN_COOLDOWN_MS) {
+      cw.cooldownMs = MIN_COOLDOWN_MS;
     }
   }
 
@@ -369,6 +408,46 @@ export class AutomationHooks {
   private _pruneLastTrigger(now: number): void {
     for (const [k, t] of this.lastTrigger) {
       if (now - t > LAST_TRIGGER_MAX_AGE_MS) this.lastTrigger.delete(k);
+    }
+  }
+
+  /**
+   * Called when Claude Code fires a CwdChanged hook (Claude Code 2.1.83+).
+   * Fires when CC's working directory changes — useful for re-snapshotting workspace context.
+   */
+  handleCwdChanged(newCwd: string): void {
+    const cfg = this.policy.onCwdChanged;
+    if (!cfg?.enabled) return;
+
+    // Cooldown check — keyed on the new cwd so switching between two known
+    // directories doesn't bypass the global rate but each dir has its own window
+    const key = `cwdChanged:${newCwd}`;
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for cwd-changed ${newCwd} (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeCwd = newCwd.slice(0, MAX_FILE_PATH_CHARS);
+    const prompt = cfg.prompt.replace(
+      /\{\{cwd\}\}/g,
+      `\n--- BEGIN CWD (untrusted) ---\n${safeCwd}\n--- END CWD ---\n`,
+    );
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.log(
+        `[automation] triggered cwd-changed task ${taskId.slice(0, 8)} for ${newCwd}`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue cwd-changed task for ${newCwd}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -570,6 +649,7 @@ export class AutomationHooks {
     onDiagnosticsError: { enabled: boolean } | null;
     onFileSave: { enabled: boolean; patternCount: number } | null;
     onFileChanged: { enabled: boolean; patternCount: number } | null;
+    onCwdChanged: { enabled: boolean; cooldownMs: number } | null;
   } {
     const p = this.policy;
     return {
@@ -592,6 +672,12 @@ export class AutomationHooks {
         ? {
             enabled: p.onFileChanged.enabled,
             patternCount: p.onFileChanged.patterns.length,
+          }
+        : null,
+      onCwdChanged: p.onCwdChanged
+        ? {
+            enabled: p.onCwdChanged.enabled,
+            cooldownMs: p.onCwdChanged.cooldownMs,
           }
         : null,
     };

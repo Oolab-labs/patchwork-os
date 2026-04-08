@@ -267,6 +267,7 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | `onDiagnosticsError` | `enabled`, `prompt`, `cooldownMs` | `minSeverity` (`error`/`warning`) | Placeholders: `{{file}}`, `{{diagnostics}}` (wrapped in delimiters) |
 | `onFileSave` | `enabled`, `prompt`, `cooldownMs`, `patterns` | — | Fires on explicit save (Ctrl+S). `patterns`: minimatch globs. Placeholder: `{{file}}` |
 | `onFileChanged` | `enabled`, `prompt`, `cooldownMs`, `patterns` | — | Fires on any editor buffer change (unsaved edits, external writes). `patterns`: minimatch globs. Placeholder: `{{file}}`. Requires Claude Code 2.1.83+ (FileChanged hook event). |
+| `onCwdChanged` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude Code's working directory changes. Placeholder: `{{cwd}}`. Trigger via the `notifyCwdChanged` MCP tool from a CC CwdChanged hook. Requires Claude Code 2.1.83+. |
 | `onPostCompact` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude compacts context (Claude Code 2.1.76+). Use to re-snapshot IDE state. |
 | `onInstructionsLoaded` | `enabled`, `prompt` | — | Fires once at session start when CLAUDE.md loads (Claude Code 2.1.76+). No cooldown. |
 
