@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.5 — 2026-04-08)
+## Current State (v2.11.6 — 2026-04-09)
 
 - **Slim mode default**: 45 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
-- **~1,646 bridge tests / ~128 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **~1,656 bridge tests / ~128 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
 - Extension v1.0.20 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE
@@ -28,6 +28,12 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.6 shipped (2026-04-09) — Claude Code changelog catch-up:**
+- `onFileChanged` automation hook: new policy type (same shape as `onFileSave`) triggering on VS Code buffer-change events (`type === "change"`) rather than explicit saves; wired in `bridge.ts` alongside `handleFileSaved`; `getStatus()` includes it; 6 new tests
+- `_meta["anthropic/maxResultSizeChars"]` injection in transport: results > 50 KB now include `_meta: { "anthropic/maxResultSizeChars": N }` so Claude Code 2.1.91+ persists the full content without truncating; 2 new tests
+- Docs: automation policy table updated with `onFileChanged`; added `if` condition hook syntax (CC 2.1.85+), `hookSpecificOutput.sessionTitle` pattern (CC 2.1.94+), and `MCP_CONNECTION_NONBLOCKING=true` headless note (CC 2.1.89+) to `platform-docs.md`
+- Roadmap: filed Anthropic Managed Agents MCP integration as watch item under Medium-Term Possibilities
 
 **v2.11.5 shipped (2026-04-08) — stale rules fix + transport hardening:**
 - `isBridgeToolsFileValid()`: strengthened to require `"batchGetHover"` as 4th keyword — stale files from pre-2.11.4 installations now trigger repair
@@ -654,6 +660,20 @@ Research (2026-03-17) against current Claude Code docs revealed gaps between the
 - **Mechanism:** bridge subprocess + lock file polling with timeout; orchestrator adopts the new lock file once extension connects
 - **CI use case:** spin up a `code-server` + bridge per PR review, run staged LSP review via ws2, tear down after — no other tool offers this
 - **Implement when:** there's a concrete CI/VPS workflow that needs it; the `init` subcommand already covers the setup half
+
+### Anthropic Managed Agents MCP Integration *(watch — revisit when beta stabilises)*
+
+Anthropic's [Claude Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview) (beta as of 2026-04-08) supports attaching external MCP servers to an agent definition. The bridge is an MCP server and already has a remote-deployment path (OAuth 2.0 mode, `--bind 0.0.0.0`, nginx TLS, `deploy/` scripts), so the plumbing exists.
+
+**Potentially interesting scenario:** VPS-hosted bridge attached to a Managed Agent session, giving the cloud agent real LSP grounding (live diagnostics, `findReferences`, `getCallHierarchy`, `getChangeImpact`) from an actual developer workspace rather than static file reads. This is something no Managed Agents built-in tool currently offers.
+
+**Why it doesn't fit today:**
+- Managed Agents run in cloud containers — they can't reach a user's *local* IDE. Extension-side tools (LSP hover, debugger, editor state) require the VS Code extension to be co-located.
+- Built-in Bash + file ops in Managed Agents make the bridge's file/git tools redundant inside a container.
+- Users running VS Code on a VPS (the one case where co-location works) are a small subset.
+- MCP server attachment in Managed Agents is beta and the API surface may shift.
+
+**Implement when:** Managed Agents exits beta *and* there's a concrete request from VPS/remote-IDE users who want long-running cloud tasks with real LSP intelligence. The OAuth 2.0 deployment track is the prerequisite — no new bridge work needed beyond that.
 
 ### Multi-Workspace Bridging
 - One bridge instance serving multiple workspaces

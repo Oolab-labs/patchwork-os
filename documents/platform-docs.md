@@ -265,11 +265,29 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | Trigger | Required fields | Optional fields | Notes |
 |---------|----------------|-----------------|-------|
 | `onDiagnosticsError` | `enabled`, `prompt`, `cooldownMs` | `minSeverity` (`error`/`warning`) | Placeholders: `{{file}}`, `{{diagnostics}}` (wrapped in delimiters) |
-| `onFileSave` | `enabled`, `prompt`, `cooldownMs`, `patterns` | — | `patterns`: minimatch globs. Placeholder: `{{file}}` |
+| `onFileSave` | `enabled`, `prompt`, `cooldownMs`, `patterns` | — | Fires on explicit save (Ctrl+S). `patterns`: minimatch globs. Placeholder: `{{file}}` |
+| `onFileChanged` | `enabled`, `prompt`, `cooldownMs`, `patterns` | — | Fires on any editor buffer change (unsaved edits, external writes). `patterns`: minimatch globs. Placeholder: `{{file}}`. Requires Claude Code 2.1.83+ (FileChanged hook event). |
 | `onPostCompact` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude compacts context (Claude Code 2.1.76+). Use to re-snapshot IDE state. |
 | `onInstructionsLoaded` | `enabled`, `prompt` | — | Fires once at session start when CLAUDE.md loads (Claude Code 2.1.76+). No cooldown. |
 
 Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering while a prior task for the same file is still pending/running.
+
+**Claude Code hooks (settings.json)** can narrow when bridge-invoked shell scripts fire using the `if` field (Claude Code 2.1.85+). Uses permission-rule syntax:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{
+      "command": "echo '{\"hookSpecificOutput\":{\"sessionTitle\":\"Bridge — myproject\"}}'",
+      "if": "Bash(*)"
+    }]
+  }
+}
+```
+
+`hookSpecificOutput.sessionTitle` (Claude Code 2.1.94+) sets the session title from a `UserPromptSubmit` hook — useful for auto-labelling bridge sessions by workspace name.
+
+**`MCP_CONNECTION_NONBLOCKING=true`**: set in environment to skip the MCP connection wait in `-p` / `--print` mode (Claude Code 2.1.89+). Speeds up headless bridge invocations when MCP startup latency is acceptable to skip.
 
 > **Cloud sessions**: `CLAUDE_CODE_REMOTE=true` is set in Anthropic cloud VMs (Claude Code on the web). Automation events will enqueue tasks, but the bridge runs locally and those tasks won't execute remotely. Add a guard in hook scripts if needed: `if [ "$CLAUDE_CODE_REMOTE" = "true" ]; then exit 0; fi`.
 
