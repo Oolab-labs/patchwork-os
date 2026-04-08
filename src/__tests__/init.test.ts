@@ -343,6 +343,7 @@ describe("bridge-tools.md repair", () => {
       "| tsc / eslint | getDiagnostics |",
       "| git commit | gitCommit |",
       "| grep / rg | searchWorkspace |",
+      "| Calling getHover in a loop | batchGetHover |",
       "",
     ].join("\n");
     fs.writeFileSync(path.join(rulesDir, "bridge-tools.md"), validContent);
@@ -360,5 +361,78 @@ describe("bridge-tools.md repair", () => {
     expect(
       fs.readFileSync(path.join(rulesDir, "bridge-tools.md"), "utf-8"),
     ).toBe(validContent);
+  });
+
+  it("replaces a stale bridge-tools.md that passes old 3-keyword check but lacks batchGetHover", () => {
+    const ws = makeTmpDir();
+    const rulesDir = path.join(ws, ".claude", "rules");
+    fs.mkdirSync(rulesDir, { recursive: true });
+    // Passes old validity (runTests + getDiagnostics + MANDATORY + >200 bytes)
+    // but missing batchGetHover — should be replaced
+    const staleContent = [
+      "## Bridge Tool Overrides — MANDATORY",
+      "| npm test | runTests |",
+      "| tsc | getDiagnostics |",
+      "x".repeat(300),
+    ].join("\n");
+    fs.writeFileSync(path.join(rulesDir, "bridge-tools.md"), staleContent);
+
+    const result = spawnSync(
+      "node",
+      [distIndex, "gen-claude-md", "--write", "--workspace", ws],
+      {
+        encoding: "utf-8",
+        env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const repaired = fs.readFileSync(
+      path.join(rulesDir, "bridge-tools.md"),
+      "utf-8",
+    );
+    expect(repaired).toContain("batchGetHover");
+  });
+
+  it("repairs stale bridge-tools.md even when CLAUDE.md already has @import (early-exit path)", () => {
+    const ws = makeTmpDir();
+    const rulesDir = path.join(ws, ".claude", "rules");
+    fs.mkdirSync(rulesDir, { recursive: true });
+    // Pre-seed CLAUDE.md with the @import + bridge section so patchClaudeMdImport
+    // returns "already-present" and the command would normally exit early
+    const claudeMdPath = path.join(ws, "CLAUDE.md");
+    fs.writeFileSync(
+      claudeMdPath,
+      "## Claude IDE Bridge\n\n@import .claude/rules/bridge-tools.md\n",
+    );
+    // Pre-seed stale rules file (passes old 3-keyword check, missing batchGetHover)
+    const staleContent = [
+      "## Bridge Tool Overrides — MANDATORY",
+      "| npm test | runTests |",
+      "| tsc | getDiagnostics |",
+      "x".repeat(300),
+    ].join("\n");
+    fs.writeFileSync(path.join(rulesDir, "bridge-tools.md"), staleContent);
+
+    const result = spawnSync(
+      "node",
+      [distIndex, "gen-claude-md", "--write", "--workspace", ws],
+      {
+        encoding: "utf-8",
+        env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      },
+    );
+
+    expect(result.status).toBe(0);
+    // Rules file must be repaired despite the early exit
+    const repaired = fs.readFileSync(
+      path.join(rulesDir, "bridge-tools.md"),
+      "utf-8",
+    );
+    expect(repaired).toContain("batchGetHover");
+    // CLAUDE.md must be untouched
+    expect(fs.readFileSync(claudeMdPath, "utf-8")).toContain(
+      "## Claude IDE Bridge",
+    );
   });
 });

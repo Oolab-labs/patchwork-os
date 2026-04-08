@@ -34,6 +34,8 @@ const MAX_HTTP_SESSIONS = 5;
 const BODY_SIZE_LIMIT = 1_048_576; // 1 MB
 const MAX_PENDING_SENDS = 100; // per-session response queue cap
 const SSE_HEARTBEAT_MS = 20_000; // keep SSE streams alive through proxies/firewalls
+const SSE_BUFFER_MAX = 100; // max events retained per session for Last-Event-ID replay
+const SSE_BUFFER_TTL_MS = 30_000; // events older than 30s are not replayed
 
 /** Mimics the WebSocket interface so McpTransport works unchanged. */
 class HttpAdapter extends EventEmitter {
@@ -66,11 +68,15 @@ class HttpAdapter extends EventEmitter {
   private sseRes: http.ServerResponse | null = null;
   private sseHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
+  // Monotonic event ID counter and replay buffer for SSE Last-Event-ID resumption.
+  private eventCounter = 0;
+  private eventBuffer: Array<{ id: number; data: string; ts: number }> = [];
+
   /**
    * Called by safeSend() / McpTransport to deliver a message.
    * Responses (JSON-RPC messages with `id`) go to the matching pending POST resolver.
-   * Notifications (no `id` — e.g. progress, list_changed) go to the SSE stream.
-   * This prevents notifications from consuming a response slot.
+   * Notifications (no `id` — e.g. progress, list_changed) go to the SSE stream with
+   * a monotonic `id:` field and are buffered for Last-Event-ID replay on reconnect.
    */
   send(data: string | Buffer, cb?: (err?: Error) => void): void {
     const str = typeof data === "string" ? data : data.toString("utf-8");
@@ -83,10 +89,11 @@ class HttpAdapter extends EventEmitter {
         responseId = parsed.id as string | number;
       }
     } catch {
-      // Unparseable — fall through to SSE path
+      // Unparseable — treat as notification
     }
 
     if (responseId !== null) {
+      // Response path: deliver to the waiting POST handler.
       const resolve = this.pendingSends.get(responseId);
       if (resolve) {
         this.pendingSends.delete(responseId);
@@ -94,22 +101,59 @@ class HttpAdapter extends EventEmitter {
         cb?.();
         return;
       }
-    }
-
-    if (this.sseRes && !this.sseRes.writableEnded) {
-      this.sseRes.write(`data: ${str}\n\n`);
-      this.onSseSend(); // refresh session lastActivity so idle pruner doesn't kill open SSE connections
-      cb?.();
-      return;
-    }
-    // Neither pending POST waiter nor SSE stream — message is silently dropped.
-    // Log a warning so operators can detect stale or missing SSE connections.
-    if (responseId !== null) {
+      // Orphaned response (waiter timed out): try SSE as fallback.
+      if (this.sseRes && !this.sseRes.writableEnded) {
+        this.sseRes.write(`data: ${str}\n\n`);
+        this.onSseSend();
+        cb?.();
+        return;
+      }
       this.warn(
         `HTTP: dropped response id=${responseId} — no pending waiter or active SSE stream`,
       );
+      cb?.();
+      return;
     }
+
+    // Notification path: assign monotonic event ID, buffer for replay, send to SSE.
+    const eventId = this.eventCounter++;
+    this.bufferEvent(eventId, str);
+    if (this.sseRes && !this.sseRes.writableEnded) {
+      this.sseRes.write(`id: ${eventId}\ndata: ${str}\n\n`);
+      this.onSseSend(); // refresh lastActivity so idle pruner doesn't kill open SSE connections
+    }
+    // If no SSE stream: buffered above for replay when the client reconnects.
     cb?.();
+  }
+
+  /** Buffer a notification event, pruning expired entries and capping at MAX. */
+  private bufferEvent(id: number, data: string): void {
+    const now = Date.now();
+    // Prune expired events from the front (buffer is append-only so oldest are first).
+    let i = 0;
+    while (
+      i < this.eventBuffer.length &&
+      now - (this.eventBuffer[i]?.ts ?? 0) > SSE_BUFFER_TTL_MS
+    ) {
+      i++;
+    }
+    if (i > 0) this.eventBuffer.splice(0, i);
+    // Cap BEFORE pushing so the buffer never transiently exceeds SSE_BUFFER_MAX.
+    if (this.eventBuffer.length >= SSE_BUFFER_MAX) {
+      this.eventBuffer.shift(); // drop oldest to make room
+    }
+    this.eventBuffer.push({ id, data, ts: now });
+  }
+
+  /**
+   * Returns buffered events with id > lastId whose timestamps are within the TTL.
+   * Called by handleGet to replay missed notifications on SSE reconnect.
+   */
+  getEventsAfter(lastId: number): Array<{ id: number; data: string }> {
+    const now = Date.now();
+    return this.eventBuffer
+      .filter((e) => e.id > lastId && now - e.ts <= SSE_BUFFER_TTL_MS)
+      .map((e) => ({ id: e.id, data: e.data }));
   }
 
   /** Attach (or detach, when null) a GET /mcp SSE response for server-initiated notifications. */
@@ -479,6 +523,18 @@ export class StreamableHttpHandler {
       "X-Accel-Buffering": "no", // prevent nginx from buffering SSE heartbeats
     });
     res.write(": connected\n\n"); // SSE comment to flush headers
+
+    // Replay missed events if the client supplies a Last-Event-ID header.
+    // This satisfies the MCP spec's stream recovery mechanism for dropped connections.
+    const lastEventIdHeader = req.headers["last-event-id"];
+    if (typeof lastEventIdHeader === "string") {
+      const lastId = Number.parseInt(lastEventIdHeader, 10);
+      if (!Number.isNaN(lastId)) {
+        for (const event of session.adapter.getEventsAfter(lastId)) {
+          res.write(`id: ${event.id}\ndata: ${event.data}\n\n`);
+        }
+      }
+    }
 
     session.adapter.attachSSE(res);
     session.lastActivity = Date.now();

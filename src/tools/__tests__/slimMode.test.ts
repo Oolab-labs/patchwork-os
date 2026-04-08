@@ -5,8 +5,8 @@ import { registerAllTools, SLIM_TOOL_NAMES } from "../index.js";
 // ── SLIM_TOOL_NAMES invariants ─────────────────────────────────────────────
 
 describe("SLIM_TOOL_NAMES", () => {
-  it("contains exactly 38 entries", () => {
-    expect(SLIM_TOOL_NAMES.size).toBe(38);
+  it("contains exactly 45 entries", () => {
+    expect(SLIM_TOOL_NAMES.size).toBe(45);
   });
 
   it("all names match the valid tool name pattern", () => {
@@ -119,6 +119,9 @@ describe("registerAllTools tool set filtering", () => {
       corsOrigins: [],
       auditLogPath: null,
       fullMode: false,
+      maxSessions: 5,
+      analyticsEnabled: null,
+      githubDefaultRepo: null,
       ...overrides,
     };
   }

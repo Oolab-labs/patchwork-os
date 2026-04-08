@@ -293,10 +293,12 @@ describe("ExtensionClient: circuit breaker half-open", () => {
     vi.useFakeTimers({ now: Date.now() });
     const { clientWs, serverWs } = await connectExtension();
 
-    // Trigger one timeout to suspend
-    const first = client.getDiagnostics().catch(() => null);
-    await vi.advanceTimersByTimeAsync(10_001);
-    await first;
+    // Trigger 3 timeouts within the 30s window to open the circuit
+    for (let i = 0; i < 3; i++) {
+      const req = client.getDiagnostics().catch(() => null);
+      await vi.advanceTimersByTimeAsync(10_001);
+      await req;
+    }
 
     const state = client.getCircuitBreakerState();
     expect(state.suspended).toBe(true);
@@ -402,5 +404,119 @@ describe("ExtensionClient: notification handling", () => {
     expect(cached.length).toBeLessThanOrEqual(500);
 
     clientWs.close();
+  });
+});
+
+// ── Tool mid-flight when socket closes ────────────────────────────────────────
+//
+// When a request is in-flight (in pendingRequests) and the WebSocket closes,
+// rejectAllPending() should be called, rejecting the in-flight promise.
+
+describe("ExtensionClient: mid-flight request rejected on socket close", () => {
+  it("in-flight request is rejected when the extension WebSocket closes", async () => {
+    const { clientWs } = await connectExtension();
+
+    // Start an in-flight request using the private request() method.
+    // Use a very long timeout so the timer doesn't fire before the close event.
+    const rawRequest = (
+      client as unknown as {
+        request: (
+          method: string,
+          params?: unknown,
+          timeoutMs?: number,
+        ) => Promise<unknown>;
+      }
+    ).request.bind(client);
+
+    const inflight = rawRequest(
+      "extension/getDiagnostics",
+      undefined,
+      60_000, // long timeout — close event should win
+    );
+
+    // Give time for the request to be in pendingRequests
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Verify request is actually pending
+    const pendingRequests = (
+      client as unknown as { pendingRequests: Map<number, unknown> }
+    ).pendingRequests;
+    expect(pendingRequests.size).toBeGreaterThan(0);
+
+    // Close the client-side socket — triggers "close" event on the server-side ws
+    clientWs.close();
+
+    // The in-flight request should be rejected with a disconnect reason
+    await expect(inflight).rejects.toThrow();
+
+    // After disconnect, no pending requests should remain
+    await new Promise((r) => setTimeout(r, 50));
+    expect(pendingRequests.size).toBe(0);
+    expect(client.isConnected()).toBe(false);
+  });
+
+  it("multiple in-flight requests are all rejected on socket close", async () => {
+    const { clientWs } = await connectExtension();
+
+    const rawRequest = (
+      client as unknown as {
+        request: (
+          method: string,
+          params?: unknown,
+          timeoutMs?: number,
+        ) => Promise<unknown>;
+      }
+    ).request.bind(client);
+
+    // Start 5 concurrent in-flight requests
+    const inflightRequests = Array.from({ length: 5 }, (_, i) =>
+      rawRequest(`extension/method${i}`, undefined, 60_000).catch(
+        (err: Error) => err.message,
+      ),
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Close the socket
+    clientWs.close();
+
+    // All should settle (reject)
+    const results = await Promise.all(inflightRequests);
+
+    // All should have been rejected (their caught error messages should be strings)
+    expect(results.every((r) => typeof r === "string")).toBe(true);
+  });
+
+  it("onExtensionDisconnected fires before rejectAllPending clears requests", async () => {
+    const { clientWs } = await connectExtension();
+
+    const rawRequest = (
+      client as unknown as {
+        request: (
+          method: string,
+          params?: unknown,
+          timeoutMs?: number,
+        ) => Promise<unknown>;
+      }
+    ).request.bind(client);
+
+    let disconnectedFired = false;
+    client.onExtensionDisconnected = () => {
+      disconnectedFired = true;
+    };
+
+    const inflight = rawRequest(
+      "extension/getDiagnostics",
+      undefined,
+      60_000,
+    ).catch(() => null);
+
+    await new Promise((r) => setTimeout(r, 20));
+    clientWs.close();
+    await inflight;
+
+    // Disconnect callback should have fired
+    await new Promise((r) => setTimeout(r, 50));
+    expect(disconnectedFired).toBe(true);
   });
 });

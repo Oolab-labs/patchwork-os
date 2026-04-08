@@ -41,7 +41,7 @@ vi.mock("../httpProbe", () => ({
 
 import WebSocket from "ws";
 // Must import after mocks are set up
-import { BridgeConnection } from "../connection";
+import { BridgeConnection, ConnectionState } from "../connection";
 import { readLockFilesAsync } from "../lockfiles";
 
 beforeEach(() => {
@@ -472,7 +472,7 @@ describe("tryConnect", () => {
 
   it("does nothing when already connecting", () => {
     const bridge = createBridge();
-    (bridge as any).connecting = true;
+    (bridge as any).state = ConnectionState.CONNECTING;
     bridge.tryConnect();
     expect(readLockFilesAsync).not.toHaveBeenCalled();
   });
@@ -575,5 +575,51 @@ describe("dispose", () => {
     expect(bridge.selectionDebounceTimer).toBeNull();
     expect(bridge.diagnosticsDebounceTimer).toBeNull();
     expect(bridge.aiCommentsDebounceTimer).toBeNull();
+  });
+});
+
+// ── Listener leak across reconnect cycles ─────────────────────
+//
+// Each call to connect() attaches a pong listener via ws.once("pong", ...) in
+// startHeartbeat(). If stopHeartbeat() doesn't clean it up before the next
+// connect(), the listener count grows unboundedly. This test simulates 100
+// connect/disconnect cycles and verifies the mock WebSocket used in each cycle
+// never accumulates stale listeners.
+
+describe("Listener leak across reconnect cycles", () => {
+  it("does not accumulate listeners after 100 connect/disconnect cycles", async () => {
+    vi.mocked(readLockFilesAsync).mockResolvedValue(null);
+    const bridge = createBridge();
+
+    const maxListenersSeen: number[] = [];
+
+    for (let i = 0; i < 100; i++) {
+      // Simulate bridge connecting: create a fresh mock socket in OPEN state
+      const ws = new WebSocket("ws://fake") as any;
+      ws.readyState = WebSocket.OPEN;
+      bridge.ws = ws;
+      (bridge as any).state = ConnectionState.CONNECTED;
+      (bridge as any).generation++;
+
+      // Start heartbeat (attaches ping listener + schedules interval)
+      (bridge as any).startHeartbeat();
+
+      // Record listener count on this socket right after heartbeat starts
+      maxListenersSeen.push(
+        ws.listenerCount("ping") + ws.listenerCount("pong"),
+      );
+
+      // Simulate disconnect: stopHeartbeat + cleanup
+      bridge.ws = null;
+      (bridge as any).stopHeartbeat(ws);
+      (bridge as any).state = ConnectionState.IDLE;
+    }
+
+    // Every cycle should have the same small listener count (≤ 2: one ping + one pong at most).
+    // If listeners leak, the count grows each cycle.
+    const max = Math.max(...maxListenersSeen);
+    const min = Math.min(...maxListenersSeen);
+    expect(max).toBeLessThanOrEqual(2);
+    expect(max - min).toBe(0); // count is stable across all 100 cycles
   });
 });

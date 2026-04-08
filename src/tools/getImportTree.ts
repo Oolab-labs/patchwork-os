@@ -4,6 +4,7 @@ import {
   optionalBool,
   optionalInt,
   requireString,
+  resolveFilePath,
   successStructuredLarge,
 } from "./utils.js";
 
@@ -118,9 +119,7 @@ export function createGetImportTreeTool(workspace: string) {
       const maxDepth = optionalInt(args, "maxDepth", 1, 10) ?? 3;
       const includeExternal = optionalBool(args, "includeExternal") ?? false;
 
-      const absFile = path.isAbsolute(file)
-        ? file
-        : path.resolve(workspace, file);
+      const absFile = resolveFilePath(file, workspace);
 
       const visited = new Set<string>();
       const cycles: string[] = [];

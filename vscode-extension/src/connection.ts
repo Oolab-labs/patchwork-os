@@ -18,6 +18,7 @@ export enum ConnectionState {
   CONNECTING = 1,
   CONNECTED = 2,
   DISCONNECTING = 3,
+  RECONNECTING = 4,
 }
 
 function formatDuration(ms: number): string {
@@ -37,15 +38,21 @@ export class BridgeConnection {
   aiCommentsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   disposed = false;
   private state = ConnectionState.IDLE;
-  private connecting = false;
   reconnectDelay = RECONNECT_BASE_DELAY;
   lockWatcher: fs.FSWatcher | null = null;
   private lockPollTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sleepProbeTimer: ReturnType<typeof setTimeout> | null = null;
   private pongHandler: (() => void) | null = null;
+  /** One-shot pong handler for the regular RTT ping — stored so stopHeartbeat() can remove it */
+  private rttPongHandler: ((data: Buffer) => void) | null = null;
+  /** One-shot pong handler for the sleep/wake probe — stored so stopHeartbeat() can remove it */
+  private probePongHandler: ((data: Buffer) => void) | null = null;
   private lastBridgePong = Date.now();
   private lastTickTime = Date.now();
+  private lastPingTime = 0;
+  /** Most recent round-trip latency to the bridge, in milliseconds. Null until first measurement. */
+  public lastRttMs: number | null = null;
   private reconnectAttempts = 0;
   /** Monotonically increasing generation — prevents stale listeners from acting */
   private generation = 0;
@@ -100,7 +107,11 @@ export class BridgeConnection {
     { timeout: ReturnType<typeof setTimeout>; controller: AbortController }
   > = new Map();
   private static readonly MAX_PENDING_NOTIFICATIONS = 20;
-  /** Notifications worth buffering during transient disconnects */
+  /**
+   * Notifications worth buffering during transient disconnects.
+   * Intentionally excludes time-sensitive or stateless notifications:
+   *   - extension/rttUpdate — stale latency measurements are meaningless after reconnect
+   */
   private static readonly BUFFERABLE_METHODS = new Set([
     "extension/diagnosticsChanged",
     "extension/fileChanged",
@@ -346,6 +357,7 @@ export class BridgeConnection {
   private handleDisconnect(): void {
     if (this.state === ConnectionState.DISCONNECTING) return;
     this.state = ConnectionState.DISCONNECTING;
+    this.lastRttMs = null;
     this.updateStatusBar("disconnected");
     // Cancel all pending handler timeouts and abort controllers
     for (const [, pending] of this.pendingHandlers) {
@@ -430,15 +442,27 @@ export class BridgeConnection {
             this.handleDisconnect();
           }
         }, 5_000);
-        probeSocket.once("pong", () => {
+        const probePingTime = Date.now();
+        this.probePongHandler = (data) => {
+          this.probePongHandler = null;
           if (this.sleepProbeTimer) {
             clearTimeout(this.sleepProbeTimer);
             this.sleepProbeTimer = null;
           }
           this.lastBridgePong = Date.now(); // refresh pong baseline
-        });
+          // Use echoed timestamp for accurate RTT; fall back to wall-clock delta.
+          const sentAt = Number.parseInt(data?.toString() ?? "", 10);
+          const rtt = !Number.isNaN(sentAt)
+            ? Date.now() - sentAt
+            : Date.now() - probePingTime;
+          if (rtt >= 0 && rtt < 10_000) {
+            this.lastRttMs = rtt;
+            this.sendNotification("extension/rttUpdate", { latencyMs: rtt });
+          }
+        };
+        probeSocket.once("pong", this.probePongHandler);
         try {
-          probeSocket.ping();
+          probeSocket.ping(String(probePingTime));
         } catch {
           /* best-effort */
         }
@@ -452,6 +476,33 @@ export class BridgeConnection {
         this.ws?.terminate();
         this.handleDisconnect();
         return;
+      }
+      // Regular RTT probe — send a ping with timestamp payload so we can
+      // measure round-trip latency even when no sleep/wake event occurs.
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.lastPingTime = Date.now();
+        const pingTime = this.lastPingTime;
+        // Remove any stale handler from a previous interval tick that never received a pong
+        if (this.rttPongHandler) {
+          this.ws.removeListener("pong", this.rttPongHandler);
+        }
+        this.rttPongHandler = (data) => {
+          this.rttPongHandler = null;
+          const sentAt = Number.parseInt(data?.toString() ?? "", 10);
+          const rtt = !Number.isNaN(sentAt)
+            ? Date.now() - sentAt
+            : Date.now() - pingTime;
+          if (rtt >= 0 && rtt < 10_000) {
+            this.lastRttMs = rtt;
+            this.sendNotification("extension/rttUpdate", { latencyMs: rtt });
+          }
+        };
+        this.ws.once("pong", this.rttPongHandler);
+        try {
+          this.ws.ping(String(this.lastPingTime));
+        } catch {
+          /* best-effort */
+        }
       }
     }, 45_000);
   }
@@ -471,6 +522,14 @@ export class BridgeConnection {
       (ws ?? this.ws)?.removeListener("ping", this.pongHandler);
       this.pongHandler = null;
     }
+    if (this.rttPongHandler) {
+      (ws ?? this.ws)?.removeListener("pong", this.rttPongHandler);
+      this.rttPongHandler = null;
+    }
+    if (this.probePongHandler) {
+      (ws ?? this.ws)?.removeListener("pong", this.probePongHandler);
+      this.probePongHandler = null;
+    }
   }
 
   scheduleReconnect(): void {
@@ -482,6 +541,7 @@ export class BridgeConnection {
     )
       return;
     this.reconnectAttempts++;
+    this.state = ConnectionState.RECONNECTING;
     this.updateStatusBar("reconnecting");
     if (this.reconnectAttempts === 3) {
       vscode.window
@@ -525,7 +585,6 @@ export class BridgeConnection {
       }
       this.ws = null;
     }
-    this.connecting = false;
     this.state = ConnectionState.IDLE;
     this.tryConnect();
   }
@@ -553,8 +612,6 @@ export class BridgeConnection {
       this.state === ConnectionState.CONNECTED
     )
       return;
-    if (this.connecting) return;
-    this.connecting = true;
     this.state = ConnectionState.CONNECTING;
     const readFn = this.workspaceOverride
       ? readLockFileForWorkspace(
@@ -564,7 +621,6 @@ export class BridgeConnection {
       : readLockFilesAsync(this.lockDirOverride || undefined);
     readFn
       .then(async (lockData) => {
-        this.connecting = false;
         if (this.disposed) {
           this.state = ConnectionState.IDLE;
           return;
@@ -623,7 +679,6 @@ export class BridgeConnection {
         }
       })
       .catch((err: unknown) => {
-        this.connecting = false;
         this.log(
           `Lock file read failed: ${err instanceof Error ? err.message : String(err)}`,
         );

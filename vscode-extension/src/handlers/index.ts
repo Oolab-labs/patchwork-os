@@ -6,7 +6,9 @@ import {
   handleFormatDocument,
   handleOrganizeImports,
 } from "./codeActions";
+import { handleGetCodeLens } from "./codeLens";
 import { handleGetDiagnostics } from "./diagnostics";
+import { handleGetDocumentLinks } from "./documentLinks";
 import { handleEditText, handleReplaceBlock } from "./editText";
 import {
   handleCloseTab,
@@ -23,6 +25,7 @@ import {
 import { handleGetInlayHints } from "./inlayHints";
 import { handleCaptureScreenshot } from "./screenshot";
 import { handleGetSelection } from "./selection";
+import { handleGetSemanticTokens } from "./semanticTokens";
 import {
   handleCreateTerminal,
   handleDisposeTerminal,
@@ -79,6 +82,9 @@ export const baseHandlers: Record<string, RequestHandler> = {
   "extension/listVSCodeCommands": handleListVSCodeCommands,
   "extension/getInlayHints": handleGetInlayHints,
   "extension/getTypeHierarchy": handleGetTypeHierarchy,
+  "extension/getSemanticTokens": handleGetSemanticTokens,
+  "extension/getCodeLens": handleGetCodeLens,
+  "extension/getDocumentLinks": handleGetDocumentLinks,
   "extension/getWorkspaceFolders": handleGetWorkspaceFolders,
   "extension/captureScreenshot": handleCaptureScreenshot,
 };

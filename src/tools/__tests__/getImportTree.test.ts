@@ -16,6 +16,9 @@ vi.mock("node:fs", async (importOriginal) => {
       ...actual,
       existsSync: (...args: Parameters<typeof actual.existsSync>) =>
         mockExistsSync(...args),
+      // resolveFilePath calls realpathSync to check symlink containment.
+      // In tests all paths are synthetic so return path unchanged (no symlinks).
+      realpathSync: (p: Parameters<typeof actual.realpathSync>[0]) => String(p),
       promises: {
         ...actual.promises,
         readFile: (...args: Parameters<typeof actual.promises.readFile>) =>

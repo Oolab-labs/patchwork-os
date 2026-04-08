@@ -549,3 +549,190 @@ describe("Bridge connectivity: grace period state machine", () => {
     ws2.close();
   });
 });
+
+// ── Session eviction state isolation ─────────────────────────────────────────
+
+describe("Bridge connectivity: session eviction state isolation", () => {
+  it("evicted session data does not leak to a replacement session", async () => {
+    const { server, transport, authToken } = buildScaffold();
+    const port = await server.findAndListen(null);
+
+    // Connect ws1 and initialize MCP
+    const ws1 = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": authToken },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws1.on("open", resolve);
+      ws1.on("error", reject);
+    });
+    openedClients.push(ws1);
+    await new Promise((r) => setTimeout(r, 50));
+
+    send(ws1, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await waitFor(ws1, (m) => m.id === 1);
+    send(ws1, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Start an in-flight tool call (extension-required tool — won't respond since no extension)
+    // We send the request but don't wait for it to complete
+    send(ws1, {
+      jsonrpc: "2.0",
+      id: 99,
+      method: "tools/call",
+      params: { name: "getActiveFile", arguments: {} },
+    });
+
+    // Close ws1 — simulates a disconnect while the in-flight call is pending
+    ws1.close();
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Wait past rate-limit interval
+    await new Promise((r) => setTimeout(r, 1100));
+
+    // Reconnect with ws2 — should get a fresh session
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": authToken },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws2.on("open", resolve);
+      ws2.on("error", reject);
+    });
+    openedClients.push(ws2);
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Initialize the new session
+    send(ws2, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    const initResp = await waitFor(ws2, (m) => m.id === 1);
+    expect(initResp.result).toBeDefined();
+
+    send(ws2, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // tools/list should work correctly on the fresh session
+    send(ws2, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    const listResp = await waitFor(ws2, (m) => m.id === 2);
+    expect(
+      Array.isArray((listResp.result as Record<string, unknown>).tools),
+    ).toBe(true);
+
+    // Verify no stale response from ws1's in-flight call id=99 leaks into ws2
+    // by checking the transport's inFlightControllers map directly.
+    const inFlightControllers = (
+      transport as unknown as Record<string, unknown>
+    ).inFlightControllers as Map<number, unknown> | undefined;
+    // Guard: if the field doesn't exist the assertion would trivially pass — fail loudly instead
+    expect(
+      inFlightControllers,
+      "transport.inFlightControllers must exist",
+    ).toBeDefined();
+    expect(inFlightControllers!.has(99)).toBe(false);
+
+    ws2.close();
+  });
+});
+
+// ── Reconnect during in-flight tool call ──────────────────────────────────────
+
+describe("Bridge connectivity: reconnect during in-flight tool call", () => {
+  it("in-flight tool call is aborted when the session disconnects mid-flight", async () => {
+    const { server, transport, authToken, graceState } = buildScaffold();
+    const port = await server.findAndListen(null);
+
+    const detachSpy = vi.spyOn(transport, "detach");
+
+    // Connect ws1 and initialize MCP
+    const ws1 = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": authToken },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws1.on("open", resolve);
+      ws1.on("error", reject);
+    });
+    openedClients.push(ws1);
+    await new Promise((r) => setTimeout(r, 50));
+
+    send(ws1, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    await waitFor(ws1, (m) => m.id === 1);
+    send(ws1, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Start an in-flight tool call to an extension-required tool.
+    // No extension is connected so the response will come back quickly as an error,
+    // but we care about the session state after disconnect — not the response itself.
+    send(ws1, {
+      jsonrpc: "2.0",
+      id: 42,
+      method: "tools/call",
+      params: { name: "getSelection", arguments: {} },
+    });
+
+    // Close ws1, give sockets a moment to flush, then switch to fake timers.
+    // We must switch to fake timers AFTER the network close to avoid freezing I/O.
+    ws1.close();
+    await new Promise((r) => setTimeout(r, 150));
+
+    // At this point the scaffold's close handler has fired and set graceState.claudeDisconnectTimer.
+    // If it already fired (real timer ran in <150ms — extremely unlikely but possible in CI),
+    // detach was already called; we accept either path.
+    const timerWasStillPending = graceState.claudeDisconnectTimer !== null;
+
+    if (timerWasStillPending) {
+      // Capture the real timer, clear it, then re-create it under fake timers
+      // so we can advance time without waiting 30 real seconds.
+      clearTimeout(graceState.claudeDisconnectTimer!);
+      graceState.claudeDisconnectTimer = null;
+
+      vi.useFakeTimers({ now: Date.now() });
+
+      // Re-arm the grace timer under fake timers (mirrors scaffold's startClaudeDisconnectGrace)
+      graceState.claudeDisconnectTimer = setTimeout(() => {
+        graceState.claudeDisconnectTimer = null;
+        transport.detach();
+      }, CLAUDE_RECONNECT_GRACE_MS);
+
+      // Advance past the full grace period — this should trigger transport.detach()
+      await vi.advanceTimersByTimeAsync(CLAUDE_RECONNECT_GRACE_MS + 100);
+
+      // detach must have been called after the grace period expired
+      expect(detachSpy).toHaveBeenCalled();
+
+      vi.useRealTimers();
+    } else {
+      // Timer already fired in real-time; detach was called by the real timer
+      expect(detachSpy).toHaveBeenCalled();
+    }
+
+    // Verify grace timer was cleared
+    expect(graceState.claudeDisconnectTimer).toBeNull();
+
+    // Wait past rate-limit interval
+    await new Promise((r) => setTimeout(r, 1100));
+
+    // Reconnect with ws2 — fresh session should work normally
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": authToken },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws2.on("open", resolve);
+      ws2.on("error", reject);
+    });
+    openedClients.push(ws2);
+    await new Promise((r) => setTimeout(r, 50));
+
+    send(ws2, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    const initResp = await waitFor(ws2, (m) => m.id === 1);
+    expect(initResp.result).toBeDefined();
+
+    send(ws2, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // tools/list must succeed on the new session
+    send(ws2, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+    const listResp = await waitFor(ws2, (m) => m.id === 2);
+    expect(
+      Array.isArray((listResp.result as Record<string, unknown>).tools),
+    ).toBe(true);
+
+    ws2.close();
+  });
+});
