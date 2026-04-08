@@ -886,17 +886,9 @@ export class McpTransport {
                   };
                   break;
                 }
-                // Strip _meta from arguments — it's a reserved MCP protocol field
-                // that clients (e.g. Claude Code) may embed inside arguments. Tool
-                // schemas use additionalProperties:false, so leaving it in causes
-                // AJV to reject the call with -32602.
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                const { _meta: _stripped, ...toolArgs } = rawArgs as Record<
-                  string,
-                  unknown
-                >;
-                // Guard against oversized argument payloads before they reach tool handlers
-                if (JSON.stringify(toolArgs).length > 1_048_576) {
+                // Guard against oversized argument payloads before they reach tool handlers.
+                // Check rawArgs (before _meta strip) so a large _meta cannot bypass the limit.
+                if (JSON.stringify(rawArgs).length > 1_048_576) {
                   this.callCount++;
                   this.errorCount++;
                   response = {
@@ -909,6 +901,15 @@ export class McpTransport {
                   };
                   break;
                 }
+                // Strip _meta from arguments — it's a reserved MCP protocol field
+                // that clients (e.g. Claude Code) may embed inside arguments. Tool
+                // schemas use additionalProperties:false, so leaving it in causes
+                // AJV to reject the call with -32602.
+                // biome-ignore lint/correctness/noUnusedVariables: intentional strip
+                const { _meta: _stripped, ...toolArgs } = rawArgs as Record<
+                  string,
+                  unknown
+                >;
                 // AJV structural validation
                 const validate = this.getValidator(params.name);
                 if (validate && !validate(toolArgs)) {
