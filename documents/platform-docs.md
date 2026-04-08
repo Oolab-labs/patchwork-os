@@ -150,6 +150,13 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `foldingRanges` | Foldable code regions (functions, classes, imports) for a file |
 | `selectionRanges` | Hierarchical selection boundaries at a position (innermost → outermost) |
 | `refactorAnalyze` | Composite: assess refactoring impact — refs, callers, inheritance, risk level |
+| `getSemanticTokens` | Token-level semantic classification (type/variable/function + modifiers like readonly/deprecated). Decodes VS Code delta-encoded Uint32Array; `startLine`/`endLine` filter; caps at 2000 tokens |
+| `getCodeLens` | Code lens items at each location (reference counts, test run indicators). Omits `commandId`; truncates titles to 200 chars |
+| `getChangeImpact` | Blast-radius composite after editing: live diagnostics + reference counts for changed symbols. Returns `blastRadius: low/medium/high` |
+| `getImportedSignatures` | Resolve imported symbols to their type signatures via `goToDefinition` → `getHover`. Prevents hallucinated API shapes; 5-concurrent; hover truncated to 4000 chars |
+| `getDocumentLinks` | Extract document links (file references, URLs). Filters `file://` paths through workspace containment; caps at 100 links |
+| `batchGetHover` | Fan-out `getHover` for up to 10 positions in one call via `Promise.allSettled` |
+| `batchGoToDefinition` | Fan-out `goToDefinition` for up to 10 positions in one call via `Promise.allSettled` |
 | `formatRange` | Format a specific line range via VS Code formatter |
 
 ### Text Editing
