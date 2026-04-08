@@ -868,11 +868,11 @@ export class McpTransport {
               let timedOut = false;
               let handlerPromise: Promise<unknown> | null = null;
               try {
-                const toolArgs = params.arguments ?? {};
+                const rawArgs = params.arguments ?? {};
                 if (
-                  typeof toolArgs !== "object" ||
-                  toolArgs === null ||
-                  Array.isArray(toolArgs)
+                  typeof rawArgs !== "object" ||
+                  rawArgs === null ||
+                  Array.isArray(rawArgs)
                 ) {
                   this.callCount++;
                   this.errorCount++;
@@ -886,6 +886,15 @@ export class McpTransport {
                   };
                   break;
                 }
+                // Strip _meta from arguments — it's a reserved MCP protocol field
+                // that clients (e.g. Claude Code) may embed inside arguments. Tool
+                // schemas use additionalProperties:false, so leaving it in causes
+                // AJV to reject the call with -32602.
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                const { _meta: _stripped, ...toolArgs } = rawArgs as Record<
+                  string,
+                  unknown
+                >;
                 // Guard against oversized argument payloads before they reach tool handlers
                 if (JSON.stringify(toolArgs).length > 1_048_576) {
                   this.callCount++;

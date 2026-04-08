@@ -205,6 +205,43 @@ describe("McpTransport", () => {
     expect(err.data).toBe("nonexistent");
   });
 
+  it("tools/call strips _meta from arguments before AJV validation", async () => {
+    // Reproduces: MCP error -32602 "must NOT have additional properties"
+    // Claude Code embeds _meta inside arguments; tool schemas have
+    // additionalProperties:false, so _meta must be stripped before validation.
+    const { ws } = await setup("call-strip-meta", (t) => {
+      t.registerTool(
+        {
+          name: "strictTool",
+          description: "test",
+          inputSchema: {
+            type: "object",
+            properties: { filePath: { type: "string" } },
+            required: ["filePath"],
+            additionalProperties: false,
+          },
+        },
+        async (args) => ({
+          content: [{ type: "text", text: String(args.filePath) }],
+        }),
+      );
+    });
+
+    // Call with _meta embedded in arguments — must NOT return -32602
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "strictTool",
+        arguments: { filePath: "/tmp/foo.ts", _meta: { progressToken: 42 } },
+      },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 1);
+    expect(resp.error).toBeUndefined();
+    expect(resp.result).toBeDefined();
+  });
+
   it("tools/call returns INVALID_PARAMS for non-object arguments", async () => {
     const { ws } = await setup("call-badargs", (t) => {
       t.registerTool(
