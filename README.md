@@ -74,7 +74,7 @@ This appends the bridge section to your existing `CLAUDE.md` and writes `.claude
 
 ## Slim Mode vs Full Mode
 
-By default, the bridge starts in **slim mode** — 38 IDE-exclusive tools that Claude can't replicate with its built-in `Read`/`Write`/`Bash` tools: LSP intelligence, debugger, editor decorations, diagnostics, refactoring, and editor state. This is the right default for most workflows because Claude already has file editing and shell access built in.
+By default, the bridge starts in **slim mode** — 45 IDE-exclusive tools that Claude can't replicate with its built-in `Read`/`Write`/`Bash` tools: LSP intelligence, debugger, editor decorations, diagnostics, refactoring, and editor state. This is the right default for most workflows because Claude already has file editing and shell access built in.
 
 If you need Claude to use the bridge's **git, terminal, file ops, HTTP client, or GitHub** tools instead of its built-in equivalents, start in full mode:
 

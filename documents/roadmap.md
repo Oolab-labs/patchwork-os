@@ -4,12 +4,12 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.4 — 2026-04-08)
+## Current State (v2.11.5 — 2026-04-08)
 
-- **Slim mode default**: 42 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
-- **~1,638 bridge tests / ~126 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **Slim mode default**: 45 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
+- **~1,646 bridge tests / ~128 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
-- Extension v1.0.19 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
+- Extension v1.0.20 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - **Four client surfaces**: Claude Code CLI, Claude Desktop (Cowork + Dispatch), Agent Teams (parallel), Scheduled Tasks (recurring)
@@ -29,15 +29,25 @@ Development direction and exploration guidance. Living document — update as pr
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
 
-**v2.11.4 in progress (2026-04-08) — LSP tools expansion (Phases 1–4):**
+**v2.11.5 shipped (2026-04-08) — stale rules fix + transport hardening:**
+- `isBridgeToolsFileValid()`: strengthened to require `"batchGetHover"` as 4th keyword — stale files from pre-2.11.4 installations now trigger repair
+- `repairBridgeToolsRulesIfStale()`: extracted helper called before both early exits in `gen-claude-md --write`; existing users with complete CLAUDE.md (triggering early-exit) now receive the repaired rules file
+- `_meta` strip in transport: MCP clients may embed `_meta` inside `arguments`; stripped before AJV validation to prevent spurious `-32602` errors on tools with `additionalProperties: false`
+- Size guard on `rawArgs` (pre-strip): 1 MB check now runs before `_meta` is removed, so a large `_meta` cannot bypass the guard
+- `.gitignore`: added `*.bak` (auto-created backups) and `.claude/rules/` (auto-generated rules copy)
+- 2 new tests: `_meta` strip verified absent from handler args; permissive-schema strip also confirmed unconditional
+
+**v2.11.4 shipped (2026-04-08) — LSP tools expansion (all phases) + connection hardening:**
 - `getSemanticTokens`: decodes delta-encoded semantic token Uint32Array from VS Code; `startLine`/`endLine` filter; caps at 2000 tokens; sanitizes legend (50 entries, 64-char names). Handler uses `vscode.provideDocumentSemanticTokensLegend` + `vscode.provideDocumentSemanticTokens`.
 - `getCodeLens`: calls `vscode.executeCodeLensProvider` with `itemResolveCount=100`; omits `commandId` (security); truncates titles to 200 chars (prompt injection defense)
 - `getChangeImpact`: composite blast-radius tool — live diagnostics + reference counts for changed symbols; up to 5 concurrent findReferences; blast radius `low`/`medium`/`high`
 - `getImportedSignatures`: composite — parses named/default/type imports; resolves each via `goToDefinition` → `getHover`; 5 concurrent; hover truncated to 4000 chars; skips `* as X` namespace imports
-- `explainSymbol` extended: new `includeSiblings: boolean` parameter adds sibling symbol names/kinds/lines from `getDocumentSymbols`
-- `getImportTree` security fix: replaced bare `path.isAbsolute` check with `resolveFilePath()` (null-byte + symlink + workspace-bounds validation)
-- SLIM_TOOL_NAMES: 38 → 42 (added `getSemanticTokens`, `getCodeLens`, `getChangeImpact`, `getImportedSignatures`)
-- Remaining: Phase 5B (`getDocumentLinks`), 5C (batch tools), 6A–6E (connection hardening)
+- `getDocumentLinks`: extracts file/URL references; workspace containment filter; cap 100 links
+- `batchGetHover`, `batchGoToDefinition`: bridge-side fan-out for up to 10 positions via `Promise.allSettled`
+- `explainSymbol` extended: new `includeSiblings: boolean` parameter
+- `getImportTree` security fix: `resolveFilePath()` replaces bare `path.isAbsolute` check
+- Connection hardening: `RECONNECTING` state (Phase 6C); windowed circuit breaker — opens only after ≥3 timeouts in 30s (Phase 6B); RTT tracking + `connectionQuality` in `getBridgeStatus` (Phase 6A); SSE event IDs for Streamable HTTP resumability (Phase 6D); 10 new connection failure tests (Phase 6E)
+- SLIM_TOOL_NAMES: 38 → 45 (added `getSemanticTokens`, `getCodeLens`, `getChangeImpact`, `getImportedSignatures`, `getDocumentLinks`, `batchGetHover`, `batchGoToDefinition`)
 
 **v2.11.2 shipped (2026-04-04) — bridge-tools enforcement hardening:**
 - `src/instructionsUtils.ts`: shared `buildEnforcementBlock()` — `bridge.ts` and `orchestratorBridge.ts` no longer maintain separate copies
