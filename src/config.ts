@@ -36,6 +36,7 @@ export interface Config {
   corsOrigins: string[];
   auditLogPath: string | null;
   fullMode: boolean;
+  maxSessions: number;
   analyticsEnabled: boolean | null; // null = not set via CLI (use stored pref)
   githubDefaultRepo: string | null;
 }
@@ -170,6 +171,7 @@ interface ConfigFile {
   issuerUrl?: string;
   corsOrigins?: string[];
   fullMode?: boolean;
+  maxSessions?: number;
   githubDefaultRepo?: string;
 }
 
@@ -197,6 +199,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "issuerUrl",
   "corsOrigins",
   "fullMode",
+  "maxSessions",
   "githubDefaultRepo",
 ]);
 
@@ -327,6 +330,17 @@ export function parseConfig(argv: string[]): Config {
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
   let auditLogPath: string | null = null;
   let fullMode = fileConfig.fullMode ?? false;
+  let maxSessions: number = fileConfig.maxSessions ?? 5;
+  if (
+    fileConfig.maxSessions !== undefined &&
+    (typeof fileConfig.maxSessions !== "number" ||
+      fileConfig.maxSessions < 1 ||
+      fileConfig.maxSessions > 100)
+  ) {
+    throw new Error(
+      `Invalid maxSessions in config file: ${fileConfig.maxSessions}. Must be a number between 1 and 100.`,
+    );
+  }
   let analyticsEnabled: boolean | null = null;
   const githubDefaultRepo: string | null = fileConfig.githubDefaultRepo ?? null;
 
@@ -486,6 +500,17 @@ export function parseConfig(argv: string[]): Config {
       case "--full":
         fullMode = true;
         break;
+      case "--max-sessions": {
+        const msStr = requireArg(args, ++i, "--max-sessions");
+        const ms = Number.parseInt(msStr, 10);
+        if (Number.isNaN(ms) || ms < 1 || ms > 100) {
+          throw new Error(
+            `Invalid max-sessions: ${msStr}. Must be between 1 and 100.`,
+          );
+        }
+        maxSessions = ms;
+        break;
+      }
       case "--plugin-watch":
         pluginWatch = true;
         break;
@@ -565,8 +590,9 @@ Options:
   --max-result-size <KB>    Max output size in KB (default: 512, max: 4096)
   --grace-period <ms>       Reconnect grace period in ms (default: 30000, max: 600000)
   --watch                   Supervisor mode: auto-restart bridge on crash (exponential backoff, max 30s)
+  --max-sessions <n>        Max concurrent Claude sessions (default: 5, max: 100)
   --full                    Register all ~95 tools including git, terminal, file ops, HTTP, and GitHub.
-                            Default is slim mode (29 IDE-exclusive tools). Use --full to restore the complete tool set.
+                            Default is slim mode (38 IDE-exclusive tools). Use --full to restore the complete tool set.
   --vps                     VPS/headless mode: expands allowlist with curl, systemctl, docker, tar, dig, openssl, etc.
   --db                      Database mode: expands allowlist with psql, pg_dump, mysql, sqlite3, redis-cli, mongosh, etc.
   --allow-private-http      Allow sendHttpRequest to reach localhost/private IPs (for VPS where bridge runs alongside services)
@@ -574,6 +600,8 @@ Options:
   --config <path>           Load config file (default: ./claude-ide-bridge.config.json)
   --verbose                 Enable debug logging
   --jsonl                   Emit structured JSONL events to stderr
+  --version, -v             Print version and exit
+  --analytics <on|off>      Enable or disable anonymous usage analytics
   --help                    Show this help
 
 Automation:
@@ -608,6 +636,12 @@ Subcommands:
   print-token                 Print the auth token from the active bridge lock file.
                               Options: --port <port>
   install-extension [editor]  Install the VS Code extension into the given editor.
+  init                        One-command setup: install extension + write CLAUDE.md + register
+                              MCP shim + print next steps.
+                              Options: --workspace <path>
+  start-all                   Launch tmux session with bridge + extension watcher panes.
+  status                      Check bridge health and extension connectivity.
+                              Options: --port <port> --json
 
 Environment Variables:
   CLAUDE_IDE_BRIDGE_EDITOR           Editor command override
@@ -747,6 +781,7 @@ Environment Variables:
     allowPrivateHttp,
     auditLogPath,
     fullMode,
+    maxSessions,
     analyticsEnabled,
     githubDefaultRepo,
   };

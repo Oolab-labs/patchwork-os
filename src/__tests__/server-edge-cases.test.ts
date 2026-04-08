@@ -381,3 +381,115 @@ describe("Server: ping keepalive", () => {
     ws.close();
   });
 });
+
+// ── WebSocket abnormal close codes ────────────────────────────────────────────
+
+describe("Server: WebSocket abnormal close codes", () => {
+  it("server.terminate() sends code 1006 to client", async () => {
+    server = new Server("test-token", logger);
+    const port = await server.findAndListen(null);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": "test-token" },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.on("open", resolve);
+      ws.on("error", reject);
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Get the server-side socket and terminate it (no close frame)
+    const wssClients = (server as unknown as { wss: { clients: Set<unknown> } })
+      .wss.clients;
+    const serverClient = [...wssClients][0] as WebSocket & {
+      isAlive: boolean;
+      missedPongs: number;
+    };
+
+    const closeCode = new Promise<number>((resolve) => {
+      ws.on("close", (code) => resolve(code));
+      ws.on("error", () => resolve(1006));
+    });
+
+    serverClient.terminate();
+
+    const code = await closeCode;
+    // Abnormal closure without a close frame results in code 1006
+    expect(code).toBe(1006);
+  });
+
+  it("server remains functional after 1006 client disconnect", async () => {
+    server = new Server("test-token", logger);
+    const port = await server.findAndListen(null);
+
+    // First connection — client terminates abnormally (no close frame)
+    const ws1 = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": "test-token" },
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws1.on("open", resolve);
+      ws1.on("error", reject);
+    });
+
+    // Client terminates without sending a close frame
+    const ws1Gone = new Promise<void>((resolve) => {
+      ws1.on("close", () => resolve());
+      ws1.on("error", () => resolve());
+    });
+    ws1.terminate();
+    await ws1Gone;
+
+    // Give the server time to clean up
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Wait past the rate-limit interval
+    await new Promise((r) => setTimeout(r, 1100));
+
+    // Second connection should succeed — server is still functional
+    const connected = new Promise<boolean>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timeout")), 5000);
+      server?.on("connection", () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": "test-token" },
+    });
+    ws2.on("error", () => {});
+
+    const result = await connected;
+    expect(result).toBe(true);
+    ws2.close();
+  });
+
+  it("unauthorized connection is rejected before WebSocket handshake completes", async () => {
+    server = new Server("test-token", logger);
+    const port = await server.findAndListen(null);
+
+    // Attempt to connect with a wrong token
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": "bad-token" },
+    });
+
+    // Either an error or a close with a non-1000/1001 code is acceptable —
+    // both indicate the connection was rejected before reaching OPEN state.
+    const outcome = await new Promise<{ event: string; code?: number }>(
+      (resolve) => {
+        ws.on("error", () => resolve({ event: "error" }));
+        ws.on("close", (code) => resolve({ event: "close", code }));
+      },
+    );
+
+    // The connection must never have reached OPEN state
+    expect(ws.readyState).not.toBe(WebSocket.OPEN);
+
+    if (outcome.event === "close") {
+      // If a close frame was sent, it must not be a normal close
+      expect(outcome.code).not.toBe(1000);
+      expect(outcome.code).not.toBe(1001);
+    }
+    // error event without a close frame is also a valid rejection signal
+  });
+});

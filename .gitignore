@@ -30,6 +30,12 @@ smoke-stash-test.ts
 smoke-test-temp.ts
 scripts/test-rg.mjs
 
+# Backup files created by gen-claude-md --write / patchClaudeMdImport
+*.bak
+
+# Auto-generated rules file (copy of templates/bridge-tools.md — not for version control)
+.claude/rules/
+
 # Demo recording
 demo-script.md
 demo-project/

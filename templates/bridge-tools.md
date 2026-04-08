@@ -43,6 +43,23 @@ Do NOT run the shell command. Call the MCP tool instead.
 | Find all uses of a symbol | `findReferences` |
 | Understand call chains | `getCallHierarchy` |
 | Find a class or function by name | `searchWorkspaceSymbols`, `getDocumentSymbols` |
+| Calling `getHover` in a loop for N symbols | `batchGetHover` (up to 10 in one call) |
+| Calling `goToDefinition` in a loop for N symbols | `batchGoToDefinition` (up to 10 in one call) |
+| Find links / referenced files in a document | `getDocumentLinks` |
+| Understand what a file imports (signatures) | `getImportedSignatures` |
+
+#### Impact analysis
+
+| ❌ Do NOT use | ✅ Call instead |
+|---|---|
+| Manual `findReferences` + `getDiagnostics` per symbol | `getChangeImpact` (blast radius: diagnostics + ref counts in one call) |
+
+#### Editor annotations
+
+| ❌ Do NOT use | ✅ Call instead |
+|---|---|
+| Guessing code lens counts (test runs, references) | `getCodeLens` |
+| Guessing semantic token types/modifiers | `getSemanticTokens` |
 
 #### Debugging
 

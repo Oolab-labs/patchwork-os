@@ -39,6 +39,11 @@ export function createBridgeStatusTool(
             required: ["suspended", "consecutiveFailures"],
           },
           uptimeSeconds: { type: "integer" },
+          latencyMs: { type: ["integer", "null"] },
+          connectionQuality: {
+            type: "string",
+            enum: ["healthy", "degraded", "poor"],
+          },
           tier: { type: "string", enum: ["full", "basic"] },
           tierDescription: { type: "string" },
           hint: { type: "string" },
@@ -57,6 +62,15 @@ export function createBridgeStatusTool(
       const extensionConnected = extensionClient.isConnected();
       const circuitBreaker = extensionClient.getCircuitBreakerState();
       const uptimeMs = Date.now() - startTime;
+      const latencyMs = extensionConnected ? extensionClient.lastRttMs : null;
+      const connectionQuality =
+        latencyMs === null
+          ? undefined
+          : latencyMs < 100
+            ? ("healthy" as const)
+            : latencyMs < 500
+              ? ("degraded" as const)
+              : ("poor" as const);
 
       return successStructured({
         extensionConnected,
@@ -72,6 +86,8 @@ export function createBridgeStatusTool(
           }),
         },
         uptimeSeconds: Math.round(uptimeMs / 1000),
+        latencyMs: latencyMs ?? null,
+        ...(connectionQuality !== undefined && { connectionQuality }),
         ...(orchestrator !== null &&
           orchestrator !== undefined && {
             tokenBudget: {

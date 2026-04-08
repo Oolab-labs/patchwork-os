@@ -33,7 +33,6 @@ import { McpTransport } from "./transport.js";
 import { PACKAGE_VERSION } from "./version.js";
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
-const MAX_SESSIONS = 5;
 let globalHandlersRegistered = false;
 
 /** Collect the union of openedFiles across all sessions in a checkpoint. */
@@ -135,9 +134,9 @@ export class Bridge {
       const activeSessionCount = [...this.sessions.values()].filter(
         (s) => !s.graceTimer,
       ).length;
-      if (activeSessionCount >= MAX_SESSIONS) {
+      if (activeSessionCount >= this.config.maxSessions) {
         this.logger.warn(
-          `Session capacity reached (${MAX_SESSIONS} active). Rejecting connection.`,
+          `Session capacity reached (${this.config.maxSessions} active). Rejecting connection.`,
         );
         ws.close(1013, "Bridge at capacity");
         return;
@@ -825,7 +824,7 @@ export class Bridge {
     this.logger.info(
       this.config.fullMode
         ? "  Tools:      full (~95 tools — git, terminal, file ops, HTTP, GitHub)"
-        : "  Tools:      slim (29 IDE tools — pass --full for git/terminal/file ops/HTTP/GitHub)",
+        : "  Tools:      slim (38 IDE tools — pass --full for git/terminal/file ops/HTTP/GitHub)",
     );
     this.logger.info("  Connect:    run `claude` in a new terminal, then /ide");
     if (this.config.gracePeriodMs !== 30_000) {

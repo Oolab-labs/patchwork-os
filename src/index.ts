@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { getAnalyticsPref, setAnalyticsPref } from "./analyticsPrefs.js";
 import { Bridge } from "./bridge.js";
 import { findEditor, parseConfig } from "./config.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 const __dirnameTop = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,7 +51,8 @@ function isBridgeToolsFileValid(filePath: string): boolean {
     return (
       content.includes("runTests") &&
       content.includes("getDiagnostics") &&
-      content.includes("MANDATORY")
+      content.includes("MANDATORY") &&
+      content.includes("batchGetHover") // stale files missing new tools fail here
     );
   } catch {
     return false;
@@ -193,6 +195,12 @@ async function downloadVsixFromOpenVsx(): Promise<string> {
   return tmpPath;
 }
 
+// Handle --version flag — print package version and exit.
+if (process.argv[2] === "--version" || process.argv[2] === "-v") {
+  console.log(`claude-ide-bridge ${PACKAGE_VERSION}`);
+  process.exit(0);
+}
+
 // Handle start-all subcommand — launches the full 3-pane tmux orchestrator.
 // Also triggered when invoked as `claude-ide-bridge-start` directly.
 const isStartAll =
@@ -216,9 +224,53 @@ if (isStartAll) {
   process.exit(result.status ?? 1);
 }
 
+/**
+ * Repairs .claude/rules/bridge-tools.md if it exists but is stale (fails
+ * isBridgeToolsFileValid). Called before early exits in gen-claude-md --write
+ * so existing users always get an up-to-date rules file even when CLAUDE.md
+ * already has the @import line and no other changes are needed.
+ */
+function repairBridgeToolsRulesIfStale(workspace: string): void {
+  const rulesDir = path.join(workspace, ".claude", "rules");
+  const rulesFilePath = path.join(rulesDir, "bridge-tools.md");
+  const templatePath = path.resolve(
+    __dirnameTop,
+    "..",
+    "templates",
+    "bridge-tools.md",
+  );
+  if (!isBridgeToolsFileValid(rulesFilePath) && existsSync(templatePath)) {
+    const repairing = existsSync(rulesFilePath);
+    try {
+      mkdirSync(rulesDir, { recursive: true });
+      writeRulesFileAtomic(rulesFilePath, readFileSync(templatePath, "utf-8"));
+      process.stderr.write(
+        repairing
+          ? `✓ Bridge rules repaired at ${rulesFilePath}\n`
+          : `✓ Bridge rules written to ${rulesFilePath}\n`,
+      );
+    } catch (err) {
+      handleRulesWriteError(err, rulesFilePath, "");
+    }
+  }
+}
+
 // Handle gen-claude-md subcommand — generates a CLAUDE.md bridge workflow section
 if (process.argv[2] === "gen-claude-md") {
   const argv = process.argv.slice(3);
+
+  if (argv.includes("--help")) {
+    console.log(`claude-ide-bridge gen-claude-md — Generate CLAUDE.md bridge section
+
+Usage: claude-ide-bridge gen-claude-md [options]
+
+Options:
+  --write               Write to CLAUDE.md in the workspace (default: print to stdout)
+  --workspace <path>    Target workspace folder (default: cwd)
+  --help                Show this help`);
+    process.exit(0);
+  }
+
   const writeToDisk = argv.includes("--write");
   const workspaceIdx = argv.indexOf("--workspace");
   const workspace =
@@ -260,12 +312,14 @@ if (process.argv[2] === "gen-claude-md") {
     process.stderr.write(
       `Patched existing CLAUDE.md — added missing @import line.\n`,
     );
+    repairBridgeToolsRulesIfStale(workspace);
     process.exit(0);
   }
   if (patchResult === "already-present") {
     process.stderr.write(
       `CLAUDE.md already contains a '${marker}' section — no changes made.\n`,
     );
+    repairBridgeToolsRulesIfStale(workspace);
     process.exit(0);
   }
   if (existsSync(targetPath)) {
@@ -301,35 +355,7 @@ if (process.argv[2] === "gen-claude-md") {
   process.stderr.write(`✓ Bridge workflow section written to ${targetPath}\n`);
 
   // Also write bridge-tools rules file alongside CLAUDE.md
-  const genRulesDir = path.join(workspace, ".claude", "rules");
-  const genRulesFilePath = path.join(genRulesDir, "bridge-tools.md");
-  const genBridgeToolsTemplate = path.resolve(
-    __dirnameTop,
-    "..",
-    "templates",
-    "bridge-tools.md",
-  );
-  if (
-    !isBridgeToolsFileValid(genRulesFilePath) &&
-    existsSync(genBridgeToolsTemplate)
-  ) {
-    const repairing = existsSync(genRulesFilePath);
-    try {
-      mkdirSync(genRulesDir, { recursive: true });
-      writeRulesFileAtomic(
-        genRulesFilePath,
-        readFileSync(genBridgeToolsTemplate, "utf-8"),
-      );
-      process.stderr.write(
-        repairing
-          ? `✓ Bridge rules repaired at ${genRulesFilePath}\n`
-          : `✓ Bridge rules written to ${genRulesFilePath}\n`,
-      );
-    } catch (err) {
-      const exitCode = handleRulesWriteError(err, genRulesFilePath, "");
-      if (exitCode !== 0) process.exit(exitCode);
-    }
-  }
+  repairBridgeToolsRulesIfStale(workspace);
 
   process.exit(0);
 }
@@ -337,6 +363,18 @@ if (process.argv[2] === "gen-claude-md") {
 // Handle print-token subcommand — print the bridge auth token from a lock file
 if (process.argv[2] === "print-token") {
   const argv = process.argv.slice(3);
+
+  if (argv.includes("--help")) {
+    console.log(`claude-ide-bridge print-token — Print bridge auth token
+
+Usage: claude-ide-bridge print-token [options]
+
+Options:
+  --port <number>  Read token from a specific port's lock file (default: most recent)
+  --help           Show this help`);
+    process.exit(0);
+  }
+
   const portIdx = argv.indexOf("--port");
   const portArg = portIdx !== -1 ? argv[portIdx + 1] : undefined;
 
@@ -541,6 +579,27 @@ export function register(ctx) {
 // Handle init subcommand — one-command setup: install extension + write CLAUDE.md + print next steps
 if (process.argv[2] === "init") {
   const argv = process.argv.slice(3);
+
+  // Handle init --help
+  if (argv.includes("--help")) {
+    console.log(`claude-ide-bridge init — One-command setup
+
+Usage: claude-ide-bridge init [options]
+
+Options:
+  --workspace <path>  Target workspace folder (default: cwd)
+  --help              Show this help
+
+Steps performed:
+  1. Install the companion VS Code extension
+  2. Write bridge section to CLAUDE.md
+  3. Write .claude/rules/bridge-tools.md
+  4. Register MCP shim in ~/.claude.json
+  5. Verify claude-ide-bridge is on PATH
+  6. Print next steps`);
+    process.exit(0);
+  }
+
   const workspaceIdx = argv.indexOf("--workspace");
   const workspace =
     workspaceIdx !== -1 && argv[workspaceIdx + 1]
@@ -999,6 +1058,19 @@ if (process.argv[2] === "--analytics") {
 // Handle status subcommand — check bridge health and extension connectivity
 if (process.argv[2] === "status") {
   const argv = process.argv.slice(3);
+
+  if (argv.includes("--help")) {
+    console.log(`claude-ide-bridge status — Check bridge health
+
+Usage: claude-ide-bridge status [options]
+
+Options:
+  --port <number>  Check a specific port (default: most recent lock file)
+  --json           Output as JSON
+  --help           Show this help`);
+    process.exit(0);
+  }
+
   const portIdx = argv.indexOf("--port");
   const portArg = portIdx !== -1 ? argv[portIdx + 1] : undefined;
   const jsonFlag = argv.includes("--json");

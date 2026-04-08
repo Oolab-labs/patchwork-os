@@ -468,6 +468,198 @@ describe("Streamable HTTP: CORS", () => {
   });
 });
 
+// ── SSE event IDs and Last-Event-ID replay ────────────────────────────────────
+
+/**
+ * Open a GET /mcp SSE stream, collect raw SSE lines for `collectMs`, then
+ * destroy the request and return all non-comment lines.
+ */
+function collectSseLines(
+  p: number,
+  sessionId: string,
+  collectMs: number,
+  lastEventId?: number,
+): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${TOKEN}`,
+      "Mcp-Session-Id": sessionId,
+    };
+    if (lastEventId !== undefined) {
+      headers["Last-Event-ID"] = String(lastEventId);
+    }
+    const req = http.request(
+      { hostname: "127.0.0.1", port: p, path: "/mcp", method: "GET", headers },
+      (res) => {
+        const lines: string[] = [];
+        res.on("data", (chunk: Buffer) => {
+          for (const line of chunk.toString().split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith(":")) lines.push(trimmed);
+          }
+        });
+        setTimeout(() => {
+          req.destroy();
+          resolve(lines);
+        }, collectMs);
+      },
+    );
+    req.on("error", (e) => {
+      // ECONNRESET is expected when we destroy the request — ignore it
+      if ((e as NodeJS.ErrnoException).code !== "ECONNRESET") reject(e);
+    });
+    req.end();
+  });
+}
+
+/** Grab the internal adapter for a session via the handler's private sessions map. */
+function getAdapter(
+  h: StreamableHttpHandler,
+  sid: string,
+): {
+  send: (d: string) => void;
+  getEventsAfter: (id: number) => Array<{ id: number; data: string }>;
+} {
+  const sessions = (
+    h as unknown as { sessions: Map<string, { adapter: unknown }> }
+  ).sessions;
+  const session = sessions.get(sid);
+  if (!session) throw new Error(`Session ${sid} not found`);
+  return session.adapter as ReturnType<typeof getAdapter>;
+}
+
+describe("Streamable HTTP: SSE event IDs", () => {
+  it("notifications sent over SSE include a monotonic id: field", async () => {
+    const sid = await initSession(port);
+
+    // Open SSE stream first, give TCP time to establish before injecting.
+    const linesPromise = collectSseLines(port, sid, 250);
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Inject a server-initiated notification directly via the adapter.
+    // (notifications/initialized is a client→server message and triggers no SSE output.)
+    const adapter = getAdapter(handler!, sid);
+    adapter.send(
+      JSON.stringify({ jsonrpc: "2.0", method: "test/ping", params: {} }),
+    );
+
+    const lines = await linesPromise;
+
+    // Should have at least one `id:` line
+    const idLines = lines.filter((l) => l.startsWith("id:"));
+    expect(idLines.length).toBeGreaterThan(0);
+    // IDs must be non-negative integers
+    for (const idLine of idLines) {
+      const val = Number(idLine.replace("id:", "").trim());
+      expect(Number.isInteger(val)).toBe(true);
+      expect(val).toBeGreaterThanOrEqual(0);
+    }
+    // Each `id:` line must be immediately followed by a `data:` line
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]?.startsWith("id:")) {
+        expect(lines[i + 1]).toMatch(/^data:/);
+      }
+    }
+  });
+
+  it("reconnect with Last-Event-ID replays missed notifications", async () => {
+    const sid = await initSession(port);
+
+    // Inject 3 notifications directly via the internal adapter (no SSE stream attached).
+    // They land in the buffer; replay is triggered when the GET includes Last-Event-ID.
+    const adapter = getAdapter(handler!, sid);
+
+    // Send 3 notifications (no SSE stream attached yet — they go into the buffer)
+    const notif = (method: string) =>
+      JSON.stringify({ jsonrpc: "2.0", method, params: {} });
+    adapter.send(notif("test/first")); // id: 0
+    adapter.send(notif("test/second")); // id: 1
+    adapter.send(notif("test/third")); // id: 2
+
+    // Reconnect with Last-Event-ID: 0 — should replay events with id > 0 (i.e. 1 and 2)
+    const lines = await collectSseLines(port, sid, 150, 0);
+
+    const dataLines = lines.filter((l) => l.startsWith("data:"));
+    expect(dataLines.length).toBeGreaterThanOrEqual(2);
+    const methods = dataLines.map((l) => {
+      const payload = JSON.parse(l.replace("data:", "").trim()) as {
+        method?: string;
+      };
+      return payload.method;
+    });
+    expect(methods).toContain("test/second");
+    expect(methods).toContain("test/third");
+    // The first notification (id=0) was already seen — must NOT be replayed
+    expect(methods).not.toContain("test/first");
+  });
+
+  it("events older than 30s are not returned by getEventsAfter", async () => {
+    // Use fake timers so we can advance Date.now() past the 30s TTL without
+    // waiting real time. We call getEventsAfter() directly (no HTTP) so the
+    // fake clock stays in effect throughout the check.
+    vi.useFakeTimers({ now: Date.now() });
+
+    const sid = await initSession(port);
+    const adapter = getAdapter(handler!, sid);
+
+    adapter.send(
+      JSON.stringify({ jsonrpc: "2.0", method: "test/old", params: {} }),
+    );
+
+    // Advance clock past TTL — getEventsAfter uses Date.now() so ts becomes stale
+    vi.advanceTimersByTime(30_001);
+
+    // getEventsAfter should return nothing — the event is older than 30s
+    const events = adapter.getEventsAfter(-1);
+    const methods = events.map((e) => {
+      try {
+        return (JSON.parse(e.data) as { method?: string }).method;
+      } catch {
+        return null;
+      }
+    });
+    expect(methods).not.toContain("test/old");
+
+    vi.useRealTimers();
+  });
+
+  it("buffer caps at 100 events — oldest are dropped", async () => {
+    const sid = await initSession(port);
+
+    const adapter = getAdapter(handler!, sid);
+
+    // Send 110 notifications (exceeds the 100-event cap)
+    for (let i = 0; i < 110; i++) {
+      adapter.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: `test/event${i}`,
+          params: {},
+        }),
+      );
+    }
+
+    // Reconnect with Last-Event-ID: -1 to request all buffered events
+    const lines = await collectSseLines(port, sid, 300, -1);
+
+    const dataLines = lines.filter((l) => l.startsWith("data:"));
+    // Should have at most 100 (the cap), so events 0-9 are dropped
+    expect(dataLines.length).toBeLessThanOrEqual(100);
+    // The most recent events (e.g. event109) must be present
+    const methods = dataLines.map((l) => {
+      try {
+        return (
+          JSON.parse(l.replace("data:", "").trim()) as { method?: string }
+        ).method;
+      } catch {
+        return null;
+      }
+    });
+    expect(methods).toContain("test/event109");
+    expect(methods).not.toContain("test/event0");
+  });
+});
+
 // ── GET SSE ────────────────────────────────────────────────────────────────────
 
 describe("Streamable HTTP: GET SSE", () => {

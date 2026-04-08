@@ -111,9 +111,12 @@ export class ExtensionClient {
   private pendingRequests = new Map<number, PendingRequest>();
   private nextId = 0;
 
-  // Exponential backoff — prevents cascading 10s timeouts when extension is unresponsive
+  // Windowed circuit breaker — opens only if ≥3 timeouts occur within 30 seconds.
+  // A single slow LSP response no longer trips the breaker; sustained failure does.
+  private static readonly CIRCUIT_WINDOW_MS = 30_000;
+  private static readonly CIRCUIT_THRESHOLD = 3;
   private extensionSuspendedUntil = 0;
-  private extensionFailures = 0;
+  private extensionFailureTimes: number[] = []; // timestamps of recent timeouts
   private extensionHalfOpen = false;
 
   // State pushed by extension via notifications
@@ -131,6 +134,9 @@ export class ExtensionClient {
   // LSP readiness state — pushed by extension when language servers finish indexing.
   // Used by lspWithRetry to skip retry delays for languages known to be ready.
   public lspReadyLanguages = new Set<string>();
+
+  // Connection quality — round-trip latency pushed by extension via rttUpdate notification.
+  public lastRttMs: number | null = null;
 
   // Callbacks for forwarding notifications to Claude Code
   public onDiagnosticsChanged:
@@ -196,10 +202,11 @@ export class ExtensionClient {
     // Clear LSP readiness — extension will re-send on reconnect
     this.lspReadyLanguages.clear();
 
-    // Reset backoff — fresh connection deserves a clean slate
+    // Reset circuit breaker — fresh connection deserves a clean slate
     this.extensionSuspendedUntil = 0;
-    this.extensionFailures = 0;
+    this.extensionFailureTimes = [];
     this.extensionHalfOpen = false;
+    this.lastRttMs = null;
 
     this.logger.info("Extension client connected");
 
@@ -572,6 +579,17 @@ export class ExtensionClient {
         this.safeCallback(this.onDebugSessionChanged, state);
         break;
       }
+      case "extension/rttUpdate": {
+        const latencyMs = p.latencyMs;
+        if (
+          typeof latencyMs === "number" &&
+          latencyMs >= 0 &&
+          latencyMs < 10_000
+        ) {
+          this.lastRttMs = latencyMs;
+        }
+        break;
+      }
       default:
         this.logger.debug(`Unknown extension notification: ${method}`);
     }
@@ -596,8 +614,13 @@ export class ExtensionClient {
     if (now < this.extensionSuspendedUntil) {
       throw new ExtensionTimeoutError(method);
     }
-    // Half-open: backoff expired but failures recorded — allow one probe through
-    if (this.extensionFailures > 0 && !this.extensionHalfOpen) {
+    // Half-open: backoff expired but failures still in window — allow one probe through.
+    // Only applicable after the circuit has actually opened (extensionSuspendedUntil > 0).
+    if (
+      this.extensionSuspendedUntil > 0 &&
+      this.extensionFailureTimes.length > 0 &&
+      !this.extensionHalfOpen
+    ) {
       this.extensionHalfOpen = true;
       this.logger.debug(
         `Extension circuit breaker half-open — probing with ${method}`,
@@ -705,36 +728,49 @@ export class ExtensionClient {
 
     try {
       const result = await inner;
-      // Success — reset backoff and half-open state
-      if (this.extensionFailures > 0) {
+      // Success — reset circuit breaker and half-open state
+      if (this.extensionFailureTimes.length > 0) {
         this.logger.warn("Extension backoff reset — connection recovered");
       }
-      this.extensionFailures = 0;
+      this.extensionFailureTimes = [];
       this.extensionSuspendedUntil = 0;
       this.extensionHalfOpen = false;
       return result;
     } catch (err) {
       if (err instanceof ExtensionTimeoutError) {
         this.extensionHalfOpen = false;
-        const failures = ++this.extensionFailures;
-        // Full jitter (AWS-recommended): random in [1, cap] — prevents rhythmic
-        // retry storms when bridge and extension restart simultaneously.
-        const capMs = Math.min(1_000 * 2 ** (failures - 1), 60_000);
-        const backoffMs = Math.floor(Math.random() * capMs) + 1;
-        this.extensionSuspendedUntil = Date.now() + backoffMs;
+        // Sliding window: prune failures older than CIRCUIT_WINDOW_MS, then record this one
+        const now = Date.now();
+        this.extensionFailureTimes = this.extensionFailureTimes.filter(
+          (t) => now - t < ExtensionClient.CIRCUIT_WINDOW_MS,
+        );
+        this.extensionFailureTimes.push(now);
+        const failures = this.extensionFailureTimes.length;
         this.logger.warn(
-          `Extension timed out (failure #${failures}) — suspending for ${Math.round(backoffMs / 100) / 10}s`,
+          `Extension timed out (${failures} failure${failures === 1 ? "" : "s"} in ${ExtensionClient.CIRCUIT_WINDOW_MS / 1_000}s window)`,
         );
-        // Fast-fail all other in-flight requests immediately when the circuit
-        // opens. Without this, each queued request waits its own REQUEST_TIMEOUT
-        // (10s) independently, so a tool handler chaining N extension calls
-        // would hang for up to N×10s after the extension becomes unresponsive.
-        // The timed-out request itself is already removed from pendingRequests
-        // by its timer callback before reaching this catch block, so calling
-        // rejectAllPending here cannot double-reject it.
-        this.rejectAllPending(
-          `Extension circuit open after ${failures} failure${failures === 1 ? "" : "s"} — fast-failing pending requests`,
-        );
+        // Only open the circuit after CIRCUIT_THRESHOLD failures in the window.
+        // A single slow LSP response no longer trips the breaker.
+        if (failures >= ExtensionClient.CIRCUIT_THRESHOLD) {
+          // Full jitter (AWS-recommended): random in [1, cap] — prevents rhythmic
+          // retry storms when bridge and extension restart simultaneously.
+          const capMs = Math.min(1_000 * 2 ** (failures - 1), 60_000);
+          const backoffMs = Math.floor(Math.random() * capMs) + 1;
+          this.extensionSuspendedUntil = now + backoffMs;
+          this.logger.warn(
+            `Extension circuit open (${failures} failures) — suspending for ${Math.round(backoffMs / 100) / 10}s`,
+          );
+          // Fast-fail all other in-flight requests immediately when the circuit
+          // opens. Without this, each queued request waits its own REQUEST_TIMEOUT
+          // (10s) independently, so a tool handler chaining N extension calls
+          // would hang for up to N×10s after the extension becomes unresponsive.
+          // The timed-out request itself is already removed from pendingRequests
+          // by its timer callback before reaching this catch block, so calling
+          // rejectAllPending here cannot double-reject it.
+          this.rejectAllPending(
+            `Extension circuit open after ${failures} failures — fast-failing pending requests`,
+          );
+        }
       }
       throw err;
     }
@@ -1370,6 +1406,45 @@ export class ExtensionClient {
     );
   }
 
+  // --- Code Lens ---
+
+  async getCodeLens(file: string, signal?: AbortSignal): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/getCodeLens",
+      { file },
+      undefined,
+      signal,
+    );
+  }
+
+  // --- Semantic Tokens ---
+
+  async getSemanticTokens(
+    file: string,
+    startLine?: number,
+    endLine?: number,
+    maxTokens?: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/getSemanticTokens",
+      { file, startLine, endLine, maxTokens },
+      15_000,
+      signal,
+    );
+  }
+
+  // --- Document Links ---
+
+  async getDocumentLinks(file: string, signal?: AbortSignal): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/getDocumentLinks",
+      { file },
+      undefined,
+      signal,
+    );
+  }
+
   // --- Tasks ---
 
   async listTasks(): Promise<unknown> {
@@ -1485,10 +1560,16 @@ export class ExtensionClient {
     suspendedUntil: number;
     failures: number;
   } {
+    const now = Date.now();
+    // Prune stale entries so callers always see the active window count,
+    // not the raw array which may include expired timestamps.
+    const activeFailures = this.extensionFailureTimes.filter(
+      (t) => now - t < ExtensionClient.CIRCUIT_WINDOW_MS,
+    );
     return {
-      suspended: Date.now() < this.extensionSuspendedUntil,
+      suspended: now < this.extensionSuspendedUntil,
       suspendedUntil: this.extensionSuspendedUntil,
-      failures: this.extensionFailures,
+      failures: activeFailures.length,
     };
   }
 

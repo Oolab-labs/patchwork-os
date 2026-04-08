@@ -9,6 +9,10 @@ import type { ProbeResults } from "../probe.js";
 import type { McpTransport } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
 import { createAuditDependenciesTool } from "./auditDependencies.js";
+import {
+  createBatchGetHoverTool,
+  createBatchGoToDefinitionTool,
+} from "./batchLsp.js";
 import { createBridgeStatusTool } from "./bridgeStatus.js";
 import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
@@ -17,6 +21,7 @@ import {
   createWriteClipboardTool,
 } from "./clipboard.js";
 import { createCloseAllDiffTabsTool, createCloseTabTool } from "./closeTabs.js";
+import { createGetCodeLensTool } from "./codeLens.js";
 import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
 import {
   createEvaluateInDebuggerTool,
@@ -30,6 +35,7 @@ import {
   createSetEditorDecorationsTool,
 } from "./decorations.js";
 import { createDetectUnusedCodeTool } from "./detectUnusedCode.js";
+import { createGetDocumentLinksTool } from "./documentLinks.js";
 import { createEditTextTool } from "./editText.js";
 import { createExplainSymbolTool } from "./explainSymbol.js";
 import {
@@ -46,6 +52,7 @@ import { createGenerateAPIDocumentationTool } from "./generateAPIDocumentation.j
 import { createGenerateTestsTool } from "./generateTests.js";
 import { createGetAICommentsTool } from "./getAIComments.js";
 import { createGetBufferContentTool } from "./getBufferContent.js";
+import { createGetChangeImpactTool } from "./getChangeImpact.js";
 import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
 import { createGetCodeCoverageTool } from "./getCodeCoverage.js";
 import {
@@ -60,6 +67,7 @@ import { createGetGitDiffTool } from "./getGitDiff.js";
 import { createGetGitHotspotsTool } from "./getGitHotspots.js";
 import { createGetGitLogTool } from "./getGitLog.js";
 import { createGetGitStatusTool } from "./getGitStatus.js";
+import { createGetImportedSignaturesTool } from "./getImportedSignatures.js";
 import { createGetImportTreeTool } from "./getImportTree.js";
 import { createGetOpenEditorsTool } from "./getOpenEditors.js";
 import { createGetPRTemplateTool } from "./getPRTemplate.js";
@@ -139,6 +147,7 @@ import { createCaptureScreenshotTool } from "./screenshot.js";
 import { createSearchAndReplaceTool } from "./searchAndReplace.js";
 import { createSearchWorkspaceTool } from "./searchWorkspace.js";
 import { createSelectionRangesTool } from "./selectionRanges.js";
+import { createGetSemanticTokensTool } from "./semanticTokens.js";
 import { createSetActiveWorkspaceFolderTool } from "./setActiveWorkspaceFolder.js";
 import { createSignatureHelpTool } from "./signatureHelp.js";
 import {
@@ -162,7 +171,7 @@ import {
 } from "./workspaceSettings.js";
 
 /**
- * The 32 IDE-exclusive tools registered in slim mode (the default).
+ * The 45 IDE-exclusive tools registered in slim mode (the default).
  *
  * Slim mode exposes only tools that require a live IDE extension — tools that
  * Claude cannot replicate via its native Read/Write/Bash capabilities. Everything
@@ -201,6 +210,13 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "foldingRanges",
   "refactorExtractFunction",
   "getImportTree",
+  "getImportedSignatures",
+  "getDocumentLinks",
+  "batchGetHover",
+  "batchGoToDefinition",
+  "getSemanticTokens",
+  "getCodeLens",
+  "getChangeImpact",
   // Editor decorations — needed for code review workflows
   "setEditorDecorations",
   "clearEditorDecorations",
@@ -381,7 +397,14 @@ export function registerAllTools(
     createGetHoverAtCursorTool(extensionClient),
     createGetTypeSignatureTool(extensionClient),
     createGetImportTreeTool(workspace),
+    createGetImportedSignaturesTool(workspace, extensionClient),
+    createGetDocumentLinksTool(workspace, extensionClient),
+    createBatchGetHoverTool(workspace, extensionClient),
+    createBatchGoToDefinitionTool(workspace, extensionClient),
     createGetTypeHierarchyTool(workspace, extensionClient),
+    createGetSemanticTokensTool(workspace, extensionClient),
+    createGetCodeLensTool(workspace, extensionClient),
+    createGetChangeImpactTool(workspace, extensionClient),
     createGetDebugStateTool(extensionClient),
     createEvaluateInDebuggerTool(extensionClient),
     createSetDebugBreakpointsTool(workspace, extensionClient),

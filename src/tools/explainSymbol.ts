@@ -44,6 +44,12 @@ export function createExplainSymbolTool(
             description:
               "Also fetch available code actions at this position (default: false)",
           },
+          includeSiblings: {
+            type: "boolean" as const,
+            description:
+              "Also fetch sibling symbols in the same file — other functions, classes, " +
+              "and variables defined alongside the target (default: false)",
+          },
         },
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
@@ -69,6 +75,7 @@ export function createExplainSymbolTool(
           // Optional fields — not in required; present only when requested
           typeHierarchy: { anyOf: [{ type: "object" }, { type: "null" }] },
           codeActions: { anyOf: [{ type: "array" }, { type: "null" }] },
+          siblings: { anyOf: [{ type: "array" }, { type: "null" }] },
         },
         required: ["hover", "definition", "callHierarchy", "references"],
       },
@@ -87,6 +94,7 @@ export function createExplainSymbolTool(
         optionalBool(args, "includeTypeHierarchy") ?? false;
       const includeCodeActions =
         optionalBool(args, "includeCodeActions") ?? false;
+      const includeSiblings = optionalBool(args, "includeSiblings") ?? false;
 
       const compositeSignal = AbortSignal.any([
         ...(signal ? [signal] : []),
@@ -121,6 +129,9 @@ export function createExplainSymbolTool(
               compositeSignal,
             )
           : Promise.resolve(null),
+        includeSiblings
+          ? extensionClient.getDocumentSymbols(filePath, compositeSignal)
+          : Promise.resolve(null),
       ] as const;
 
       const [
@@ -130,6 +141,7 @@ export function createExplainSymbolTool(
         referencesResult,
         typeHierarchyResult,
         codeActionsResult,
+        siblingsResult,
       ] = await Promise.allSettled([...basePromises, ...optionalPromises]);
 
       const hover =
@@ -150,6 +162,27 @@ export function createExplainSymbolTool(
         codeActionsResult.status === "fulfilled"
           ? codeActionsResult.value
           : null;
+      const siblingsRaw =
+        siblingsResult.status === "fulfilled" ? siblingsResult.value : null;
+
+      // Extract sibling symbol names/kinds from document symbols, excluding target line
+      type SymbolEntry = { name: string; kind: string; line: number };
+      let siblings: SymbolEntry[] | null = null;
+      if (includeSiblings && siblingsRaw !== null) {
+        const raw = siblingsRaw as Record<string, unknown>;
+        const symList: Record<string, unknown>[] = Array.isArray(raw)
+          ? (raw as Record<string, unknown>[])
+          : Array.isArray(raw?.symbols)
+            ? (raw.symbols as Record<string, unknown>[])
+            : [];
+        siblings = symList
+          .filter((s) => s.line !== line)
+          .map((s) => ({
+            name: String(s.name),
+            kind: String(s.kind),
+            line: Number(s.line),
+          }));
+      }
 
       return successStructured({
         hover,
@@ -158,6 +191,7 @@ export function createExplainSymbolTool(
         references,
         ...(includeTypeHierarchy && { typeHierarchy }),
         ...(includeCodeActions && { codeActions }),
+        ...(includeSiblings && { siblings }),
       });
     },
   };

@@ -157,7 +157,7 @@ describe("ExtensionClient", () => {
     expect(state.failures).toBe(0);
   });
 
-  it("suspends after first timeout with exponential backoff", async () => {
+  it("suspends after 3 timeouts within the 30s window (windowed circuit breaker)", async () => {
     vi.useFakeTimers();
     const serverConn = new Promise<WebSocket>((resolve) => {
       wss.on("connection", resolve);
@@ -168,14 +168,16 @@ describe("ExtensionClient", () => {
     const serverWs = await serverConn;
     client.handleExtensionConnection(serverWs);
 
-    // One request that times out (no response)
-    const request = client.getDiagnostics().catch(() => null);
-    await vi.advanceTimersByTimeAsync(10_001); // just past REQUEST_TIMEOUT
-    await request;
+    // Three requests that time out — circuit opens only after the 3rd
+    for (let i = 0; i < 3; i++) {
+      const request = client.getDiagnostics().catch(() => null);
+      await vi.advanceTimersByTimeAsync(10_001);
+      await request;
+    }
 
     const state = client.getCircuitBreakerState();
     expect(state.suspended).toBe(true);
-    expect(state.failures).toBe(1);
+    expect(state.failures).toBe(3);
 
     ws.close();
     vi.useRealTimers();
@@ -194,11 +196,13 @@ describe("ExtensionClient", () => {
 
     vi.useFakeTimers();
     try {
-      // Trigger suspension via the first connection
+      // Trigger suspension via the first connection (3 timeouts needed)
       client.handleExtensionConnection(connections[0]!);
-      const request = client.getDiagnostics().catch(() => null);
-      await vi.advanceTimersByTimeAsync(10_001);
-      await request;
+      for (let i = 0; i < 3; i++) {
+        const request = client.getDiagnostics().catch(() => null);
+        await vi.advanceTimersByTimeAsync(10_001);
+        await request;
+      }
       expect(client.getCircuitBreakerState().suspended).toBe(true);
 
       // Reconnect via the second server-side socket — backoff should reset immediately
@@ -397,13 +401,15 @@ describe("ExtensionClient", () => {
     const serverWs = await serverConn;
     client.handleExtensionConnection(serverWs);
 
-    // Trigger suspension (1 timeout = 1s backoff)
-    const triggerRequest = client.getDiagnostics().catch(() => null);
-    await vi.advanceTimersByTimeAsync(10_001); // just past REQUEST_TIMEOUT
-    await triggerRequest;
+    // Trigger suspension (3 timeouts within 30s window open the circuit)
+    for (let i = 0; i < 3; i++) {
+      const request = client.getDiagnostics().catch(() => null);
+      await vi.advanceTimersByTimeAsync(10_001);
+      await request;
+    }
     expect(client.getCircuitBreakerState().suspended).toBe(true);
 
-    // Next request should throw ExtensionTimeoutError immediately (still within 1s backoff)
+    // Next request should throw ExtensionTimeoutError immediately (circuit open)
     const start = Date.now();
     await expect(client.getDiagnostics()).rejects.toThrow(
       ExtensionTimeoutError,
@@ -425,22 +431,26 @@ describe("ExtensionClient", () => {
     const serverWs = await serverConn;
     client.handleExtensionConnection(serverWs);
 
-    // Start req1 — will time out at REQUEST_TIMEOUT (10s)
-    const _req1 = client.getDiagnostics().catch((e) => e);
+    // Start 3 early requests at t=0 — all time out at t=10001ms, opening the circuit.
+    // A 4th request (req2) is started at t=1s; its own timeout would fire at t=11001ms.
+    // When the 3 early requests expire at t=10001ms, the circuit opens and
+    // rejectAllPending() clears req2 before its own timeout fires.
+    client.getDiagnostics().catch(() => null); // early-a
+    client.getDiagnostics().catch(() => null); // early-b
+    client.getDiagnostics().catch(() => null); // early-c
 
-    // Advance 1s — req1 still in flight
+    // Advance 1s — the 3 early requests are still in-flight
     await vi.advanceTimersByTimeAsync(1_000);
 
-    // Start req2 AFTER req1 — its own 10s timeout would fire at 11s total (1s from now)
+    // Start req2 AFTER the 3 early requests — timeout would fire at t=11001ms
     const req2 = client.getSelection();
 
-    // Advance to just past req1's timeout (total 10001ms from req1 start)
-    // req1 times out → circuit opens → rejectAllPending() → req2 is cleared immediately
+    // Advance to just past the 3 early timeouts (total ~10001ms)
+    // All 3 expire → circuit opens → rejectAllPending() → req2 cleared immediately
     await vi.advanceTimersByTimeAsync(9_001);
 
-    // req2's own timeout (from when it was sent at t=1s) would fire at t=11001ms.
-    // Since we are only at t=10001ms, req2 should already be settled (null) via
-    // rejectAllPending — NOT still pending waiting for its own timeout.
+    // req2's own timeout (at t=11001ms) has NOT fired yet (we are at ~10001ms).
+    // req2 should already be settled via rejectAllPending, not still pending.
     expect((client as any).pendingRequests.size).toBe(0);
     expect(client.getCircuitBreakerState().suspended).toBe(true);
 
