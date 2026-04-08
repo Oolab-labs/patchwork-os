@@ -282,6 +282,60 @@ describe("McpTransport", () => {
     expect(receivedArgs.x).toBe(1);
   });
 
+  it("tools/call injects _meta maxResultSizeChars for large results", async () => {
+    // Results > 50 KB should include _meta["anthropic/maxResultSizeChars"] so
+    // Claude Code 2.1.91+ persists the full content without truncating.
+    const largeText = "x".repeat(60_000);
+    const { ws } = await setup("call-large-result", (t) => {
+      t.registerTool(
+        {
+          name: "bigTool",
+          description: "test",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async () => ({ content: [{ type: "text", text: largeText }] }),
+      );
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "bigTool", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 1);
+    expect(resp.error).toBeUndefined();
+    const meta = (resp.result as Record<string, unknown>)._meta as Record<
+      string,
+      unknown
+    >;
+    expect(meta).toBeDefined();
+    expect(meta["anthropic/maxResultSizeChars"]).toBe(60_000);
+  });
+
+  it("tools/call omits _meta for small results", async () => {
+    const { ws } = await setup("call-small-result", (t) => {
+      t.registerTool(
+        {
+          name: "smallTool",
+          description: "test",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async () => ({ content: [{ type: "text", text: "small" }] }),
+      );
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "smallTool", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 1);
+    expect(resp.error).toBeUndefined();
+    expect((resp.result as Record<string, unknown>)._meta).toBeUndefined();
+  });
+
   it("tools/call returns INVALID_PARAMS for non-object arguments", async () => {
     const { ws } = await setup("call-badargs", (t) => {
       t.registerTool(

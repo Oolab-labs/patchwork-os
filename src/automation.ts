@@ -32,6 +32,15 @@ export interface OnFileSavePolicy {
   cooldownMs: number;
 }
 
+export interface OnFileChangedPolicy {
+  enabled: boolean;
+  /** Minimatch glob patterns, e.g. ["**\/*.ts", "!node_modules/**"] */
+  patterns: string[];
+  /** Placeholders: {{file}} */
+  prompt: string;
+  cooldownMs: number;
+}
+
 export interface OnPostCompactPolicy {
   enabled: boolean;
   /**
@@ -57,6 +66,8 @@ export interface OnInstructionsLoadedPolicy {
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
+  /** Fired by Claude Code 2.1.83+ FileChanged hook — reacts to any file edit, not just explicit saves. */
+  onFileChanged?: OnFileChangedPolicy;
   /** Fired by Claude Code 2.1.76+ PostCompact hook — re-injects IDE context after compaction. */
   onPostCompact?: OnPostCompactPolicy;
   /** Fired by Claude Code 2.1.76+ InstructionsLoaded hook — injects bridge status at session start. */
@@ -163,6 +174,40 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onFileChanged
+  if (policy.onFileChanged !== undefined) {
+    const fc = policy.onFileChanged;
+    if (typeof fc !== "object" || fc === null) {
+      throw new Error(`"onFileChanged" must be an object`);
+    }
+    if (typeof fc.enabled !== "boolean") {
+      throw new Error(`"onFileChanged.enabled" must be a boolean`);
+    }
+    if (
+      !Array.isArray(fc.patterns) ||
+      fc.patterns.length > 100 ||
+      fc.patterns.some((p: unknown) => typeof p !== "string" || p.length > 1024)
+    ) {
+      throw new Error(
+        "onFileChanged.patterns must be an array of ≤100 strings, each ≤1024 chars",
+      );
+    }
+    if (typeof fc.prompt !== "string" || fc.prompt.trim() === "") {
+      throw new Error(`"onFileChanged.prompt" must be a non-empty string`);
+    }
+    if (fc.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(
+        `"onFileChanged.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
+    }
+    if (typeof fc.cooldownMs !== "number" || !Number.isFinite(fc.cooldownMs)) {
+      throw new Error(`"onFileChanged.cooldownMs" must be a number`);
+    }
+    if (fc.cooldownMs < MIN_COOLDOWN_MS) {
+      fc.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   // Validate onPostCompact
   if (policy.onPostCompact !== undefined) {
     const p = policy.onPostCompact;
@@ -225,6 +270,8 @@ export class AutomationHooks {
   private activeDiagnosticsTasks = new Map<string, string>();
   /** Active task IDs per file for the file-saved handler. */
   private activeSaveTasks = new Map<string, string>();
+  /** Active task IDs per file for the file-changed handler. */
+  private activeFileChangedTasks = new Map<string, string>();
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -451,11 +498,78 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Called when the VS Code extension reports a file-changed event (type === "change").
+   * Distinct from handleFileSaved — reacts to any editor buffer change, not just explicit saves.
+   * Useful for triggering tasks on unsaved edits (e.g. lint-as-you-type workflows).
+   */
+  handleFileChanged(_id: string, type: string, file: string): void {
+    const cfg = this.policy.onFileChanged;
+    if (!cfg?.enabled) return;
+    if (type !== "change") return;
+
+    const normalizedFile = path.resolve(file);
+
+    // Pattern matching
+    const matched = cfg.patterns.some((pattern) =>
+      minimatch(normalizedFile, pattern, { dot: true }),
+    );
+    if (!matched) return;
+
+    // Loop guard
+    const existingId = this.activeFileChangedTasks.get(normalizedFile);
+    if (existingId) {
+      const existing = this.orchestrator.getTask(existingId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping file-changed trigger for ${normalizedFile} — task ${existingId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeFileChangedTasks.delete(normalizedFile);
+    }
+
+    // Cooldown check
+    const key = `fileChanged:${normalizedFile}`;
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for file-changed ${normalizedFile} (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
+    const prompt = cfg.prompt.replace(
+      /\{\{file\}\}/g,
+      `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
+    );
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.activeFileChangedTasks.set(normalizedFile, taskId);
+      this.log(
+        `[automation] triggered file-changed task ${taskId.slice(0, 8)} for ${normalizedFile}`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue file-changed task for ${normalizedFile}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
     onDiagnosticsError: { enabled: boolean } | null;
     onFileSave: { enabled: boolean; patternCount: number } | null;
+    onFileChanged: { enabled: boolean; patternCount: number } | null;
   } {
     const p = this.policy;
     return {
@@ -472,6 +586,12 @@ export class AutomationHooks {
         ? {
             enabled: p.onFileSave.enabled,
             patternCount: p.onFileSave.patterns.length,
+          }
+        : null,
+      onFileChanged: p.onFileChanged
+        ? {
+            enabled: p.onFileChanged.enabled,
+            patternCount: p.onFileChanged.patterns.length,
           }
         : null,
     };

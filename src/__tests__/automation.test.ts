@@ -100,6 +100,41 @@ describe("loadPolicy", () => {
     expect(policy.onFileSave?.cooldownMs).toBe(5_000);
   });
 
+  it("parses a valid onFileChanged policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onFileChanged: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Changed: {{file}}",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onFileChanged?.enabled).toBe(true);
+    expect(policy.onFileChanged?.patterns).toEqual(["**/*.ts"]);
+  });
+
+  it("enforces onFileChanged cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onFileChanged: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Changed: {{file}}",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onFileChanged?.cooldownMs).toBe(5_000);
+  });
+
   it("throws on invalid minSeverity", () => {
     const p = path.join(tmpDir, "policy.json");
     fs.writeFileSync(
@@ -295,5 +330,124 @@ describe("AutomationHooks.handleFileSaved", () => {
     hooks.handleFileSaved("id1", "save", "/src/foo.ts");
     hooks.handleFileSaved("id2", "save", "/src/foo.ts");
     expect(orch.list().length).toBe(1);
+  });
+});
+
+// ── handleFileChanged ─────────────────────────────────────────────────────────
+
+describe("AutomationHooks.handleFileChanged", () => {
+  it("enqueues task for matching change event", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileChanged: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "File changed: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileChanged("id1", "change", "/src/foo.ts");
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("ignores save events (those are for onFileSave)", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileChanged: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "File changed: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileChanged("id1", "save", "/src/foo.ts");
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("ignores non-matching patterns", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileChanged: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "File changed: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileChanged("id1", "change", "/src/foo.js");
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("cooldown prevents duplicate tasks", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileChanged: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "File changed: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileChanged("id1", "change", "/src/foo.ts");
+    hooks.handleFileChanged("id2", "change", "/src/foo.ts");
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("does not suppress diagnostics trigger for same file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileChanged: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Changed: {{file}}",
+          cooldownMs: 5_000,
+        },
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix: {{file}} {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileChanged("id1", "change", "/src/foo.ts");
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    expect(orch.list().length).toBe(2);
+  });
+
+  it("getStatus includes onFileChanged", () => {
+    const hooks = new AutomationHooks(
+      {
+        onFileChanged: {
+          enabled: true,
+          patterns: ["**/*.ts", "**/*.tsx"],
+          prompt: "Changed: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    const status = hooks.getStatus();
+    expect(status.onFileChanged).toEqual({ enabled: true, patternCount: 2 });
   });
 });

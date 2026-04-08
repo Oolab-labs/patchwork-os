@@ -380,6 +380,7 @@ export class Bridge {
       this.logger.event("file_changed", { id, type, file });
       this.sendListChanged();
       this.automationHooks?.handleFileSaved(id, type, file);
+      this.automationHooks?.handleFileChanged(id, type, file);
     };
 
     // Forward debug session changes from extension to Claude Code

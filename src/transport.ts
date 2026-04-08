@@ -13,6 +13,10 @@ const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
 const RATE_LIMIT_MAX = 200; // max requests per window
 const NOTIFICATION_RATE_LIMIT = 500; // max notifications per minute (separate from request limit)
 const TOOLS_LIST_PAGE_SIZE = 200; // Most MCP clients (Claude Desktop) only fetch page 1 — keep all tools visible
+// When a tool result's total text content exceeds this threshold, inject
+// _meta["anthropic/maxResultSizeChars"] into the result so Claude Code 2.1.91+
+// persists the full result instead of truncating at its own internal limit.
+const META_SIZE_HINT_THRESHOLD = 50_000; // 50 KB
 // Supported MCP protocol versions, newest first.
 // Extend this array when new protocol versions are ratified; keep oldest supported version last.
 const SUPPORTED_VERSIONS = ["2025-11-25"];
@@ -905,7 +909,6 @@ export class McpTransport {
                 // that clients (e.g. Claude Code) may embed inside arguments. Tool
                 // schemas use additionalProperties:false, so leaving it in causes
                 // AJV to reject the call with -32602.
-                // biome-ignore lint/correctness/noUnusedVariables: intentional strip
                 const { _meta: _stripped, ...toolArgs } = rawArgs as Record<
                   string,
                   unknown
@@ -1000,6 +1003,28 @@ export class McpTransport {
                     structuredContent?: unknown;
                     isError?: boolean;
                   };
+                  // Inject _meta["anthropic/maxResultSizeChars"] for large results so
+                  // Claude Code 2.1.91+ persists the full content rather than truncating
+                  // it at its own internal limit (MCP tool result persistence override).
+                  const totalContentChars = Array.isArray(toolResult.content)
+                    ? toolResult.content.reduce(
+                        (sum, item) =>
+                          sum +
+                          (typeof item.text === "string"
+                            ? item.text.length
+                            : 0),
+                        0,
+                      )
+                    : 0;
+                  const resultWithMeta =
+                    totalContentChars > META_SIZE_HINT_THRESHOLD
+                      ? {
+                          ...toolResult,
+                          _meta: {
+                            "anthropic/maxResultSizeChars": totalContentChars,
+                          },
+                        }
+                      : toolResult;
                   if (
                     tool.schema.outputSchema !== undefined &&
                     toolResult.structuredContent !== undefined
@@ -1016,7 +1041,7 @@ export class McpTransport {
                         `structuredContent failed outputSchema validation for tool "${params.name}" — stripping`,
                       );
                       const { structuredContent: _dropped, ...safeResult } =
-                        toolResult as Record<string, unknown>;
+                        resultWithMeta as Record<string, unknown>;
                       response = {
                         jsonrpc: "2.0",
                         id: msg.id,
@@ -1026,14 +1051,14 @@ export class McpTransport {
                       response = {
                         jsonrpc: "2.0",
                         id: msg.id,
-                        result: toolResult,
+                        result: resultWithMeta,
                       };
                     }
                   } else {
                     response = {
                       jsonrpc: "2.0",
                       id: msg.id,
-                      result: toolResult,
+                      result: resultWithMeta,
                     };
                   }
                 } finally {
