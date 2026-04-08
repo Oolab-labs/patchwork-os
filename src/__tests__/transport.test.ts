@@ -209,6 +209,7 @@ describe("McpTransport", () => {
     // Reproduces: MCP error -32602 "must NOT have additional properties"
     // Claude Code embeds _meta inside arguments; tool schemas have
     // additionalProperties:false, so _meta must be stripped before validation.
+    let receivedArgs: Record<string, unknown> = {};
     const { ws } = await setup("call-strip-meta", (t) => {
       t.registerTool(
         {
@@ -221,13 +222,14 @@ describe("McpTransport", () => {
             additionalProperties: false,
           },
         },
-        async (args) => ({
-          content: [{ type: "text", text: String(args.filePath) }],
-        }),
+        async (args) => {
+          receivedArgs = args;
+          return { content: [{ type: "text", text: String(args.filePath) }] };
+        },
       );
     });
 
-    // Call with _meta embedded in arguments — must NOT return -32602
+    // Strict schema + _meta in arguments — must NOT return -32602
     send(ws, {
       jsonrpc: "2.0",
       id: 1,
@@ -240,6 +242,44 @@ describe("McpTransport", () => {
     const resp = await waitFor(ws, (m) => m.id === 1);
     expect(resp.error).toBeUndefined();
     expect(resp.result).toBeDefined();
+    // _meta must be absent from args received by the handler
+    expect(Object.keys(receivedArgs)).not.toContain("_meta");
+    expect(receivedArgs.filePath).toBe("/tmp/foo.ts");
+  });
+
+  it("tools/call strips _meta even with a permissive schema (additionalProperties absent)", async () => {
+    // Ensures the strip is unconditional — not gated on additionalProperties:false.
+    let receivedArgs: Record<string, unknown> = {};
+    const { ws } = await setup("call-strip-meta-permissive", (t) => {
+      t.registerTool(
+        {
+          name: "permissiveTool",
+          description: "test",
+          inputSchema: {
+            type: "object",
+            properties: { x: { type: "number" } },
+          },
+        },
+        async (args) => {
+          receivedArgs = args;
+          return { content: [{ type: "text", text: "ok" }] };
+        },
+      );
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "permissiveTool",
+        arguments: { x: 1, _meta: { anything: true } },
+      },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 1);
+    expect(resp.error).toBeUndefined();
+    expect(Object.keys(receivedArgs)).not.toContain("_meta");
+    expect(receivedArgs.x).toBe(1);
   });
 
   it("tools/call returns INVALID_PARAMS for non-object arguments", async () => {
@@ -506,7 +546,7 @@ describe("McpTransport", () => {
 
   it("concurrent tool call limit returns busy error when MAX_CONCURRENT_TOOLS is reached", async () => {
     // MAX_CONCURRENT_TOOLS = 10; register a slow tool and saturate it
-    let resolveAll: () => void;
+    let resolveAll!: () => void; // Promise executor runs synchronously — always assigned
     const gate = new Promise<void>((r) => {
       resolveAll = r;
     });
