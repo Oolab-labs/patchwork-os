@@ -118,6 +118,38 @@ describe("loadPolicy", () => {
     expect(policy.onFileChanged?.patterns).toEqual(["**/*.ts"]);
   });
 
+  it("parses a valid onCwdChanged policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onCwdChanged: {
+          enabled: true,
+          prompt: "Cwd changed to {{cwd}}",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onCwdChanged?.enabled).toBe(true);
+  });
+
+  it("enforces onCwdChanged cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onCwdChanged: {
+          enabled: true,
+          prompt: "Cwd: {{cwd}}",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onCwdChanged?.cooldownMs).toBe(5_000);
+  });
+
   it("enforces onFileChanged cooldownMs >= 5000", () => {
     const p = path.join(tmpDir, "policy.json");
     fs.writeFileSync(
@@ -449,5 +481,95 @@ describe("AutomationHooks.handleFileChanged", () => {
     );
     const status = hooks.getStatus();
     expect(status.onFileChanged).toEqual({ enabled: true, patternCount: 2 });
+  });
+});
+
+// ── handleCwdChanged ──────────────────────────────────────────────────────────
+
+describe("AutomationHooks.handleCwdChanged", () => {
+  it("enqueues task when cwd changes", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onCwdChanged: {
+          enabled: true,
+          prompt: "Cwd changed to {{cwd}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleCwdChanged("/new/workspace");
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("does nothing when disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onCwdChanged: {
+          enabled: false,
+          prompt: "Cwd: {{cwd}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleCwdChanged("/new/workspace");
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("cooldown prevents repeated triggers for same cwd", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onCwdChanged: {
+          enabled: true,
+          prompt: "Cwd: {{cwd}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleCwdChanged("/workspace/a");
+    hooks.handleCwdChanged("/workspace/a");
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("different cwd values each get their own cooldown", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onCwdChanged: {
+          enabled: true,
+          prompt: "Cwd: {{cwd}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleCwdChanged("/workspace/a");
+    hooks.handleCwdChanged("/workspace/b");
+    expect(orch.list().length).toBe(2);
+  });
+
+  it("getStatus includes onCwdChanged", () => {
+    const hooks = new AutomationHooks(
+      {
+        onCwdChanged: {
+          enabled: true,
+          prompt: "Cwd: {{cwd}}",
+          cooldownMs: 30_000,
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    const status = hooks.getStatus();
+    expect(status.onCwdChanged).toEqual({ enabled: true, cooldownMs: 30_000 });
   });
 });
