@@ -74,12 +74,12 @@ This appends the bridge section to your existing `CLAUDE.md` and writes `.claude
 
 ## Slim Mode vs Full Mode
 
-By default, the bridge starts in **slim mode** — 45 IDE-exclusive tools that Claude can't replicate with its built-in `Read`/`Write`/`Bash` tools: LSP intelligence, debugger, editor decorations, diagnostics, refactoring, and editor state. This is the right default for most workflows because Claude already has file editing and shell access built in.
+By default, the bridge starts in **slim mode** — 45 IDE-exclusive tools that Claude can't replicate with its built-in `Read`/`Write`/`Bash` tools: LSP intelligence, debugger, editor decorations, diagnostics, refactoring, impact analysis, and editor state. This is the right default for most workflows because Claude already has file editing and shell access built in.
 
 If you need Claude to use the bridge's **git, terminal, file ops, HTTP client, or GitHub** tools instead of its built-in equivalents, start in full mode:
 
 ```bash
-claude-ide-bridge --watch --full   # all ~95 tools
+claude-ide-bridge --watch --full   # all ~130 tools
 ```
 
 Or set it permanently in your config file (`claude-ide-bridge.config.json`):
@@ -169,7 +169,7 @@ See [docs/multi-ide-review.md](docs/multi-ide-review.md) for the staged review w
 
 | Doc | What it covers |
 |-----|----------------|
-| **[Platform Docs](documents/platform-docs.md)** | Complete tool reference (95+ tools), parameters, examples |
+| **[Platform Docs](documents/platform-docs.md)** | Complete tool reference (130+ tools), parameters, examples |
 | **[Data Reference](documents/data-reference.md)** | Data flows, state management, protocol details |
 | **[Plugin Authoring](documents/plugin-authoring.md)** | Writing custom plugins — manifest schema, entrypoint API |
 | **[Use Cases](documents/use-cases.md)** | Real-world workflows and scenarios |
@@ -278,15 +278,16 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 
 The bridge exposes tools in two modes:
 
-- **Slim mode (default)** — 38 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
-- **Full mode (`--full`)** — all ~95 tools, adding git, terminal, file ops, HTTP, and GitHub. Use this for large projects or workflows that rely on those integrations.
+- **Slim mode (default)** — 45 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
+- **Full mode (`--full`)** — all ~130 tools, adding git, terminal, file ops, HTTP, and GitHub. Use this for large projects or workflows that rely on those integrations.
 
-### Slim mode — 38 IDE tools (default)
+### Slim mode — 45 IDE tools (default)
 
 | Category | Tools |
 |----------|-------|
-| LSP / Code Intelligence | `getDiagnostics` · `watchDiagnostics` · `goToDefinition` · `findReferences` · `getHover` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchWorkspaceSymbols` · `getDocumentSymbols` · `getCallHierarchy` |
-| Refactor & Navigation | `refactorAnalyze` · `refactorPreview` · `refactorExtractFunction` · `renameSymbol` · `prepareRename` · `selectionRanges` · `foldingRanges` · `signatureHelp` · `explainSymbol` · `getImportTree` |
+| LSP / Code Intelligence | `getDiagnostics` · `watchDiagnostics` · `goToDefinition` · `findReferences` · `getHover` · `getCodeActions` · `applyCodeAction` · `renameSymbol` · `searchWorkspaceSymbols` · `getDocumentSymbols` · `getCallHierarchy` · `getSemanticTokens` · `getCodeLens` · `getDocumentLinks` · `batchGetHover` · `batchGoToDefinition` |
+| Impact Analysis | `getChangeImpact` · `getImportedSignatures` |
+| Refactor & Navigation | `refactorAnalyze` · `refactorPreview` · `refactorExtractFunction` · `prepareRename` · `selectionRanges` · `foldingRanges` · `signatureHelp` · `explainSymbol` · `getImportTree` |
 | Editor Decorations | `setEditorDecorations` · `clearEditorDecorations` |
 | Debugger | `startDebugging` · `stopDebugging` · `setDebugBreakpoints` · `evaluateInDebugger` · `getDebugState` |
 | Editor State | `getOpenEditors` · `getCurrentSelection` · `getLatestSelection` · `checkDocumentDirty` · `saveDocument` · `openFile` · `closeTab` · `captureScreenshot` |
@@ -422,6 +423,17 @@ claude-ide-bridge --workspace /path/to/project \
     "prompt": "Review the saved file: {{file}}",
     "cooldownMs": 10000
   },
+  "onFileChanged": {
+    "enabled": true,
+    "patterns": ["**/*.ts"],
+    "prompt": "A file was edited: {{file}}. Run getDiagnostics to check for new errors.",
+    "cooldownMs": 15000
+  },
+  "onCwdChanged": {
+    "enabled": true,
+    "prompt": "Working directory changed to {{cwd}}. Call getBridgeStatus and getOpenEditors to orient.",
+    "cooldownMs": 10000
+  },
   "onPostCompact": {
     "enabled": true,
     "prompt": "Context was compacted. Call getOpenEditors and getDiagnostics to rebuild your understanding of the current state.",
@@ -434,14 +446,16 @@ claude-ide-bridge --workspace /path/to/project \
 }
 ```
 
-When automation is active, VS Code save events and diagnostic errors automatically enqueue Claude tasks. Output streams to the "Claude IDE Bridge" output channel in real time.
+When automation is active, VS Code save/change events, diagnostic errors, and Claude Code hook events automatically enqueue Claude tasks. Output streams to the "Claude IDE Bridge" output channel in real time.
 
 **Policy triggers:**
 
 | Trigger | When it fires | Key fields |
 |---------|--------------|------------|
 | `onDiagnosticsError` | VS Code reports new errors/warnings for a file | `enabled`, `minSeverity` (`error`/`warning`), `prompt` (supports `{{file}}` and `{{diagnostics}}`), `cooldownMs` |
-| `onFileSave` | A file matching `patterns` is saved | `enabled`, `patterns` (minimatch globs), `prompt` (supports `{{file}}`), `cooldownMs` |
+| `onFileSave` | A file matching `patterns` is explicitly saved (Ctrl+S) | `enabled`, `patterns` (minimatch globs), `prompt` (supports `{{file}}`), `cooldownMs` |
+| `onFileChanged` | Any buffer edit on a matching file (unsaved changes, external writes) — CC 2.1.83+ | `enabled`, `patterns` (minimatch globs), `prompt` (supports `{{file}}`), `cooldownMs` |
+| `onCwdChanged` | Claude Code's working directory changes — CC 2.1.83+; call via `notifyCwdChanged` tool from a CC `CwdChanged` hook | `enabled`, `prompt` (supports `{{cwd}}`), `cooldownMs` |
 | `onPostCompact` | Claude compacts its context (Claude Code 2.1.76+) | `enabled`, `prompt`, `cooldownMs` |
 | `onInstructionsLoaded` | Claude loads CLAUDE.md at session start (Claude Code 2.1.76+) | `enabled`, `prompt` |
 
@@ -638,7 +652,7 @@ bash scripts/gen-claude-desktop-config.sh --write
 
 Then restart Claude Desktop once to load the new config. After that, the bridge's **stdio shim** handles everything automatically — it discovers the running bridge via lock files, buffers requests until connected, and reconnects transparently when the bridge restarts. No port or token needs to be hard-coded, and no further Desktop restarts are needed when the bridge restarts.
 
-> **Tool availability:** Without the VS Code extension connected, ~38 tools (debugger, LSP intelligence, editor state, decorations, refactoring) are unavailable. Claude Desktop works best alongside the running extension. You can verify connectivity by asking *"What tools do you have available?"* — the response will list what's active.
+> **Tool availability:** Without the VS Code extension connected, ~45 tools (debugger, LSP intelligence, editor state, decorations, refactoring) are unavailable. Claude Desktop works best alongside the running extension. You can verify connectivity by asking *"What tools do you have available?"* — the response will list what's active.
 
 > **Debugging the shim:** If the connection seems stuck, the shim logs to stderr. In Claude Desktop, check **Settings → Developer → MCP Logs** to see shim output. Common cause: bridge not running — start it with `claude-ide-bridge --watch` first.
 
@@ -746,7 +760,7 @@ Team Lead (Claude Code)
     └── Teammate C ──► Bridge Session 3 ──► IDE
 ```
 
-All teammates share the same IDE and workspace. Each gets full access to all 95+ bridge tools.
+All teammates share the same IDE and workspace. Each gets full access to all 130+ bridge tools.
 
 ### Setup
 
@@ -897,7 +911,7 @@ claude-ide-bridge \
 
 > The bridge token is entered once during authorization. After that, claude.ai holds a short-lived OAuth access token that it refreshes automatically — you don't need to update the connector URL when the bridge restarts.
 
-> **Tool availability:** All 95+ tools are available in full mode. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~57 CLI-backed tools still work (file ops, git, terminal, search, HTTP client). In slim mode (default), only the 38 IDE-exclusive tools are exposed.
+> **Tool availability:** All 130+ tools are available in full mode. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~57 CLI-backed tools still work (file ops, git, terminal, search, HTTP client). In slim mode (default), only the 45 IDE-exclusive tools are exposed.
 
 ### Alternatives
 
@@ -993,7 +1007,7 @@ claude-ide-bridge gen-claude-md [--write] [--workspace <path>]
 --automation-policy <path> Path to JSON automation policy file
 --plugin <path>           Load a plugin directory (repeatable)
 --plugin-watch            Watch plugin directories and hot-reload on change
---full                    Register all ~95 tools (default: slim mode with 38 IDE-exclusive tools)
+--full                    Register all ~130 tools (default: slim mode with 45 IDE-exclusive tools)
 --verbose                 Enable debug logging
 --version, -v             Print version and exit
 --analytics <on|off>      Enable or disable anonymous usage analytics
@@ -1013,7 +1027,7 @@ claude-ide-bridge/
     claudeDriver.ts   IClaudeDriver interface + SubprocessDriver
     claudeOrchestrator.ts Task queue (MAX_CONCURRENT=10, MAX_QUEUE=20)
     automation.ts     AutomationHooks — onDiagnosticsError / onFileSave / onPostCompact / onInstructionsLoaded policies
-    tools/            95+ MCP tool implementations
+    tools/            130+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
     src/connection.ts WebSocket connection management
@@ -1116,7 +1130,7 @@ npm test             # Run 394 extension tests
 
 ### Claude says a tool doesn't exist or tool count seems low
 
-When the VS Code extension is disconnected, 38 tools that require extension access return an error with reconnect instructions (they remain visible but non-functional). These include LSP, debugger, editor state, and refactoring tools. In slim mode (default), all tools need the extension; in full mode, ~57 CLI-backed tools (git, terminal, file ops, HTTP, GitHub) still work. Check the "Claude IDE Bridge" output channel in VS Code — if you see a disconnection event, use `Claude IDE Bridge: Reconnect` from the command palette, or reload the window.
+When the VS Code extension is disconnected, 45 tools that require extension access return an error with reconnect instructions (they remain visible but non-functional). These include LSP, debugger, editor state, and refactoring tools. In slim mode (default), all tools need the extension; in full mode, ~57 CLI-backed tools (git, terminal, file ops, HTTP, GitHub) still work. Check the "Claude IDE Bridge" output channel in VS Code — if you see a disconnection event, use `Claude IDE Bridge: Reconnect` from the command palette, or reload the window.
 
 ### Bridge and extension version mismatch
 
