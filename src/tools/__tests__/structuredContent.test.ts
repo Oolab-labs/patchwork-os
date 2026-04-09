@@ -42,9 +42,13 @@ import { createListClaudeTasksTool } from "../listClaudeTasks.js";
 import {
   createApplyCodeActionTool,
   createFindReferencesTool,
+  createFormatRangeTool,
   createGetCallHierarchyTool,
+  createGetCodeActionsTool,
   createGetHoverTool,
   createGoToDefinitionTool,
+  createPrepareRenameTool,
+  createRenameSymbolTool,
   createSearchWorkspaceSymbolsTool,
 } from "../lsp.js";
 import { createResumeClaudeTaskTool } from "../resumeClaudeTask.js";
@@ -358,6 +362,145 @@ describe("structuredContent contract", () => {
         endLine: 1,
         endColumn: 10,
         actionTitle: "Fix lint error",
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── lsp.ts: getCodeActions ────────────────────────────────────────────────
+
+  describe("getCodeActions (lsp.ts)", () => {
+    it("emits structuredContent when extension returns null", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        getCodeActions: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createGetCodeActionsTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+        startLine: 1,
+        startColumn: 1,
+        endLine: 1,
+        endColumn: 10,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+
+    it("emits structuredContent with action list", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        getCodeActions: vi.fn().mockResolvedValue({
+          actions: [{ title: "Fix lint", kind: "quickfix" }],
+        }),
+      } as never;
+      const tool = createGetCodeActionsTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+        startLine: 1,
+        startColumn: 1,
+        endLine: 1,
+        endColumn: 10,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── lsp.ts: renameSymbol ──────────────────────────────────────────────────
+
+  describe("renameSymbol (lsp.ts)", () => {
+    it("emits structuredContent on successful rename", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        renameSymbol: vi.fn().mockResolvedValue({
+          success: true,
+          newName: "newFoo",
+          affectedFiles: [{ file: "/src/index.ts", editCount: 2 }],
+          totalEdits: 2,
+        }),
+      } as never;
+      const tool = createRenameSymbolTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: "src/index.ts",
+        line: 1,
+        column: 5,
+        newName: "newFoo",
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── lsp.ts: prepareRename ─────────────────────────────────────────────────
+
+  describe("prepareRename (lsp.ts)", () => {
+    it("emits structuredContent when rename is not supported", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        prepareRename: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createPrepareRenameTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: "src/index.ts",
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+
+    it("emits structuredContent when rename is supported", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        prepareRename: vi.fn().mockResolvedValue({
+          canRename: true,
+          placeholder: "foo",
+          range: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 4 },
+        }),
+      } as never;
+      const tool = createPrepareRenameTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: "src/index.ts",
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── lsp.ts: formatRange ───────────────────────────────────────────────────
+
+  describe("formatRange (lsp.ts)", () => {
+    it("emits structuredContent when no formatter available", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        formatRange: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createFormatRangeTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+        startLine: 1,
+        endLine: 5,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+
+    it("emits structuredContent on successful format", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        formatRange: vi
+          .fn()
+          .mockResolvedValue({ formatted: true, editCount: 3 }),
+      } as never;
+      const tool = createFormatRangeTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+        startLine: 1,
+        endLine: 5,
       });
       assertStructured(result as Parameters<typeof assertStructured>[0]);
     });
