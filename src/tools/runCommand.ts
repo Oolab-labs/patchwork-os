@@ -8,6 +8,7 @@ import {
   resolveFilePath,
   successStructuredLarge,
   truncateOutput,
+  withHeartbeat,
 } from "./utils.js";
 
 const MAX_ARGS = 100;
@@ -192,7 +193,11 @@ export function createRunCommandTool(workspace: string, config: Config) {
       },
     },
     timeoutMs: 300_000,
-    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+    handler: async (
+      args: Record<string, unknown>,
+      signal?: AbortSignal,
+      progress?: (value: number, total: number, message?: string) => void,
+    ) => {
       // Normalize to lowercase before all validation — prevents case-sensitivity bypass
       // on case-insensitive filesystems (macOS HFS+, Windows) where "NODE" resolves to "node"
       const command = requireString(args, "command", 256).toLowerCase();
@@ -207,12 +212,17 @@ export function createRunCommandTool(workspace: string, config: Config) {
 
       const maxBytes = config.maxResultSize * 1024;
 
-      const result = await execSafe(command, cmdArgs, {
-        cwd,
-        timeout,
-        maxBuffer: maxBytes,
-        signal,
-      });
+      const result = await withHeartbeat(
+        () =>
+          execSafe(command, cmdArgs, {
+            cwd,
+            timeout,
+            maxBuffer: maxBytes,
+            signal,
+          }),
+        progress,
+        { message: `running ${command}…`, intervalMs: 5_000 },
+      );
 
       const stdoutResult = truncateOutput(result.stdout, maxBytes);
       const stderrResult = truncateOutput(result.stderr, maxBytes);

@@ -6,6 +6,7 @@ import {
   optionalArray,
   optionalInt,
   successStructuredLarge,
+  withHeartbeat,
 } from "./utils.js";
 
 interface UnusedItem {
@@ -89,6 +90,7 @@ export function createDetectUnusedCodeTool(
     async handler(
       args: Record<string, unknown>,
       signal?: AbortSignal,
+      progress?: (value: number, total: number, message?: string) => void,
     ): Promise<ReturnType<typeof successStructuredLarge>> {
       const maxResults = optionalInt(args, "maxResults", 1, 10_000) ?? 50;
       // includePatterns stored for future filtering — currently unused
@@ -98,12 +100,17 @@ export function createDetectUnusedCodeTool(
       // spawning an extra process and potentially picking up a different version.
       const tsPruneBin = join(workspace, "node_modules", ".bin", "ts-prune");
       if (existsSync(tsPruneBin)) {
-        const result = await execSafe(tsPruneBin, ["--error"], {
-          cwd: workspace,
-          signal,
-          timeout: 55_000,
-          maxBuffer: 4 * 1024 * 1024,
-        });
+        const result = await withHeartbeat(
+          () =>
+            execSafe(tsPruneBin, ["--error"], {
+              cwd: workspace,
+              signal,
+              timeout: 55_000,
+              maxBuffer: 4 * 1024 * 1024,
+            }),
+          progress,
+          { message: "running ts-prune…" },
+        );
 
         const output = `${result.stdout}\n${result.stderr}`.trim();
         if (output) {
@@ -120,15 +127,20 @@ export function createDetectUnusedCodeTool(
       }
 
       // Fall back to tsc --noUnusedLocals --noUnusedParameters
-      const result = await execSafe(
-        "npx",
-        ["tsc", "--noEmit", "--noUnusedLocals", "--noUnusedParameters"],
-        {
-          cwd: workspace,
-          signal,
-          timeout: 55_000,
-          maxBuffer: 4 * 1024 * 1024,
-        },
+      const result = await withHeartbeat(
+        () =>
+          execSafe(
+            "npx",
+            ["tsc", "--noEmit", "--noUnusedLocals", "--noUnusedParameters"],
+            {
+              cwd: workspace,
+              signal,
+              timeout: 55_000,
+              maxBuffer: 4 * 1024 * 1024,
+            },
+          ),
+        progress,
+        { message: "running tsc unused check…" },
       );
 
       const output = `${result.stdout}\n${result.stderr}`.trim();

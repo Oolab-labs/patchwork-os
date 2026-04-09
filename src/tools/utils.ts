@@ -447,6 +447,38 @@ export async function execSafe(
   }
 }
 
+/**
+ * Wraps a long-running async operation with periodic progress heartbeat
+ * notifications so MCP clients don't time out waiting for a response.
+ *
+ * Sends a progress ping every `intervalMs` (default 5s) until the operation
+ * resolves. Progress value increments from 1 toward 99 (never reaches 100 —
+ * the caller is responsible for sending the final progress(100) on success).
+ *
+ * Safe to call with `progress = undefined` — no-ops cleanly.
+ */
+export async function withHeartbeat<T>(
+  fn: () => Promise<T>,
+  progress:
+    | ((value: number, total: number, message?: string) => void)
+    | undefined,
+  opts: { intervalMs?: number; message?: string } = {},
+): Promise<T> {
+  if (!progress) return fn();
+  const intervalMs = opts.intervalMs ?? 5_000;
+  let tick = 1;
+  const timer = setInterval(() => {
+    // Increment slowly toward 99 — never falsely claim 100% complete
+    const value = Math.min(tick++, 99);
+    progress(value, 100, opts.message ?? "running…");
+  }, intervalMs);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 export const LANGUAGE_ID_MAP: Record<string, string> = {
   ".ts": "typescript",
   ".tsx": "typescriptreact",
