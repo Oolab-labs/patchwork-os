@@ -26,7 +26,6 @@ import { createGetCodeLensTool } from "./codeLens.js";
 import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
 import {
   createEvaluateInDebuggerTool,
-  createGetDebugStateTool,
   createSetDebugBreakpointsTool,
   createStartDebuggingTool,
   createStopDebuggingTool,
@@ -60,6 +59,7 @@ import {
   createGetCurrentSelectionTool,
   createGetLatestSelectionTool,
 } from "./getCurrentSelection.js";
+import { createGetDebugStateTool } from "./getDebugState.js";
 import { createGetDependencyTreeTool } from "./getDependencyTree.js";
 import { createGetDiagnosticsTool } from "./getDiagnostics.js";
 import { createGetDocumentSymbolsTool } from "./getDocumentSymbols.js";
@@ -77,6 +77,7 @@ import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
 import { createGetToolCapabilitiesTool } from "./getToolCapabilities.js";
 import { createGetTypeSignatureTool } from "./getTypeSignature.js";
 import { createGetWorkspaceFoldersTool } from "./getWorkspaceFolders.js";
+import { createGetWorkspaceSettingsTool } from "./getWorkspaceSettings.js";
 import {
   createGetCommitDetailsTool,
   createGetDiffBetweenRefsTool,
@@ -118,6 +119,7 @@ import {
 } from "./httpClient.js";
 import { createGetInlayHintsTool } from "./inlayHints.js";
 import { createListClaudeTasksTool } from "./listClaudeTasks.js";
+import { createListTerminalsTool } from "./listTerminals.js";
 import {
   createApplyCodeActionTool,
   createFindImplementationsTool,
@@ -160,7 +162,6 @@ import {
   createCreateTerminalTool,
   createDisposeTerminalTool,
   createGetTerminalOutputTool,
-  createListTerminalsTool,
   createRunInTerminalTool,
   createSendTerminalCommandTool,
   createWaitForTerminalOutputTool,
@@ -171,10 +172,7 @@ import {
   createListVSCodeCommandsTool,
 } from "./vscodeCommands.js";
 import { createWatchDiagnosticsTool } from "./watchDiagnostics.js";
-import {
-  createGetWorkspaceSettingsTool,
-  createSetWorkspaceSettingTool,
-} from "./workspaceSettings.js";
+import { createSetWorkspaceSettingTool } from "./workspaceSettings.js";
 
 /**
  * The 53 IDE-exclusive tools registered in slim mode (the default).

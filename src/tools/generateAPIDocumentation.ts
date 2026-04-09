@@ -5,7 +5,7 @@ import {
   optionalString,
   requireArray,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
@@ -53,12 +53,31 @@ export function createGenerateAPIDocumentationTool(workspace: string) {
         required: ["files"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          files: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                file: { type: "string" as const },
+                symbols: { type: "integer" as const },
+                documentation: { type: "string" as const },
+              },
+              required: ["file", "symbols", "documentation"],
+            },
+          },
+          totalSymbols: { type: "integer" as const },
+        },
+        required: ["files", "totalSymbols"],
+      },
     },
     timeoutMs: 30_000,
 
     async handler(
       args: Record<string, unknown>,
-    ): Promise<ReturnType<typeof success>> {
+    ): Promise<ReturnType<typeof successStructured>> {
       const rawFiles = requireArray(args, "files");
       const format = optionalString(args, "format") ?? "markdown";
       const includePrivate = optionalBool(args, "includePrivate") ?? false;
@@ -113,7 +132,7 @@ export function createGenerateAPIDocumentationTool(workspace: string) {
         docs.push({ file: filePath, symbols: symbols.length, documentation });
       }
 
-      return success({ files: docs, totalSymbols });
+      return successStructured({ files: docs, totalSymbols });
     },
   };
 }

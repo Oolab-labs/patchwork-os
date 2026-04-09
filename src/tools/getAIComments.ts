@@ -3,7 +3,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, success } from "./utils.js";
+import { error, successStructured } from "./utils.js";
 
 export function createGetAICommentsTool(extensionClient: ExtensionClient) {
   return {
@@ -18,6 +18,37 @@ export function createGetAICommentsTool(extensionClient: ExtensionClient) {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          count: { type: "integer" as const },
+          comments: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                file: { type: "string" as const },
+                line: { type: "integer" as const },
+                comment: { type: "string" as const },
+                syntax: { type: "string" as const },
+                fullLine: { type: "string" as const },
+                severity: {
+                  type: "string" as const,
+                  enum: ["fix", "todo", "question", "warn", "task"],
+                },
+              },
+              required: ["file", "line", "comment", "syntax", "fullLine"],
+            },
+          },
+          summary: {
+            type: "object" as const,
+            additionalProperties: { type: "integer" as const },
+          },
+          message: { type: "string" as const },
+          tip: { type: "string" as const },
+        },
+        required: ["count", "comments"],
       },
     },
     timeoutMs: 10_000,
@@ -50,7 +81,7 @@ export function createGetAICommentsTool(extensionClient: ExtensionClient) {
       }
 
       if (comments.length === 0) {
-        return success({
+        return successStructured({
           count: 0,
           comments: [],
           message:
@@ -65,7 +96,7 @@ export function createGetAICommentsTool(extensionClient: ExtensionClient) {
         bySeverity[sev] = (bySeverity[sev] ?? 0) + 1;
       }
 
-      return success({
+      return successStructured({
         count: comments.length,
         comments,
         summary: bySeverity,

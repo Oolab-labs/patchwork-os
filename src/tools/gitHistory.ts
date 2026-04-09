@@ -6,7 +6,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  successLarge,
+  successStructuredLarge,
   truncateOutput,
 } from "./utils.js";
 
@@ -43,12 +43,20 @@ export function createGetCommitDetailsTool(workspace: string) {
           },
         },
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          output: { type: "string" as const },
+          truncated: { type: "boolean" as const },
+          error: { type: "string" as const },
+        },
+      },
     },
 
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const hash = requireString(args, "commitHash", 64);
       if (!isValidRef(hash)) {
-        return successLarge({ error: "Invalid commit hash" });
+        return successStructuredLarge({ error: "Invalid commit hash" });
       }
 
       const includePatch = optionalBool(args, "includePatch") ?? true;
@@ -73,16 +81,18 @@ export function createGetCommitDetailsTool(workspace: string) {
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim();
         if (msg.includes("unknown revision") || msg.includes("bad object")) {
-          return successLarge({ error: `Commit "${hash}" not found` });
+          return successStructuredLarge({
+            error: `Commit "${hash}" not found`,
+          });
         }
-        return successLarge({ error: msg || "git show failed" });
+        return successStructuredLarge({ error: msg || "git show failed" });
       }
 
       const { text, truncated } = truncateOutput(
         result.stdout,
         MAX_OUTPUT_BYTES,
       );
-      return successLarge({
+      return successStructuredLarge({
         output: text,
         ...(truncated ? { truncated: true } : {}),
       });
@@ -128,14 +138,24 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
           },
         },
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          diff: { type: "string" as const },
+          truncated: { type: "boolean" as const },
+          error: { type: "string" as const },
+        },
+      },
     },
 
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       const ref1 = requireString(args, "ref1", 256);
       const ref2 = requireString(args, "ref2", 256);
 
-      if (!isValidRef(ref1)) return successLarge({ error: "Invalid ref1" });
-      if (!isValidRef(ref2)) return successLarge({ error: "Invalid ref2" });
+      if (!isValidRef(ref1))
+        return successStructuredLarge({ error: "Invalid ref1" });
+      if (!isValidRef(ref2))
+        return successStructuredLarge({ error: "Invalid ref2" });
 
       const rawPath = optionalString(args, "filePath");
       const filterPath = rawPath
@@ -162,18 +182,18 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
       if (result.exitCode !== 0) {
         const msg = result.stderr.trim();
         if (msg.includes("unknown revision") || msg.includes("bad object")) {
-          return successLarge({
+          return successStructuredLarge({
             error: `One or both refs not found: "${ref1}", "${ref2}"`,
           });
         }
-        return successLarge({ error: msg || "git diff failed" });
+        return successStructuredLarge({ error: msg || "git diff failed" });
       }
 
       const { text, truncated } = truncateOutput(
         result.stdout,
         MAX_OUTPUT_BYTES,
       );
-      return successLarge({
+      return successStructuredLarge({
         diff: text,
         ...(truncated ? { truncated: true } : {}),
       });

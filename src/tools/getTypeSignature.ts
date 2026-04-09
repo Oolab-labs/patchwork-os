@@ -7,7 +7,7 @@ import {
   extensionRequired,
   requireInt,
   requireString,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
@@ -29,6 +29,18 @@ export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" as const },
+          file: { type: "string" as const },
+          line: { type: "integer" as const },
+          column: { type: "integer" as const },
+          signature: { type: "string" as const },
+          raw: { type: "array" as const, items: { type: "string" as const } },
+        },
+        required: ["found", "file", "line", "column"],
+      },
     },
     async handler(args: Record<string, unknown>) {
       const file = requireString(args, "file");
@@ -43,7 +55,7 @@ export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
         const result = await extensionClient.getHover(file, line, column);
 
         if (result === null || result === undefined) {
-          return success({ found: false, file, line, column });
+          return successStructured({ found: false, file, line, column });
         }
 
         // Extract contents array from hover result
@@ -65,7 +77,7 @@ export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
         }
 
         if (contents.length === 0) {
-          return success({ found: false, file, line, column });
+          return successStructured({ found: false, file, line, column });
         }
 
         // Try to extract a fenced code block from any content string
@@ -84,10 +96,10 @@ export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
         }
 
         if (!signature) {
-          return success({ found: false, file, line, column });
+          return successStructured({ found: false, file, line, column });
         }
 
-        return success({
+        return successStructured({
           found: true,
           file,
           line,
