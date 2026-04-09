@@ -124,6 +124,79 @@ export function createRunTestsTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          available: {
+            type: "boolean",
+            description: "Whether any test runners were detected",
+          },
+          runners: {
+            type: "array",
+            items: { type: "string" },
+            description: "Names of runners that were executed",
+          },
+          summary: {
+            type: "object",
+            properties: {
+              total: { type: "integer" },
+              passed: { type: "integer" },
+              failed: { type: "integer" },
+              skipped: { type: "integer" },
+              errored: { type: "integer" },
+              durationMs: { type: "number" },
+            },
+            required: [
+              "total",
+              "passed",
+              "failed",
+              "skipped",
+              "errored",
+              "durationMs",
+            ],
+          },
+          results: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                status: {
+                  type: "string",
+                  enum: ["passed", "failed", "skipped", "errored"],
+                },
+                file: { type: "string" },
+                line: { type: "integer" },
+                message: { type: "string" },
+                durationMs: { type: "number" },
+              },
+              required: ["name", "status"],
+            },
+          },
+          failures: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                status: { type: "string" },
+                file: { type: "string" },
+                line: { type: "integer" },
+                message: { type: "string" },
+                durationMs: { type: "number" },
+              },
+              required: ["name", "status"],
+            },
+            description: "Subset of results where status is failed or errored",
+          },
+          error: {
+            type: "string",
+            description:
+              "Set when a specific runner was requested but not found",
+          },
+        },
+        required: ["available", "runners", "summary", "results", "failures"],
+      },
     },
 
     async handler(
