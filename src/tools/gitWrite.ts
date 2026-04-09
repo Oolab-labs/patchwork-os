@@ -753,7 +753,16 @@ export function createGitPullTool(workspace: string) {
   };
 }
 
-export function createGitPushTool(workspace: string) {
+export interface GitPushCallbackResult {
+  remote: string;
+  branch: string;
+  hash: string;
+}
+
+export function createGitPushTool(
+  workspace: string,
+  onGitPush?: (result: GitPushCallbackResult) => void,
+) {
   return {
     // Override the global 60s MCP tool timeout — SSH pushes on high-latency
     // VPS connections can take longer than 60s end-to-end.
@@ -908,13 +917,15 @@ export function createGitPushTool(workspace: string) {
       });
       const hash = hashResult.stdout.trim().slice(0, 12);
 
-      return success({
+      const pushResult = {
         remote,
         branch,
         hash,
         setUpstream,
         output: pushStderr.trim() || pushStdout.trim(),
-      });
+      };
+      onGitPush?.({ remote, branch, hash });
+      return success(pushResult);
     },
   };
 }
