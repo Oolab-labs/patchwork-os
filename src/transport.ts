@@ -101,6 +101,7 @@ export class McpTransport {
   public workspace = "";
   private activeListener: ((data: Buffer) => void) | null = null;
   private inFlightControllers = new Map<string | number, AbortController>();
+  private inFlightToolNames = new Map<string | number, string>();
   /** Pending elicitation/create requests waiting for a client response. */
   private pendingElicitations = new Map<
     string | number,
@@ -373,6 +374,7 @@ export class McpTransport {
       controller.abort();
     }
     this.inFlightControllers.clear();
+    this.inFlightToolNames.clear();
     // Reject all pending elicitation requests so callers don't hang after disconnect
     for (const [, pending] of this.pendingElicitations) {
       pending.reject(
@@ -392,8 +394,18 @@ export class McpTransport {
     this.notifWindowStart = 0;
   }
 
-  getStats(): { callCount: number; errorCount: number } {
-    return { callCount: this.callCount, errorCount: this.errorCount };
+  getStats(): {
+    callCount: number;
+    errorCount: number;
+    activeToolCalls: number;
+    inFlightTools: string[];
+  } {
+    return {
+      callCount: this.callCount,
+      errorCount: this.errorCount,
+      activeToolCalls: this.activeToolCalls,
+      inFlightTools: [...this.inFlightToolNames.values()],
+    };
   }
 
   attach(ws: WebSocket): void {
@@ -956,6 +968,7 @@ export class McpTransport {
                         )
                     : undefined;
                 this.activeToolCalls++;
+                this.inFlightToolNames.set(msg.id, params.name);
                 let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
                 try {
                   const effectiveTimeout = tool.timeoutMs ?? TOOL_TIMEOUT_MS;
@@ -1069,6 +1082,7 @@ export class McpTransport {
                   // not delete the new session's controller or skew its counter.
                   if (gen === this.generation) {
                     this.inFlightControllers.delete(msg.id);
+                    this.inFlightToolNames.delete(msg.id);
                     this.activeToolCalls = Math.max(
                       0,
                       this.activeToolCalls - 1,

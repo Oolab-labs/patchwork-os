@@ -1044,7 +1044,12 @@ describe("McpTransport", () => {
 
   it("getStats() returns zero counters on a fresh transport", async () => {
     await setup("stats-zero");
-    expect(transport?.getStats()).toEqual({ callCount: 0, errorCount: 0 });
+    expect(transport?.getStats()).toEqual({
+      callCount: 0,
+      errorCount: 0,
+      activeToolCalls: 0,
+      inFlightTools: [],
+    });
   });
 
   it("getStats().callCount increments on a successful tool call", async () => {
@@ -1067,7 +1072,12 @@ describe("McpTransport", () => {
     });
     await waitFor(ws, (m) => m.id === 1);
 
-    expect(transport?.getStats()).toEqual({ callCount: 1, errorCount: 0 });
+    expect(transport?.getStats()).toEqual({
+      callCount: 1,
+      errorCount: 0,
+      activeToolCalls: 0,
+      inFlightTools: [],
+    });
   });
 
   it("getStats().errorCount increments when handler throws", async () => {
@@ -1092,7 +1102,12 @@ describe("McpTransport", () => {
     });
     await waitFor(ws, (m) => m.id === 1);
 
-    expect(transport?.getStats()).toEqual({ callCount: 1, errorCount: 1 });
+    expect(transport?.getStats()).toEqual({
+      callCount: 1,
+      errorCount: 1,
+      activeToolCalls: 0,
+      inFlightTools: [],
+    });
   });
 
   it("getStats() counters survive detach()", async () => {
@@ -1117,7 +1132,12 @@ describe("McpTransport", () => {
 
     transport?.detach();
     // Counters must NOT be reset by detach()
-    expect(transport?.getStats()).toEqual({ callCount: 1, errorCount: 0 });
+    expect(transport?.getStats()).toEqual({
+      callCount: 1,
+      errorCount: 0,
+      activeToolCalls: 0,
+      inFlightTools: [],
+    });
   });
 
   it("deregisterToolsByPrefix — removes matching tools, returns count, leaves others", () => {

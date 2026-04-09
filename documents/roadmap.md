@@ -4,13 +4,15 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.13.0 — 2026-04-09)
+## Current State (v2.15.0 — 2026-04-09)
 
 - **Slim mode default**: 53 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all 136+; plugin tools always bypass slim filter
-- **1,839 bridge tests / 133 files + 472 extension tests / 28 files = 2,311 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
-- **27 MCP prompts** (slash commands): 15 general/Dispatch + 12 LSP-composition
+- **Token-efficient `tools/list`**: boilerplate stripped (~45 occurrences, 16 files), all 133 tool descriptions ≤200 chars (slim ≤160), CI audit check #6 enforces limit; `scripts/measure-tools-list.mjs` tracks payload size
+- **1,850 bridge tests / 133 files + 472 extension tests / 28 files = 2,322 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **28 MCP prompts** (slash commands): 15 general/Dispatch + 13 LSP-composition (added `explore-type`)
 - **12 plugin skills**, **4 subagents** (including new `ide-architect`)
-- `templates/automation-policy.example.json` with LSP-aware prompts for all 8 automation hooks
+- **`promptName`/`promptArgs` in automation policy**: all 11 hooks can now reference named MCP prompts instead of inline strings; `{{placeholder}}` substitution works inside `promptArgs` values
+- `templates/automation-policy.example.json` with LSP-aware prompts for all 11 automation hooks + `promptName` usage example
 - Extension v1.1.0 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
 
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE

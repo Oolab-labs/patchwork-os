@@ -788,6 +788,23 @@ export class Bridge {
     const shutdown = async (signal: string, exitCode: number) => {
       if (shuttingDown) return;
       shuttingDown = true;
+      if (signal === "uncaughtException") {
+        // Tool names go to stderr only (not the activity log) to avoid
+        // leaking operational detail into activity-log consumers.
+        const inFlightTools = [...this.sessions.values()].flatMap(
+          (s) => s.transport.getStats().inFlightTools,
+        );
+        if (inFlightTools.length > 0) {
+          this.logger.error(
+            `In-flight tools at crash: ${inFlightTools.join(", ")}`,
+          );
+        }
+        this.activityLog?.recordEvent("crash_detected", {
+          signal,
+          sessions: this.sessions.size,
+          inFlightToolCount: inFlightTools.length,
+        });
+      }
       this.logger.info(`Shutdown initiated by ${signal}`);
       const forceTimer = setTimeout(() => {
         process.exit(exitCode);
@@ -806,11 +823,27 @@ export class Bridge {
       process.once("SIGTERM", () => shutdown("SIGTERM", 143));
       process.once("SIGHUP", () => shutdown("SIGHUP", 143));
       process.on("unhandledRejection", (reason) => {
+        for (const [sid, session] of this.sessions) {
+          const stats = session.transport.getStats();
+          if (stats.inFlightTools.length > 0) {
+            this.logger.error(
+              `Session ${sid.slice(0, 8)} had ${stats.inFlightTools.length} in-flight tool(s): ${stats.inFlightTools.join(", ")}`,
+            );
+          }
+        }
         this.logger.error(
           `Unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
         );
       });
       process.once("uncaughtException", (err) => {
+        for (const [sid, session] of this.sessions) {
+          const stats = session.transport.getStats();
+          if (stats.inFlightTools.length > 0) {
+            this.logger.error(
+              `Session ${sid.slice(0, 8)} had ${stats.inFlightTools.length} in-flight tool(s) at crash: ${stats.inFlightTools.join(", ")}`,
+            );
+          }
+        }
         this.logger.error(`Uncaught exception: ${err.stack ?? err.message}`);
         shutdown("uncaughtException", 1);
       });

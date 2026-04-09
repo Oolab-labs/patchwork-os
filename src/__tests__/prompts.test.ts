@@ -378,6 +378,28 @@ describe("getPrompt", () => {
     expect(result).toBeNull();
   });
 
+  it("explore-type references findImplementations, goToTypeDefinition, and goToDeclaration tools", () => {
+    const result = getPrompt("explore-type", {
+      file: "src/foo.ts",
+      line: "3",
+      column: "10",
+    });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("findImplementations");
+    expect(text).toContain("goToTypeDefinition");
+    expect(text).toContain("goToDeclaration");
+    expect(text).toContain("src/foo.ts");
+  });
+
+  it("explore-type requires file, line, and column args", () => {
+    expect(getPrompt("explore-type", {})).toBeNull();
+    expect(getPrompt("explore-type", { file: "src/foo.ts" })).toBeNull();
+    expect(
+      getPrompt("explore-type", { file: "src/foo.ts", line: "3" }),
+    ).toBeNull();
+  });
+
   it("all returned messages have correct shape", () => {
     for (const prompt of PROMPTS) {
       const args: Record<string, string> = {};
