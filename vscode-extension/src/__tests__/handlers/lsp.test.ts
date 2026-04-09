@@ -850,40 +850,21 @@ describe("findImplementations", () => {
     expect(result.implementations[0].line).toBe(11);
   });
 
-  it("returns found:false when no implementations found", async () => {
+  it("returns null when no implementations found", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
-    const result = (await call({
-      file: "/iface.ts",
-      line: 1,
-      column: 1,
-    })) as any;
-    expect(result.found).toBe(false);
-    expect(result.implementations).toEqual([]);
-    expect(result.count).toBe(0);
+    expect(await call({ file: "/iface.ts", line: 1, column: 1 })).toBeNull();
   });
 
-  it("returns found:false when result is null", async () => {
+  it("returns null when result is null", async () => {
     vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
-    const result = (await call({
-      file: "/iface.ts",
-      line: 1,
-      column: 1,
-    })) as any;
-    expect(result.found).toBe(false);
-    expect(result.count).toBe(0);
+    expect(await call({ file: "/iface.ts", line: 1, column: 1 })).toBeNull();
   });
 
-  it("returns found:false when executeCommand throws", async () => {
+  it("returns null when executeCommand throws", async () => {
     vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
       new Error("provider error"),
     );
-    const result = (await call({
-      file: "/iface.ts",
-      line: 1,
-      column: 1,
-    })) as any;
-    expect(result.found).toBe(false);
-    expect(result.implementations).toEqual([]);
+    expect(await call({ file: "/iface.ts", line: 1, column: 1 })).toBeNull();
   });
 
   it("throws on missing file param", async () => {
