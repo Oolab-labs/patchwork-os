@@ -1,7 +1,7 @@
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import { ToolErrorCodes } from "../errors.js";
 import type { ProgressFn } from "../transport.js";
-import { error, resolveFilePath, success } from "./utils.js";
+import { error, resolveFilePath, successStructured } from "./utils.js";
 
 const MAX_CONTEXT_FILES = 20;
 const MIN_TIMEOUT_MS = 5_000;
@@ -53,6 +53,15 @@ export function createRunClaudeTaskTool(
           },
         },
         required: ["prompt"],
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          taskId: { type: "string" },
+          status: { type: "string" },
+          output: { type: "string" },
+        },
+        required: ["taskId", "status"],
       },
     },
     handler: async (
@@ -144,7 +153,7 @@ export function createRunClaudeTaskTool(
             sessionId,
             model,
           });
-          return success({ taskId, status: "pending" });
+          return successStructured({ taskId, status: "pending" });
         } catch (e) {
           return error(
             `Failed to enqueue task: ${e instanceof Error ? e.message : String(e)}`,
@@ -165,7 +174,7 @@ export function createRunClaudeTaskTool(
             progressFn?.(++chunkIndex, -1, chunk);
           },
         });
-        return success({
+        return successStructured({
           taskId: task.id,
           status: task.status,
           output: task.output,

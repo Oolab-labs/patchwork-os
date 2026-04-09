@@ -1,6 +1,6 @@
 import type { ClaudeOrchestrator, TaskStatus } from "../claudeOrchestrator.js";
 import { ToolErrorCodes } from "../errors.js";
-import { error, success } from "./utils.js";
+import { error, successStructured } from "./utils.js";
 
 const VALID_STATUSES = new Set<string>([
   "pending",
@@ -33,6 +33,30 @@ export function createListClaudeTasksTool(
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          count: { type: "integer" },
+          tasks: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                taskId: { type: "string" },
+                status: { type: "string" },
+                createdAt: { type: "number" },
+                startedAt: { type: "number" },
+                doneAt: { type: "number" },
+                output: { type: "string" },
+                errorMessage: { type: "string" },
+                timeoutMs: { type: "number" },
+              },
+              required: ["taskId", "status", "createdAt"],
+            },
+          },
+        },
+        required: ["count", "tasks"],
+      },
     },
     handler: async (args: Record<string, unknown>) => {
       const statusFilter = args.status;
@@ -53,7 +77,7 @@ export function createListClaudeTasksTool(
         .list(statusFilter as TaskStatus | undefined)
         .filter((t) => t.sessionId === sessionId);
 
-      return success({
+      return successStructured({
         count: tasks.length,
         tasks: tasks.map((t) => ({
           taskId: t.id,

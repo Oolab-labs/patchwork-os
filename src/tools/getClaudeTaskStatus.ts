@@ -1,6 +1,6 @@
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import { ToolErrorCodes } from "../errors.js";
-import { error, success } from "./utils.js";
+import { error, successStructured } from "./utils.js";
 
 export function createGetClaudeTaskStatusTool(
   orchestrator: ClaudeOrchestrator,
@@ -25,6 +25,20 @@ export function createGetClaudeTaskStatusTool(
           },
         },
         required: ["taskId"],
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          taskId: { type: "string" },
+          status: { type: "string" },
+          createdAt: { type: "number" },
+          startedAt: { type: "number" },
+          doneAt: { type: "number" },
+          output: { type: "string" },
+          errorMessage: { type: "string" },
+          timeoutMs: { type: "number" },
+        },
+        required: ["taskId", "status", "createdAt"],
       },
     },
     handler: async (args: Record<string, unknown>) => {
@@ -52,7 +66,7 @@ export function createGetClaudeTaskStatusTool(
         );
       }
 
-      return success({
+      return successStructured({
         taskId: task.id,
         status: task.status,
         createdAt: task.createdAt,

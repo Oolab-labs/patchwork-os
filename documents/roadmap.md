@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.9 — 2026-04-09)
+## Current State (v2.11.10 — 2026-04-09)
 
 - **Slim mode default**: 48 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
 - **~1,695 bridge tests / ~130 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
@@ -28,6 +28,11 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.10 shipped (2026-04-09) — outputSchema for Claude orchestration tools:**
+- `outputSchema` + `structuredContent` added to `runClaudeTask`, `getClaudeTaskStatus`, and `listClaudeTasks` — 33 total outputSchema tools (up from 30)
+- `structuredContent.test.ts`: 3 new contract tests (20 total); covers non-streaming enqueue, status poll, and empty task list
+- All 5 audit checks pass; 1700 bridge tests (up from 1697)
 
 **v2.11.9 shipped (2026-04-09) — outputSchema for getToolCapabilities + auditDependencies:**
 - `outputSchema` + `structuredContent` added to `getToolCapabilities` (session-start tool) and `auditDependencies` (dependency audit) — 30 total outputSchema tools (up from 28)
