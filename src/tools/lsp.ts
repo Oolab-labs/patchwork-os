@@ -11,6 +11,7 @@ import {
   requireString,
   resolveFilePath,
   success,
+  successStructured,
 } from "./utils.js";
 
 /**
@@ -285,12 +286,12 @@ export function createGetHoverTool(
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
-        return success({
+        return successStructured({
           found: false,
           message: "No hover information at this position",
         });
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }
@@ -487,7 +488,7 @@ export function createApplyCodeActionTool(
           "Extension returned no result — code action may not be available",
         );
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }
@@ -717,9 +718,9 @@ export function createSearchWorkspaceSymbolsTool(
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
-        return success({ symbols: [], count: 0 });
+        return successStructured({ symbols: [], count: 0 });
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }
