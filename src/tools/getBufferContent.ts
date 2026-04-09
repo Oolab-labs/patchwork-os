@@ -10,7 +10,7 @@ import {
   optionalInt,
   requireString,
   resolveFilePath,
-  successLarge,
+  successStructuredLarge,
 } from "./utils.js";
 
 const MAX_CONTENT_BYTES = 512 * 1024; // 512 KB hard cap
@@ -205,7 +205,7 @@ export function createGetBufferContentTool(
             );
           }
 
-          return successLarge({
+          return successStructuredLarge({
             isDirty: false,
             source: "disk",
             filePath,
@@ -243,7 +243,7 @@ export function createGetBufferContentTool(
       const end = endLine !== undefined ? endLine : totalLines; // exclusive
       const sliced = lines.slice(start, end);
 
-      return successLarge({
+      return successStructuredLarge({
         ...meta,
         filePath,
         content: sliced.join("\n"),

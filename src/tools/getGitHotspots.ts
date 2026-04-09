@@ -3,7 +3,7 @@ import {
   execSafe,
   optionalInt,
   optionalString,
-  successLarge,
+  successStructuredLarge,
 } from "./utils.js";
 
 interface Hotspot {
@@ -163,7 +163,7 @@ export function createGetGitHotspotsTool(workspace: string) {
         rank: i + 1,
       }));
 
-      return successLarge({
+      return successStructuredLarge({
         since,
         days,
         totalCommitsScanned: totalCommits,
