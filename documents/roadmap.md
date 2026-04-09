@@ -4,12 +4,15 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.23 — 2026-04-09)
+## Current State (v2.12.0 — 2026-04-09)
 
-- **Slim mode default**: 49 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all 136+; plugin tools always bypass slim filter
-- **~1,783 bridge tests / ~131 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
-- 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
-- Extension v1.0.20 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
+- **Slim mode default**: 50 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all 136+; plugin tools always bypass slim filter
+- **1,827 bridge tests / 132 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **27 MCP prompts** (slash commands): 15 general/Dispatch + 12 LSP-composition
+- **12 plugin skills**, **4 subagents** (including new `ide-architect`)
+- `templates/automation-policy.example.json` with LSP-aware prompts for all 8 automation hooks
+- Extension v1.1.0 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
+
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
 - **Four client surfaces**: Claude Code CLI, Claude Desktop (Cowork + Dispatch), Agent Teams (parallel), Scheduled Tasks (recurring)
@@ -28,6 +31,13 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.12.0 shipped (2026-04-09) — LSP Leverage Round:**
+- 12 new MCP slash commands composing existing LSP tools: `find-callers`, `blast-radius`, `why-error`, `unused-in`, `trace-to`, `imports-of`, `circular-deps`, `refactor-preview`, `module-exports`, `type-of`, `deprecations`, `coverage-gap`
+- 3 new plugin skills: `ide-dead-code-hunter`, `ide-type-mismatch-fix`, `ide-api-deprecation-tracker`
+- New `ide-architect` subagent for architectural health audits (God objects, circular deps, coupling, modularization)
+- `templates/automation-policy.example.json` with LSP-aware hook prompts for all 8 hooks
+- 22 new tests (1805 → 1827); bridge v2.12.0, extension v1.1.0
 
 **v2.11.16 shipped (2026-04-09) — previewCodeAction LSP tool:**
 - New `previewCodeAction` tool in `src/tools/lsp.ts`: shows exact text edits a code action would make without applying them — safe to call before `applyCodeAction`
