@@ -329,7 +329,10 @@ export function registerAllTools(
     createGitFetchTool(workspace),
     createGitListBranchesTool(workspace),
     createGitPullTool(workspace),
-    createGitPushTool(workspace),
+    createGitPushTool(
+      workspace,
+      automationHooks ? (r) => automationHooks.handleGitPush(r) : undefined,
+    ),
     createGitStashTool(workspace),
     createGitStashPopTool(workspace),
     createGitStashListTool(workspace),

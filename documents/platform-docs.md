@@ -272,6 +272,7 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | `onInstructionsLoaded` | `enabled`, `prompt` | — | Fires once at session start when CLAUDE.md loads (Claude Code 2.1.76+). No cooldown. |
 | `onTestRun` | `enabled`, `prompt`, `cooldownMs` | `onFailureOnly` (bool, default `true`) | Fires when `runTests` completes. Placeholders: `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array of `{name,file,message}`). Loop guard prevents hook-spawned tasks from re-triggering. |
 | `onGitCommit` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitCommit` tool call. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}` (list of committed files). Loop guard; file list capped at 20 entries. |
+| `onGitPush` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitPush` tool call. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`. Loop guard. |
 
 Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering while a prior task for the same file/event is still pending/running.
 

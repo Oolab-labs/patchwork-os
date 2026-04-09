@@ -2,7 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Diagnostic, GitCommitResult } from "../automation.js";
+import type {
+  Diagnostic,
+  GitCommitResult,
+  GitPushResult,
+} from "../automation.js";
 import { AutomationHooks, loadPolicy } from "../automation.js";
 import type { IClaudeDriver } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
@@ -1001,5 +1005,175 @@ describe("loadPolicy — onGitCommit", () => {
     );
     const policy = loadPolicy(p);
     expect(policy.onGitCommit?.cooldownMs).toBe(5_000);
+  });
+});
+
+// ── onGitPush ─────────────────────────────────────────────────────────────────
+
+function makePushResult(overrides?: Partial<GitPushResult>): GitPushResult {
+  return {
+    remote: "origin",
+    branch: "main",
+    hash: "abc123def456",
+    ...overrides,
+  };
+}
+
+describe("AutomationHooks.handleGitPush", () => {
+  it("enqueues a task on push", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPush: {
+          enabled: true,
+          prompt: "Pushed {{branch}} to {{remote}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPush(makePushResult());
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("replaces {{remote}}, {{branch}}, {{hash}} placeholders", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPush: {
+          enabled: true,
+          prompt: "remote={{remote}} branch={{branch}} hash={{hash}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPush(
+      makePushResult({
+        remote: "upstream",
+        branch: "feature/y",
+        hash: "deadbeef1234",
+      }),
+    );
+    const task = orch.list()[0];
+    expect(task?.prompt).toContain("remote=upstream");
+    expect(task?.prompt).toContain("branch=feature/y");
+    expect(task?.prompt).toContain("hash=deadbeef1234");
+  });
+
+  it("does not trigger when disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPush: {
+          enabled: false,
+          prompt: "Pushed {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPush(makePushResult());
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("respects cooldown between pushes", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPush: {
+          enabled: true,
+          prompt: "Pushed {{branch}}",
+          cooldownMs: 30_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPush(makePushResult());
+    hooks.handleGitPush(makePushResult({ hash: "999999999999" }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("skips trigger when a task is still running (loop guard)", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPush: {
+          enabled: true,
+          prompt: "Pushed {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPush(makePushResult());
+    hooks.handleGitPush(makePushResult({ hash: "111111111111" }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onGitPush", () => {
+    const hooks = new AutomationHooks(
+      {
+        onGitPush: {
+          enabled: true,
+          prompt: "Pushed {{branch}}",
+          cooldownMs: 10_000,
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    const status = hooks.getStatus();
+    expect(status.onGitPush).toEqual({ enabled: true, cooldownMs: 10_000 });
+  });
+});
+
+describe("loadPolicy — onGitPush", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-gp-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onGitPush policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onGitPush: {
+          enabled: true,
+          prompt: "Monitor CI for {{branch}}",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onGitPush?.enabled).toBe(true);
+    expect(policy.onGitPush?.cooldownMs).toBe(10_000);
+  });
+
+  it("enforces onGitPush cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onGitPush: {
+          enabled: true,
+          prompt: "Pushed {{branch}}",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onGitPush?.cooldownMs).toBe(5_000);
   });
 });

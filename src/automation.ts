@@ -125,6 +125,24 @@ export interface GitCommitResult {
   count: number;
 }
 
+export interface OnGitPushPolicy {
+  enabled: boolean;
+  /**
+   * Prompt to enqueue after a successful git push.
+   * Placeholders: {{remote}}, {{branch}}, {{hash}}
+   */
+  prompt: string;
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+/** Minimal push result passed to handleGitPush — avoids importing from gitWrite. */
+export interface GitPushResult {
+  remote: string;
+  branch: string;
+  hash: string;
+}
+
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
@@ -140,6 +158,8 @@ export interface AutomationPolicy {
   onTestRun?: OnTestRunPolicy;
   /** Fired after every successful gitCommit call. */
   onGitCommit?: OnGitCommitPolicy;
+  /** Fired after every successful gitPush call. */
+  onGitPush?: OnGitPushPolicy;
 }
 
 export interface Diagnostic {
@@ -400,6 +420,31 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onGitPush
+  if (policy.onGitPush !== undefined) {
+    const gp = policy.onGitPush;
+    if (typeof gp !== "object" || gp === null) {
+      throw new Error(`"onGitPush" must be an object`);
+    }
+    if (typeof gp.enabled !== "boolean") {
+      throw new Error(`"onGitPush.enabled" must be a boolean`);
+    }
+    if (typeof gp.prompt !== "string" || gp.prompt.trim() === "") {
+      throw new Error(`"onGitPush.prompt" must be a non-empty string`);
+    }
+    if (gp.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(
+        `"onGitPush.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
+    }
+    if (typeof gp.cooldownMs !== "number" || !Number.isFinite(gp.cooldownMs)) {
+      throw new Error(`"onGitPush.cooldownMs" must be a number`);
+    }
+    if (gp.cooldownMs < MIN_COOLDOWN_MS) {
+      gp.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   return policy;
 }
 
@@ -422,6 +467,8 @@ export class AutomationHooks {
   private activeTestRunTaskId: string | null = null;
   /** Active task ID for the git-commit handler (workspace-global). */
   private activeGitCommitTaskId: string | null = null;
+  /** Active task ID for the git-push handler (workspace-global). */
+  private activeGitPushTaskId: string | null = null;
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -905,6 +952,61 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Called after a successful gitPush tool call.
+   * Fires the onGitPush automation hook if configured.
+   */
+  handleGitPush(result: GitPushResult): void {
+    const cfg = this.policy.onGitPush;
+    if (!cfg?.enabled) return;
+
+    // Loop guard: skip if a task is still pending/running
+    if (this.activeGitPushTaskId) {
+      const existing = this.orchestrator.getTask(this.activeGitPushTaskId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping git-push trigger — task ${this.activeGitPushTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeGitPushTaskId = null;
+    }
+
+    // Cooldown check (workspace-global)
+    const key = "gitPush:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for git-push (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const prompt = cfg.prompt
+      .replace(/\{\{remote\}\}/g, result.remote)
+      .replace(/\{\{branch\}\}/g, result.branch)
+      .replace(/\{\{hash\}\}/g, result.hash);
+
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.activeGitPushTaskId = taskId;
+      this.log(
+        `[automation] triggered git-push task ${taskId.slice(0, 8)} (${result.remote}/${result.branch} @ ${result.hash})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue git-push task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
@@ -918,6 +1020,7 @@ export class AutomationHooks {
       cooldownMs: number;
     } | null;
     onGitCommit: { enabled: boolean; cooldownMs: number } | null;
+    onGitPush: { enabled: boolean; cooldownMs: number } | null;
   } {
     const p = this.policy;
     return {
@@ -959,6 +1062,12 @@ export class AutomationHooks {
         ? {
             enabled: p.onGitCommit.enabled,
             cooldownMs: p.onGitCommit.cooldownMs,
+          }
+        : null,
+      onGitPush: p.onGitPush
+        ? {
+            enabled: p.onGitPush.enabled,
+            cooldownMs: p.onGitPush.cooldownMs,
           }
         : null,
     };
