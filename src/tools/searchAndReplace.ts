@@ -76,7 +76,15 @@ export function createSearchAndReplaceTool(workspace: string) {
               type: "object" as const,
               properties: {
                 file: { type: "string" as const },
-                replacements: {},
+                replacements: {
+                  oneOf: [
+                    { type: "integer" as const },
+                    {
+                      type: "string" as const,
+                      enum: ["skipped (file too large)"],
+                    },
+                  ],
+                },
                 written: { type: "boolean" as const },
                 writeError: { type: "string" as const },
               },
