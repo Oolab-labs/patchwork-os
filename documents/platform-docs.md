@@ -357,6 +357,26 @@ Optimized for terse phone triggers via Claude Desktop's Dispatch feature. Each i
 | `build-check` | _(none)_ | Build/compile check with error summary |
 | `recent-activity` | `count` (optional, default: 10) | Recent git log + uncommitted changes |
 
+### LSP Composition Prompts
+
+Multi-step LSP workflows composed from bridge primitives. Each instructs Claude to call a sequence of tools and return a structured report.
+
+| Prompt | Arguments | Description |
+|--------|-----------|-------------|
+| `find-callers` | `symbol` (required) | Find every caller of a symbol with file:line locations. Wraps `searchWorkspaceSymbols` + `getCallHierarchy(incoming)` + `findReferences` |
+| `blast-radius` | `file`, `line`, `column` (all required) | Compute blast radius of a change: diagnostics + reference counts + risk badge. Wraps `getChangeImpact` |
+| `why-error` | `file` (required), `line` (optional) | Explain a diagnostic in plain English with surrounding type context. Wraps `getDiagnostics` + `explainSymbol` |
+| `unused-in` | `file` (required) | List unused exports, parameters, and imports with reference verification. Wraps `detectUnusedCode` + `findReferences` |
+| `trace-to` | `symbol` (required) | Trace call chain to a target symbol with type signatures at each hop. Wraps `getCallHierarchy(outgoing)` + `getImportedSignatures` |
+| `imports-of` | `symbol` (required) | List every file that imports a symbol with reference counts. Wraps `findReferences` + `getImportTree` |
+| `circular-deps` | _(none)_ | Detect circular import dependencies in the workspace. Wraps `getImportTree` with cycle detection |
+| `refactor-preview` | `file`, `line`, `column`, `newName` (all required) | Preview exact edits a rename would make, plus blast-radius risk. Wraps `refactorAnalyze` + `refactorPreview` |
+| `module-exports` | `file` (required) | List a module's exported symbols with type signatures as Markdown. Wraps `getDocumentSymbols` + `getHover` |
+| `type-of` | `file`, `line`, `column` (all required) | Get the type signature at a position (no documentation). Wraps `getHoverAtCursor` + `getTypeSignature` |
+| `deprecations` | _(none)_ | Find `@deprecated` APIs across the workspace and count their callers. Wraps `searchWorkspace` + `findReferences` |
+| `coverage-gap` | `file` (required) | Identify untested functions by correlating coverage with document symbols. Wraps `getCodeCoverage` + `getDocumentSymbols` |
+| `explore-type` | `file`, `line`, `column` (all required) | Explore a type's declaration, definition, and all implementations. Wraps `getHover` + `goToDeclaration` + `goToTypeDefinition` + `findImplementations` |
+
 ### Agent Teams & Scheduled Tasks prompts
 
 | Prompt | Argument | Description |

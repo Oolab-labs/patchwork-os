@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { minimatch } from "minimatch";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
+import { getPrompt } from "./prompts.js";
 
 /** Maximum length (chars) of a single diagnostic message before truncation */
 const MAX_DIAGNOSTIC_MSG_CHARS = 500;
@@ -25,68 +26,74 @@ const LAST_TRIGGER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 
 // ── Policy schema ─────────────────────────────────────────────────────────────
 
-export interface OnDiagnosticsErrorPolicy {
+/**
+ * Shared fields for prompt resolution in any automation hook.
+ * Exactly one of `prompt` or `promptName` must be provided.
+ *
+ * - `prompt`: inline instruction string with `{{placeholder}}` tokens.
+ * - `promptName`: name of a built-in MCP prompt (e.g. `"unused-in"`, `"why-error"`).
+ * - `promptArgs`: static args passed to the named prompt. Values may contain
+ *   `{{placeholder}}` tokens that are substituted with sanitized event data
+ *   (control chars stripped, length capped) before the prompt is resolved.
+ */
+export interface PromptSource {
+  prompt?: string;
+  promptName?: string;
+  promptArgs?: Record<string, string>;
+}
+
+export interface OnDiagnosticsErrorPolicy extends PromptSource {
   enabled: boolean;
   minSeverity: "error" | "warning";
-  /** Placeholders: {{file}}, {{diagnostics}} */
-  prompt: string;
+  /** Placeholders (inline prompt only): {{file}}, {{diagnostics}} */
   /** Minimum ms between triggers for the same file. Enforced minimum: 5000. */
   cooldownMs: number;
 }
 
-export interface OnFileSavePolicy {
+export interface OnFileSavePolicy extends PromptSource {
   enabled: boolean;
   /** Minimatch glob patterns, e.g. ["**\/*.ts", "!node_modules/**"] */
   patterns: string[];
-  /** Placeholders: {{file}} */
-  prompt: string;
+  /** Placeholders (inline prompt only): {{file}} */
   cooldownMs: number;
 }
 
-export interface OnFileChangedPolicy {
+export interface OnFileChangedPolicy extends PromptSource {
   enabled: boolean;
   /** Minimatch glob patterns, e.g. ["**\/*.ts", "!node_modules/**"] */
   patterns: string[];
-  /** Placeholders: {{file}} */
-  prompt: string;
+  /** Placeholders (inline prompt only): {{file}} */
   cooldownMs: number;
 }
 
-export interface OnPostCompactPolicy {
+export interface OnPostCompactPolicy extends PromptSource {
   enabled: boolean;
   /**
-   * Prompt to enqueue after Claude compacts its context.
-   * Use this to re-snapshot IDE state so Claude recovers context.
    * No placeholders — fired unconditionally when compaction occurs.
+   * Use promptName (e.g. "project-status") to re-snapshot IDE state.
    */
-  prompt: string;
   /** Minimum ms between triggers (prevents repeated compaction storms). Enforced minimum: 5000. */
   cooldownMs: number;
 }
 
-export interface OnInstructionsLoadedPolicy {
+export interface OnInstructionsLoadedPolicy extends PromptSource {
   enabled: boolean;
   /**
-   * Prompt to enqueue when Claude loads its system instructions (first turn of a session).
-   * Useful for injecting a tool-capability summary at session start.
-   * No placeholders.
+   * No placeholders — fired once at session start.
+   * Use promptName (e.g. "orient-project") to inject tool capability summary.
    */
-  prompt: string;
 }
 
-export interface OnCwdChangedPolicy {
+export interface OnCwdChangedPolicy extends PromptSource {
   enabled: boolean;
   /**
-   * Prompt to enqueue when Claude Code's working directory changes (Claude Code 2.1.83+).
-   * Useful for re-initialising workspace context when CC switches projects.
-   * Placeholder: {{cwd}}
+   * Placeholders (inline prompt only): {{cwd}}
    */
-  prompt: string;
   /** Minimum ms between triggers. Enforced minimum: 5000. */
   cooldownMs: number;
 }
 
-export interface OnTestRunPolicy {
+export interface OnTestRunPolicy extends PromptSource {
   enabled: boolean;
   /**
    * Only trigger when there are test failures or errors.
@@ -95,10 +102,8 @@ export interface OnTestRunPolicy {
    */
   onFailureOnly: boolean;
   /**
-   * Prompt to enqueue after a test run.
-   * Placeholders: {{runner}}, {{failed}}, {{passed}}, {{total}}, {{failures}}
+   * Placeholders (inline prompt only): {{runner}}, {{failed}}, {{passed}}, {{total}}, {{failures}}
    */
-  prompt: string;
   /** Minimum ms between triggers. Enforced minimum: 5000. */
   cooldownMs: number;
 }
@@ -116,13 +121,11 @@ export interface TestRunResult {
   failures: Array<{ name: string; file: string; message: string }>;
 }
 
-export interface OnGitCommitPolicy {
+export interface OnGitCommitPolicy extends PromptSource {
   enabled: boolean;
   /**
-   * Prompt to enqueue after a successful git commit.
-   * Placeholders: {{hash}}, {{branch}}, {{message}}, {{files}}, {{count}}
+   * Placeholders (inline prompt only): {{hash}}, {{branch}}, {{message}}, {{files}}, {{count}}
    */
-  prompt: string;
   /** Minimum ms between triggers. Enforced minimum: 5000. */
   cooldownMs: number;
 }
@@ -136,13 +139,11 @@ export interface GitCommitResult {
   count: number;
 }
 
-export interface OnGitPushPolicy {
+export interface OnGitPushPolicy extends PromptSource {
   enabled: boolean;
   /**
-   * Prompt to enqueue after a successful git push.
-   * Placeholders: {{remote}}, {{branch}}, {{hash}}
+   * Placeholders (inline prompt only): {{remote}}, {{branch}}, {{hash}}
    */
-  prompt: string;
   /** Minimum ms between triggers. Enforced minimum: 5000. */
   cooldownMs: number;
 }
@@ -154,13 +155,11 @@ export interface GitPushResult {
   hash: string;
 }
 
-export interface OnBranchCheckoutPolicy {
+export interface OnBranchCheckoutPolicy extends PromptSource {
   enabled: boolean;
   /**
-   * Prompt to enqueue after a successful git checkout (branch switch or creation).
-   * Placeholders: {{branch}}, {{previousBranch}}, {{created}}
+   * Placeholders (inline prompt only): {{branch}}, {{previousBranch}}, {{created}}
    */
-  prompt: string;
   /** Minimum ms between triggers. Enforced minimum: 5000. */
   cooldownMs: number;
 }
@@ -172,13 +171,11 @@ export interface BranchCheckoutResult {
   created: boolean;
 }
 
-export interface OnPullRequestPolicy {
+export interface OnPullRequestPolicy extends PromptSource {
   enabled: boolean;
   /**
-   * Prompt to enqueue after a GitHub PR is successfully created.
-   * Placeholders: {{url}}, {{number}}, {{title}}, {{branch}}
+   * Placeholders (inline prompt only): {{url}}, {{number}}, {{title}}, {{branch}}
    */
-  prompt: string;
   /** Minimum ms between triggers. Enforced minimum: 5000. */
   cooldownMs: number;
 }
@@ -221,8 +218,58 @@ export interface Diagnostic {
 }
 
 const MIN_COOLDOWN_MS = 5_000;
+/** Maximum length of a promptName value in a policy. */
+const MAX_PROMPT_NAME_CHARS = 64;
 
 // ── Policy loading ────────────────────────────────────────────────────────────
+
+/**
+ * Validates that a hook config has exactly one of `prompt` (non-empty inline string)
+ * or `promptName` (reference to a built-in MCP prompt), plus optional `promptArgs`.
+ * Throws a descriptive error on violation.
+ */
+function validatePromptSource(hookName: string, cfg: PromptSource): void {
+  const hasPrompt = typeof cfg.prompt === "string" && cfg.prompt.trim() !== "";
+  const hasPromptName =
+    typeof cfg.promptName === "string" && cfg.promptName.trim() !== "";
+
+  if (hasPrompt && hasPromptName) {
+    throw new Error(
+      `"${hookName}" must specify either "prompt" or "promptName", not both`,
+    );
+  }
+  if (!hasPrompt && !hasPromptName) {
+    throw new Error(
+      `"${hookName}" must have a non-empty "prompt" or "promptName"`,
+    );
+  }
+  if (hasPrompt && cfg.prompt!.length > MAX_POLICY_PROMPT_CHARS) {
+    throw new Error(
+      `"${hookName}.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+    );
+  }
+  if (hasPromptName) {
+    if (cfg.promptName!.length > MAX_PROMPT_NAME_CHARS) {
+      throw new Error(
+        `"${hookName}.promptName" must be ≤ ${MAX_PROMPT_NAME_CHARS} characters`,
+      );
+    }
+    if (cfg.promptArgs !== undefined) {
+      if (
+        typeof cfg.promptArgs !== "object" ||
+        cfg.promptArgs === null ||
+        Array.isArray(cfg.promptArgs)
+      ) {
+        throw new Error(`"${hookName}.promptArgs" must be a plain object`);
+      }
+      for (const [k, v] of Object.entries(cfg.promptArgs)) {
+        if (typeof v !== "string") {
+          throw new Error(`"${hookName}.promptArgs.${k}" must be a string`);
+        }
+      }
+    }
+  }
+}
 
 /** Load and validate a JSON automation policy file. Throws on any failure. */
 export function loadPolicy(filePath: string): AutomationPolicy {
@@ -264,14 +311,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         `"onDiagnosticsError.minSeverity" must be "error" or "warning"`,
       );
     }
-    if (typeof d.prompt !== "string" || d.prompt.trim() === "") {
-      throw new Error(`"onDiagnosticsError.prompt" must be a non-empty string`);
-    }
-    if (d.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onDiagnosticsError.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onDiagnosticsError", d);
     if (typeof d.cooldownMs !== "number" || !Number.isFinite(d.cooldownMs)) {
       throw new Error(`"onDiagnosticsError.cooldownMs" must be a number`);
     }
@@ -298,14 +338,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         "onFileSave.patterns must be an array of ≤100 strings, each ≤1024 chars",
       );
     }
-    if (typeof s.prompt !== "string" || s.prompt.trim() === "") {
-      throw new Error(`"onFileSave.prompt" must be a non-empty string`);
-    }
-    if (s.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onFileSave.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onFileSave", s);
     if (typeof s.cooldownMs !== "number" || !Number.isFinite(s.cooldownMs)) {
       throw new Error(`"onFileSave.cooldownMs" must be a number`);
     }
@@ -332,14 +365,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         "onFileChanged.patterns must be an array of ≤100 strings, each ≤1024 chars",
       );
     }
-    if (typeof fc.prompt !== "string" || fc.prompt.trim() === "") {
-      throw new Error(`"onFileChanged.prompt" must be a non-empty string`);
-    }
-    if (fc.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onFileChanged.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onFileChanged", fc);
     if (typeof fc.cooldownMs !== "number" || !Number.isFinite(fc.cooldownMs)) {
       throw new Error(`"onFileChanged.cooldownMs" must be a number`);
     }
@@ -357,14 +383,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof cw.enabled !== "boolean") {
       throw new Error(`"onCwdChanged.enabled" must be a boolean`);
     }
-    if (typeof cw.prompt !== "string" || cw.prompt.trim() === "") {
-      throw new Error(`"onCwdChanged.prompt" must be a non-empty string`);
-    }
-    if (cw.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onCwdChanged.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onCwdChanged", cw);
     if (typeof cw.cooldownMs !== "number" || !Number.isFinite(cw.cooldownMs)) {
       throw new Error(`"onCwdChanged.cooldownMs" must be a number`);
     }
@@ -382,14 +401,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof p.enabled !== "boolean") {
       throw new Error(`"onPostCompact.enabled" must be a boolean`);
     }
-    if (typeof p.prompt !== "string" || p.prompt.trim() === "") {
-      throw new Error(`"onPostCompact.prompt" must be a non-empty string`);
-    }
-    if (p.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onPostCompact.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onPostCompact", p);
     if (typeof p.cooldownMs !== "number" || !Number.isFinite(p.cooldownMs)) {
       throw new Error(`"onPostCompact.cooldownMs" must be a number`);
     }
@@ -407,16 +419,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof il.enabled !== "boolean") {
       throw new Error(`"onInstructionsLoaded.enabled" must be a boolean`);
     }
-    if (typeof il.prompt !== "string" || il.prompt.trim() === "") {
-      throw new Error(
-        `"onInstructionsLoaded.prompt" must be a non-empty string`,
-      );
-    }
-    if (il.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onInstructionsLoaded.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onInstructionsLoaded", il);
   }
 
   // Validate onTestRun
@@ -431,14 +434,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof tr.onFailureOnly !== "boolean") {
       throw new Error(`"onTestRun.onFailureOnly" must be a boolean`);
     }
-    if (typeof tr.prompt !== "string" || tr.prompt.trim() === "") {
-      throw new Error(`"onTestRun.prompt" must be a non-empty string`);
-    }
-    if (tr.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onTestRun.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onTestRun", tr);
     if (typeof tr.cooldownMs !== "number" || !Number.isFinite(tr.cooldownMs)) {
       throw new Error(`"onTestRun.cooldownMs" must be a number`);
     }
@@ -456,14 +452,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof gc.enabled !== "boolean") {
       throw new Error(`"onGitCommit.enabled" must be a boolean`);
     }
-    if (typeof gc.prompt !== "string" || gc.prompt.trim() === "") {
-      throw new Error(`"onGitCommit.prompt" must be a non-empty string`);
-    }
-    if (gc.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onGitCommit.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onGitCommit", gc);
     if (typeof gc.cooldownMs !== "number" || !Number.isFinite(gc.cooldownMs)) {
       throw new Error(`"onGitCommit.cooldownMs" must be a number`);
     }
@@ -481,14 +470,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof gp.enabled !== "boolean") {
       throw new Error(`"onGitPush.enabled" must be a boolean`);
     }
-    if (typeof gp.prompt !== "string" || gp.prompt.trim() === "") {
-      throw new Error(`"onGitPush.prompt" must be a non-empty string`);
-    }
-    if (gp.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onGitPush.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onGitPush", gp);
     if (typeof gp.cooldownMs !== "number" || !Number.isFinite(gp.cooldownMs)) {
       throw new Error(`"onGitPush.cooldownMs" must be a number`);
     }
@@ -506,14 +488,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof bc.enabled !== "boolean") {
       throw new Error(`"onBranchCheckout.enabled" must be a boolean`);
     }
-    if (typeof bc.prompt !== "string" || bc.prompt.trim() === "") {
-      throw new Error(`"onBranchCheckout.prompt" must be a non-empty string`);
-    }
-    if (bc.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onBranchCheckout.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onBranchCheckout", bc);
     if (typeof bc.cooldownMs !== "number" || !Number.isFinite(bc.cooldownMs)) {
       throw new Error(`"onBranchCheckout.cooldownMs" must be a number`);
     }
@@ -531,14 +506,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof pr.enabled !== "boolean") {
       throw new Error(`"onPullRequest.enabled" must be a boolean`);
     }
-    if (typeof pr.prompt !== "string" || pr.prompt.trim() === "") {
-      throw new Error(`"onPullRequest.prompt" must be a non-empty string`);
-    }
-    if (pr.prompt.length > MAX_POLICY_PROMPT_CHARS) {
-      throw new Error(
-        `"onPullRequest.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
-      );
-    }
+    validatePromptSource("onPullRequest", pr);
     if (typeof pr.cooldownMs !== "number" || !Number.isFinite(pr.cooldownMs)) {
       throw new Error(`"onPullRequest.cooldownMs" must be a number`);
     }
@@ -581,6 +549,46 @@ export class AutomationHooks {
     private readonly orchestrator: ClaudeOrchestrator,
     private readonly log: (msg: string) => void,
   ) {}
+
+  /**
+   * Resolve a named prompt, substituting any `{{placeholder}}` tokens in
+   * `promptArgs` values with sanitized event data before calling `getPrompt()`.
+   *
+   * Returns the resolved user-message text, or `null` if the prompt is unknown
+   * or has missing required arguments.
+   */
+  private _resolveNamedPrompt(
+    name: string,
+    args: Record<string, string>,
+    eventData: Record<string, string>,
+  ): string | null {
+    // Substitute event placeholders into promptArgs values.
+    // Sanitize: strip control characters and cap length to prevent injection
+    // via crafted file paths or branch names embedded in args.
+    const resolvedArgs: Record<string, string> = {};
+    for (const [k, v] of Object.entries(args)) {
+      resolvedArgs[k] = v.replace(
+        /\{\{(\w+)\}\}/g,
+        (_match: string, placeholder: string) => {
+          const raw = eventData[placeholder] ?? "";
+          return raw
+            .replace(/[\x00-\x1F\x7F]/g, "")
+            .slice(0, MAX_FILE_PATH_CHARS);
+        },
+      );
+    }
+    const result = getPrompt(name, resolvedArgs);
+    if (!result) {
+      this.log(
+        `[automation] promptName "${name}" could not be resolved — unknown prompt or missing required args`,
+      );
+      return null;
+    }
+    return result.messages
+      .filter((m) => m.role === "user")
+      .map((m) => m.content.text)
+      .join("\n\n");
+  }
 
   handleDiagnosticsChanged(file: string, diagnostics: Diagnostic[]): void {
     const cfg = this.policy.onDiagnosticsError;
@@ -640,19 +648,30 @@ export class AutomationHooks {
     // The diagnosticsText is placed between explicit delimiters in the prompt to
     // architecturally separate trusted policy instructions from untrusted data.
     const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
-    const diagnosticsText = matching
-      .map(
-        (d) =>
-          `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`,
-      )
-      .join("\n");
 
-    const prompt = cfg.prompt
-      .replace(/\{\{file\}\}/g, safeFilePath)
-      .replace(
-        /\{\{diagnostics\}\}/g,
-        `\n--- BEGIN DIAGNOSTIC DATA (untrusted) ---\n${diagnosticsText}\n--- END DIAGNOSTIC DATA ---\n`,
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { file: safeFilePath },
       );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const diagnosticsText = matching
+        .map(
+          (d) =>
+            `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`,
+        )
+        .join("\n");
+      prompt = cfg
+        .prompt!.replace(/\{\{file\}\}/g, safeFilePath)
+        .replace(
+          /\{\{diagnostics\}\}/g,
+          `\n--- BEGIN DIAGNOSTIC DATA (untrusted) ---\n${diagnosticsText}\n--- END DIAGNOSTIC DATA ---\n`,
+        );
+    }
 
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
@@ -698,10 +717,22 @@ export class AutomationHooks {
     this._pruneLastTrigger(now);
 
     const safeCwd = newCwd.slice(0, MAX_FILE_PATH_CHARS);
-    const prompt = cfg.prompt.replace(
-      /\{\{cwd\}\}/g,
-      `\n--- BEGIN CWD (untrusted) ---\n${safeCwd}\n--- END CWD ---\n`,
-    );
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { cwd: safeCwd },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt = cfg.prompt!.replace(
+        /\{\{cwd\}\}/g,
+        untrustedBlock("CWD", safeCwd, nonce),
+      );
+    }
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
       this.lastTrigger.set(key, now);
@@ -735,9 +766,21 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
+    let postCompactPrompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {},
+      );
+      if (resolved === null) return;
+      postCompactPrompt = resolved;
+    } else {
+      postCompactPrompt = cfg.prompt!;
+    }
     try {
       const taskId = this.orchestrator.enqueue({
-        prompt: cfg.prompt,
+        prompt: postCompactPrompt,
         sessionId: "",
       });
       // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
@@ -759,9 +802,21 @@ export class AutomationHooks {
     const cfg = this.policy.onInstructionsLoaded;
     if (!cfg?.enabled) return;
 
+    let instrPrompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {},
+      );
+      if (resolved === null) return;
+      instrPrompt = resolved;
+    } else {
+      instrPrompt = cfg.prompt!;
+    }
     try {
       const taskId = this.orchestrator.enqueue({
-        prompt: cfg.prompt,
+        prompt: instrPrompt,
         sessionId: "",
       });
       this.log(
@@ -818,13 +873,22 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
-    // Truncate file path and wrap in delimiters to prevent prompt injection
-    // via crafted workspace directory names embedding instruction-like content.
     const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
-    const prompt = cfg.prompt.replace(
-      /\{\{file\}\}/g,
-      `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
-    );
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { file: safeFilePath },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      prompt = cfg.prompt!.replace(
+        /\{\{file\}\}/g,
+        `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
+      );
+    }
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
       // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
@@ -889,10 +953,21 @@ export class AutomationHooks {
     this._pruneLastTrigger(now);
 
     const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
-    const prompt = cfg.prompt.replace(
-      /\{\{file\}\}/g,
-      `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
-    );
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { file: safeFilePath },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      prompt = cfg.prompt!.replace(
+        /\{\{file\}\}/g,
+        `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
+      );
+    }
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
       this.lastTrigger.set(key, now);
@@ -964,15 +1039,31 @@ export class AutomationHooks {
         ? `${failureLines}\n… and ${result.failures.length - 10} more`
         : failureLines;
 
-    const prompt = cfg.prompt
-      .replace(/\{\{runner\}\}/g, runnerStr)
-      .replace(/\{\{failed\}\}/g, String(failureCount))
-      .replace(/\{\{passed\}\}/g, String(result.summary.passed))
-      .replace(/\{\{total\}\}/g, String(result.summary.total))
-      .replace(
-        /\{\{failures\}\}/g,
-        `\n--- BEGIN TEST FAILURES (untrusted) ---\n${failuresText}\n--- END TEST FAILURES ---\n`,
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {
+          runner: runnerStr,
+          failed: String(failureCount),
+          passed: String(result.summary.passed),
+          total: String(result.summary.total),
+        },
       );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      prompt = cfg
+        .prompt!.replace(/\{\{runner\}\}/g, runnerStr)
+        .replace(/\{\{failed\}\}/g, String(failureCount))
+        .replace(/\{\{passed\}\}/g, String(result.summary.passed))
+        .replace(/\{\{total\}\}/g, String(result.summary.total))
+        .replace(
+          /\{\{failures\}\}/g,
+          `\n--- BEGIN TEST FAILURES (untrusted) ---\n${failuresText}\n--- END TEST FAILURES ---\n`,
+        );
+    }
 
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
@@ -1024,7 +1115,8 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
-    const nonce = crypto.randomBytes(6).toString("hex");
+    const safeHash = result.hash.slice(0, 64);
+    const safeBranchCommit = result.branch.slice(0, MAX_FILE_PATH_CHARS);
     const safeMessage = result.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
     const fileList = result.files
       .slice(0, 20)
@@ -1035,25 +1127,38 @@ export class AutomationHooks {
         ? `${fileList}\n… and ${result.files.length - 20} more`
         : fileList;
 
-    const prompt = cfg.prompt
-      .replace(/\{\{hash\}\}/g, result.hash)
-      .replace(
-        /\{\{branch\}\}/g,
-        untrustedBlock(
-          "BRANCH",
-          result.branch.slice(0, MAX_FILE_PATH_CHARS),
-          nonce,
-        ),
-      )
-      .replace(
-        /\{\{message\}\}/g,
-        untrustedBlock("COMMIT MESSAGE", safeMessage, nonce),
-      )
-      .replace(/\{\{count\}\}/g, String(result.count))
-      .replace(
-        /\{\{files\}\}/g,
-        untrustedBlock("COMMITTED FILES", filesText, nonce),
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {
+          hash: safeHash,
+          branch: safeBranchCommit,
+          message: safeMessage,
+          count: String(result.count),
+        },
       );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt = cfg
+        .prompt!.replace(/\{\{hash\}\}/g, safeHash)
+        .replace(
+          /\{\{branch\}\}/g,
+          untrustedBlock("BRANCH", safeBranchCommit, nonce),
+        )
+        .replace(
+          /\{\{message\}\}/g,
+          untrustedBlock("COMMIT MESSAGE", safeMessage, nonce),
+        )
+        .replace(/\{\{count\}\}/g, String(result.count))
+        .replace(
+          /\{\{files\}\}/g,
+          untrustedBlock("COMMITTED FILES", filesText, nonce),
+        );
+    }
 
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
@@ -1105,14 +1210,28 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
-    const nonce = crypto.randomBytes(6).toString("hex");
     const safeRemote = result.remote.slice(0, MAX_FILE_PATH_CHARS);
     const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
     const safeHash = result.hash.slice(0, 64);
-    const prompt = cfg.prompt
-      .replace(/\{\{remote\}\}/g, untrustedBlock("REMOTE", safeRemote, nonce))
-      .replace(/\{\{branch\}\}/g, untrustedBlock("BRANCH", safeBranch, nonce))
-      .replace(/\{\{hash\}\}/g, safeHash);
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { remote: safeRemote, branch: safeBranch, hash: safeHash },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt = cfg
+        .prompt!.replace(
+          /\{\{remote\}\}/g,
+          untrustedBlock("REMOTE", safeRemote, nonce),
+        )
+        .replace(/\{\{branch\}\}/g, untrustedBlock("BRANCH", safeBranch, nonce))
+        .replace(/\{\{hash\}\}/g, safeHash);
+    }
 
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
@@ -1166,18 +1285,36 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
-    const nonce = crypto.randomBytes(6).toString("hex");
     const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
     const safePreviousBranch = (
       result.previousBranch ?? "(detached HEAD)"
     ).slice(0, MAX_FILE_PATH_CHARS);
-    const prompt = cfg.prompt
-      .replace(/\{\{branch\}\}/g, untrustedBlock("BRANCH", safeBranch, nonce))
-      .replace(
-        /\{\{previousBranch\}\}/g,
-        untrustedBlock("PREVIOUS BRANCH", safePreviousBranch, nonce),
-      )
-      .replace(/\{\{created\}\}/g, String(result.created));
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {
+          branch: safeBranch,
+          previousBranch: safePreviousBranch,
+          created: String(result.created),
+        },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt = cfg
+        .prompt!.replace(
+          /\{\{branch\}\}/g,
+          untrustedBlock("BRANCH", safeBranch, nonce),
+        )
+        .replace(
+          /\{\{previousBranch\}\}/g,
+          untrustedBlock("PREVIOUS BRANCH", safePreviousBranch, nonce),
+        )
+        .replace(/\{\{created\}\}/g, String(result.created));
+    }
 
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
@@ -1230,17 +1367,32 @@ export class AutomationHooks {
     const safeUrl = result.url.slice(0, MAX_FILE_PATH_CHARS);
     const safeTitle = result.title.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
     const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
-    const prompt = cfg.prompt
-      .replace(/\{\{url\}\}/g, safeUrl)
-      .replace(
-        /\{\{number\}\}/g,
-        result.number !== null ? String(result.number) : "(unknown)",
-      )
-      .replace(
-        /\{\{title\}\}/g,
-        `\n--- BEGIN PR TITLE (untrusted) ---\n${safeTitle}\n--- END PR TITLE ---\n`,
-      )
-      .replace(/\{\{branch\}\}/g, safeBranch);
+    const safeNumber =
+      result.number !== null ? String(result.number) : "(unknown)";
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {
+          url: safeUrl,
+          title: safeTitle,
+          branch: safeBranch,
+          number: safeNumber,
+        },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      prompt = cfg
+        .prompt!.replace(/\{\{url\}\}/g, safeUrl)
+        .replace(/\{\{number\}\}/g, safeNumber)
+        .replace(
+          /\{\{title\}\}/g,
+          `\n--- BEGIN PR TITLE (untrusted) ---\n${safeTitle}\n--- END PR TITLE ---\n`,
+        )
+        .replace(/\{\{branch\}\}/g, safeBranch);
+    }
 
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
