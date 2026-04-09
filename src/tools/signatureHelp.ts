@@ -17,10 +17,8 @@ export function createSignatureHelpTool(
       name: "signatureHelp",
       extensionRequired: true,
       description:
-        "Get function signature documentation and parameter info at a call site using VS Code LSP. " +
-        "Returns the active signature, active parameter index, and all overloads with parameter docs. " +
-        "Useful for understanding what arguments a function expects while writing a call. " +
-        "Requires the VS Code extension.",
+        "Get function signature documentation and parameter info at a call site. " +
+        "Returns the active signature, parameter index, and all overloads with docs. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

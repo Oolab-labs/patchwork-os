@@ -16,10 +16,8 @@ export function createGetCodeLensTool(
       name: "getCodeLens",
       extensionRequired: true,
       description:
-        "Get code lens items for a file. Code lenses are contextual annotations shown " +
-        "above code by language server extensions — reference counts, 'Run Test', " +
-        "'Debug', implementation counts, etc. Provides quantitative signals about " +
-        "code importance and test coverage. Requires the VS Code extension.",
+        "Get code lens items for a file: reference counts, Run Test/Debug buttons, and implementation counts " +
+        "shown above code by the language server. Useful for quantitative code coverage signals.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

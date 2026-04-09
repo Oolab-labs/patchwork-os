@@ -208,8 +208,7 @@ export function createListTerminalsTool(
       name: "listTerminals",
       extensionRequired: true,
       description:
-        "List all active VS Code integrated terminals. Returns terminal names, indices, and whether output capture is available. " +
-        "Requires the VS Code extension — on headless VPS/SSH without the extension, use runInTerminal instead.",
+        "List all active VS Code integrated terminals. Returns terminal names, indices, and whether output capture is available. On headless VPS/SSH, use runInTerminal instead.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -270,8 +269,7 @@ export function createGetTerminalOutputTool(
       name: "getTerminalOutput",
       extensionRequired: true,
       description:
-        "Get recent output from a VS Code integrated terminal. Identify the terminal by name or index (from listTerminals). Returns the last N lines of output. " +
-        "Requires the VS Code extension — on headless VPS/SSH, use runInTerminal which captures output directly via subprocess fallback.",
+        "Get recent output from a VS Code integrated terminal. Identify by name or index (from listTerminals). Returns last N lines. On headless VPS/SSH, use runInTerminal instead.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -340,7 +338,7 @@ export function createCreateTerminalTool(
       extensionRequired: true,
       annotations: { destructiveHint: true },
       description:
-        "Create a new VS Code integrated terminal. Optionally set a name, working directory, environment variables, and shell. Requires the VS Code extension.",
+        "Create a new VS Code integrated terminal. Optionally set a name, working directory, environment variables, and shell.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -449,10 +447,7 @@ export function createWaitForTerminalOutputTool(
       name: "waitForTerminalOutput",
       extensionRequired: true,
       description:
-        "Block until a regex pattern appears in a VS Code terminal's output, then return the matching line. " +
-        "Use this after sendTerminalCommand to detect when a background process is ready " +
-        "(e.g. wait for 'ready|listening|compiled' after starting a dev server). " +
-        "Requires terminal output capture (VS Code proposed API). " +
+        "Block until a regex pattern appears in terminal output, then return the matching line. " +
         "Returns {matched, matchedLine, elapsed} on success or {matched: false, timedOut: true} on timeout.",
       annotations: { readOnlyHint: true },
       inputSchema: {
@@ -557,9 +552,7 @@ export function createRunInTerminalTool(
       annotations: { destructiveHint: true, openWorldHint: true },
       description:
         "Execute a command and wait for completion, returning exit code and full output. " +
-        "Works headlessly on VPS/SSH — falls back to direct subprocess when extension is disconnected or shell integration unavailable. " +
-        "When the extension IS connected, execution is also visible in the VS Code terminal panel. " +
-        "Prefer this over runCommand when you need output capture on a headless server.",
+        "Falls back to subprocess on headless VPS/SSH. Prefer over runCommand when you need output capture.",
       inputSchema: {
         type: "object" as const,
         required: ["command"],
@@ -685,7 +678,7 @@ export function createDisposeTerminalTool(
       name: "disposeTerminal",
       extensionRequired: true,
       description:
-        "Close and dispose a VS Code integrated terminal. Identify the terminal by name or index (from listTerminals). Requires the VS Code extension.",
+        "Close and dispose a VS Code integrated terminal. Identify the terminal by name or index (from listTerminals).",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -747,13 +740,8 @@ export function createSendTerminalCommandTool(
       extensionRequired: true,
       annotations: { destructiveHint: true, openWorldHint: true },
       description:
-        "Send text or a command to a VS Code integrated terminal. " +
-        "Identify the terminal by name or index (from listTerminals). " +
-        "Note: sendText is fire-and-forget — use getTerminalOutput afterward to check results. " +
-        "To respond to an interactive prompt mid-execution (e.g. a migration tool asking for a name), " +
-        "set isCommand: false to send a short stdin response to the running process (max 512 chars). " +
-        "Pair with waitForTerminalOutput to detect when the prompt appears before sending the response. " +
-        "Requires the VS Code extension.",
+        "Send text or a command to a VS Code integrated terminal. Identify by name or index. " +
+        "Fire-and-forget — use getTerminalOutput to check results. ",
       inputSchema: {
         type: "object" as const,
         required: ["text"],

@@ -65,8 +65,7 @@ export function createBatchGetHoverTool(
       extensionRequired: true,
       description:
         "Get hover information (type signatures, docs) for multiple positions in one call. " +
-        "More efficient than calling getHover repeatedly. Max 10 items. " +
-        "Requires the VS Code extension.",
+        "More efficient than calling getHover repeatedly. Max 10 items. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -160,8 +159,7 @@ export function createBatchGoToDefinitionTool(
       extensionRequired: true,
       description:
         "Go to definition for multiple symbols in one call. " +
-        "More efficient than calling goToDefinition repeatedly. Max 10 items. " +
-        "Requires the VS Code extension.",
+        "More efficient than calling goToDefinition repeatedly. Max 10 items. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

@@ -31,11 +31,8 @@ export function createGetDocumentSymbolsTool(
     schema: {
       name: "getDocumentSymbols",
       description:
-        "List all symbols (functions, classes, interfaces, types, methods, etc.) defined in a file. " +
-        "Returns a flat list with names, kinds, line numbers, and parent relationships. " +
-        "Use this to understand a file's structure before editing, or to find where a specific symbol is defined. " +
-        "When the VS Code extension is connected, uses full LSP symbol data including nested symbols. " +
-        "Without the extension, falls back to regex-based detection for common languages.",
+        "List all symbols (functions, classes, interfaces, methods) in a file. " +
+        "Returns names, kinds, line numbers, and parent relationships.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

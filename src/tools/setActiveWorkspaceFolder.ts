@@ -8,8 +8,7 @@ export function createSetActiveWorkspaceFolderTool(config: Config) {
       name: "setActiveWorkspaceFolder",
       description:
         "Set the active workspace folder for subsequent file operations. " +
-        "Useful in multi-root workspaces to scope Claude's work to a specific folder. " +
-        "Pass a path matching one of the workspace folders from getWorkspaceFolders.",
+        "Useful in multi-root workspaces. Pass a path from getWorkspaceFolders.",
       annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

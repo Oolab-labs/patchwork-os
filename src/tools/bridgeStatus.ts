@@ -15,9 +15,7 @@ export function createBridgeStatusTool(
     schema: {
       name: "getBridgeStatus",
       description:
-        "Get the current status of the IDE bridge, including extension connection state, " +
-        "circuit breaker status, and uptime. Use this to diagnose when tools are " +
-        "unavailable or the extension appears disconnected.",
+        "Get the current status of the IDE bridge: extension connection state, circuit breaker status, and uptime.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

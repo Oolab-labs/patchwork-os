@@ -369,9 +369,8 @@ export function createBridgeDoctorTool(
     schema: {
       name: "bridgeDoctor",
       description:
-        "Run a comprehensive health check of the bridge environment — extension connection, git, linters, test runners, lock file, workspace path, node_modules, and GitHub CLI. " +
-        "Use this whenever tools are misbehaving, diagnostics are empty, or the setup feels broken. " +
-        "Returns a list of checks with status (ok/warn/error/skip) and actionable suggestions.",
+        "Run a comprehensive health check of the bridge: extension, git, linters, test runners, and GitHub CLI. " +
+        "Use whenever tools are misbehaving or diagnostics are empty.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

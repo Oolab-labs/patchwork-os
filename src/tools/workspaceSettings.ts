@@ -31,8 +31,7 @@ export function createGetWorkspaceSettingsTool(
       name: "getWorkspaceSettings",
       description:
         "Read VS Code workspace settings. Optionally filter by section (e.g. 'editor', 'typescript'). " +
-        "Returns values with their sources (workspace vs global). " +
-        "Requires the VS Code extension.",
+        "Returns values with their sources (workspace vs global). ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -83,9 +82,8 @@ export function createSetWorkspaceSettingTool(
     schema: {
       name: "setWorkspaceSetting",
       description:
-        "Write a VS Code workspace setting. Use dot notation for the key (e.g. 'editor.tabSize'). " +
-        "Writes to workspace scope by default. Writes to 'security.*' are blocked. " +
-        "Requires the VS Code extension.",
+        "Write a VS Code workspace setting (dot notation, e.g. editor.tabSize). " +
+        "Writes to workspace scope (.vscode/settings.json). Writes to security.* are blocked. ",
       annotations: { destructiveHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

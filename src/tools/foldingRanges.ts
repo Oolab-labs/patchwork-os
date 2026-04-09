@@ -16,10 +16,8 @@ export function createFoldingRangesTool(
       name: "foldingRanges",
       extensionRequired: true,
       description:
-        "Get foldable code regions in a file using VS Code LSP: functions, classes, imports, comments, and regions. " +
-        "Useful for understanding the high-level structure of a large file and identifying block boundaries. " +
-        "Returns an array of { startLine, endLine, kind } objects. " +
-        "Requires the VS Code extension.",
+        "Get foldable code regions in a file: functions, classes, imports, comments. " +
+        "Returns { startLine, endLine, kind } objects. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

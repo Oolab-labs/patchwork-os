@@ -208,7 +208,8 @@ export function createGetDependencyTreeTool(
     schema: {
       name: "getDependencyTree",
       description:
-        "Get the dependency tree for the project. Auto-detects npm, cargo, go mod, or pip. Returns a structured tree with package names and versions. Useful for understanding project dependencies, finding outdated packages, and assessing attack surface before security audits.",
+        "Get the dependency tree for the project. Auto-detects npm, cargo, go mod, or pip. " +
+        "Returns structured tree with package names and versions. Useful for understanding dependencies.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

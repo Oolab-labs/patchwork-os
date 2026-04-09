@@ -102,7 +102,8 @@ export function createRunTestsTool(
     schema: {
       name: "runTests",
       description:
-        "Run tests using auto-detected frameworks (Vitest, Jest, Pytest, Cargo test, Go test). Returns structured results with pass/fail status, failure messages, and file:line locations for correlation with code changes. Results are cached per runner (30s TTL) — use noCache: true after code changes to get fresh results.",
+        "Run tests using auto-detected frameworks (Vitest, Jest, Pytest, Cargo test, Go test). " +
+        "Returns pass/fail, failure messages, and file:line locations. Cached 30s; use noCache: true after changes.",
       annotations: {
         title: "Run Tests",
         readOnlyHint: false,

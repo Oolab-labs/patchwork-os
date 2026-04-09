@@ -11,7 +11,7 @@ export function createGetHoverAtCursorTool(extensionClient: ExtensionClient) {
       description:
         "Get hover documentation for the symbol currently under the developer's cursor. " +
         "Zero-input convenience wrapper around getHover — uses the active file and " +
-        "cursor position tracked by the extension. Requires the VS Code extension.",
+        "cursor position tracked by the extension.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
