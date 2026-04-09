@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.10 — 2026-04-09)
+## Current State (v2.11.11 — 2026-04-09)
 
 - **Slim mode default**: 48 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
 - **~1,695 bridge tests / ~130 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
@@ -28,6 +28,13 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.11 shipped (2026-04-09) — onGitCommit automation hook:**
+- New `OnGitCommitPolicy` + `handleGitCommit()` in `automation.ts`: fires after every successful `gitCommit` tool call; placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`; loop guard (blocks re-trigger while prior task running); cooldown (min 5s); file list capped at 20 entries; delimiter-wrapped `{{files}}` block (prompt injection defense)
+- `createGitCommitTool` accepts optional `onGitCommit` callback; wired in `tools/index.ts` via `automationHooks.handleGitCommit`
+- `getStatus()` extended with `onGitCommit: { enabled, cooldownMs } | null`
+- `loadPolicy` validates + clamps `onGitCommit.cooldownMs` ≥ 5 000 ms
+- 8 new tests in `automation.test.ts` (48 total); 1708 bridge tests
 
 **v2.11.10 shipped (2026-04-09) — outputSchema for Claude orchestration tools:**
 - `outputSchema` + `structuredContent` added to `runClaudeTask`, `getClaudeTaskStatus`, and `listClaudeTasks` — 33 total outputSchema tools (up from 30)

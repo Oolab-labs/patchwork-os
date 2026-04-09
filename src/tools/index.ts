@@ -320,7 +320,10 @@ export function registerAllTools(
     createGetCommitDetailsTool(workspace),
     createGetDiffBetweenRefsTool(workspace),
     createGitAddTool(workspace),
-    createGitCommitTool(workspace),
+    createGitCommitTool(
+      workspace,
+      automationHooks ? (r) => automationHooks.handleGitCommit(r) : undefined,
+    ),
     createGitCheckoutTool(workspace),
     createGitBlameTool(workspace),
     createGitFetchTool(workspace),

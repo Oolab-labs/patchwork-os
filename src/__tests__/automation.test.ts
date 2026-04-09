@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Diagnostic } from "../automation.js";
+import type { Diagnostic, GitCommitResult } from "../automation.js";
 import { AutomationHooks, loadPolicy } from "../automation.js";
 import type { IClaudeDriver } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
@@ -822,5 +822,184 @@ describe("loadPolicy — onTestRun", () => {
       }),
     );
     expect(() => loadPolicy(p)).toThrow(/onFailureOnly/);
+  });
+});
+
+// ── onGitCommit ───────────────────────────────────────────────────────────────
+
+function makeCommitResult(
+  overrides?: Partial<GitCommitResult>,
+): GitCommitResult {
+  return {
+    hash: "abc123def456",
+    branch: "main",
+    message: "feat: add something",
+    files: ["src/a.ts", "src/b.ts"],
+    count: 2,
+    ...overrides,
+  };
+}
+
+describe("AutomationHooks.handleGitCommit", () => {
+  it("enqueues a task on commit", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt: "Committed {{hash}} on {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitCommit(makeCommitResult());
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("replaces {{hash}}, {{branch}}, {{message}}, {{count}}, {{files}} placeholders", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt:
+            "hash={{hash}} branch={{branch}} msg={{message}} count={{count}} files={{files}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitCommit(
+      makeCommitResult({
+        hash: "deadbeef1234",
+        branch: "feature/x",
+        message: "fix: bug",
+        count: 1,
+        files: ["src/x.ts"],
+      }),
+    );
+    const task = orch.list()[0];
+    expect(task?.prompt).toContain("hash=deadbeef1234");
+    expect(task?.prompt).toContain("branch=feature/x");
+    expect(task?.prompt).toContain("msg=fix: bug");
+    expect(task?.prompt).toContain("count=1");
+    expect(task?.prompt).toContain("src/x.ts");
+  });
+
+  it("does not trigger when disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: false,
+          prompt: "Committed {{hash}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitCommit(makeCommitResult());
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("respects cooldown between commits", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt: "Committed {{hash}}",
+          cooldownMs: 30_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitCommit(makeCommitResult());
+    hooks.handleGitCommit(makeCommitResult({ hash: "999999999999" }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("skips trigger when a task is still running (loop guard)", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt: "Committed {{hash}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitCommit(makeCommitResult());
+    hooks.handleGitCommit(makeCommitResult({ hash: "111111111111" }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onGitCommit", () => {
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt: "Committed {{hash}}",
+          cooldownMs: 10_000,
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    const status = hooks.getStatus();
+    expect(status.onGitCommit).toEqual({ enabled: true, cooldownMs: 10_000 });
+  });
+});
+
+describe("loadPolicy — onGitCommit", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-gc-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onGitCommit policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onGitCommit: {
+          enabled: true,
+          prompt: "Review commit {{hash}}",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onGitCommit?.enabled).toBe(true);
+    expect(policy.onGitCommit?.cooldownMs).toBe(10_000);
+  });
+
+  it("enforces onGitCommit cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onGitCommit: {
+          enabled: true,
+          prompt: "Review commit {{hash}}",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onGitCommit?.cooldownMs).toBe(5_000);
   });
 });

@@ -105,6 +105,26 @@ export interface TestRunResult {
   failures: Array<{ name: string; file: string; message: string }>;
 }
 
+export interface OnGitCommitPolicy {
+  enabled: boolean;
+  /**
+   * Prompt to enqueue after a successful git commit.
+   * Placeholders: {{hash}}, {{branch}}, {{message}}, {{files}}, {{count}}
+   */
+  prompt: string;
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+/** Minimal commit result passed to handleGitCommit — avoids importing from gitWrite. */
+export interface GitCommitResult {
+  hash: string;
+  branch: string;
+  message: string;
+  files: string[];
+  count: number;
+}
+
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
@@ -118,6 +138,8 @@ export interface AutomationPolicy {
   onInstructionsLoaded?: OnInstructionsLoadedPolicy;
   /** Fired after every runTests call (or only on failures, depending on onFailureOnly). */
   onTestRun?: OnTestRunPolicy;
+  /** Fired after every successful gitCommit call. */
+  onGitCommit?: OnGitCommitPolicy;
 }
 
 export interface Diagnostic {
@@ -353,6 +375,31 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onGitCommit
+  if (policy.onGitCommit !== undefined) {
+    const gc = policy.onGitCommit;
+    if (typeof gc !== "object" || gc === null) {
+      throw new Error(`"onGitCommit" must be an object`);
+    }
+    if (typeof gc.enabled !== "boolean") {
+      throw new Error(`"onGitCommit.enabled" must be a boolean`);
+    }
+    if (typeof gc.prompt !== "string" || gc.prompt.trim() === "") {
+      throw new Error(`"onGitCommit.prompt" must be a non-empty string`);
+    }
+    if (gc.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(
+        `"onGitCommit.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
+    }
+    if (typeof gc.cooldownMs !== "number" || !Number.isFinite(gc.cooldownMs)) {
+      throw new Error(`"onGitCommit.cooldownMs" must be a number`);
+    }
+    if (gc.cooldownMs < MIN_COOLDOWN_MS) {
+      gc.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   return policy;
 }
 
@@ -373,6 +420,8 @@ export class AutomationHooks {
   private activeFileChangedTasks = new Map<string, string>();
   /** Active task ID for the test-run handler (workspace-global). */
   private activeTestRunTaskId: string | null = null;
+  /** Active task ID for the git-commit handler (workspace-global). */
+  private activeGitCommitTaskId: string | null = null;
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -786,6 +835,76 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Called after a successful gitCommit tool call.
+   * Fires the onGitCommit automation hook if configured.
+   */
+  handleGitCommit(result: GitCommitResult): void {
+    const cfg = this.policy.onGitCommit;
+    if (!cfg?.enabled) return;
+
+    // Loop guard: skip if a task is still pending/running
+    if (this.activeGitCommitTaskId) {
+      const existing = this.orchestrator.getTask(this.activeGitCommitTaskId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping git-commit trigger — task ${this.activeGitCommitTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeGitCommitTaskId = null;
+    }
+
+    // Cooldown check (workspace-global)
+    const key = "gitCommit:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for git-commit (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeMessage = result.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
+    const fileList = result.files
+      .slice(0, 20)
+      .map((f) => `- ${f.slice(0, MAX_FILE_PATH_CHARS)}`)
+      .join("\n");
+    const filesText =
+      result.files.length > 20
+        ? `${fileList}\n… and ${result.files.length - 20} more`
+        : fileList;
+
+    const prompt = cfg.prompt
+      .replace(/\{\{hash\}\}/g, result.hash)
+      .replace(/\{\{branch\}\}/g, result.branch)
+      .replace(/\{\{message\}\}/g, safeMessage)
+      .replace(/\{\{count\}\}/g, String(result.count))
+      .replace(
+        /\{\{files\}\}/g,
+        `\n--- BEGIN COMMITTED FILES (untrusted) ---\n${filesText}\n--- END COMMITTED FILES ---\n`,
+      );
+
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.activeGitCommitTaskId = taskId;
+      this.log(
+        `[automation] triggered git-commit task ${taskId.slice(0, 8)} (hash: ${result.hash}, ${result.count} file(s))`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue git-commit task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
@@ -798,6 +917,7 @@ export class AutomationHooks {
       onFailureOnly: boolean;
       cooldownMs: number;
     } | null;
+    onGitCommit: { enabled: boolean; cooldownMs: number } | null;
   } {
     const p = this.policy;
     return {
@@ -833,6 +953,12 @@ export class AutomationHooks {
             enabled: p.onTestRun.enabled,
             onFailureOnly: p.onTestRun.onFailureOnly,
             cooldownMs: p.onTestRun.cooldownMs,
+          }
+        : null,
+      onGitCommit: p.onGitCommit
+        ? {
+            enabled: p.onGitCommit.enabled,
+            cooldownMs: p.onGitCommit.cooldownMs,
           }
         : null,
     };
