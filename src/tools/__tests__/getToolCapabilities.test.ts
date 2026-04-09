@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createGetToolCapabilitiesTool } from "../getToolCapabilities.js";
+import { SLIM_TOOL_NAMES } from "../index.js";
 
 function makeClient(connected: boolean) {
   return { isConnected: vi.fn(() => connected) } as any;
@@ -286,5 +287,56 @@ describe("createGetToolCapabilitiesTool — extension disconnected", () => {
     );
     const data = parse(await tool.handler());
     expect(data.features.search).toBe("grep-fallback");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LSP list consistency: availableTools.lsp ↔ SLIM_TOOL_NAMES
+//
+// These tests cross-check the two live runtime sources against each other.
+// No hardcoded tool lists — adding a new LSP tool only requires updating
+// getToolCapabilities.ts and SLIM_TOOL_NAMES; the tests catch drift automatically.
+// Deeper checks (schema registration, orphaned files) live in scripts/audit-lsp-tools.mjs.
+// ---------------------------------------------------------------------------
+
+describe("LSP tool list consistency", () => {
+  async function getLspTools(): Promise<string[]> {
+    const tool = createGetToolCapabilitiesTool(
+      fullProbes,
+      makeClient(true),
+      cfg(),
+    );
+    const data = parse(await tool.handler());
+    return data.availableTools.lsp as string[];
+  }
+
+  it("every tool in availableTools.lsp is present in SLIM_TOOL_NAMES", async () => {
+    const lspTools = await getLspTools();
+    const missing = lspTools.filter((t) => !SLIM_TOOL_NAMES.has(t));
+    expect(
+      missing,
+      `In availableTools.lsp but missing from SLIM_TOOL_NAMES: ${missing.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("availableTools.lsp is empty when extension is disconnected", async () => {
+    const tool = createGetToolCapabilitiesTool(
+      fullProbes,
+      makeClient(false),
+      cfg(),
+    );
+    const data = parse(await tool.handler());
+    expect(data.availableTools.lsp).toEqual([]);
+  });
+
+  it("availableTools.lsp count matches SLIM_TOOL_NAMES LSP subset", async () => {
+    const lspTools = await getLspTools();
+    const lspSet = new Set(lspTools);
+    // Every slim tool that appears in the lsp array should be accounted for —
+    // lsp array size must equal the count of slim tools that are lsp tools.
+    const slimLspCount = [...SLIM_TOOL_NAMES].filter((t) =>
+      lspSet.has(t),
+    ).length;
+    expect(lspTools.length).toBe(slimLspCount);
   });
 });

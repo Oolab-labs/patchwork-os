@@ -177,6 +177,8 @@ export function createGetToolCapabilitiesTool(
                 "getDocumentLinks",
                 "batchGetHover",
                 "batchGoToDefinition",
+                "refactorExtractFunction",
+                "getImportTree",
               ]
             : [],
           planning: [
