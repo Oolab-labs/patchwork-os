@@ -132,12 +132,11 @@ describe("handoffNote tools", () => {
       expect(parsed.note).toBe("scoped note");
     });
 
-    it("writeNote with workspace also dual-writes to global path", async () => {
-      await writeNote("dual write test", workspace, tmpDir);
+    it("writeNote with workspace does NOT dual-write to global path", async () => {
+      await writeNote("workspace only note", workspace, tmpDir);
       const globalPath = path.join(tmpDir, "ide", "handoff-note.json");
-      expect(fs.existsSync(globalPath)).toBe(true);
-      const parsed = JSON.parse(fs.readFileSync(globalPath, "utf-8"));
-      expect(parsed.note).toBe("dual write test");
+      // Global path must NOT be written when workspace is provided
+      expect(fs.existsSync(globalPath)).toBe(false);
     });
 
     it("readNote with workspace reads scoped path first", async () => {
@@ -199,6 +198,16 @@ describe("handoffNote tools", () => {
     it("readNote returns null when no files exist", async () => {
       const result = await readNote(workspace, tmpDir);
       expect(result).toBeNull();
+    });
+
+    it("workspace A note does not leak into workspace B via global fallback", async () => {
+      // Workspace A writes a note
+      const workspaceA = "/home/user/project-a-leak-test";
+      const workspaceB = "/home/user/project-b-leak-test";
+      await writeNote("secret from A", workspaceA, tmpDir);
+      // Workspace B has no scoped note — should NOT fall back to global with A's content
+      const resultB = await readNote(workspaceB, tmpDir);
+      expect(resultB?.note).not.toBe("secret from A");
     });
 
     it("scoped note path differs per workspace", async () => {

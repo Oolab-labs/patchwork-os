@@ -296,7 +296,10 @@ export class ExtensionClient {
             if (typeof d !== "object" || d === null) return d;
             const diag = d as Record<string, unknown>;
             return {
-              file: typeof diag.file === "string" ? diag.file : undefined,
+              file:
+                typeof diag.file === "string"
+                  ? diag.file.slice(0, 4096)
+                  : undefined,
               line: typeof diag.line === "number" ? diag.line : undefined,
               column: typeof diag.column === "number" ? diag.column : undefined,
               endLine:
@@ -304,10 +307,17 @@ export class ExtensionClient {
               endColumn:
                 typeof diag.endColumn === "number" ? diag.endColumn : undefined,
               severity:
-                typeof diag.severity === "string" ? diag.severity : undefined,
+                typeof diag.severity === "string"
+                  ? diag.severity.slice(0, 32)
+                  : undefined,
               message:
-                typeof diag.message === "string" ? diag.message : undefined,
-              source: typeof diag.source === "string" ? diag.source : undefined,
+                typeof diag.message === "string"
+                  ? diag.message.slice(0, 4096)
+                  : undefined,
+              source:
+                typeof diag.source === "string"
+                  ? diag.source.slice(0, 256)
+                  : undefined,
               code:
                 typeof diag.code === "string" || typeof diag.code === "number"
                   ? diag.code
@@ -342,12 +352,12 @@ export class ExtensionClient {
           return;
         }
         this.latestSelection = {
-          file: p.file,
+          file: p.file.slice(0, 4096),
           startLine: p.startLine,
           endLine: p.endLine,
           startColumn: p.startColumn,
           endColumn: p.endColumn,
-          selectedText: p.selectedText,
+          selectedText: p.selectedText.slice(0, 65536),
         };
         break;
       }
@@ -358,7 +368,7 @@ export class ExtensionClient {
           );
           return;
         }
-        this.latestActiveFile = p.file;
+        this.latestActiveFile = p.file.slice(0, 4096);
         break;
       }
       case "extension/aiCommentsChanged": {
