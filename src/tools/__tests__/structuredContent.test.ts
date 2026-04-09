@@ -7,10 +7,10 @@
  * the handler still calls success()/successLarge() instead of
  * successStructured()/successStructuredLarge().
  *
- * Covers the tools updated in v2.11.7 that were previously missing
- * structuredContent: runTests, searchWorkspace, getGitDiff, getBufferContent,
- * generateTests, detectUnusedCode, getGitHotspots, plus lsp.ts tools
- * (getHover, applyCodeAction, searchWorkspaceSymbols).
+ * Covers the tools updated in v2.11.7–2.11.9: runTests, searchWorkspace,
+ * getGitDiff, getBufferContent, generateTests, detectUnusedCode, getGitHotspots,
+ * lsp.ts tools (getHover, applyCodeAction, searchWorkspaceSymbols), plus
+ * v2.11.9 additions: getToolCapabilities, auditDependencies.
  */
 
 import { tmpdir } from "node:os";
@@ -23,12 +23,14 @@ vi.mock("../utils.js", async (importOriginal) => {
 });
 
 import { createGetActivityLogTool } from "../activityLog.js";
+import { createAuditDependenciesTool } from "../auditDependencies.js";
 import { createDetectUnusedCodeTool } from "../detectUnusedCode.js";
 import { createGenerateTestsTool } from "../generateTests.js";
 import { createGetBufferContentTool } from "../getBufferContent.js";
 import { createGetGitDiffTool } from "../getGitDiff.js";
 import { createGetGitHotspotsTool } from "../getGitHotspots.js";
 import { createGetProjectInfoTool } from "../getProjectInfo.js";
+import { createGetToolCapabilitiesTool } from "../getToolCapabilities.js";
 import {
   createApplyCodeActionTool,
   createGetHoverTool,
@@ -302,6 +304,52 @@ describe("structuredContent contract", () => {
       } as never;
       const tool = createRunCommandTool(WORKSPACE, config);
       const result = await tool.handler({ command: "echo", args: ["hello"] });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── getToolCapabilities ───────────────────────────────────────────────────
+
+  describe("getToolCapabilities", () => {
+    it("emits structuredContent when extension is disconnected", async () => {
+      const mockClient = {
+        isConnected: () => false,
+      } as never;
+      const probes = {
+        rg: false,
+        fd: false,
+        git: false,
+        codex: false,
+        tsc: false,
+        eslint: false,
+        pyright: false,
+        ruff: false,
+        cargo: false,
+        go: false,
+        biome: false,
+        prettier: false,
+        black: false,
+        gofmt: false,
+        rustfmt: false,
+        vitest: false,
+        jest: false,
+        pytest: false,
+        gh: false,
+      } as never;
+      const config = { commandAllowlist: [], editorCommand: null } as never;
+      const tool = createGetToolCapabilitiesTool(probes, mockClient, config);
+      const result = await tool.handler({});
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── auditDependencies ─────────────────────────────────────────────────────
+
+  describe("auditDependencies", () => {
+    it("emits structuredContent when no manifest found", async () => {
+      // Use a temp dir with no package files so detected manager is null
+      const tool = createAuditDependenciesTool(WORKSPACE);
+      const result = await tool.handler({});
       assertStructured(result as Parameters<typeof assertStructured>[0]);
     });
   });

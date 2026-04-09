@@ -1,7 +1,7 @@
 import type { Config } from "../config.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { ProbeResults } from "../probe.js";
-import { success } from "./utils.js";
+import { successStructured } from "./utils.js";
 
 export function createGetToolCapabilitiesTool(
   probes: ProbeResults,
@@ -19,9 +19,37 @@ export function createGetToolCapabilitiesTool(
         properties: {},
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          extensionConnected: { type: "boolean" },
+          tier: { type: "string" },
+          tierDescription: { type: "string" },
+          editor: { type: "string" },
+          cliTools: { type: "object" },
+          linters: { type: "object" },
+          formatters: { type: "object" },
+          testRunners: { type: "object" },
+          features: { type: "object" },
+          commandAllowlist: { type: "array", items: { type: "string" } },
+          availableTools: { type: "object" },
+        },
+        required: [
+          "extensionConnected",
+          "tier",
+          "tierDescription",
+          "cliTools",
+          "linters",
+          "formatters",
+          "testRunners",
+          "features",
+          "commandAllowlist",
+          "availableTools",
+        ],
+      },
     },
     handler: async () => {
-      return success({
+      return successStructured({
         extensionConnected: extensionClient.isConnected(),
         tier: extensionClient.isConnected() ? "full" : "basic",
         tierDescription: extensionClient.isConnected()

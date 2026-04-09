@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, optionalString, success } from "./utils.js";
+import { execSafe, optionalString, successStructured } from "./utils.js";
 
 const CACHE_TTL = 60_000;
 
@@ -273,13 +273,36 @@ export function createAuditDependenciesTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          available: { type: "boolean" },
+          packageManager: { type: ["string", "null"] },
+          total: { type: "integer" },
+          packages: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                current: { type: "string" },
+                wanted: { type: "string" },
+                latest: { type: "string" },
+              },
+              required: ["name", "current", "wanted", "latest"],
+            },
+          },
+          error: { type: "string" },
+        },
+        required: ["available"],
+      },
     },
     timeoutMs: 65_000,
 
     async handler(
       args: Record<string, unknown>,
       signal?: AbortSignal,
-    ): Promise<ReturnType<typeof success>> {
+    ): Promise<ReturnType<typeof successStructured>> {
       const pm = optionalString(args, "packageManager") ?? "auto";
 
       // Resolve the package manager before the cache check so that "auto" and
@@ -287,7 +310,7 @@ export function createAuditDependenciesTool(
       // trigger redundant audit subprocess runs.
       const detected = detectManager(workspace, pm);
       if (!detected) {
-        return success({
+        return successStructured({
           available: false,
           packageManager: null,
           error:
@@ -299,7 +322,7 @@ export function createAuditDependenciesTool(
       const now = Date.now();
       const cached = cache.get(cacheKey);
       if (cached && now - cached.timestamp < CACHE_TTL) {
-        return success(cached.data);
+        return successStructured(cached.data);
       }
 
       try {
@@ -321,7 +344,7 @@ export function createAuditDependenciesTool(
             packages = await runPipOutdated(workspace, signal);
             break;
           default:
-            return success({
+            return successStructured({
               available: false,
               packageManager: detected,
               error: `Unsupported package manager: ${detected}`,
@@ -335,20 +358,20 @@ export function createAuditDependenciesTool(
           packages,
         };
         cache.set(cacheKey, { data: result, timestamp: Date.now() });
-        return success(result);
+        return successStructured(result);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         // Cap error messages to the first line to avoid leaking internal paths,
         // proxy configs, or env vars that may appear in multi-line stderr output.
         const safeMsg = msg.split("\n")[0]?.trim() ?? msg;
         if (msg.includes("ENOENT") || msg.includes("not found")) {
-          return success({
+          return successStructured({
             available: false,
             packageManager: detected,
             error: `${detected} not found. ${safeMsg}`,
           });
         }
-        return success({
+        return successStructured({
           available: false,
           packageManager: detected,
           error: safeMsg,
