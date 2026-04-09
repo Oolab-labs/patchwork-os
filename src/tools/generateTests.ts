@@ -1,6 +1,11 @@
 import { existsSync, promises as fsPromises, readFileSync } from "node:fs";
 import path from "node:path";
-import { error, optionalString, requireString, success } from "./utils.js";
+import {
+  error,
+  optionalString,
+  requireString,
+  successStructured,
+} from "./utils.js";
 
 function extractTsJsExports(content: string): string[] {
   const exports: string[] = [];
@@ -251,7 +256,7 @@ export function createGenerateTestsTool(workspace: string) {
         );
       }
 
-      return success({
+      return successStructured({
         file: filePath,
         outputFile,
         framework,

@@ -9,7 +9,7 @@ import {
   optionalInt,
   optionalString,
   requireString,
-  successLarge,
+  successStructuredLarge,
 } from "./utils.js";
 
 export function createSearchWorkspaceTool(
@@ -160,7 +160,7 @@ export function createSearchWorkspaceTool(
           }
         }
         const truncated = matches.length >= maxResults;
-        return successLarge({
+        return successStructuredLarge({
           matches,
           totalMatches: matches.length,
           tool: "rg",
@@ -205,7 +205,7 @@ export function createSearchWorkspaceTool(
       }
       const truncated = matches.length >= maxResults;
       progress?.(100, 100);
-      return successLarge({
+      return successStructuredLarge({
         matches,
         totalMatches: matches.length,
         tool: "grep",

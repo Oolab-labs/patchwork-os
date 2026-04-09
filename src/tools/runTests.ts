@@ -6,7 +6,7 @@ import { goTestRunner } from "./testRunners/goTest.js";
 import { pytestRunner } from "./testRunners/pytest.js";
 import type { TestResult, TestRunner } from "./testRunners/types.js";
 import { jestRunner, vitestRunner } from "./testRunners/vitestJest.js";
-import { optionalBool, optionalString, success } from "./utils.js";
+import { optionalBool, optionalString, successStructured } from "./utils.js";
 
 const MAX_CACHE_ENTRIES = 50;
 
@@ -210,7 +210,7 @@ export function createRunTestsTool(
       const noCache = optionalBool(args, "noCache") ?? false;
 
       if (availableRunners.length === 0) {
-        return success({
+        return successStructured({
           available: false,
           runners: [],
           summary: {
@@ -230,7 +230,7 @@ export function createRunTestsTool(
       if (runnerName) {
         runners = availableRunners.filter((r) => r.name === runnerName);
         if (runners.length === 0) {
-          return success({
+          return successStructured({
             available: true,
             runners: availableRunners.map((r) => r.name),
             error: `Runner '${runnerName}' not found. Available: ${availableRunners.map((r) => r.name).join(", ")}`,
@@ -305,7 +305,7 @@ export function createRunTestsTool(
       }
 
       progress?.(100, 100);
-      return success({
+      return successStructured({
         available: true,
         runners: runners.map((r) => r.name),
         summary,

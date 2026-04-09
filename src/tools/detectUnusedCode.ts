@@ -1,7 +1,12 @@
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, optionalArray, optionalInt, successLarge } from "./utils.js";
+import {
+  execSafe,
+  optionalArray,
+  optionalInt,
+  successStructuredLarge,
+} from "./utils.js";
 
 interface UnusedItem {
   file: string;
@@ -84,7 +89,7 @@ export function createDetectUnusedCodeTool(
     async handler(
       args: Record<string, unknown>,
       signal?: AbortSignal,
-    ): Promise<ReturnType<typeof successLarge>> {
+    ): Promise<ReturnType<typeof successStructuredLarge>> {
       const maxResults = optionalInt(args, "maxResults", 1, 10_000) ?? 50;
       // includePatterns stored for future filtering — currently unused
       optionalArray(args, "includePatterns");
@@ -104,7 +109,7 @@ export function createDetectUnusedCodeTool(
         if (output) {
           const items = parseTsPruneOutput(output, workspace);
           const truncated = items.length > maxResults;
-          return successLarge({
+          return successStructuredLarge({
             available: true,
             detector: "ts-prune",
             total: items.length,
@@ -135,7 +140,7 @@ export function createDetectUnusedCodeTool(
         (result.stderr.includes("ENOENT") ||
           result.stderr.includes("not found"))
       ) {
-        return successLarge({
+        return successStructuredLarge({
           available: false,
           error:
             "No unused code detector available. Install ts-prune: npm install -D ts-prune",
@@ -144,7 +149,7 @@ export function createDetectUnusedCodeTool(
 
       const items = parseTscOutput(output, workspace);
       if (items.length === 0 && result.exitCode !== 0 && !output) {
-        return successLarge({
+        return successStructuredLarge({
           available: false,
           error:
             "No unused code detector available. Install ts-prune: npm install -D ts-prune",
@@ -152,7 +157,7 @@ export function createDetectUnusedCodeTool(
       }
 
       const truncated = items.length > maxResults;
-      return successLarge({
+      return successStructuredLarge({
         available: true,
         detector: "tsc",
         total: items.length,
