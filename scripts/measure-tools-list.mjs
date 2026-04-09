@@ -62,20 +62,60 @@ if (!token) {
   }
 }
 
-// ── connect and send tools/list ───────────────────────────────────────────────
+// ── connect and send initialize → tools/list ─────────────────────────────────
 
-const requestId = 1;
-const jsonRpcRequest = JSON.stringify({
+const INIT_ID = 1;
+const LIST_ID = 2;
+
+function makeFrame(obj) {
+  const msgBuf = Buffer.from(JSON.stringify(obj), "utf8");
+  const frameLen = msgBuf.length;
+  const maskKey = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
+  let headerBuf;
+  if (frameLen < 126) {
+    headerBuf = Buffer.from([0x81, 0x80 | frameLen]);
+  } else if (frameLen < 65536) {
+    headerBuf = Buffer.alloc(4);
+    headerBuf[0] = 0x81;
+    headerBuf[1] = 0x80 | 126;
+    headerBuf.writeUInt16BE(frameLen, 2);
+  } else {
+    headerBuf = Buffer.alloc(10);
+    headerBuf[0] = 0x81;
+    headerBuf[1] = 0x80 | 127;
+    headerBuf.writeBigUInt64BE(BigInt(frameLen), 2);
+  }
+  const masked = Buffer.alloc(frameLen);
+  for (let i = 0; i < frameLen; i++) masked[i] = msgBuf[i] ^ maskKey[i % 4];
+  return Buffer.concat([headerBuf, maskKey, masked]);
+}
+
+const initRequest = {
   jsonrpc: "2.0",
-  id: requestId,
+  id: INIT_ID,
+  method: "initialize",
+  params: {
+    protocolVersion: "2024-11-05",
+    capabilities: {},
+    clientInfo: { name: "measure-tools-list", version: "1.0" },
+  },
+};
+const listRequest = {
+  jsonrpc: "2.0",
+  id: LIST_ID,
   method: "tools/list",
   params: {},
-});
+};
+const initializedNotif = {
+  jsonrpc: "2.0",
+  method: "notifications/initialized",
+  params: {},
+};
 
 // Build a minimal HTTP/WebSocket upgrade request
-const wsKey = Buffer.from("claude-measure-tools-list").toString("base64");
+const wsKey = Buffer.alloc(16).fill("claude").toString("base64");
 const httpUpgrade = [
-  `GET /mcp HTTP/1.1`,
+  `GET / HTTP/1.1`,
   `Host: 127.0.0.1:${port}`,
   `Upgrade: websocket`,
   `Connection: Upgrade`,
@@ -89,7 +129,8 @@ const httpUpgrade = [
 let buffer = Buffer.alloc(0);
 let upgraded = false;
 let responseBytes = 0;
-let responseText = "";
+let pendingText = "";
+const initialized = false;
 
 const socket = createConnection({ host: "127.0.0.1", port }, () => {
   socket.write(httpUpgrade);
@@ -110,37 +151,15 @@ socket.on("data", (chunk) => {
     if (headerEnd === -1) return;
     upgraded = true;
     buffer = buffer.slice(headerEnd + 4);
-
-    // Send the JSON-RPC request as a WebSocket text frame
-    const msgBuf = Buffer.from(jsonRpcRequest, "utf8");
-    const frameLen = msgBuf.length;
-    const maskKey = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
-    let headerBuf;
-    if (frameLen < 126) {
-      headerBuf = Buffer.from([0x81, 0x80 | frameLen]);
-    } else if (frameLen < 65536) {
-      headerBuf = Buffer.alloc(4);
-      headerBuf[0] = 0x81;
-      headerBuf[1] = 0x80 | 126;
-      headerBuf.writeUInt16BE(frameLen, 2);
-    } else {
-      headerBuf = Buffer.alloc(10);
-      headerBuf[0] = 0x81;
-      headerBuf[1] = 0x80 | 127;
-      headerBuf.writeBigUInt64BE(BigInt(frameLen), 2);
-    }
-    const masked = Buffer.alloc(frameLen);
-    for (let i = 0; i < frameLen; i++) {
-      masked[i] = msgBuf[i] ^ maskKey[i % 4];
-    }
-    socket.write(Buffer.concat([headerBuf, maskKey, masked]));
+    // Start MCP handshake
+    socket.write(makeFrame(initRequest));
   }
 
   // Parse WebSocket frames
   while (buffer.length >= 2) {
     const fin = (buffer[0] & 0x80) !== 0;
     const opcode = buffer[0] & 0x0f;
-    const masked = (buffer[1] & 0x80) !== 0;
+    const isMasked = (buffer[1] & 0x80) !== 0;
     let payloadLen = buffer[1] & 0x7f;
     let offset = 2;
 
@@ -154,26 +173,29 @@ socket.on("data", (chunk) => {
       offset = 10;
     }
 
-    const maskOffset = masked ? offset + 4 : offset;
+    const maskOffset = isMasked ? offset + 4 : offset;
     const totalLen = maskOffset + payloadLen;
     if (buffer.length < totalLen) break;
 
     if (opcode === 1 || opcode === 0) {
       // text or continuation frame
       const payload = buffer.slice(maskOffset, totalLen);
-      if (masked) {
-        const maskKey = buffer.slice(offset, offset + 4);
-        for (let i = 0; i < payload.length; i++) {
-          payload[i] ^= maskKey[i % 4];
-        }
+      if (isMasked) {
+        const mk = buffer.slice(offset, offset + 4);
+        for (let i = 0; i < payload.length; i++) payload[i] ^= mk[i % 4];
       }
-      responseBytes += payload.length;
-      responseText += payload.toString("utf8");
+      pendingText += payload.toString("utf8");
 
       if (fin) {
         try {
-          const msg = JSON.parse(responseText);
-          if (msg.id === requestId && msg.result) {
+          const msg = JSON.parse(pendingText);
+          pendingText = "";
+          if (msg.id === INIT_ID && msg.result) {
+            // initialize done — send initialized notification then tools/list
+            socket.write(makeFrame(initializedNotif));
+            socket.write(makeFrame(listRequest));
+          } else if (msg.id === LIST_ID && msg.result) {
+            responseBytes = Buffer.byteLength(JSON.stringify(msg), "utf8");
             printReport(responseBytes, msg.result.tools || []);
             socket.destroy();
             process.exit(0);
@@ -181,7 +203,6 @@ socket.on("data", (chunk) => {
         } catch {
           // not a complete JSON message yet, keep accumulating
         }
-        if (!fin) responseText = "";
       }
     } else if (opcode === 8) {
       // close frame
