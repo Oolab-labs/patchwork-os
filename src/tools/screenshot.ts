@@ -10,10 +10,8 @@ export function createCaptureScreenshotTool(extensionClient: ExtensionClient) {
       name: "captureScreenshot",
       extensionRequired: true,
       description:
-        "Capture a screenshot of the current screen. Returns the image as a base64-encoded PNG. " +
-        "Supported on macOS (screencapture) and Linux with a display server (ImageMagick import). " +
-        "Not available on headless servers (no DISPLAY / Wayland compositor). " +
-        "Requires the VS Code extension.",
+        "Capture a screenshot. Returns base64-encoded PNG. " +
+        "Supported on macOS (screencapture) and Linux with a display (ImageMagick). Not available on headless servers. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

@@ -672,3 +672,44 @@ CLI subcommands added in v2.1.16:
 - `gen-mcp-config.sh remote --host <h:p> --token <t>` — generates HTTP MCP config, no local lock file needed
 
 Available tools headless: file operations, git, terminals, search, CLI linters, dependency audits, HTTP client. Missing without extension: LSP, debugger, editor state.
+
+---
+
+## Token Efficiency
+
+### Why it matters
+
+The `tools/list` response is sent to the model on every request and is a prime candidate for prompt caching. Shorter tool descriptions reduce token usage per request and improve cache hit rates — especially important when 130+ tools are registered.
+
+**Rule:** Every tool `description` field must be ≤ 200 characters (collapsed, with string concatenation removed). This limit is enforced by check #6 in `scripts/audit-lsp-tools.mjs`.
+
+### Prompt caching
+
+Enable prompt caching in your Claude API client or MCP host to avoid re-encoding the full tool list on every request. With caching enabled, the first request pays the full token cost; subsequent requests with the same tool list are served from cache.
+
+### Measuring current token cost
+
+Use `scripts/measure-tools-list.mjs` to measure the tools/list response size from a running bridge:
+
+```bash
+# With a running bridge on the default port:
+node scripts/measure-tools-list.mjs
+
+# Custom port and token:
+node scripts/measure-tools-list.mjs --port 9000 --token <tok>
+```
+
+Output includes:
+- Total response bytes
+- Estimated token count (bytes ÷ 4)
+- Per-tool breakdown sorted by description length
+
+### Description guidelines
+
+- **≤ 160 chars** for slim-mode tools (the 53 in `SLIM_TOOL_NAMES`) — these are included in every session
+- **≤ 200 chars** for all other tools
+- Strip phrases like "Requires the VS Code extension" — the `extensionRequired: true` flag enforces this at dispatch time
+- Prefer imperative one-liners: "Get X" or "List Y" rather than "This tool gets X and returns Y"
+- Omit obvious caveats that are already enforced by the schema or transport layer
+
+The `audit-lsp-tools.mjs` check #6 runs in CI and will fail the build if any description exceeds 200 chars.

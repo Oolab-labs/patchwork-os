@@ -22,11 +22,7 @@ export function createReplaceBlockTool(
       name: "replaceBlock",
       description:
         "Replace an exact block of text in a file by content match — no line numbers needed. " +
-        "Finds the exact oldContent string in the file and replaces it with newContent. " +
-        "Safer than editText because it verifies the content exists before applying. " +
-        "Fails with a clear error if oldContent is not found or appears more than once. " +
-        "Use getBufferContent first to get the current text if the file may have unsaved changes. " +
-        "Saves the file by default (save: true).",
+        "Safer than editText — fails clearly if content not found or ambiguous.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

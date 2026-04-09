@@ -16,10 +16,8 @@ export function createGetDocumentLinksTool(
       name: "getDocumentLinks",
       extensionRequired: true,
       description:
-        "Get document links (file references, URLs) in a file as identified by the language server. " +
-        "Useful for navigating to referenced files or external documentation. " +
-        "File links are workspace-relative; private/internal URLs are omitted. " +
-        "Requires the VS Code extension.",
+        "Get document links (file references, URLs) in a file. " +
+        "Useful for navigating to referenced files or external docs. File links are workspace-relative. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

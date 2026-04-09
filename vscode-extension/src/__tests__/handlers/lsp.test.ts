@@ -812,6 +812,187 @@ describe("formatRange", () => {
   });
 });
 
+// ── findImplementations ───────────────────────────────────────
+
+describe("findImplementations", () => {
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/findImplementations"](params);
+
+  it("returns implementations for Location[] result", async () => {
+    const loc = { uri: Uri.file("/impl.ts"), range: new Range(4, 0, 4, 20) };
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
+
+    const result = (await call({
+      file: "/iface.ts",
+      line: 1,
+      column: 1,
+    })) as any;
+    expect(result.found).toBe(true);
+    expect(result.count).toBe(1);
+    expect(result.implementations[0].file).toBe("/impl.ts");
+    expect(result.implementations[0].line).toBe(5); // 4 + 1
+  });
+
+  it("returns implementations for LocationLink[] result", async () => {
+    const link = {
+      targetUri: Uri.file("/impl2.ts"),
+      targetRange: new Range(10, 2, 10, 15),
+    };
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([link]);
+
+    const result = (await call({
+      file: "/iface.ts",
+      line: 1,
+      column: 1,
+    })) as any;
+    expect(result.found).toBe(true);
+    expect(result.implementations[0].file).toBe("/impl2.ts");
+    expect(result.implementations[0].line).toBe(11);
+  });
+
+  it("returns null when no implementations found", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
+    expect(await call({ file: "/iface.ts", line: 1, column: 1 })).toBeNull();
+  });
+
+  it("returns null when result is null", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
+    expect(await call({ file: "/iface.ts", line: 1, column: 1 })).toBeNull();
+  });
+
+  it("returns null when executeCommand throws", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
+      new Error("provider error"),
+    );
+    expect(await call({ file: "/iface.ts", line: 1, column: 1 })).toBeNull();
+  });
+
+  it("throws on missing file param", async () => {
+    await expect(call({ line: 1, column: 1 })).rejects.toThrow("file");
+  });
+});
+
+// ── goToTypeDefinition ────────────────────────────────────────
+
+describe("goToTypeDefinition", () => {
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/goToTypeDefinition"](params);
+
+  it("returns locations for Location[] result", async () => {
+    const loc = { uri: Uri.file("/type.ts"), range: new Range(7, 0, 7, 12) };
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
+
+    const result = (await call({
+      file: "/src.ts",
+      line: 3,
+      column: 5,
+    })) as any;
+    expect(result.found).toBe(true);
+    expect(result.locations).toHaveLength(1);
+    expect(result.locations[0].file).toBe("/type.ts");
+    expect(result.locations[0].line).toBe(8); // 7 + 1
+  });
+
+  it("returns locations for LocationLink[] result", async () => {
+    const link = {
+      targetUri: Uri.file("/types.d.ts"),
+      targetRange: new Range(0, 0, 0, 10),
+    };
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([link]);
+
+    const result = (await call({
+      file: "/src.ts",
+      line: 1,
+      column: 1,
+    })) as any;
+    expect(result.found).toBe(true);
+    expect(result.locations[0].file).toBe("/types.d.ts");
+  });
+
+  it("returns null when no type definitions found", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
+    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+  });
+
+  it("returns null when result is null", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
+    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+  });
+
+  it("returns null when executeCommand throws", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
+      new Error("provider error"),
+    );
+    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+  });
+
+  it("throws on missing file param", async () => {
+    await expect(call({ line: 1, column: 1 })).rejects.toThrow("file");
+  });
+});
+
+// ── goToDeclaration ───────────────────────────────────────────
+
+describe("goToDeclaration", () => {
+  const call = (params: Record<string, unknown>) =>
+    handlers["extension/goToDeclaration"](params);
+
+  it("returns locations for Location[] result", async () => {
+    const loc = {
+      uri: Uri.file("/decl.d.ts"),
+      range: new Range(20, 0, 20, 30),
+    };
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([loc]);
+
+    const result = (await call({
+      file: "/src.ts",
+      line: 5,
+      column: 8,
+    })) as any;
+    expect(result.found).toBe(true);
+    expect(result.locations).toHaveLength(1);
+    expect(result.locations[0].file).toBe("/decl.d.ts");
+    expect(result.locations[0].line).toBe(21); // 20 + 1
+  });
+
+  it("returns locations for LocationLink[] result", async () => {
+    const link = {
+      targetUri: Uri.file("/header.h"),
+      targetRange: new Range(5, 0, 5, 25),
+    };
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([link]);
+
+    const result = (await call({
+      file: "/src.ts",
+      line: 1,
+      column: 1,
+    })) as any;
+    expect(result.found).toBe(true);
+    expect(result.locations[0].file).toBe("/header.h");
+  });
+
+  it("returns null when no declarations found", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue([]);
+    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+  });
+
+  it("returns null when result is null", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockResolvedValue(null);
+    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+  });
+
+  it("returns null when executeCommand throws", async () => {
+    vi.mocked(vscode.commands.executeCommand).mockRejectedValue(
+      new Error("provider error"),
+    );
+    expect(await call({ file: "/src.ts", line: 1, column: 1 })).toBeNull();
+  });
+
+  it("throws on missing file param", async () => {
+    await expect(call({ line: 1, column: 1 })).rejects.toThrow("file");
+  });
+});
+
 // ── goToDefinition throw path ──────────────────────────────────
 
 describe("goToDefinition — executeCommand throw path", () => {

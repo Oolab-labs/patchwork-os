@@ -17,11 +17,8 @@ export function createSelectionRangesTool(
       name: "selectionRanges",
       extensionRequired: true,
       description:
-        "Get hierarchical selection boundaries at a position using VS Code LSP. " +
-        "Returns an ordered array of ranges from innermost (word/token) to outermost (file), " +
-        "e.g. identifier → expression → statement → block → function → class. " +
-        "Useful for understanding scope containment and making scope-aware edits. " +
-        "Requires the VS Code extension.",
+        "Get hierarchical selection boundaries at a position: from token to file. " +
+        "Returns identifier → expression → block → function → class ranges. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

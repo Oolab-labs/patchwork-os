@@ -12,7 +12,8 @@ export function createSaveDocumentTool(
     schema: {
       name: "saveDocument",
       description:
-        "Save a document with unsaved changes. Uses VS Code's real buffer save when the extension is connected (ensures editor state matches disk). Without the extension, this is a no-op — edits applied via editText are already written directly to disk.",
+        "Save a document with unsaved changes. Uses VS Code's buffer save when connected. " +
+        "Without the extension, this is a no-op — editText writes directly to disk.",
       annotations: { destructiveHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

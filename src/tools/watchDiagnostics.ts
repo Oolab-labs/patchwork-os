@@ -47,11 +47,8 @@ export function createWatchDiagnosticsTool(
     schema: {
       name: "watchDiagnostics",
       description:
-        "Wait for diagnostic changes and return updated diagnostics. " +
-        "Long-polls until diagnostics change or timeout. " +
-        "Use this after making edits to wait for the language server to report new errors/warnings. " +
-        "Returns immediately if diagnostics have already changed since the given timestamp. " +
-        "When the VS Code extension is not connected, runs CLI linters immediately and returns a snapshot.",
+        "Wait for diagnostic changes. Long-polls until change or timeout. " +
+        "Use after edits to wait for the language server to re-validate.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

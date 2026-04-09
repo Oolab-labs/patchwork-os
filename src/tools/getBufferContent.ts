@@ -81,11 +81,8 @@ export function createGetBufferContentTool(
     schema: {
       name: "getBufferContent",
       description:
-        "Read the current content of a file from the VS Code editor buffer, including any unsaved changes. " +
-        "Use this instead of the standard Read tool when you need the live editor state — " +
-        "especially before calling editText, to ensure your line numbers are accurate. " +
-        "Returns isDirty:true when the buffer has unsaved changes that differ from disk. " +
-        "Falls back to disk content when the extension is not connected.",
+        "Read the current content of a file from the VS Code editor buffer, including unsaved changes. " +
+        "Use before editText for accurate line numbers. Returns isDirty:true when buffer differs from disk.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

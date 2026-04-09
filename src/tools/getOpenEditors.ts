@@ -19,7 +19,8 @@ export function createGetOpenEditorsTool(
     schema: {
       name: "getOpenEditors",
       description:
-        "Get list of currently open files/tabs. Uses real VS Code tab state when the extension is connected (includes isDirty, isActive, and all open tabs). Without the extension, returns only files that Claude Code has opened in this session.",
+        "Get list of currently open files/tabs. Returns isDirty, isActive, and all tabs when extension is connected. " +
+        "Without extension, returns only files opened in this session.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

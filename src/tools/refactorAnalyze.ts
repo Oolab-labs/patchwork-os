@@ -28,11 +28,8 @@ export function createRefactorAnalyzeTool(
       name: "refactorAnalyze",
       extensionRequired: true,
       description:
-        "Analyze the impact of refactoring a symbol before making changes. " +
-        "Checks rename safety, counts references and callers, detects inheritance relationships, " +
-        "and returns a risk level (low/medium/high). " +
-        "Use this before renameSymbol or other refactoring operations to understand scope of impact. " +
-        "Requires the VS Code extension.",
+        "Analyze refactoring impact: rename safety, reference count, caller count, and risk level (low/medium/high). " +
+        "Use before renameSymbol to understand scope. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

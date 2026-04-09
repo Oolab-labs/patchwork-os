@@ -17,7 +17,7 @@ export function createExplainSymbolTool(
       name: "explainSymbol",
       extensionRequired: true,
       description:
-        "Get comprehensive information about a symbol in one call: type signature, documentation, definition location, call hierarchy, and reference count. Replaces separate calls to getHover, goToDefinition, getCallHierarchy, and findReferences. Optionally includes type hierarchy and available code actions.",
+        "Get comprehensive symbol info in one call: type signature, docs, definition location, call hierarchy, and reference count.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.12.0 — 2026-04-09)
+## Current State (v2.13.0 — 2026-04-09)
 
-- **Slim mode default**: 50 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all 136+; plugin tools always bypass slim filter
-- **1,827 bridge tests / 132 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **Slim mode default**: 53 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all 136+; plugin tools always bypass slim filter
+- **1,839 bridge tests / 133 files + 472 extension tests / 28 files = 2,311 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - **27 MCP prompts** (slash commands): 15 general/Dispatch + 12 LSP-composition
 - **12 plugin skills**, **4 subagents** (including new `ide-architect`)
 - `templates/automation-policy.example.json` with LSP-aware prompts for all 8 automation hooks
@@ -31,6 +31,12 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.13.0 shipped (2026-04-09) — Track B LSP primitives:**
+- 3 new LSP navigation tools: `findImplementations`, `goToTypeDefinition`, `goToDeclaration`
+- Extension handlers + ExtensionClient methods + MCP tool factories with outputSchema
+- 12 bridge unit tests + 18 extension handler tests; SLIM count 50 → 53
+- Extension v1.2.0; published to npm, VS Marketplace, Open VSX
 
 **v2.12.0 shipped (2026-04-09) — LSP Leverage Round:**
 - 12 new MCP slash commands composing existing LSP tools: `find-callers`, `blast-radius`, `why-error`, `unused-in`, `trace-to`, `imports-of`, `circular-deps`, `refactor-preview`, `module-exports`, `type-of`, `deprecations`, `coverage-gap`

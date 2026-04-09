@@ -57,7 +57,7 @@ export function createFormatDocumentTool(
     schema: {
       name: "formatDocument",
       description:
-        "Format a file using VS Code's configured formatter when the extension is connected, or falls back to CLI formatters (prettier, biome, black, gofmt, rustfmt). Returns whether changes were made and line counts before/after.",
+        "Format a file using VS Code's configured formatter, or falls back to CLI formatters (prettier, biome, black, gofmt, rustfmt). Returns whether changes were made.",
       annotations: { destructiveHint: true, idempotentHint: true },
       inputSchema: {
         type: "object" as const,

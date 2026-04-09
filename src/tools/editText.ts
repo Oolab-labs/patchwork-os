@@ -159,11 +159,8 @@ export function createEditTextTool(
     schema: {
       name: "editText",
       description:
-        "Insert, delete, or replace text at specific positions in a file. " +
-        "Supports multiple edits in a single atomic operation. " +
-        "All line and column numbers are 1-based. " +
-        "Uses VS Code WorkspaceEdit when connected, falls back to native fs read/write otherwise. " +
-        "Note: native fallback has no undo buffer — edits are written directly to disk.",
+        "Insert, delete, or replace text at specific positions in a file (1-based line/col). " +
+        "Supports multiple atomic edits. Uses VS Code WorkspaceEdit when connected, or native fs otherwise.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

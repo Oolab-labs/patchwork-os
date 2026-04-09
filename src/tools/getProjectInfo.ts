@@ -171,11 +171,8 @@ export function createGetProjectInfoTool(workspace: string) {
     schema: {
       name: "getProjectInfo",
       description:
-        "Get a compact overview of the project at session start. " +
-        "Returns: project name/version, detected languages, package manager, key scripts, " +
-        "important dependencies, config files present, top-level directory structure, and git status. " +
-        "Use this as the first call in a new session instead of manually reading package.json, " +
-        "running getFileTree, and calling getGitStatus separately.",
+        "Get a compact project overview: name/version, languages, package manager, scripts, " +
+        "dependencies, config files, structure, and git status. Call once at session start.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
