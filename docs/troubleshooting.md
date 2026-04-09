@@ -67,6 +67,12 @@ ls ~/.claude/ide/
 
 **Fix:**
 
+If you have an old version installed, uninstall it first:
+```bash
+code --uninstall-extension oolab-labs.claude-ide-bridge-extension
+```
+
+Then reinstall:
 ```bash
 code --install-extension oolab-labs.claude-ide-bridge-extension
 ```
@@ -153,6 +159,69 @@ source ~/.zshrc
 **Cause:** IDE-launched Claude Code injects `--mcp-config` which overrides project `.mcp.json`. See Issue 1.
 
 **Fix:** Confirm `~/.claude.json` has the bridge entry (see Issue 1 fix). The global config is always loaded regardless of how Claude Code is launched.
+
+---
+
+## Issue 8: Some tools missing in slim mode (default)
+
+**Symptom:** Tools like `runTests`, `getGitStatus`, `createFile`, or `githubCreatePR` aren't showing up, but LSP tools work fine.
+
+**Cause:** Slim mode (the default) only exposes ~48 IDE-exclusive tools — LSP, debugger, editor state, decorations, and refactoring. Git, terminal, file ops, GitHub, and HTTP tools are only available in `--full` mode.
+
+**Fix:** Start the bridge in full mode:
+```bash
+claude-ide-bridge --watch --full
+```
+
+Or set permanently in `claude-ide-bridge.config.json`:
+```json
+{ "fullMode": true }
+```
+
+To see which mode is active and which tools are registered, ask Claude to call `getToolCapabilities`.
+
+---
+
+## Issue 9: Bridge keeps crashing or restarting
+
+**Symptom:** Bridge process exits unexpectedly; Claude loses connection repeatedly; logs show restart messages.
+
+**Cause:** Common triggers: a tool call that hangs past the timeout, a workspace with unusual permissions, or an out-of-date Node.js version.
+
+**Diagnosis:**
+```bash
+# Check Node.js version — must be 20+
+node --version
+
+# Run the bridge manually (not via --watch) to see the crash output directly
+claude-ide-bridge --workspace /your/project
+```
+
+**Fixes:**
+1. **Upgrade Node.js** if below v20: `nvm install 20 && nvm use 20`
+2. **Use `--watch` mode** — it auto-restarts with exponential backoff and is safe for production:
+   ```bash
+   claude-ide-bridge --watch
+   ```
+3. **Increase timeout** if a specific tool is timing out:
+   ```bash
+   claude-ide-bridge --watch --timeout 60000
+   ```
+4. **Check disk space** — the bridge writes lock files and task persistence to `~/.claude/ide/`. Low disk space causes write failures.
+5. Run `bridgeDoctor` via Claude to get a full environment health check.
+
+---
+
+## Issue 10: HTTP session capacity exceeded (503 error)
+
+**Symptom:** Remote MCP clients (claude.ai, Claude Desktop via Custom Connector) get a `503 Service Unavailable` with message `"HTTP session capacity reached"`.
+
+**Cause:** The bridge allows a maximum of **5 concurrent HTTP sessions**. When the limit is reached, the oldest idle session (inactive >60s) is evicted automatically. If all 5 sessions are actively in use, new connections are rejected with 503.
+
+**Fix:** This usually resolves itself as idle sessions expire (10-minute idle TTL). If you're consistently hitting the limit:
+- Check whether stale browser tabs or tools are holding sessions open
+- Restart the bridge to clear all sessions: `claude-ide-bridge --watch`
+- For high-traffic team setups, run multiple bridge instances on different ports (one per user or project)
 
 ---
 

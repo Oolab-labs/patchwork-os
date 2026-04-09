@@ -43,7 +43,7 @@ Dossiers for each type of developer who uses Claude IDE Bridge. Validate and ref
 - Remote control auto-restart wrapper
 - Terminal operations (runInTerminal, getTerminalOutput, waitForTerminalOutput)
 - Activity log (track session progress)
-- Workspace snapshots (checkpoint before risky changes)
+- Git checkpoints + `refactorAnalyze`/`refactorPreview` before risky changes
 - start-all.sh orchestrator (manages full stack)
 
 **Pain Points Addressed**:

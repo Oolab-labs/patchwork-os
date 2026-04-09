@@ -790,7 +790,7 @@ export class Bridge {
       shuttingDown = true;
       this.logger.info(`Shutdown initiated by ${signal}`);
       const forceTimer = setTimeout(() => {
-        process.exit(1);
+        process.exit(exitCode);
       }, SHUTDOWN_TIMEOUT_MS);
       forceTimer.unref();
       await this.stop();

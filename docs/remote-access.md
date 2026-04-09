@@ -224,7 +224,7 @@ CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai,https://app.yourdomain.com
 - OAuth access tokens are opaque 32-byte base64url strings; auth codes are single-use with 5 min TTL
 - Session IDs are `crypto.randomUUID()` (122 bits of entropy)
 - Sessions expire after **10 minutes of inactivity** and are pruned every 2 minutes
-- Maximum **5 concurrent HTTP sessions**; oldest idle session is evicted when capacity is reached
+- Maximum **5 concurrent HTTP sessions**; oldest idle session (inactive >60s) is evicted when at capacity. New connections beyond the limit receive `503 Service Unavailable` — see [Troubleshooting Issue 10](troubleshooting.md#issue-10-http-session-capacity-exceeded-503-error)
 
 ### Token rotation
 
