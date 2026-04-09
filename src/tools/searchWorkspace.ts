@@ -57,6 +57,35 @@ export function createSearchWorkspaceTool(
         required: ["query"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          matches: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                line: { type: "integer" },
+                matchText: { type: "string" },
+              },
+              required: ["file", "line", "matchText"],
+            },
+          },
+          totalMatches: { type: "integer" },
+          tool: {
+            type: "string",
+            enum: ["rg", "grep"],
+            description: "Search backend used",
+          },
+          truncated: {
+            type: "boolean",
+            description: "True when maxResults was reached",
+          },
+          note: { type: "string" },
+        },
+        required: ["matches", "totalMatches", "tool"],
+      },
     },
     handler: async (
       args: Record<string, unknown>,

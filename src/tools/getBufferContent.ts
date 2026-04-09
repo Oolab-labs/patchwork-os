@@ -108,6 +108,33 @@ export function createGetBufferContentTool(
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          content: {
+            type: "string",
+            description:
+              "File or buffer content (may be sliced by startLine/endLine)",
+          },
+          filePath: { type: "string" },
+          startLine: { type: "integer" },
+          endLine: { type: "integer" },
+          totalLines: { type: "integer" },
+          isDirty: {
+            type: "boolean",
+            description:
+              "True when the buffer has unsaved changes (extension only)",
+          },
+          languageId: { type: "string" },
+          source: {
+            type: "string",
+            enum: ["extension", "disk"],
+            description:
+              "Whether content came from the live VS Code buffer or disk",
+          },
+        },
+        required: ["content", "filePath"],
+      },
     },
 
     // 15s: disk fallback on slow VPS storage or large files via readline streaming

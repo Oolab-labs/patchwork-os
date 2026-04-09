@@ -38,6 +38,20 @@ export function createGetGitDiffTool(workspace: string) {
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          diff: {
+            type: "string",
+            description: "Unified diff output",
+          },
+          truncated: {
+            type: "boolean",
+            description: "True when diff was capped at the size limit",
+          },
+        },
+        required: ["diff"],
+      },
     },
 
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
