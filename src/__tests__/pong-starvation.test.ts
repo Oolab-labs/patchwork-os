@@ -109,8 +109,9 @@ describe("pong starvation — threshold is 4 missed pongs", () => {
   it("does NOT terminate after 4 ping intervals (3 missed pongs)", async () => {
     const ws = await connectNoAutoPong(port, authToken);
 
-    // Wait 4 intervals + slack, then check client is still connected
-    await new Promise((r) => setTimeout(r, PING_MS * 4 + PING_MS / 2));
+    // Wait 3.5 intervals — 3 misses counted, safely below threshold of 4.
+    // (Using 3.5× not 4.5× gives more headroom before the 5th interval fires.)
+    await new Promise((r) => setTimeout(r, PING_MS * 3 + PING_MS / 2));
 
     const clients = getWssClients(server);
     expect(clients.size).toBe(1);
@@ -162,17 +163,15 @@ describe("pong starvation — disconnect-reason logging", () => {
     );
     expect(infoMatch).toBeDefined();
     expect(infoMatch).toContain("disconnectReason=pong_timeout");
-    ws.terminate();
+    // ws was already terminated by the server — no need to call ws.terminate()
   });
 
   it("logs 'disconnectReason=client_initiated' on clean close", async () => {
     const ws = await connectNoAutoPong(port, authToken);
 
-    const closedP = new Promise<void>((resolve) => {
-      ws.once("close", () => setTimeout(resolve, 30));
-    });
     ws.close(1000, "done");
-    await closedP;
+    // Wait until server side has removed the client (close handler has fired)
+    await waitForClientsSize(server, 0, 2000);
 
     const infoMatch = infoLines.find((l) =>
       l.includes("Claude Code WebSocket closed"),
