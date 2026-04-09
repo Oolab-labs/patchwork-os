@@ -14,45 +14,6 @@ import {
   success,
 } from "./utils.js";
 
-export function createGetDebugStateTool(extensionClient: ExtensionClient) {
-  return {
-    schema: {
-      name: "getDebugState",
-      extensionRequired: true,
-      description:
-        "Get the current VS Code debugger state: session info, paused location, " +
-        "call stack, and local variables. Returns hasActiveSession=false when not running. ",
-      annotations: { readOnlyHint: true },
-      inputSchema: {
-        $schema: "http://json-schema.org/draft-07/schema#",
-        type: "object" as const,
-        additionalProperties: false as const,
-      },
-    },
-    async handler() {
-      if (!extensionClient.isConnected()) {
-        return extensionRequired("getDebugState");
-      }
-      try {
-        const result = await extensionClient.getDebugState();
-        if (result === null) {
-          return success({
-            hasActiveSession: false,
-            isPaused: false,
-            breakpoints: [],
-          });
-        }
-        return success(result);
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error("Extension timed out getting debug state");
-        }
-        throw err;
-      }
-    },
-  };
-}
-
 export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
   return {
     schema: {

@@ -199,67 +199,6 @@ function checkIndexWithPrefix(
   return null;
 }
 
-export function createListTerminalsTool(
-  extensionClient: ExtensionClient,
-  terminalPrefix = "",
-) {
-  return {
-    schema: {
-      name: "listTerminals",
-      extensionRequired: true,
-      description:
-        "List all active VS Code integrated terminals. Returns terminal names, indices, and whether output capture is available. On headless VPS/SSH, use runInTerminal instead.",
-      annotations: { readOnlyHint: true },
-      inputSchema: {
-        type: "object" as const,
-        properties: {},
-        additionalProperties: false as const,
-      },
-    },
-    handler: async () => {
-      if (!extensionClient.isConnected()) {
-        return extensionRequired("terminal features", [
-          "Use runCommand to execute shell commands directly",
-        ]);
-      }
-      try {
-        const result = await extensionClient.listTerminals();
-        if (result === null) {
-          return success({ terminals: [] });
-        }
-        if (!terminalPrefix) {
-          return success(result);
-        }
-        // Filter to this session's terminals and strip prefix from names
-        const r = result as { terminals?: Array<{ name?: string }> };
-        const filtered = {
-          ...result,
-          terminals: (r.terminals ?? [])
-            .filter(
-              (t) =>
-                typeof t.name === "string" && t.name.startsWith(terminalPrefix),
-            )
-            .map((t) => ({
-              ...t,
-              name:
-                typeof t.name === "string"
-                  ? stripPrefix(t.name, terminalPrefix)
-                  : t.name,
-            })),
-        };
-        return success(filtered);
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Extension timed out — terminal features may be unavailable",
-          );
-        }
-        throw err;
-      }
-    },
-  };
-}
-
 export function createGetTerminalOutputTool(
   extensionClient: ExtensionClient,
   terminalPrefix = "",

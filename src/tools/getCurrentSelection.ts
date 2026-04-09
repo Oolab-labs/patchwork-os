@@ -2,7 +2,36 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { success } from "./utils.js";
+import { successStructured } from "./utils.js";
+
+const SELECTION_OUTPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    success: { type: "boolean" as const },
+    selection: {
+      type: "object" as const,
+      properties: {
+        file: { type: "string" as const },
+        startLine: { type: "integer" as const },
+        startColumn: { type: "integer" as const },
+        endLine: { type: "integer" as const },
+        endColumn: { type: "integer" as const },
+        selectedText: { type: "string" as const },
+      },
+      required: [
+        "file",
+        "startLine",
+        "startColumn",
+        "endLine",
+        "endColumn",
+        "selectedText",
+      ],
+    },
+    source: { type: "string" as const },
+    message: { type: "string" as const },
+  },
+  required: ["success"],
+};
 
 const STUB_RESPONSE = {
   success: false,
@@ -23,6 +52,7 @@ export function createGetCurrentSelectionTool(
         type: "object",
         additionalProperties: false,
       },
+      outputSchema: SELECTION_OUTPUT_SCHEMA,
     },
     timeoutMs: 5_000,
     async handler() {
@@ -30,13 +60,17 @@ export function createGetCurrentSelectionTool(
       try {
         const selection = await extensionClient.getSelection();
         if (selection !== null) {
-          return success({ success: true, selection, source: "extension" });
+          return successStructured({
+            success: true,
+            selection,
+            source: "extension",
+          });
         }
       } catch (err) {
         if (!(err instanceof ExtensionTimeoutError)) throw err;
         // Timeout — fall through to stub
       }
-      return success(STUB_RESPONSE);
+      return successStructured(STUB_RESPONSE);
     },
   };
 }
@@ -53,12 +87,13 @@ export function createGetLatestSelectionTool(extensionClient: ExtensionClient) {
         type: "object",
         additionalProperties: false,
       },
+      outputSchema: SELECTION_OUTPUT_SCHEMA,
     },
     timeoutMs: 5_000,
     async handler() {
       // Try cached selection from push notifications
       if (extensionClient.latestSelection) {
-        return success({
+        return successStructured({
           success: true,
           selection: extensionClient.latestSelection,
           source: "extension-cached",
@@ -68,13 +103,17 @@ export function createGetLatestSelectionTool(extensionClient: ExtensionClient) {
       try {
         const selection = await extensionClient.getSelection();
         if (selection !== null) {
-          return success({ success: true, selection, source: "extension" });
+          return successStructured({
+            success: true,
+            selection,
+            source: "extension",
+          });
         }
       } catch (err) {
         if (!(err instanceof ExtensionTimeoutError)) throw err;
         // Timeout — fall through to stub
       }
-      return success(STUB_RESPONSE);
+      return successStructured(STUB_RESPONSE);
     },
   };
 }

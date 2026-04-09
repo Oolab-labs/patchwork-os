@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { ExtensionClient } from "../extensionClient.js";
-import { success } from "./utils.js";
+import { successStructured } from "./utils.js";
 
 export function createGetWorkspaceFoldersTool(
   workspaceFolders: string[],
@@ -16,6 +16,28 @@ export function createGetWorkspaceFoldersTool(
         type: "object",
         additionalProperties: false,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          success: { type: "boolean" as const },
+          folders: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                name: { type: "string" as const },
+                path: { type: "string" as const },
+                uri: { type: "string" as const },
+                index: { type: "integer" as const },
+              },
+              required: ["name", "path", "uri", "index"],
+            },
+          },
+          rootPath: { type: ["string", "null"] as const },
+          workspaceFile: { type: ["string", "null"] as const },
+        },
+        required: ["success", "folders", "rootPath", "workspaceFile"],
+      },
     },
 
     async handler() {
@@ -24,7 +46,7 @@ export function createGetWorkspaceFoldersTool(
         try {
           const folders = await extensionClient.getWorkspaceFolders();
           if (folders && folders.length > 0) {
-            return success({
+            return successStructured({
               success: true,
               folders,
               rootPath: folders[0]?.path ?? null,
@@ -36,7 +58,7 @@ export function createGetWorkspaceFoldersTool(
         }
       }
 
-      return success({
+      return successStructured({
         success: true,
         folders: workspaceFolders.map((p, i) => ({
           name: path.basename(p),

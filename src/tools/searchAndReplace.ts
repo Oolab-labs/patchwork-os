@@ -7,7 +7,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 const MAX_FILES = 100;
@@ -60,6 +60,31 @@ export function createSearchAndReplaceTool(workspace: string) {
         },
         required: ["pattern", "replacement"],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          matched: { type: "integer" as const },
+          modified: { type: "integer" as const },
+          totalReplacements: { type: "integer" as const },
+          dryRun: { type: "boolean" as const },
+          warning: { type: "string" as const },
+          message: { type: "string" as const },
+          files: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                file: { type: "string" as const },
+                replacements: {},
+                written: { type: "boolean" as const },
+                writeError: { type: "string" as const },
+              },
+              required: ["file", "replacements"],
+            },
+          },
+        },
+        required: ["matched", "modified", "dryRun", "files"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -154,7 +179,7 @@ export function createSearchAndReplaceTool(workspace: string) {
         .filter(Boolean);
 
       if (matchedFiles.length === 0) {
-        return success({
+        return successStructured({
           matched: 0,
           modified: 0,
           dryRun,
@@ -277,7 +302,7 @@ export function createSearchAndReplaceTool(workspace: string) {
           r.replacements > 0,
       ).length;
 
-      return success({
+      return successStructured({
         matched: matchedFiles.length,
         modified: writtenCount,
         totalReplacements,

@@ -6,7 +6,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createFindFilesTool(workspace: string, probes: ProbeResults) {
@@ -31,6 +31,18 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
         required: ["pattern"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          files: { type: "array" as const, items: { type: "string" as const } },
+          count: { type: "integer" as const },
+          totalMatches: { type: "integer" as const },
+          tool: { type: "string" as const },
+          truncated: { type: "boolean" as const },
+          note: { type: "string" as const },
+        },
+        required: ["files", "count", "tool"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const pattern = requireString(args, "pattern", 200);
@@ -50,7 +62,7 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
           .filter(Boolean)
           .map((f) => makeRelative(f, workspace));
         const truncated = files.length === 100;
-        return success({
+        return successStructured({
           files,
           count: files.length,
           tool: "fd",
@@ -82,7 +94,7 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
         const regex = new RegExp(`(^|/)${regexPattern}$`, "i");
         const allMatches = allFiles.filter((f) => regex.test(f));
         const files = allMatches.slice(0, 100);
-        return success({
+        return successStructured({
           files,
           count: files.length,
           totalMatches: allMatches.length,
@@ -133,7 +145,7 @@ export function createFindFilesTool(workspace: string, probes: ProbeResults) {
         .map((f) => makeRelative(f, workspace))
         .slice(0, 100);
       const truncated = files.length === 100;
-      return success({
+      return successStructured({
         files,
         count: files.length,
         tool: "find",

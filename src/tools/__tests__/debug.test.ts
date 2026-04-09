@@ -5,11 +5,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ExtensionTimeoutError } from "../../extensionClient.js";
 import {
   createEvaluateInDebuggerTool,
-  createGetDebugStateTool,
   createSetDebugBreakpointsTool,
   createStartDebuggingTool,
   createStopDebuggingTool,
 } from "../debug.js";
+import { createGetDebugStateTool } from "../getDebugState.js";
 
 let WORKSPACE: string;
 let TEST_FILE: string;

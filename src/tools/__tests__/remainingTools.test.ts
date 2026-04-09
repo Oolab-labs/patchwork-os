@@ -18,13 +18,11 @@ import {
   createGetCurrentSelectionTool,
   createGetLatestSelectionTool,
 } from "../getCurrentSelection.js";
+import { createGetWorkspaceSettingsTool } from "../getWorkspaceSettings.js";
 import { createGetInlayHintsTool } from "../inlayHints.js";
 import { createSetActiveWorkspaceFolderTool } from "../setActiveWorkspaceFolder.js";
 import { createGetTypeHierarchyTool } from "../typeHierarchy.js";
-import {
-  createGetWorkspaceSettingsTool,
-  createSetWorkspaceSettingTool,
-} from "../workspaceSettings.js";
+import { createSetWorkspaceSettingTool } from "../workspaceSettings.js";
 
 function parse(r: { content: Array<{ type: string; text: string }> }) {
   return JSON.parse(r.content[0]?.text ?? "{}");
