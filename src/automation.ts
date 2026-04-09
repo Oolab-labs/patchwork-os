@@ -161,6 +161,25 @@ export interface BranchCheckoutResult {
   created: boolean;
 }
 
+export interface OnPullRequestPolicy {
+  enabled: boolean;
+  /**
+   * Prompt to enqueue after a GitHub PR is successfully created.
+   * Placeholders: {{url}}, {{number}}, {{title}}, {{branch}}
+   */
+  prompt: string;
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+/** Minimal PR result passed to handlePullRequest — avoids importing from github/pr. */
+export interface PullRequestResult {
+  url: string;
+  number: number | null;
+  title: string;
+  branch: string;
+}
+
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
@@ -180,6 +199,8 @@ export interface AutomationPolicy {
   onGitPush?: OnGitPushPolicy;
   /** Fired after every successful gitCheckout call (branch switch or creation). */
   onBranchCheckout?: OnBranchCheckoutPolicy;
+  /** Fired after every successful githubCreatePR call. */
+  onPullRequest?: OnPullRequestPolicy;
 }
 
 export interface Diagnostic {
@@ -490,6 +511,31 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onPullRequest
+  if (policy.onPullRequest !== undefined) {
+    const pr = policy.onPullRequest;
+    if (typeof pr !== "object" || pr === null) {
+      throw new Error(`"onPullRequest" must be an object`);
+    }
+    if (typeof pr.enabled !== "boolean") {
+      throw new Error(`"onPullRequest.enabled" must be a boolean`);
+    }
+    if (typeof pr.prompt !== "string" || pr.prompt.trim() === "") {
+      throw new Error(`"onPullRequest.prompt" must be a non-empty string`);
+    }
+    if (pr.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(
+        `"onPullRequest.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
+    }
+    if (typeof pr.cooldownMs !== "number" || !Number.isFinite(pr.cooldownMs)) {
+      throw new Error(`"onPullRequest.cooldownMs" must be a number`);
+    }
+    if (pr.cooldownMs < MIN_COOLDOWN_MS) {
+      pr.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   return policy;
 }
 
@@ -516,6 +562,8 @@ export class AutomationHooks {
   private activeGitPushTaskId: string | null = null;
   /** Active task ID for the branch-checkout handler (workspace-global). */
   private activeBranchCheckoutTaskId: string | null = null;
+  /** Active task ID for the pull-request handler (workspace-global). */
+  private activePullRequestTaskId: string | null = null;
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -1114,6 +1162,58 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Fires the onPullRequest automation hook if configured.
+   */
+  handlePullRequest(result: PullRequestResult): void {
+    const cfg = this.policy.onPullRequest;
+    if (!cfg?.enabled) return;
+
+    // Loop guard: skip if a task is still pending/running
+    if (this.activePullRequestTaskId) {
+      const existing = this.orchestrator.getTask(this.activePullRequestTaskId);
+      if (existing?.status === "pending" || existing?.status === "running") {
+        this.log(
+          `[automation] skipping pull-request trigger — task ${this.activePullRequestTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activePullRequestTaskId = null;
+    }
+
+    const key = "pullRequest:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] skipping pull-request trigger — cooldown active (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    const prompt = cfg.prompt
+      .replace(/\{\{url\}\}/g, result.url)
+      .replace(
+        /\{\{number\}\}/g,
+        result.number !== null ? String(result.number) : "(unknown)",
+      )
+      .replace(/\{\{title\}\}/g, result.title)
+      .replace(/\{\{branch\}\}/g, result.branch);
+
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.activePullRequestTaskId = taskId;
+      this.log(
+        `[automation] triggered pull-request task ${taskId.slice(0, 8)} (PR #${result.number ?? "?"}: ${result.title})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue pull-request task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
@@ -1129,6 +1229,7 @@ export class AutomationHooks {
     onGitCommit: { enabled: boolean; cooldownMs: number } | null;
     onGitPush: { enabled: boolean; cooldownMs: number } | null;
     onBranchCheckout: { enabled: boolean; cooldownMs: number } | null;
+    onPullRequest: { enabled: boolean; cooldownMs: number } | null;
   } {
     const p = this.policy;
     return {
@@ -1182,6 +1283,12 @@ export class AutomationHooks {
         ? {
             enabled: p.onBranchCheckout.enabled,
             cooldownMs: p.onBranchCheckout.cooldownMs,
+          }
+        : null,
+      onPullRequest: p.onPullRequest
+        ? {
+            enabled: p.onPullRequest.enabled,
+            cooldownMs: p.onPullRequest.cooldownMs,
           }
         : null,
     };

@@ -274,6 +274,7 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | `onGitCommit` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitCommit` tool call. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}` (list of committed files). Loop guard; file list capped at 20 entries. |
 | `onGitPush` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitPush` tool call. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`. Loop guard. |
 | `onBranchCheckout` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitCheckout` tool call. Placeholders: `{{branch}}`, `{{previousBranch}}` (null → `"(detached HEAD)"`), `{{created}}` (bool). Loop guard. |
+| `onPullRequest` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `githubCreatePR` tool call. Placeholders: `{{url}}`, `{{number}}` (null → `"(unknown)"`), `{{title}}`, `{{branch}}`. Loop guard. |
 
 Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering while a prior task for the same file/event is still pending/running.
 

@@ -7,6 +7,7 @@ import type {
   Diagnostic,
   GitCommitResult,
   GitPushResult,
+  PullRequestResult,
 } from "../automation.js";
 import { AutomationHooks, loadPolicy } from "../automation.js";
 import type { IClaudeDriver } from "../claudeDriver.js";
@@ -1367,5 +1368,196 @@ describe("loadPolicy — onBranchCheckout", () => {
     );
     const policy = loadPolicy(p);
     expect(policy.onBranchCheckout?.cooldownMs).toBe(5_000);
+  });
+});
+
+// ── onPullRequest ─────────────────────────────────────────────────────────────
+
+function makePRResult(
+  overrides?: Partial<PullRequestResult>,
+): PullRequestResult {
+  return {
+    url: "https://github.com/org/repo/pull/42",
+    number: 42,
+    title: "feat: add onPullRequest hook",
+    branch: "feat/pr-hook",
+    ...overrides,
+  };
+}
+
+describe("AutomationHooks — onPullRequest", () => {
+  it("enqueues a task when PR is created", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: true,
+          prompt: "PR created: {{url}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePullRequest(makePRResult());
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("replaces all placeholders in the prompt", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: true,
+          prompt: "PR #{{number}} '{{title}}' on {{branch}} → {{url}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePullRequest(makePRResult());
+    const task = orch.list()[0];
+    expect(task?.prompt).toBe(
+      "PR #42 'feat: add onPullRequest hook' on feat/pr-hook → https://github.com/org/repo/pull/42",
+    );
+  });
+
+  it("handles null PR number gracefully", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: true,
+          prompt: "PR #{{number}} created",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePullRequest(makePRResult({ number: null }));
+    const task = orch.list()[0];
+    expect(task?.prompt).toBe("PR #(unknown) created");
+  });
+
+  it("does nothing when disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: false,
+          prompt: "PR {{url}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePullRequest(makePRResult());
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("respects cooldown between triggers", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: true,
+          prompt: "PR {{url}}",
+          cooldownMs: 60_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePullRequest(
+      makePRResult({ url: "https://github.com/org/repo/pull/1", number: 1 }),
+    );
+    hooks.handlePullRequest(
+      makePRResult({ url: "https://github.com/org/repo/pull/2", number: 2 }),
+    );
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("skips trigger when a task is still running (loop guard)", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: true,
+          prompt: "PR {{url}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePullRequest(
+      makePRResult({ url: "https://github.com/org/repo/pull/1", number: 1 }),
+    );
+    hooks.handlePullRequest(
+      makePRResult({ url: "https://github.com/org/repo/pull/2", number: 2 }),
+    );
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onPullRequest", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: true,
+          prompt: "PR {{url}}",
+          cooldownMs: 10_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    expect(hooks.getStatus().onPullRequest).toEqual({
+      enabled: true,
+      cooldownMs: 10_000,
+    });
+  });
+});
+
+describe("loadPolicy — onPullRequest", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-pr-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onPullRequest policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onPullRequest: {
+          enabled: true,
+          prompt: "PR #{{number}} created: {{url}}",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onPullRequest?.enabled).toBe(true);
+  });
+
+  it("enforces onPullRequest cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onPullRequest: { enabled: true, prompt: "PR {{url}}", cooldownMs: 100 },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onPullRequest?.cooldownMs).toBe(5_000);
   });
 });
