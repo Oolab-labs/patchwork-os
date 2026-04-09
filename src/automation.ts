@@ -75,6 +75,36 @@ export interface OnCwdChangedPolicy {
   cooldownMs: number;
 }
 
+export interface OnTestRunPolicy {
+  enabled: boolean;
+  /**
+   * Only trigger when there are test failures or errors.
+   * Set to false to trigger after every test run regardless of outcome.
+   * Default: true.
+   */
+  onFailureOnly: boolean;
+  /**
+   * Prompt to enqueue after a test run.
+   * Placeholders: {{runner}}, {{failed}}, {{passed}}, {{total}}, {{failures}}
+   */
+  prompt: string;
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+/** Minimal test run result passed to handleTestRun — avoids importing TestResult from tool files. */
+export interface TestRunResult {
+  runners: string[];
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    errored: number;
+  };
+  failures: Array<{ name: string; file: string; message: string }>;
+}
+
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
@@ -86,6 +116,8 @@ export interface AutomationPolicy {
   onPostCompact?: OnPostCompactPolicy;
   /** Fired by Claude Code 2.1.76+ InstructionsLoaded hook — injects bridge status at session start. */
   onInstructionsLoaded?: OnInstructionsLoadedPolicy;
+  /** Fired after every runTests call (or only on failures, depending on onFailureOnly). */
+  onTestRun?: OnTestRunPolicy;
 }
 
 export interface Diagnostic {
@@ -293,6 +325,34 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onTestRun
+  if (policy.onTestRun !== undefined) {
+    const tr = policy.onTestRun;
+    if (typeof tr !== "object" || tr === null) {
+      throw new Error(`"onTestRun" must be an object`);
+    }
+    if (typeof tr.enabled !== "boolean") {
+      throw new Error(`"onTestRun.enabled" must be a boolean`);
+    }
+    if (typeof tr.onFailureOnly !== "boolean") {
+      throw new Error(`"onTestRun.onFailureOnly" must be a boolean`);
+    }
+    if (typeof tr.prompt !== "string" || tr.prompt.trim() === "") {
+      throw new Error(`"onTestRun.prompt" must be a non-empty string`);
+    }
+    if (tr.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(
+        `"onTestRun.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
+    }
+    if (typeof tr.cooldownMs !== "number" || !Number.isFinite(tr.cooldownMs)) {
+      throw new Error(`"onTestRun.cooldownMs" must be a number`);
+    }
+    if (tr.cooldownMs < MIN_COOLDOWN_MS) {
+      tr.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   return policy;
 }
 
@@ -311,6 +371,8 @@ export class AutomationHooks {
   private activeSaveTasks = new Map<string, string>();
   /** Active task IDs per file for the file-changed handler. */
   private activeFileChangedTasks = new Map<string, string>();
+  /** Active task ID for the test-run handler (workspace-global). */
+  private activeTestRunTaskId: string | null = null;
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -643,6 +705,87 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Called after every runTests tool invocation completes.
+   * Triggers an automation task when tests fail (or on every run if onFailureOnly is false).
+   */
+  handleTestRun(result: TestRunResult): void {
+    const cfg = this.policy.onTestRun;
+    if (!cfg?.enabled) return;
+
+    const failureCount = result.summary.failed + result.summary.errored;
+
+    // Honour onFailureOnly: skip trigger when all tests pass
+    if (cfg.onFailureOnly && failureCount === 0) return;
+
+    // Loop guard: skip if a task is still pending/running
+    if (this.activeTestRunTaskId) {
+      const existing = this.orchestrator.getTask(this.activeTestRunTaskId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping test-run trigger — task ${this.activeTestRunTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeTestRunTaskId = null;
+    }
+
+    // Cooldown check (workspace-global key)
+    const key = "testRun:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for test-run (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const runnerStr = result.runners.join(", ") || "unknown";
+    const failureLines = result.failures
+      .slice(0, 10)
+      .map((f) => {
+        const loc = f.file ? ` (${f.file.slice(0, MAX_FILE_PATH_CHARS)})` : "";
+        const msg = f.message
+          ? `: ${f.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`
+          : "";
+        return `- ${f.name}${loc}${msg}`;
+      })
+      .join("\n");
+    const failuresText =
+      result.failures.length > 10
+        ? `${failureLines}\n… and ${result.failures.length - 10} more`
+        : failureLines;
+
+    const prompt = cfg.prompt
+      .replace(/\{\{runner\}\}/g, runnerStr)
+      .replace(/\{\{failed\}\}/g, String(failureCount))
+      .replace(/\{\{passed\}\}/g, String(result.summary.passed))
+      .replace(/\{\{total\}\}/g, String(result.summary.total))
+      .replace(
+        /\{\{failures\}\}/g,
+        `\n--- BEGIN TEST FAILURES (untrusted) ---\n${failuresText}\n--- END TEST FAILURES ---\n`,
+      );
+
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.activeTestRunTaskId = taskId;
+      this.log(
+        `[automation] triggered test-run task ${taskId.slice(0, 8)} (${failureCount} failure(s))`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue test-run task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
@@ -650,6 +793,11 @@ export class AutomationHooks {
     onFileSave: { enabled: boolean; patternCount: number } | null;
     onFileChanged: { enabled: boolean; patternCount: number } | null;
     onCwdChanged: { enabled: boolean; cooldownMs: number } | null;
+    onTestRun: {
+      enabled: boolean;
+      onFailureOnly: boolean;
+      cooldownMs: number;
+    } | null;
   } {
     const p = this.policy;
     return {
@@ -678,6 +826,13 @@ export class AutomationHooks {
         ? {
             enabled: p.onCwdChanged.enabled,
             cooldownMs: p.onCwdChanged.cooldownMs,
+          }
+        : null,
+      onTestRun: p.onTestRun
+        ? {
+            enabled: p.onTestRun.enabled,
+            onFailureOnly: p.onTestRun.onFailureOnly,
+            cooldownMs: p.onTestRun.cooldownMs,
           }
         : null,
     };

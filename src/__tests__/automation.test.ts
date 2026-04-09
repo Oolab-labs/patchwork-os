@@ -573,3 +573,254 @@ describe("AutomationHooks.handleCwdChanged", () => {
     expect(status.onCwdChanged).toEqual({ enabled: true, cooldownMs: 30_000 });
   });
 });
+
+// ── onTestRun ─────────────────────────────────────────────────────────────────
+
+function makeTestResult(overrides?: {
+  failed?: number;
+  passed?: number;
+  total?: number;
+  runners?: string[];
+}) {
+  const failed = overrides?.failed ?? 0;
+  const passed = overrides?.passed ?? 0;
+  return {
+    runners: overrides?.runners ?? ["vitest"],
+    summary: {
+      total: overrides?.total ?? failed + passed,
+      passed,
+      failed,
+      skipped: 0,
+      errored: 0,
+    },
+    failures: Array.from({ length: failed }, (_, i) => ({
+      name: `test ${i + 1}`,
+      file: `src/foo.test.ts`,
+      message: `Expected ${i} to equal ${i + 1}`,
+    })),
+  };
+}
+
+describe("AutomationHooks.handleTestRun", () => {
+  it("enqueues a task when tests fail (onFailureOnly: true)", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          prompt: "{{failed}} tests failed",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(makeTestResult({ failed: 2, passed: 8 }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("does NOT trigger when all tests pass and onFailureOnly is true", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          prompt: "{{failed}} failures",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(makeTestResult({ passed: 10 }));
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("triggers on passing tests when onFailureOnly is false", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: false,
+          prompt: "Tests ran: {{total}} total",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(makeTestResult({ passed: 5 }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("replaces {{runner}}, {{failed}}, {{passed}}, {{total}} placeholders", () => {
+    const logs: string[] = [];
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: false,
+          prompt:
+            "runner={{runner}} failed={{failed}} passed={{passed}} total={{total}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      (msg) => logs.push(msg),
+    );
+    hooks.handleTestRun(
+      makeTestResult({ failed: 1, passed: 9, runners: ["jest"] }),
+    );
+    const task = orch.list()[0];
+    expect(task?.prompt).toContain("runner=jest");
+    expect(task?.prompt).toContain("failed=1");
+    expect(task?.prompt).toContain("passed=9");
+    expect(task?.prompt).toContain("total=10");
+  });
+
+  it("does not trigger when disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: false,
+          onFailureOnly: true,
+          prompt: "{{failed}} failures",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(makeTestResult({ failed: 3 }));
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("respects cooldown between triggers", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          prompt: "{{failed}} failures",
+          cooldownMs: 30_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(makeTestResult({ failed: 1 }));
+    hooks.handleTestRun(makeTestResult({ failed: 1 }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("skips trigger when a task is still running (loop guard)", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          prompt: "{{failures}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(makeTestResult({ failed: 1 }));
+    // Manually advance time past cooldown so second call isn't blocked by it
+    // Instead rely on the loop guard: the task is still running
+    hooks.handleTestRun(makeTestResult({ failed: 1 }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onTestRun", () => {
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          prompt: "{{failed}} failures",
+          cooldownMs: 10_000,
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    const status = hooks.getStatus();
+    expect(status.onTestRun).toEqual({
+      enabled: true,
+      onFailureOnly: true,
+      cooldownMs: 10_000,
+    });
+  });
+});
+
+describe("loadPolicy — onTestRun", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-tr-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onTestRun policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          prompt: "Fix {{failed}} failing tests",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onTestRun?.enabled).toBe(true);
+    expect(policy.onTestRun?.onFailureOnly).toBe(true);
+  });
+
+  it("enforces onTestRun cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          prompt: "Fix tests",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onTestRun?.cooldownMs).toBe(5_000);
+  });
+
+  it("throws when onTestRun.onFailureOnly is missing", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTestRun: {
+          enabled: true,
+          prompt: "Fix tests",
+          cooldownMs: 10_000,
+          // onFailureOnly omitted
+        },
+      }),
+    );
+    expect(() => loadPolicy(p)).toThrow(/onFailureOnly/);
+  });
+});

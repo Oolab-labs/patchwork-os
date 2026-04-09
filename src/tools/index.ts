@@ -284,7 +284,11 @@ export function registerAllTools(
     config.linters.length > 0 ? config.linters : undefined,
   );
 
-  const testsTool = createRunTestsTool(workspace, probes);
+  const testsTool = createRunTestsTool(
+    workspace,
+    probes,
+    automationHooks ? (r) => automationHooks.handleTestRun(r) : undefined,
+  );
 
   const tools = [
     createOpenFileTool(
