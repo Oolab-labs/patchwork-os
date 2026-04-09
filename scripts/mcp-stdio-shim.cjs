@@ -110,6 +110,75 @@ const RECONNECT_DEBOUNCE_MS = 500;
 const POLL_INTERVAL_MS = 3000; // fallback poll when disconnected
 const MAX_PENDING_LINES = 1000;
 
+// Backoff state — differentiated retry delays by error category
+const MAX_UNREACHABLE_MS =
+  Number(process.env.SHIM_MAX_UNREACHABLE_MS) || 5 * 60 * 1000;
+let firstUnreachableAt = 0; // epoch ms of first consecutive failure in current streak
+let currentBackoffMs = 0; // 0 = not in a backoff sequence
+let backoffTimer = null; // pending setTimeout for next reconnect attempt
+
+// --- Backoff helpers ---
+
+/**
+ * Returns the next retry delay (ms) for a given error category and mutates
+ * currentBackoffMs so successive calls produce exponential growth.
+ *
+ * Categories:
+ *   "429"         – rate-limited: start 1s, double, cap 30s, full jitter
+ *   "unreachable" – ECONNREFUSED / ETIMEDOUT: start 1s, double, cap 30s
+ *   "other"       – falls back to flat POLL_INTERVAL_MS
+ */
+function nextBackoffMs(errorType) {
+  if (errorType === "other") {
+    currentBackoffMs = 0;
+    return POLL_INTERVAL_MS;
+  }
+  const CAP_MS = 30_000;
+  currentBackoffMs =
+    currentBackoffMs === 0 ? 1000 : Math.min(currentBackoffMs * 2, CAP_MS);
+  // Full jitter for 429 (avoids thundering herd on a recovering bridge)
+  return errorType === "429"
+    ? Math.floor(Math.random() * currentBackoffMs)
+    : currentBackoffMs;
+}
+
+function resetBackoff() {
+  currentBackoffMs = 0;
+  firstUnreachableAt = 0;
+  if (backoffTimer) {
+    clearTimeout(backoffTimer);
+    backoffTimer = null;
+  }
+}
+
+/**
+ * Schedule a reconnect attempt after a computed backoff delay.
+ * Replaces any pending backoffTimer. Does NOT call startPoll().
+ */
+function scheduleBackoffReconnect(errorType) {
+  if (backoffTimer) clearTimeout(backoffTimer);
+  const delay = nextBackoffMs(errorType);
+  process.stderr.write(
+    `mcp-stdio-shim: Will retry in ${Math.round(delay / 1000)}s (reason: ${errorType}).\n`,
+  );
+  backoffTimer = setTimeout(() => {
+    backoffTimer = null;
+    const lockFile = findLockFile();
+    if (!lockFile) {
+      startPoll();
+      return;
+    }
+    let parsed;
+    try {
+      parsed = parseLock(lockFile);
+    } catch {
+      startPoll();
+      return;
+    }
+    connect(parsed.port, parsed.authToken);
+  }, delay);
+}
+
 // --- Explicit args (bypass auto-discover and watcher) ---
 const explicitPort =
   process.argv[2] && process.argv[3] ? Number(process.argv[2]) : null;
@@ -139,18 +208,76 @@ function connect(port, authToken) {
     headers: { "x-claude-code-ide-authorization": authToken },
   });
 
+  // Per-connect flag: set when the error handler classifies this attempt as 429
+  // so the close handler knows not to call startPoll() and instead backs off.
+  let lastErrorWas429 = false;
+
   ws.on("error", (err) => {
-    process.stderr.write(`mcp-stdio-shim: WebSocket error: ${err.message}\n`);
-    // In explicit mode exit immediately; in auto-discover mode wait for a new lock
-    if (explicitPort !== null) process.exit(1);
+    const code = err.code; // e.g. "ECONNREFUSED", "ETIMEDOUT", or undefined
+    process.stderr.write(
+      `mcp-stdio-shim: WebSocket error [${code ?? "unknown"}]: ${err.message}\n`,
+    );
+
+    if (explicitPort !== null) {
+      process.exit(1);
+    }
+
+    if (code === "ECONNREFUSED" || code === "ETIMEDOUT") {
+      if (firstUnreachableAt === 0) firstUnreachableAt = Date.now();
+      if (Date.now() - firstUnreachableAt > MAX_UNREACHABLE_MS) {
+        process.stderr.write(
+          "mcp-stdio-shim: Bridge unreachable for >5 minutes — giving up.\n",
+        );
+        process.exit(1);
+      }
+      scheduleBackoffReconnect("unreachable");
+    } else if (err.message?.includes("429")) {
+      lastErrorWas429 = true;
+      if (firstUnreachableAt === 0) firstUnreachableAt = Date.now();
+      if (Date.now() - firstUnreachableAt > MAX_UNREACHABLE_MS) {
+        process.stderr.write(
+          "mcp-stdio-shim: Bridge rate-limiting for >5 minutes — giving up.\n",
+        );
+        process.exit(1);
+      }
+      scheduleBackoffReconnect("429");
+    } else if (
+      err.message &&
+      (err.message.includes("401") || err.message.includes("403"))
+    ) {
+      process.stderr.write(
+        "mcp-stdio-shim: Auth failure (401/403) — exiting.\n",
+      );
+      process.exit(1);
+    }
+    // Other errors fall through to the close handler
   });
 
   ws.on("close", (code, reason) => {
+    const reasonStr = reason?.toString() || "";
     process.stderr.write(
-      `mcp-stdio-shim: Connection closed (${code} ${reason})\n`,
+      `mcp-stdio-shim: Connection closed (${code} ${reasonStr})\n`,
     );
     if (explicitPort !== null) process.exit(0);
-    // Auto-discover mode: start polling as fallback in case fs.watch misses the event
+
+    // Auth rejected — exit immediately, retrying will not help
+    if (code === 4001) {
+      process.stderr.write(
+        "mcp-stdio-shim: Authorization rejected (4001) — token mismatch. Exiting.\n",
+      );
+      process.exit(1);
+    }
+
+    // If the error handler already scheduled a backoff reconnect, don't also start polling
+    if (backoffTimer) return;
+
+    // 1006 = abnormal closure (often accompanies a 429 rejection before handshake)
+    if (lastErrorWas429) {
+      scheduleBackoffReconnect("429");
+      return;
+    }
+
+    // Normal closure or other codes: resume flat polling (existing behavior)
     startPoll();
   });
 
@@ -162,6 +289,7 @@ function connect(port, authToken) {
   ws.on("open", () => {
     process.stderr.write("mcp-stdio-shim: Connected.\n");
     stopPoll();
+    resetBackoff();
     // On reconnect (after a prior successful connection), drop stale pending messages —
     // they reference old session state (e.g. the previous initialize handshake) and must
     // not be replayed. A failed first attempt does NOT count — pendingLines must be kept
@@ -280,7 +408,16 @@ process.stdin.on("data", (chunk) => {
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(trimmed);
+      try {
+        ws.send(trimmed);
+      } catch (sendErr) {
+        process.stderr.write(
+          `mcp-stdio-shim: ws.send failed (${sendErr.message}) — queuing message.\n`,
+        );
+        if (pendingLines.length < MAX_PENDING_LINES) {
+          pendingLines.push(trimmed);
+        }
+      }
     } else if (pendingLines.length < MAX_PENDING_LINES) {
       pendingLines.push(trimmed);
     } else {
@@ -292,5 +429,30 @@ process.stdin.on("data", (chunk) => {
 });
 
 process.stdin.on("end", () => {
-  if (ws) ws.close();
+  if (ws) {
+    try {
+      ws.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  process.exit(0);
+});
+
+process.stdin.on("error", (err) => {
+  // EPIPE / ERR_STREAM_DESTROYED means the MCP host closed the pipe — clean shutdown.
+  if (err.code === "EPIPE" || err.code === "ERR_STREAM_DESTROYED") {
+    process.stderr.write(
+      `mcp-stdio-shim: stdin closed (${err.code}) — shutting down.\n`,
+    );
+    if (ws) {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    process.exit(0);
+  }
+  process.stderr.write(`mcp-stdio-shim: stdin error: ${err.message}\n`);
 });
