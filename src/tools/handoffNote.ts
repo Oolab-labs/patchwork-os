@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { error, success } from "./utils.js";
+import { error, successStructured } from "./utils.js";
 
 function getGlobalNotePath(configDir: string): string {
   return path.join(configDir, "ide", "handoff-note.json");
@@ -106,6 +106,14 @@ export function createSetHandoffNoteTool(
         },
         required: ["note"],
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          saved: { type: "boolean" },
+          updatedAt: { type: "number" },
+        },
+        required: ["saved", "updatedAt"],
+      },
     },
     handler: async (args: Record<string, unknown>) => {
       const note = args.note as string;
@@ -121,7 +129,7 @@ export function createSetHandoffNoteTool(
           `Failed to write handoff note: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-      return success({ saved: true, updatedAt: Date.now() });
+      return successStructured({ saved: true, updatedAt: Date.now() });
     },
   };
 }
@@ -140,11 +148,22 @@ export function createGetHandoffNoteTool(
         properties: {},
         required: [],
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          note: { type: ["string", "null"] },
+          message: { type: "string" },
+          updatedAt: { type: "number" },
+          updatedBy: { type: "string" },
+          age: { type: "string" },
+        },
+        required: ["note"],
+      },
     },
     handler: async (_args: Record<string, unknown>) => {
       const note = await readNote(deps.workspace, deps.configDir);
       if (!note) {
-        return success({
+        return successStructured({
           note: null,
           message: "No handoff note found. Use setHandoffNote to save context.",
         });
@@ -155,7 +174,7 @@ export function createGetHandoffNoteTool(
         ageMinutes < 60
           ? `${ageMinutes}m ago`
           : `${Math.round(ageMinutes / 60)}h ago`;
-      return success({
+      return successStructured({
         note: note.note,
         updatedAt: note.updatedAt,
         updatedBy: note.updatedBy,

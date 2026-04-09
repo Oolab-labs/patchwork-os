@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.14 — 2026-04-09)
+## Current State (v2.11.15 — 2026-04-09)
 
 - **Slim mode default**: 48 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
 - **~1,695 bridge tests / ~130 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
@@ -28,6 +28,16 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.15 shipped (2026-04-09) — outputSchema for remaining workflow tools:**
+- `outputSchema` + `successStructured` added to 4 tools completing all major tool families:
+  - `cancelClaudeTask` → `{ cancelled, taskId }` (completes Claude orchestration family)
+  - `resumeClaudeTask` → `{ newTaskId, originalTaskId, prompt, status }` (completes Claude orchestration family)
+  - `setHandoffNote` → `{ saved, updatedAt }` / `getHandoffNote` → `{ note, updatedAt?, updatedBy?, age? }` (cross-session context tools)
+  - `getPRTemplate` → `{ body, commits, issueRefs, filesChanged, base, style?, note? }` (PR workflow tool)
+- `structuredContent.test.ts`: 5 new contract tests (25 total)
+- Audit: 37 outputSchema tools (up from 33); all 5 checks pass
+- 1739 bridge tests (up from 1734)
 
 **v2.11.14 shipped (2026-04-09) — onPullRequest automation hook:**
 - New `OnPullRequestPolicy` + `handlePullRequest()` in `automation.ts`: fires after every successful `githubCreatePR` tool call; placeholders: `{{url}}`, `{{number}}` (null → `"(unknown)"`), `{{title}}`, `{{branch}}`; loop guard + cooldown (min 5s)

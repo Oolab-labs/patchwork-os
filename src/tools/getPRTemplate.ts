@@ -1,5 +1,5 @@
 import { runGitStdout } from "./git-utils.js";
-import { error, execSafe, optionalString, success } from "./utils.js";
+import { error, execSafe, optionalString, successStructured } from "./utils.js";
 
 function runGit(
   args: string[],
@@ -133,6 +133,19 @@ export function createGetPRTemplateTool(workspace: string) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          body: { type: "string" },
+          commits: { type: "number" },
+          issueRefs: { type: "array", items: { type: "string" } },
+          filesChanged: { type: "number" },
+          base: { type: "string" },
+          style: { type: "string" },
+          note: { type: "string" },
+        },
+        required: ["body", "commits", "issueRefs", "filesChanged", "base"],
+      },
     },
     timeoutMs: 15_000,
 
@@ -195,7 +208,7 @@ export function createGetPRTemplateTool(workspace: string) {
       }
 
       if (commits.length === 0) {
-        return success({
+        return successStructured({
           body: "",
           commits: 0,
           issueRefs: [],
@@ -220,7 +233,7 @@ export function createGetPRTemplateTool(workspace: string) {
           body = formatBullet(commits, stats, issueRefs);
       }
 
-      return success({
+      return successStructured({
         body,
         commits: commits.length,
         issueRefs,
