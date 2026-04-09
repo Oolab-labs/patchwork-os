@@ -12,6 +12,7 @@ function mockClient(
 ) {
   return {
     isConnected: () => connected,
+    lspReadyLanguages: new Set(["typescript"]),
     previewCodeAction: vi.fn(async () => {
       if (throwTimeout) throw new ExtensionTimeoutError("timeout");
       return previewResult;
