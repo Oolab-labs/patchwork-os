@@ -270,8 +270,9 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | `onCwdChanged` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude Code's working directory changes. Placeholder: `{{cwd}}`. Trigger via the `notifyCwdChanged` MCP tool from a CC CwdChanged hook. Requires Claude Code 2.1.83+. |
 | `onPostCompact` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude compacts context (Claude Code 2.1.76+). Use to re-snapshot IDE state. |
 | `onInstructionsLoaded` | `enabled`, `prompt` | — | Fires once at session start when CLAUDE.md loads (Claude Code 2.1.76+). No cooldown. |
+| `onTestRun` | `enabled`, `prompt`, `cooldownMs` | `onFailureOnly` (bool, default `true`) | Fires when `runTests` completes. Placeholders: `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array of `{name,file,message}`). Loop guard prevents hook-spawned tasks from re-triggering. |
 
-Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering while a prior task for the same file is still pending/running.
+Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering while a prior task for the same file/event is still pending/running.
 
 **Claude Code hooks (settings.json)** can narrow when bridge-invoked shell scripts fire using the `if` field (Claude Code 2.1.85+). Uses permission-rule syntax:
 
