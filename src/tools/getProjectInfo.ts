@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execSafe, success } from "./utils.js";
+import { execSafe, successStructured } from "./utils.js";
 
 interface PackageJson {
   name?: string;
@@ -182,6 +182,21 @@ export function createGetProjectInfoTool(workspace: string) {
         properties: {},
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          workspace: { type: "string" },
+          project: {
+            description:
+              "Single project object or array when multiple detected",
+          },
+          directories: { type: "array", items: { type: "string" } },
+          configFiles: { type: "array", items: { type: "string" } },
+          git: { type: "object" },
+          tip: { type: "string" },
+        },
+        required: ["workspace"],
+      },
     },
     handler: async () => {
       const projects: Array<Record<string, unknown>> = [];
@@ -350,7 +365,7 @@ export function createGetProjectInfoTool(workspace: string) {
         // ignore
       }
 
-      return success({
+      return successStructured({
         workspace,
         project: projects.length === 1 ? projects[0] : projects,
         directories: topLevelDirs,

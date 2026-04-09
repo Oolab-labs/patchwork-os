@@ -1,5 +1,10 @@
 import type { ActivityLog } from "../activityLog.js";
-import { optionalBool, optionalInt, optionalString, success } from "./utils.js";
+import {
+  optionalBool,
+  optionalInt,
+  optionalString,
+  successStructured,
+} from "./utils.js";
 
 export function createGetActivityLogTool(activityLog: ActivityLog) {
   return {
@@ -33,6 +38,15 @@ export function createGetActivityLogTool(activityLog: ActivityLog) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          entries: { type: "array" },
+          count: { type: "integer" },
+          stats: { type: "object" },
+        },
+        required: ["entries", "count"],
+      },
     },
     handler: async (args: Record<string, unknown>) => {
       const tool = optionalString(args, "tool");
@@ -48,7 +62,7 @@ export function createGetActivityLogTool(activityLog: ActivityLog) {
       if (showStats) {
         result.stats = activityLog.stats();
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }

@@ -6,7 +6,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  successLarge,
+  successStructuredLarge,
   truncateOutput,
 } from "./utils.js";
 
@@ -179,6 +179,17 @@ export function createRunCommandTool(workspace: string, config: Config) {
         required: ["command"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          exitCode: { type: "integer" },
+          stdout: { type: "string" },
+          stderr: { type: "string" },
+          durationMs: { type: "number" },
+          timedOut: { type: "boolean" },
+        },
+        required: ["exitCode", "stdout", "stderr", "durationMs", "timedOut"],
+      },
     },
     timeoutMs: 300_000,
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -207,7 +218,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
       const stderrResult = truncateOutput(result.stderr, maxBytes);
       const anyTruncated = stdoutResult.truncated || stderrResult.truncated;
 
-      return successLarge({
+      return successStructuredLarge({
         exitCode: result.exitCode,
         stdout: stdoutResult.text,
         stderr: stderrResult.text,
