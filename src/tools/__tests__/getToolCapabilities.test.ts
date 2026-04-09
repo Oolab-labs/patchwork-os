@@ -115,6 +115,13 @@ describe("createGetToolCapabilitiesTool — extension connected", () => {
     const data = parse(await tool.handler());
     expect(data.availableTools.terminal).toContain("listTerminals");
     expect(data.availableTools.debug).toContain("getDebugState");
+    expect(data.availableTools.lsp).toContain("getSemanticTokens");
+    expect(data.availableTools.lsp).toContain("getCodeLens");
+    expect(data.availableTools.lsp).toContain("getChangeImpact");
+    expect(data.availableTools.lsp).toContain("getImportedSignatures");
+    expect(data.availableTools.lsp).toContain("getDocumentLinks");
+    expect(data.availableTools.lsp).toContain("batchGetHover");
+    expect(data.availableTools.lsp).toContain("batchGoToDefinition");
   });
 
   it("includes watchFiles and organizeImports when connected", async () => {
