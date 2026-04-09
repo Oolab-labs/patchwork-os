@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.13 — 2026-04-09)
+## Current State (v2.11.14 — 2026-04-09)
 
 - **Slim mode default**: 48 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
 - **~1,695 bridge tests / ~130 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
@@ -28,6 +28,13 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.14 shipped (2026-04-09) — onPullRequest automation hook:**
+- New `OnPullRequestPolicy` + `handlePullRequest()` in `automation.ts`: fires after every successful `githubCreatePR` tool call; placeholders: `{{url}}`, `{{number}}` (null → `"(unknown)"`), `{{title}}`, `{{branch}}`; loop guard + cooldown (min 5s)
+- `createGithubCreatePRTool` accepts optional `onPullRequest` callback; resolves current branch via `git rev-parse --abbrev-ref HEAD` before invoking callback; wired in `tools/index.ts`
+- `getStatus()` extended with `onPullRequest: { enabled, cooldownMs } | null`
+- `loadPolicy` validates + clamps `onPullRequest.cooldownMs` ≥ 5 000 ms
+- 9 new tests in `automation.test.ts` (74 total); 1734 bridge tests
 
 **v2.11.13 shipped (2026-04-09) — onBranchCheckout automation hook:**
 - New `OnBranchCheckoutPolicy` + `handleBranchCheckout()` in `automation.ts`: fires after every successful `gitCheckout` tool call; placeholders: `{{branch}}`, `{{previousBranch}}` (null → `"(detached HEAD)"`), `{{created}}`; loop guard + cooldown (min 5s)

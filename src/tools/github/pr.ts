@@ -34,7 +34,18 @@ async function resolveRepo(
   return result.stdout.trim() || null;
 }
 
-export function createGithubCreatePRTool(workspace: string) {
+/** Callback result shape for onPullRequest automation hook. */
+export interface PullRequestCallbackResult {
+  url: string;
+  number: number | null;
+  title: string;
+  branch: string;
+}
+
+export function createGithubCreatePRTool(
+  workspace: string,
+  onPullRequest?: (result: PullRequestCallbackResult) => void,
+) {
   return {
     schema: {
       name: "githubCreatePR",
@@ -122,6 +133,17 @@ export function createGithubCreatePRTool(workspace: string) {
       const number = numberMatch
         ? Number.parseInt(numberMatch[1] ?? "0", 10)
         : null;
+
+      if (onPullRequest) {
+        const branchResult = await execSafe(
+          "git",
+          ["rev-parse", "--abbrev-ref", "HEAD"],
+          { cwd: workspace, signal, timeout: 5_000 },
+        );
+        const branch =
+          branchResult.exitCode === 0 ? branchResult.stdout.trim() : "unknown";
+        onPullRequest({ url, number, title, branch });
+      }
 
       return success({ url, number, title });
     },

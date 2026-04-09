@@ -449,7 +449,12 @@ export function registerAllTools(
     createGenerateTestsTool(workspace),
     ...(probes.gh
       ? [
-          createGithubCreatePRTool(workspace),
+          createGithubCreatePRTool(
+            workspace,
+            automationHooks
+              ? (r) => automationHooks.handlePullRequest(r)
+              : undefined,
+          ),
           createGithubListPRsTool(workspace),
           createGithubViewPRTool(workspace),
           createGithubListIssuesTool(workspace),
