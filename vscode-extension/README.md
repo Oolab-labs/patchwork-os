@@ -6,7 +6,7 @@ Fix a bug from your phone. Let Claude run your tests and commit the result. Ask 
 
 ## How It Works
 
-This extension is the VS Code side of [claude-ide-bridge](https://github.com/Oolab-labs/claude-ide-bridge), an MCP server that connects Claude Code to your IDE over WebSockets. The extension streams live editor state to the bridge; Claude Code reads and acts on it through 138+ MCP tools.
+This extension is the VS Code side of [claude-ide-bridge](https://github.com/Oolab-labs/claude-ide-bridge), an MCP server that connects Claude Code to your IDE over WebSockets. The extension streams live editor state to the bridge; Claude Code reads and acts on it through 136+ MCP tools.
 
 When this extension is installed, **the bridge is installed and started automatically** — no terminal commands required to get going.
 
@@ -24,7 +24,7 @@ In your project directory:
 CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide
 ```
 
-> Add `export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true` to your shell profile so `claude --ide` is all you need going forward.
+> **Why the env var?** Claude Code normally validates that `--ide` is launched from within a recognized IDE (VS Code, Cursor, etc.). Since the bridge manages this connection independently, this check can be skipped. Add `export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true` to your shell profile (`~/.zshrc` or `~/.bashrc`) so `claude --ide` is all you need going forward.
 
 **Step 3 — Confirm the connection.**
 
@@ -56,7 +56,7 @@ Once connected, Claude has full IDE context and can act on it without you descri
 - **Capture a screenshot** — Claude can see what your editor looks like.
 - **Watch files for changes** — register file watchers and react to saves.
 
-Tools that require the extension (~50 of 138+) are automatically hidden from Claude when the extension is not connected. When reconnected, they reappear.
+Tools that require the extension (~50 of 136+) are automatically hidden from Claude when the extension is not connected. When reconnected, they reappear.
 
 ## Requirements
 
@@ -98,6 +98,8 @@ Tools that require the extension (~50 of 138+) are automatically hidden from Cla
 
 When the extension loses its connection to the bridge, tools requiring extension access (~50 tools: terminal, LSP, debug, editor state) are automatically hidden from Claude. Open the **Output** panel and select **Claude IDE Bridge** to check connection status. Run **Claude IDE Bridge: Reconnect** from the command palette, or reload the window.
 
+For a full environment health check, ask Claude to call `bridgeDoctor`. It verifies the extension connection, git, linters, test runner, lock file, node_modules, and GitHub CLI — and reports actionable suggestions for anything that's wrong.
+
 ### Bridge and extension version mismatch
 
 The extension auto-manages the `claude-ide-bridge` npm package. If you also installed the bridge manually, versions may diverge. To sync:
@@ -113,6 +115,29 @@ Repeated disconnects usually mean multiple old versions are installed across VS 
 
 In untrusted workspaces, bridge auto-install and auto-start are disabled. The extension will watch for a manually-started bridge via lock file, but will not spawn one itself.
 
+## Automation Hooks
+
+The bridge supports event-driven automation that fires Claude tasks in response to IDE events. Enable with `--automation --automation-policy <path.json>` when starting the bridge.
+
+| Trigger | When it fires |
+|---------|--------------|
+| `onDiagnosticsError` | VS Code reports new errors/warnings for a file |
+| `onFileSave` | A matching file is explicitly saved |
+| `onFileChanged` | Any buffer edit on a matching file |
+| `onTestRun` | `runTests` completes (optionally failures-only) |
+| `onGitCommit` | `gitCommit` tool succeeds |
+| `onGitPush` | `gitPush` tool succeeds |
+| `onBranchCheckout` | Git branch is created or switched |
+| `onPullRequest` | A pull request event occurs |
+| `onPostCompact` | Claude compacts its context |
+| `onInstructionsLoaded` | Claude loads CLAUDE.md at session start |
+
+See the [bridge README](https://github.com/Oolab-labs/claude-ide-bridge#claude-orchestration--automation) for full policy file syntax and placeholder reference.
+
+## Claude Orchestration
+
+When started with `--claude-driver subprocess`, the bridge can spawn Claude Code subprocesses as background tasks. Tools available: `runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`, `resumeClaudeTask`. Output streams to the **Claude IDE Bridge** output channel in real time.
+
 ## Links
 
 - [GitHub](https://github.com/Oolab-labs/claude-ide-bridge)
@@ -123,7 +148,7 @@ In untrusted workspaces, bridge auto-install and auto-start are disabled. The ex
 
 | | |
 |---|---|
-| Extension version | 1.0.5 |
+| Extension version | 1.0.20 |
 | Bridge package | `claude-ide-bridge` (npm) |
 | VS Code requirement | 1.93+ |
 | Compatible editors | VS Code, Cursor, Windsurf, Google Antigravity |

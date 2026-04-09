@@ -329,7 +329,7 @@ export class BridgeConnection {
       if (gen !== this.generation) return;
       const hint =
         res.statusCode === 401
-          ? " — auth token mismatch; try reloading the window"
+          ? " — auth token mismatch; will retry with fresh lock file"
           : res.statusCode === 403
             ? " — Host header rejected; bridge may be on a different interface"
             : res.statusCode === 429
@@ -337,15 +337,12 @@ export class BridgeConnection {
               : "";
       this.logError(`Upgrade rejected: HTTP ${res.statusCode}${hint}`);
       if (res.statusCode === 401) {
-        vscode.window
-          .showWarningMessage(
-            "Claude IDE Bridge: Auth token mismatch — the bridge may have restarted with a new token. Reloading the window should fix this.",
-            "Reload Window",
-          )
-          .then((choice) => {
-            if (choice === "Reload Window")
-              vscode.commands.executeCommand("workbench.action.reloadWindow");
-          });
+        // Clear the stale cached token so the next reconnect attempt reads a
+        // fresh lock file rather than retrying the old token and looping into
+        // repeated 401s. The reconnect backoff is also reset so recovery is fast.
+        this.lockDataFallback = null;
+        this.reconnectDelay = RECONNECT_BASE_DELAY;
+        this.reconnectAttempts = 0;
       }
       // Use handleDisconnect() for full cleanup (heartbeat, pending handlers,
       // listener removal, status bar). Must call BEFORE setting DISCONNECTING

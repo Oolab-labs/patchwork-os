@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.16 — 2026-04-09)
+## Current State (v2.11.23 — 2026-04-09)
 
-- **Slim mode default**: 48 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
-- **~1,695 bridge tests / ~130 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **Slim mode default**: 49 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all 136+; plugin tools always bypass slim filter
+- **~1,783 bridge tests / ~131 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
 - Extension v1.0.20 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE

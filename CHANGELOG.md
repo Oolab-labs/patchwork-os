@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.11.23] — 2026-04-09
+
+### Added
+- **`onGitCommit` automation hook** — fires after every successful `gitCommit` tool call. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`. Loop guard prevents re-triggering from tasks spawned by the hook itself. Cooldown min 5s.
+- **`onGitPush` automation hook** — fires after every successful `gitPush` tool call. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`. Cooldown min 5s.
+- **`onBranchCheckout` automation hook** — fires after every successful `gitCheckout` tool call. Placeholders: `{{branch}}`, `{{previousBranch}}`, `{{created}}`. Cooldown min 5s.
+- **`onPullRequest` automation hook** — fires after every successful `githubCreatePR` tool call. Placeholders: `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}`. `{{title}}` is nonce-wrapped (prompt injection defense). Cooldown min 5s.
+- **`previewCodeAction` LSP tool** — shows exact text edits a code action would make without applying them. Safe to call before `applyCodeAction`. Included in slim mode (50 slim tools total).
+- **`bridgeDoctor` tool** — comprehensive environment health check: extension connection, git, TypeScript, linter, test runner, lock file, node_modules, GitHub CLI. Returns per-check status and actionable suggestions.
+- **outputSchema + structuredContent** on all 29 LSP tools — structured output now enforced by CI audit script (`audit-lsp-tools.mjs`, 5 checks).
+- **SSE event IDs** on Streamable HTTP — monotonic event IDs + replay buffer (cap 100, TTL 30s) for `Last-Event-ID` reconnect resumability.
+- **Windowed circuit breaker** — opens only after ≥3 extension timeouts in 30s window (previously tripped on any single failure).
+- **RTT tracking** — `getBridgeStatus` now includes `latencyMs` and `connectionQuality` (`healthy`/`degraded`/`poor`).
+
+### Fixed
+- **`bridge.ts` shutdown exit code** — force-terminate timer now uses `exitCode` from signal handler instead of hardcoded `1`. Correct exit code propagated on SIGTERM/SIGINT.
+- **`connection.ts` 401 auto-recovery** — on auth token mismatch, the extension now clears the stale cached token and resets reconnect delay/attempts rather than showing a "Reload Window" modal. Recovery is automatic on the next reconnect cycle.
+
+### Changed
+- Slim mode tool count: 49 → **50** (`previewCodeAction` promoted to slim, `bridgeDoctor` added).
+- All automation hook prompt injection: untrusted placeholders (`{{title}}`, `{{files}}`, `{{message}}`, `{{branch}}`, `{{previousBranch}}`, `{{remote}}`) are nonce-wrapped with per-trigger delimiters.
+- Documentation overhaul: phantom snapshot tools removed from `platform-docs.md` and `use-cases.md`; all tool counts updated to 136+/50 slim; `troubleshooting.md` expanded with Issues 8–10; `vscode-extension/README.md` version corrected to 1.0.20.
+
+---
+
 ## [2.11.2] — 2026-04-04
 
 ### Added

@@ -13,7 +13,7 @@ Real-world workflows that showcase what the bridge makes possible. Each workflow
 | Programmatic debugging (breakpoints, eval) | 5 tools | No | No | No | No |
 | Terminal orchestration (create, run, wait) | 7 tools | No | No | No | No |
 | Real-time diagnostics streaming | Live push | No | No | No | No |
-| Workspace snapshots (checkpoint/rollback) | 6 tools | No | No | No | No |
+| Refactor preview + blast-radius analysis | `refactorAnalyze`, `refactorPreview` | No | No | No | No |
 | LSP with CLI fallback (works without extension) | 12 tools | Extension only | Extension only | Extension only | No LSP |
 | Remote control from any device | Yes | No | No | No | No |
 | Multi-language auto-detection (5 runners, 6 linters) | Yes | Partial | No | No | Partial |
@@ -282,49 +282,59 @@ Real-world workflows that showcase what the bridge makes possible. Each workflow
 
 ---
 
-## Workflow 5: Safe Refactoring with Rollback
+## Workflow 5: Safe Refactoring with Git Safety Net
 
 **Persona**: Solo Developer
-**Shows**: Snapshot safety net for risky multi-file changes
+**Shows**: Risky multi-file rename with a git checkpoint so rollback is one command away
 
 ### Step 1: Checkpoint before the refactor
-**Tool**: `createSnapshot` → `{ "name": "before-auth-refactor" }`
+**Tool**: `gitCommit` → `{ "message": "wip: checkpoint before auth rename", "all": true }`
 ```json
-← { "name": "before-auth-refactor", "index": 0 }
+← { "success": true, "hash": "a1b2c3d", "message": "wip: checkpoint before auth rename" }
 ```
 
-### Step 2: Rename across the codebase
+### Step 2: Analyze blast radius before touching anything
+**Tool**: `refactorAnalyze` → `{ "file": "src/auth.ts", "line": 5, "column": 14 }`
+```json
+← { "risk": "medium", "referenceCount": 12, "callerCount": 4, "files": ["src/auth.ts", "src/routes/login.ts", "src/middleware/jwt.ts", "test/auth.test.ts"] }
+```
+
+### Step 3: Preview the rename before applying
+**Tool**: `refactorPreview` → `{ "file": "src/auth.ts", "line": 5, "column": 14, "newName": "AuthenticationService" }`
+```json
+← { "edits": [{ "file": "src/routes/login.ts", "changes": 3 }, { "file": "src/middleware/jwt.ts", "changes": 2 }] }
+```
+
+### Step 4: Apply the rename
 **Tool**: `renameSymbol` → `{ "file": "src/auth.ts", "line": 5, "column": 14, "newName": "AuthenticationService" }`
 ```json
 ← { "success": true, "changes": 12, "files": ["src/auth.ts", "src/routes/login.ts", "src/middleware/jwt.ts", "test/auth.test.ts"] }
 ```
 
-### Step 3: Clean up imports
+### Step 5: Clean up imports and format
 **Tool**: `organizeImports` → `{ "file": "src/routes/login.ts" }`
 **Tool**: `organizeImports` → `{ "file": "src/middleware/jwt.ts" }`
-
-### Step 4: Format everything
 **Tool**: `formatDocument` → `{ "file": "src/auth.ts" }`
 
-### Step 5: Run tests to verify
+### Step 6: Run tests to verify
 **Tool**: `runTests` → `{}`
 ```json
 ← { "summary": { "total": 42, "passed": 39, "failed": 3 } }
 ```
 
-### Step 6: Tests failed — see what broke
-**Tool**: `diffSnapshot` → `{ "name": "before-auth-refactor" }`
+### Step 7: Tests failed — see exactly what broke
+**Tool**: `getGitDiff` → `{ "staged": false }`
 ```json
 ← { "diff": "diff --git a/src/middleware/jwt.ts...\n-import { AuthService } from '../auth';\n+import { AuthenticationService } from '../auth';\n..." }
 ```
 
-### Step 7: Rollback to the checkpoint
-**Tool**: `restoreSnapshot` → `{ "name": "before-auth-refactor" }`
+### Step 8: Rollback to the checkpoint if needed
+**Tool**: `runCommand` → `{ "command": "git", "args": ["reset", "--hard", "HEAD~1"] }`
 ```json
-← { "success": true, "message": "Restored snapshot before-auth-refactor" }
+← { "stdout": "HEAD is now at a1b2c3d wip: checkpoint before auth rename\n" }
 ```
 
-> **What's unique**: Workspace snapshots give you `git stash` superpowers — named checkpoints, diffing against current state, and instant rollback. No other AI tool provides this safety net for refactoring.
+> **What's unique**: `refactorAnalyze` + `refactorPreview` give you exact blast-radius data before any changes land. Claude sees the same diff a developer would review — then commits or rolls back with structured git tools, not raw shell commands.
 
 ---
 
@@ -548,7 +558,7 @@ Back to sleep by 2:19.
 | Debug | 5 | Yes |
 | Decorations | 2 | Yes |
 | Workspace Management | 4 | No |
-| Snapshots & Plans | 10 | No |
+| Plans | 5 | No |
 | HTTP | 2 | No |
 | VS Code Integration | 8 | Yes |
 | Notebooks | 3 | Yes |

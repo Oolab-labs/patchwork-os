@@ -89,20 +89,14 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `getWorkspaceFolders` | Workspace path info (enhanced with extension data when connected) |
 | `setActiveWorkspaceFolder` | Switch active workspace in multi-root setups |
 
-### Snapshots & Plans
+### Plans
 | Tool | Description |
 |------|-------------|
-| `createSnapshot` | Capture workspace state (file tree + key file contents) |
-| `listSnapshots` | List saved snapshots |
-| `showSnapshot` | View snapshot contents |
-| `diffSnapshot` | Diff current state against a snapshot |
-| `restoreSnapshot` | Restore workspace to snapshot state |
-| `deleteSnapshot` | Remove a snapshot |
-| `savePlan` | Persist an implementation plan to disk |
-| `loadPlan` | Load a saved plan |
-| `listPlans` | List saved plans |
+| `createPlan` | Persist an implementation plan to disk |
+| `updatePlan` | Update a saved plan |
+| `getPlan` | Load a saved plan by name |
 | `deletePlan` | Remove a saved plan |
-| `getPlanStatus` | Check plan completion status |
+| `listPlans` | List all saved plans |
 
 ### Flow & Activity
 | Tool | Description |
