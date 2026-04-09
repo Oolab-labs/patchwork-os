@@ -324,7 +324,12 @@ export function registerAllTools(
       workspace,
       automationHooks ? (r) => automationHooks.handleGitCommit(r) : undefined,
     ),
-    createGitCheckoutTool(workspace),
+    createGitCheckoutTool(
+      workspace,
+      automationHooks
+        ? (r) => automationHooks.handleBranchCheckout(r)
+        : undefined,
+    ),
     createGitBlameTool(workspace),
     createGitFetchTool(workspace),
     createGitListBranchesTool(workspace),

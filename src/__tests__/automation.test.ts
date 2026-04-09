@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type {
+  BranchCheckoutResult,
   Diagnostic,
   GitCommitResult,
   GitPushResult,
@@ -1175,5 +1176,196 @@ describe("loadPolicy — onGitPush", () => {
     );
     const policy = loadPolicy(p);
     expect(policy.onGitPush?.cooldownMs).toBe(5_000);
+  });
+});
+
+// ── onBranchCheckout ──────────────────────────────────────────────────────────
+
+function makeCheckoutResult(
+  overrides?: Partial<BranchCheckoutResult>,
+): BranchCheckoutResult {
+  return {
+    branch: "feature/abc",
+    previousBranch: "main",
+    created: false,
+    ...overrides,
+  };
+}
+
+describe("AutomationHooks.handleBranchCheckout", () => {
+  it("enqueues a task on branch switch", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onBranchCheckout: {
+          enabled: true,
+          prompt: "Switched to {{branch}} from {{previousBranch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleBranchCheckout(makeCheckoutResult());
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("replaces {{branch}}, {{previousBranch}}, {{created}} placeholders", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onBranchCheckout: {
+          enabled: true,
+          prompt:
+            "branch={{branch}} prev={{previousBranch}} created={{created}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleBranchCheckout(
+      makeCheckoutResult({
+        branch: "feat/xyz",
+        previousBranch: "develop",
+        created: true,
+      }),
+    );
+    const task = orch.list()[0];
+    expect(task?.prompt).toContain("branch=feat/xyz");
+    expect(task?.prompt).toContain("prev=develop");
+    expect(task?.prompt).toContain("created=true");
+  });
+
+  it("uses (detached HEAD) when previousBranch is null", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onBranchCheckout: {
+          enabled: true,
+          prompt: "from={{previousBranch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleBranchCheckout(makeCheckoutResult({ previousBranch: null }));
+    expect(orch.list()[0]?.prompt).toContain("from=(detached HEAD)");
+  });
+
+  it("does not trigger when disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onBranchCheckout: {
+          enabled: false,
+          prompt: "Switched to {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleBranchCheckout(makeCheckoutResult());
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("respects cooldown", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onBranchCheckout: {
+          enabled: true,
+          prompt: "Switched to {{branch}}",
+          cooldownMs: 30_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleBranchCheckout(makeCheckoutResult());
+    hooks.handleBranchCheckout(makeCheckoutResult({ branch: "other" }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("skips trigger when task is still running (loop guard)", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onBranchCheckout: {
+          enabled: true,
+          prompt: "Switched to {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleBranchCheckout(makeCheckoutResult());
+    hooks.handleBranchCheckout(makeCheckoutResult({ branch: "other" }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onBranchCheckout", () => {
+    const hooks = new AutomationHooks(
+      {
+        onBranchCheckout: {
+          enabled: true,
+          prompt: "Switched to {{branch}}",
+          cooldownMs: 10_000,
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    expect(hooks.getStatus().onBranchCheckout).toEqual({
+      enabled: true,
+      cooldownMs: 10_000,
+    });
+  });
+});
+
+describe("loadPolicy — onBranchCheckout", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-bc-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onBranchCheckout policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onBranchCheckout: {
+          enabled: true,
+          prompt: "Load context for {{branch}}",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onBranchCheckout?.enabled).toBe(true);
+  });
+
+  it("enforces onBranchCheckout cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onBranchCheckout: {
+          enabled: true,
+          prompt: "Switched to {{branch}}",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onBranchCheckout?.cooldownMs).toBe(5_000);
   });
 });

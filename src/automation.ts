@@ -143,6 +143,24 @@ export interface GitPushResult {
   hash: string;
 }
 
+export interface OnBranchCheckoutPolicy {
+  enabled: boolean;
+  /**
+   * Prompt to enqueue after a successful git checkout (branch switch or creation).
+   * Placeholders: {{branch}}, {{previousBranch}}, {{created}}
+   */
+  prompt: string;
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+/** Minimal checkout result passed to handleBranchCheckout — avoids importing from gitWrite. */
+export interface BranchCheckoutResult {
+  branch: string;
+  previousBranch: string | null;
+  created: boolean;
+}
+
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
@@ -160,6 +178,8 @@ export interface AutomationPolicy {
   onGitCommit?: OnGitCommitPolicy;
   /** Fired after every successful gitPush call. */
   onGitPush?: OnGitPushPolicy;
+  /** Fired after every successful gitCheckout call (branch switch or creation). */
+  onBranchCheckout?: OnBranchCheckoutPolicy;
 }
 
 export interface Diagnostic {
@@ -445,6 +465,31 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onBranchCheckout
+  if (policy.onBranchCheckout !== undefined) {
+    const bc = policy.onBranchCheckout;
+    if (typeof bc !== "object" || bc === null) {
+      throw new Error(`"onBranchCheckout" must be an object`);
+    }
+    if (typeof bc.enabled !== "boolean") {
+      throw new Error(`"onBranchCheckout.enabled" must be a boolean`);
+    }
+    if (typeof bc.prompt !== "string" || bc.prompt.trim() === "") {
+      throw new Error(`"onBranchCheckout.prompt" must be a non-empty string`);
+    }
+    if (bc.prompt.length > MAX_POLICY_PROMPT_CHARS) {
+      throw new Error(
+        `"onBranchCheckout.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
+      );
+    }
+    if (typeof bc.cooldownMs !== "number" || !Number.isFinite(bc.cooldownMs)) {
+      throw new Error(`"onBranchCheckout.cooldownMs" must be a number`);
+    }
+    if (bc.cooldownMs < MIN_COOLDOWN_MS) {
+      bc.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   return policy;
 }
 
@@ -469,6 +514,8 @@ export class AutomationHooks {
   private activeGitCommitTaskId: string | null = null;
   /** Active task ID for the git-push handler (workspace-global). */
   private activeGitPushTaskId: string | null = null;
+  /** Active task ID for the branch-checkout handler (workspace-global). */
+  private activeBranchCheckoutTaskId: string | null = null;
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -1007,6 +1054,66 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Called after a successful gitCheckout tool call.
+   * Fires the onBranchCheckout automation hook if configured.
+   */
+  handleBranchCheckout(result: BranchCheckoutResult): void {
+    const cfg = this.policy.onBranchCheckout;
+    if (!cfg?.enabled) return;
+
+    // Loop guard: skip if a task is still pending/running
+    if (this.activeBranchCheckoutTaskId) {
+      const existing = this.orchestrator.getTask(
+        this.activeBranchCheckoutTaskId,
+      );
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping branch-checkout trigger — task ${this.activeBranchCheckoutTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeBranchCheckoutTaskId = null;
+    }
+
+    // Cooldown check (workspace-global)
+    const key = "branchCheckout:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for branch-checkout (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const prompt = cfg.prompt
+      .replace(/\{\{branch\}\}/g, result.branch)
+      .replace(
+        /\{\{previousBranch\}\}/g,
+        result.previousBranch ?? "(detached HEAD)",
+      )
+      .replace(/\{\{created\}\}/g, String(result.created));
+
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.activeBranchCheckoutTaskId = taskId;
+      this.log(
+        `[automation] triggered branch-checkout task ${taskId.slice(0, 8)} (${result.created ? "created" : "switched to"} ${result.branch})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue branch-checkout task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
@@ -1021,6 +1128,7 @@ export class AutomationHooks {
     } | null;
     onGitCommit: { enabled: boolean; cooldownMs: number } | null;
     onGitPush: { enabled: boolean; cooldownMs: number } | null;
+    onBranchCheckout: { enabled: boolean; cooldownMs: number } | null;
   } {
     const p = this.policy;
     return {
@@ -1068,6 +1176,12 @@ export class AutomationHooks {
         ? {
             enabled: p.onGitPush.enabled,
             cooldownMs: p.onGitPush.cooldownMs,
+          }
+        : null,
+      onBranchCheckout: p.onBranchCheckout
+        ? {
+            enabled: p.onBranchCheckout.enabled,
+            cooldownMs: p.onBranchCheckout.cooldownMs,
           }
         : null,
     };

@@ -254,7 +254,16 @@ export function createGitCommitTool(
   };
 }
 
-export function createGitCheckoutTool(workspace: string) {
+export interface BranchCheckoutCallbackResult {
+  branch: string;
+  previousBranch: string | null;
+  created: boolean;
+}
+
+export function createGitCheckoutTool(
+  workspace: string,
+  onBranchCheckout?: (result: BranchCheckoutCallbackResult) => void,
+) {
   return {
     schema: {
       name: "gitCheckout",
@@ -337,7 +346,7 @@ export function createGitCheckoutTool(workspace: string) {
       }
 
       const newBranch = await currentBranch(workspace, signal);
-      return success({
+      const checkoutResult = {
         branch: newBranch,
         // If HEAD was detached, prevBranch is the literal string "HEAD" which
         // cannot be passed back to gitCheckout to restore position. Annotate it
@@ -356,7 +365,13 @@ export function createGitCheckoutTool(workspace: string) {
             : undefined,
         wasDetached: prevBranch === "HEAD" || undefined,
         created: create,
+      };
+      onBranchCheckout?.({
+        branch: checkoutResult.branch,
+        previousBranch: checkoutResult.previousBranch,
+        created: checkoutResult.created,
       });
+      return success(checkoutResult);
     },
   };
 }
