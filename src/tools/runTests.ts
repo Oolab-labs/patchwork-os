@@ -1,3 +1,4 @@
+import type { TestRunResult } from "../automation.js";
 import type { ProbeResults } from "../probe.js";
 import type { ProgressFn } from "../transport.js";
 import { cargoTestRunner } from "./testRunners/cargoTest.js";
@@ -22,7 +23,11 @@ interface RunnerCache {
   timestamp: number;
 }
 
-export function createRunTestsTool(workspace: string, probes?: ProbeResults) {
+export function createRunTestsTool(
+  workspace: string,
+  probes?: ProbeResults,
+  onTestRun?: (result: TestRunResult) => void,
+) {
   const availableRunners = probes
     ? ALL_RUNNERS.filter((r) => r.detect(workspace, probes))
     : [];
@@ -205,15 +210,34 @@ export function createRunTestsTool(workspace: string, probes?: ProbeResults) {
         if (err) errors[r.name] = err;
       }
 
+      const failures = results.filter(
+        (r) => r.status === "failed" || r.status === "errored",
+      );
+
+      // Fire automation hook (best-effort — errors must not propagate to caller)
+      if (onTestRun) {
+        try {
+          onTestRun({
+            runners: runners.map((r) => r.name),
+            summary,
+            failures: failures.map((f) => ({
+              name: f.name,
+              file: f.file,
+              message: f.message,
+            })),
+          });
+        } catch {
+          // ignore — automation hook failures must not affect tool output
+        }
+      }
+
       progress?.(100, 100);
       return success({
         available: true,
         runners: runners.map((r) => r.name),
         summary,
         results,
-        failures: results.filter(
-          (r) => r.status === "failed" || r.status === "errored",
-        ),
+        failures,
         ...(Object.keys(errors).length > 0 && { runnerErrors: errors }),
       });
     },

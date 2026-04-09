@@ -36,6 +36,48 @@ export function createDetectUnusedCodeTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          available: {
+            type: "boolean",
+            description: "Whether a detector (ts-prune or tsc) was found",
+          },
+          detector: {
+            type: "string",
+            description: "Which detector ran: 'ts-prune' or 'tsc'",
+          },
+          total: {
+            type: "integer",
+            description: "Total unused symbols found before maxResults cap",
+          },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                line: { type: "integer" },
+                symbol: { type: "string" },
+                kind: {
+                  type: "string",
+                  enum: ["export", "local", "parameter"],
+                },
+              },
+              required: ["file", "line", "symbol", "kind"],
+            },
+          },
+          truncated: {
+            type: "boolean",
+            description: "True when total exceeds maxResults",
+          },
+          error: {
+            type: "string",
+            description: "Set when available is false",
+          },
+        },
+        required: ["available"],
+      },
     },
     timeoutMs: 60_000,
 

@@ -43,6 +43,43 @@ export function createGetGitHotspotsTool(workspace: string) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          since: {
+            type: "string",
+            description: "ISO date string — start of the lookback window",
+          },
+          days: { type: "integer", description: "Lookback window in days" },
+          totalCommitsScanned: {
+            type: "integer",
+            description: "Total commits in the time window",
+          },
+          hotspots: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                commits: {
+                  type: "integer",
+                  description: "Number of commits touching this file",
+                },
+                rank: {
+                  type: "integer",
+                  description: "1-based rank by commit count",
+                },
+              },
+              required: ["file", "commits", "rank"],
+            },
+          },
+          scopedTo: {
+            type: "string",
+            description: "Present when analysis was scoped to a subdirectory",
+          },
+        },
+        required: ["since", "days", "totalCommitsScanned", "hotspots"],
+      },
     },
     timeoutMs: 15_000,
 

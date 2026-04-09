@@ -177,6 +177,41 @@ export function createGenerateTestsTool(workspace: string) {
         required: ["file"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          file: { type: "string", description: "Absolute path to source file" },
+          outputFile: {
+            type: "string",
+            description: "Suggested output path for the test file",
+          },
+          framework: {
+            type: "string",
+            description: "Detected test framework (vitest, jest, pytest)",
+          },
+          exports: {
+            type: "array",
+            items: { type: "string" },
+            description: "Exported names extracted from the source file",
+          },
+          content: {
+            type: "string",
+            description: "Generated test scaffold ready to write to outputFile",
+          },
+          exportCount: {
+            type: "integer",
+            description: "Number of exports detected",
+          },
+        },
+        required: [
+          "file",
+          "outputFile",
+          "framework",
+          "exports",
+          "content",
+          "exportCount",
+        ],
+      },
     },
     handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       const fileArg = requireString(args, "file");
