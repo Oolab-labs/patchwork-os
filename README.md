@@ -316,7 +316,9 @@ The bridge exposes tools in two modes:
 
 ## MCP Prompts (Slash Commands)
 
-The bridge exposes 15 built-in slash commands via the MCP `prompts/list` + `prompts/get` protocol. These appear as `/mcp__bridge__<name>` in any MCP client that supports prompts.
+The bridge exposes 27 built-in slash commands via the MCP `prompts/list` + `prompts/get` protocol. These appear as `/mcp__bridge__<name>` in any MCP client that supports prompts.
+
+**General / Dispatch**
 
 | Prompt | Argument | Description |
 |--------|----------|-------------|
@@ -334,6 +336,24 @@ The bridge exposes 15 built-in slash commands via the MCP `prompts/list` + `prom
 | `/mcp__bridge__recent-activity` | `count` (optional, default: `10`) | Recent git log and uncommitted changes (Dispatch) |
 | `/mcp__bridge__team-status` | _(none)_ | Workspace state, active tasks, and recent activity for team leads (Agent Teams) |
 | `/mcp__bridge__health-check` | _(none)_ | Comprehensive project health: tests, diagnostics, security (Scheduled Tasks) |
+| `/mcp__bridge__orient-project` | _(none)_ | Architecture overview from key docs and CLAUDE.md |
+
+**LSP Intelligence**
+
+| Prompt | Arguments | Description |
+|--------|-----------|-------------|
+| `/mcp__bridge__find-callers` | `symbol` (required) | List all callers of a symbol via call hierarchy + references |
+| `/mcp__bridge__blast-radius` | `file`, `line`, `column` (all required) | Compute change impact at a position — risk badge + reference counts |
+| `/mcp__bridge__why-error` | `file` (required), `line` (optional) | Explain a diagnostic in plain English with type context |
+| `/mcp__bridge__unused-in` | `file` (required) | Find dead exports and unused code in a file |
+| `/mcp__bridge__trace-to` | `symbol` (required) | Trace outgoing call chain from a symbol with type signatures |
+| `/mcp__bridge__imports-of` | `symbol` (required) | List every file that imports a symbol, with reference counts |
+| `/mcp__bridge__circular-deps` | _(none)_ | Detect circular import cycles in the workspace |
+| `/mcp__bridge__refactor-preview` | `file`, `line`, `column`, `newName` (all required) | Preview rename edits and blast-radius risk before committing |
+| `/mcp__bridge__module-exports` | `file` (required) | List a file's exported symbols with type signatures |
+| `/mcp__bridge__type-of` | `file`, `line`, `column` (all required) | Get the type signature at a position (no documentation) |
+| `/mcp__bridge__deprecations` | _(none)_ | Find `@deprecated` APIs workspace-wide and count their callers |
+| `/mcp__bridge__coverage-gap` | `file` (required) | List untested functions by correlating coverage data with document symbols |
 
 > **Cowork sessions and MCP tools:** MCP tools (including all bridge tools) are **not available inside a Cowork session**. Use a two-step workflow: run `/mcp__bridge__cowork` in a regular Claude Code chat first — it gathers full IDE context and produces an action plan — then open a Cowork session armed with that context.
 

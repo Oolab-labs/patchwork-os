@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.12.0] — 2026-04-09
+
+### Added
+- **12 new LSP-composition MCP slash commands** — all compose existing LSP primitives (zero new bridge tools):
+  - `/mcp__bridge__find-callers` — list all callers of a symbol via call hierarchy + references
+  - `/mcp__bridge__blast-radius` — compute change impact at a position (risk badge + reference counts)
+  - `/mcp__bridge__why-error` — explain a diagnostic in plain English with type context
+  - `/mcp__bridge__unused-in` — find dead exports and unused code in a file
+  - `/mcp__bridge__trace-to` — trace outgoing call chain from a symbol with type signatures
+  - `/mcp__bridge__imports-of` — list every file that imports a symbol with reference counts
+  - `/mcp__bridge__circular-deps` — detect circular import cycles workspace-wide
+  - `/mcp__bridge__refactor-preview` — preview rename edits + blast-radius risk before committing
+  - `/mcp__bridge__module-exports` — list a file's exported symbols with type signatures
+  - `/mcp__bridge__type-of` — get the type signature at a cursor position
+  - `/mcp__bridge__deprecations` — find `@deprecated` APIs workspace-wide and count callers
+  - `/mcp__bridge__coverage-gap` — list untested functions by correlating coverage with document symbols
+- **3 new plugin skills** (in `claude-ide-bridge-plugin`):
+  - `ide-dead-code-hunter` — unused exports + dead functions with LSP cross-verification
+  - `ide-type-mismatch-fix` — diagnose and optionally fix type errors using diagnostics + code actions
+  - `ide-api-deprecation-tracker` — audit `@deprecated` APIs ranked by caller count with migration paths
+- **`ide-architect` subagent** — architectural health audit: God objects, circular deps, coupling analysis, modularization opportunities
+- **`templates/automation-policy.example.json`** — LSP-aware default automation hook prompts for `onFileChanged`, `onBranchCheckout`, `onGitCommit`, `onGitPush`, `onPullRequest`, `onTestRun`, `onPostCompact`, `onDiagnosticsError`
+- Prompt count: 15 → **27** total MCP slash commands
+
+---
+
 ## [2.11.23] — 2026-04-09
 
 ### Added
