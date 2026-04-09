@@ -74,7 +74,7 @@ This appends the bridge section to your existing `CLAUDE.md` and writes `.claude
 
 ## Slim Mode vs Full Mode
 
-By default, the bridge starts in **slim mode** — 45 IDE-exclusive tools that Claude can't replicate with its built-in `Read`/`Write`/`Bash` tools: LSP intelligence, debugger, editor decorations, diagnostics, refactoring, impact analysis, and editor state. This is the right default for most workflows because Claude already has file editing and shell access built in.
+By default, the bridge starts in **slim mode** — 48 IDE-exclusive tools that Claude can't replicate with its built-in `Read`/`Write`/`Bash` tools: LSP intelligence, debugger, editor decorations, diagnostics, refactoring, impact analysis, and editor state. This is the right default for most workflows because Claude already has file editing and shell access built in.
 
 If you need Claude to use the bridge's **git, terminal, file ops, HTTP client, or GitHub** tools instead of its built-in equivalents, start in full mode:
 
@@ -278,10 +278,10 @@ claude --plugin-dir ./claude-ide-bridge-plugin
 
 The bridge exposes tools in two modes:
 
-- **Slim mode (default)** — 45 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
+- **Slim mode (default)** — 48 IDE-exclusive tools. Only tools that require a live VS Code extension and have no native Claude equivalent. This is what you get with `claude-ide-bridge --watch`.
 - **Full mode (`--full`)** — all ~130 tools, adding git, terminal, file ops, HTTP, and GitHub. Use this for large projects or workflows that rely on those integrations.
 
-### Slim mode — 45 IDE tools (default)
+### Slim mode — 48 IDE tools (default)
 
 | Category | Tools |
 |----------|-------|
@@ -442,6 +442,12 @@ claude-ide-bridge --workspace /path/to/project \
   "onInstructionsLoaded": {
     "enabled": true,
     "prompt": "Call getToolCapabilities to confirm the bridge is connected and note which tools are available for this session."
+  },
+  "onTestRun": {
+    "enabled": true,
+    "onFailureOnly": true,
+    "prompt": "Tests failed ({{failed}}/{{total}}). Fix the failures:\n{{failures}}",
+    "cooldownMs": 15000
   }
 }
 ```
@@ -458,6 +464,7 @@ When automation is active, VS Code save/change events, diagnostic errors, and Cl
 | `onCwdChanged` | Claude Code's working directory changes — CC 2.1.83+; call via `notifyCwdChanged` tool from a CC `CwdChanged` hook | `enabled`, `prompt` (supports `{{cwd}}`), `cooldownMs` |
 | `onPostCompact` | Claude compacts its context (Claude Code 2.1.76+) | `enabled`, `prompt`, `cooldownMs` |
 | `onInstructionsLoaded` | Claude loads CLAUDE.md at session start (Claude Code 2.1.76+) | `enabled`, `prompt` |
+| `onTestRun` | `runTests` completes | `enabled`, `onFailureOnly` (bool, default `true`), `prompt` (supports `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}`), `cooldownMs` |
 
 > **Cloud sessions**: If `CLAUDE_CODE_REMOTE=true` (Claude Code on the web), automation tasks will still enqueue but the bridge itself runs locally — those tasks will not execute. Guard policy prompts or the `onInstructionsLoaded` hook with an environment check if needed.
 
@@ -652,7 +659,7 @@ bash scripts/gen-claude-desktop-config.sh --write
 
 Then restart Claude Desktop once to load the new config. After that, the bridge's **stdio shim** handles everything automatically — it discovers the running bridge via lock files, buffers requests until connected, and reconnects transparently when the bridge restarts. No port or token needs to be hard-coded, and no further Desktop restarts are needed when the bridge restarts.
 
-> **Tool availability:** Without the VS Code extension connected, ~45 tools (debugger, LSP intelligence, editor state, decorations, refactoring) are unavailable. Claude Desktop works best alongside the running extension. You can verify connectivity by asking *"What tools do you have available?"* — the response will list what's active.
+> **Tool availability:** Without the VS Code extension connected, ~48 tools (debugger, LSP intelligence, editor state, decorations, refactoring) are unavailable. Claude Desktop works best alongside the running extension. You can verify connectivity by asking *"What tools do you have available?"* — the response will list what's active.
 
 > **Debugging the shim:** If the connection seems stuck, the shim logs to stderr. In Claude Desktop, check **Settings → Developer → MCP Logs** to see shim output. Common cause: bridge not running — start it with `claude-ide-bridge --watch` first.
 
@@ -911,7 +918,7 @@ claude-ide-bridge \
 
 > The bridge token is entered once during authorization. After that, claude.ai holds a short-lived OAuth access token that it refreshes automatically — you don't need to update the connector URL when the bridge restarts.
 
-> **Tool availability:** All 130+ tools are available in full mode. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~57 CLI-backed tools still work (file ops, git, terminal, search, HTTP client). In slim mode (default), only the 45 IDE-exclusive tools are exposed.
+> **Tool availability:** All 130+ tools are available in full mode. VS Code extension-dependent tools (LSP, debugger, editor state) require the extension to be connected on the remote machine. Without the extension, ~57 CLI-backed tools still work (file ops, git, terminal, search, HTTP client). In slim mode (default), only the 48 IDE-exclusive tools are exposed.
 
 ### Alternatives
 
@@ -1007,7 +1014,7 @@ claude-ide-bridge gen-claude-md [--write] [--workspace <path>]
 --automation-policy <path> Path to JSON automation policy file
 --plugin <path>           Load a plugin directory (repeatable)
 --plugin-watch            Watch plugin directories and hot-reload on change
---full                    Register all ~130 tools (default: slim mode with 45 IDE-exclusive tools)
+--full                    Register all ~130 tools (default: slim mode with 48 IDE-exclusive tools)
 --verbose                 Enable debug logging
 --version, -v             Print version and exit
 --analytics <on|off>      Enable or disable anonymous usage analytics
@@ -1026,7 +1033,7 @@ claude-ide-bridge/
     config.ts         CLI args & config
     claudeDriver.ts   IClaudeDriver interface + SubprocessDriver
     claudeOrchestrator.ts Task queue (MAX_CONCURRENT=10, MAX_QUEUE=20)
-    automation.ts     AutomationHooks — onDiagnosticsError / onFileSave / onPostCompact / onInstructionsLoaded policies
+    automation.ts     AutomationHooks — onDiagnosticsError / onFileSave / onFileChanged / onTestRun / onPostCompact / onInstructionsLoaded policies
     tools/            130+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
@@ -1130,7 +1137,7 @@ npm test             # Run 394 extension tests
 
 ### Claude says a tool doesn't exist or tool count seems low
 
-When the VS Code extension is disconnected, 45 tools that require extension access return an error with reconnect instructions (they remain visible but non-functional). These include LSP, debugger, editor state, and refactoring tools. In slim mode (default), all tools need the extension; in full mode, ~57 CLI-backed tools (git, terminal, file ops, HTTP, GitHub) still work. Check the "Claude IDE Bridge" output channel in VS Code — if you see a disconnection event, use `Claude IDE Bridge: Reconnect` from the command palette, or reload the window.
+When the VS Code extension is disconnected, 48 tools that require extension access return an error with reconnect instructions (they remain visible but non-functional). These include LSP, debugger, editor state, and refactoring tools. In slim mode (default), all tools need the extension; in full mode, ~57 CLI-backed tools (git, terminal, file ops, HTTP, GitHub) still work. Check the "Claude IDE Bridge" output channel in VS Code — if you see a disconnection event, use `Claude IDE Bridge: Reconnect` from the command palette, or reload the window.
 
 ### Bridge and extension version mismatch
 
