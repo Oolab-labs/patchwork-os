@@ -11,6 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { PACKAGE_VERSION } from "../version.js";
 
 const distIndex = path.resolve(
   import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname),
@@ -333,6 +334,8 @@ describe("bridge-tools.md repair", () => {
     // Must satisfy the strengthened check: >200 bytes, contains runTests,
     // getDiagnostics, and MANDATORY (the section heading in the real template).
     const validContent = [
+      `<!-- bridge-tools v${PACKAGE_VERSION} -->`,
+      "",
       "# Bridge Tools — MANDATORY substitution table",
       "",
       "When the bridge is connected, ALWAYS use MCP tools instead of shell commands.",

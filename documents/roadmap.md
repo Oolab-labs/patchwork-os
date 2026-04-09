@@ -620,6 +620,11 @@ Research (2026-03-17) against current Claude Code docs revealed gaps between the
 
 ## Near-Term Exploration Areas
 
+### Subprocess Stdin Interaction — Auto-answer Claude prompts *(shipped)*
+- **Resolved**: `SubprocessDriver` now passes `--dangerously-skip-permissions` by default (opt-out via `skipPermissions: false` in `ClaudeTaskInput`)
+- stdout-scan + stdin-write approach was investigated and rejected: prompt injection attack vector, semantic ambiguity ("Delete all files?" and "Proceed?" look identical), chunk-boundary races, and fragility against CLI format changes
+- **Known limitation**: session-selection and editor-selection prompts are not permission prompts — they may still hang. Requires a `--non-interactive` flag from the Claude CLI team (not yet available)
+
 ### `source: 'settings'` Plugin Support *(shipped — v2.5.8)*
 - Documented `enabledPlugins` settings.json approach in `claude-ide-bridge-plugin/README.md` as Option 3 — no CLI flags needed; Claude Code loads the plugin automatically from the project root on startup
 
