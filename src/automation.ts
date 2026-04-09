@@ -1172,7 +1172,10 @@ export class AutomationHooks {
     // Loop guard: skip if a task is still pending/running
     if (this.activePullRequestTaskId) {
       const existing = this.orchestrator.getTask(this.activePullRequestTaskId);
-      if (existing?.status === "pending" || existing?.status === "running") {
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
         this.log(
           `[automation] skipping pull-request trigger — task ${this.activePullRequestTaskId.slice(0, 8)} still active`,
         );
@@ -1190,6 +1193,8 @@ export class AutomationHooks {
       );
       return;
     }
+
+    this._pruneLastTrigger(now);
 
     const prompt = cfg.prompt
       .replace(/\{\{url\}\}/g, result.url)

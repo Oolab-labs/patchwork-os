@@ -140,8 +140,15 @@ export function createGithubCreatePRTool(
           ["rev-parse", "--abbrev-ref", "HEAD"],
           { cwd: workspace, signal, timeout: 5_000 },
         );
-        const branch =
-          branchResult.exitCode === 0 ? branchResult.stdout.trim() : "unknown";
+        let branch: string;
+        if (branchResult.exitCode === 0) {
+          branch = branchResult.stdout.trim();
+        } else {
+          branch = "unknown";
+          console.warn(
+            "[automation] git rev-parse failed — branch will be 'unknown' in onPullRequest prompt",
+          );
+        }
         onPullRequest({ url, number, title, branch });
       }
 

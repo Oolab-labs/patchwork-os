@@ -608,26 +608,21 @@ export function createPreviewCodeActionTool(
       const startColumn = requireInt(args, "startColumn");
       const endLine = requireInt(args, "endLine");
       const endColumn = requireInt(args, "endColumn");
-      let result: unknown;
-      try {
-        result = await extensionClient.previewCodeAction(
-          filePath,
-          startLine,
-          startColumn,
-          endLine,
-          endColumn,
-          actionTitle,
-          signal,
-        );
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Language server timed out — it may still be indexing. " +
-              "Wait a few seconds and try again.",
-          );
-        }
-        throw err;
-      }
+      const result = await lspWithRetry(
+        () =>
+          extensionClient.previewCodeAction(
+            filePath,
+            startLine,
+            startColumn,
+            endLine,
+            endColumn,
+            actionTitle,
+            signal,
+          ),
+        signal,
+        readinessChecker(extensionClient, filePath),
+      );
+      if (result === "timeout") return lspColdStartError();
       if (result === null) {
         return error(
           "Extension returned no result — code action may not be available",
