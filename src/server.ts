@@ -19,6 +19,7 @@ interface AliveWebSocket extends WebSocket {
   missedPongs: number;
   lastPongTime: number;
   lastPingTime: number;
+  disconnectReason?: string;
 }
 
 function enableTcpKeepalive(ws: WebSocket): void {
@@ -139,6 +140,7 @@ export class Server extends EventEmitter<ServerEvents> {
     private authToken: string,
     private logger: Logger,
     private extraCorsOrigins: string[] = [],
+    private pingIntervalMs = 30_000,
   ) {
     super();
     // Defense-in-depth: ensure token is non-empty so timingSafeTokenCompare
@@ -679,8 +681,27 @@ export class Server extends EventEmitter<ServerEvents> {
       ws.isAlive = true;
       ws.missedPongs = 0;
       ws.lastPongTime = Date.now();
+      ws.lastPingTime = 0;
       enableTcpKeepalive(raw);
       setupPongHandler(ws);
+      ws.on("close", (code, reason) => {
+        // Strip control chars (newlines, ANSI codes) to prevent log injection.
+        // Cap at 123 bytes — RFC 6455 §7.4 limit for close reason payloads.
+        const reasonStr = reason?.length
+          ? reason
+              .toString()
+              .replace(/[\x00-\x1f\x7f]/g, "")
+              .slice(0, 123)
+          : "(none)";
+        const lastSeen = ws.lastPongTime
+          ? `${Math.round((Date.now() - ws.lastPongTime) / 1000)}s ago`
+          : "never";
+        this.logger.info(
+          `Claude Code WebSocket closed — code=${code} reason="${reasonStr}" ` +
+            `disconnectReason=${ws.disconnectReason ?? "client_initiated"} ` +
+            `missedPongs=${ws.missedPongs ?? 0} lastPong=${lastSeen}`,
+        );
+      });
       ws.on("error", (err) => {
         this.logger.error(`WebSocket client error: ${err.message}`);
       });
@@ -712,39 +733,47 @@ export class Server extends EventEmitter<ServerEvents> {
             reject(new Error("Unexpected server address"));
             return;
           }
-          // Ping clients every 30s; terminate after 3 missed pongs (90s tolerance)
-          this.pingInterval = setInterval(() => {
-            const now = Date.now();
-            for (const raw of this.wss.clients) {
-              const client = raw as AliveWebSocket;
-              // Sleep/wake detection: if timer fired much later than expected,
-              // the system likely slept. Reset and probe instead of killing.
-              if (client.lastPingTime && now - client.lastPingTime > 45_000) {
-                client.missedPongs = 0;
+          // Ping clients every pingIntervalMs (default 30s); terminate after 4 missed pongs (120s tolerance)
+          this.pingInterval = setInterval(
+            () => {
+              const now = Date.now();
+              for (const raw of this.wss.clients) {
+                const client = raw as AliveWebSocket;
+                // Sleep/wake detection: if timer fired much later than expected,
+                // the system likely slept. Reset and probe instead of killing.
+                if (client.lastPingTime && now - client.lastPingTime > 45_000) {
+                  client.missedPongs = 0;
+                  client.isAlive = false;
+                  client.lastPingTime = now;
+                  if (client.readyState === WebSocket.OPEN) {
+                    client.ping(Buffer.from(now.toString()));
+                  }
+                  continue;
+                }
+                if (!client.isAlive) {
+                  client.missedPongs = (client.missedPongs ?? 0) + 1;
+                  if (client.missedPongs >= 4) {
+                    client.disconnectReason = "pong_timeout";
+                    this.logger.warn(
+                      `Terminating unresponsive client — 4 missed pongs ` +
+                        `lastPong=${client.lastPongTime ? `${Math.round((now - client.lastPongTime) / 1000)}s ago` : "never"}`,
+                    );
+                    client.terminate();
+                    continue;
+                  }
+                }
                 client.isAlive = false;
                 client.lastPingTime = now;
                 if (client.readyState === WebSocket.OPEN) {
                   client.ping(Buffer.from(now.toString()));
                 }
-                continue;
               }
-              if (!client.isAlive) {
-                client.missedPongs = (client.missedPongs ?? 0) + 1;
-                if (client.missedPongs >= 3) {
-                  this.logger.warn(
-                    "Terminating unresponsive client (3 missed pongs)",
-                  );
-                  client.terminate();
-                  continue;
-                }
-              }
-              client.isAlive = false;
-              client.lastPingTime = now;
-              if (client.readyState === WebSocket.OPEN) {
-                client.ping(Buffer.from(now.toString()));
-              }
-            }
-          }, 30_000);
+              // Enforce a minimum interval so a misconfigured value cannot spin
+              // the event loop (setInterval(fn, 0) would fire on every tick).
+              // 10 ms floor is low enough for tests, high enough to be safe.
+            },
+            Math.max(10, this.pingIntervalMs),
+          );
           resolve(addr.port);
         })
         .on("error", reject);

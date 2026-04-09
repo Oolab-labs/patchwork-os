@@ -9,7 +9,7 @@
       "!node_modules/**",
       "!dist/**"
     ],
-    "prompt": "File {{file}} was just edited. Call getChangeImpact on the changed symbols to compute blast radius. If risk is medium or high (referenceCount > 10 or callerCount > 5), also call findReferences to list the affected files. Report in ≤15 lines: risk badge, reference counts, and the top 5 most-impacted files.",
+    "prompt": "File {{file}} was just edited. Call getChangeImpact on the changed symbols to compute blast radius. If risk is medium or high (referenceCount > 10 or callerCount > 5), also call findReferences to list the affected files. If the changed file exports an interface or abstract class, also call findImplementations at the first exported symbol position to check that all implementations are still reachable. Report in ≤15 lines: risk badge, reference counts, and the top 5 most-impacted files.",
     "cooldownMs": 15000
   },
 
@@ -24,7 +24,7 @@
     "enabled": true,
     "minSeverity": "error",
     "patterns": ["**/*.{ts,tsx,js,jsx}"],
-    "prompt": "New diagnostic errors appeared in {{file}}:\n\n{{diagnostics}}\n\nFor each error: (1) call getHover at the error position to fetch type info, (2) call explainSymbol on the failing symbol if applicable, (3) suggest the most likely fix. Keep response under 20 lines.",
+    "prompt": "New diagnostic errors appeared in {{file}}:\n\n{{diagnostics}}\n\nFor each error: (1) call getHover at the error position to fetch type info, (2) if the error is a type error, call goToTypeDefinition at that position to navigate to the root type definition, (3) call explainSymbol on the failing symbol if applicable, (4) suggest the most likely fix. Keep response under 20 lines.",
     "cooldownMs": 20000
   },
 
@@ -36,7 +36,7 @@
 
   "onGitCommit": {
     "enabled": true,
-    "prompt": "Committed {{hash}} on {{branch}}: {{message}}. Changed files: {{files}}. For each changed file: call getChangeImpact to check blast radius. If any export was removed or renamed, call findReferences to verify no broken callers remain. Report a compact post-commit health summary.",
+    "prompt": "Committed {{hash}} on {{branch}}: {{message}}. Changed files: {{files}}. For each changed file: call getChangeImpact to check blast radius. If any export was removed or renamed, call findReferences to verify no broken callers remain. If any interface or abstract class was modified, call findImplementations at the changed symbol to verify all concrete implementations are still consistent. Report a compact post-commit health summary.",
     "cooldownMs": 10000
   },
 
@@ -44,6 +44,20 @@
     "enabled": false,
     "prompt": "Pushed {{commits}} commits to {{remote}}/{{branch}}. Run getDiagnostics workspace-wide and detectUnusedCode to flag any dead exports that were pushed. Keep report under 15 lines.",
     "cooldownMs": 5000
+  },
+
+  "_commentPromptName": "Instead of an inline prompt, you can reference any named MCP prompt using promptName + promptArgs. Event placeholders ({{file}}, {{branch}}, etc.) work inside promptArgs values too.",
+  "onFileSave_example_named": {
+    "_comment": "Example: use the explore-type prompt on every saved file (position 1:1 = first symbol)",
+    "enabled": false,
+    "promptName": "explore-type",
+    "promptArgs": {
+      "file": "{{file}}",
+      "line": "1",
+      "column": "1"
+    },
+    "patterns": ["**/*.{ts,tsx}"],
+    "cooldownMs": 30000
   },
 
   "onPullRequest": {
@@ -54,7 +68,7 @@
 
   "onTestRun": {
     "enabled": true,
-    "prompt": "Tests just ran. Results: {{results}}. For each failed test file: call getDiagnostics to check for type errors, then call getCallHierarchy (incoming) on the failing function to identify what changed upstream. Suggest the most likely root cause in ≤10 lines.",
+    "prompt": "Tests just ran. Results: {{results}}. For each failed test file: call getDiagnostics to check for type errors, then call getCallHierarchy (incoming) on the failing function to identify what changed upstream. If the failure involves an interface mismatch, call goToDeclaration on the symbol under test to verify the expected contract. Suggest the most likely root cause in ≤10 lines.",
     "cooldownMs": 15000
   },
 

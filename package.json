@@ -1,6 +1,6 @@
 {
   "name": "claude-ide-bridge",
-  "version": "2.14.0",
+  "version": "2.15.0",
   "description": "Standalone MCP bridge for Claude Code IDE integration with any editor \u2014 136+ tools for LSP, debugging, terminals, Git, GitHub, and more",
   "type": "module",
   "main": "dist/index.js",

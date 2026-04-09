@@ -386,6 +386,28 @@ export const PROMPTS: McpPrompt[] = [
       },
     ],
   },
+  {
+    name: "explore-type",
+    description:
+      "Explore a type: declaration, definition, and all implementations. Wraps getHover + goToDeclaration + goToTypeDefinition + findImplementations.",
+    arguments: [
+      {
+        name: "file",
+        description: "Workspace-relative or absolute path to the file.",
+        required: true,
+      },
+      {
+        name: "line",
+        description: "Line number (1-based).",
+        required: true,
+      },
+      {
+        name: "column",
+        description: "Column number (1-based).",
+        required: true,
+      },
+    ],
+  },
 ];
 
 // ── Orient-project prompt text builder ────────────────────────────────────────
@@ -1742,6 +1764,33 @@ const TEMPLATES: Record<
             "",
             "If `getCodeCoverage` is unavailable, say so and recommend running tests with coverage first.",
             "Keep response under 30 lines.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+  "explore-type": ({ file, line, column }) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Explore the type at ${file}:${line}:${column} using these steps:`,
+            `1. Call \`getHover\` at that position to identify the symbol name and its type.`,
+            `2. Call \`goToDeclaration\` at the same position to find the contract/header declaration (.d.ts or interface file). Note the file and line.`,
+            `3. Call \`goToTypeDefinition\` at the same position to find where the type is actually defined in source. Note the file and line.`,
+            `4. Call \`findImplementations\` at the same position to get all concrete implementations.`,
+            `5. For each implementation location (up to 5), call \`getHover\` on that location to retrieve the signature.`,
+            ``,
+            `Report in this format:`,
+            `**Symbol:** <name> — <type signature from step 1>`,
+            `**Declaration:** <file>:<line> (the contract / .d.ts entry)`,
+            `**Type defined at:** <file>:<line> (source definition)`,
+            `**Implementations (N total):**`,
+            `  1. <file>:<line> — <signature>`,
+            `  2. ...`,
+            `If any step returns no results, note it clearly (e.g. "No declaration found").`,
           ].join("\n"),
         },
       },
