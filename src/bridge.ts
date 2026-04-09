@@ -789,12 +789,20 @@ export class Bridge {
       if (shuttingDown) return;
       shuttingDown = true;
       if (signal === "uncaughtException") {
+        // Tool names go to stderr only (not the activity log) to avoid
+        // leaking operational detail into activity-log consumers.
+        const inFlightTools = [...this.sessions.values()].flatMap(
+          (s) => s.transport.getStats().inFlightTools,
+        );
+        if (inFlightTools.length > 0) {
+          this.logger.error(
+            `In-flight tools at crash: ${inFlightTools.join(", ")}`,
+          );
+        }
         this.activityLog?.recordEvent("crash_detected", {
           signal,
           sessions: this.sessions.size,
-          inFlightTools: [...this.sessions.values()].flatMap(
-            (s) => s.transport.getStats().inFlightTools,
-          ),
+          inFlightToolCount: inFlightTools.length,
         });
       }
       this.logger.info(`Shutdown initiated by ${signal}`);
