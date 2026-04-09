@@ -177,7 +177,7 @@ import {
 } from "./workspaceSettings.js";
 
 /**
- * The 45 IDE-exclusive tools registered in slim mode (the default).
+ * The 53 IDE-exclusive tools registered in slim mode (the default).
  *
  * Slim mode exposes only tools that require a live IDE extension — tools that
  * Claude cannot replicate via its native Read/Write/Bash capabilities. Everything
