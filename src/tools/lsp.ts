@@ -10,7 +10,6 @@ import {
   requireInt,
   requireString,
   resolveFilePath,
-  success,
   successStructured,
 } from "./utils.js";
 
@@ -417,9 +416,9 @@ export function createGetCodeActionsTool(
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
-        return success({ actions: [] });
+        return successStructured({ actions: [] });
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }
@@ -695,6 +694,27 @@ export function createRenameSymbolTool(
         required: ["filePath", "line", "column", "newName"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          success: { type: "boolean" },
+          newName: { type: "string" },
+          affectedFiles: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                editCount: { type: "number" },
+              },
+              required: ["file", "editCount"],
+            },
+          },
+          totalEdits: { type: "number" },
+          error: { type: "string" },
+        },
+        required: ["success"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
@@ -713,30 +733,19 @@ export function createRenameSymbolTool(
       }
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
-      let result: unknown;
-      try {
-        result = await extensionClient.renameSymbol(
-          filePath,
-          line,
-          column,
-          newName,
-          signal,
-        );
-      } catch (err) {
-        if (err instanceof ExtensionTimeoutError) {
-          return error(
-            "Language server timed out — it may still be indexing. " +
-              "Wait a few seconds and try again.",
-          );
-        }
-        throw err;
-      }
+      const result = await lspWithRetry(
+        () =>
+          extensionClient.renameSymbol(filePath, line, column, newName, signal),
+        signal,
+        readinessChecker(extensionClient, filePath),
+      );
+      if (result === "timeout") return lspColdStartError();
       if (result === null) {
         return error(
           "Extension returned no result — symbol may not be renameable at this position",
         );
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }
@@ -946,6 +955,24 @@ export function createPrepareRenameTool(
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          canRename: { type: "boolean" },
+          reason: { type: "string" },
+          placeholder: { type: "string" },
+          range: {
+            type: "object",
+            properties: {
+              startLine: { type: "number" },
+              startColumn: { type: "number" },
+              endLine: { type: "number" },
+              endColumn: { type: "number" },
+            },
+          },
+        },
+        required: ["canRename"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const filePath = resolveFilePath(
@@ -965,7 +992,7 @@ export function createPrepareRenameTool(
         readinessChecker(extensionClient, filePath),
       );
       if (result === "timeout") return lspColdStartError();
-      return success(
+      return successStructured(
         result ?? {
           canRename: false,
           reason: "Symbol does not support renaming at this position",
@@ -1007,6 +1034,15 @@ export function createFormatRangeTool(
         required: ["filePath", "startLine", "endLine"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          formatted: { type: "boolean" },
+          editCount: { type: "number" },
+          reason: { type: "string" },
+        },
+        required: ["formatted"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const filePath = resolveFilePath(
@@ -1031,12 +1067,12 @@ export function createFormatRangeTool(
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
-        return success({
+        return successStructured({
           formatted: false,
           reason: "No formatter available for this file type",
         });
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }
