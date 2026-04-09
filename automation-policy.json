@@ -1,0 +1,19 @@
+{
+  "onGitCommit": {
+    "enabled": true,
+    "cooldownMs": 10000,
+    "prompt": "A commit was just made to claude-ide-bridge:\nbranch: {{branch}}\nmessage: {{message}}\nfiles: {{files}}\n\nRun getDiagnostics and report any new errors introduced."
+  },
+  "onTestRun": {
+    "enabled": true,
+    "cooldownMs": 10000,
+    "onFailureOnly": true,
+    "prompt": "Tests just ran and {{failed}} failed out of {{total}}.\n\nFailed tests:\n{{failures}}\n\nInvestigate the failures and suggest fixes."
+  },
+  "onDiagnosticsError": {
+    "enabled": true,
+    "cooldownMs": 15000,
+    "minSeverity": "error",
+    "prompt": "New TypeScript error in {{file}}:\n\n{{diagnostics}}\n\nExplain what's wrong and suggest a fix."
+  }
+}
