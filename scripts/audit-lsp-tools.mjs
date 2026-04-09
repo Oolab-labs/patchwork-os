@@ -1,7 +1,7 @@
 /**
  * Tool registry audit.
  *
- * Checks five things:
+ * Checks six things:
  *   1. Every tool in SLIM_TOOL_NAMES is registered (has a schema name matching
  *      a `name: "..."` entry in a tool source file).
  *   2. Every LSP tool in availableTools.lsp (getToolCapabilities.ts) is also
@@ -11,6 +11,8 @@
  *   4. Every tool using successStructured declares outputSchema.
  *   5. Every tool source file that exports a create*Tool function is imported
  *      in index.ts (not accidentally orphaned).
+ *   6. Every tool description field is ≤ 200 chars (tools/list is sent on every
+ *      request — short descriptions reduce token usage and improve cache hit rates).
  *
  * Usage:
  *   node scripts/audit-lsp-tools.mjs
@@ -169,6 +171,39 @@ for (const [f] of fileToNames) {
   }
 }
 
+// ── check 6: tool description length ─────────────────────────────────────────
+//
+// Every tool's description field must be ≤ 200 chars (collapsed). The tools/list
+// response is sent on every request — keeping descriptions short reduces token
+// usage and improves prompt cache hit rates.
+
+const MAX_DESCRIPTION_CHARS = 200;
+const descriptionViolations = [];
+
+for (const [f] of fileToNames) {
+  if (f === "index.ts" || f === "utils.ts") continue;
+  const src = readFileSync(path.join(toolsDir, f), "utf8");
+  // Match tool-level description fields (not property-level ones).
+  // A tool description sits directly inside the schema object at ~6 spaces indent.
+  const re =
+    /description:\s*([\s\S]{1,800}?)(?=,\s*\n\s+(?:annotations|inputSchema|extensionRequired|name:|outputSchema)|,\s*\n\s+[a-z])/g;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const raw = m[1].trim();
+    const cleaned = raw
+      .replace(/['"]\s*\+\s*['"]/g, "")
+      .replace(/^['"`]/, "")
+      .replace(/['"`]$/, "")
+      .replace(/\n\s*/g, " ")
+      .trim();
+    if (cleaned.length > MAX_DESCRIPTION_CHARS) {
+      descriptionViolations.push(
+        `${f}: ${cleaned.length} chars — "${cleaned.slice(0, 60)}…"`,
+      );
+    }
+  }
+}
+
 // ── check 5: orphaned tool source files ──────────────────────────────────────
 
 // Any .ts file in src/tools/ that exports create*Tool but is NOT imported in index.ts
@@ -240,6 +275,15 @@ if (structuredWithoutOutputSchema.length === 0) {
   fail(
     "Tools using successStructured but missing outputSchema declaration",
     structuredWithoutOutputSchema,
+  );
+}
+
+if (descriptionViolations.length === 0) {
+  ok(`All tool descriptions are ≤ ${MAX_DESCRIPTION_CHARS} chars`);
+} else {
+  fail(
+    `Tool descriptions exceeding ${MAX_DESCRIPTION_CHARS} chars`,
+    descriptionViolations,
   );
 }
 

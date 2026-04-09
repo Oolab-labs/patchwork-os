@@ -18,12 +18,8 @@ export function createSearchAndReplaceTool(workspace: string) {
     schema: {
       name: "searchAndReplace",
       description:
-        "Find and replace text across all matching files in the workspace in a single operation. " +
-        "More efficient than calling searchWorkspace + replaceBlock/editText per file. " +
-        "Returns a summary of every file modified and the replacement count per file. " +
-        "For exact string replacement, set isRegex: false (default). " +
-        "For pattern-based replacement with capture groups, set isRegex: true. " +
-        "Always dry-runs first internally to confirm matches exist before writing.",
+        "Find and replace text across matching workspace files in one operation. " +
+        "Supports regex with capture groups. Returns a summary of files modified. Before writing.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

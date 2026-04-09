@@ -22,7 +22,7 @@ export function createGetInlayHintsTool(
       description:
         "Get inlay hints for a range of lines in a file. Inlay hints are the inline type " +
         "annotations and parameter names shown by the language server (e.g. TypeScript types, " +
-        "Rust lifetimes). Requires the VS Code extension.",
+        "Rust lifetimes).",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

@@ -96,7 +96,6 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
       name: "getDiffBetweenRefs",
       description:
         "Get the diff between two git refs (branches, tags, or commit hashes). " +
-        "Example: ref1='main' ref2='feature/my-branch' shows what the feature branch adds. " +
         "Use statOnly to get a quick file-level summary without the full patch.",
       annotations: { readOnlyHint: true },
       inputSchema: {

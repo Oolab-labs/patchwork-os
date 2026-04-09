@@ -107,7 +107,7 @@ export function createGoToDefinitionTool(
       name: "goToDefinition",
       extensionRequired: true,
       description:
-        "Go to the definition of a symbol at a given position using VS Code LSP. Requires the VS Code extension to be connected.",
+        "Go to the definition of a symbol at a given position using VS Code LSP.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -186,7 +186,7 @@ export function createFindReferencesTool(
       name: "findReferences",
       extensionRequired: true,
       description:
-        "Find all references to a symbol at a given position using VS Code LSP. Requires the VS Code extension to be connected.",
+        "Find all references to a symbol at a given position using VS Code LSP.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -261,7 +261,7 @@ export function createGetHoverTool(
       name: "getHover",
       extensionRequired: true,
       description:
-        "Get hover information (type info, documentation) for a symbol at a given position. Requires the VS Code extension to be connected.",
+        "Get hover information (type info, documentation) for a symbol at a given position.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -332,7 +332,7 @@ export function createGetCodeActionsTool(
       name: "getCodeActions",
       extensionRequired: true,
       description:
-        "Get available code actions (quick fixes, refactorings) for a range in a file. Requires the VS Code extension to be connected.",
+        "Get available code actions (quick fixes, refactorings) for a range in a file.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -432,7 +432,7 @@ export function createApplyCodeActionTool(
       name: "applyCodeAction",
       extensionRequired: true,
       description:
-        "Apply a code action (quick fix, refactoring) by title. First use getCodeActions to see available actions, then use this tool to apply one. Requires the VS Code extension.",
+        "Apply a code action (quick fix, refactoring) by title. First use getCodeActions to see available actions, then use this tool to apply one.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -530,9 +530,7 @@ export function createPreviewCodeActionTool(
       extensionRequired: true,
       description:
         "Preview the text edits a code action would make without applying them. " +
-        "Use this before applyCodeAction to verify the change is correct. " +
-        "Returns the list of files and edits (line ranges + new text) that would be modified. " +
-        "Requires the VS Code extension.",
+        "Returns files and edits that would be modified. Use before applyCodeAction to verify. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -669,7 +667,7 @@ export function createRenameSymbolTool(
       name: "renameSymbol",
       extensionRequired: true,
       description:
-        "Rename a symbol at a given position across all files using the LSP rename provider. Returns list of affected files and edit counts. Requires the VS Code extension.",
+        "Rename a symbol at a given position across all files using the LSP rename provider. Returns list of affected files and edit counts.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -759,9 +757,7 @@ export function createGetCallHierarchyTool(
       name: "getCallHierarchy",
       extensionRequired: true,
       description:
-        "Get the call hierarchy for a function or method — who calls it (incoming) and what it calls (outgoing). " +
-        'Use direction="incoming" to find all callers of a function, "outgoing" to see everything it calls, or "both" (default). ' +
-        "Requires the VS Code extension to be connected.",
+        'Get the call hierarchy for a function or method. Use direction="incoming" to find callers, "outgoing" to see everything it calls, or "both" (default).',
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -859,7 +855,7 @@ export function createSearchWorkspaceSymbolsTool(
       name: "searchWorkspaceSymbols",
       extensionRequired: true,
       description:
-        "Search for symbols (classes, functions, variables, interfaces) by name across the entire workspace using VS Code LSP. Requires the VS Code extension to be connected.",
+        "Search for symbols (classes, functions, variables, interfaces) by name across the entire workspace using VS Code LSP.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -932,9 +928,7 @@ export function createPrepareRenameTool(
       name: "prepareRename",
       extensionRequired: true,
       description:
-        "Check whether a symbol at a given position can be safely renamed before attempting the rename. " +
-        "Returns canRename:false (with reason) if the language server does not support renaming this symbol. " +
-        "Use this before calling renameSymbol to avoid failed renames. Requires the VS Code extension.",
+        "Check whether a symbol can be safely renamed. Returns canRename:false (with reason) if the language server does not support renaming this symbol. Use before renameSymbol.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -1011,9 +1005,7 @@ export function createFormatRangeTool(
       name: "formatRange",
       extensionRequired: true,
       description:
-        "Format a specific line range in a file using the language server formatter. " +
-        "Faster and safer than formatting the entire document for large files. " +
-        "Applies edits and saves the file. Requires the VS Code extension.",
+        "Format a specific line range in a file using the language server formatter. Faster and safer than formatting the entire document for large files.",
       annotations: { readOnlyHint: false },
       inputSchema: {
         type: "object" as const,
@@ -1070,6 +1062,255 @@ export function createFormatRangeTool(
         return successStructured({
           formatted: false,
           reason: "No formatter available for this file type",
+        });
+      }
+      return successStructured(result);
+    },
+  };
+}
+
+export function createFindImplementationsTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "findImplementations",
+      extensionRequired: true,
+      description:
+        "Find all implementations of an interface, abstract method, or abstract class. Useful for discovering concrete classes that implement an interface.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: {
+            type: "string" as const,
+            description: "Absolute or workspace-relative file path",
+          },
+          line: {
+            type: "integer" as const,
+            description: "Line number (1-based)",
+          },
+          column: {
+            type: "integer" as const,
+            description: "Column number (1-based)",
+          },
+        },
+        required: ["filePath", "line", "column"],
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" },
+          implementations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                line: { type: "number" },
+                column: { type: "number" },
+                endLine: { type: "number" },
+                endColumn: { type: "number" },
+              },
+            },
+          },
+          count: { type: "number" },
+        },
+        required: ["found"],
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
+      }
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
+      const line = requireInt(args, "line");
+      const column = requireInt(args, "column");
+      const result = await lspWithRetry(
+        () =>
+          extensionClient.findImplementations(filePath, line, column, signal),
+        signal,
+        readinessChecker(extensionClient, filePath),
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return successStructured({
+          found: false,
+          implementations: [],
+          count: 0,
+        });
+      }
+      return successStructured(result);
+    },
+  };
+}
+
+export function createGoToTypeDefinitionTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "goToTypeDefinition",
+      extensionRequired: true,
+      description:
+        "Go to the type definition of a symbol. Unlike goToDefinition (navigates to declaration), this navigates to where the type itself is defined.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: {
+            type: "string" as const,
+            description: "Absolute or workspace-relative file path",
+          },
+          line: {
+            type: "integer" as const,
+            description: "Line number (1-based)",
+          },
+          column: {
+            type: "integer" as const,
+            description: "Column number (1-based)",
+          },
+        },
+        required: ["filePath", "line", "column"],
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" },
+          message: { type: "string" },
+          locations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                line: { type: "number" },
+                column: { type: "number" },
+                endLine: { type: "number" },
+                endColumn: { type: "number" },
+              },
+            },
+          },
+        },
+        required: ["found"],
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
+      }
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
+      const line = requireInt(args, "line");
+      const column = requireInt(args, "column");
+      const result = await lspWithRetry(
+        () =>
+          extensionClient.goToTypeDefinition(filePath, line, column, signal),
+        signal,
+        readinessChecker(extensionClient, filePath),
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return successStructured({
+          found: false,
+          message: "No type definition found at this position",
+        });
+      }
+      return successStructured(result);
+    },
+  };
+}
+
+export function createGoToDeclarationTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "goToDeclaration",
+      extensionRequired: true,
+      description:
+        "Go to the declaration of a symbol (header file in C/C++, .d.ts entry in TypeScript). Unlike goToDefinition, navigates to the 'declare' statement rather than the implementation.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: {
+            type: "string" as const,
+            description: "Absolute or workspace-relative file path",
+          },
+          line: {
+            type: "integer" as const,
+            description: "Line number (1-based)",
+          },
+          column: {
+            type: "integer" as const,
+            description: "Column number (1-based)",
+          },
+        },
+        required: ["filePath", "line", "column"],
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" },
+          message: { type: "string" },
+          locations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                line: { type: "number" },
+                column: { type: "number" },
+                endLine: { type: "number" },
+                endColumn: { type: "number" },
+              },
+            },
+          },
+        },
+        required: ["found"],
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
+      }
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
+      const line = requireInt(args, "line");
+      const column = requireInt(args, "column");
+      const result = await lspWithRetry(
+        () => extensionClient.goToDeclaration(filePath, line, column, signal),
+        signal,
+        readinessChecker(extensionClient, filePath),
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return successStructured({
+          found: false,
+          message: "No declaration found at this position",
         });
       }
       return successStructured(result);

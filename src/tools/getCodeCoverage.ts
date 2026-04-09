@@ -115,8 +115,7 @@ export function createGetCodeCoverageTool(workspace: string) {
     schema: {
       name: "getCodeCoverage",
       description:
-        "Parse an existing code coverage report (lcov.info, coverage-summary.json, or clover.xml) " +
-        "and return per-file line/branch/function coverage percentages. " +
+        "Parse an existing coverage report (lcov.info, coverage-summary.json, or clover.xml) and return per-file line/branch/function coverage percentages. " +
         "Does not run tests — parses the most recent report.",
       annotations: { readOnlyHint: true },
       inputSchema: {

@@ -737,6 +737,134 @@ export function createLspHandlers(
     };
   }
 
+  async function handleFindImplementations(
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    const file = requireString(params.file, "file");
+    const line = requireNumber(params.line, "line") - 1;
+    const column = requireNumber(params.column, "column") - 1;
+    const uri = vscode.Uri.file(file);
+    await vscode.workspace.openTextDocument(uri);
+    const position = new vscode.Position(line, column);
+
+    let locations: vscode.Location[] | vscode.LocationLink[] | undefined;
+    try {
+      locations = await vscode.commands.executeCommand<
+        vscode.Location[] | vscode.LocationLink[]
+      >("vscode.executeImplementationProvider", uri, position);
+    } catch (_err: unknown) {
+      return null;
+    }
+
+    if (!locations || locations.length === 0) {
+      return null;
+    }
+
+    const implementations = locations.map((loc) => {
+      if ("targetUri" in loc) {
+        return {
+          file: loc.targetUri.fsPath,
+          line: loc.targetRange.start.line + 1,
+          column: loc.targetRange.start.character + 1,
+          endLine: loc.targetRange.end.line + 1,
+          endColumn: loc.targetRange.end.character + 1,
+        };
+      }
+      return {
+        file: loc.uri.fsPath,
+        line: loc.range.start.line + 1,
+        column: loc.range.start.character + 1,
+        endLine: loc.range.end.line + 1,
+        endColumn: loc.range.end.character + 1,
+      };
+    });
+    return { found: true, implementations, count: implementations.length };
+  }
+
+  async function handleGoToTypeDefinition(
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    const file = requireString(params.file, "file");
+    const line = requireNumber(params.line, "line") - 1;
+    const column = requireNumber(params.column, "column") - 1;
+    const uri = vscode.Uri.file(file);
+    await vscode.workspace.openTextDocument(uri);
+    const position = new vscode.Position(line, column);
+
+    let locations: vscode.Location[] | vscode.LocationLink[] | undefined;
+    try {
+      locations = await vscode.commands.executeCommand<
+        vscode.Location[] | vscode.LocationLink[]
+      >("vscode.executeTypeDefinitionProvider", uri, position);
+    } catch (_err: unknown) {
+      return null;
+    }
+
+    if (!locations || locations.length === 0) return null;
+
+    const mapped = locations.map((loc) => {
+      if ("targetUri" in loc) {
+        return {
+          file: loc.targetUri.fsPath,
+          line: loc.targetRange.start.line + 1,
+          column: loc.targetRange.start.character + 1,
+          endLine: loc.targetRange.end.line + 1,
+          endColumn: loc.targetRange.end.character + 1,
+        };
+      }
+      return {
+        file: loc.uri.fsPath,
+        line: loc.range.start.line + 1,
+        column: loc.range.start.character + 1,
+        endLine: loc.range.end.line + 1,
+        endColumn: loc.range.end.character + 1,
+      };
+    });
+    return { found: true, locations: mapped };
+  }
+
+  async function handleGoToDeclaration(
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    const file = requireString(params.file, "file");
+    const line = requireNumber(params.line, "line") - 1;
+    const column = requireNumber(params.column, "column") - 1;
+    const uri = vscode.Uri.file(file);
+    await vscode.workspace.openTextDocument(uri);
+    const position = new vscode.Position(line, column);
+
+    let locations: vscode.Location[] | vscode.LocationLink[] | undefined;
+    try {
+      locations = await vscode.commands.executeCommand<
+        vscode.Location[] | vscode.LocationLink[]
+      >("vscode.executeDeclarationProvider", uri, position);
+    } catch (_err: unknown) {
+      return null;
+    }
+
+    if (!locations || locations.length === 0) return null;
+
+    const mapped = locations.map((loc) => {
+      if ("targetUri" in loc) {
+        return {
+          file: loc.targetUri.fsPath,
+          line: loc.targetRange.start.line + 1,
+          column: loc.targetRange.start.character + 1,
+          endLine: loc.targetRange.end.line + 1,
+          endColumn: loc.targetRange.end.character + 1,
+        };
+      }
+      return {
+        file: loc.uri.fsPath,
+        line: loc.range.start.line + 1,
+        column: loc.range.start.character + 1,
+        endLine: loc.range.end.line + 1,
+        endColumn: loc.range.end.character + 1,
+      };
+    });
+    return { found: true, locations: mapped };
+  }
+
   async function handleSelectionRanges(params: Record<string, unknown>) {
     const file = requireString(params.file, "file");
     const line = requireNumber(params.line, "line") - 1;
@@ -792,5 +920,8 @@ export function createLspHandlers(
     "extension/signatureHelp": handleSignatureHelp,
     "extension/foldingRanges": handleFoldingRanges,
     "extension/selectionRanges": handleSelectionRanges,
+    "extension/findImplementations": handleFindImplementations,
+    "extension/goToTypeDefinition": handleGoToTypeDefinition,
+    "extension/goToDeclaration": handleGoToDeclaration,
   };
 }

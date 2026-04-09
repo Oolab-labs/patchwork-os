@@ -208,6 +208,9 @@ export function createGetToolCapabilitiesTool(
                 "batchGoToDefinition",
                 "refactorExtractFunction",
                 "getImportTree",
+                "findImplementations",
+                "goToTypeDefinition",
+                "goToDeclaration",
               ]
             : [],
           planning: [

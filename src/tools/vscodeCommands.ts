@@ -14,11 +14,7 @@ export function createExecuteVSCodeCommandTool(
       name: "executeVSCodeCommand",
       extensionRequired: true,
       description:
-        "Execute any registered VS Code command by ID. " +
-        "Examples: 'editor.action.formatDocument', 'workbench.action.showAllSymbols', " +
-        "'testing.runAll'. Use listVSCodeCommands to discover available commands. " +
-        "If --vscode-allow-command flags are set, only those commands are permitted. " +
-        "Requires the VS Code extension.",
+        "Execute any registered VS Code command by ID. Use listVSCodeCommands to discover IDs. ",
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
@@ -93,8 +89,7 @@ export function createListVSCodeCommandsTool(extensionClient: ExtensionClient) {
       extensionRequired: true,
       description:
         "List all registered VS Code commands. Optionally filter by substring. " +
-        "Returns up to 2000 commands. Use this to discover command IDs for executeVSCodeCommand. " +
-        "Requires the VS Code extension.",
+        "Returns up to 2000 commands. Use this to discover command IDs for executeVSCodeCommand. ",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

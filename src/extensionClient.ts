@@ -897,6 +897,48 @@ export class ExtensionClient {
     );
   }
 
+  async findImplementations(
+    file: string,
+    line: number,
+    column: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/findImplementations",
+      { file, line, column },
+      undefined,
+      signal,
+    );
+  }
+
+  async goToTypeDefinition(
+    file: string,
+    line: number,
+    column: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/goToTypeDefinition",
+      { file, line, column },
+      undefined,
+      signal,
+    );
+  }
+
+  async goToDeclaration(
+    file: string,
+    line: number,
+    column: number,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/goToDeclaration",
+      { file, line, column },
+      undefined,
+      signal,
+    );
+  }
+
   async getHover(
     file: string,
     line: number,

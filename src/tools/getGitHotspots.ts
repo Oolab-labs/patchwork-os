@@ -17,7 +17,7 @@ export function createGetGitHotspotsTool(workspace: string) {
     schema: {
       name: "getGitHotspots",
       description:
-        "Identify the most frequently changed files in the git history. High change frequency indicates areas of active development or instability — useful for prioritizing refactoring, code review focus, and test coverage improvements.",
+        "Identify the most frequently changed files in git history. High change frequency indicates areas of active development or instability — useful for refactoring prioritization.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
