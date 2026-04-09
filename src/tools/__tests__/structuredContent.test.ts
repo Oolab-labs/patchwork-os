@@ -22,15 +22,19 @@ vi.mock("../utils.js", async (importOriginal) => {
   return { ...actual, execSafe: vi.fn() };
 });
 
+import { createGetActivityLogTool } from "../activityLog.js";
 import { createDetectUnusedCodeTool } from "../detectUnusedCode.js";
 import { createGenerateTestsTool } from "../generateTests.js";
 import { createGetBufferContentTool } from "../getBufferContent.js";
 import { createGetGitDiffTool } from "../getGitDiff.js";
 import { createGetGitHotspotsTool } from "../getGitHotspots.js";
+import { createGetProjectInfoTool } from "../getProjectInfo.js";
 import {
+  createApplyCodeActionTool,
   createGetHoverTool,
   createSearchWorkspaceSymbolsTool,
 } from "../lsp.js";
+import { createRunCommandTool } from "../runCommand.js";
 import { createRunTestsTool } from "../runTests.js";
 import { createSearchWorkspaceTool } from "../searchWorkspace.js";
 import { execSafe } from "../utils.js";
@@ -210,6 +214,29 @@ describe("structuredContent contract", () => {
     });
   });
 
+  // ── lsp.ts: applyCodeAction ───────────────────────────────────────────────
+
+  describe("applyCodeAction (lsp.ts)", () => {
+    it("emits structuredContent when action applied successfully", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        applyCodeAction: vi
+          .fn()
+          .mockResolvedValue({ applied: true, title: "Fix lint error" }),
+      } as never;
+      const tool = createApplyCodeActionTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+        startLine: 1,
+        startColumn: 1,
+        endLine: 1,
+        endColumn: 10,
+        actionTitle: "Fix lint error",
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
   // ── lsp.ts: searchWorkspaceSymbols ────────────────────────────────────────
 
   describe("searchWorkspaceSymbols (lsp.ts)", () => {
@@ -234,6 +261,47 @@ describe("structuredContent contract", () => {
       } as never;
       const tool = createSearchWorkspaceSymbolsTool(WORKSPACE, mockClient);
       const result = await tool.handler({ query: "hello" });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── getProjectInfo ────────────────────────────────────────────────────────
+
+  describe("getProjectInfo", () => {
+    it("emits structuredContent for the test workspace", async () => {
+      const tool = createGetProjectInfoTool(WORKSPACE);
+      const result = await tool.handler({});
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── getActivityLog ────────────────────────────────────────────────────────
+
+  describe("getActivityLog", () => {
+    it("emits structuredContent with empty log", async () => {
+      const mockLog = {
+        query: vi.fn().mockReturnValue([]),
+        stats: vi.fn().mockReturnValue({}),
+      } as never;
+      const tool = createGetActivityLogTool(mockLog);
+      const result = await tool.handler({});
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── runCommand ────────────────────────────────────────────────────────────
+
+  describe("runCommand", () => {
+    it("emits structuredContent for a successful command", async () => {
+      mockExecSafe.mockResolvedValueOnce(execOk("hello"));
+      const config = {
+        workspace: WORKSPACE,
+        commandAllowlist: ["echo"],
+        commandTimeout: 30_000,
+        maxResultSize: 512,
+      } as never;
+      const tool = createRunCommandTool(WORKSPACE, config);
+      const result = await tool.handler({ command: "echo", args: ["hello"] });
       assertStructured(result as Parameters<typeof assertStructured>[0]);
     });
   });
