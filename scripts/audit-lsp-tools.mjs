@@ -1,12 +1,15 @@
 /**
- * LSP tool registry audit.
+ * Tool registry audit.
  *
- * Checks three things:
+ * Checks five things:
  *   1. Every tool in SLIM_TOOL_NAMES is registered (has a schema name matching
  *      a `name: "..."` entry in a tool source file).
  *   2. Every LSP tool in availableTools.lsp (getToolCapabilities.ts) is also
  *      in SLIM_TOOL_NAMES, and vice versa for known LSP tools.
- *   3. Every tool source file that exports a create*Tool function is imported
+ *   3. Every tool with outputSchema uses successStructured/successStructuredLarge
+ *      (not plain success/successLarge which omit structuredContent).
+ *   4. Every tool using successStructured declares outputSchema.
+ *   5. Every tool source file that exports a create*Tool function is imported
  *      in index.ts (not accidentally orphaned).
  *
  * Usage:
@@ -142,7 +145,31 @@ const inSlimLspNotCaps = [...lspToolNames].filter(
   (t) => slimNames.has(t) && !lspInCaps.has(t),
 );
 
-// ── check 3: orphaned tool source files ──────────────────────────────────────
+// ── check 3: outputSchema ↔ successStructured consistency ────────────────────
+//
+// Every tool file that declares `outputSchema:` must return structuredContent
+// by using successStructured() or successStructuredLarge() — not the plain
+// success()/successLarge() variants (which omit the structuredContent field).
+
+const outputSchemaWithoutStructured = [];
+const structuredWithoutOutputSchema = [];
+
+for (const [f] of fileToNames) {
+  if (f === "index.ts" || f === "utils.ts") continue;
+  const src = readFileSync(path.join(toolsDir, f), "utf8");
+  const hasOutputSchema = /\boutputSchema\s*:/.test(src);
+  const hasSuccessStructured = /\bsuccessStructured(?:Large)?\s*\(/.test(src);
+  const hasPlainSuccess = /\breturn success(?:Large)?\s*\(/.test(src);
+
+  if (hasOutputSchema && hasPlainSuccess && !hasSuccessStructured) {
+    outputSchemaWithoutStructured.push(f);
+  }
+  if (hasSuccessStructured && !hasOutputSchema) {
+    structuredWithoutOutputSchema.push(f);
+  }
+}
+
+// ── check 5: orphaned tool source files ──────────────────────────────────────
 
 // Any .ts file in src/tools/ that exports create*Tool but is NOT imported in index.ts
 const orphaned = [];
@@ -173,7 +200,7 @@ function ok(label) {
   console.log(`✓ ${label}`);
 }
 
-console.log(`\nLSP Tool Registry Audit\n${"─".repeat(40)}`);
+console.log(`\nTool Registry Audit\n${"─".repeat(40)}`);
 
 if (inSlimNotRegistered.length === 0) {
   ok("All SLIM_TOOL_NAMES entries have a registered schema");
@@ -196,6 +223,26 @@ if (inSlimLspNotCaps.length === 0) {
   );
 }
 
+if (outputSchemaWithoutStructured.length === 0) {
+  ok(
+    "All tools with outputSchema use successStructured/successStructuredLarge",
+  );
+} else {
+  fail(
+    "Tools with outputSchema but returning plain success() — missing structuredContent",
+    outputSchemaWithoutStructured,
+  );
+}
+
+if (structuredWithoutOutputSchema.length === 0) {
+  ok("All tools using successStructured declare outputSchema");
+} else {
+  fail(
+    "Tools using successStructured but missing outputSchema declaration",
+    structuredWithoutOutputSchema,
+  );
+}
+
 if (orphaned.length === 0) {
   ok("All tool source files are imported in index.ts");
 } else {
@@ -207,7 +254,7 @@ console.log(
 );
 
 console.log(
-  `\nStats: ${slimNames.size} slim tools · ${lspInCaps.size} LSP tools advertised · ${registeredNames.size} total registered · ${lspToolNames.size} LSP tool implementations`,
+  `\nStats: ${slimNames.size} slim tools · ${lspInCaps.size} LSP tools advertised · ${registeredNames.size} total registered · ${lspToolNames.size} LSP implementations · ${[...fileToNames.keys()].filter((f) => /\boutputSchema\s*:/.test(readFileSync(path.join(toolsDir, f), "utf8"))).length} outputSchema tools`,
 );
 
 process.exit(issues > 0 ? 1 : 0);
