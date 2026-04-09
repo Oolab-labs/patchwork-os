@@ -12,6 +12,14 @@ export interface ClaudeTaskInput {
   onChunk?: (chunk: string) => void;
   /** Optional model override, e.g. "claude-haiku-4-5-20251001". Passed as --model to the subprocess. */
   model?: string;
+  /**
+   * Skip all permission prompts in the subprocess by passing --dangerously-skip-permissions.
+   * Defaults to true — subprocess tasks are headless and permission prompts would hang indefinitely.
+   * Set to false only if you need to audit which permissions Claude requests (task will hang on prompts).
+   * Note: session-selection and editor-selection prompts are not permission prompts and may still
+   * hang regardless of this flag; those require a claude --non-interactive flag (not yet available).
+   */
+  skipPermissions?: boolean;
 }
 
 export interface ClaudeTaskOutput {
@@ -80,6 +88,11 @@ export class SubprocessDriver implements IClaudeDriver {
       this.settingsPath,
     ];
     if (input.model) args.push("--model", input.model);
+    // Default true: subprocess tasks are headless — permission prompts would hang indefinitely
+    // since stdin is 'ignore'. The flag is well-scoped to permission checks; session-selection
+    // and editor-selection prompts are unaffected (known limitation, requires CLI-side fix).
+    if (input.skipPermissions !== false)
+      args.push("--dangerously-skip-permissions");
     // workspace is set as cwd in spawn() — claude -p has no --workspace flag
     for (const f of input.contextFiles ?? []) {
       if (typeof f === "string" && f.length > 0 && !f.startsWith("-")) {

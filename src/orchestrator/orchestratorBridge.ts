@@ -1,3 +1,26 @@
+/**
+ * OrchestratorBridge — multi-IDE proxy layer.
+ *
+ * This is NOT the same as the regular `Bridge` in `src/bridge.ts`.
+ *
+ * | Aspect          | Bridge (bridge.ts)                         | OrchestratorBridge (this file)                           |
+ * |-----------------|---------------------------------------------|----------------------------------------------------------|
+ * | Purpose         | Direct MCP server for a single IDE/workspace | Proxy that fans out to one or more child Bridge instances |
+ * | Tool execution  | Runs tools locally (fs, LSP, git, etc.)     | Forwards every tool call to the appropriate child bridge  |
+ * | Clients         | Claude Code CLI, Claude Desktop, remote HTTP | Claude Code CLI only (WebSocket)                         |
+ * | Lock file flag  | `isBridge: true`                            | `orchestrator: true`                                     |
+ * | Start command   | `claude-ide-bridge` (default)               | `claude-ide-bridge --mode orchestrator`                  |
+ * | Multi-IDE       | Single workspace                            | Discovers all running bridges via lock-file scan, routes  |
+ *                                                                                                                      |
+ * Why they look identical in Claude's tool list: the orchestrator exposes the
+ * same tool *names* as its child bridges (they are proxied 1-for-1, with an
+ * optional `__<IDE>` suffix when multiple workspaces conflict). In a single-IDE
+ * setup the tool lists are therefore identical, which is expected — every call
+ * is transparently forwarded.
+ *
+ * Use OrchestratorBridge when you need to address multiple IDE workspaces from
+ * one Claude session. Use Bridge directly for a single-workspace setup.
+ */
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
 import { ErrorCodes } from "../errors.js";

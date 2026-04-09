@@ -1,3 +1,5 @@
+<!-- bridge-tools v{{VERSION}} -->
+
 ## Bridge Tool Overrides (claude-ide-bridge)
 
 > **These rules are active when the `claude-ide-bridge` MCP server is connected** (green in `/mcp`).  

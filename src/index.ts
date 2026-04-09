@@ -52,7 +52,8 @@ function isBridgeToolsFileValid(filePath: string): boolean {
       content.includes("runTests") &&
       content.includes("getDiagnostics") &&
       content.includes("MANDATORY") &&
-      content.includes("batchGetHover") // stale files missing new tools fail here
+      content.includes("batchGetHover") && // stale files missing new tools fail here
+      content.includes(`<!-- bridge-tools v${PACKAGE_VERSION} -->`) // version sentinel — forces rewrite on package update
     );
   } catch {
     return false;
@@ -243,7 +244,13 @@ function repairBridgeToolsRulesIfStale(workspace: string): void {
     const repairing = existsSync(rulesFilePath);
     try {
       mkdirSync(rulesDir, { recursive: true });
-      writeRulesFileAtomic(rulesFilePath, readFileSync(templatePath, "utf-8"));
+      writeRulesFileAtomic(
+        rulesFilePath,
+        readFileSync(templatePath, "utf-8").replace(
+          "{{VERSION}}",
+          PACKAGE_VERSION,
+        ),
+      );
       process.stderr.write(
         repairing
           ? `✓ Bridge rules repaired at ${rulesFilePath}\n`
@@ -764,7 +771,10 @@ Steps performed:
       mkdirSync(rulesDir, { recursive: true });
       writeRulesFileAtomic(
         rulesFilePath,
-        readFileSync(bridgeToolsTemplatePath, "utf-8"),
+        readFileSync(bridgeToolsTemplatePath, "utf-8").replace(
+          "{{VERSION}}",
+          PACKAGE_VERSION,
+        ),
       );
       process.stderr.write(
         repairing

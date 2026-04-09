@@ -2,6 +2,16 @@
 
 @import .claude/rules/bridge-tools.md
 
+> **BRIDGE TOOL ENFORCEMENT — mandatory when bridge is connected**
+> Do NOT run shell commands. Call MCP bridge tools instead:
+> - Testing: `runTests` (not `npm test` / `npx vitest`)
+> - Diagnostics: `getDiagnostics` (not `tsc --noEmit` / `npm run lint`)
+> - Git: `gitCommit`, `gitAdd`, `gitPush` (not `git commit` etc.)
+> - Search: `searchWorkspace` (not `grep` / `rg`)
+> - Hover/types: `batchGetHover` (not calling `getHover` in a loop)
+>
+> Full substitution table: see `.claude/rules/bridge-tools.md` (loaded above via @import).
+
 The bridge is connected via MCP. The session-start hook reports connection status, tool count, and extension state automatically — check that summary before proceeding. If tools appear missing, call `getBridgeStatus` to diagnose.
 
 ### Bug fix methodology

@@ -35,7 +35,11 @@ vi.mock("node:child_process", async (importOriginal) => {
   };
 });
 
+import { spawn } from "node:child_process";
+
 import { ApiDriver, SubprocessDriver } from "../claudeDriver.js";
+
+const spawnMock = vi.mocked(spawn);
 
 function makeSignal(): AbortSignal {
   return new AbortController().signal;
@@ -118,6 +122,24 @@ describe("SubprocessDriver", () => {
     // onChunk only received up to cap
     const totalChunked = chunks.reduce((s, c) => s + c.length, 0);
     expect(totalChunked).toBeLessThanOrEqual(50 * 1024);
+  });
+
+  it("passes --dangerously-skip-permissions by default", async () => {
+    const runPromise = driver.run(makeInput());
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.emit("close", 0);
+    await runPromise;
+    const args = spawnMock.mock.calls[0]![1] as string[];
+    expect(args).toContain("--dangerously-skip-permissions");
+  });
+
+  it("omits --dangerously-skip-permissions when skipPermissions is false", async () => {
+    const runPromise = driver.run(makeInput({ skipPermissions: false }));
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.emit("close", 0);
+    await runPromise;
+    const args = spawnMock.mock.calls[0]![1] as string[];
+    expect(args).not.toContain("--dangerously-skip-permissions");
   });
 
   it("logs stderr on non-zero exit", async () => {
