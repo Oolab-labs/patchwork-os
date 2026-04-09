@@ -1,8 +1,24 @@
 {
+  "onFileSave": {
+    "enabled": true,
+    "patterns": ["src/**/*.ts", "vscode-extension/src/**/*.ts"],
+    "cooldownMs": 8000,
+    "prompt": "File saved: {{file}}\n\nCall fixAllLintErrors on this file, then getDiagnostics. If any errors remain, explain them concisely."
+  },
+  "onPostCompact": {
+    "enabled": true,
+    "cooldownMs": 5000,
+    "prompt": "Context was just compacted. Re-orient by calling: getGitStatus (what branch/changes), getDiagnostics (any active errors), getHandoffNote (session context). Summarize in ≤10 lines."
+  },
+  "onBranchCheckout": {
+    "enabled": true,
+    "cooldownMs": 5000,
+    "prompt": "Branch switched to {{branch}} (from {{previousBranch}}). New branch: {{created}}.\n\nCall getGitStatus and getDiagnostics. Summarize what's different on this branch in ≤5 lines."
+  },
   "onGitCommit": {
     "enabled": true,
     "cooldownMs": 10000,
-    "prompt": "A commit was just made to claude-ide-bridge:\nbranch: {{branch}}\nmessage: {{message}}\nfiles: {{files}}\n\nRun getDiagnostics and report any new errors introduced."
+    "prompt": "Commit made on {{branch}}: {{message}}\nFiles: {{files}}\n\nCall getDiagnostics (report errors only). If any test files were in {{files}}, also call runTests and report pass/fail count."
   },
   "onTestRun": {
     "enabled": true,
