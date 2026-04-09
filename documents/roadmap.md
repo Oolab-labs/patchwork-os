@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.6 — 2026-04-09)
+## Current State (v2.11.7 — 2026-04-09)
 
-- **Slim mode default**: 45 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
-- **~1,656 bridge tests / ~128 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **Slim mode default**: 48 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
+- **~1,680 bridge tests / ~129 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
 - Extension v1.0.20 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE
@@ -28,6 +28,13 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.7 shipped (2026-04-09) — outputSchema expansion + onTestRun hook + LSP consistency:**
+- `onTestRun` automation hook: new `OnTestRunPolicy` with `onFailureOnly`, `cooldownMs`, placeholders (`{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}`); loop guard prevents re-triggering from tasks spawned by the hook itself; `runTests` wired via callback to avoid circular imports; 10 new tests
+- `outputSchema` added to 7 more tools: `runTests`, `searchWorkspace`, `getGitDiff`, `getBufferContent`, `generateTests`, `detectUnusedCode`, `getGitHotspots` — brings total to 22 tools with declared structured output
+- LSP tool registry consistency: `SLIM_TOOL_NAMES` ↔ `availableTools.lsp` drift fixed (`getTypeHierarchy`, `getInlayHints`, `getHoverAtCursor` added to slim; `refactorExtractFunction`, `getImportTree` added to caps list); SLIM_TOOL_NAMES: 45 → 48
+- `scripts/audit-lsp-tools.mjs`: new audit script deriving tool truth from source — checks SLIM entries have schemas, caps list ⊆ SLIM, no orphaned files; exits 1 on drift
+- CI: new `lsp-audit` job runs audit script on every push/PR — prevents future SLIM ↔ caps drift silently regressing
 
 **v2.11.6 shipped (2026-04-09) — Claude Code changelog catch-up:**
 - `onFileChanged` automation hook: new policy type (same shape as `onFileSave`) triggering on VS Code buffer-change events (`type === "change"`) rather than explicit saves; wired in `bridge.ts` alongside `handleFileSaved`; `getStatus()` includes it; 6 new tests
