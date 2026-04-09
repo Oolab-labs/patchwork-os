@@ -37,7 +37,7 @@ export function createGetChangeImpactTool(
       description:
         "Analyze the blast radius after editing a file. Returns diagnostics on the file " +
         "and reference counts for changed symbols. Use after edits to understand what " +
-        "other code may be affected. Requires the VS Code extension.",
+        "other code may be affected.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -245,7 +245,7 @@ export function createGetChangeImpactTool(
           `${symbolImpact.length} changed symbol(s) affect ${affected} file(s)`,
         );
       }
-      const summary = parts.join("; ") + `. Blast radius: ${blastRadius}.`;
+      const summary = `${parts.join("; ")}. Blast radius: ${blastRadius}.`;
 
       return successStructured({
         diagnostics: { errors, warnings, items: diagItems.slice(0, 50) },

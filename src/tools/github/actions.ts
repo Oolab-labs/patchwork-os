@@ -23,9 +23,8 @@ export function createGithubListRunsTool(
     schema: {
       name: "githubListRuns",
       description:
-        "List GitHub Actions workflow runs for the current repository using the GitHub CLI (gh). " +
-        "Use this to check CI status after a push or PR. The run ID (databaseId) can be passed to " +
-        "githubGetRunLogs to retrieve failure details. Requires gh to be installed and authenticated.",
+        "List GitHub Actions workflow runs. Use to check CI status after a push. " +
+        "Pass the run ID (databaseId) to githubGetRunLogs to retrieve failure details.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -107,10 +106,8 @@ export function createGithubGetRunLogsTool(
     schema: {
       name: "githubGetRunLogs",
       description:
-        "Get logs from a GitHub Actions workflow run using the GitHub CLI (gh). " +
-        "By default returns only the failed steps' logs (most useful for diagnosing CI failures). " +
-        "Pass the databaseId from githubListRuns as the runId. " +
-        "Requires gh to be installed and authenticated.",
+        "Get logs from a GitHub Actions workflow run. By default returns only the failed steps' logs. " +
+        "Pass the databaseId from githubListRuns as the runId.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

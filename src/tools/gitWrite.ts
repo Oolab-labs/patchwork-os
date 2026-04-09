@@ -40,10 +40,8 @@ export function createGitAddTool(workspace: string) {
     schema: {
       name: "gitAdd",
       description:
-        "Stage files for the next git commit. " +
-        "Pass specific file paths to stage selectively, or omit files to stage all tracked changes (equivalent to 'git add -u'). " +
-        "Use addUntracked: true to also stage new files not yet tracked (equivalent to 'git add .'). " +
-        "Check what will be staged first with getGitStatus.",
+        "Stage files for the next git commit. Omit files to stage all tracked changes (git add -u). " +
+        "Use addUntracked: true to also stage new untracked files. Check first with getGitStatus.",
       annotations: { destructiveHint: false },
       inputSchema: {
         type: "object" as const,
@@ -122,10 +120,8 @@ export function createGitCommitTool(
     schema: {
       name: "gitCommit",
       description:
-        "Create a git commit from the current staged changes. " +
-        "Use gitAdd first to stage files, or pass files here to stage-and-commit in one step. " +
-        "Returns the new commit hash, branch, and list of committed files. " +
-        "Will fail with a clear error if there is nothing staged and no files are provided.",
+        "Create a git commit from staged changes. Use gitAdd first, or pass files to stage-and-commit in one step. " +
+        "Returns the new commit hash, branch, and list of committed files.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -268,9 +264,7 @@ export function createGitCheckoutTool(
     schema: {
       name: "gitCheckout",
       description:
-        "Switch to an existing branch, or create and switch to a new branch. " +
-        "Use create: true to create a new branch from HEAD (or a specified base). " +
-        "Check the current branch and available branches with getGitStatus first.",
+        "Switch to a branch, or create and switch to a new branch. Use create: true to create from HEAD or a specified base.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -382,9 +376,7 @@ export function createGitBlameTool(workspace: string) {
       name: "gitBlame",
       description:
         "Show who last modified each line of a file and in which commit. " +
-        "Use to understand why code was written a certain way, find the PR/commit that introduced a bug, " +
-        "or identify the author to ask for context. " +
-        "Optionally limit to a line range to avoid large outputs.",
+        "Use to trace why code was written a certain way or find the commit that introduced a bug.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -528,10 +520,8 @@ export function createGitFetchTool(workspace: string) {
     schema: {
       name: "gitFetch",
       description:
-        "Fetch updates from a remote without merging — updates remote-tracking branches (e.g. origin/main) " +
-        "so gitListBranches shows current remote state and gitCheckout can find remote branches. " +
-        "Required before checking out a branch that exists on remote but not locally. " +
-        "Use gitPull to fetch and merge in one step.",
+        "Fetch updates from a remote without merging. Updates remote-tracking branches so gitListBranches " +
+        "and gitCheckout see the latest state. Use gitPull to fetch and merge in one step.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -602,10 +592,7 @@ export function createGitListBranchesTool(workspace: string) {
     schema: {
       name: "gitListBranches",
       description:
-        "List git branches in the workspace. " +
-        "Returns local branches with the current branch marked. " +
-        "Pass includeRemote: true to also list remote-tracking branches. " +
-        "Use before gitCheckout to see available branches.",
+        "List git branches. Returns local branches with the current branch marked. Pass includeRemote: true for remote-tracking branches.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -677,10 +664,7 @@ export function createGitPullTool(workspace: string) {
     schema: {
       name: "gitPull",
       description:
-        "Pull changes from a remote repository into the current branch. " +
-        "Defaults to fetching from origin and merging (or rebasing if configured). " +
-        "Use rebase: true for a cleaner linear history. " +
-        "Returns output summary and whether the branch was already up to date.",
+        "Pull changes from a remote into the current branch. Defaults to origin with merge. Use rebase: true for linear history.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -785,10 +769,7 @@ export function createGitPushTool(
     schema: {
       name: "gitPush",
       description:
-        "Push the current branch to a remote repository. " +
-        "Use setUpstream: true on the first push of a new branch to set its tracking remote. " +
-        "Force push is blocked on main/master to prevent accidental history rewrites. " +
-        "Uses --force-with-lease (not --force) for safe force pushes.",
+        "Push the current branch to a remote. Use setUpstream: true on the first push. Force push uses --force-with-lease. Blocked on main/master.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -950,9 +931,8 @@ export function createGitStashTool(workspace: string) {
     schema: {
       name: "gitStash",
       description:
-        "Stash current changes to get a clean working tree — required before switching branches when you have uncommitted changes. " +
-        "Use gitStashPop to restore them after switching back. " +
-        "Pass includeUntracked: true to also stash new files not yet tracked by git.",
+        "Stash current changes to get a clean working tree. Required before switching branches with uncommitted changes. " +
+        "Use gitStashPop to restore. Pass includeUntracked: true to also stash new files.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -1017,9 +997,8 @@ export function createGitStashPopTool(workspace: string) {
     schema: {
       name: "gitStashPop",
       description:
-        "Restore stashed changes back to the working tree and remove the stash entry. " +
-        "Pops the most recent stash by default, or a specific entry by index (from gitStashList). " +
-        "Will fail with a conflict error if the stashed changes clash with the current state.",
+        "Restore stashed changes to the working tree. Pops the most recent stash by default, " +
+        "or a specific entry by index (from gitStashList).",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

@@ -10,11 +10,8 @@ export function createGetAICommentsTool(extensionClient: ExtensionClient) {
     schema: {
       name: "getAIComments",
       description:
-        "Scan all open documents for AI-tagged comments and return them. " +
-        "AI comments use the format `// AI: <severity>: <message>` where severity is " +
-        "fix, todo, question, warn, or task. " +
-        "Populates the cache used by createGithubIssueFromAIComment — call this first " +
-        "before filing issues from AI comments.",
+        "Scan open documents for AI-tagged comments (// AI: <severity>: <message>). " +
+        "Severity: fix, todo, question, warn, task. Call before createGithubIssueFromAIComment.",
       extensionRequired: true,
       annotations: { readOnlyHint: true },
       inputSchema: {

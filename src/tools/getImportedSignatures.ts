@@ -141,10 +141,8 @@ export function createGetImportedSignaturesTool(
       name: "getImportedSignatures",
       extensionRequired: true,
       description:
-        "Resolve imported symbols to their type signatures. For each import in the file, " +
-        "follows the definition and returns the hover signature from the language server. " +
-        "Prevents hallucinating API shapes — use before calling an unfamiliar function or " +
-        "passing arguments to an external library. Requires the VS Code extension.",
+        "Resolve imported symbols to their type signatures. " +
+        "Prevents hallucinating API shapes — use before calling unfamiliar functions.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

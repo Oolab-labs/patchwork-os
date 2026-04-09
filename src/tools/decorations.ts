@@ -22,11 +22,8 @@ export function createSetEditorDecorationsTool(
       name: "setEditorDecorations",
       extensionRequired: true,
       description:
-        "Place visual decorations (highlights, annotations, inline text) on lines in a file. " +
-        "Decorations are grouped by a logical ID — you can have multiple independent decoration sets. " +
-        "Each call replaces existing decorations for that ID+file. " +
-        "Styles: info (green), warning (yellow), error (red), focus (border), strikethrough, dim. " +
-        "Requires the VS Code extension.",
+        "Place visual decorations (highlights, inline text) on file lines. " +
+        "Grouped by logical ID; each call replaces that ID's set. ",
       annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -138,8 +135,7 @@ export function createClearEditorDecorationsTool(
       extensionRequired: true,
       description:
         "Clear editor decorations. Pass an id to clear a specific decoration set, " +
-        "or omit to clear all Claude-managed decorations. " +
-        "Requires the VS Code extension.",
+        "or omit to clear all Claude-managed decorations. ",
       annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

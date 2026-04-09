@@ -50,9 +50,7 @@ export function createGithubCreatePRTool(
     schema: {
       name: "githubCreatePR",
       description:
-        "Create a GitHub pull request for the current branch using the GitHub CLI (gh). " +
-        "Requires gh to be installed (https://cli.github.com/) and authenticated via 'gh auth login'. " +
-        "When no body is provided, uses commit messages to fill the description (--fill). " +
+        "Create a GitHub pull request using gh CLI. Uses commit messages as description if body is omitted (--fill). " +
         "Returns the PR URL and number.",
       annotations: { destructiveHint: true },
       inputSchema: {
@@ -308,11 +306,7 @@ export function createGithubGetPRDiffTool(workspace: string) {
       name: "githubGetPRDiff",
       description:
         "Fetch the full diff and metadata for a GitHub pull request. " +
-        "Returns the PR title, description, branch info, per-file change list, and the unified diff text — " +
-        "everything needed to analyze the changes and identify bugs. " +
-        "Inline review comments must target lines present in the diff; use the diff output to identify valid line numbers. " +
-        "Diffs larger than 256 KB are truncated (truncated: true in response). " +
-        "Requires gh to be installed (https://cli.github.com/) and authenticated via 'gh auth login'.",
+        "Returns title, branch info, per-file diffs, and unified diff text. Diffs over 256 KB are truncated.",
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         type: "object" as const,
@@ -423,13 +417,8 @@ export function createGithubPostPRReviewTool(workspace: string) {
     schema: {
       name: "githubPostPRReview",
       description:
-        "Post a code review on a GitHub pull request: an overview comment plus optional inline comments on specific lines. " +
-        "Use after analyzing the PR diff with githubGetPRDiff. " +
-        "Inline comments MUST target lines that appear in the diff — comments on lines outside the diff hunks will cause the entire review to fail. " +
-        "Use side:'RIGHT' for added/context lines (default) and side:'LEFT' for deleted lines. " +
-        "Set event to 'REQUEST_CHANGES' to request changes, or leave as 'COMMENT' for a non-blocking review. " +
-        "Approving PRs is intentionally not supported — that remains a human decision. " +
-        "Requires gh to be installed and authenticated.",
+        "Post a code review on a GitHub pull request. Inline comments MUST target lines in the diff (use githubGetPRDiff first). " +
+        "event: COMMENT (non-blocking), REQUEST_CHANGES. Approving PRs is not supported.",
       annotations: { destructiveHint: false, openWorldHint: true },
       inputSchema: {
         type: "object" as const,

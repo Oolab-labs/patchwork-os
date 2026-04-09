@@ -21,9 +21,7 @@ export function createGetTypeHierarchyTool(
     schema: {
       name: "getTypeHierarchy",
       description:
-        "Get the type hierarchy for a symbol — its supertypes (parent classes/interfaces) " +
-        "and subtypes (implementations/subclasses). Requires the VS Code extension and " +
-        "a language server that supports type hierarchy (TypeScript, Java, C++, etc.).",
+        "Get the type hierarchy for a symbol — supertypes (parent classes/interfaces) and subtypes (implementations/subclasses). Requires a language server with type hierarchy support.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
