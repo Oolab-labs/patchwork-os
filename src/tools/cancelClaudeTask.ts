@@ -1,6 +1,6 @@
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import { ToolErrorCodes } from "../errors.js";
-import { error, success } from "./utils.js";
+import { error, successStructured } from "./utils.js";
 
 export function createCancelClaudeTaskTool(
   orchestrator: ClaudeOrchestrator,
@@ -25,6 +25,14 @@ export function createCancelClaudeTaskTool(
           },
         },
         required: ["taskId"],
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          cancelled: { type: "boolean" },
+          taskId: { type: "string" },
+        },
+        required: ["cancelled", "taskId"],
       },
     },
     handler: async (args: Record<string, unknown>) => {
@@ -53,7 +61,7 @@ export function createCancelClaudeTaskTool(
       }
 
       const cancelled = orchestrator.cancel(taskId);
-      return success({ cancelled, taskId });
+      return successStructured({ cancelled, taskId });
     },
   };
 }

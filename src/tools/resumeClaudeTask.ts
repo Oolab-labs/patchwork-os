@@ -1,6 +1,6 @@
 import type { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import { ToolErrorCodes } from "../errors.js";
-import { error, success } from "./utils.js";
+import { error, successStructured } from "./utils.js";
 
 export function createResumeClaudeTaskTool(
   orchestrator: ClaudeOrchestrator,
@@ -27,6 +27,16 @@ export function createResumeClaudeTaskTool(
           },
         },
         required: ["taskId"],
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          newTaskId: { type: "string" },
+          originalTaskId: { type: "string" },
+          prompt: { type: "string" },
+          status: { type: "string" },
+        },
+        required: ["newTaskId", "originalTaskId", "prompt", "status"],
       },
     },
     handler: async (args: Record<string, unknown>) => {
@@ -69,7 +79,7 @@ export function createResumeClaudeTaskTool(
           sessionId,
           model: original.model,
         });
-        return success({
+        return successStructured({
           newTaskId,
           originalTaskId: taskId,
           prompt: original.prompt,

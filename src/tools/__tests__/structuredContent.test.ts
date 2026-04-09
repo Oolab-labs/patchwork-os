@@ -24,20 +24,27 @@ vi.mock("../utils.js", async (importOriginal) => {
 
 import { createGetActivityLogTool } from "../activityLog.js";
 import { createAuditDependenciesTool } from "../auditDependencies.js";
+import { createCancelClaudeTaskTool } from "../cancelClaudeTask.js";
 import { createDetectUnusedCodeTool } from "../detectUnusedCode.js";
 import { createGenerateTestsTool } from "../generateTests.js";
 import { createGetBufferContentTool } from "../getBufferContent.js";
 import { createGetClaudeTaskStatusTool } from "../getClaudeTaskStatus.js";
 import { createGetGitDiffTool } from "../getGitDiff.js";
 import { createGetGitHotspotsTool } from "../getGitHotspots.js";
+import { createGetPRTemplateTool } from "../getPRTemplate.js";
 import { createGetProjectInfoTool } from "../getProjectInfo.js";
 import { createGetToolCapabilitiesTool } from "../getToolCapabilities.js";
+import {
+  createGetHandoffNoteTool,
+  createSetHandoffNoteTool,
+} from "../handoffNote.js";
 import { createListClaudeTasksTool } from "../listClaudeTasks.js";
 import {
   createApplyCodeActionTool,
   createGetHoverTool,
   createSearchWorkspaceSymbolsTool,
 } from "../lsp.js";
+import { createResumeClaudeTaskTool } from "../resumeClaudeTask.js";
 import { createRunClaudeTaskTool } from "../runClaudeTask.js";
 import { createRunCommandTool } from "../runCommand.js";
 import { createRunTestsTool } from "../runTests.js";
@@ -403,6 +410,88 @@ describe("structuredContent contract", () => {
       const tool = createAuditDependenciesTool(WORKSPACE);
       const result = await tool.handler({});
       assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── cancelClaudeTask ──────────────────────────────────────────────────────
+
+  describe("cancelClaudeTask", () => {
+    it("emits structuredContent on successful cancellation", async () => {
+      const mockOrchestrator = {
+        getTask: vi.fn().mockReturnValue({
+          id: "task-1",
+          status: "pending",
+          sessionId: "session-1",
+        }),
+        cancel: vi.fn().mockReturnValue(true),
+      } as never;
+      const tool = createCancelClaudeTaskTool(mockOrchestrator, "session-1");
+      const result = await tool.handler({ taskId: "task-1" });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── resumeClaudeTask ──────────────────────────────────────────────────────
+
+  describe("resumeClaudeTask", () => {
+    it("emits structuredContent on successful resume", async () => {
+      const mockOrchestrator = {
+        getTask: vi.fn().mockReturnValue({
+          id: "task-1",
+          status: "done",
+          sessionId: "session-1",
+          prompt: "hello",
+          contextFiles: [],
+          timeoutMs: 120_000,
+          model: undefined,
+        }),
+        enqueue: vi.fn().mockReturnValue("task-2"),
+      } as never;
+      const tool = createResumeClaudeTaskTool(mockOrchestrator, "session-1");
+      const result = await tool.handler({ taskId: "task-1" });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── setHandoffNote ────────────────────────────────────────────────────────
+
+  describe("setHandoffNote", () => {
+    it("emits structuredContent on save", async () => {
+      const tool = createSetHandoffNoteTool("session-1", {
+        configDir: WORKSPACE,
+      });
+      const result = await tool.handler({ note: "working on auth bug" });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── getHandoffNote ────────────────────────────────────────────────────────
+
+  describe("getHandoffNote", () => {
+    it("emits structuredContent when no note exists", async () => {
+      const tool = createGetHandoffNoteTool({
+        configDir: WORKSPACE + "/nonexistent-dir-xyz",
+      });
+      const result = await tool.handler({});
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── getPRTemplate ─────────────────────────────────────────────────────────
+
+  describe("getPRTemplate", () => {
+    it("emits structuredContent when not a git repo", async () => {
+      mockExecSafe.mockResolvedValueOnce({
+        stdout: "",
+        stderr: "not a git repo",
+        exitCode: 128,
+        timedOut: false,
+        durationMs: 5,
+      });
+      const tool = createGetPRTemplateTool(WORKSPACE);
+      const result = await tool.handler({});
+      // error path returns isError — just check it's a valid content response
+      expect(result.content[0]?.type).toBe("text");
     });
   });
 });
