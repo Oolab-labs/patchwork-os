@@ -5,7 +5,7 @@ import {
   requireInt,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createSelectionRangesTool(
@@ -42,6 +42,17 @@ export function createSelectionRangesTool(
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          ranges: {
+            type: "array" as const,
+            items: { type: "object" as const },
+          },
+          count: { type: "number" as const },
+        },
+        required: ["ranges", "count"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const filePath = resolveFilePath(
@@ -61,10 +72,10 @@ export function createSelectionRangesTool(
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
-        return success({ ranges: [], count: 0 });
+        return successStructured({ ranges: [], count: 0 });
       }
       const data = result as { ranges: unknown[] };
-      return success({ ...data, count: data.ranges.length });
+      return successStructured({ ...data, count: data.ranges.length });
     },
   };
 }

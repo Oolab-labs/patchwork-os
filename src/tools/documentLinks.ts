@@ -4,7 +4,7 @@ import {
   extensionRequired,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createGetDocumentLinksTool(
@@ -32,6 +32,25 @@ export function createGetDocumentLinksTool(
         required: ["filePath"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          links: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                url: { type: "string" as const },
+                range: { type: "object" as const },
+                tooltip: { type: "string" as const },
+              },
+              required: ["url"],
+            },
+          },
+          count: { type: "number" as const },
+        },
+        required: ["links", "count"],
+      },
     },
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
@@ -51,8 +70,8 @@ export function createGetDocumentLinksTool(
       );
 
       if (result === "timeout") return lspColdStartError();
-      if (result === null) return success({ links: [], count: 0 });
-      return success(result);
+      if (result === null) return successStructured({ links: [], count: 0 });
+      return successStructured(result);
     },
   };
 }

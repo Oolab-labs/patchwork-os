@@ -25,7 +25,10 @@ vi.mock("../utils.js", async (importOriginal) => {
 import { createGetActivityLogTool } from "../activityLog.js";
 import { createAuditDependenciesTool } from "../auditDependencies.js";
 import { createCancelClaudeTaskTool } from "../cancelClaudeTask.js";
+import { createGetCodeLensTool } from "../codeLens.js";
 import { createDetectUnusedCodeTool } from "../detectUnusedCode.js";
+import { createGetDocumentLinksTool } from "../documentLinks.js";
+import { createFoldingRangesTool } from "../foldingRanges.js";
 import { createGenerateTestsTool } from "../generateTests.js";
 import { createGetBufferContentTool } from "../getBufferContent.js";
 import { createGetClaudeTaskStatusTool } from "../getClaudeTaskStatus.js";
@@ -38,6 +41,8 @@ import {
   createGetHandoffNoteTool,
   createSetHandoffNoteTool,
 } from "../handoffNote.js";
+import { createGetHoverAtCursorTool } from "../hoverAtCursor.js";
+import { createGetInlayHintsTool } from "../inlayHints.js";
 import { createListClaudeTasksTool } from "../listClaudeTasks.js";
 import {
   createApplyCodeActionTool,
@@ -51,11 +56,16 @@ import {
   createRenameSymbolTool,
   createSearchWorkspaceSymbolsTool,
 } from "../lsp.js";
+import { createRefactorExtractFunctionTool } from "../refactorExtractFunction.js";
+import { createRefactorPreviewTool } from "../refactorPreview.js";
 import { createResumeClaudeTaskTool } from "../resumeClaudeTask.js";
 import { createRunClaudeTaskTool } from "../runClaudeTask.js";
 import { createRunCommandTool } from "../runCommand.js";
 import { createRunTestsTool } from "../runTests.js";
 import { createSearchWorkspaceTool } from "../searchWorkspace.js";
+import { createSelectionRangesTool } from "../selectionRanges.js";
+import { createGetSemanticTokensTool } from "../semanticTokens.js";
+import { createGetTypeHierarchyTool } from "../typeHierarchy.js";
 import { execSafe } from "../utils.js";
 
 const mockExecSafe = vi.mocked(execSafe);
@@ -749,6 +759,204 @@ describe("structuredContent contract", () => {
       const result = await tool.handler({});
       // error path returns isError — just check it's a valid content response
       expect(result.content[0]?.type).toBe("text");
+    });
+  });
+
+  // ── inlayHints ────────────────────────────────────────────────────────────
+
+  describe("getInlayHints", () => {
+    it("emits structuredContent with hint results", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        getInlayHints: vi.fn().mockResolvedValue({
+          hints: [{ position: {}, label: "string" }],
+          count: 1,
+        }),
+      } as never;
+      const tool = createGetInlayHintsTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        file: join(WORKSPACE, "index.ts"),
+        startLine: 1,
+        endLine: 10,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── semanticTokens ────────────────────────────────────────────────────────
+
+  describe("getSemanticTokens", () => {
+    it("emits structuredContent with token results", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        getSemanticTokens: vi.fn().mockResolvedValue({
+          tokens: [],
+          count: 0,
+          capped: false,
+          legend: { tokenTypes: [], tokenModifiers: [] },
+        }),
+      } as never;
+      const tool = createGetSemanticTokensTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── codeLens ──────────────────────────────────────────────────────────────
+
+  describe("getCodeLens", () => {
+    it("emits structuredContent when extension returns null", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        getCodeLens: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createGetCodeLensTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── documentLinks ─────────────────────────────────────────────────────────
+
+  describe("getDocumentLinks", () => {
+    it("emits structuredContent when extension returns null", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        getDocumentLinks: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createGetDocumentLinksTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── foldingRanges ─────────────────────────────────────────────────────────
+
+  describe("foldingRanges", () => {
+    it("emits structuredContent when extension returns null", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        foldingRanges: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createFoldingRangesTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── selectionRanges ───────────────────────────────────────────────────────
+
+  describe("selectionRanges", () => {
+    it("emits structuredContent when extension returns null", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        selectionRanges: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createSelectionRangesTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── hoverAtCursor ─────────────────────────────────────────────────────────
+
+  describe("getHoverAtCursor", () => {
+    it("emits structuredContent when no active file", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        latestActiveFile: null,
+        latestSelection: null,
+        getHover: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createGetHoverAtCursorTool(mockClient);
+      const result = await tool.handler({});
+      // null file → extensionRequired or error, both are isError content — just check content exists
+      expect(result.content[0]?.type).toBe("text");
+    });
+
+    it("emits structuredContent when hover is null at cursor", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        latestActiveFile: join(WORKSPACE, "index.ts"),
+        latestSelection: null,
+        getHover: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createGetHoverAtCursorTool(mockClient);
+      const result = await tool.handler({});
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── typeHierarchy ─────────────────────────────────────────────────────────
+
+  describe("getTypeHierarchy", () => {
+    it("emits structuredContent when not found", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        getTypeHierarchy: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createGetTypeHierarchyTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        file: join(WORKSPACE, "index.ts"),
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── refactorPreview ───────────────────────────────────────────────────────
+
+  describe("refactorPreview", () => {
+    it("emits structuredContent on preview result", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        previewCodeAction: vi.fn().mockResolvedValue({
+          title: "Extract variable",
+          changes: [],
+          totalFiles: 0,
+          totalEdits: 0,
+        }),
+      } as never;
+      const tool = createRefactorPreviewTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: join(WORKSPACE, "index.ts"),
+        startLine: 1,
+        startColumn: 1,
+        endLine: 1,
+        endColumn: 10,
+        actionTitle: "Extract variable",
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── refactorExtractFunction ───────────────────────────────────────────────
+
+  describe("refactorExtractFunction", () => {
+    it("emits structuredContent on path resolution failure", async () => {
+      const mockClient = { isConnected: () => true } as never;
+      const tool = createRefactorExtractFunctionTool(WORKSPACE, mockClient);
+      // Pass a path with null byte to trigger resolveFilePath error → success({refactored:false})
+      const result = await tool.handler({
+        file: "src/\x00bad.ts",
+        startLine: 1,
+        endLine: 3,
+        functionName: "extracted",
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
     });
   });
 });
