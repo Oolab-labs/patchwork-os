@@ -218,6 +218,9 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "getSemanticTokens",
   "getCodeLens",
   "getChangeImpact",
+  "getTypeHierarchy",
+  "getInlayHints",
+  "getHoverAtCursor",
   // Editor decorations — needed for code review workflows
   "setEditorDecorations",
   "clearEditorDecorations",
