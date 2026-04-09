@@ -1076,3 +1076,252 @@ export function createFormatRangeTool(
     },
   };
 }
+
+export function createFindImplementationsTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "findImplementations",
+      extensionRequired: true,
+      description:
+        "Find all implementations of an interface, abstract method, or abstract class at a given position using VS Code LSP. Useful for discovering concrete classes that implement an interface. Requires the VS Code extension to be connected.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: {
+            type: "string" as const,
+            description: "Absolute or workspace-relative file path",
+          },
+          line: {
+            type: "integer" as const,
+            description: "Line number (1-based)",
+          },
+          column: {
+            type: "integer" as const,
+            description: "Column number (1-based)",
+          },
+        },
+        required: ["filePath", "line", "column"],
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" },
+          implementations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                line: { type: "number" },
+                column: { type: "number" },
+                endLine: { type: "number" },
+                endColumn: { type: "number" },
+              },
+            },
+          },
+          count: { type: "number" },
+        },
+        required: ["found"],
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
+      }
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
+      const line = requireInt(args, "line");
+      const column = requireInt(args, "column");
+      const result = await lspWithRetry(
+        () =>
+          extensionClient.findImplementations(filePath, line, column, signal),
+        signal,
+        readinessChecker(extensionClient, filePath),
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return successStructured({
+          found: false,
+          implementations: [],
+          count: 0,
+        });
+      }
+      return successStructured(result);
+    },
+  };
+}
+
+export function createGoToTypeDefinitionTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "goToTypeDefinition",
+      extensionRequired: true,
+      description:
+        "Go to the type definition of a symbol at a given position using VS Code LSP. Unlike goToDefinition which navigates to where a variable is declared, this navigates to where its type is defined. Requires the VS Code extension to be connected.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: {
+            type: "string" as const,
+            description: "Absolute or workspace-relative file path",
+          },
+          line: {
+            type: "integer" as const,
+            description: "Line number (1-based)",
+          },
+          column: {
+            type: "integer" as const,
+            description: "Column number (1-based)",
+          },
+        },
+        required: ["filePath", "line", "column"],
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" },
+          message: { type: "string" },
+          locations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                line: { type: "number" },
+                column: { type: "number" },
+                endLine: { type: "number" },
+                endColumn: { type: "number" },
+              },
+            },
+          },
+        },
+        required: ["found"],
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
+      }
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
+      const line = requireInt(args, "line");
+      const column = requireInt(args, "column");
+      const result = await lspWithRetry(
+        () =>
+          extensionClient.goToTypeDefinition(filePath, line, column, signal),
+        signal,
+        readinessChecker(extensionClient, filePath),
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return successStructured({
+          found: false,
+          message: "No type definition found at this position",
+        });
+      }
+      return successStructured(result);
+    },
+  };
+}
+
+export function createGoToDeclarationTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "goToDeclaration",
+      extensionRequired: true,
+      description:
+        "Go to the declaration of a symbol at a given position using VS Code LSP. In languages like C/C++, navigates to the header file declaration rather than the implementation. In TypeScript, navigates to the 'declare' statement or .d.ts entry. Requires the VS Code extension to be connected.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: {
+            type: "string" as const,
+            description: "Absolute or workspace-relative file path",
+          },
+          line: {
+            type: "integer" as const,
+            description: "Line number (1-based)",
+          },
+          column: {
+            type: "integer" as const,
+            description: "Column number (1-based)",
+          },
+        },
+        required: ["filePath", "line", "column"],
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" },
+          message: { type: "string" },
+          locations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                line: { type: "number" },
+                column: { type: "number" },
+                endLine: { type: "number" },
+                endColumn: { type: "number" },
+              },
+            },
+          },
+        },
+        required: ["found"],
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features", [
+          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+          "Use getDiagnostics for lint/type-check results from CLI linters",
+        ]);
+      }
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
+      const line = requireInt(args, "line");
+      const column = requireInt(args, "column");
+      const result = await lspWithRetry(
+        () => extensionClient.goToDeclaration(filePath, line, column, signal),
+        signal,
+        readinessChecker(extensionClient, filePath),
+      );
+      if (result === "timeout") return lspColdStartError();
+      if (result === null) {
+        return successStructured({
+          found: false,
+          message: "No declaration found at this position",
+        });
+      }
+      return successStructured(result);
+    },
+  };
+}
