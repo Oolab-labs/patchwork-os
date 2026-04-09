@@ -13,6 +13,7 @@ import {
   createBatchGetHoverTool,
   createBatchGoToDefinitionTool,
 } from "./batchLsp.js";
+import { createBridgeDoctorTool } from "./bridgeDoctor.js";
 import { createBridgeStatusTool } from "./bridgeStatus.js";
 import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
@@ -237,6 +238,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   // Bridge introspection — Claude needs these to understand bridge state and discover --full
   "getBridgeStatus",
   "getToolCapabilities",
+  "bridgeDoctor",
 ]);
 
 /**
@@ -312,6 +314,12 @@ export function registerAllTools(
     createCloseTabTool(workspace, extensionClient),
     createCloseAllDiffTabsTool(),
     createGetToolCapabilitiesTool(probes, extensionClient, config),
+    createBridgeDoctorTool(
+      workspace,
+      extensionClient,
+      probes,
+      config.port ?? 0,
+    ),
     createSearchWorkspaceTool(workspace, probes),
     createSearchAndReplaceTool(workspace),
     createFindFilesTool(workspace, probes),
