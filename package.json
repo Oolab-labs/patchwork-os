@@ -1,6 +1,6 @@
 {
   "name": "claude-ide-bridge",
-  "version": "2.11.22",
+  "version": "2.11.23",
   "description": "Standalone MCP bridge for Claude Code IDE integration with any editor — 136+ tools for LSP, debugging, terminals, Git, GitHub, and more",
   "type": "module",
   "main": "dist/index.js",
@@ -78,6 +78,7 @@
     "vps:stop": "bash scripts/start-vps.sh --stop",
     "start-all": "bash scripts/start-all.sh",
     "start-orchestrator": "bash scripts/start-orchestrator.sh",
+    "start:automation": "claude-ide-bridge --workspace . --automation --automation-policy automation-policy.json --claude-driver subprocess --full",
     "prepare": "husky"
   },
   "dependencies": {

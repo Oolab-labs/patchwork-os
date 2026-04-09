@@ -1,7 +1,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, optionalString, successStructured } from "./utils.js";
+import {
+  execSafe,
+  optionalString,
+  successStructured,
+  withHeartbeat,
+} from "./utils.js";
 
 const CACHE_TTL = 60_000;
 
@@ -302,6 +307,7 @@ export function createAuditDependenciesTool(
     async handler(
       args: Record<string, unknown>,
       signal?: AbortSignal,
+      progress?: (value: number, total: number, message?: string) => void,
     ): Promise<ReturnType<typeof successStructured>> {
       const pm = optionalString(args, "packageManager") ?? "auto";
 
@@ -329,19 +335,39 @@ export function createAuditDependenciesTool(
         let packages: OutdatedPackage[];
         switch (detected) {
           case "npm":
-            packages = await runNpmOutdated(workspace, signal);
+            packages = await withHeartbeat(
+              () => runNpmOutdated(workspace, signal),
+              progress,
+              { message: "running npm outdated…" },
+            );
             break;
           case "yarn":
-            packages = await runYarnOutdated(workspace, signal);
+            packages = await withHeartbeat(
+              () => runYarnOutdated(workspace, signal),
+              progress,
+              { message: "running yarn outdated…" },
+            );
             break;
           case "pnpm":
-            packages = await runPnpmOutdated(workspace, signal);
+            packages = await withHeartbeat(
+              () => runPnpmOutdated(workspace, signal),
+              progress,
+              { message: "running pnpm outdated…" },
+            );
             break;
           case "cargo":
-            packages = await runCargoOutdated(workspace, signal);
+            packages = await withHeartbeat(
+              () => runCargoOutdated(workspace, signal),
+              progress,
+              { message: "running cargo outdated…" },
+            );
             break;
           case "pip":
-            packages = await runPipOutdated(workspace, signal);
+            packages = await withHeartbeat(
+              () => runPipOutdated(workspace, signal),
+              progress,
+              { message: "running pip outdated…" },
+            );
             break;
           default:
             return successStructured({

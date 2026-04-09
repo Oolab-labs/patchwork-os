@@ -6,7 +6,12 @@ import { goTestRunner } from "./testRunners/goTest.js";
 import { pytestRunner } from "./testRunners/pytest.js";
 import type { TestResult, TestRunner } from "./testRunners/types.js";
 import { jestRunner, vitestRunner } from "./testRunners/vitestJest.js";
-import { optionalBool, optionalString, successStructured } from "./utils.js";
+import {
+  optionalBool,
+  optionalString,
+  successStructured,
+  withHeartbeat,
+} from "./utils.js";
 
 const MAX_CACHE_ENTRIES = 50;
 
@@ -261,8 +266,10 @@ export function createRunTestsTool(
       }
 
       const startTime = Date.now();
-      const allResults = await Promise.all(
-        runners.map((r) => runRunner(r, filter, signal)),
+      const allResults = await withHeartbeat(
+        () => Promise.all(runners.map((r) => runRunner(r, filter, signal))),
+        progress,
+        { message: "running tests…" },
       );
       const results = allResults.flat();
       const durationMs = Date.now() - startTime;

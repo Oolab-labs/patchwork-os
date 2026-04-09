@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   execSafe,
   requireInt,
   successStructured,
   toFileUri,
   truncateOutput,
+  withHeartbeat,
 } from "../utils.js";
 
 describe("requireInt", () => {
@@ -170,4 +171,82 @@ describe("execSafe", () => {
     expect(result.timedOut).toBe(true);
     expect(result.durationMs).toBeGreaterThanOrEqual(400);
   }, 10000);
+});
+
+describe("withHeartbeat", () => {
+  it("returns the result of the wrapped function", async () => {
+    const result = await withHeartbeat(() => Promise.resolve(42), undefined);
+    expect(result).toBe(42);
+  });
+
+  it("no-ops when progress is undefined", async () => {
+    // Should not throw
+    await expect(
+      withHeartbeat(() => Promise.resolve("ok"), undefined),
+    ).resolves.toBe("ok");
+  });
+
+  it("fires progress notifications during execution", async () => {
+    vi.useFakeTimers();
+    const progress = vi.fn();
+    const slow = new Promise<string>((resolve) =>
+      setTimeout(() => resolve("done"), 12_000),
+    );
+    const resultPromise = withHeartbeat(() => slow, progress, {
+      intervalMs: 5_000,
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(progress).toHaveBeenCalledTimes(1);
+    expect(progress).toHaveBeenCalledWith(1, 100, "running…");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(progress).toHaveBeenCalledTimes(2);
+    await vi.runAllTimersAsync();
+    expect(await resultPromise).toBe("done");
+    vi.useRealTimers();
+  });
+
+  it("clears the interval when fn resolves", async () => {
+    vi.useFakeTimers();
+    const progress = vi.fn();
+    const resultPromise = withHeartbeat(
+      () => Promise.resolve("fast"),
+      progress,
+      { intervalMs: 5_000 },
+    );
+    const result = await resultPromise;
+    expect(result).toBe("fast");
+    // Advance time — interval should be cleared, no more calls
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(progress).toHaveBeenCalledTimes(0);
+    vi.useRealTimers();
+  });
+
+  it("clears the interval when fn rejects", async () => {
+    vi.useFakeTimers();
+    const progress = vi.fn();
+    const resultPromise = withHeartbeat(
+      () => Promise.reject(new Error("boom")),
+      progress,
+      { intervalMs: 5_000 },
+    );
+    await expect(resultPromise).rejects.toThrow("boom");
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(progress).toHaveBeenCalledTimes(0);
+    vi.useRealTimers();
+  });
+
+  it("includes custom message in progress calls", async () => {
+    vi.useFakeTimers();
+    const progress = vi.fn();
+    const slow = new Promise<void>((resolve) => setTimeout(resolve, 6_000));
+    const resultPromise = withHeartbeat(() => slow, progress, {
+      intervalMs: 5_000,
+      message: "running tests…",
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(progress).toHaveBeenCalledWith(1, 100, "running tests…");
+    await vi.runAllTimersAsync();
+    await resultPromise;
+    vi.useRealTimers();
+  });
 });

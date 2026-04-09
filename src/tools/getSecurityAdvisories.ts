@@ -1,7 +1,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ProbeResults } from "../probe.js";
-import { execSafe, optionalString, successStructuredLarge } from "./utils.js";
+import {
+  execSafe,
+  optionalString,
+  successStructuredLarge,
+  withHeartbeat,
+} from "./utils.js";
 
 const CACHE_TTL = 60_000;
 
@@ -459,7 +464,11 @@ export function createGetSecurityAdvisoriesTool(
     },
     timeoutMs: 65_000,
 
-    async handler(args: Record<string, unknown>, signal?: AbortSignal) {
+    async handler(
+      args: Record<string, unknown>,
+      signal?: AbortSignal,
+      progress?: (value: number, total: number, message?: string) => void,
+    ) {
       const pm = optionalString(args, "packageManager") ?? "auto";
       const minSeverity = (optionalString(args, "severity") ?? "all") as
         | Severity
@@ -494,19 +503,39 @@ export function createGetSecurityAdvisoriesTool(
         let result: AuditResult;
         switch (detected) {
           case "npm":
-            result = await runNpmAudit(workspace, signal);
+            result = await withHeartbeat(
+              () => runNpmAudit(workspace, signal),
+              progress,
+              { message: "running npm audit…" },
+            );
             break;
           case "yarn":
-            result = await runYarnAudit(workspace, signal);
+            result = await withHeartbeat(
+              () => runYarnAudit(workspace, signal),
+              progress,
+              { message: "running yarn audit…" },
+            );
             break;
           case "pnpm":
-            result = await runPnpmAudit(workspace, signal);
+            result = await withHeartbeat(
+              () => runPnpmAudit(workspace, signal),
+              progress,
+              { message: "running pnpm audit…" },
+            );
             break;
           case "cargo":
-            result = await runCargoAudit(workspace, signal);
+            result = await withHeartbeat(
+              () => runCargoAudit(workspace, signal),
+              progress,
+              { message: "running cargo audit…" },
+            );
             break;
           case "pip":
-            result = await runPipAudit(workspace, signal);
+            result = await withHeartbeat(
+              () => runPipAudit(workspace, signal),
+              progress,
+              { message: "running pip-audit…" },
+            );
             break;
           default:
             return successStructuredLarge({
