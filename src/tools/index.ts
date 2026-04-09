@@ -126,6 +126,7 @@ import {
   createGetHoverTool,
   createGoToDefinitionTool,
   createPrepareRenameTool,
+  createPreviewCodeActionTool,
   createRenameSymbolTool,
   createSearchWorkspaceSymbolsTool,
 } from "./lsp.js";
@@ -199,6 +200,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "getHover",
   "getCodeActions",
   "applyCodeAction",
+  "previewCodeAction",
   "refactorPreview",
   "renameSymbol",
   "searchWorkspaceSymbols",
@@ -348,6 +350,7 @@ export function registerAllTools(
     createGetHoverTool(workspace, extensionClient),
     createGetCodeActionsTool(workspace, extensionClient),
     createApplyCodeActionTool(workspace, extensionClient),
+    createPreviewCodeActionTool(workspace, extensionClient),
     createRefactorPreviewTool(workspace, extensionClient),
     createRenameSymbolTool(workspace, extensionClient),
     createSearchWorkspaceSymbolsTool(workspace, extensionClient),

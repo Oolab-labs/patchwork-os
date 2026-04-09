@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.15 — 2026-04-09)
+## Current State (v2.11.16 — 2026-04-09)
 
 - **Slim mode default**: 48 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
 - **~1,695 bridge tests / ~130 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
@@ -28,6 +28,13 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.16 shipped (2026-04-09) — previewCodeAction LSP tool:**
+- New `previewCodeAction` tool in `src/tools/lsp.ts`: shows exact text edits a code action would make without applying them — safe to call before `applyCodeAction`
+- Extension handler (`extension/previewCodeAction`) and `extensionClient.previewCodeAction()` already existed; only the bridge tool was missing
+- `outputSchema` declared: `{ title, changes[{ file, edits[{ range, newText }] }], totalFiles, totalEdits, note? }`
+- Added to `SLIM_TOOL_NAMES` (49 total, up from 48) and `availableTools.lsp` (29 LSP tools)
+- 5 new tests in `src/tools/__tests__/previewCodeAction.test.ts`; 1744 bridge tests
 
 **v2.11.15 shipped (2026-04-09) — outputSchema for remaining workflow tools:**
 - `outputSchema` + `successStructured` added to 4 tools completing all major tool families:

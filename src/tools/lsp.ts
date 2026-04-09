@@ -493,6 +493,151 @@ export function createApplyCodeActionTool(
   };
 }
 
+export function createPreviewCodeActionTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "previewCodeAction",
+      extensionRequired: true,
+      description:
+        "Preview the text edits a code action would make without applying them. " +
+        "Use this before applyCodeAction to verify the change is correct. " +
+        "Returns the list of files and edits (line ranges + new text) that would be modified. " +
+        "Requires the VS Code extension.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          filePath: {
+            type: "string" as const,
+            description: "Absolute or workspace-relative file path",
+          },
+          startLine: {
+            type: "integer" as const,
+            description: "Start line (1-based)",
+          },
+          startColumn: {
+            type: "integer" as const,
+            description: "Start column (1-based)",
+          },
+          endLine: {
+            type: "integer" as const,
+            description: "End line (1-based)",
+          },
+          endColumn: {
+            type: "integer" as const,
+            description: "End column (1-based)",
+          },
+          actionTitle: {
+            type: "string" as const,
+            description:
+              "Exact title of the code action to preview (from getCodeActions output)",
+          },
+        },
+        required: [
+          "filePath",
+          "startLine",
+          "startColumn",
+          "endLine",
+          "endColumn",
+          "actionTitle",
+        ],
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          title: { type: "string" },
+          changes: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string" },
+                edits: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      range: {
+                        type: "object",
+                        properties: {
+                          startLine: { type: "number" },
+                          startColumn: { type: "number" },
+                          endLine: { type: "number" },
+                          endColumn: { type: "number" },
+                        },
+                        required: [
+                          "startLine",
+                          "startColumn",
+                          "endLine",
+                          "endColumn",
+                        ],
+                      },
+                      newText: { type: "string" },
+                    },
+                    required: ["range", "newText"],
+                  },
+                },
+              },
+              required: ["file", "edits"],
+            },
+          },
+          totalFiles: { type: "number" },
+          totalEdits: { type: "number" },
+          note: { type: "string" },
+        },
+        required: ["title", "changes"],
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("LSP features", [
+          "Use getCodeActions to list available actions first",
+          "Use applyCodeAction to apply without preview if extension reconnects",
+        ]);
+      }
+      const filePath = resolveFilePath(
+        requireString(args, "filePath"),
+        workspace,
+      );
+      const actionTitle = requireString(args, "actionTitle", 500);
+      const startLine = requireInt(args, "startLine");
+      const startColumn = requireInt(args, "startColumn");
+      const endLine = requireInt(args, "endLine");
+      const endColumn = requireInt(args, "endColumn");
+      let result: unknown;
+      try {
+        result = await extensionClient.previewCodeAction(
+          filePath,
+          startLine,
+          startColumn,
+          endLine,
+          endColumn,
+          actionTitle,
+          signal,
+        );
+      } catch (err) {
+        if (err instanceof ExtensionTimeoutError) {
+          return error(
+            "Language server timed out — it may still be indexing. " +
+              "Wait a few seconds and try again.",
+          );
+        }
+        throw err;
+      }
+      if (result === null) {
+        return error(
+          "Extension returned no result — code action may not be available",
+        );
+      }
+      return successStructured(result);
+    },
+  };
+}
+
 export function createRenameSymbolTool(
   workspace: string,
   extensionClient: ExtensionClient,

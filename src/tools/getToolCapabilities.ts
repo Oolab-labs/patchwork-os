@@ -185,6 +185,7 @@ export function createGetToolCapabilitiesTool(
                 "getHover",
                 "getCodeActions",
                 "applyCodeAction",
+                "previewCodeAction",
                 "renameSymbol",
                 "searchWorkspaceSymbols",
                 "getCallHierarchy",
