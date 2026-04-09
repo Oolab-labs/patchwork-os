@@ -106,7 +106,18 @@ export function createGitAddTool(workspace: string) {
   };
 }
 
-export function createGitCommitTool(workspace: string) {
+export interface GitCommitCallbackResult {
+  hash: string;
+  branch: string;
+  message: string;
+  files: string[];
+  count: number;
+}
+
+export function createGitCommitTool(
+  workspace: string,
+  onGitCommit?: (result: GitCommitCallbackResult) => void,
+) {
   return {
     schema: {
       name: "gitCommit",
@@ -230,13 +241,15 @@ export function createGitCommitTool(workspace: string) {
         .map((f) => f.trim())
         .filter(Boolean);
 
-      return success({
+      const commitResult = {
         hash,
         branch,
         message,
         files: committedFiles,
         count: committedFiles.length,
-      });
+      };
+      onGitCommit?.(commitResult);
+      return success(commitResult);
     },
   };
 }
