@@ -202,33 +202,64 @@ async function checkTestRunner(
 
 async function checkLockFile(port: number): Promise<CheckResult> {
   const lockDir = path.join(os.homedir(), ".claude", "ide");
-  const lockPath = path.join(lockDir, `${port}.lock`);
-  try {
-    const raw = fs.readFileSync(lockPath, "utf-8");
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    if (!data.isBridge) {
+  const pid = process.pid;
+
+  // If port is known, check that specific lock file first
+  if (port > 0) {
+    const lockPath = path.join(lockDir, `${port}.lock`);
+    try {
+      const raw = fs.readFileSync(lockPath, "utf-8");
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      if (!data.isBridge) {
+        return {
+          name: "Lock file",
+          status: "warn",
+          detail: `Lock file exists but isBridge flag is missing (port ${port})`,
+          suggestion:
+            "Restart the bridge — this lock may be left over from an IDE process.",
+        };
+      }
       return {
         name: "Lock file",
-        status: "warn",
-        detail: `Lock file exists but isBridge flag is missing (port ${port})`,
-        suggestion:
-          "Restart the bridge — this lock may be left over from an IDE process.",
+        status: "ok",
+        detail: `~/.claude/ide/${port}.lock present`,
       };
+    } catch {
+      // fall through to scan below
     }
-    return {
-      name: "Lock file",
-      status: "ok",
-      detail: `~/.claude/ide/${port}.lock present`,
-    };
-  } catch {
-    return {
-      name: "Lock file",
-      status: "warn",
-      detail: `No lock file found at ~/.claude/ide/${port}.lock`,
-      suggestion:
-        "Bridge may not have written its lock file yet, or a previous crash left it missing. Restart the bridge.",
-    };
   }
+
+  // Port is 0 (stdio/unknown) or specific lock missing — scan for any bridge lock matching our PID
+  try {
+    const entries = fs.readdirSync(lockDir);
+    for (const entry of entries) {
+      if (!entry.endsWith(".lock")) continue;
+      try {
+        const raw = fs.readFileSync(path.join(lockDir, entry), "utf-8");
+        const data = JSON.parse(raw) as Record<string, unknown>;
+        if (data.isBridge && data.pid === pid) {
+          return {
+            name: "Lock file",
+            status: "ok",
+            detail: `~/.claude/ide/${entry} present`,
+          };
+        }
+      } catch {
+        // skip unreadable/malformed lock files
+      }
+    }
+  } catch {
+    // lockDir doesn't exist or unreadable
+  }
+
+  const portLabel = port > 0 ? `${port}.lock` : "(none found for this process)";
+  return {
+    name: "Lock file",
+    status: "warn",
+    detail: `No bridge lock file found — ${portLabel}`,
+    suggestion:
+      "Bridge may not have written its lock file yet, or a previous crash left it missing. Restart the bridge.",
+  };
 }
 
 async function checkWorkspacePath(workspace: string): Promise<CheckResult> {
