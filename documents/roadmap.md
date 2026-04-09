@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.12 — 2026-04-09)
+## Current State (v2.11.13 — 2026-04-09)
 
 - **Slim mode default**: 48 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
 - **~1,695 bridge tests / ~130 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
@@ -28,6 +28,13 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.13 shipped (2026-04-09) — onBranchCheckout automation hook:**
+- New `OnBranchCheckoutPolicy` + `handleBranchCheckout()` in `automation.ts`: fires after every successful `gitCheckout` tool call; placeholders: `{{branch}}`, `{{previousBranch}}` (null → `"(detached HEAD)"`), `{{created}}`; loop guard + cooldown (min 5s)
+- `createGitCheckoutTool` accepts optional `onBranchCheckout` callback; wired in `tools/index.ts`
+- `getStatus()` extended with `onBranchCheckout: { enabled, cooldownMs } | null`
+- `loadPolicy` validates + clamps `onBranchCheckout.cooldownMs` ≥ 5 000 ms
+- 9 new tests in `automation.test.ts` (65 total); 1725 bridge tests
 
 **v2.11.12 shipped (2026-04-09) — onGitPush automation hook:**
 - New `OnGitPushPolicy` + `handleGitPush()` in `automation.ts`: fires after every successful `gitPush` tool call; placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`; loop guard + cooldown (min 5s)
