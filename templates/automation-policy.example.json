@@ -1,0 +1,66 @@
+{
+  "_comment": "Example automation policy with LSP-aware prompts. Copy to automation-policy.json and adjust as needed.",
+  "_usage": "Start bridge with: claude-ide-bridge --automation --automation-policy ./automation-policy.json --claude-driver subprocess",
+
+  "onFileChanged": {
+    "enabled": true,
+    "patterns": [
+      "**/*.{ts,tsx,js,jsx,py,go,rs}",
+      "!node_modules/**",
+      "!dist/**"
+    ],
+    "prompt": "File {{file}} was just edited. Call getChangeImpact on the changed symbols to compute blast radius. If risk is medium or high (referenceCount > 10 or callerCount > 5), also call findReferences to list the affected files. Report in ≤15 lines: risk badge, reference counts, and the top 5 most-impacted files.",
+    "cooldownMs": 15000
+  },
+
+  "onFileSave": {
+    "enabled": false,
+    "patterns": ["**/*.{ts,tsx}"],
+    "prompt": "{{file}} was saved. Run getDiagnostics for this file and report any new errors or warnings. If there are type errors, call getHover at the first error position to explain the expected vs actual types.",
+    "cooldownMs": 10000
+  },
+
+  "onDiagnosticsError": {
+    "enabled": true,
+    "minSeverity": "error",
+    "patterns": ["**/*.{ts,tsx,js,jsx}"],
+    "prompt": "New diagnostic errors appeared in {{file}}:\n\n{{diagnostics}}\n\nFor each error: (1) call getHover at the error position to fetch type info, (2) call explainSymbol on the failing symbol if applicable, (3) suggest the most likely fix. Keep response under 20 lines.",
+    "cooldownMs": 20000
+  },
+
+  "onBranchCheckout": {
+    "enabled": true,
+    "prompt": "Switched to branch {{branch}} (from {{previousBranch}}). Run getDiagnostics with no uri to baseline workspace health. If there are errors, call explainSymbol on the first one. Report: branch name, error count, warning count, and first error (if any).",
+    "cooldownMs": 30000
+  },
+
+  "onGitCommit": {
+    "enabled": true,
+    "prompt": "Committed {{hash}} on {{branch}}: {{message}}. Changed files: {{files}}. For each changed file: call getChangeImpact to check blast radius. If any export was removed or renamed, call findReferences to verify no broken callers remain. Report a compact post-commit health summary.",
+    "cooldownMs": 10000
+  },
+
+  "onGitPush": {
+    "enabled": false,
+    "prompt": "Pushed {{commits}} commits to {{remote}}/{{branch}}. Run getDiagnostics workspace-wide and detectUnusedCode to flag any dead exports that were pushed. Keep report under 15 lines.",
+    "cooldownMs": 5000
+  },
+
+  "onPullRequest": {
+    "enabled": true,
+    "prompt": "PR #{{number}} opened: {{title}} ({{url}}). Changed files: {{files}}. For each changed file: (1) call getChangeImpact to report blast radius, (2) call getDiagnostics to surface any new errors. Output a compact PR readiness report: risk badge per file, total error count, top 3 most-impacted downstream files.",
+    "cooldownMs": 5000
+  },
+
+  "onTestRun": {
+    "enabled": true,
+    "prompt": "Tests just ran. Results: {{results}}. For each failed test file: call getDiagnostics to check for type errors, then call getCallHierarchy (incoming) on the failing function to identify what changed upstream. Suggest the most likely root cause in ≤10 lines.",
+    "cooldownMs": 15000
+  },
+
+  "onPostCompact": {
+    "enabled": true,
+    "prompt": "Context was just compacted. Re-orient: call getProjectInfo for workspace summary, getGitStatus for current changes, and getDiagnostics to check health. Report in ≤10 lines so the session can continue smoothly.",
+    "cooldownMs": 60000
+  }
+}

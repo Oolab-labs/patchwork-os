@@ -124,7 +124,7 @@ Add it to your `~/.zshrc` or `~/.bashrc` to make it permanent. Without it, Claud
 
 ## What's Included
 
-### Skills (9 slash commands)
+### Skills (12 slash commands)
 
 | Skill | Description |
 |-------|-------------|
@@ -137,14 +137,18 @@ Add it to your `~/.zshrc` or `~/.bashrc` to make it permanent. Without it, Claud
 | `/claude-ide-bridge:ide-coverage` | Coverage report generation and gap analysis |
 | `/claude-ide-bridge:ide-deps` | Dependency audit and security advisory review |
 | `/claude-ide-bridge:ide-diagnostics-board` | Visual diagnostics dashboard for the active workspace |
+| `/claude-ide-bridge:ide-dead-code-hunter` | Find unused exports, dead functions, and unused imports with LSP cross-verification |
+| `/claude-ide-bridge:ide-type-mismatch-fix` | Diagnose and fix type errors using LSP diagnostics, hover, and code actions |
+| `/claude-ide-bridge:ide-api-deprecation-tracker` | Audit `@deprecated` APIs workspace-wide, ranked by caller count with migration paths |
 
-### Subagents (3 specialized agents)
+### Subagents (4 specialized agents)
 
 | Agent | Model | Description |
 |-------|-------|-------------|
 | `ide-code-reviewer` | Sonnet | Evidence-based code review using LSP tools, with persistent memory |
 | `ide-debugger` | Inherit | Autonomous debug cycles with breakpoints and expression evaluation |
 | `ide-test-runner` | Sonnet | Runs tests, categorizes failures, applies fixes |
+| `ide-architect` | Sonnet | Architectural health audit: God objects, circular deps, coupling analysis, modularization opportunities |
 
 All agents have `memory: project` enabled — they learn codebase patterns across sessions.
 

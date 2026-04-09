@@ -210,6 +210,182 @@ export const PROMPTS: McpPrompt[] = [
       },
     ],
   },
+
+  // ── LSP composition prompts (Round: LSP Leverage) ─────────────────────────
+  // These wrap the bridge's existing LSP primitives + composites (getChangeImpact,
+  // explainSymbol, refactorAnalyze, etc.) into one-call developer workflows.
+  {
+    name: "find-callers",
+    description:
+      "Find every caller of a symbol with file:line locations. Wraps searchWorkspaceSymbols + getCallHierarchy(incoming) + findReferences. Answers: 'what breaks if I change this?'",
+    arguments: [
+      {
+        name: "symbol",
+        description: "Symbol name to look up (function, class, variable).",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "blast-radius",
+    description:
+      "Compute the blast radius of a change at a specific position: diagnostics + reference counts + risk badge. Wraps getChangeImpact.",
+    arguments: [
+      {
+        name: "file",
+        description: "Workspace-relative or absolute path to the file.",
+        required: true,
+      },
+      {
+        name: "line",
+        description: "Line number (1-based).",
+        required: true,
+      },
+      {
+        name: "column",
+        description: "Column number (1-based).",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "why-error",
+    description:
+      "Explain a diagnostic in plain English with surrounding type context. Wraps getDiagnostics + explainSymbol at the error position.",
+    arguments: [
+      {
+        name: "file",
+        description: "Workspace-relative or absolute path to the file.",
+        required: true,
+      },
+      {
+        name: "line",
+        description: "Optional line number to focus on (default: first error).",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "unused-in",
+    description:
+      "List unused exports, parameters, and imports in a file with reference verification. Wraps detectUnusedCode + findReferences.",
+    arguments: [
+      {
+        name: "file",
+        description: "Workspace-relative or absolute path to the file.",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "trace-to",
+    description:
+      "Trace the call chain from entry points to a target symbol with type signatures at each hop. Wraps getCallHierarchy(outgoing) + getImportedSignatures.",
+    arguments: [
+      {
+        name: "symbol",
+        description: "Target symbol name to trace toward.",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "imports-of",
+    description:
+      "List every file that imports a given symbol with reference counts. Wraps findReferences + getImportTree.",
+    arguments: [
+      {
+        name: "symbol",
+        description: "Symbol name to look up imports for.",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "circular-deps",
+    description:
+      "Detect circular import dependencies in the workspace. Wraps getImportTree with cycle detection.",
+    arguments: [],
+  },
+  {
+    name: "refactor-preview",
+    description:
+      "Preview the exact edits a rename would make at a position, plus blast-radius risk. Wraps refactorAnalyze + refactorPreview.",
+    arguments: [
+      {
+        name: "file",
+        description: "Workspace-relative or absolute path to the file.",
+        required: true,
+      },
+      {
+        name: "line",
+        description: "Line number (1-based).",
+        required: true,
+      },
+      {
+        name: "column",
+        description: "Column number (1-based).",
+        required: true,
+      },
+      {
+        name: "newName",
+        description: "Proposed new name for the symbol.",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "module-exports",
+    description:
+      "List a module's exported symbols with their type signatures, formatted as Markdown. Wraps getDocumentSymbols + getHover for each export.",
+    arguments: [
+      {
+        name: "file",
+        description: "Workspace-relative or absolute path to the file.",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "type-of",
+    description:
+      "Get just the type signature at a position (no documentation). Wraps getHoverAtCursor + getTypeSignature.",
+    arguments: [
+      {
+        name: "file",
+        description: "Workspace-relative or absolute path to the file.",
+        required: true,
+      },
+      {
+        name: "line",
+        description: "Line number (1-based).",
+        required: true,
+      },
+      {
+        name: "column",
+        description: "Column number (1-based).",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "deprecations",
+    description:
+      "Find @deprecated APIs across the workspace and count their callers. Wraps searchWorkspace for @deprecated + findReferences.",
+    arguments: [],
+  },
+  {
+    name: "coverage-gap",
+    description:
+      "Identify untested functions in a file by correlating coverage with document symbols. Wraps getCodeCoverage + getDocumentSymbols.",
+    arguments: [
+      {
+        name: "file",
+        description: "Workspace-relative or absolute path to the file.",
+        required: true,
+      },
+    ],
+  },
 ];
 
 // ── Orient-project prompt text builder ────────────────────────────────────────
@@ -1182,6 +1358,390 @@ const TEMPLATES: Record<
             "Use FAILING if: any errors, test failures, or critical/high advisories.",
             "",
             "If `getSecurityAdvisories` or `auditDependencies` are unavailable, note 'Security: not checked (tools unavailable)'.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  // ── LSP composition prompts ──────────────────────────────────────────────
+
+  "find-callers": ({ symbol }) => ({
+    description: `Find callers of ${symbol}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Find every caller of \`${symbol}\` and report file:line locations.`,
+            "",
+            `1. Call \`searchWorkspaceSymbols\` with query \`${symbol}\` to find the definition`,
+            "2. Call `getCallHierarchy` with `direction: 'incoming'` at the definition position",
+            "3. Call `findReferences` for cross-verification (some callers may not be in the call graph for dynamic dispatch)",
+            "",
+            "Report:",
+            "```",
+            `Symbol: ${symbol} (defined at <file:line>)`,
+            "Callers (N):",
+            "  <file:line> <containing function>",
+            "  ...",
+            "```",
+            "",
+            "Keep total response under 25 lines. If the symbol is not found, say so and stop.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "blast-radius": ({ file, line, column }) => ({
+    description: `Blast radius at ${file}:${line}:${column}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Compute the blast radius of changing the symbol at \`${file}:${line}:${column}\`.`,
+            "",
+            `1. Call \`getChangeImpact\` with file \`${file}\`, line ${line}, column ${column}`,
+            "2. Read the structured output: `blastRadius`, `referenceCount`, `affectedFiles`, `diagnostics`",
+            "",
+            "Report:",
+            "```",
+            `Position: ${file}:${line}:${column}`,
+            "Risk: <LOW | MEDIUM | HIGH>",
+            "References: N (across M files)",
+            "Diagnostics: <X errors, Y warnings>",
+            "Top affected files:",
+            "  <file> (<refs> refs)",
+            "  ...",
+            "```",
+            "",
+            "If risk is MEDIUM or HIGH, list the top 5 affected files. Keep response under 20 lines.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "why-error": ({ file, line }) => {
+    const lineHint = line ? ` (focus on line ${line})` : "";
+    return {
+      description: `Explain error in ${file}${lineHint}`,
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Explain the diagnostic error in \`${file}\`${lineHint} in plain English with surrounding type context.`,
+              "",
+              `1. Call \`getDiagnostics\` for \`${file}\``,
+              line
+                ? `2. Find the diagnostic at or nearest to line ${line}`
+                : "2. Pick the first error (or warning if no errors exist)",
+              "3. Call `explainSymbol` at the diagnostic position to gather hover, definition, and context",
+              "4. Call `getHover` at the position for the exact type information",
+              "",
+              "Explain:",
+              "- What the error message *literally* says",
+              "- *Why* it's wrong in this context (use the type info)",
+              "- *How* to fix it — show the corrected code",
+              "",
+              "Keep the explanation accessible. No jargon without definition. Under 30 lines.",
+            ].join("\n"),
+          },
+        },
+      ],
+    };
+  },
+
+  "unused-in": ({ file }) => ({
+    description: `Unused code in ${file}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Find all unused exports, parameters, and imports in \`${file}\` with reference verification.`,
+            "",
+            `1. Call \`detectUnusedCode\` for \`${file}\``,
+            "2. For each candidate, call `findReferences` to verify zero external uses (dead code rules differ across linters)",
+            "3. Cross-check imports against actual usage in the file body",
+            "",
+            "Report a prioritized cleanup list:",
+            "```",
+            `## Unused in ${file}`,
+            "",
+            "### Truly dead (0 references)",
+            "- <kind> <name> (<line>) — safe to delete",
+            "",
+            "### Local-only (used in this file but not exported elsewhere)",
+            "- <kind> <name> (<line>) — consider making private",
+            "",
+            "### Unused imports",
+            "- <import> (<line>) — safe to remove",
+            "```",
+            "",
+            "If nothing is unused, say so and stop. Keep response under 30 lines.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "trace-to": ({ symbol }) => ({
+    description: `Trace call chain to ${symbol}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Trace the call chain from entry points to \`${symbol}\` with type signatures at each hop.`,
+            "",
+            `1. Call \`searchWorkspaceSymbols\` with query \`${symbol}\` to find the definition`,
+            "2. Call `getCallHierarchy` with `direction: 'incoming'` recursively (up to 5 levels)",
+            "3. For each hop, call `getHover` to extract the function signature",
+            "4. Call `getImportedSignatures` on the entry point file to understand the data types being passed",
+            "",
+            "Report a vertical call chain:",
+            "```",
+            "Entry: <topLevelFunction>(<args>): <return> @ <file:line>",
+            "  ↓",
+            "<intermediate>(<args>): <return> @ <file:line>",
+            "  ↓",
+            `${symbol}(<args>): <return> @ <file:line>`,
+            "```",
+            "",
+            "Keep response under 35 lines. If multiple entry points exist, show the 2 shortest chains.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "imports-of": ({ symbol }) => ({
+    description: `Files importing ${symbol}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `List every file that imports \`${symbol}\` with reference counts.`,
+            "",
+            `1. Call \`searchWorkspaceSymbols\` with query \`${symbol}\` to find its definition file`,
+            "2. Call `findReferences` and filter results to those occurring inside import statements",
+            "3. For each importing file, count the inline references (uses of the symbol after import)",
+            "",
+            "Report:",
+            "```",
+            `${symbol} is imported by N files:`,
+            "  <file> — <inline refs> uses",
+            "  ...",
+            "```",
+            "",
+            "Sort by inline reference count descending. Keep response under 25 lines.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "circular-deps": (_args) => ({
+    description: "Detect circular import dependencies",
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            "Detect circular import dependencies in the workspace.",
+            "",
+            "1. Call `getProjectInfo` to find the project entry points",
+            "2. Call `getImportTree` on each entry point with depth >= 5 — the response includes a `cycles` array",
+            "3. If no entry points are obvious, call `getFileTree` and pick the top 3 source files",
+            "",
+            "Report each cycle as:",
+            "```",
+            "Cycle 1: <file-a> → <file-b> → <file-c> → <file-a>",
+            "Cycle 2: ...",
+            "```",
+            "",
+            "If no cycles, say 'No circular dependencies found'. Keep response under 20 lines.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "refactor-preview": ({ file, line, column, newName }) => ({
+    description: `Preview rename to ${newName} at ${file}:${line}:${column}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Preview the exact edits a rename to \`${newName}\` would make at \`${file}:${line}:${column}\`, plus blast-radius risk.`,
+            "",
+            `1. Call \`refactorAnalyze\` at \`${file}:${line}:${column}\` to get \`risk\`, \`referenceCount\`, \`callerCount\``,
+            `2. Call \`refactorPreview\` at the same position with \`newName: '${newName}'\` to get the exact edit list`,
+            "3. Do NOT apply the rename — this is a preview only",
+            "",
+            "Report:",
+            "```",
+            `Rename: <oldName> → ${newName}`,
+            "Risk: <LOW | MEDIUM | HIGH>",
+            "References: N | Callers: M",
+            "",
+            "Edits (K total across J files):",
+            "  <file>: <count> edits",
+            "  ...",
+            "```",
+            "",
+            "If risk is HIGH, recommend writing tests first. Keep response under 25 lines.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "module-exports": ({ file }) => ({
+    description: `Module exports of ${file}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `List the exported symbols of \`${file}\` with their type signatures, formatted as Markdown.`,
+            "",
+            `1. Call \`getDocumentSymbols\` for \`${file}\``,
+            "2. Filter to top-level exported symbols (functions, classes, types, constants)",
+            "3. For each export, call `getHover` at its position to read the type signature",
+            "",
+            "Format as Markdown:",
+            "```markdown",
+            `## Exports of \`${file}\``,
+            "",
+            "### Functions",
+            "- `functionName(args): ReturnType` — brief description from JSDoc if available",
+            "",
+            "### Classes",
+            "- `ClassName` — brief description",
+            "",
+            "### Types",
+            "- `TypeName` — definition",
+            "",
+            "### Constants",
+            "- `CONST_NAME: Type`",
+            "```",
+            "",
+            "Skip private/internal symbols. Keep response focused on the public API.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "type-of": ({ file, line, column }) => ({
+    description: `Type at ${file}:${line}:${column}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Return ONLY the type signature at \`${file}:${line}:${column}\` — no documentation, no examples.`,
+            "",
+            `1. Call \`getTypeSignature\` for \`${file}:${line}:${column}\``,
+            "2. If `getTypeSignature` is unavailable or returns nothing, call `getHoverAtCursor` at the position and extract the first fenced code block",
+            "",
+            "Output the type signature in a single fenced code block. Nothing else. Example:",
+            "```typescript",
+            "function processOrder(order: Order, opts?: Options): Promise<Receipt>",
+            "```",
+            "",
+            "If no type info is available, just say 'No type information at this position.'",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  deprecations: (_args) => ({
+    description: "Find deprecated APIs and their callers",
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            "Find every `@deprecated` API in the workspace and count its callers.",
+            "",
+            "1. Call `searchWorkspace` with query `@deprecated` and a glob like `**/*.{ts,tsx,js,jsx,py,go,rs}`",
+            "2. For each result, identify the symbol the annotation applies to (function/class/method on the next non-comment line)",
+            "3. Call `findReferences` on each deprecated symbol to count callers",
+            "4. Call `getHover` on each to extract the deprecation message and migration hint",
+            "",
+            "Report sorted by caller count descending:",
+            "```markdown",
+            "## Deprecated APIs (N total, M still in use)",
+            "",
+            "### High caller count (urgent migration)",
+            "- `symbolName` (K callers) — defined at <file:line>",
+            "  Migration: <message from JSDoc>",
+            "",
+            "### Low caller count (easy cleanup)",
+            "- `symbolName` (1 caller) — ...",
+            "",
+            "### Unused (safe to delete)",
+            "- `symbolName` (0 callers) — ...",
+            "```",
+            "",
+            "Keep response under 50 lines.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "coverage-gap": ({ file }) => ({
+    description: `Coverage gaps in ${file}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Identify untested functions in \`${file}\` by correlating line coverage with document symbols.`,
+            "",
+            `1. Call \`getCodeCoverage\` for \`${file}\` to get per-line hit counts`,
+            `2. Call \`getDocumentSymbols\` for \`${file}\` to map line ranges to function names`,
+            "3. For each function, compute: lines covered / total lines",
+            "4. Sort by coverage ascending — least-tested first",
+            "",
+            "Report:",
+            "```",
+            `## Coverage gaps in ${file}`,
+            "",
+            "Untested (0%):",
+            "  - functionName (lines L1-L2)",
+            "",
+            "Partial (<50%):",
+            "  - functionName (lines L1-L2) — N/M lines",
+            "",
+            "Well covered (>= 50%):",
+            "  - <count> functions",
+            "```",
+            "",
+            "If `getCodeCoverage` is unavailable, say so and recommend running tests with coverage first.",
+            "Keep response under 30 lines.",
           ].join("\n"),
         },
       },

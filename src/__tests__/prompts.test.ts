@@ -207,6 +207,177 @@ describe("getPrompt", () => {
     expect(text).toContain("HEALTHY");
   });
 
+  // LSP composition prompts
+  it("find-callers references call hierarchy and findReferences tools", () => {
+    const result = getPrompt("find-callers", { symbol: "MyClass" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("MyClass");
+    expect(text).toContain("getCallHierarchy");
+    expect(text).toContain("findReferences");
+  });
+
+  it("find-callers requires symbol arg", () => {
+    const result = getPrompt("find-callers", {});
+    expect(result).toBeNull();
+  });
+
+  it("blast-radius references getChangeImpact tool", () => {
+    const result = getPrompt("blast-radius", {
+      file: "src/foo.ts",
+      line: "10",
+      column: "5",
+    });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getChangeImpact");
+    expect(text).toContain("src/foo.ts");
+  });
+
+  it("blast-radius requires file, line, column args", () => {
+    expect(getPrompt("blast-radius", {})).toBeNull();
+    expect(getPrompt("blast-radius", { file: "src/foo.ts" })).toBeNull();
+  });
+
+  it("why-error references getDiagnostics and explainSymbol tools", () => {
+    const result = getPrompt("why-error", { file: "/src/foo.ts" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getDiagnostics");
+    expect(text).toContain("explainSymbol");
+    expect(text).toContain("/src/foo.ts");
+  });
+
+  it("why-error requires file arg", () => {
+    const result = getPrompt("why-error", {});
+    expect(result).toBeNull();
+  });
+
+  it("unused-in references detectUnusedCode and findReferences tools", () => {
+    const result = getPrompt("unused-in", { file: "/src/foo.ts" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("detectUnusedCode");
+    expect(text).toContain("findReferences");
+  });
+
+  it("unused-in requires file arg", () => {
+    const result = getPrompt("unused-in", {});
+    expect(result).toBeNull();
+  });
+
+  it("trace-to references getCallHierarchy and getImportedSignatures tools", () => {
+    const result = getPrompt("trace-to", { symbol: "handleRequest" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getCallHierarchy");
+    expect(text).toContain("getImportedSignatures");
+    expect(text).toContain("handleRequest");
+  });
+
+  it("trace-to requires symbol arg", () => {
+    const result = getPrompt("trace-to", {});
+    expect(result).toBeNull();
+  });
+
+  it("imports-of references findReferences and searchWorkspaceSymbols tools", () => {
+    const result = getPrompt("imports-of", { symbol: "MyType" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("findReferences");
+    expect(text).toContain("searchWorkspaceSymbols");
+    expect(text).toContain("MyType");
+  });
+
+  it("imports-of requires symbol arg", () => {
+    const result = getPrompt("imports-of", {});
+    expect(result).toBeNull();
+  });
+
+  it("circular-deps references getImportTree tool", () => {
+    const result = getPrompt("circular-deps", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getImportTree");
+  });
+
+  it("refactor-preview references refactorAnalyze and refactorPreview tools", () => {
+    const result = getPrompt("refactor-preview", {
+      file: "src/foo.ts",
+      line: "5",
+      column: "3",
+      newName: "betterName",
+    });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("refactorAnalyze");
+    expect(text).toContain("refactorPreview");
+    expect(text).toContain("betterName");
+  });
+
+  it("refactor-preview requires file, line, column, and newName args", () => {
+    expect(getPrompt("refactor-preview", {})).toBeNull();
+    expect(
+      getPrompt("refactor-preview", {
+        file: "src/foo.ts",
+        line: "5",
+        column: "3",
+      }),
+    ).toBeNull();
+    expect(getPrompt("refactor-preview", { newName: "betterName" })).toBeNull();
+  });
+
+  it("module-exports references getDocumentSymbols tool", () => {
+    const result = getPrompt("module-exports", { file: "/src/foo.ts" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getDocumentSymbols");
+  });
+
+  it("module-exports requires file arg", () => {
+    const result = getPrompt("module-exports", {});
+    expect(result).toBeNull();
+  });
+
+  it("type-of references getHover tool", () => {
+    const result = getPrompt("type-of", {
+      file: "src/foo.ts",
+      line: "3",
+      column: "10",
+    });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getHover");
+    expect(text).toContain("src/foo.ts");
+  });
+
+  it("type-of requires file, line, column args", () => {
+    expect(getPrompt("type-of", {})).toBeNull();
+    expect(getPrompt("type-of", { file: "src/foo.ts" })).toBeNull();
+  });
+
+  it("deprecations references searchWorkspace and findReferences tools", () => {
+    const result = getPrompt("deprecations", {});
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("searchWorkspace");
+    expect(text).toContain("findReferences");
+    expect(text).toContain("@deprecated");
+  });
+
+  it("coverage-gap references getCodeCoverage and getDocumentSymbols tools", () => {
+    const result = getPrompt("coverage-gap", { file: "/src/foo.ts" });
+    expect(result).not.toBeNull();
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("getCodeCoverage");
+    expect(text).toContain("getDocumentSymbols");
+  });
+
+  it("coverage-gap requires file arg", () => {
+    const result = getPrompt("coverage-gap", {});
+    expect(result).toBeNull();
+  });
+
   it("all returned messages have correct shape", () => {
     for (const prompt of PROMPTS) {
       const args: Record<string, string> = {};
