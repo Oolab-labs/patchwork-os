@@ -753,11 +753,11 @@ export function createLspHandlers(
         vscode.Location[] | vscode.LocationLink[]
       >("vscode.executeImplementationProvider", uri, position);
     } catch (_err: unknown) {
-      return { found: false, implementations: [], count: 0 };
+      return null;
     }
 
     if (!locations || locations.length === 0) {
-      return { found: false, implementations: [], count: 0 };
+      return null;
     }
 
     const implementations = locations.map((loc) => {
