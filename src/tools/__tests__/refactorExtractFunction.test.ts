@@ -139,6 +139,57 @@ describe("refactorExtractFunction", () => {
     expect(result.message).toContain("escapes workspace");
   });
 
+  it("rejects functionName with braces/parens (code injection chars)", async () => {
+    const file = path.join(tmpDir, "inject.ts");
+    fs.writeFileSync(file, "const x = 1;\n");
+    const tool = createRefactorExtractFunctionTool(
+      tmpDir,
+      makeExtensionClient(),
+    );
+    const result = await tool.handler({
+      file: "inject.ts",
+      startLine: 1,
+      endLine: 1,
+      functionName: "x(){evil()};function legit",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("valid identifier");
+  });
+
+  it("rejects functionName exceeding 64 characters", async () => {
+    const file = path.join(tmpDir, "longname.ts");
+    fs.writeFileSync(file, "const x = 1;\n");
+    const tool = createRefactorExtractFunctionTool(
+      tmpDir,
+      makeExtensionClient(),
+    );
+    const result = await tool.handler({
+      file: "longname.ts",
+      startLine: 1,
+      endLine: 1,
+      functionName: "a".repeat(65),
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("valid identifier");
+  });
+
+  it("accepts valid camelCase identifier", async () => {
+    const file = path.join(tmpDir, "valid.ts");
+    fs.writeFileSync(file, "const x = 1;\n");
+    const client = makeExtensionClient({
+      getCodeActions: vi.fn().mockResolvedValue([]),
+    });
+    const tool = createRefactorExtractFunctionTool(tmpDir, client);
+    const result = await tool.handler({
+      file: "valid.ts",
+      startLine: 1,
+      endLine: 1,
+      functionName: "myValidFunction",
+    });
+    // Not a validation error
+    expect(result.isError).toBeUndefined();
+  });
+
   it("getCodeActions called with correct arguments", async () => {
     const file = path.join(tmpDir, "check.ts");
     fs.writeFileSync(file, "const x = 1;\n");

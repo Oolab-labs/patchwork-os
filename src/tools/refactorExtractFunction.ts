@@ -71,9 +71,12 @@ export function createRefactorExtractFunctionTool(
       const startLine = requireInt(args, "startLine", 1, 1_000_000);
       const endLine = requireInt(args, "endLine", 1, 1_000_000);
       const functionName = requireString(args, "functionName");
-      if (/[\x00-\x1f*/]/.test(functionName)) {
+      if (
+        functionName.length > 64 ||
+        !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(functionName)
+      ) {
         return error(
-          "functionName must not contain control characters or */ characters",
+          "functionName must be a valid identifier (letters, digits, _ or $; max 64 chars)",
         );
       }
 

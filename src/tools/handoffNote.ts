@@ -72,16 +72,9 @@ export async function writeNote(
   fs.mkdirSync(path.dirname(primaryPath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(primaryPath, contentJson, { mode: 0o600 });
 
-  // Dual-write to global path (best-effort) when writing to a scoped path
-  if (workspace) {
-    const globalPath = getGlobalNotePath(dir);
-    try {
-      fs.mkdirSync(path.dirname(globalPath), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(globalPath, contentJson, { mode: 0o600 });
-    } catch {
-      // best-effort — ignore failures on global write
-    }
-  }
+  // Do NOT dual-write to global path when a workspace is provided — this
+  // would allow workspace A's note to leak into workspace B via the global
+  // fallback read path (cross-workspace prompt injection vector).
 }
 
 export function createSetHandoffNoteTool(
@@ -116,7 +109,10 @@ export function createSetHandoffNoteTool(
       },
     },
     handler: async (args: Record<string, unknown>) => {
-      const note = args.note as string;
+      const note = args.note;
+      if (typeof note !== "string") {
+        return error("note must be a string");
+      }
       if (note.length > 10_000) {
         return error(
           `Note exceeds maximum length of 10,000 characters (got ${note.length}).`,

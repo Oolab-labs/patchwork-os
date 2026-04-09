@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { minimatch } from "minimatch";
@@ -5,6 +6,16 @@ import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 
 /** Maximum length (chars) of a single diagnostic message before truncation */
 const MAX_DIAGNOSTIC_MSG_CHARS = 500;
+
+/**
+ * Wrap an untrusted user-controlled value in delimiters that include a
+ * per-trigger nonce so a crafted value cannot forge a closing delimiter.
+ * The nonce is stripped from the value itself before insertion.
+ */
+function untrustedBlock(label: string, value: string, nonce: string): string {
+  const safe = value.replace(new RegExp(nonce, "g"), "");
+  return `\n--- BEGIN ${label} [${nonce}] (untrusted) ---\n${safe}\n--- END ${label} [${nonce}] ---\n`;
+}
 /** Maximum length (chars) of a file path inserted into prompts */
 const MAX_FILE_PATH_CHARS = 500;
 /** Maximum length (chars) of an automation policy prompt template (matches runClaudeTask cap) */
@@ -1013,6 +1024,7 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
+    const nonce = crypto.randomBytes(6).toString("hex");
     const safeMessage = result.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
     const fileList = result.files
       .slice(0, 20)
@@ -1025,12 +1037,22 @@ export class AutomationHooks {
 
     const prompt = cfg.prompt
       .replace(/\{\{hash\}\}/g, result.hash)
-      .replace(/\{\{branch\}\}/g, result.branch)
-      .replace(/\{\{message\}\}/g, safeMessage)
+      .replace(
+        /\{\{branch\}\}/g,
+        untrustedBlock(
+          "BRANCH",
+          result.branch.slice(0, MAX_FILE_PATH_CHARS),
+          nonce,
+        ),
+      )
+      .replace(
+        /\{\{message\}\}/g,
+        untrustedBlock("COMMIT MESSAGE", safeMessage, nonce),
+      )
       .replace(/\{\{count\}\}/g, String(result.count))
       .replace(
         /\{\{files\}\}/g,
-        `\n--- BEGIN COMMITTED FILES (untrusted) ---\n${filesText}\n--- END COMMITTED FILES ---\n`,
+        untrustedBlock("COMMITTED FILES", filesText, nonce),
       );
 
     try {
@@ -1083,12 +1105,13 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
+    const nonce = crypto.randomBytes(6).toString("hex");
     const safeRemote = result.remote.slice(0, MAX_FILE_PATH_CHARS);
     const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
     const safeHash = result.hash.slice(0, 64);
     const prompt = cfg.prompt
-      .replace(/\{\{remote\}\}/g, safeRemote)
-      .replace(/\{\{branch\}\}/g, safeBranch)
+      .replace(/\{\{remote\}\}/g, untrustedBlock("REMOTE", safeRemote, nonce))
+      .replace(/\{\{branch\}\}/g, untrustedBlock("BRANCH", safeBranch, nonce))
       .replace(/\{\{hash\}\}/g, safeHash);
 
     try {
@@ -1143,13 +1166,17 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
+    const nonce = crypto.randomBytes(6).toString("hex");
     const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
     const safePreviousBranch = (
       result.previousBranch ?? "(detached HEAD)"
     ).slice(0, MAX_FILE_PATH_CHARS);
     const prompt = cfg.prompt
-      .replace(/\{\{branch\}\}/g, safeBranch)
-      .replace(/\{\{previousBranch\}\}/g, safePreviousBranch)
+      .replace(/\{\{branch\}\}/g, untrustedBlock("BRANCH", safeBranch, nonce))
+      .replace(
+        /\{\{previousBranch\}\}/g,
+        untrustedBlock("PREVIOUS BRANCH", safePreviousBranch, nonce),
+      )
       .replace(/\{\{created\}\}/g, String(result.created));
 
     try {

@@ -633,3 +633,77 @@ describe("OAuthServerImpl — redirect_uri validation", () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+// ── OAuthServerImpl — body size cap (DoS prevention) ─────────────────────────
+
+describe("OAuthServerImpl — body size cap", () => {
+  /**
+   * Stream a body in small chunks, tracking how many bytes were pushed AFTER
+   * the handler responded. If the fix is correct, the request is destroyed
+   * after the cap trips and no further bytes are pushed.
+   */
+  function makeOversizedReq(contentType: string): {
+    req: http.IncomingMessage;
+    bytesConsumed: () => number;
+  } {
+    const { Readable: NodeReadable } =
+      require("node:stream") as typeof import("node:stream");
+    let consumed = 0;
+    let destroyed = false;
+    const chunks: Buffer[] = [];
+    // 8193 bytes (1 over the 8192 cap)
+    chunks.push(Buffer.alloc(8193, "x"));
+
+    const stream = new NodeReadable({
+      read() {
+        if (destroyed) return;
+        const chunk = chunks.shift();
+        if (chunk) {
+          consumed += chunk.length;
+          this.push(chunk);
+        } else {
+          this.push(null);
+        }
+      },
+      destroy(err, cb) {
+        destroyed = true;
+        cb(err);
+      },
+    });
+
+    const req = Object.assign(stream, {
+      method: "POST",
+      headers: { "content-type": contentType },
+    }) as unknown as http.IncomingMessage;
+
+    return { req, bytesConsumed: () => consumed };
+  }
+
+  it("handleRegister returns 400 and destroys the request when body exceeds 8192 bytes", async () => {
+    const oauth = makeOAuth();
+    const { req } = makeOversizedReq("application/json");
+    const res = new MockResponse();
+    await oauth.handleRegister(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(400);
+    // The request should have been destroyed — no further data after cap
+    expect((req as unknown as { destroyed: boolean }).destroyed).toBe(true);
+  });
+
+  it("handleToken returns 400 and destroys the request when body exceeds 8192 bytes", async () => {
+    const oauth = makeOAuth();
+    const { req } = makeOversizedReq("application/x-www-form-urlencoded");
+    const res = new MockResponse();
+    await oauth.handleToken(req, res as unknown as http.ServerResponse);
+    expect(res.statusCode).toBe(400);
+    expect((req as unknown as { destroyed: boolean }).destroyed).toBe(true);
+  });
+
+  it("handleRevoke returns 200 and destroys the request when body exceeds 8192 bytes", async () => {
+    const oauth = makeOAuth();
+    const { req } = makeOversizedReq("application/x-www-form-urlencoded");
+    const res = new MockResponse();
+    await oauth.handleRevoke(req, res as unknown as http.ServerResponse);
+    // RFC 7009: revoke always returns 200, even on error — but request must be destroyed
+    expect((req as unknown as { destroyed: boolean }).destroyed).toBe(true);
+  });
+});

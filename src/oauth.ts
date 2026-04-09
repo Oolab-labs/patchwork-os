@@ -189,11 +189,18 @@ export class OAuthServerImpl implements OAuthServer {
     try {
       const raw = await new Promise<string>((resolve, reject) => {
         let data = "";
-        req.on("data", (c: Buffer) => {
+        const onData = (c: Buffer) => {
           data += c.toString();
-          if (data.length > 8192) reject(new Error("too large"));
-        });
-        req.on("end", () => resolve(data));
+          if (data.length > 8192) {
+            req.removeListener("data", onData);
+            req.removeListener("end", onEnd);
+            req.destroy();
+            reject(new Error("too large"));
+          }
+        };
+        const onEnd = () => resolve(data);
+        req.on("data", onData);
+        req.on("end", onEnd);
         req.on("error", reject);
       });
       body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
@@ -359,7 +366,14 @@ export class OAuthServerImpl implements OAuthServer {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
-    const body = await this.readBody(req);
+    let body: URLSearchParams;
+    try {
+      body = await this.readBody(req);
+    } catch {
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("request body too large");
+      return;
+    }
     const action = body.get("action");
     const clientId = body.get("client_id") ?? "";
     const redirectUri = body.get("redirect_uri") ?? "";
@@ -462,7 +476,13 @@ export class OAuthServerImpl implements OAuthServer {
   // ── Token endpoint ────────────────────────────────────────────────────────
 
   async handleToken(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const body = await this.readBody(req);
+    let body: URLSearchParams;
+    try {
+      body = await this.readBody(req);
+    } catch {
+      this.sendError(res, 400, "invalid_request");
+      return;
+    }
 
     if (body.get("grant_type") !== "authorization_code") {
       this.sendError(res, 400, "unsupported_grant_type");
@@ -597,11 +617,18 @@ export class OAuthServerImpl implements OAuthServer {
   private readBody(req: IncomingMessage): Promise<URLSearchParams> {
     return new Promise((resolve, reject) => {
       let data = "";
-      req.on("data", (chunk: Buffer) => {
+      const onData = (chunk: Buffer) => {
         data += chunk.toString();
-        if (data.length > 8_192) reject(new Error("Request body too large"));
-      });
-      req.on("end", () => resolve(new URLSearchParams(data)));
+        if (data.length > 8_192) {
+          req.removeListener("data", onData);
+          req.removeListener("end", onEnd);
+          req.destroy();
+          reject(new Error("Request body too large"));
+        }
+      };
+      const onEnd = () => resolve(new URLSearchParams(data));
+      req.on("data", onData);
+      req.on("end", onEnd);
       req.on("error", reject);
     });
   }
