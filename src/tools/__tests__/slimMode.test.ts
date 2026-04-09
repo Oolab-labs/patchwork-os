@@ -5,8 +5,8 @@ import { registerAllTools, SLIM_TOOL_NAMES } from "../index.js";
 // ── SLIM_TOOL_NAMES invariants ─────────────────────────────────────────────
 
 describe("SLIM_TOOL_NAMES", () => {
-  it("contains exactly 49 entries", () => {
-    expect(SLIM_TOOL_NAMES.size).toBe(49);
+  it("contains exactly 50 entries", () => {
+    expect(SLIM_TOOL_NAMES.size).toBe(50);
   });
 
   it("all names match the valid tool name pattern", () => {
@@ -26,6 +26,7 @@ describe("SLIM_TOOL_NAMES", () => {
     expect(SLIM_TOOL_NAMES.has("captureScreenshot")).toBe(true);
     expect(SLIM_TOOL_NAMES.has("getBridgeStatus")).toBe(true);
     expect(SLIM_TOOL_NAMES.has("getToolCapabilities")).toBe(true);
+    expect(SLIM_TOOL_NAMES.has("bridgeDoctor")).toBe(true);
   });
 
   it("does not contain tools that duplicate Claude native capabilities", () => {
