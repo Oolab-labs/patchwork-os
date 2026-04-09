@@ -165,6 +165,18 @@ export function createGetToolCapabilitiesTool(
                 "getHoverAtCursor",
                 "explainSymbol",
                 "refactorPreview",
+                "prepareRename",
+                "signatureHelp",
+                "foldingRanges",
+                "selectionRanges",
+                "refactorAnalyze",
+                "getSemanticTokens",
+                "getCodeLens",
+                "getChangeImpact",
+                "getImportedSignatures",
+                "getDocumentLinks",
+                "batchGetHover",
+                "batchGoToDefinition",
               ]
             : [],
           planning: [
