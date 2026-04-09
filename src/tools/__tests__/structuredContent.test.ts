@@ -41,7 +41,10 @@ import {
 import { createListClaudeTasksTool } from "../listClaudeTasks.js";
 import {
   createApplyCodeActionTool,
+  createFindReferencesTool,
+  createGetCallHierarchyTool,
   createGetHoverTool,
+  createGoToDefinitionTool,
   createSearchWorkspaceSymbolsTool,
 } from "../lsp.js";
 import { createResumeClaudeTaskTool } from "../resumeClaudeTask.js";
@@ -187,6 +190,117 @@ describe("structuredContent contract", () => {
       } finally {
         await fs.unlink(testFile).catch(() => {});
       }
+    });
+  });
+
+  // ── lsp.ts: goToDefinition ───────────────────────────────────────────────
+
+  describe("goToDefinition (lsp.ts)", () => {
+    it("emits structuredContent when no definition found", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        goToDefinition: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createGoToDefinitionTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: "src/index.ts",
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+
+    it("emits structuredContent when definition is found", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        goToDefinition: vi.fn().mockResolvedValue({
+          found: true,
+          uri: "file:///src/foo.ts",
+          range: {},
+        }),
+      } as never;
+      const tool = createGoToDefinitionTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: "src/index.ts",
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── lsp.ts: findReferences ────────────────────────────────────────────────
+
+  describe("findReferences (lsp.ts)", () => {
+    it("emits structuredContent when no references found", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        findReferences: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createFindReferencesTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: "src/index.ts",
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+
+    it("emits structuredContent with reference results", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        findReferences: vi.fn().mockResolvedValue({
+          found: true,
+          references: [{ uri: "file:///src/foo.ts", range: {} }],
+        }),
+      } as never;
+      const tool = createFindReferencesTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: "src/index.ts",
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── lsp.ts: getCallHierarchy ──────────────────────────────────────────────
+
+  describe("getCallHierarchy (lsp.ts)", () => {
+    it("emits structuredContent when no hierarchy found", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        getCallHierarchy: vi.fn().mockResolvedValue(null),
+      } as never;
+      const tool = createGetCallHierarchyTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: "src/index.ts",
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+
+    it("emits structuredContent with hierarchy results", async () => {
+      const mockClient = {
+        isConnected: () => true,
+        lspReadyLanguages: new Set(["typescript"]),
+        getCallHierarchy: vi
+          .fn()
+          .mockResolvedValue({ found: true, incoming: [], outgoing: [] }),
+      } as never;
+      const tool = createGetCallHierarchyTool(WORKSPACE, mockClient);
+      const result = await tool.handler({
+        filePath: "src/index.ts",
+        line: 1,
+        column: 1,
+      });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
     });
   });
 

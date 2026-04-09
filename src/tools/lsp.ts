@@ -129,6 +129,24 @@ export function createGoToDefinitionTool(
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" },
+          message: { type: "string" },
+          uri: { type: "string" },
+          range: {
+            type: "object",
+            properties: {
+              startLine: { type: "number" },
+              startColumn: { type: "number" },
+              endLine: { type: "number" },
+              endColumn: { type: "number" },
+            },
+          },
+        },
+        required: ["found"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
@@ -150,12 +168,12 @@ export function createGoToDefinitionTool(
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
-        return success({
+        return successStructured({
           found: false,
           message: "No definition found at this position",
         });
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }
@@ -228,9 +246,9 @@ export function createFindReferencesTool(
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
-        return success({ found: false, references: [] });
+        return successStructured({ found: false, references: [] });
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }
@@ -264,6 +282,16 @@ export function createGetHoverTool(
         },
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" },
+          message: { type: "string" },
+          contents: { type: "string" },
+          range: { type: "object" },
+        },
+        required: ["found"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -798,13 +826,13 @@ export function createGetCallHierarchyTool(
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
-        return success({
+        return successStructured({
           found: false,
           message:
             "No call hierarchy available at this position — ensure a language server is active",
         });
       }
-      return success(result);
+      return successStructured(result);
     },
   };
 }
@@ -838,6 +866,27 @@ export function createSearchWorkspaceSymbolsTool(
         },
         required: ["query"],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          symbols: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                kind: { type: "string" },
+                uri: { type: "string" },
+                range: { type: "object" },
+                containerName: { type: "string" },
+              },
+              required: ["name", "kind", "uri"],
+            },
+          },
+          count: { type: "number" },
+        },
+        required: ["symbols", "count"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
