@@ -8,7 +8,7 @@ import {
   requireInt,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createGetInlayHintsTool(
@@ -44,6 +44,28 @@ export function createGetInlayHintsTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          hints: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                position: { type: "object" as const },
+                label: { type: "string" as const },
+                kind: { type: "string" as const },
+                tooltip: { type: "string" as const },
+                paddingLeft: { type: "boolean" as const },
+                paddingRight: { type: "boolean" as const },
+              },
+              required: ["position", "label"],
+            },
+          },
+          count: { type: "number" as const },
+        },
+        required: ["hints", "count"],
+      },
     },
     timeoutMs: 8_000,
     async handler(args: Record<string, unknown>) {
@@ -60,7 +82,7 @@ export function createGetInlayHintsTool(
           endLine,
         );
         if (result === null) return error("Failed to get inlay hints");
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out getting inlay hints");

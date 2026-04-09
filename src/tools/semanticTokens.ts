@@ -5,7 +5,7 @@ import {
   optionalInt,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createGetSemanticTokensTool(
@@ -52,6 +52,32 @@ export function createGetSemanticTokensTool(
         required: ["filePath"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          tokens: {
+            type: "array" as const,
+            items: { type: "object" as const },
+          },
+          count: { type: "number" as const },
+          capped: { type: "boolean" as const },
+          legend: {
+            type: "object" as const,
+            properties: {
+              tokenTypes: {
+                type: "array" as const,
+                items: { type: "string" as const },
+              },
+              tokenModifiers: {
+                type: "array" as const,
+                items: { type: "string" as const },
+              },
+            },
+            required: ["tokenTypes", "tokenModifiers"],
+          },
+        },
+        required: ["tokens", "count", "capped", "legend"],
+      },
     },
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
@@ -79,13 +105,13 @@ export function createGetSemanticTokensTool(
 
       if (result === "timeout") return lspColdStartError();
       if (result === null)
-        return success({
+        return successStructured({
           tokens: [],
           count: 0,
           capped: false,
           legend: { tokenTypes: [], tokenModifiers: [] },
         });
-      return success(result);
+      return successStructured(result);
     },
   };
 }

@@ -4,7 +4,7 @@ import {
   extensionRequired,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createGetCodeLensTool(
@@ -32,6 +32,17 @@ export function createGetCodeLensTool(
         required: ["filePath"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          lenses: {
+            type: "array" as const,
+            items: { type: "object" as const },
+          },
+          count: { type: "number" as const },
+        },
+        required: ["lenses", "count"],
+      },
     },
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
@@ -51,8 +62,8 @@ export function createGetCodeLensTool(
       );
 
       if (result === "timeout") return lspColdStartError();
-      if (result === null) return success({ lenses: [], count: 0 });
-      return success(result);
+      if (result === null) return successStructured({ lenses: [], count: 0 });
+      return successStructured(result);
     },
   };
 }

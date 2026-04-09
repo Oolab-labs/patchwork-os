@@ -10,7 +10,7 @@ import {
   requireInt,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createGetTypeHierarchyTool(
@@ -54,6 +54,22 @@ export function createGetTypeHierarchyTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" as const },
+          message: { type: "string" as const },
+          supertypes: {
+            type: "array" as const,
+            items: { type: "object" as const },
+          },
+          subtypes: {
+            type: "array" as const,
+            items: { type: "object" as const },
+          },
+        },
+        required: ["found"],
+      },
     },
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
@@ -77,12 +93,12 @@ export function createGetTypeHierarchyTool(
           signal,
         );
         if (result === null)
-          return success({
+          return successStructured({
             found: false,
             message:
               "No type hierarchy at this position — ensure a language server is active",
           });
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out getting type hierarchy");

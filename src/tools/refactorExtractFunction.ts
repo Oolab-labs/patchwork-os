@@ -6,7 +6,7 @@ import {
   requireInt,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createRefactorExtractFunctionTool(
@@ -43,6 +43,15 @@ export function createRefactorExtractFunctionTool(
         required: ["file", "startLine", "endLine", "functionName"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          refactored: { type: "boolean" as const },
+          method: { type: "string" as const },
+          message: { type: "string" as const },
+        },
+        required: ["refactored", "method", "message"],
+      },
     },
     timeoutMs: 30_000,
 
@@ -50,7 +59,7 @@ export function createRefactorExtractFunctionTool(
       args: Record<string, unknown>,
       signal?: AbortSignal,
     ): Promise<
-      | ReturnType<typeof success>
+      | ReturnType<typeof successStructured>
       | ReturnType<typeof error>
       | ReturnType<typeof extensionRequired>
     > {
@@ -72,7 +81,7 @@ export function createRefactorExtractFunctionTool(
       try {
         absPath = resolveFilePath(file, workspace);
       } catch (err) {
-        return success({
+        return successStructured({
           refactored: false,
           method: "none",
           message: err instanceof Error ? err.message : String(err),
@@ -113,7 +122,7 @@ export function createRefactorExtractFunctionTool(
             actionTitle,
             signal,
           );
-          return success({
+          return successStructured({
             refactored: true,
             method: "codeAction",
             message: `Applied VS Code code action: "${actionTitle}"`,
@@ -144,13 +153,13 @@ export function createRefactorExtractFunctionTool(
 
         fs.writeFileSync(absPath, newLines.join("\n"), "utf-8");
 
-        return success({
+        return successStructured({
           refactored: true,
           method: "textManipulation",
           message: `Extracted lines ${startLine}-${endLine} into function \`${functionName}\` using text manipulation. Review the result and adjust parameters/return values as needed.`,
         });
       } catch (err) {
-        return success({
+        return successStructured({
           refactored: false,
           method: "none",
           message: `Refactor failed: ${err instanceof Error ? err.message : String(err)}`,

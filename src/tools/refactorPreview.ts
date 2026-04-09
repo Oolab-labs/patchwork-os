@@ -8,7 +8,7 @@ import {
   requireInt,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createRefactorPreviewTool(
@@ -59,6 +59,20 @@ export function createRefactorPreviewTool(
           "actionTitle",
         ],
       },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          title: { type: "string" as const },
+          changes: {
+            type: "array" as const,
+            items: { type: "object" as const },
+          },
+          totalFiles: { type: "number" as const },
+          totalEdits: { type: "number" as const },
+          note: { type: "string" as const },
+        },
+        required: ["title", "changes"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
@@ -101,7 +115,7 @@ export function createRefactorPreviewTool(
       if (!result) return error("No response from extension");
       const r = result as Record<string, unknown>;
       if (typeof r.error === "string") return error(r.error);
-      return success(result);
+      return successStructured(result);
     },
   };
 }

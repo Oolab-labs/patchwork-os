@@ -2,7 +2,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, extensionRequired, success } from "./utils.js";
+import { error, extensionRequired, successStructured } from "./utils.js";
 
 export function createGetHoverAtCursorTool(extensionClient: ExtensionClient) {
   return {
@@ -17,6 +17,18 @@ export function createGetHoverAtCursorTool(extensionClient: ExtensionClient) {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          found: { type: "boolean" as const },
+          file: { type: "string" as const },
+          line: { type: "number" as const },
+          column: { type: "number" as const },
+          message: { type: "string" as const },
+          hover: { type: "object" as const },
+        },
+        required: ["found"],
       },
     },
     timeoutMs: 8_000,
@@ -38,7 +50,7 @@ export function createGetHoverAtCursorTool(extensionClient: ExtensionClient) {
       try {
         const result = await extensionClient.getHover(file, line, column);
         if (result === null) {
-          return success({
+          return successStructured({
             found: false,
             file,
             line,
@@ -46,7 +58,13 @@ export function createGetHoverAtCursorTool(extensionClient: ExtensionClient) {
             message: "No hover information available at cursor position",
           });
         }
-        return success({ found: true, file, line, column, hover: result });
+        return successStructured({
+          found: true,
+          file,
+          line,
+          column,
+          hover: result,
+        });
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out getting hover information");
