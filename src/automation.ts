@@ -1083,10 +1083,13 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
+    const safeRemote = result.remote.slice(0, MAX_FILE_PATH_CHARS);
+    const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
+    const safeHash = result.hash.slice(0, 64);
     const prompt = cfg.prompt
-      .replace(/\{\{remote\}\}/g, result.remote)
-      .replace(/\{\{branch\}\}/g, result.branch)
-      .replace(/\{\{hash\}\}/g, result.hash);
+      .replace(/\{\{remote\}\}/g, safeRemote)
+      .replace(/\{\{branch\}\}/g, safeBranch)
+      .replace(/\{\{hash\}\}/g, safeHash);
 
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
@@ -1140,12 +1143,13 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
+    const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
+    const safePreviousBranch = (
+      result.previousBranch ?? "(detached HEAD)"
+    ).slice(0, MAX_FILE_PATH_CHARS);
     const prompt = cfg.prompt
-      .replace(/\{\{branch\}\}/g, result.branch)
-      .replace(
-        /\{\{previousBranch\}\}/g,
-        result.previousBranch ?? "(detached HEAD)",
-      )
+      .replace(/\{\{branch\}\}/g, safeBranch)
+      .replace(/\{\{previousBranch\}\}/g, safePreviousBranch)
       .replace(/\{\{created\}\}/g, String(result.created));
 
     try {
@@ -1196,14 +1200,20 @@ export class AutomationHooks {
 
     this._pruneLastTrigger(now);
 
+    const safeUrl = result.url.slice(0, MAX_FILE_PATH_CHARS);
+    const safeTitle = result.title.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
+    const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
     const prompt = cfg.prompt
-      .replace(/\{\{url\}\}/g, result.url)
+      .replace(/\{\{url\}\}/g, safeUrl)
       .replace(
         /\{\{number\}\}/g,
         result.number !== null ? String(result.number) : "(unknown)",
       )
-      .replace(/\{\{title\}\}/g, result.title)
-      .replace(/\{\{branch\}\}/g, result.branch);
+      .replace(
+        /\{\{title\}\}/g,
+        `\n--- BEGIN PR TITLE (untrusted) ---\n${safeTitle}\n--- END PR TITLE ---\n`,
+      )
+      .replace(/\{\{branch\}\}/g, safeBranch);
 
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
