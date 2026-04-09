@@ -1418,9 +1418,12 @@ describe("AutomationHooks — onPullRequest", () => {
     );
     hooks.handlePullRequest(makePRResult());
     const task = orch.list()[0];
-    expect(task?.prompt).toBe(
-      "PR #42 'feat: add onPullRequest hook' on feat/pr-hook → https://github.com/org/repo/pull/42",
-    );
+    // {{title}} is wrapped in untrusted-data delimiters
+    expect(task?.prompt).toContain("PR #42");
+    expect(task?.prompt).toContain("--- BEGIN PR TITLE (untrusted) ---");
+    expect(task?.prompt).toContain("feat: add onPullRequest hook");
+    expect(task?.prompt).toContain("on feat/pr-hook");
+    expect(task?.prompt).toContain("https://github.com/org/repo/pull/42");
   });
 
   it("handles null PR number gracefully", () => {
@@ -1559,5 +1562,98 @@ describe("loadPolicy — onPullRequest", () => {
     );
     const policy = loadPolicy(p);
     expect(policy.onPullRequest?.cooldownMs).toBe(5_000);
+  });
+});
+
+// ── Prompt injection hardening ─────────────────────────────────────────────────
+
+describe("AutomationHooks — prompt injection hardening", () => {
+  it("wraps {{title}} with untrusted-data delimiters in onPullRequest", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: true,
+          prompt: "Review this: {{title}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePullRequest(makePRResult({ title: "feat: normal title" }));
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("--- BEGIN PR TITLE (untrusted) ---");
+    expect(prompt).toContain("feat: normal title");
+    expect(prompt).toContain("--- END PR TITLE ---");
+  });
+
+  it("truncates a long {{title}} to MAX_DIAGNOSTIC_MSG_CHARS in onPullRequest", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: true,
+          prompt: "{{title}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    const longTitle = "x".repeat(1000);
+    hooks.handlePullRequest(makePRResult({ title: longTitle }));
+    const prompt = orch.list()[0]?.prompt ?? "";
+    // 500 = MAX_DIAGNOSTIC_MSG_CHARS
+    expect(prompt).toContain("x".repeat(500));
+    expect(prompt).not.toContain("x".repeat(501));
+  });
+
+  it("truncates a long {{branch}} in onBranchCheckout", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onBranchCheckout: {
+          enabled: true,
+          prompt: "{{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    const longBranch = "b".repeat(1000);
+    hooks.handleBranchCheckout(makeCheckoutResult({ branch: longBranch }));
+    const prompt = orch.list()[0]?.prompt ?? "";
+    // 500 = MAX_FILE_PATH_CHARS
+    expect(prompt).toContain("b".repeat(500));
+    expect(prompt).not.toContain("b".repeat(501));
+  });
+
+  it("truncates a long {{branch}} and {{remote}} in onGitPush", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPush: {
+          enabled: true,
+          prompt: "{{remote}} {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    const longRemote = "r".repeat(1000);
+    const longBranch = "b".repeat(1000);
+    hooks.handleGitPush({
+      remote: longRemote,
+      branch: longBranch,
+      hash: "abc1234",
+    });
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("r".repeat(500));
+    expect(prompt).not.toContain("r".repeat(501));
+    expect(prompt).toContain("b".repeat(500));
+    expect(prompt).not.toContain("b".repeat(501));
   });
 });
