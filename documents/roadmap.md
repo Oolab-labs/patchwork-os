@@ -4,10 +4,10 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.11.7 — 2026-04-09)
+## Current State (v2.11.8 — 2026-04-09)
 
 - **Slim mode default**: 48 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all ~95; plugin tools always bypass slim filter
-- **~1,680 bridge tests / ~129 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **~1,695 bridge tests / ~130 files**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - 15 MCP prompts (slash commands): 8 core + 5 Dispatch + 2 team/schedule
 - Extension v1.0.20 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE
@@ -28,6 +28,12 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.11.8 shipped (2026-04-09) — structuredContent wiring + audit hardening:**
+- `structuredContent` now emitted by all 28 outputSchema tools; previously 10 tools declared `outputSchema` but returned plain text blobs
+- `audit-lsp-tools.mjs` extended to 5 checks: added `outputSchema ↔ successStructured` consistency (checks 3 & 4) — immediately caught 3 pre-existing violations in `lsp.ts` (`getHover`, `applyCodeAction`, `searchWorkspaceSymbols`)
+- `outputSchema` + `structuredContent` added to 3 more high-frequency tools: `getProjectInfo`, `getActivityLog`, `runCommand` (28 total, up from 25)
+- `structuredContent.test.ts`: new cross-cutting contract test file (15 tests) verifying every updated tool emits `structuredContent` and it round-trips through JSON consistently
 
 **v2.11.7 shipped (2026-04-09) — outputSchema expansion + onTestRun hook + LSP consistency:**
 - `onTestRun` automation hook: new `OnTestRunPolicy` with `onFailureOnly`, `cooldownMs`, placeholders (`{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}`); loop guard prevents re-triggering from tasks spawned by the hook itself; `runTests` wired via callback to avoid circular imports; 10 new tests
