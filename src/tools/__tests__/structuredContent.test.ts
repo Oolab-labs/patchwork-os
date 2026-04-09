@@ -27,15 +27,18 @@ import { createAuditDependenciesTool } from "../auditDependencies.js";
 import { createDetectUnusedCodeTool } from "../detectUnusedCode.js";
 import { createGenerateTestsTool } from "../generateTests.js";
 import { createGetBufferContentTool } from "../getBufferContent.js";
+import { createGetClaudeTaskStatusTool } from "../getClaudeTaskStatus.js";
 import { createGetGitDiffTool } from "../getGitDiff.js";
 import { createGetGitHotspotsTool } from "../getGitHotspots.js";
 import { createGetProjectInfoTool } from "../getProjectInfo.js";
 import { createGetToolCapabilitiesTool } from "../getToolCapabilities.js";
+import { createListClaudeTasksTool } from "../listClaudeTasks.js";
 import {
   createApplyCodeActionTool,
   createGetHoverTool,
   createSearchWorkspaceSymbolsTool,
 } from "../lsp.js";
+import { createRunClaudeTaskTool } from "../runClaudeTask.js";
 import { createRunCommandTool } from "../runCommand.js";
 import { createRunTestsTool } from "../runTests.js";
 import { createSearchWorkspaceTool } from "../searchWorkspace.js";
@@ -339,6 +342,55 @@ describe("structuredContent contract", () => {
       const config = { commandAllowlist: [], editorCommand: null } as never;
       const tool = createGetToolCapabilitiesTool(probes, mockClient, config);
       const result = await tool.handler({});
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  // ── Claude orchestration tools ────────────────────────────────────────────
+
+  describe("listClaudeTasks", () => {
+    it("emits structuredContent with empty task list", async () => {
+      const mockOrchestrator = {
+        list: vi.fn().mockReturnValue([]),
+      } as never;
+      const tool = createListClaudeTasksTool(mockOrchestrator, "session-1");
+      const result = await tool.handler({});
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  describe("getClaudeTaskStatus", () => {
+    it("emits structuredContent for a found task", async () => {
+      const mockOrchestrator = {
+        getTask: vi.fn().mockReturnValue({
+          id: "task-1",
+          status: "done",
+          createdAt: Date.now(),
+          startedAt: Date.now(),
+          doneAt: Date.now(),
+          output: "hello",
+          errorMessage: undefined,
+          timeoutMs: 120_000,
+          sessionId: "session-1",
+        }),
+      } as never;
+      const tool = createGetClaudeTaskStatusTool(mockOrchestrator, "session-1");
+      const result = await tool.handler({ taskId: "task-1" });
+      assertStructured(result as Parameters<typeof assertStructured>[0]);
+    });
+  });
+
+  describe("runClaudeTask", () => {
+    it("emits structuredContent for a non-streaming enqueue", async () => {
+      const mockOrchestrator = {
+        enqueue: vi.fn().mockReturnValue("task-2"),
+      } as never;
+      const tool = createRunClaudeTaskTool(
+        mockOrchestrator,
+        "session-1",
+        WORKSPACE,
+      );
+      const result = await tool.handler({ prompt: "hello" });
       assertStructured(result as Parameters<typeof assertStructured>[0]);
     });
   });
