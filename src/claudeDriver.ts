@@ -12,16 +12,6 @@ export interface ClaudeTaskInput {
   onChunk?: (chunk: string) => void;
   /** Optional model override, e.g. "claude-haiku-4-5-20251001". Passed as --model to the subprocess. */
   model?: string;
-  /**
-   * Pass --dangerously-skip-permissions to the subprocess.
-   * Must be explicitly set to true — there is no default-on behavior.
-   * Automation hooks should set this to true since they run headless and permission
-   * prompts would hang indefinitely. User-submitted tasks should leave this false
-   * (default) so the Claude CLI permission layer remains active.
-   * Note: session-selection and editor-selection prompts are not permission prompts
-   * and may still hang regardless of this flag (requires CLI-side fix).
-   */
-  skipPermissions?: boolean;
 }
 
 export interface ClaudeTaskOutput {
@@ -90,12 +80,9 @@ export class SubprocessDriver implements IClaudeDriver {
       this.settingsPath,
     ];
     if (input.model) args.push("--model", input.model);
-    // Opt-in only: caller must explicitly set skipPermissions: true.
-    // Automation hooks do so because they are headless (stdin: 'ignore') and permission
-    // prompts would hang indefinitely. User-submitted tasks default to false so the
-    // Claude CLI permission layer remains active as a defense-in-depth gate.
-    const skipPerms = input.skipPermissions === true;
-    if (skipPerms) args.push("--dangerously-skip-permissions");
+    // Always skip permissions: all bridge-spawned subprocesses run headless (stdin: 'ignore',
+    // detached: true) so permission prompts can never be answered interactively.
+    args.push("--dangerously-skip-permissions");
     // workspace is set as cwd in spawn() — claude -p has no --workspace flag
     for (const f of input.contextFiles ?? []) {
       if (typeof f === "string" && f.length > 0 && !f.startsWith("-")) {
@@ -119,7 +106,7 @@ export class SubprocessDriver implements IClaudeDriver {
     }
 
     this.log(
-      `[SubprocessDriver] spawning: ${this.binary} -p <prompt> (workspace: ${input.workspace}, skipPermissions: ${skipPerms})`,
+      `[SubprocessDriver] spawning: ${this.binary} -p <prompt> (workspace: ${input.workspace})`,
     );
 
     const child = spawn(this.binary, args, {
@@ -129,6 +116,13 @@ export class SubprocessDriver implements IClaudeDriver {
       // stdin must be 'ignore' (not 'pipe') — claude -p may block waiting for stdin to close
       // if it detects a pipe on fd 0 in certain environments.
       stdio: ["ignore", "pipe", "pipe"],
+      // detached: true calls setsid() on POSIX, creating a new session with no controlling
+      // terminal. Without this, the subprocess inherits the parent's terminal and can open
+      // /dev/tty directly to display interactive prompts (session-selection, permission
+      // confirmations). Those prompts appear on the physical terminal but are invisible to
+      // remote HTTP sessions (claude.ai, Codex CLI etc.), causing the sub-agent to hang
+      // waiting for input that never arrives. Detaching prevents /dev/tty access entirely.
+      detached: true,
     });
 
     let output = "";

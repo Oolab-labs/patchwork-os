@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
@@ -12,7 +13,7 @@ import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import type { Config } from "./config.js";
 import { ExtensionClient } from "./extensionClient.js";
 import { FileLock } from "./fileLock.js";
-import { buildEnforcementBlock } from "./instructionsUtils.js";
+import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
 import { Logger } from "./logger.js";
 import { OAuthServerImpl } from "./oauth.js";
@@ -467,7 +468,7 @@ export class Bridge {
       "  ctxSaveTrace(ref, problem, solution) — record fix after resolving a task",
     );
     lines.push("");
-    lines.push(...buildEnforcementBlock());
+    lines.push(...buildEnforcementReminder());
     return lines.join("\n");
   }
 
@@ -523,6 +524,28 @@ export class Bridge {
   async start(): Promise<void> {
     // 0. Initialize OpenTelemetry (no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset)
     initTelemetry();
+
+    // 0a. Warn if .claude/rules/bridge-tools.md is stale (present but missing the
+    // current version sentinel). Stale files are written by older package versions and
+    // may lack new tool substitution rules. Running gen-claude-md --write repairs it.
+    try {
+      const rulesPath = path.join(
+        this.config.workspace,
+        ".claude",
+        "rules",
+        "bridge-tools.md",
+      );
+      if (existsSync(rulesPath)) {
+        const content = readFileSync(rulesPath, "utf-8");
+        if (!content.includes(`<!-- bridge-tools v${PACKAGE_VERSION} -->`)) {
+          this.logger.warn(
+            `[bridge-tools] .claude/rules/bridge-tools.md is stale — run: claude-ide-bridge gen-claude-md --write`,
+          );
+        }
+      }
+    } catch {
+      /* non-fatal — best-effort check only */
+    }
 
     // 1. Probe available CLI tools (pass workspace so local node_modules/.bin is checked)
     this.probes = await probeAll(this.config.workspace);

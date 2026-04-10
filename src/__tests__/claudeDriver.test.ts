@@ -124,31 +124,22 @@ describe("SubprocessDriver", () => {
     expect(totalChunked).toBeLessThanOrEqual(50 * 1024);
   });
 
-  it("omits --dangerously-skip-permissions by default (opt-in required)", async () => {
+  it("spawns with detached:true so subprocess has no controlling terminal", async () => {
+    const runPromise = driver.run(makeInput());
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.emit("close", 0);
+    await runPromise;
+    const opts = spawnMock.mock.calls[0]![2] as Record<string, unknown>;
+    expect(opts.detached).toBe(true);
+  });
+
+  it("always passes --dangerously-skip-permissions (all subprocesses run headless)", async () => {
     const runPromise = driver.run(makeInput());
     await new Promise<void>((r) => setTimeout(r, 0));
     mockChild.emit("close", 0);
     await runPromise;
     const args = spawnMock.mock.calls[0]![1] as string[];
-    expect(args).not.toContain("--dangerously-skip-permissions");
-  });
-
-  it("passes --dangerously-skip-permissions when skipPermissions is true", async () => {
-    const runPromise = driver.run(makeInput({ skipPermissions: true }));
-    await new Promise<void>((r) => setTimeout(r, 0));
-    mockChild.emit("close", 0);
-    await runPromise;
-    const args = spawnMock.mock.calls[0]![1] as string[];
     expect(args).toContain("--dangerously-skip-permissions");
-  });
-
-  it("omits --dangerously-skip-permissions when skipPermissions is false", async () => {
-    const runPromise = driver.run(makeInput({ skipPermissions: false }));
-    await new Promise<void>((r) => setTimeout(r, 0));
-    mockChild.emit("close", 0);
-    await runPromise;
-    const args = spawnMock.mock.calls[0]![1] as string[];
-    expect(args).not.toContain("--dangerously-skip-permissions");
   });
 
   it("logs stderr on non-zero exit", async () => {
