@@ -26,7 +26,10 @@ const EXTENSIONS_TO_TRY = [
 ];
 
 function resolveLocalImport(specifier: string, fromDir: string): string | null {
-  const base = path.resolve(fromDir, specifier);
+  // Strip JS/JSX extensions that TypeScript ESM sources use for import paths
+  // (e.g. "./foo.js" → try "./foo.ts", "./foo.js", etc.)
+  const stripped = specifier.replace(/\.(js|jsx)$/, "");
+  const base = path.resolve(fromDir, stripped);
   for (const ext of EXTENSIONS_TO_TRY) {
     const candidate = base + ext;
     if (fs.existsSync(candidate)) return candidate;

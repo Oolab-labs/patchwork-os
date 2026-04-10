@@ -260,7 +260,13 @@ export function createGetImportedSignaturesTool(
           return extensionClient
             .getHover(loc.file, loc.line, loc.column, compositeSignal)
             .then((hover) => ({ symIdx: j, defFile: loc.file, hover }))
-            .catch(() => null) as Promise<{
+            .catch((err: unknown) => {
+              console.warn(
+                `[getImportedSignatures] getHover failed for ${loc.file}:${loc.line}:${loc.column} —`,
+                err instanceof Error ? err.message : String(err),
+              );
+              return null;
+            }) as Promise<{
             symIdx: number;
             defFile: string;
             hover: unknown;

@@ -160,6 +160,23 @@ describe("createGetImportTreeTool", () => {
     expect(data.tree.external).toBeUndefined();
   });
 
+  it("resolves .js extension imports to .ts source files (ESM convention)", async () => {
+    setupFiles({
+      "/workspace/src/index.ts": `import { foo } from "./foo.js";\nimport { bar } from "./sub/bar.js";`,
+      "/workspace/src/foo.ts": "export const foo = 1;",
+      "/workspace/src/sub/bar.ts": "export const bar = 2;",
+    });
+
+    const tool = createGetImportTreeTool(WS);
+    const data = parse(await tool.handler({ file: "/workspace/src/index.ts" }));
+    expect(data.tree.imports).toHaveLength(2);
+    const paths = data.tree.imports.map(
+      (n: { relativePath: string }) => n.relativePath,
+    );
+    expect(paths).toContain("src/foo.ts");
+    expect(paths).toContain("src/sub/bar.ts");
+  });
+
   it("includes both local and external when includeExternal: true", async () => {
     setupFiles({
       "/workspace/src/app.ts": `import { helper } from "./helper.ts";\nimport express from "express";`,
