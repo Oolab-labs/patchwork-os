@@ -703,6 +703,141 @@ describe("McpTransport", () => {
     expect(elapsed).toBeLessThan(3000);
   });
 
+  it("schema-declared timeoutMs overrides global default when no third arg is passed", async () => {
+    const { ws } = await setup("schema-timeout", (t) => {
+      t.registerTool(
+        {
+          name: "schemaTimedTool",
+          description: "Hangs forever",
+          inputSchema: { type: "object", properties: {} },
+          timeoutMs: 400, // declared in schema, no third arg
+        },
+        async (_args, signal) =>
+          new Promise<never>((_, reject) => {
+            signal?.addEventListener(
+              "abort",
+              () => reject(new Error("aborted")),
+              { once: true },
+            );
+          }),
+      );
+    });
+
+    const start = Date.now();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "schemaTimedTool", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 1, 3000);
+    const elapsed = Date.now() - start;
+
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as {
+      isError: boolean;
+      content: Array<{ text: string }>;
+    };
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/timed out/i);
+    expect(elapsed).toBeLessThan(3000);
+  });
+
+  it("explicit third-arg timeoutMs takes precedence over schema.timeoutMs", async () => {
+    const { ws } = await setup("explicit-timeout-wins", (t) => {
+      t.registerTool(
+        {
+          name: "dualTimedTool",
+          description: "Hangs forever",
+          inputSchema: { type: "object", properties: {} },
+          timeoutMs: 30_000, // schema says 30s — should be overridden
+        },
+        async (_args, signal) =>
+          new Promise<never>((_, reject) => {
+            signal?.addEventListener(
+              "abort",
+              () => reject(new Error("aborted")),
+              { once: true },
+            );
+          }),
+        400, // explicit third arg: 400ms wins
+      );
+    });
+
+    const start = Date.now();
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "dualTimedTool", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 1, 3000);
+    const elapsed = Date.now() - start;
+
+    expect(resp.error).toBeUndefined();
+    const result = resp.result as { isError: boolean };
+    expect(result.isError).toBe(true);
+    expect(elapsed).toBeLessThan(3000);
+  });
+
+  it("timeoutMs is stripped from tools/list wire schema", async () => {
+    const { ws } = await setup("timeout-strip", (t) => {
+      t.registerTool(
+        {
+          name: "internalTimeoutTool",
+          description: "Has internal timeout",
+          inputSchema: { type: "object", properties: {} },
+          timeoutMs: 5000,
+        },
+        async () => ({ content: [{ type: "text", text: "ok" }] }),
+      );
+    });
+
+    send(ws, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const resp = await waitFor(ws, (m) => m.id === 1, 2000);
+    const tools = (resp.result as { tools: Array<Record<string, unknown>> })
+      .tools;
+    const tool = tools.find((t) => t.name === "internalTimeoutTool");
+    expect(tool).toBeDefined();
+    expect(tool).not.toHaveProperty("timeoutMs");
+    expect(tool).not.toHaveProperty("extensionRequired");
+  });
+
+  it("onActivity is called on each progress notification", async () => {
+    let activityCount = 0;
+    const { ws } = await setup("on-activity", (t) => {
+      t.onActivity = () => {
+        activityCount++;
+      };
+      t.registerTool(
+        {
+          name: "progressTool",
+          description: "Emits progress",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async (_args, _signal, progress) => {
+          progress?.(1, 3, "a");
+          progress?.(2, 3, "b");
+          progress?.(3, 3, "c");
+          return { content: [{ type: "text", text: "done" }] };
+        },
+      );
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "progressTool",
+        arguments: {},
+        _meta: { progressToken: "tok-1" },
+      },
+    });
+    await waitFor(ws, (m) => m.id === 1, 3000);
+    expect(activityCount).toBe(3);
+  });
+
   it("progress token: notifications/progress delivered with progress, total, and message", async () => {
     const { ws } = await setup("progress-token-test", (t) => {
       t.registerTool(

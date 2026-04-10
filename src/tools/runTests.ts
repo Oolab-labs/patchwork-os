@@ -49,6 +49,7 @@ export function createRunTestsTool(
     runner: TestRunner,
     filter?: string,
     signal?: AbortSignal,
+    timeoutMs?: number,
   ): Promise<TestResult[]> {
     const cacheKey = `${runner.name}:${filter ?? ""}`;
     const now = Date.now();
@@ -61,7 +62,7 @@ export function createRunTestsTool(
     if (!running) {
       const myGeneration = cacheGenerations.get(cacheKey) ?? 0;
       running = runner
-        .run(workspace, filter, signal)
+        .run(workspace, filter, signal, timeoutMs)
         .then((data) => {
           // Only write to cache if we are still the current generation.
           // noCache eviction bumps the generation so a stale in-flight run
@@ -104,6 +105,7 @@ export function createRunTestsTool(
       description:
         "Run tests using auto-detected frameworks (Vitest, Jest, Pytest, Cargo test, Go test). " +
         "Returns pass/fail, failure messages, and file:line locations. Cached 30s; use noCache: true after changes.",
+      timeoutMs: 300_000, // 5 min — large test suites (1800+ tests) routinely exceed the global 60s default
       annotations: {
         title: "Run Tests",
         readOnlyHint: false,
@@ -126,6 +128,11 @@ export function createRunTestsTool(
           noCache: {
             type: "boolean",
             description: "Skip cache and force a fresh run. Default: false",
+          },
+          timeoutMs: {
+            type: "integer",
+            description:
+              "Subprocess timeout in milliseconds. Default: 120000 (2 min). Increase for large test suites.",
           },
         },
         additionalProperties: false as const,
@@ -214,6 +221,10 @@ export function createRunTestsTool(
       const filter = optionalString(args, "filter");
       const runnerName = optionalString(args, "runner");
       const noCache = optionalBool(args, "noCache") ?? false;
+      const timeoutMs =
+        typeof args.timeoutMs === "number" && args.timeoutMs > 0
+          ? args.timeoutMs
+          : undefined;
 
       if (availableRunners.length === 0) {
         return successStructured({
@@ -268,7 +279,10 @@ export function createRunTestsTool(
 
       const startTime = Date.now();
       const allResults = await withHeartbeat(
-        () => Promise.all(runners.map((r) => runRunner(r, filter, signal))),
+        () =>
+          Promise.all(
+            runners.map((r) => runRunner(r, filter, signal, timeoutMs)),
+          ),
         progress,
         { message: "running tests…" },
       );

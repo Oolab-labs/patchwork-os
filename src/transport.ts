@@ -57,6 +57,8 @@ export interface ToolSchema {
   annotations?: ToolAnnotations;
   /** If true, this tool requires the VS Code extension. When disconnected, calling it returns an error. */
   extensionRequired?: boolean;
+  /** Override the global 60s tool timeout for this specific tool (milliseconds). */
+  timeoutMs?: number;
 }
 
 export type ProgressFn = (
@@ -130,6 +132,8 @@ export class McpTransport {
   public claudeCodeSessionId: string | null = null;
   /** OAuth scope for this session. null = full access (static bridge token). "mcp:read" = read-only. */
   private sessionScope: string | null = null;
+  /** Called on each progress notification — HTTP sessions use this to refresh lastActivity. */
+  public onActivity: (() => void) | undefined = undefined;
   private activityLog: ActivityLog | null = null;
   private isExtensionConnectedFn: (() => boolean) | null = null;
   private readonly ajv = new Ajv({ strict: false, allErrors: true });
@@ -319,7 +323,11 @@ export class McpTransport {
         `Duplicate tool name "${schema.name}": a tool with this name is already registered`,
       );
     }
-    this.tools.set(schema.name, { schema, handler, timeoutMs });
+    this.tools.set(schema.name, {
+      schema,
+      handler,
+      timeoutMs: timeoutMs ?? schema.timeoutMs,
+    });
   }
 
   /** Upsert a tool by name — replaces if already registered, inserts if new. */
@@ -337,7 +345,11 @@ export class McpTransport {
     this.schemaValidators.delete(schema.name);
     this.outputValidators.delete(schema.name);
     this.wireSchemaCache = null;
-    this.tools.set(schema.name, { schema, handler, timeoutMs });
+    this.tools.set(schema.name, {
+      schema,
+      handler,
+      timeoutMs: timeoutMs ?? schema.timeoutMs,
+    });
   }
 
   /** Remove all tools whose name starts with `prefix`. Returns count removed. */
@@ -679,7 +691,11 @@ export class McpTransport {
               this.wireSchemaCache = Array.from(this.tools.values()).map(
                 (t) => {
                   // Strip internal-only fields before sending on the wire
-                  const { extensionRequired: _ext, ...wireSchema } = t.schema;
+                  const {
+                    extensionRequired: _ext,
+                    timeoutMs: _timeout,
+                    ...wireSchema
+                  } = t.schema;
                   return wireSchema;
                 },
               );
@@ -958,14 +974,16 @@ export class McpTransport {
                     : undefined;
                 const progressFn: ProgressFn | undefined =
                   progressToken !== undefined
-                    ? (progress: number, total?: number, message?: string) =>
+                    ? (progress: number, total?: number, message?: string) => {
+                        this.onActivity?.();
                         this.sendProgress(
                           ws,
                           progressToken,
                           progress,
                           total,
                           message,
-                        )
+                        );
+                      }
                     : undefined;
                 this.activeToolCalls++;
                 this.inFlightToolNames.set(msg.id, params.name);

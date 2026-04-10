@@ -584,6 +584,9 @@ export class StreamableHttpHandler {
     const transport = new McpTransport(this.logger);
     transport.workspace = this.config.workspace;
     transport.sessionId = id;
+    transport.onActivity = () => {
+      session.lastActivity = Date.now();
+    };
     transport.setActivityLog(this.activityLog);
     transport.setToolRateLimit(this.config.toolRateLimit);
     // Share one rate-limit bucket across all HTTP sessions to prevent bypass via cycling.
