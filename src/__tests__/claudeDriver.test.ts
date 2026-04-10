@@ -124,8 +124,17 @@ describe("SubprocessDriver", () => {
     expect(totalChunked).toBeLessThanOrEqual(50 * 1024);
   });
 
-  it("passes --dangerously-skip-permissions by default", async () => {
+  it("omits --dangerously-skip-permissions by default (opt-in required)", async () => {
     const runPromise = driver.run(makeInput());
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.emit("close", 0);
+    await runPromise;
+    const args = spawnMock.mock.calls[0]![1] as string[];
+    expect(args).not.toContain("--dangerously-skip-permissions");
+  });
+
+  it("passes --dangerously-skip-permissions when skipPermissions is true", async () => {
+    const runPromise = driver.run(makeInput({ skipPermissions: true }));
     await new Promise<void>((r) => setTimeout(r, 0));
     mockChild.emit("close", 0);
     await runPromise;

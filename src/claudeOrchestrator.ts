@@ -35,6 +35,11 @@ export interface ClaudeTask {
   tokenEstimate: number;
   /** Optional model override passed to the driver (e.g. "claude-haiku-4-5-20251001"). */
   model?: string;
+  /**
+   * Whether this task was spawned with --dangerously-skip-permissions.
+   * Recorded for audit purposes — visible in task history and logs.
+   */
+  dangerouslySkipPermissions: boolean;
 }
 
 /** Fast heuristic: ~4 chars per token for English code. */
@@ -52,6 +57,13 @@ export type EnqueueOpts = {
   model?: string;
   /** Original creation timestamp — used when re-enqueuing persisted tasks. */
   createdAt?: number;
+  /**
+   * Pass --dangerously-skip-permissions to the subprocess.
+   * Defaults to false — callers that need unattended headless execution must opt in explicitly.
+   * Automation hooks set this to true since they run in headless contexts where permission
+   * prompts would hang indefinitely.
+   */
+  dangerouslySkipPermissions?: boolean;
 };
 
 /** Shape of a task entry in the v1 tasks file. */
@@ -69,6 +81,7 @@ interface PersistedTask {
   timeoutMs: number;
   tokenEstimate: number;
   model?: string;
+  dangerouslySkipPermissions?: boolean;
 }
 
 export class ClaudeOrchestrator {
@@ -135,6 +148,7 @@ export class ClaudeOrchestrator {
       createdAt: opts.createdAt ?? Date.now(),
       timeoutMs: opts.timeoutMs ?? ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
       tokenEstimate: estimateTokens(opts.prompt),
+      dangerouslySkipPermissions: opts.dangerouslySkipPermissions === true,
       ...(opts.model !== undefined && { model: opts.model }),
     };
 
@@ -253,6 +267,7 @@ export class ClaudeOrchestrator {
         timeoutMs: task.timeoutMs,
         signal: controller.signal,
         model: task.model,
+        skipPermissions: task.dangerouslySkipPermissions,
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
           this.taskCallbacks.get(id)?.(chunk);
@@ -331,6 +346,7 @@ export class ClaudeOrchestrator {
       doneAt: t.doneAt,
       timeoutMs: t.timeoutMs,
       tokenEstimate: t.tokenEstimate,
+      dangerouslySkipPermissions: t.dangerouslySkipPermissions,
       ...(t.model !== undefined && { model: t.model }),
     }));
   }
@@ -528,6 +544,7 @@ export class ClaudeOrchestrator {
         typeof t.tokenEstimate === "number"
           ? t.tokenEstimate
           : estimateTokens(prompt),
+      dangerouslySkipPermissions: t.dangerouslySkipPermissions === true,
       ...(t.model !== undefined && { model: t.model }),
     };
     this.tasks.set(task.id, task);
