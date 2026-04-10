@@ -48,7 +48,7 @@ npm run package        # create .vsix
 # Always rebuild bridge + extension + VSIX before testing changes
 ```
 
-Run `npx biome check .` before committing.
+Before staging files for commit, run `npx biome check --write <files>` on the files you changed. This auto-fixes formatting and safe lint issues before the pre-commit hook rejects the commit. Do not wait for the hook to fail — fix first, then stage.
 
 ## LSP Workflows
 
