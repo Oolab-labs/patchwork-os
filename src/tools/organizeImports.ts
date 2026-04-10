@@ -8,7 +8,7 @@ import {
   execSafe,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 async function organizeImportsNative(
@@ -63,6 +63,17 @@ export function createOrganizeImportsTool(
         required: ["filePath"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          organized: { type: "boolean" },
+          source: { type: "string" },
+          changes: { type: "string" },
+          linesBeforeCount: { type: "integer" },
+          linesAfterCount: { type: "integer" },
+        },
+        required: ["organized"],
+      },
     },
     handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
@@ -89,7 +100,7 @@ export function createOrganizeImportsTool(
         } catch {
           return error({ error: "File unreadable after organize operation" });
         }
-        return success({
+        return successStructured({
           organized: true,
           source: nativeResult.source,
           changes: contentBefore === contentAfter ? "none" : "modified",
@@ -121,7 +132,7 @@ export function createOrganizeImportsTool(
       } catch {
         return error({ error: "File unreadable after organize operation" });
       }
-      return success({
+      return successStructured({
         organized: true,
         source: "extension",
         changes: contentBefore === contentAfter ? "none" : "modified",

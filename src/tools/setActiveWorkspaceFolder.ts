@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { Config } from "../config.js";
-import { requireString, success } from "./utils.js";
+import { requireString, successStructured } from "./utils.js";
 
 export function createSetActiveWorkspaceFolderTool(config: Config) {
   return {
@@ -22,12 +22,20 @@ export function createSetActiveWorkspaceFolderTool(config: Config) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          set: { type: "boolean" },
+          activeWorkspaceFolder: { type: "string" },
+        },
+        required: ["set", "activeWorkspaceFolder"],
+      },
     },
     async handler(args: Record<string, unknown>) {
       const folderPath = requireString(args, "path");
       const resolved = path.resolve(folderPath);
       config.activeWorkspaceFolder = resolved;
-      return success({ set: true, activeWorkspaceFolder: resolved });
+      return successStructured({ set: true, activeWorkspaceFolder: resolved });
     },
   };
 }

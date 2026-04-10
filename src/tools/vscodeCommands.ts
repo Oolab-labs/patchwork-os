@@ -3,7 +3,12 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, extensionRequired, requireString, success } from "./utils.js";
+import {
+  error,
+  extensionRequired,
+  requireString,
+  successStructured,
+} from "./utils.js";
 
 export function createExecuteVSCodeCommandTool(
   extensionClient: ExtensionClient,
@@ -31,6 +36,9 @@ export function createExecuteVSCodeCommandTool(
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
       },
     },
     async handler(args: Record<string, unknown>) {
@@ -71,7 +79,7 @@ export function createExecuteVSCodeCommandTool(
         );
         if (result === null)
           return error(`Command "${command}" returned null or failed`);
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(`Extension timed out executing "${command}"`);
@@ -102,6 +110,13 @@ export function createListVSCodeCommandsTool(extensionClient: ExtensionClient) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          commands: { type: "array", items: { type: "string" } },
+          count: { type: "integer" },
+        },
+      },
     },
     async handler(args: Record<string, unknown>) {
       if (!extensionClient.isConnected()) {
@@ -111,7 +126,7 @@ export function createListVSCodeCommandsTool(extensionClient: ExtensionClient) {
       try {
         const result = await extensionClient.listVSCodeCommands(filter);
         if (result === null) return error("Failed to list VS Code commands");
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out listing commands");

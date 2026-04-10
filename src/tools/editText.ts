@@ -9,7 +9,7 @@ import {
   optionalBool,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export interface TextEdit {
@@ -213,6 +213,17 @@ export function createEditTextTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+          editsApplied: { type: "integer" },
+          source: { type: "string" },
+          filePath: { type: "string" },
+          warning: { type: "string" },
+        },
+        required: ["success"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
@@ -301,7 +312,7 @@ export function createEditTextTool(
               return error(String(parsed.error ?? "Failed to apply edits"));
             }
             // Pass through extension result with source annotation
-            return success({ ...parsed, source: "vscode", filePath });
+            return successStructured({ ...parsed, source: "vscode", filePath });
           }
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
@@ -352,7 +363,7 @@ export function createEditTextTool(
           release?.();
         }
 
-        return success({
+        return successStructured({
           success: true,
           editsApplied: typedEdits.length,
           source: extensionClient.isConnected()

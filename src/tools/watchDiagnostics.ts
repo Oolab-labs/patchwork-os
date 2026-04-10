@@ -13,7 +13,7 @@ import {
   optionalInt,
   optionalString,
   resolveFilePath,
-  success,
+  successStructured,
   toFileUri,
 } from "./utils.js";
 
@@ -72,6 +72,19 @@ export function createWatchDiagnosticsTool(
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          changed: { type: "boolean" },
+          timestamp: { type: "integer" },
+          diagnostics: { type: "array" },
+          count: { type: "integer" },
+          source: { type: "string" },
+          linters: { type: "array", items: { type: "string" } },
+          note: { type: "string" },
+        },
+        required: ["changed", "timestamp", "diagnostics", "count"],
+      },
     },
     timeoutMs: 120_000,
     handler: (async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -100,7 +113,7 @@ export function createWatchDiagnosticsTool(
         ) {
           const diagnostics =
             extensionClient.getCachedDiagnostics(resolvedPath);
-          return success({
+          return successStructured({
             changed: true,
             timestamp: extensionClient.lastDiagnosticsUpdate,
             diagnostics,
@@ -117,7 +130,7 @@ export function createWatchDiagnosticsTool(
             const diagnostics =
               extensionClient.getCachedDiagnostics(resolvedPath);
             resolve(
-              success({
+              successStructured({
                 changed: false,
                 timestamp: extensionClient.lastDiagnosticsUpdate,
                 diagnostics,
@@ -151,7 +164,7 @@ export function createWatchDiagnosticsTool(
             const diagnostics =
               extensionClient.getCachedDiagnostics(resolvedPath);
             resolve(
-              success({
+              successStructured({
                 changed,
                 timestamp: extensionClient.lastDiagnosticsUpdate,
                 diagnostics,
@@ -190,7 +203,7 @@ export function createWatchDiagnosticsTool(
       const now = Date.now();
 
       if (availableLinters.length === 0) {
-        return success({
+        return successStructured({
           changed: false,
           timestamp: now,
           diagnostics: [],
@@ -218,7 +231,7 @@ export function createWatchDiagnosticsTool(
         });
       }
 
-      return success({
+      return successStructured({
         changed: true,
         timestamp: now,
         diagnostics,

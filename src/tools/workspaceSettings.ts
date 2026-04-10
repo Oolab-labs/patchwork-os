@@ -2,7 +2,12 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, extensionRequired, requireString, success } from "./utils.js";
+import {
+  error,
+  extensionRequired,
+  requireString,
+  successStructured,
+} from "./utils.js";
 
 // Bridge-side mirror of the extension's BLOCKED_KEY_PREFIXES — defense in depth
 // so the check is enforced even if the extension is unavailable or has a bug.
@@ -53,6 +58,15 @@ export function createSetWorkspaceSettingTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          key: { type: "string" },
+          value: {},
+          target: { type: "string" },
+        },
+        required: ["key"],
+      },
     },
     async handler(args: Record<string, unknown>) {
       if (!extensionClient.isConnected()) {
@@ -76,7 +90,7 @@ export function createSetWorkspaceSettingTool(
           return error(
             "Failed to write setting — ensure a workspace folder is open",
           );
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out writing setting");

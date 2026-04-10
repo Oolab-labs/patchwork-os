@@ -2,7 +2,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, requireString, success } from "./utils.js";
+import { error, requireString, successStructured } from "./utils.js";
 
 export function createWatchFilesTool(extensionClient: ExtensionClient) {
   return {
@@ -27,10 +27,21 @@ export function createWatchFilesTool(extensionClient: ExtensionClient) {
         required: ["id", "pattern"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          watching: { type: "boolean" },
+          id: { type: "string" },
+          pattern: { type: "string" },
+          available: { type: "boolean" },
+          error: { type: "string" },
+        },
+        required: [],
+      },
     },
     handler: async (args: Record<string, unknown>) => {
       if (!extensionClient.isConnected()) {
-        return success({
+        return successStructured({
           available: false,
           error:
             "VS Code extension not connected — file watching requires the extension",
@@ -56,7 +67,7 @@ export function createWatchFilesTool(extensionClient: ExtensionClient) {
         if (result === null) {
           return error("Failed to register file watcher");
         }
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
@@ -86,10 +97,20 @@ export function createUnwatchFilesTool(extensionClient: ExtensionClient) {
         required: ["id"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          unwatched: { type: "boolean" },
+          id: { type: "string" },
+          available: { type: "boolean" },
+          error: { type: "string" },
+        },
+        required: [],
+      },
     },
     handler: async (args: Record<string, unknown>) => {
       if (!extensionClient.isConnected()) {
-        return success({
+        return successStructured({
           available: false,
           error:
             "VS Code extension not connected — file watching requires the extension",
@@ -101,7 +122,7 @@ export function createUnwatchFilesTool(extensionClient: ExtensionClient) {
         if (result === null) {
           return error("Failed to unregister file watcher");
         }
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(

@@ -6,7 +6,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 async function currentBranch(
@@ -59,6 +59,14 @@ export function createGitAddTool(workspace: string) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          staged: { type: "array", items: { type: "string" } },
+          count: { type: "integer" },
+        },
+        required: ["staged", "count"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       if (!(await checkGitRepo(workspace, signal))) {
@@ -99,7 +107,7 @@ export function createGitAddTool(workspace: string) {
         .map((f) => f.trim())
         .filter(Boolean);
 
-      return success({ staged, count: staged.length });
+      return successStructured({ staged, count: staged.length });
     },
   };
 }
@@ -144,6 +152,17 @@ export function createGitCommitTool(
         },
         required: ["message"],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          hash: { type: "string" },
+          branch: { type: "string" },
+          message: { type: "string" },
+          files: { type: "array", items: { type: "string" } },
+          count: { type: "integer" },
+        },
+        required: ["hash", "branch", "message", "files", "count"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -245,7 +264,7 @@ export function createGitCommitTool(
         count: committedFiles.length,
       };
       onGitCommit?.(commitResult);
-      return success(commitResult);
+      return successStructured(commitResult);
     },
   };
 }
@@ -286,6 +305,15 @@ export function createGitCheckoutTool(
         },
         required: ["branch"],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          branch: { type: "string" },
+          previousBranch: { type: ["string", "null"] },
+          created: { type: "boolean" },
+        },
+        required: ["branch", "created"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -365,7 +393,7 @@ export function createGitCheckoutTool(
         previousBranch: checkoutResult.previousBranch,
         created: checkoutResult.created,
       });
-      return success(checkoutResult);
+      return successStructured(checkoutResult);
     },
   };
 }
@@ -398,6 +426,14 @@ export function createGitBlameTool(workspace: string) {
         },
         required: ["filePath"],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          lines: { type: "array" },
+          count: { type: "integer" },
+        },
+        required: ["lines", "count"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -510,7 +546,7 @@ export function createGitBlameTool(workspace: string) {
         }
       }
 
-      return success({ lines: blameLines, count: blameLines.length });
+      return successStructured({ lines: blameLines, count: blameLines.length });
     },
   };
 }
@@ -536,6 +572,15 @@ export function createGitFetchTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          fetched: { type: "boolean" },
+          nothingNew: { type: "boolean" },
+          output: { type: "string" },
+        },
+        required: ["fetched"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -582,7 +627,7 @@ export function createGitFetchTool(workspace: string) {
 
       // git fetch writes to stderr even on success; empty = nothing new
       const output = fetchStderr.trim() || fetchStdout.trim();
-      return success({ fetched: true, nothingNew: !output, output });
+      return successStructured({ fetched: true, nothingNew: !output, output });
     },
   };
 }
@@ -604,6 +649,15 @@ export function createGitListBranchesTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          local: { type: "array" },
+          current: { type: "string" },
+          remote: { type: "array", items: { type: "string" } },
+        },
+        required: ["local", "current"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -654,7 +708,7 @@ export function createGitListBranchesTool(workspace: string) {
         }
       }
 
-      return success(result);
+      return successStructured(result);
     },
   };
 }
@@ -685,6 +739,14 @@ export function createGitPullTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          alreadyUpToDate: { type: "boolean" },
+          output: { type: "string" },
+        },
+        required: ["alreadyUpToDate"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -747,7 +809,7 @@ export function createGitPullTool(workspace: string) {
         pullOutput.includes("Already up to date") ||
         pullOutput.includes("Already up-to-date");
 
-      return success({ alreadyUpToDate, output: pullOutput });
+      return successStructured({ alreadyUpToDate, output: pullOutput });
     },
   };
 }
@@ -794,6 +856,17 @@ export function createGitPushTool(
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          remote: { type: "string" },
+          branch: { type: "string" },
+          hash: { type: "string" },
+          setUpstream: { type: "boolean" },
+          output: { type: "string" },
+        },
+        required: ["remote", "branch", "hash"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -921,7 +994,7 @@ export function createGitPushTool(
         output: pushStderr.trim() || pushStdout.trim(),
       };
       onGitPush?.({ remote, branch, hash });
-      return success(pushResult);
+      return successStructured(pushResult);
     },
   };
 }
@@ -947,6 +1020,16 @@ export function createGitStashTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          stashed: { type: "boolean" },
+          stashRef: { type: "string" },
+          output: { type: "string" },
+          reason: { type: "string" },
+        },
+        required: ["stashed"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -977,7 +1060,10 @@ export function createGitStashTool(workspace: string) {
 
       const output = stashStdout.trim() || stashStderr.trim();
       if (output.includes("No local changes to save")) {
-        return success({ stashed: false, reason: "No local changes to save" });
+        return successStructured({
+          stashed: false,
+          reason: "No local changes to save",
+        });
       }
 
       const listResult = await execSafe(
@@ -987,7 +1073,7 @@ export function createGitStashTool(workspace: string) {
       );
       const stashRef = listResult.stdout.trim().split(":")[0] ?? "stash@{0}";
 
-      return success({ stashed: true, stashRef, output });
+      return successStructured({ stashed: true, stashRef, output });
     },
   };
 }
@@ -1010,6 +1096,15 @@ export function createGitStashPopTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          restored: { type: "boolean" },
+          stashRef: { type: "string" },
+          output: { type: "string" },
+        },
+        required: ["restored"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -1048,7 +1143,11 @@ export function createGitStashPopTool(workspace: string) {
         return error(`git stash pop failed: ${msg}`);
       }
 
-      return success({ restored: true, stashRef, output: popOutput.trim() });
+      return successStructured({
+        restored: true,
+        stashRef,
+        output: popOutput.trim(),
+      });
     },
   };
 }
@@ -1066,6 +1165,14 @@ export function createGitStashListTool(workspace: string) {
         type: "object" as const,
         properties: {},
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          entries: { type: "array" },
+          count: { type: "integer" },
+        },
+        required: ["entries", "count"],
       },
     },
     handler: async (_args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -1104,7 +1211,7 @@ export function createGitStashListTool(workspace: string) {
           };
         });
 
-      return success({ entries, count: entries.length });
+      return successStructured({ entries, count: entries.length });
     },
   };
 }

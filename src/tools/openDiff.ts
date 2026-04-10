@@ -2,7 +2,12 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { error, requireString, resolveFilePath, success } from "./utils.js";
+import {
+  error,
+  requireString,
+  resolveFilePath,
+  successStructured,
+} from "./utils.js";
 
 const MAX_DIFF_CONTENT_BYTES = 5 * 1024 * 1024; // 5 MB
 const MAX_TRACKED_DIRS = 10;
@@ -53,6 +58,16 @@ export function createOpenDiffTool(
           },
           tabName: { type: "string", description: "Name for the diff tab" },
         },
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+          oldPath: { type: "string" },
+          newPath: { type: "string" },
+          message: { type: "string" },
+        },
+        required: ["success"],
       },
     },
 
@@ -107,7 +122,7 @@ export function createOpenDiffTool(
       }
 
       if (!editorCommand) {
-        return success({
+        return successStructured({
           success: true,
           message: "No editor command — diff files written",
           oldPath,
@@ -122,7 +137,7 @@ export function createOpenDiffTool(
         });
         child.on("error", () => {}); // Prevent unhandled error events
         child.unref();
-        return success({ success: true, oldPath, newPath: tmpFile });
+        return successStructured({ success: true, oldPath, newPath: tmpFile });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return error(`Failed to open diff: ${message}`);

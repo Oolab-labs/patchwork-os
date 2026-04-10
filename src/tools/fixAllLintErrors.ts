@@ -10,7 +10,7 @@ import {
   execSafe,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 interface FixerOption {
@@ -59,6 +59,20 @@ export function createFixAllLintErrorsTool(
         required: ["filePath"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          fixed: { type: "boolean" },
+          source: { type: "string" },
+          changes: { type: "string" },
+          fixerUsed: { type: "string" },
+          linesBeforeCount: { type: "integer" },
+          linesAfterCount: { type: "integer" },
+          stdout: { type: "string" },
+          stderr: { type: "string" },
+        },
+        required: ["fixed"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
@@ -77,7 +91,7 @@ export function createFixAllLintErrorsTool(
           const result = await extensionClient.fixAllLintErrors(resolved);
           if (result !== null) {
             const contentAfter = fs.readFileSync(resolved, "utf-8");
-            return success({
+            return successStructured({
               fixed: true,
               source: "extension",
               changes: contentBefore === contentAfter ? "none" : "modified",
@@ -128,7 +142,7 @@ export function createFixAllLintErrorsTool(
       }
 
       const contentAfter = fs.readFileSync(resolved, "utf-8");
-      return success({
+      return successStructured({
         fixed: true,
         source: "cli",
         fixerUsed: fixer.cmd,

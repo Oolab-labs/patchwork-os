@@ -3,7 +3,12 @@ import {
   ExtensionTimeoutError,
 } from "../extensionClient.js";
 import { cleanupTempDirs, trackedTempDirCount } from "./openDiff.js";
-import { error, requireString, resolveFilePath, success } from "./utils.js";
+import {
+  error,
+  requireString,
+  resolveFilePath,
+  successStructured,
+} from "./utils.js";
 
 export function createCloseTabTool(
   workspace?: string,
@@ -29,6 +34,15 @@ export function createCloseTabTool(
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+          filePath: { type: "string" },
+          closed: { type: "boolean" },
+        },
+        required: ["success"],
+      },
     },
     async handler(args: Record<string, unknown>) {
       const rawPath = requireString(args, "filePath", 4096);
@@ -43,14 +57,14 @@ export function createCloseTabTool(
       try {
         const result = await extensionClient.closeTab(filePath);
         if (result === true) {
-          return success({ success: true, filePath, closed: true });
+          return successStructured({ success: true, filePath, closed: true });
         }
         if (result !== null && typeof result === "object") {
           const r = result as Record<string, unknown>;
           if (r.success === false) {
             return error(String(r.error ?? "Failed to close tab"));
           }
-          return success(result);
+          return successStructured(result);
         }
         return error("Failed to close tab — file may not be open");
       } catch (err) {
@@ -75,11 +89,19 @@ export function createCloseAllDiffTabsTool() {
         type: "object",
         additionalProperties: false,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+          message: { type: "string" },
+        },
+        required: ["success"],
+      },
     },
     async handler() {
       const count = trackedTempDirCount();
       cleanupTempDirs();
-      return success({
+      return successStructured({
         success: true,
         message: `${count} diff temp dirs cleaned up`,
       });

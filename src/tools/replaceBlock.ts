@@ -9,7 +9,7 @@ import {
   optionalBool,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createReplaceBlockTool(
@@ -48,6 +48,15 @@ export function createReplaceBlockTool(
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+          saved: { type: "boolean" },
+          source: { type: "string" },
+        },
+        required: ["success"],
+      },
     },
 
     async handler(args: Record<string, unknown>) {
@@ -72,7 +81,7 @@ export function createReplaceBlockTool(
             save,
           );
           if (result !== null) {
-            return success(result);
+            return successStructured(result);
           }
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
@@ -126,7 +135,11 @@ export function createReplaceBlockTool(
         release?.();
       }
 
-      return success({ success: true, saved: save, source: "native-fs" });
+      return successStructured({
+        success: true,
+        saved: save,
+        source: "native-fs",
+      });
     },
   };
 }

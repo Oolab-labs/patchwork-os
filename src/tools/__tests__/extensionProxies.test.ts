@@ -54,6 +54,7 @@ function makeMinimalConfig(overrides: Partial<Config> = {}): Config {
     maxResultSize: 512 * 1024,
     vscodeCommandAllowlist: [],
     activeWorkspaceFolder: "/tmp",
+    gracePeriodMs: 30_000,
     ...overrides,
   };
 }
@@ -214,7 +215,9 @@ describe("readClipboard: disconnected extension", () => {
       expect(msg.toLowerCase()).not.toContain("vs code extension is required");
       expect(msg.toLowerCase()).toContain("clipboard");
     } else {
-      expect(typeof JSON.parse(result.content[0].text)).toBe("string");
+      expect(JSON.parse(result.content[0].text)).toMatchObject({
+        text: expect.any(String),
+      });
     }
   });
 });

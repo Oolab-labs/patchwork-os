@@ -11,7 +11,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createOpenFileTool(
@@ -56,6 +56,17 @@ export function createOpenFileTool(
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+          filePath: { type: "string" },
+          via: { type: "string" },
+          tracked: { type: "boolean" },
+          message: { type: "string" },
+        },
+        required: ["success"],
+      },
     },
 
     async handler(args: Record<string, unknown>) {
@@ -89,7 +100,11 @@ export function createOpenFileTool(
         }
         try {
           const result = await extensionClient.openFile(filePath, line);
-          return success({ success: result, filePath, via: "extension" });
+          return successStructured({
+            success: result,
+            filePath,
+            via: "extension",
+          });
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
           // Timeout — fall through to CLI fallback
@@ -97,7 +112,7 @@ export function createOpenFileTool(
       }
 
       if (!editorCommand) {
-        return success({
+        return successStructured({
           success: true,
           filePath,
           tracked: true,
@@ -127,7 +142,7 @@ export function createOpenFileTool(
         );
         child.on("error", () => {}); // Prevent unhandled error events
         child.unref();
-        return success({ success: true, filePath });
+        return successStructured({ success: true, filePath });
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         return error(

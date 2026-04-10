@@ -12,7 +12,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 /**
@@ -229,6 +229,13 @@ export function createGetTerminalOutputTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          output: { type: "string" },
+          lines: { type: "array", items: { type: "string" } },
+        },
+      },
     },
     handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
@@ -253,7 +260,7 @@ export function createGetTerminalOutputTool(
         if (result === null) {
           return error("Terminal not found");
         }
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
@@ -303,6 +310,13 @@ export function createCreateTerminalTool(
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          index: { type: "integer" },
+        },
       },
     },
     handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
@@ -364,7 +378,7 @@ export function createCreateTerminalTool(
                 name: stripPrefix(resultWithName.name, terminalPrefix),
               }
             : result;
-        return success(stripped);
+        return successStructured(stripped);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
@@ -416,6 +430,16 @@ export function createWaitForTerminalOutputTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          matched: { type: "boolean" },
+          matchedLine: { type: "string" },
+          elapsed: { type: "integer" },
+          timedOut: { type: "boolean" },
+        },
+        required: ["matched"],
+      },
     },
     // Extension adds a 5 s internal buffer on top of the user timeout — raise
     // the tool ceiling by 10 s so the extension response always arrives before
@@ -466,7 +490,7 @@ export function createWaitForTerminalOutputTool(
             "Extension did not respond — ensure the VS Code extension is running",
           );
         }
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
@@ -524,6 +548,15 @@ export function createRunInTerminalTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          exitCode: { type: "integer" },
+          stdout: { type: "string" },
+          stderr: { type: "string" },
+          fallback: { type: "string" },
+        },
+      },
     },
     // Extension adds a 5 s internal buffer on top of the user timeout — raise
     // the tool ceiling by 10 s so the extension response always arrives before
@@ -554,7 +587,7 @@ export function createRunInTerminalTool(
             show,
           );
           if (result !== null) {
-            return success(result);
+            return successStructured(result);
           }
           // null means shell integration unavailable (SSH remote, no PTY hooks)
           // — fall through to subprocess fallback below
@@ -603,7 +636,7 @@ export function createRunInTerminalTool(
         signal: signal ?? undefined,
       });
 
-      return success({ ...fallbackResult, fallback: "subprocess" });
+      return successStructured({ ...fallbackResult, fallback: "subprocess" });
     },
   };
 }
@@ -633,6 +666,12 @@ export function createDisposeTerminalTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          disposed: { type: "boolean" },
+        },
+      },
     },
     handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
       if (!extensionClient.isConnected()) {
@@ -655,7 +694,7 @@ export function createDisposeTerminalTool(
         if (result === null) {
           return error("Terminal not found");
         }
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(
@@ -708,6 +747,12 @@ export function createSendTerminalCommandTool(
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          sent: { type: "boolean" },
+        },
       },
     },
     handler: async (args: Record<string, unknown>, _signal?: AbortSignal) => {
@@ -764,7 +809,7 @@ export function createSendTerminalCommandTool(
         if (result === null) {
           return error("Failed to send command to terminal");
         }
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error(

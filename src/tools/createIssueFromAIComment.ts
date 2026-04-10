@@ -12,7 +12,7 @@ import {
   optionalString,
   requireInt,
   requireString,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createCreateIssueFromAICommentTool(
@@ -53,6 +53,18 @@ export function createCreateIssueFromAICommentTool(
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          number: { type: ["integer", "null"] },
+          title: { type: "string" },
+          commentFile: { type: "string" },
+          commentLine: { type: "integer" },
+          severity: { type: "string" },
+        },
+        required: ["url", "title", "commentFile", "commentLine"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -118,7 +130,7 @@ export function createCreateIssueFromAICommentTool(
         ? Number.parseInt(numberMatch[1] ?? "0", 10)
         : null;
 
-      return success({
+      return successStructured({
         url,
         number,
         title,

@@ -11,7 +11,7 @@ import {
   execSafe,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 interface FormatterOption {
@@ -71,6 +71,18 @@ export function createFormatDocumentTool(
         required: ["filePath"],
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          formatted: { type: "boolean" },
+          source: { type: "string" },
+          changes: { type: "string" },
+          formatterUsed: { type: "string" },
+          linesBeforeCount: { type: "integer" },
+          linesAfterCount: { type: "integer" },
+        },
+        required: ["formatted"],
+      },
     },
     handler: async (
       args: Record<string, unknown>,
@@ -97,13 +109,13 @@ export function createFormatDocumentTool(
             // Read file content after formatting
             const contentAfter = fs.readFileSync(resolved, "utf-8");
             if (contentBefore === contentAfter) {
-              return success({
+              return successStructured({
                 formatted: true,
                 source: "extension",
                 changes: "none",
               });
             }
-            return success({
+            return successStructured({
               formatted: true,
               source: "extension",
               changes: "modified",
@@ -155,7 +167,7 @@ export function createFormatDocumentTool(
 
       const contentAfter = fs.readFileSync(resolved, "utf-8");
       progress?.(100, 100);
-      return success({
+      return successStructured({
         formatted: true,
         source: "cli",
         formatterUsed: formatter.cmd,

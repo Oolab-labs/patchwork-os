@@ -11,7 +11,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createCreateFileTool(
@@ -54,6 +54,16 @@ export function createCreateFileTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          created: { type: "boolean" },
+          filePath: { type: "string" },
+          isDirectory: { type: "boolean" },
+          source: { type: "string" },
+        },
+        required: ["created"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
@@ -75,7 +85,7 @@ export function createCreateFileTool(
             openAfterCreate,
           );
           if (result !== null) {
-            return success(result);
+            return successStructured(result);
           }
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
@@ -119,7 +129,7 @@ export function createCreateFileTool(
             });
           }
         }
-        return success({
+        return successStructured({
           created: true,
           filePath: makeRelative(filePath, workspace),
           isDirectory,
@@ -167,6 +177,16 @@ export function createDeleteFileTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          deleted: { type: "boolean" },
+          filePath: { type: "string" },
+          source: { type: "string" },
+          warning: { type: "string" },
+        },
+        required: ["deleted"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawPath = requireString(args, "filePath");
@@ -184,7 +204,7 @@ export function createDeleteFileTool(
             useTrash,
           );
           if (result !== null) {
-            return success(result);
+            return successStructured(result);
           }
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
@@ -210,7 +230,7 @@ export function createDeleteFileTool(
           return error("Cannot delete directory without recursive: true");
         }
         await fs.promises.rm(filePath, { recursive, force: false });
-        return success({
+        return successStructured({
           deleted: true,
           filePath: makeRelative(filePath, workspace),
           source: extensionClient.isConnected()
@@ -256,6 +276,16 @@ export function createRenameFileTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          renamed: { type: "boolean" },
+          oldPath: { type: "string" },
+          newPath: { type: "string" },
+          source: { type: "string" },
+        },
+        required: ["renamed"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const rawOld = requireString(args, "oldPath");
@@ -274,7 +304,7 @@ export function createRenameFileTool(
             overwrite,
           );
           if (result !== null) {
-            return success(result);
+            return successStructured(result);
           }
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
@@ -333,7 +363,7 @@ export function createRenameFileTool(
         } else {
           await fs.promises.rename(oldPath, newPath);
         }
-        return success({
+        return successStructured({
           renamed: true,
           oldPath: makeRelative(oldPath, workspace),
           newPath: makeRelative(newPath, workspace),

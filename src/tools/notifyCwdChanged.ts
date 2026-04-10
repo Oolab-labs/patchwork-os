@@ -1,5 +1,5 @@
 import type { AutomationHooks } from "../automation.js";
-import { success } from "./utils.js";
+import { successStructured } from "./utils.js";
 
 /**
  * Called by a Claude Code CwdChanged hook (CC 2.1.83+) to notify the bridge
@@ -32,11 +32,19 @@ export function createNotifyCwdChangedTool(automationHooks: AutomationHooks) {
         required: ["cwd"],
         additionalProperties: false,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          received: { type: "boolean" },
+          cwd: { type: "string" },
+        },
+        required: ["received", "cwd"],
+      },
     },
     handler: async (args: Record<string, unknown>) => {
       const cwd = args.cwd as string;
       automationHooks.handleCwdChanged(cwd);
-      return success(`cwd-changed event received for: ${cwd}`);
+      return successStructured({ received: true, cwd });
     },
   };
 }
