@@ -48,6 +48,8 @@ NTFY_TOPIC=""
 IDE_NAME=""
 VPS=""
 FULL_MODE=""
+AUTOMATION_POLICY=""
+CLAUDE_DRIVER="subprocess"
 BRIDGE_READY_TIMEOUT="${BRIDGE_READY_TIMEOUT:-30}"
 LAST_CLAUDE_RESTART=0
 RESTART_COUNT=0
@@ -57,12 +59,14 @@ LAST_START_TIME=0
 # --- Parse args ---
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --workspace) WORKSPACE="$2"; shift 2 ;;
-    --notify)    NTFY_TOPIC="$2"; shift 2 ;;
-    --ide)       IDE_NAME="$2"; shift 2 ;;
-    --vps)       VPS="$2"; shift 2 ;;
-    --full)      FULL_MODE="--full"; shift ;;
-    *)           echo "Unknown option: $1" >&2; exit 1 ;;
+    --workspace)         WORKSPACE="$2"; shift 2 ;;
+    --notify)            NTFY_TOPIC="$2"; shift 2 ;;
+    --ide)               IDE_NAME="$2"; shift 2 ;;
+    --vps)               VPS="$2"; shift 2 ;;
+    --full)              FULL_MODE="--full"; shift ;;
+    --automation-policy) AUTOMATION_POLICY="$2"; shift 2 ;;
+    --claude-driver)     CLAUDE_DRIVER="$2"; shift 2 ;;
+    *)                   echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
 WORKSPACE="$(cd "$WORKSPACE" && pwd)" || { echo "Error: workspace directory not found" >&2; exit 1; }
@@ -70,6 +74,41 @@ if [ ! -d "$WORKSPACE" ]; then
   echo "Error: workspace directory does not exist: $WORKSPACE" >&2
   exit 1
 fi
+
+# Validate automation policy path if provided
+if [[ -n "$AUTOMATION_POLICY" ]]; then
+  AUTOMATION_POLICY="$(cd "$(dirname "$AUTOMATION_POLICY")" && pwd)/$(basename "$AUTOMATION_POLICY")" || {
+    echo "Error: automation-policy directory not found: $AUTOMATION_POLICY" >&2; exit 1
+  }
+  [[ -f "$AUTOMATION_POLICY" ]] || {
+    echo "Error: automation-policy file not found: $AUTOMATION_POLICY" >&2; exit 1
+  }
+  if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$AUTOMATION_POLICY" 2>/dev/null; then
+    echo "Error: automation-policy is not valid JSON: $AUTOMATION_POLICY" >&2; exit 1
+  fi
+fi
+
+# --- Bridge conflict check ---
+# Detect an already-running bridge instance and abort early with a clear message.
+# Iterates lock files safely (no xargs injection); filters to isBridge:true + live PID.
+while IFS= read -r lock; do
+  [[ -f "$lock" ]] || continue
+  bridge_pid=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    if d.get('isBridge') is True:
+        print(d.get('pid', ''))
+except Exception:
+    pass
+" "$lock" 2>/dev/null || true)
+  if [[ -n "$bridge_pid" ]] && kill -0 "$bridge_pid" 2>/dev/null; then
+    echo "Error: bridge already running (PID $bridge_pid, lock: $(basename "$lock"))." >&2
+    echo "       Stop it first: kill $bridge_pid" >&2
+    echo "       Or kill the tmux session: tmux kill-session -t claude-all" >&2
+    exit 1
+  fi
+done < <(ls ~/.claude/ide/*.lock 2>/dev/null)
 
 # --- Dependency checks ---
 command -v tmux >/dev/null 2>&1 || {
@@ -109,6 +148,11 @@ if [[ -z "$FULL_MODE" ]]; then
   echo "     Git, terminal, file ops, HTTP, GitHub NOT registered."
   echo "     Add --full to restore all ~95 tools."
 fi
+if [[ -n "$AUTOMATION_POLICY" ]]; then
+  echo ""
+  echo "  ⚡ Automation: enabled (driver: $CLAUDE_DRIVER)"
+  echo "     Policy: $AUTOMATION_POLICY"
+fi
 echo ""
 
 # Detect caffeinate (macOS-only)
@@ -143,13 +187,17 @@ if [[ -n "$IDE_NAME" ]]; then
   _ide_lower="$(echo "$IDE_NAME" | tr '[:upper:]' '[:lower:]')"
   BRIDGE_IDE_FLAGS="--ide-name $(printf '%q' "$IDE_NAME") --editor $(printf '%q' "$_ide_lower")"
 fi
+BRIDGE_AUTOMATION_FLAGS=""
+if [[ -n "$AUTOMATION_POLICY" ]]; then
+  BRIDGE_AUTOMATION_FLAGS="--automation --automation-policy $(printf '%q' "$AUTOMATION_POLICY") --claude-driver $(printf '%q' "$CLAUDE_DRIVER")"
+fi
 # Use compiled dist when src/ is absent (npm install), tsx during local development
 if [[ -f "$BRIDGE_DIR/src/index.ts" ]]; then
   BRIDGE_BIN="npx tsx src/index.ts"
 else
   BRIDGE_BIN="node dist/index.js"
 fi
-BRIDGE_CMD="cd $(printf '%q' "$BRIDGE_DIR") && $BRIDGE_BIN --workspace $(printf '%q' "$WORKSPACE")${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}${FULL_MODE:+ $FULL_MODE}"
+BRIDGE_CMD="cd $(printf '%q' "$BRIDGE_DIR") && $BRIDGE_BIN --workspace $(printf '%q' "$WORKSPACE")${BRIDGE_IDE_FLAGS:+ $BRIDGE_IDE_FLAGS}${FULL_MODE:+ $FULL_MODE}${BRIDGE_AUTOMATION_FLAGS:+ $BRIDGE_AUTOMATION_FLAGS}"
 # Derive a short display name for the Claude session from the workspace directory name.
 # This appears in Claude Code's session list, making multi-workspace tmux setups identifiable.
 WS_BASENAME=$(basename "$WORKSPACE")
