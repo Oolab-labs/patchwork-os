@@ -13,11 +13,13 @@ export interface ClaudeTaskInput {
   /** Optional model override, e.g. "claude-haiku-4-5-20251001". Passed as --model to the subprocess. */
   model?: string;
   /**
-   * Skip all permission prompts in the subprocess by passing --dangerously-skip-permissions.
-   * Defaults to true — subprocess tasks are headless and permission prompts would hang indefinitely.
-   * Set to false only if you need to audit which permissions Claude requests (task will hang on prompts).
-   * Note: session-selection and editor-selection prompts are not permission prompts and may still
-   * hang regardless of this flag; those require a claude --non-interactive flag (not yet available).
+   * Pass --dangerously-skip-permissions to the subprocess.
+   * Must be explicitly set to true — there is no default-on behavior.
+   * Automation hooks should set this to true since they run headless and permission
+   * prompts would hang indefinitely. User-submitted tasks should leave this false
+   * (default) so the Claude CLI permission layer remains active.
+   * Note: session-selection and editor-selection prompts are not permission prompts
+   * and may still hang regardless of this flag (requires CLI-side fix).
    */
   skipPermissions?: boolean;
 }
@@ -88,11 +90,12 @@ export class SubprocessDriver implements IClaudeDriver {
       this.settingsPath,
     ];
     if (input.model) args.push("--model", input.model);
-    // Default true: subprocess tasks are headless — permission prompts would hang indefinitely
-    // since stdin is 'ignore'. The flag is well-scoped to permission checks; session-selection
-    // and editor-selection prompts are unaffected (known limitation, requires CLI-side fix).
-    if (input.skipPermissions !== false)
-      args.push("--dangerously-skip-permissions");
+    // Opt-in only: caller must explicitly set skipPermissions: true.
+    // Automation hooks do so because they are headless (stdin: 'ignore') and permission
+    // prompts would hang indefinitely. User-submitted tasks default to false so the
+    // Claude CLI permission layer remains active as a defense-in-depth gate.
+    const skipPerms = input.skipPermissions === true;
+    if (skipPerms) args.push("--dangerously-skip-permissions");
     // workspace is set as cwd in spawn() — claude -p has no --workspace flag
     for (const f of input.contextFiles ?? []) {
       if (typeof f === "string" && f.length > 0 && !f.startsWith("-")) {
@@ -116,7 +119,7 @@ export class SubprocessDriver implements IClaudeDriver {
     }
 
     this.log(
-      `[SubprocessDriver] spawning: ${this.binary} -p <prompt> (workspace: ${input.workspace})`,
+      `[SubprocessDriver] spawning: ${this.binary} -p <prompt> (workspace: ${input.workspace}, skipPermissions: ${skipPerms})`,
     );
 
     const child = spawn(this.binary, args, {
