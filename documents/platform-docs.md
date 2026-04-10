@@ -151,6 +151,7 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `getDocumentLinks` | Extract document links (file references, URLs). Filters `file://` paths through workspace containment; caps at 100 links |
 | `batchGetHover` | Fan-out `getHover` for up to 10 positions in one call via `Promise.allSettled` |
 | `batchGoToDefinition` | Fan-out `goToDefinition` for up to 10 positions in one call via `Promise.allSettled` |
+| `batchFindImplementations` | Fan-out `findImplementations` for up to 10 positions in one call via `Promise.allSettled` |
 | `formatRange` | Format a specific line range via VS Code formatter |
 
 ### Text Editing
