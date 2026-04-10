@@ -51,11 +51,6 @@ export function createRunClaudeTaskTool(
             description:
               'Optional model override for this task, e.g. "claude-haiku-4-5-20251001". Defaults to the Claude CLI default.',
           },
-          dangerouslySkipPermissions: {
-            type: "boolean",
-            description:
-              "Pass --dangerously-skip-permissions to the Claude subprocess. Set to true only for fully unattended headless tasks where permission prompts would hang. Defaults to false — the Claude CLI permission layer remains active.",
-          },
         },
         required: ["prompt"],
       },
@@ -147,8 +142,6 @@ export function createRunClaudeTaskTool(
         typeof args.model === "string" && args.model.trim() !== ""
           ? args.model.trim()
           : undefined;
-      const dangerouslySkipPermissions =
-        args.dangerouslySkipPermissions === true;
 
       if (!stream) {
         // Non-streaming: enqueue and return taskId immediately
@@ -159,7 +152,6 @@ export function createRunClaudeTaskTool(
             timeoutMs,
             sessionId,
             model,
-            dangerouslySkipPermissions,
           });
           return successStructured({ taskId, status: "pending" });
         } catch (e) {
@@ -178,7 +170,6 @@ export function createRunClaudeTaskTool(
           timeoutMs,
           sessionId,
           model,
-          dangerouslySkipPermissions,
           onChunk: (chunk: string) => {
             progressFn?.(++chunkIndex, -1, chunk);
           },

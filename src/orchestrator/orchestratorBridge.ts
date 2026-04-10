@@ -24,7 +24,7 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
 import { ErrorCodes } from "../errors.js";
-import { buildEnforcementBlock } from "../instructionsUtils.js";
+import { buildEnforcementReminder } from "../instructionsUtils.js";
 import { LockFileManager } from "../lockfile.js";
 import { Logger } from "../logger.js";
 import { Server } from "../server.js";
@@ -515,7 +515,7 @@ export class OrchestratorBridge {
       "  ctxSaveTrace(ref, problem, solution) — record fix after resolving a task",
     );
     lines.push("");
-    lines.push(...buildEnforcementBlock());
+    lines.push(...buildEnforcementReminder());
 
     return lines.join("\n");
   }

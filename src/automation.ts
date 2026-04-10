@@ -243,13 +243,13 @@ function validatePromptSource(hookName: string, cfg: PromptSource): void {
       `"${hookName}" must have a non-empty "prompt" or "promptName"`,
     );
   }
-  if (hasPrompt && cfg.prompt?.length > MAX_POLICY_PROMPT_CHARS) {
+  if (hasPrompt && cfg.prompt!.length > MAX_POLICY_PROMPT_CHARS) {
     throw new Error(
       `"${hookName}.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
     );
   }
   if (hasPromptName) {
-    if (cfg.promptName?.length > MAX_PROMPT_NAME_CHARS) {
+    if (cfg.promptName!.length > MAX_PROMPT_NAME_CHARS) {
       throw new Error(
         `"${hookName}.promptName" must be ≤ ${MAX_PROMPT_NAME_CHARS} characters`,
       );
@@ -665,8 +665,8 @@ export class AutomationHooks {
             `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`,
         )
         .join("\n");
-      prompt = cfg.prompt
-        ?.replace(/\{\{file\}\}/g, safeFilePath)
+      prompt = cfg
+        .prompt!.replace(/\{\{file\}\}/g, safeFilePath)
         .replace(
           /\{\{diagnostics\}\}/g,
           `\n--- BEGIN DIAGNOSTIC DATA (untrusted) ---\n${diagnosticsText}\n--- END DIAGNOSTIC DATA ---\n`,
@@ -677,7 +677,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       this.lastTrigger.set(key, now);
       this.activeDiagnosticsTasks.set(normalizedFile, taskId);
@@ -732,7 +731,7 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg.prompt?.replace(
+      prompt = cfg.prompt!.replace(
         /\{\{cwd\}\}/g,
         untrustedBlock("CWD", safeCwd, nonce),
       );
@@ -741,7 +740,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       this.lastTrigger.set(key, now);
       this.log(
@@ -790,7 +788,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt: postCompactPrompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
       // impose a spurious cooldown on the next trigger attempt.
@@ -827,7 +824,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt: instrPrompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       this.log(
         `[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`,
@@ -894,7 +890,7 @@ export class AutomationHooks {
       if (resolved === null) return;
       prompt = resolved;
     } else {
-      prompt = cfg.prompt?.replace(
+      prompt = cfg.prompt!.replace(
         /\{\{file\}\}/g,
         `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
       );
@@ -903,7 +899,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
       // impose a spurious cooldown on the next trigger attempt.
@@ -977,7 +972,7 @@ export class AutomationHooks {
       if (resolved === null) return;
       prompt = resolved;
     } else {
-      prompt = cfg.prompt?.replace(
+      prompt = cfg.prompt!.replace(
         /\{\{file\}\}/g,
         `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
       );
@@ -986,7 +981,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       this.lastTrigger.set(key, now);
       this.activeFileChangedTasks.set(normalizedFile, taskId);
@@ -1072,8 +1066,8 @@ export class AutomationHooks {
       if (resolved === null) return;
       prompt = resolved;
     } else {
-      prompt = cfg.prompt
-        ?.replace(/\{\{runner\}\}/g, runnerStr)
+      prompt = cfg
+        .prompt!.replace(/\{\{runner\}\}/g, runnerStr)
         .replace(/\{\{failed\}\}/g, String(failureCount))
         .replace(/\{\{passed\}\}/g, String(result.summary.passed))
         .replace(/\{\{total\}\}/g, String(result.summary.total))
@@ -1087,7 +1081,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       this.lastTrigger.set(key, now);
       this.activeTestRunTaskId = taskId;
@@ -1165,8 +1158,8 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg.prompt
-        ?.replace(/\{\{hash\}\}/g, safeHash)
+      prompt = cfg
+        .prompt!.replace(/\{\{hash\}\}/g, safeHash)
         .replace(
           /\{\{branch\}\}/g,
           untrustedBlock("BRANCH", safeBranchCommit, nonce),
@@ -1186,7 +1179,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       this.lastTrigger.set(key, now);
       this.activeGitCommitTaskId = taskId;
@@ -1250,8 +1242,8 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg.prompt
-        ?.replace(
+      prompt = cfg
+        .prompt!.replace(
           /\{\{remote\}\}/g,
           untrustedBlock("REMOTE", safeRemote, nonce),
         )
@@ -1263,7 +1255,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       this.lastTrigger.set(key, now);
       this.activeGitPushTaskId = taskId;
@@ -1334,8 +1325,8 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg.prompt
-        ?.replace(
+      prompt = cfg
+        .prompt!.replace(
           /\{\{branch\}\}/g,
           untrustedBlock("BRANCH", safeBranch, nonce),
         )
@@ -1350,7 +1341,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       this.lastTrigger.set(key, now);
       this.activeBranchCheckoutTaskId = taskId;
@@ -1418,8 +1408,8 @@ export class AutomationHooks {
       if (resolved === null) return;
       prompt = resolved;
     } else {
-      prompt = cfg.prompt
-        ?.replace(/\{\{url\}\}/g, safeUrl)
+      prompt = cfg
+        .prompt!.replace(/\{\{url\}\}/g, safeUrl)
         .replace(/\{\{number\}\}/g, safeNumber)
         .replace(
           /\{\{title\}\}/g,
@@ -1432,7 +1422,6 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
-        dangerouslySkipPermissions: true,
       });
       this.lastTrigger.set(key, now);
       this.activePullRequestTaskId = taskId;
