@@ -11,7 +11,7 @@ import {
   requireArray,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
@@ -45,6 +45,15 @@ export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          result: { type: "string" },
+          type: { type: "string" },
+          variablesReference: { type: "integer" },
+        },
+        required: ["result"],
+      },
     },
     timeoutMs: 30_000,
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
@@ -63,7 +72,7 @@ export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
         );
         if (result === null)
           return error("No active debug session or evaluation failed");
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out evaluating expression");
@@ -125,6 +134,13 @@ export function createSetDebugBreakpointsTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          breakpoints: { type: "array" },
+        },
+        required: ["breakpoints"],
+      },
     },
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
@@ -148,7 +164,7 @@ export function createSetDebugBreakpointsTool(
           signal,
         );
         if (result === null) return error("Failed to set breakpoints");
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out setting breakpoints");
@@ -177,6 +193,14 @@ export function createStartDebuggingTool(extensionClient: ExtensionClient) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          started: { type: "boolean" },
+          sessionId: { type: "string" },
+        },
+        required: ["started"],
+      },
     },
     async handler(args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
@@ -189,7 +213,7 @@ export function createStartDebuggingTool(extensionClient: ExtensionClient) {
       try {
         const result = await extensionClient.startDebugging(configName, signal);
         if (result === null) return error("Failed to start debug session");
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out starting debug session");
@@ -212,6 +236,13 @@ export function createStopDebuggingTool(extensionClient: ExtensionClient) {
         type: "object" as const,
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          stopped: { type: "boolean" },
+        },
+        required: ["stopped"],
+      },
     },
     async handler(_args: Record<string, unknown>, signal?: AbortSignal) {
       if (!extensionClient.isConnected()) {
@@ -220,7 +251,7 @@ export function createStopDebuggingTool(extensionClient: ExtensionClient) {
       try {
         const result = await extensionClient.stopDebugging(signal);
         if (result === null) return error("Failed to stop debug session");
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out stopping debug session");

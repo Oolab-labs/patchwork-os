@@ -2,7 +2,12 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { execSafe, optionalString, requireString, success } from "./utils.js";
+import {
+  execSafe,
+  optionalString,
+  requireString,
+  successStructured,
+} from "./utils.js";
 
 /** True when a graphical display is available. */
 function hasDisplay(): boolean {
@@ -69,6 +74,16 @@ export function createOpenInBrowserTool() {
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          headless: { type: "boolean" },
+          url: { type: "string" },
+          note: { type: "string" },
+        },
+        required: ["path"],
+      },
     },
 
     async handler(args: Record<string, unknown>) {
@@ -103,7 +118,7 @@ export function createOpenInBrowserTool() {
       ) {
         const url = await serveOnce(html);
         const port = new URL(url).port;
-        return success({
+        return successStructured({
           path: tmpPath,
           headless: true,
           url,
@@ -124,7 +139,7 @@ export function createOpenInBrowserTool() {
         await execSafe("xdg-open", [tmpPath]);
       }
 
-      return success({ path: tmpPath });
+      return successStructured({ path: tmpPath });
     },
   };
 }

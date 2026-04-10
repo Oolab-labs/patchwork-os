@@ -206,6 +206,7 @@ export function createGetToolCapabilitiesTool(
                 "getDocumentLinks",
                 "batchGetHover",
                 "batchGoToDefinition",
+                "batchFindImplementations",
                 "refactorExtractFunction",
                 "getImportTree",
                 "findImplementations",

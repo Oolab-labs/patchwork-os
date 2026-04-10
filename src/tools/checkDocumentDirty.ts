@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import type { ExtensionClient } from "../extensionClient.js";
-import { requireString, resolveFilePath, success } from "./utils.js";
+import { requireString, resolveFilePath, successStructured } from "./utils.js";
 
 export function createCheckDocumentDirtyTool(
   workspace: string,
@@ -24,6 +24,19 @@ export function createCheckDocumentDirtyTool(
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+          filePath: { type: "string" },
+          isDirty: { type: "boolean" },
+          isUntitled: { type: "boolean" },
+          source: { type: "string" },
+          unknown: { type: "boolean" },
+          message: { type: "string" },
+        },
+        required: ["success", "filePath"],
+      },
     },
 
     async handler(args: Record<string, unknown>) {
@@ -34,7 +47,7 @@ export function createCheckDocumentDirtyTool(
       if (extensionClient?.isConnected()) {
         const isDirty = await extensionClient.isDirty(filePath);
         if (isDirty !== null) {
-          return success({
+          return successStructured({
             success: true,
             filePath,
             isDirty,
@@ -48,7 +61,7 @@ export function createCheckDocumentDirtyTool(
       // Fallback: check file exists on disk; buffer state is unknown
       try {
         fs.statSync(filePath);
-        return success({
+        return successStructured({
           success: true,
           filePath,
           isDirty: false,
@@ -58,7 +71,7 @@ export function createCheckDocumentDirtyTool(
             "VS Code extension not connected — isDirty may be inaccurate for files with unsaved editor changes",
         });
       } catch {
-        return success({
+        return successStructured({
           success: false,
           filePath,
           message: "File not found",

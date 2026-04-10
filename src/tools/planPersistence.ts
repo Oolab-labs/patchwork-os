@@ -5,7 +5,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 interface PlanFrontmatter {
@@ -147,6 +147,17 @@ export function createPlanTools(workspace: string) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          created: { type: "boolean" },
+          fileName: { type: "string" },
+          path: { type: "string" },
+          sections: { type: "integer" },
+          tasks: { type: "integer" },
+        },
+        required: ["created", "fileName", "path"],
+      },
     },
     handler: async (args: Record<string, unknown>) => {
       const title = requireString(args, "title");
@@ -201,7 +212,7 @@ export function createPlanTools(workspace: string) {
       await fsp.writeFile(resolved, content, "utf-8");
 
       const totalTasks = sections.reduce((n, s) => n + s.tasks.length, 0);
-      return success({
+      return successStructured({
         created: true,
         fileName,
         path: resolved,
@@ -265,6 +276,14 @@ export function createPlanTools(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          updated: { type: "boolean" },
+          changes: { type: "array", items: { type: "string" } },
+        },
+        required: ["updated", "changes"],
       },
     },
     handler: async (args: Record<string, unknown>) => {
@@ -369,7 +388,7 @@ export function createPlanTools(workspace: string) {
       plan.frontmatter.updated = new Date().toISOString();
       await fsp.writeFile(resolved, serializePlan(plan), "utf-8");
 
-      return success({ updated: true, changes });
+      return successStructured({ updated: true, changes });
     },
   };
 
@@ -389,6 +408,19 @@ export function createPlanTools(workspace: string) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          found: { type: "boolean" },
+          fileName: { type: "string" },
+          title: { type: "string" },
+          created: { type: "string" },
+          updated: { type: "string" },
+          sections: { type: "array" },
+          summary: { type: "object" },
+        },
+        required: ["found"],
+      },
     },
     handler: async (args: Record<string, unknown>) => {
       const fileName = optionalString(args, "fileName") ?? ".claude-plan.md";
@@ -400,7 +432,7 @@ export function createPlanTools(workspace: string) {
           () => false,
         ))
       ) {
-        return success({ found: false, fileName });
+        return successStructured({ found: false, fileName });
       }
 
       const content = await fsp.readFile(resolved, "utf-8");
@@ -420,7 +452,7 @@ export function createPlanTools(workspace: string) {
         };
       });
 
-      return success({
+      return successStructured({
         found: true,
         title: plan.frontmatter.title,
         created: plan.frontmatter.created,
@@ -446,6 +478,14 @@ export function createPlanTools(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          deleted: { type: "boolean" },
+          fileName: { type: "string" },
+        },
+        required: ["deleted", "fileName"],
       },
     },
     handler: async (args: Record<string, unknown>) => {
@@ -474,7 +514,7 @@ export function createPlanTools(workspace: string) {
       }
 
       await fsp.unlink(resolved);
-      return success({ deleted: true, fileName });
+      return successStructured({ deleted: true, fileName });
     },
   };
 
@@ -488,6 +528,14 @@ export function createPlanTools(workspace: string) {
         type: "object" as const,
         properties: {},
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          plans: { type: "array" },
+          count: { type: "integer" },
+        },
+        required: ["plans", "count"],
       },
     },
     handler: async () => {
@@ -527,7 +575,7 @@ export function createPlanTools(workspace: string) {
         }
       }
 
-      return success({ plans, count: plans.length });
+      return successStructured({ plans, count: plans.length });
     },
   };
 

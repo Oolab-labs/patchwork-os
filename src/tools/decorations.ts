@@ -10,7 +10,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
 } from "./utils.js";
 
 export function createSetEditorDecorationsTool(
@@ -81,6 +81,14 @@ export function createSetEditorDecorationsTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          applied: { type: "integer" },
+          id: { type: "string" },
+        },
+        required: ["applied"],
+      },
     },
     async handler(args: Record<string, unknown>) {
       if (!extensionClient.isConnected()) {
@@ -115,7 +123,7 @@ export function createSetEditorDecorationsTool(
           decorations,
         );
         if (result === null) return error("Failed to set decorations");
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out setting decorations");
@@ -148,6 +156,14 @@ export function createClearEditorDecorationsTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          cleared: { type: "integer" },
+          id: { type: "string" },
+        },
+        required: ["cleared"],
+      },
     },
     async handler(args: Record<string, unknown>) {
       if (!extensionClient.isConnected()) {
@@ -157,7 +173,7 @@ export function createClearEditorDecorationsTool(
       try {
         const result = await extensionClient.clearDecorations(id);
         if (result === null) return error("Failed to clear decorations");
-        return success(result);
+        return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out clearing decorations");

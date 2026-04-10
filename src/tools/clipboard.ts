@@ -4,7 +4,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import { error, success } from "./utils.js";
+import { error, successStructured } from "./utils.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -123,12 +123,19 @@ export function createReadClipboardTool(extensionClient: ExtensionClient) {
         type: "object" as const,
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+        },
+        required: ["text"],
+      },
     },
     async handler() {
       if (extensionClient.isConnected()) {
         try {
           const result = await extensionClient.readClipboard();
-          if (result !== null) return success(result);
+          if (result !== null) return successStructured(result);
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
         }
@@ -139,7 +146,7 @@ export function createReadClipboardTool(extensionClient: ExtensionClient) {
         return error(
           "Clipboard unavailable — VS Code extension not connected and no native clipboard tool found",
         );
-      return success(result);
+      return successStructured({ text: result });
     },
   };
 }
@@ -165,6 +172,13 @@ export function createWriteClipboardTool(extensionClient: ExtensionClient) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+        },
+        required: ["success"],
+      },
     },
     async handler(args: Record<string, unknown>) {
       const text = args.text;
@@ -176,7 +190,7 @@ export function createWriteClipboardTool(extensionClient: ExtensionClient) {
       if (extensionClient.isConnected()) {
         try {
           const result = await extensionClient.writeClipboard(text);
-          if (result !== null) return success(result);
+          if (result !== null) return successStructured(result);
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
         }
@@ -187,7 +201,7 @@ export function createWriteClipboardTool(extensionClient: ExtensionClient) {
         return error(
           "Clipboard unavailable — VS Code extension not connected and no native clipboard tool found",
         );
-      return success({ success: true });
+      return successStructured({ success: true });
     },
   };
 }

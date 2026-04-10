@@ -7,7 +7,7 @@ import {
   optionalString,
   requireString,
   resolveFilePath,
-  success,
+  successStructured,
   truncateOutput,
 } from "./utils.js";
 
@@ -126,6 +126,20 @@ export function createSendHttpRequestTool(options?: {
               "Follow HTTP redirects (capped at 10 hops). Default: true.",
           },
         },
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          status: { type: "integer" },
+          statusText: { type: "string" },
+          headers: { type: "object" },
+          body: { type: "string" },
+          durationMs: { type: "integer" },
+          redirects: { type: "integer" },
+          truncated: { type: "boolean" },
+          fullBytes: { type: "integer" },
+        },
+        required: ["status", "body", "durationMs"],
       },
     },
 
@@ -380,7 +394,7 @@ export function createSendHttpRequestTool(options?: {
           ? { text: rawBody, truncated: true }
           : truncateOutput(rawBody, maxBytes);
 
-        return success({
+        return successStructured({
           status: resp.status,
           statusText: resp.statusText,
           headers: respHeaders,
@@ -521,6 +535,14 @@ export function createParseHttpFileTool(workspace: string) {
           },
         },
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          requests: { type: "array" },
+          count: { type: "integer" },
+        },
+        required: ["requests", "count"],
+      },
     },
 
     async handler(args: Record<string, unknown>) {
@@ -535,7 +557,7 @@ export function createParseHttpFileTool(workspace: string) {
       }
 
       const requests = parseHttpFileContent(content);
-      return success({ requests, count: requests.length });
+      return successStructured({ requests, count: requests.length });
     },
   };
 }
