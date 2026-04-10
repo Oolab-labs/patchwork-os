@@ -147,6 +147,104 @@ export function createBatchGetHoverTool(
   };
 }
 
+// ── batchFindImplementations ──────────────────────────────────────────────────
+
+export function createBatchFindImplementationsTool(
+  workspace: string,
+  extensionClient: ExtensionClient,
+) {
+  return {
+    schema: {
+      name: "batchFindImplementations",
+      extensionRequired: true,
+      description:
+        "Find implementations for multiple symbols in one call. " +
+        "More efficient than calling findImplementations repeatedly. Max 10 items. ",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          items: {
+            type: "array" as const,
+            description: "List of positions to look up (max 10)",
+            maxItems: MAX_BATCH,
+            items: {
+              type: "object" as const,
+              properties: {
+                filePath: {
+                  type: "string" as const,
+                  description: "Absolute or workspace-relative file path",
+                },
+                line: {
+                  type: "integer" as const,
+                  description: "Line number (1-based)",
+                  minimum: 1,
+                },
+                column: {
+                  type: "integer" as const,
+                  description: "Column number (1-based)",
+                  minimum: 1,
+                },
+              },
+              required: ["filePath", "line", "column"],
+              additionalProperties: false as const,
+            },
+          },
+        },
+        required: ["items"],
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          results: { type: "array" },
+          count: { type: "integer" },
+        },
+        required: ["results", "count"],
+      },
+    },
+
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      if (!extensionClient.isConnected()) {
+        return extensionRequired("batchFindImplementations");
+      }
+
+      const items = parseBatchItems(
+        args.items,
+        workspace,
+        "batchFindImplementations",
+      );
+      const compositeSignal = AbortSignal.any([
+        ...(signal ? [signal] : []),
+        AbortSignal.timeout(15_000),
+      ]);
+
+      const settled = await Promise.allSettled(
+        items.map((item) =>
+          extensionClient.findImplementations(
+            item.filePath,
+            item.line,
+            item.column,
+            compositeSignal,
+          ),
+        ),
+      );
+
+      const results = items.map((item, i) => {
+        const r = settled[i];
+        return {
+          filePath: item.filePath,
+          line: item.line,
+          column: item.column,
+          result: r?.status === "fulfilled" ? (r.value ?? null) : null,
+        };
+      });
+
+      return successStructured({ results, count: results.length });
+    },
+  };
+}
+
 // ── batchGoToDefinition ───────────────────────────────────────────────────────
 
 export function createBatchGoToDefinitionTool(

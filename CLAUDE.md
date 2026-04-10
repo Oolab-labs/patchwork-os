@@ -96,6 +96,7 @@ All LSP tools are available in default slim mode. Use these sequences for the mo
 | What does this method accept? | `getHover` |
 | Hover for N symbols at once | `batchGetHover` |
 | Jump to definition for N symbols at once | `batchGoToDefinition` |
+| Find implementations for N symbols at once | `batchFindImplementations` |
 | Is this change breaking? | `getChangeImpact` (blast radius) or `getDiagnostics` + `findReferences` |
 | How many callers does this have? | `getCallHierarchy { direction: "incoming" }` |
 | Safe to rename? | `refactorAnalyze` → `refactorPreview` → `renameSymbol` |

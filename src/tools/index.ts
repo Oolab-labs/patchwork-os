@@ -10,6 +10,7 @@ import type { McpTransport } from "../transport.js";
 import { createGetActivityLogTool } from "./activityLog.js";
 import { createAuditDependenciesTool } from "./auditDependencies.js";
 import {
+  createBatchFindImplementationsTool,
   createBatchGetHoverTool,
   createBatchGoToDefinitionTool,
 } from "./batchLsp.js";
@@ -222,6 +223,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "getDocumentLinks",
   "batchGetHover",
   "batchGoToDefinition",
+  "batchFindImplementations",
   "getSemanticTokens",
   "getCodeLens",
   "getChangeImpact",
@@ -438,6 +440,7 @@ export function registerAllTools(
     createGetDocumentLinksTool(workspace, extensionClient),
     createBatchGetHoverTool(workspace, extensionClient),
     createBatchGoToDefinitionTool(workspace, extensionClient),
+    createBatchFindImplementationsTool(workspace, extensionClient),
     createGetTypeHierarchyTool(workspace, extensionClient),
     createGetSemanticTokensTool(workspace, extensionClient),
     createGetCodeLensTool(workspace, extensionClient),
