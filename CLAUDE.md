@@ -249,28 +249,33 @@ Bridge tool substitution rules are in `.claude/rules/bridge-tools.md` (loaded ab
 
 ### Quick reference
 
-| Task | Tool |
-|---|---|
-| Check errors / warnings | `getDiagnostics` |
-| Run tests | `runTests` |
-| Git status / diff | `getGitStatus`, `getGitDiff` |
-| Stage, commit, push | `gitAdd`, `gitCommit`, `gitPush` |
-| Open a pull request | `githubCreatePR` |
-| Navigate to definition | `goToDefinition` |
-| Find all references | `findReferences` |
-| Call hierarchy | `getCallHierarchy` |
-| File tree / symbols | `getFileTree`, `getDocumentSymbols` |
-| Run a shell command | `runInTerminal`, `getTerminalOutput` |
-| Interactive debug | `setDebugBreakpoints`, `startDebugging`, `evaluateInDebugger` |
-| Lint / format | `fixAllLintErrors`, `formatDocument` |
-| Security audit | `getSecurityAdvisories`, `auditDependencies` |
-| Unused code | `detectUnusedCode` |
+> Tools marked **[full]** require `--full` mode (not available in default slim mode). Slim mode exposes only IDE-exclusive tools (LSP, debugger, editor state). Call `getToolCapabilities` to confirm what is available in the current session.
+
+| Task | Tool | Mode |
+|---|---|---|
+| Check errors / warnings | `getDiagnostics` | slim |
+| Navigate to definition | `goToDefinition` | slim |
+| Find all references | `findReferences` | slim |
+| Call hierarchy | `getCallHierarchy` | slim |
+| File symbols | `getDocumentSymbols` | slim |
+| Interactive debug | `setDebugBreakpoints`, `startDebugging`, `evaluateInDebugger` | slim |
+| Run tests | `runTests` | **[full]** |
+| Git status / diff | `getGitStatus`, `getGitDiff` | **[full]** |
+| Stage, commit, push | `gitAdd`, `gitCommit`, `gitPush` | **[full]** |
+| Open a pull request | `githubCreatePR` | **[full]** |
+| File tree | `getFileTree` | **[full]** |
+| Run a shell command | `runInTerminal`, `getTerminalOutput` | **[full]** |
+| Lint / format | `fixAllLintErrors`, `formatDocument` | **[full]** |
+| Security audit | `getSecurityAdvisories`, `auditDependencies` | **[full]** |
+| Unused code | `detectUnusedCode` | **[full]** |
 
 ### Dispatch prompts (mobile)
 
 When a terse message arrives via Claude Desktop Dispatch (phone/Siri), Claude automatically routes it to the appropriate bridge prompt. You can also invoke these prompts directly by name in any chat.
 
-When responding to terse Dispatch messages from a phone, use these prompts for consistent, concise output:
+When responding to terse Dispatch messages from a phone, use these prompts for consistent, concise output.
+
+> These prompts use git, test, and project tools that require `--full` mode. They will not work in default slim mode.
 
 | Phone message | Prompt | Tools called |
 |---|---|---|
