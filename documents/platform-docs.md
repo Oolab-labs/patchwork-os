@@ -270,6 +270,8 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | `onGitPush` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitPush` tool call. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`. Loop guard. |
 | `onBranchCheckout` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitCheckout` tool call. Placeholders: `{{branch}}`, `{{previousBranch}}` (null → `"(detached HEAD)"`), `{{created}}` (bool). Loop guard. |
 | `onPullRequest` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `githubCreatePR` tool call. Placeholders: `{{url}}`, `{{number}}` (null → `"(unknown)"`), `{{title}}`, `{{branch}}`. Loop guard. |
+| `onTaskCreated` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude Code 2.1.84+ `TaskCreated` hook fires — i.e., when Claude spawns a subagent task. Placeholders: `{{taskId}}`, `{{prompt}}` (truncated to 500 chars). Loop guard. |
+| `onPermissionDenied` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude Code 2.1.89+ `PermissionDenied` hook fires — i.e., when a tool call is blocked by the permission system. Placeholders: `{{tool}}`, `{{reason}}`. Loop guard. |
 
 Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering while a prior task for the same file/event is still pending/running.
 

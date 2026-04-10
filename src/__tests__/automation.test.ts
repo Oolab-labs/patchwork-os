@@ -7,7 +7,9 @@ import type {
   Diagnostic,
   GitCommitResult,
   GitPushResult,
+  PermissionDeniedResult,
   PullRequestResult,
+  TaskCreatedResult,
 } from "../automation.js";
 import { AutomationHooks, loadPolicy } from "../automation.js";
 import type { IClaudeDriver } from "../claudeDriver.js";
@@ -1899,6 +1901,281 @@ describe("loadPolicy — onPullRequest", () => {
   });
 });
 
+// ── onTaskCreated ─────────────────────────────────────────────────────────────
+
+describe("AutomationHooks — onTaskCreated", () => {
+  it("fires when enabled and enqueues a task", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskCreated: {
+          enabled: true,
+          prompt: "Task {{taskId}} created",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskCreated({ taskId: "t-abc", prompt: "do the thing" });
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("does not fire when disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskCreated: {
+          enabled: false,
+          prompt: "Task {{taskId}} created",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskCreated({ taskId: "t-abc", prompt: "do the thing" });
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("skips while a prior task-created task is still active", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskCreated: {
+          enabled: true,
+          prompt: "Task {{taskId}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskCreated({ taskId: "t-1", prompt: "first" });
+    hooks.handleTaskCreated({ taskId: "t-2", prompt: "second" });
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("respects cooldown between triggers", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskCreated: {
+          enabled: true,
+          prompt: "Task {{taskId}}",
+          cooldownMs: 60_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskCreated({ taskId: "t-1", prompt: "first" });
+    hooks.handleTaskCreated({ taskId: "t-2", prompt: "second" });
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onTaskCreated", () => {
+    const hooks = new AutomationHooks(
+      {
+        onTaskCreated: {
+          enabled: true,
+          prompt: "Task {{taskId}}",
+          cooldownMs: 10_000,
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    expect(hooks.getStatus().onTaskCreated).toEqual({
+      enabled: true,
+      cooldownMs: 10_000,
+    });
+  });
+});
+
+describe("loadPolicy — onTaskCreated", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-tc-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onTaskCreated policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTaskCreated: {
+          enabled: true,
+          prompt: "Task {{taskId}} was created",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onTaskCreated?.enabled).toBe(true);
+  });
+
+  it("enforces onTaskCreated cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTaskCreated: {
+          enabled: true,
+          prompt: "Task {{taskId}}",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onTaskCreated?.cooldownMs).toBe(5_000);
+  });
+});
+
+// ── onPermissionDenied ────────────────────────────────────────────────────────
+
+describe("AutomationHooks — onPermissionDenied", () => {
+  it("fires when enabled and enqueues a task", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPermissionDenied: {
+          enabled: true,
+          prompt: "{{tool}} was blocked: {{reason}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePermissionDenied({
+      tool: "runCommand",
+      reason: "not in allowlist",
+    });
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("does not fire when disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPermissionDenied: {
+          enabled: false,
+          prompt: "{{tool}} blocked",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePermissionDenied({ tool: "runCommand", reason: "blocked" });
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("skips while a prior permission-denied task is still active", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPermissionDenied: {
+          enabled: true,
+          prompt: "{{tool}} blocked",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePermissionDenied({ tool: "tool1", reason: "r1" });
+    hooks.handlePermissionDenied({ tool: "tool2", reason: "r2" });
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("respects cooldown between triggers", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPermissionDenied: {
+          enabled: true,
+          prompt: "{{tool}} blocked",
+          cooldownMs: 60_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePermissionDenied({ tool: "tool1", reason: "r1" });
+    hooks.handlePermissionDenied({ tool: "tool2", reason: "r2" });
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onPermissionDenied", () => {
+    const hooks = new AutomationHooks(
+      {
+        onPermissionDenied: {
+          enabled: true,
+          prompt: "{{tool}} blocked",
+          cooldownMs: 10_000,
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    expect(hooks.getStatus().onPermissionDenied).toEqual({
+      enabled: true,
+      cooldownMs: 10_000,
+    });
+  });
+});
+
+describe("loadPolicy — onPermissionDenied", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-pd-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onPermissionDenied policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onPermissionDenied: {
+          enabled: true,
+          prompt: "{{tool}} was blocked: {{reason}}",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onPermissionDenied?.enabled).toBe(true);
+  });
+
+  it("enforces onPermissionDenied cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onPermissionDenied: {
+          enabled: true,
+          prompt: "{{tool}} blocked",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onPermissionDenied?.cooldownMs).toBe(5_000);
+  });
+});
+
 // ── Prompt injection hardening ─────────────────────────────────────────────────
 
 describe("AutomationHooks — prompt injection hardening", () => {
@@ -2289,6 +2566,52 @@ describe("AutomationHooks — promptName support", () => {
     // Both wrapped by the same nonce
     const nonceMatches = prompt.match(/\[([a-f0-9]{12})\]/g) ?? [];
     expect(nonceMatches.length).toBeGreaterThanOrEqual(4); // 2 placeholders × open+close
+    expect(nonceMatches[0]).toBe(nonceMatches[1]);
+  });
+
+  it("wraps {{taskId}} and {{prompt}} with nonce delimiters in onTaskCreated", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskCreated: {
+          enabled: true,
+          prompt: "Task {{taskId}} created with prompt {{prompt}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskCreated({ taskId: "abc-123", prompt: "do the thing" });
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("abc-123");
+    expect(prompt).toContain("do the thing");
+    expect(prompt).toContain("(untrusted)");
+    const nonceMatches = prompt.match(/\[([a-f0-9]{12})\]/g) ?? [];
+    expect(nonceMatches.length).toBeGreaterThanOrEqual(4);
+    expect(nonceMatches[0]).toBe(nonceMatches[1]);
+  });
+
+  it("wraps {{tool}} and {{reason}} with nonce delimiters in onPermissionDenied", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPermissionDenied: {
+          enabled: true,
+          prompt: "Tool {{tool}} was blocked: {{reason}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePermissionDenied({ tool: "runCommand", reason: "not allowed" });
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("runCommand");
+    expect(prompt).toContain("not allowed");
+    expect(prompt).toContain("(untrusted)");
+    const nonceMatches = prompt.match(/\[([a-f0-9]{12})\]/g) ?? [];
+    expect(nonceMatches.length).toBeGreaterThanOrEqual(4);
     expect(nonceMatches[0]).toBe(nonceMatches[1]);
   });
 });

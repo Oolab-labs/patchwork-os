@@ -188,6 +188,38 @@ export interface PullRequestResult {
   branch: string;
 }
 
+export interface OnTaskCreatedPolicy extends PromptSource {
+  enabled: boolean;
+  /**
+   * Fired by Claude Code 2.1.84+ TaskCreated hook — fires when Claude creates a subagent task.
+   * Placeholders (inline prompt only): {{taskId}}, {{prompt}}
+   */
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+/** Minimal task-created result passed to handleTaskCreated. */
+export interface TaskCreatedResult {
+  taskId: string;
+  prompt: string;
+}
+
+export interface OnPermissionDeniedPolicy extends PromptSource {
+  enabled: boolean;
+  /**
+   * Fired by Claude Code 2.1.89+ PermissionDenied hook — fires when a tool call is blocked.
+   * Placeholders (inline prompt only): {{tool}}, {{reason}}
+   */
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+/** Minimal permission-denied result passed to handlePermissionDenied. */
+export interface PermissionDeniedResult {
+  tool: string;
+  reason: string;
+}
+
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
@@ -209,6 +241,10 @@ export interface AutomationPolicy {
   onBranchCheckout?: OnBranchCheckoutPolicy;
   /** Fired after every successful githubCreatePR call. */
   onPullRequest?: OnPullRequestPolicy;
+  /** Fired by Claude Code 2.1.84+ TaskCreated hook — fires when Claude creates a subagent task. */
+  onTaskCreated?: OnTaskCreatedPolicy;
+  /** Fired by Claude Code 2.1.89+ PermissionDenied hook — fires when a tool call is blocked. */
+  onPermissionDenied?: OnPermissionDeniedPolicy;
 }
 
 export interface Diagnostic {
@@ -515,6 +551,42 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onTaskCreated
+  if (policy.onTaskCreated !== undefined) {
+    const tc = policy.onTaskCreated;
+    if (typeof tc !== "object" || tc === null) {
+      throw new Error(`"onTaskCreated" must be an object`);
+    }
+    if (typeof tc.enabled !== "boolean") {
+      throw new Error(`"onTaskCreated.enabled" must be a boolean`);
+    }
+    validatePromptSource("onTaskCreated", tc);
+    if (typeof tc.cooldownMs !== "number" || !Number.isFinite(tc.cooldownMs)) {
+      throw new Error(`"onTaskCreated.cooldownMs" must be a number`);
+    }
+    if (tc.cooldownMs < MIN_COOLDOWN_MS) {
+      tc.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
+  // Validate onPermissionDenied
+  if (policy.onPermissionDenied !== undefined) {
+    const pd = policy.onPermissionDenied;
+    if (typeof pd !== "object" || pd === null) {
+      throw new Error(`"onPermissionDenied" must be an object`);
+    }
+    if (typeof pd.enabled !== "boolean") {
+      throw new Error(`"onPermissionDenied.enabled" must be a boolean`);
+    }
+    validatePromptSource("onPermissionDenied", pd);
+    if (typeof pd.cooldownMs !== "number" || !Number.isFinite(pd.cooldownMs)) {
+      throw new Error(`"onPermissionDenied.cooldownMs" must be a number`);
+    }
+    if (pd.cooldownMs < MIN_COOLDOWN_MS) {
+      pd.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   return policy;
 }
 
@@ -543,6 +615,10 @@ export class AutomationHooks {
   private activeBranchCheckoutTaskId: string | null = null;
   /** Active task ID for the pull-request handler (workspace-global). */
   private activePullRequestTaskId: string | null = null;
+  /** Active task ID for the task-created handler (workspace-global). */
+  private activeTaskCreatedTaskId: string | null = null;
+  /** Active task ID for the permission-denied handler (workspace-global). */
+  private activePermissionDeniedTaskId: string | null = null;
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -1454,6 +1530,144 @@ export class AutomationHooks {
     }
   }
 
+  handleTaskCreated(result: TaskCreatedResult): void {
+    const cfg = this.policy.onTaskCreated;
+    if (!cfg?.enabled) return;
+
+    if (this.activeTaskCreatedTaskId) {
+      const existing = this.orchestrator.getTask(this.activeTaskCreatedTaskId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping task-created trigger — task ${this.activeTaskCreatedTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeTaskCreatedTaskId = null;
+    }
+
+    const key = "taskCreated:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] skipping task-created trigger — cooldown active (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeTaskId = result.taskId.slice(0, MAX_FILE_PATH_CHARS);
+    const safePrompt = result.prompt.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { taskId: safeTaskId, prompt: safePrompt },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt = cfg
+        .prompt!.replace(
+          /\{\{taskId\}\}/g,
+          untrustedBlock("TASK ID", safeTaskId, nonce),
+        )
+        .replace(
+          /\{\{prompt\}\}/g,
+          untrustedBlock("TASK PROMPT", safePrompt, nonce),
+        );
+    }
+
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.activeTaskCreatedTaskId = taskId;
+      this.log(
+        `[automation] triggered task-created task ${taskId.slice(0, 8)} (spawned task: ${result.taskId.slice(0, 8)})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue task-created task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  handlePermissionDenied(result: PermissionDeniedResult): void {
+    const cfg = this.policy.onPermissionDenied;
+    if (!cfg?.enabled) return;
+
+    if (this.activePermissionDeniedTaskId) {
+      const existing = this.orchestrator.getTask(
+        this.activePermissionDeniedTaskId,
+      );
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping permission-denied trigger — task ${this.activePermissionDeniedTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activePermissionDeniedTaskId = null;
+    }
+
+    const key = "permissionDenied:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] skipping permission-denied trigger — cooldown active (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeTool = result.tool.slice(0, MAX_FILE_PATH_CHARS);
+    const safeReason = result.reason.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { tool: safeTool, reason: safeReason },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt = cfg
+        .prompt!.replace(
+          /\{\{tool\}\}/g,
+          untrustedBlock("TOOL NAME", safeTool, nonce),
+        )
+        .replace(
+          /\{\{reason\}\}/g,
+          untrustedBlock("DENIAL REASON", safeReason, nonce),
+        );
+    }
+
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.activePermissionDeniedTaskId = taskId;
+      this.log(
+        `[automation] triggered permission-denied task ${taskId.slice(0, 8)} (tool: ${result.tool})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue permission-denied task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
@@ -1470,6 +1684,8 @@ export class AutomationHooks {
     onGitPush: { enabled: boolean; cooldownMs: number } | null;
     onBranchCheckout: { enabled: boolean; cooldownMs: number } | null;
     onPullRequest: { enabled: boolean; cooldownMs: number } | null;
+    onTaskCreated: { enabled: boolean; cooldownMs: number } | null;
+    onPermissionDenied: { enabled: boolean; cooldownMs: number } | null;
   } {
     const p = this.policy;
     return {
@@ -1529,6 +1745,18 @@ export class AutomationHooks {
         ? {
             enabled: p.onPullRequest.enabled,
             cooldownMs: p.onPullRequest.cooldownMs,
+          }
+        : null,
+      onTaskCreated: p.onTaskCreated
+        ? {
+            enabled: p.onTaskCreated.enabled,
+            cooldownMs: p.onTaskCreated.cooldownMs,
+          }
+        : null,
+      onPermissionDenied: p.onPermissionDenied
+        ? {
+            enabled: p.onPermissionDenied.enabled,
+            cooldownMs: p.onPermissionDenied.cooldownMs,
           }
         : null,
     };
