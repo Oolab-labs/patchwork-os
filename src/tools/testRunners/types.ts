@@ -20,6 +20,7 @@ export interface TestRunner {
     cwd: string,
     filter?: string,
     signal?: AbortSignal,
+    timeoutMs?: number,
   ): Promise<TestResult[]>;
   cacheTtl: number;
 }

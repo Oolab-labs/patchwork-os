@@ -4,8 +4,8 @@ import type { ProbeResults } from "../../probe.js";
 import { execSafe } from "../utils.js";
 import type { TestResult, TestRunner, TestStatus } from "./types.js";
 
-const TEST_TIMEOUT = 120_000;
-const MAX_BUFFER = 2 * 1024 * 1024;
+const DEFAULT_TEST_TIMEOUT = 120_000;
+const MAX_BUFFER = 10 * 1024 * 1024;
 
 interface JsonTestResult {
   fullName?: string;
@@ -191,6 +191,7 @@ export const vitestRunner: TestRunner = {
     cwd: string,
     filter?: string,
     signal?: AbortSignal,
+    timeoutMs?: number,
   ): Promise<TestResult[]> {
     // Prefer local node_modules/.bin to avoid npx auto-downloading packages
     const bin = resolveLocalBin(cwd, "vitest");
@@ -201,7 +202,7 @@ export const vitestRunner: TestRunner = {
     if (filter) args.push("--", filter);
     const result = await execSafe(cmd, args, {
       cwd,
-      timeout: TEST_TIMEOUT,
+      timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
     });
@@ -236,6 +237,7 @@ export const jestRunner: TestRunner = {
     cwd: string,
     filter?: string,
     signal?: AbortSignal,
+    timeoutMs?: number,
   ): Promise<TestResult[]> {
     // Prefer local node_modules/.bin to avoid npx auto-downloading packages
     const bin = resolveLocalBin(cwd, "jest");
@@ -246,7 +248,7 @@ export const jestRunner: TestRunner = {
     if (filter) args.push("--", filter);
     const result = await execSafe(cmd, args, {
       cwd,
-      timeout: TEST_TIMEOUT,
+      timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
     });

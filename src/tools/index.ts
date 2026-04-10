@@ -510,10 +510,6 @@ export function registerAllTools(
 
   // Plugin tools always bypass the slim filter — they are opt-in by definition.
   for (const tool of [...activeTools, ...pluginTools]) {
-    transport.registerTool(
-      tool.schema,
-      tool.handler,
-      (tool as { timeoutMs?: number }).timeoutMs,
-    );
+    transport.registerTool(tool.schema, tool.handler);
   }
 }

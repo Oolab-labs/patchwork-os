@@ -4,7 +4,7 @@ import type { ProbeResults } from "../../probe.js";
 import { execSafe } from "../utils.js";
 import type { TestResult, TestRunner, TestStatus } from "./types.js";
 
-const TEST_TIMEOUT = 120_000;
+const DEFAULT_TEST_TIMEOUT = 120_000;
 const MAX_BUFFER = 2 * 1024 * 1024;
 
 // Match: file_test.go:42: message
@@ -30,6 +30,7 @@ export const goTestRunner: TestRunner = {
     cwd: string,
     filter?: string,
     signal?: AbortSignal,
+    timeoutMs?: number,
   ): Promise<TestResult[]> {
     const args = ["test", "-json", "-count=1", "./..."];
     if (filter) {
@@ -39,7 +40,7 @@ export const goTestRunner: TestRunner = {
     }
     const result = await execSafe("go", args, {
       cwd,
-      timeout: TEST_TIMEOUT,
+      timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
     });

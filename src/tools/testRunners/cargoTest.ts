@@ -4,7 +4,7 @@ import type { ProbeResults } from "../../probe.js";
 import { execSafe } from "../utils.js";
 import type { TestResult, TestRunner, TestStatus } from "./types.js";
 
-const TEST_TIMEOUT = 120_000;
+const DEFAULT_TEST_TIMEOUT = 120_000;
 const MAX_BUFFER = 2 * 1024 * 1024;
 
 // Match: test module::test_name ... ok/FAILED/ignored
@@ -31,6 +31,7 @@ export const cargoTestRunner: TestRunner = {
     cwd: string,
     filter?: string,
     signal?: AbortSignal,
+    timeoutMs?: number,
   ): Promise<TestResult[]> {
     const args = ["test"];
     if (filter) {
@@ -41,7 +42,7 @@ export const cargoTestRunner: TestRunner = {
     args.push("--", "--color=never");
     const result = await execSafe("cargo", args, {
       cwd,
-      timeout: TEST_TIMEOUT,
+      timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
     });

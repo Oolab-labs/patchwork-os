@@ -4,7 +4,7 @@ import type { ProbeResults } from "../../probe.js";
 import { execSafe } from "../utils.js";
 import type { TestResult, TestRunner } from "./types.js";
 
-const TEST_TIMEOUT = 120_000;
+const DEFAULT_TEST_TIMEOUT = 120_000;
 const MAX_BUFFER = 2 * 1024 * 1024;
 
 // Match: FAILED path/to/test.py::TestClass::test_name - message
@@ -34,6 +34,7 @@ export const pytestRunner: TestRunner = {
     cwd: string,
     filter?: string,
     signal?: AbortSignal,
+    timeoutMs?: number,
   ): Promise<TestResult[]> {
     const args = ["--tb=short", "-q"];
     if (filter) {
@@ -45,7 +46,7 @@ export const pytestRunner: TestRunner = {
     }
     const result = await execSafe("pytest", args, {
       cwd,
-      timeout: TEST_TIMEOUT,
+      timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
     });

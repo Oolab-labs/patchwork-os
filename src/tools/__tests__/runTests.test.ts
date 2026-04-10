@@ -124,6 +124,7 @@ describe("createRunTestsTool", () => {
       ws,
       "someFilter",
       undefined,
+      undefined,
     );
   });
 
