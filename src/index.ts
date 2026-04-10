@@ -49,7 +49,6 @@ function isBridgeToolsFileValid(filePath: string): boolean {
     if (content.length > 512 * 1024) return false; // > 512 KB is not a valid rules file
     if (content.length < BRIDGE_TOOLS_MIN_BYTES) return false;
     return (
-      content.includes("runTests") &&
       content.includes("getDiagnostics") &&
       content.includes("MANDATORY") &&
       content.includes("batchGetHover") && // stale files missing new tools fail here

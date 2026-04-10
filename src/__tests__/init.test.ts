@@ -73,7 +73,6 @@ describe("gen-claude-md --write", () => {
 
     const rulesFile = path.join(ws, ".claude", "rules", "bridge-tools.md");
     expect(fs.existsSync(rulesFile)).toBe(true);
-    expect(fs.readFileSync(rulesFile, "utf-8")).toContain("runTests");
     expect(fs.readFileSync(rulesFile, "utf-8")).toContain("getDiagnostics");
   });
 
@@ -300,7 +299,6 @@ describe("bridge-tools.md repair", () => {
       path.join(rulesDir, "bridge-tools.md"),
       "utf-8",
     );
-    expect(repaired).toContain("runTests");
     expect(repaired).toContain("getDiagnostics");
   });
 
@@ -324,15 +322,15 @@ describe("bridge-tools.md repair", () => {
       path.join(rulesDir, "bridge-tools.md"),
       "utf-8",
     );
-    expect(repaired).toContain("runTests");
+    expect(repaired).toContain("getDiagnostics");
   });
 
   it("does not overwrite a valid bridge-tools.md", () => {
     const ws = makeTmpDir();
     const rulesDir = path.join(ws, ".claude", "rules");
     fs.mkdirSync(rulesDir, { recursive: true });
-    // Must satisfy the strengthened check: >200 bytes, contains runTests,
-    // getDiagnostics, and MANDATORY (the section heading in the real template).
+    // Must satisfy the strengthened check: >200 bytes, contains getDiagnostics,
+    // and MANDATORY (the section heading in the real template).
     const validContent = [
       `<!-- bridge-tools v${PACKAGE_VERSION} -->`,
       "",
@@ -342,7 +340,6 @@ describe("bridge-tools.md repair", () => {
       "",
       "| Shell command | MCP tool to use instead |",
       "|---|---|",
-      "| npm test | runTests |",
       "| tsc / eslint | getDiagnostics |",
       "| git commit | gitCommit |",
       "| grep / rg | searchWorkspace |",

@@ -9,12 +9,6 @@
 
 Do NOT run the shell command. Call the MCP tool instead.
 
-#### Testing
-
-| ❌ Do NOT use | ✅ Call instead |
-|---|---|
-| `npm test`, `npx vitest`, `npx jest`, `yarn test` | `runTests` |
-
 #### Diagnostics & linting
 
 | ❌ Do NOT use | ✅ Call instead |

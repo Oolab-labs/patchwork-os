@@ -259,7 +259,6 @@ Bridge tool substitution rules are in `.claude/rules/bridge-tools.md` (loaded ab
 | Call hierarchy | `getCallHierarchy` | slim |
 | File symbols | `getDocumentSymbols` | slim |
 | Interactive debug | `setDebugBreakpoints`, `startDebugging`, `evaluateInDebugger` | slim |
-| Run tests | `runTests` | **[full]** |
 | Git status / diff | `getGitStatus`, `getGitDiff` | **[full]** |
 | Stage, commit, push | `gitAdd`, `gitCommit`, `gitPush` | **[full]** |
 | Open a pull request | `githubCreatePR` | **[full]** |
@@ -279,8 +278,7 @@ When responding to terse Dispatch messages from a phone, use these prompts for c
 
 | Phone message | Prompt | Tools called |
 |---|---|---|
-| "How's the build?" | `project-status` | `getGitStatus`, `getDiagnostics`, `runTests` |
-| "Run the tests" | `quick-tests` | `runTests` |
+| "How's the build?" | `project-status` | `getGitStatus`, `getDiagnostics` |
 | "Review my changes" | `quick-review` | `getGitStatus`, `getGitDiff`, `getDiagnostics` |
 | "Does it build?" | `build-check` | `getProjectInfo`, `getDiagnostics`, `runCommand` |
 | "What changed?" | `recent-activity` | `getGitLog`, `getGitStatus` |
