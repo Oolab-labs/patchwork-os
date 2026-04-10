@@ -24,6 +24,8 @@ export function buildEnforcementReminder(): string[] {
     "  Code search/nav:    searchWorkspace · getBufferContent · batchGetHover · batchGoToDefinition",
     "  Impact analysis:    getChangeImpact",
     "  Editor annotations: getCodeLens · getSemanticTokens",
+    "  Refactoring:        refactorAnalyze · refactorPreview · renameSymbol · refactorExtractFunction",
+    "  Code quality:       detectUnusedCode · getCodeCoverage · auditDependencies · getGitHotspots",
     "  Debugging:          setDebugBreakpoints · evaluateInDebugger",
     "  File tree:          getFileTree · findFiles",
     "  Full substitution table: .claude/rules/bridge-tools.md (loaded via @import in CLAUDE.md)",

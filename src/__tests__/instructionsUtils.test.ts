@@ -15,10 +15,11 @@ describe("buildEnforcementReminder", () => {
 
   it("includes representative tools for core categories", () => {
     const text = buildEnforcementReminder().join("\n");
-    expect(text).toContain("runTests");
     expect(text).toContain("getDiagnostics");
     expect(text).toContain("gitCommit");
     expect(text).toContain("searchWorkspace");
+    expect(text).toContain("renameSymbol");
+    expect(text).toContain("detectUnusedCode");
   });
 
   it("references bridge-tools.md", () => {

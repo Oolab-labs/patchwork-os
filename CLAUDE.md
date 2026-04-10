@@ -259,6 +259,12 @@ Bridge tool substitution rules are in `.claude/rules/bridge-tools.md` (loaded ab
 | Call hierarchy | `getCallHierarchy` | slim |
 | File symbols | `getDocumentSymbols` | slim |
 | Interactive debug | `setDebugBreakpoints`, `startDebugging`, `evaluateInDebugger` | slim |
+| Function signature at call site | `signatureHelp` | slim |
+| Type hierarchy (supertypes/subtypes) | `getTypeHierarchy` | slim |
+| Explain a symbol (composite) | `explainSymbol` | slim |
+| Inline type hints | `getInlayHints` | slim |
+| Refactor safely | `refactorAnalyze` → `refactorPreview` → `renameSymbol` | slim |
+| Extract function | `refactorExtractFunction` | slim |
 | Git status / diff | `getGitStatus`, `getGitDiff` | **[full]** |
 | Stage, commit, push | `gitAdd`, `gitCommit`, `gitPush` | **[full]** |
 | Open a pull request | `githubCreatePR` | **[full]** |
@@ -267,6 +273,10 @@ Bridge tool substitution rules are in `.claude/rules/bridge-tools.md` (loaded ab
 | Lint / format | `fixAllLintErrors`, `formatDocument` | **[full]** |
 | Security audit | `getSecurityAdvisories`, `auditDependencies` | **[full]** |
 | Unused code | `detectUnusedCode` | **[full]** |
+| Coverage report | `getCodeCoverage` | **[full]** |
+| Change-heavy files | `getGitHotspots` | **[full]** |
+| Scaffold tests | `generateTests` | **[full]** |
+| PR description | `getPRTemplate` | **[full]** |
 
 ### Dispatch prompts (mobile)
 

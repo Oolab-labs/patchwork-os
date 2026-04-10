@@ -43,6 +43,10 @@ Do NOT run the shell command. Call the MCP tool instead.
 | Calling `goToDefinition` in a loop for N symbols | `batchGoToDefinition` (up to 10 in one call) |
 | Find links / referenced files in a document | `getDocumentLinks` |
 | Understand what a file imports (signatures) | `getImportedSignatures` |
+| Function signature + parameter info at call site | `signatureHelp` |
+| Supertypes / subtypes of a class or interface | `getTypeHierarchy` |
+| Composite: hover + definition + refs + type hierarchy | `explainSymbol` |
+| Inline type annotations and parameter names | `getInlayHints` |
 
 #### Impact analysis
 
@@ -56,6 +60,26 @@ Do NOT run the shell command. Call the MCP tool instead.
 |---|---|
 | Guessing code lens counts (test runs, references) | `getCodeLens` |
 | Guessing semantic token types/modifiers | `getSemanticTokens` |
+
+#### Refactoring
+
+| ❌ Do NOT use | ✅ Call instead |
+|---|---|
+| Guessing if a rename is safe | `refactorAnalyze` (risk level + ref count + caller count) |
+| Manually reviewing every rename site | `refactorPreview` (exact edits before committing) |
+| Manual find-and-replace rename | `renameSymbol` |
+| Manually extracting a function | `refactorExtractFunction` |
+
+#### Code quality
+
+| ❌ Do NOT use | ✅ Call instead |
+|---|---|
+| `tsc --noUnusedLocals`, `ts-prune` | `detectUnusedCode` |
+| Manually reading coverage HTML | `getCodeCoverage` (parses lcov/clover, filters by min%) |
+| `npm audit`, `cargo audit` | `auditDependencies` (outdated packages) or `getSecurityAdvisories` (CVEs) |
+| `git log --follow` to find change-heavy files | `getGitHotspots` |
+| Manually writing test stubs | `generateTests` |
+| Manually writing PR description | `getPRTemplate` |
 
 #### Debugging
 
