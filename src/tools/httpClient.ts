@@ -67,6 +67,8 @@ function isPrivateHost(hostname: string): boolean {
   // IPv6-mapped IPv4 addresses (::ffff:x.x.x.x) bypass the IPv4 block above
   // on dual-stack systems — recurse on the embedded IPv4 part.
   if (host.startsWith("::ffff:")) return isPrivateHost(host.slice(7));
+  // RFC 2765 SIIT alternate mapped form (::ffff:0:x.x.x.x)
+  if (host.startsWith("::ffff:0:")) return isPrivateHost(host.slice(9));
 
   return false;
 }

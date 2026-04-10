@@ -91,7 +91,9 @@ describe("McpTransport — tool call rate limiter", () => {
     }
 
     const responses = await Promise.all(waiters);
-    expect(responses.every((r) => r.error?.code !== -32029)).toBe(true);
+    expect(responses.every((r) => (r.error as any)?.code !== -32029)).toBe(
+      true,
+    );
   });
 
   it("rejects the (LIMIT+1)th call with error code -32029", async () => {
@@ -140,5 +142,89 @@ describe("McpTransport — tool call rate limiter", () => {
     expect(responses.every((r) => (r.error as any)?.code !== -32029)).toBe(
       true,
     );
+  });
+
+  it("AJV validation failure does not consume a rate limit token", async () => {
+    // With LIMIT=1: if AJV failures consumed tokens, the valid call that follows
+    // would be rate-limited (-32029). It must succeed instead.
+    const LIMIT = 1;
+    const { ws, transport } = await setup(LIMIT);
+
+    // Register a strict tool that requires a field
+    transport.registerTool(
+      {
+        name: "strict_tool",
+        description: "requires a label field",
+        inputSchema: {
+          type: "object",
+          properties: { label: { type: "string" } },
+          required: ["label"],
+          additionalProperties: false,
+        },
+      },
+      async () => ({ content: [{ type: "text", text: "ok" }] }),
+    );
+
+    // Call with missing required field — should fail AJV, NOT consume the token
+    const invalidWaiter = waitFor(ws, (m) => m.id === 100);
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 100,
+      method: "tools/call",
+      params: { name: "strict_tool", arguments: {} },
+    });
+    const invalidResp = await invalidWaiter;
+    expect((invalidResp.error as any)?.code).toBe(-32602); // INVALID_PARAMS, not rate limit
+
+    // The token was not consumed, so this valid call must succeed
+    const validWaiter = waitFor(ws, (m) => m.id === 101);
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 101,
+      method: "tools/call",
+      params: { name: "strict_tool", arguments: { label: "hello" } },
+    });
+    const validResp = await validWaiter;
+    expect((validResp.error as any)?.code).not.toBe(-32029);
+    expect(validResp.result).toBeDefined();
+  });
+
+  it("shared bucket drains across sessions — prevents bypass via session cycling", async () => {
+    // Two independent transports sharing one bucket: after session 1 exhausts the
+    // limit, session 2 must also be rate-limited (not start with a full bucket).
+    const LIMIT = 2;
+    const { ws: ws1, transport: t1 } = await setup(LIMIT);
+    const { ws: ws2, transport: t2 } = await setup(LIMIT);
+
+    // Wire both transports to the same bucket
+    const sharedBucket = { tokens: LIMIT, lastRefill: Date.now() };
+    t1.setSharedToolRateLimitBucket(sharedBucket);
+    t2.setSharedToolRateLimitBucket(sharedBucket);
+
+    // Session 1 consumes all LIMIT tokens
+    const w1 = Array.from({ length: LIMIT }, (_, i) =>
+      waitFor(ws1, (m) => m.id === i + 200),
+    );
+    for (let i = 0; i < LIMIT; i++) {
+      send(ws1, {
+        jsonrpc: "2.0",
+        id: i + 200,
+        method: "tools/call",
+        params: { name: "ping_tool", arguments: {} },
+      });
+    }
+    const r1 = await Promise.all(w1);
+    expect(r1.every((r) => (r.error as any)?.code !== -32029)).toBe(true);
+
+    // Session 2 must now be rate-limited because the shared bucket is empty
+    const w2 = waitFor(ws2, (m) => m.id === 300);
+    send(ws2, {
+      jsonrpc: "2.0",
+      id: 300,
+      method: "tools/call",
+      params: { name: "ping_tool", arguments: {} },
+    });
+    const r2 = await w2;
+    expect((r2.error as any)?.code).toBe(-32029);
   });
 });

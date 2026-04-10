@@ -665,11 +665,15 @@ export class AutomationHooks {
             `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`,
         )
         .join("\n");
+      const nonce = crypto.randomBytes(6).toString("hex");
       prompt = cfg
-        .prompt!.replace(/\{\{file\}\}/g, safeFilePath)
+        .prompt!.replace(
+          /\{\{file\}\}/g,
+          untrustedBlock("FILE PATH", safeFilePath, nonce),
+        )
         .replace(
           /\{\{diagnostics\}\}/g,
-          `\n--- BEGIN DIAGNOSTIC DATA (untrusted) ---\n${diagnosticsText}\n--- END DIAGNOSTIC DATA ---\n`,
+          untrustedBlock("DIAGNOSTIC DATA", diagnosticsText, nonce),
         );
     }
 
@@ -705,9 +709,13 @@ export class AutomationHooks {
     const cfg = this.policy.onCwdChanged;
     if (!cfg?.enabled) return;
 
-    // Cooldown check — keyed on the new cwd so switching between two known
+    // Cap path before using as map key to prevent unbounded map growth from
+    // an extension sending unique paths rapidly.
+    const safeCwd = newCwd.slice(0, MAX_FILE_PATH_CHARS);
+
+    // Cooldown check — keyed on the capped cwd so switching between two known
     // directories doesn't bypass the global rate but each dir has its own window
-    const key = `cwdChanged:${newCwd}`;
+    const key = `cwdChanged:${safeCwd}`;
     const now = Date.now();
     const last = this.lastTrigger.get(key) ?? 0;
     if (now - last < cfg.cooldownMs) {
@@ -718,8 +726,6 @@ export class AutomationHooks {
     }
 
     this._pruneLastTrigger(now);
-
-    const safeCwd = newCwd.slice(0, MAX_FILE_PATH_CHARS);
     let prompt: string;
     if (cfg.promptName) {
       const resolved = this._resolveNamedPrompt(
@@ -890,9 +896,10 @@ export class AutomationHooks {
       if (resolved === null) return;
       prompt = resolved;
     } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
       prompt = cfg.prompt!.replace(
         /\{\{file\}\}/g,
-        `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
+        untrustedBlock("FILE PATH", safeFilePath, nonce),
       );
     }
     try {
@@ -972,9 +979,10 @@ export class AutomationHooks {
       if (resolved === null) return;
       prompt = resolved;
     } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
       prompt = cfg.prompt!.replace(
         /\{\{file\}\}/g,
-        `\n--- BEGIN FILE PATH (untrusted) ---\n${safeFilePath}\n--- END FILE PATH ---\n`,
+        untrustedBlock("FILE PATH", safeFilePath, nonce),
       );
     }
     try {
@@ -1066,14 +1074,18 @@ export class AutomationHooks {
       if (resolved === null) return;
       prompt = resolved;
     } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
       prompt = cfg
-        .prompt!.replace(/\{\{runner\}\}/g, runnerStr)
+        .prompt!.replace(
+          /\{\{runner\}\}/g,
+          untrustedBlock("TEST RUNNER", runnerStr, nonce),
+        )
         .replace(/\{\{failed\}\}/g, String(failureCount))
         .replace(/\{\{passed\}\}/g, String(result.summary.passed))
         .replace(/\{\{total\}\}/g, String(result.summary.total))
         .replace(
           /\{\{failures\}\}/g,
-          `\n--- BEGIN TEST FAILURES (untrusted) ---\n${failuresText}\n--- END TEST FAILURES ---\n`,
+          untrustedBlock("TEST FAILURES", failuresText, nonce),
         );
     }
 
@@ -1159,7 +1171,10 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt = cfg
-        .prompt!.replace(/\{\{hash\}\}/g, safeHash)
+        .prompt!.replace(
+          /\{\{hash\}\}/g,
+          untrustedBlock("COMMIT HASH", safeHash, nonce),
+        )
         .replace(
           /\{\{branch\}\}/g,
           untrustedBlock("BRANCH", safeBranchCommit, nonce),
@@ -1408,14 +1423,18 @@ export class AutomationHooks {
       if (resolved === null) return;
       prompt = resolved;
     } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
       prompt = cfg
-        .prompt!.replace(/\{\{url\}\}/g, safeUrl)
-        .replace(/\{\{number\}\}/g, safeNumber)
-        .replace(
-          /\{\{title\}\}/g,
-          `\n--- BEGIN PR TITLE (untrusted) ---\n${safeTitle}\n--- END PR TITLE ---\n`,
+        .prompt!.replace(
+          /\{\{url\}\}/g,
+          untrustedBlock("PR URL", safeUrl, nonce),
         )
-        .replace(/\{\{branch\}\}/g, safeBranch);
+        .replace(/\{\{number\}\}/g, safeNumber)
+        .replace(/\{\{title\}\}/g, untrustedBlock("PR TITLE", safeTitle, nonce))
+        .replace(
+          /\{\{branch\}\}/g,
+          untrustedBlock("BRANCH", safeBranch, nonce),
+        );
     }
 
     try {
