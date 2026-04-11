@@ -174,10 +174,22 @@ Event-driven hooks that trigger Claude tasks automatically.
 
 - **Activation**: `--automation --automation-policy <path.json> --claude-driver subprocess`
 - **Hooks**:
-  - `onDiagnosticsError` — fires on new error/warning diagnostics. Placeholders: `{{file}}`, `{{diagnostics}}`. Severity filter + cooldown.
-  - `onFileSave` — fires when matching files are saved. Minimatch glob patterns. Placeholder: `{{file}}`.
+  - `onDiagnosticsError` — new error/warning diagnostics. Placeholders: `{{file}}`, `{{diagnostics}}`. Severity filter + cooldown.
+  - `onDiagnosticsCleared` — errors/warnings drop to zero. Placeholder: `{{file}}`. Cooldown.
+  - `onFileSave` — matching files saved. Minimatch glob patterns. Placeholder: `{{file}}`.
+  - `onFileChanged` — matching files changed (buffer change, not save). Minimatch glob patterns. Placeholder: `{{file}}`.
   - `onPostCompact` — fires after Claude Code compacts context. Re-injects IDE state.
   - `onInstructionsLoaded` — fires at session start. Injects bridge status summary.
+  - `onGitCommit` — fires after successful `gitCommit`. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`.
+  - `onGitPush` — fires after successful `gitPush`. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`.
+  - `onBranchCheckout` — fires after successful `gitCheckout`. Placeholders: `{{branch}}`, `{{previousBranch}}`, `{{created}}`.
+  - `onPullRequest` — fires after successful `githubCreatePR`. Placeholders: `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}`.
+  - `onTestRun` — fires after `runTests` completes. Placeholders: `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array). Supports `onFailureOnly` flag.
+  - `onTaskCreated` — fires on Claude Code TaskCreated hook (CC 2.1.84+). Placeholders: `{{taskId}}`, `{{prompt}}`.
+  - `onTaskSuccess` — fires when orchestrator task completes successfully. Placeholders: `{{taskId}}`, `{{output}}`.
+  - `onPermissionDenied` — fires on Claude Code PermissionDenied hook (CC 2.1.89+). Placeholders: `{{tool}}`, `{{reason}}`.
+  - `onCwdChanged` — fires when Claude Code CWD changes (CC 2.1.83+). Placeholder: `{{cwd}}`.
+- **Shared options**: all hooks support inline `prompt` string or `promptName`/`promptArgs` named prompt references. All support `cooldownMs` (min 5000).
 - **Cooldown**: minimum 5 seconds between triggers for the same file/event. Max prompt size: 32KB.
 
 ## Transport & Session Model
@@ -266,11 +278,40 @@ Bridge tool substitution rules are in `.claude/rules/bridge-tools.md` (loaded ab
 | Inline type hints | `getInlayHints` | slim |
 | Refactor safely | `refactorAnalyze` → `refactorPreview` → `renameSymbol` | slim |
 | Extract function | `refactorExtractFunction` | slim |
+| Get bridge/extension health | `getBridgeStatus` | slim |
+| What tools are available? | `getToolCapabilities` | slim |
+| Watch live diagnostics (long-poll) | `watchDiagnostics` | slim |
+| Bundle editor context into one call | `contextBundle` | slim |
+| Stream recent activity events | `watchActivityLog` | slim |
+| Take a screenshot | `captureScreenshot` | slim |
+| List open editors | `getOpenEditors` | slim |
+| Hover at current cursor position | `getHoverAtCursor` | slim |
+| Go to declaration | `goToDeclaration` | slim |
+| Go to type definition | `goToTypeDefinition` | slim |
+| Find all implementations | `findImplementations` | slim |
+| Batch find implementations (N symbols) | `batchFindImplementations` | slim |
+| Selection range expand/shrink | `selectionRanges` | slim |
+| Folding ranges in document | `foldingRanges` | slim |
+| Preview a code action without applying | `previewCodeAction` | slim |
 | Git status / diff | `getGitStatus`, `getGitDiff` | **[full]** |
 | Stage, commit, push | `gitAdd`, `gitCommit`, `gitPush` | **[full]** |
 | Open a pull request | `githubCreatePR` | **[full]** |
 | File tree | `getFileTree` | **[full]** |
 | Run a shell command | `runInTerminal`, `getTerminalOutput` | **[full]** |
+| Edit file text by line range | `editText` | **[full]** |
+| Open a file in the editor | `openFile` | **[full]** |
+| Find + replace across workspace | `searchAndReplace` | **[full]** |
+| List VS Code tasks | `listVSCodeTasks` | **[full]** |
+| Run a VS Code task | `runVSCodeTask` | **[full]** |
+| Get project info (name, version, deps) | `getProjectInfo` | **[full]** |
+| Enqueue a Claude subprocess task | `runClaudeTask` | **[full]** |
+| List Claude subprocess tasks | `listClaudeTasks` | **[full]** |
+| Checkout a branch | `gitCheckout` | **[full]** |
+| Pull latest from remote | `gitPull` | **[full]** |
+| List branches | `gitListBranches` | **[full]** |
+| Blame a file | `gitBlame` | **[full]** |
+| Run VS Code command by ID | `executeVSCodeCommand` | **[full]** |
+| Capture/set cross-session context | `setHandoffNote` / `getHandoffNote` | **[full]** |
 | Lint / format | `fixAllLintErrors`, `formatDocument` | **[full]** |
 | Security audit | `getSecurityAdvisories`, `auditDependencies` | **[full]** |
 | Unused code | `detectUnusedCode` | **[full]** |

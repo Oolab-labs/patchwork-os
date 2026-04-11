@@ -154,6 +154,10 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `batchGetHover` | Fan-out `getHover` for up to 10 positions in one call via `Promise.allSettled` |
 | `batchGoToDefinition` | Fan-out `goToDefinition` for up to 10 positions in one call via `Promise.allSettled` |
 | `batchFindImplementations` | Fan-out `findImplementations` for up to 10 positions in one call via `Promise.allSettled` |
+| `goToDeclaration` | Navigate to the declaration of a symbol (distinct from definition; relevant in languages with separate declaration/definition such as C/C++ headers). Returns file path + line/column. |
+| `goToTypeDefinition` | Navigate to the type definition of a symbol (e.g. from a variable to the interface or class it implements). Returns file path + line/column. |
+| `findImplementations` | Find all concrete implementations of an interface, abstract class, or method. Returns array of locations. Use `batchFindImplementations` for multiple symbols. |
+| `previewCodeAction` | Show the exact text edits a code action would make without applying them. Safe to call before `applyCodeAction`. Returns `{ title, changes[{ file, edits[{ range, newText }] }], totalFiles, totalEdits }`. |
 | `formatRange` | Format a specific line range via VS Code formatter |
 
 ### Text Editing
@@ -259,23 +263,31 @@ Task status lifecycle: `pending → running → done | error | cancelled`.
 
 When started with `--automation --automation-policy <file>`, the bridge enqueues Claude tasks in response to IDE events. Policy is a JSON file with any of these keys:
 
-| Trigger | Required fields | Optional fields | Notes |
-|---------|----------------|-----------------|-------|
-| `onDiagnosticsError` | `enabled`, `prompt`, `cooldownMs` | `minSeverity` (`error`/`warning`) | Placeholders: `{{file}}`, `{{diagnostics}}` (wrapped in delimiters) |
-| `onFileSave` | `enabled`, `prompt`, `cooldownMs`, `patterns` | — | Fires on explicit save (Ctrl+S). `patterns`: minimatch globs. Placeholder: `{{file}}` |
-| `onFileChanged` | `enabled`, `prompt`, `cooldownMs`, `patterns` | — | Fires on any editor buffer change (unsaved edits, external writes). `patterns`: minimatch globs. Placeholder: `{{file}}`. Requires Claude Code 2.1.83+ (FileChanged hook event). |
-| `onCwdChanged` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude Code's working directory changes. Placeholder: `{{cwd}}`. Trigger via the `notifyCwdChanged` MCP tool from a CC CwdChanged hook. Requires Claude Code 2.1.83+. |
-| `onPostCompact` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude compacts context (Claude Code 2.1.76+). Use to re-snapshot IDE state. |
-| `onInstructionsLoaded` | `enabled`, `prompt` | — | Fires once at session start when CLAUDE.md loads (Claude Code 2.1.76+). No cooldown. |
-| `onTestRun` | `enabled`, `prompt`, `cooldownMs` | `onFailureOnly` (bool, default `true`) | Fires when `runTests` completes. Placeholders: `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array of `{name,file,message}`). Loop guard prevents hook-spawned tasks from re-triggering. |
-| `onGitCommit` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitCommit` tool call. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}` (list of committed files). Loop guard; file list capped at 20 entries. |
-| `onGitPush` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitPush` tool call. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`. Loop guard. |
-| `onBranchCheckout` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `gitCheckout` tool call. Placeholders: `{{branch}}`, `{{previousBranch}}` (null → `"(detached HEAD)"`), `{{created}}` (bool). Loop guard. |
-| `onPullRequest` | `enabled`, `prompt`, `cooldownMs` | — | Fires after every successful `githubCreatePR` tool call. Placeholders: `{{url}}`, `{{number}}` (null → `"(unknown)"`), `{{title}}`, `{{branch}}`. Loop guard. |
-| `onTaskCreated` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude Code 2.1.84+ `TaskCreated` hook fires — i.e., when Claude spawns a subagent task. Placeholders: `{{taskId}}`, `{{prompt}}` (truncated to 500 chars). Loop guard. |
-| `onPermissionDenied` | `enabled`, `prompt`, `cooldownMs` | — | Fires when Claude Code 2.1.89+ `PermissionDenied` hook fires — i.e., when a tool call is blocked by the permission system. Placeholders: `{{tool}}`, `{{reason}}`. Loop guard. |
+| Hook | Trigger | Placeholders | Notes |
+|------|---------|--------------|-------|
+| `onDiagnosticsError` | New error/warning diagnostics appear | `{{file}}`, `{{diagnostics}}` | Severity filter: `minSeverity` — `"error"` or `"warning"` (default `"warning"`) |
+| `onDiagnosticsCleared` | Errors/warnings drop to zero for a file (non-zero → zero transition) | `{{file}}` | — |
+| `onFileSave` | Matching file saved (explicit save, Ctrl+S) | `{{file}}` | `patterns`: minimatch globs |
+| `onFileChanged` | Matching file buffer changes (before save; also external writes) | `{{file}}` | `patterns`: minimatch globs. Requires CC 2.1.83+ |
+| `onPostCompact` | Claude Code compacts conversation context | — | Use to re-inject IDE state. Requires CC 2.1.76+ |
+| `onInstructionsLoaded` | Session starts / CLAUDE.md reloads | — | No cooldown. Requires CC 2.1.76+ |
+| `onGitCommit` | `gitCommit` tool succeeds | `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}` | `{{files}}` is a delimiter-wrapped list (max 20 entries) |
+| `onGitPush` | `gitPush` tool succeeds | `{{remote}}`, `{{branch}}`, `{{hash}}` | — |
+| `onBranchCheckout` | `gitCheckout` tool succeeds | `{{branch}}`, `{{previousBranch}}`, `{{created}}` | `{{previousBranch}}` is `"(detached HEAD)"` when applicable |
+| `onPullRequest` | `githubCreatePR` tool succeeds | `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}` | `{{number}}` is `"(unknown)"` if not returned |
+| `onTestRun` | `runTests` tool completes | `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` | `{{failures}}` is a **JSON array of strings** — each entry is one failure message/test name. `onFailureOnly: true` (default) skips passing runs |
+| `onTaskCreated` | Claude Code `TaskCreated` hook fires (Claude spawns a subagent) | `{{taskId}}`, `{{prompt}}` | `{{prompt}}` truncated to 500 chars. Requires CC 2.1.84+ |
+| `onTaskSuccess` | Orchestrator Claude task completes with status `done` | `{{taskId}}`, `{{output}}` | — |
+| `onPermissionDenied` | Claude Code `PermissionDenied` hook fires (tool call blocked) | `{{tool}}`, `{{reason}}` | Requires CC 2.1.89+ |
+| `onCwdChanged` | Claude Code working directory changes | `{{cwd}}` | Trigger via `notifyCwdChanged` MCP tool from a CC CwdChanged hook. Requires CC 2.1.83+ |
 
-Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering while a prior task for the same file/event is still pending/running.
+**Shared options** (apply to all hooks):
+
+- `prompt` (string) — inline prompt template with `{{placeholder}}` substitution
+- `promptName` (string) — name of a registered MCP prompt to use instead of `prompt`
+- `promptArgs` (object) — arguments passed to the named prompt; values support `{{placeholder}}` substitution
+- `cooldownMs` (integer, min 5000) — minimum milliseconds between triggers for the same file/event
+- **Loop guard** — if the hook's own Claude task is still `pending` or `running`, a re-trigger is suppressed automatically
 
 **Claude Code hooks (settings.json)** can narrow when bridge-invoked shell scripts fire using the `if` field (Claude Code 2.1.85+). Uses permission-rule syntax:
 
@@ -330,6 +342,8 @@ Minimum `cooldownMs` enforced at 5000 ms. Loop guard prevents re-triggering whil
 | `setWorkspaceSetting` | Write VS Code settings |
 | `readClipboard` | Read system clipboard |
 | `writeClipboard` | Write to system clipboard |
+| `listVSCodeTasks` | List all VS Code tasks defined in `.vscode/tasks.json` plus detected Makefile targets. Optional `type` filter (e.g. `"shell"`, `"npm"`). Returns `{ tasks[{ label, type, group, detail }] }`. |
+| `runVSCodeTask` | Execute a named VS Code task and wait for it to complete. Returns `{ exitCode, success }`. Task must be defined in `.vscode/tasks.json`. |
 
 ---
 

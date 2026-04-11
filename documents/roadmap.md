@@ -4,16 +4,19 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.15.0 — 2026-04-09)
+## Current State (v2.22.10 — 2026-04-12)
 
-- **Slim mode default**: 53 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection); `--full` restores all 136+; plugin tools always bypass slim filter
-- **Token-efficient `tools/list`**: boilerplate stripped (~45 occurrences, 16 files), all 133 tool descriptions ≤200 chars (slim ≤160), CI audit check #6 enforces limit; `scripts/measure-tools-list.mjs` tracks payload size
-- **1,850 bridge tests / 133 files + 472 extension tests / 28 files = 2,322 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
-- **28 MCP prompts** (slash commands): 15 general/Dispatch + 13 LSP-composition (added `explore-type`)
-- **12 plugin skills**, **4 subagents** (including new `ide-architect`)
-- **`promptName`/`promptArgs` in automation policy**: all 11 hooks can now reference named MCP prompts instead of inline strings; `{{placeholder}}` substitution works inside `promptArgs` values
-- `templates/automation-policy.example.json` with LSP-aware prompts for all 11 automation hooks + `promptName` usage example
-- Extension v1.1.0 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
+- **Slim mode default**: 56 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection, `watchActivityLog`, `contextBundle`); `--full` restores all tools; plugin tools always bypass slim filter
+- **Token-efficient `tools/list`**: all tool descriptions ≤200 chars (slim ≤160), CI audit check #6 enforces limit; `scripts/measure-tools-list.mjs` tracks payload size
+- **2,040 bridge tests / 143 files + 564 extension tests / 35 files = 2,604 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **31 MCP prompts** (slash commands): 15 general/Dispatch + 13 LSP-composition + 3 visual skills (`/ide-coverage`, `/ide-deps`, `/ide-diagnostics-board`)
+- **12 plugin skills**, **4 subagents** (including `ide-architect`)
+- **59 tools with `outputSchema`/`structuredContent`**; CI audit enforces coverage
+- **`promptName`/`promptArgs` in automation policy**: all 15 hooks can reference named MCP prompts instead of inline strings; `{{placeholder}}` substitution works inside `promptArgs` values
+- **OAuth token persistence**: bridge token in `~/.claude/ide/bridge-token.json`; access tokens in `~/.claude/ide/oauth-tokens.json` (SHA-256 keyed, configurable TTL via `oauthTokenTtlDays`, max 90d); eliminates re-auth on restart
+- **VS Code task tools**: `listVSCodeTasks` + `runVSCodeTask` (full mode); extension handlers use `vscode.tasks.fetchTasks`/`executeTask`/`onDidEndTaskProcess`
+- **Local auth reliability**: lock file age filter 2h→24h; WebSocket session resumption via `X-Claude-Code-Session-Id` header; grace period default 30s→120s
+- Extension v1.3.0 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
 
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
@@ -33,6 +36,9 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.18–v2.22.10 shipped (2026-04-09–2026-04-12) — Tracks A–E + security sweep:**
+FileLock `tryAcquire` (non-blocking); `watchActivityLog` + `contextBundle` slim-mode tools; cursor pagination on `findReferences`/`getCallHierarchy`; diagnostic enrichment in `watchDiagnostics` (git blame, per-instance `blameCache`); visual skills (`/ide-coverage`, `/ide-deps`, `/ide-diagnostics-board`); Track B automation (`onDiagnosticsCleared`, condition expressions, `getChangeImpact` in `onGitCommit`, `onTaskSuccess` chained automation, hooks total 11→15); OAuth token persistence (bridge-token.json + oauth-tokens.json, SHA-256 keyed, configurable TTL); VS Code task tools (`listVSCodeTasks`, `runVSCodeTask`); local auth reliability (lock file age 2h→24h, WebSocket session resumption via `X-Claude-Code-Session-Id`, grace period 120s); 22-item security sweep (ws.send bypass fixed, test isolation — vitest no longer kills live MCP session). Bridge tests 1,850→2,040 / 133→143 files; extension tests 472→564 / 28→35 files.
 
 **v2.13.0 shipped (2026-04-09) — Track B LSP primitives:**
 - 3 new LSP navigation tools: `findImplementations`, `goToTypeDefinition`, `goToDeclaration`
