@@ -58,10 +58,14 @@ async function readValidLockFiles(
         }
 
         // Guard against PID reuse: startedAt is required.
+        // 24-hour window: bridges running for longer than this are treated as
+        // stale — a PID that old has almost certainly been reused on a system
+        // that has been up for more than a day. 2 hours was too aggressive and
+        // caused the extension to drop valid lock files on long-running sessions.
         const startedAt: number =
           typeof content.startedAt === "number" ? content.startedAt : 0;
         const ageMs = Date.now() - startedAt;
-        if (ageMs > 2 * 60 * 60 * 1000) continue;
+        if (ageMs > 24 * 60 * 60 * 1000) continue;
 
         results.push({
           port,

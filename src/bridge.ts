@@ -137,6 +137,65 @@ export class Bridge {
         ws.close(1013, "Bridge not ready");
         return;
       }
+
+      // ── Session resumption ────────────────────────────────────────────────
+      // If the client sent X-Claude-Code-Session-Id and we have a matching
+      // session in the grace period, reattach the new WebSocket to it instead
+      // of creating a fresh session. This eliminates re-initialization overhead
+      // after brief disconnects (sleep/wake, network blip, bridge restart).
+      const clientSessionId = (ws as WebSocket & { clientSessionId?: string })
+        .clientSessionId;
+      if (clientSessionId) {
+        const existing = this.sessions.get(clientSessionId);
+        if (existing?.graceTimer) {
+          clearTimeout(existing.graceTimer);
+          existing.graceTimer = null;
+          existing.ws = ws;
+          existing.transport.attach(ws);
+          this.lastConnectAt = new Date().toISOString();
+          this.logger.info(
+            `Session ${clientSessionId.slice(0, 8)} resumed — grace period cancelled`,
+          );
+          this.activityLog.recordEvent("session_resumed", {
+            sessionId: clientSessionId.slice(0, 8),
+          });
+          this.logger.event("session_resumed", { sessionId: clientSessionId });
+          // Re-attach close/error handlers to the new WebSocket
+          ws.on("close", () => {
+            this.lastDisconnectAt = new Date().toISOString();
+            this.logger.info(
+              `Claude Code disconnected (session ${clientSessionId.slice(0, 8)})`,
+            );
+            this.activityLog.recordEvent("claude_disconnected", {
+              sessionId: clientSessionId.slice(0, 8),
+            });
+            this.logger.event("claude_disconnected", {
+              sessionId: clientSessionId,
+            });
+            const s = this.sessions.get(clientSessionId);
+            if (s && !s.graceTimer) {
+              s.graceTimer = setTimeout(() => {
+                this.cleanupSession(clientSessionId);
+              }, this.config.gracePeriodMs);
+              this.activityLog.recordEvent("grace_started", {
+                sessionId: clientSessionId.slice(0, 8),
+                gracePeriodMs: this.config.gracePeriodMs,
+              });
+              this.logger.info(
+                `Grace period started for session ${clientSessionId.slice(0, 8)} (${this.config.gracePeriodMs / 1000}s)`,
+              );
+            }
+          });
+          ws.on("error", (err) => {
+            this.logger.error(
+              `WebSocket error (session ${clientSessionId.slice(0, 8)}): ${err.message}`,
+            );
+          });
+          return;
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       // Reject connections beyond capacity (grace-period sessions don't count)
       const activeSessionCount = [...this.sessions.values()].filter(
         (s) => !s.graceTimer,

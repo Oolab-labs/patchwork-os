@@ -193,7 +193,7 @@ Three transports serve different clients:
 - **Lock file**: `~/.claude/ide/<port>.lock` — `{pid, workspace, authToken, isBridge: true, ...}`. Created with `O_EXCL` (prevents symlink attacks), permissions `0o600`. The `isBridge: true` flag distinguishes bridge locks from IDE-owned locks. See [ADR-0003](docs/adr/0003-isbridge-lock-file-flag.md).
 - **Auth**: token from lock file, validated with `crypto.timingSafeEqual`. Host header DNS rebinding defense rejects non-loopback hosts.
 - **HTTP sessions**: max 5 concurrent, 10-min idle TTL, oldest idle (>60s) evicted on capacity. See [ADR-0005](docs/adr/0005-http-session-eviction.md).
-- **Grace period**: `--grace-period <ms>` (default 30s) preserves session state across brief disconnects.
+- **Grace period**: `--grace-period <ms>` (default 120s) preserves session state across brief disconnects. During grace, a reconnecting client that sends `X-Claude-Code-Session-Id` matching the in-grace session is reattached to it (no new session, no re-initialization). The stdio shim sends a stable per-process UUID automatically.
 - **Version numbers**: `BRIDGE_PROTOCOL_VERSION` (wire format, bump rarely) vs `PACKAGE_VERSION` (npm, every release). See [ADR-0001](docs/adr/0001-dual-version-numbers.md).
 - **Generation guards**: every WebSocket callback checks `gen !== this.generation` to prevent stale callbacks from corrupting new connection state. See [ADR-0002](docs/adr/0002-generation-guards-on-reconnect.md).
 

@@ -71,33 +71,33 @@ describe("readLockFilesAsync — PID reuse guards", () => {
     expect(result).toBeNull();
   });
 
-  it("rejects a lock file whose startedAt is more than 2 hours ago even if PID is alive (PID reuse)", async () => {
-    const twoHoursAndOneMinute = 2 * 60 * 60 * 1000 + 60_000;
+  it("accepts a lock file whose startedAt is 3 hours ago (within the 24-hour window)", async () => {
+    // The age filter was changed from 2h → 24h so that long-running bridges
+    // are not incorrectly dropped by the extension after 2 hours of uptime.
+    const threeHoursAgo = 3 * 60 * 60 * 1000;
     vi.mocked(fsp.readFile).mockResolvedValue(
-      makeLockContent({ startedAt: NOW - twoHoursAndOneMinute }) as any,
-    );
-    // process.kill returns true — simulating a reused PID
-    const result = await readLockFilesAsync();
-    expect(result).toBeNull();
-  });
-
-  it("accepts a lock file whose startedAt is just under 2 hours ago", async () => {
-    const justUnder2h = 2 * 60 * 60 * 1000 - 5_000;
-    vi.mocked(fsp.readFile).mockResolvedValue(
-      makeLockContent({ startedAt: NOW - justUnder2h }) as any,
+      makeLockContent({ startedAt: NOW - threeHoursAgo }) as any,
     );
     const result = await readLockFilesAsync();
     expect(result).not.toBeNull();
   });
 
-  it("rejects a lock file whose startedAt is exactly 24 hours ago (old threshold should no longer pass)", async () => {
-    const exactly24h = 24 * 60 * 60 * 1000;
+  it("accepts a lock file whose startedAt is just under 24 hours ago", async () => {
+    const justUnder24h = 24 * 60 * 60 * 1000 - 5_000;
     vi.mocked(fsp.readFile).mockResolvedValue(
-      makeLockContent({ startedAt: NOW - exactly24h }) as any,
+      makeLockContent({ startedAt: NOW - justUnder24h }) as any,
     );
     const result = await readLockFilesAsync();
-    // With the old 24h window this would have been accepted; with the new 2h
-    // window it must be rejected.
+    expect(result).not.toBeNull();
+  });
+
+  it("rejects a lock file whose startedAt is more than 24 hours ago (PID reuse guard)", async () => {
+    const twentyFiveHoursAgo = 25 * 60 * 60 * 1000;
+    vi.mocked(fsp.readFile).mockResolvedValue(
+      makeLockContent({ startedAt: NOW - twentyFiveHoursAgo }) as any,
+    );
+    // process.kill returns true — simulating a reused PID
+    const result = await readLockFilesAsync();
     expect(result).toBeNull();
   });
 });

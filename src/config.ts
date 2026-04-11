@@ -314,7 +314,7 @@ export function parseConfig(argv: string[]): Config {
     process.env.BRIDGE_BIND_ADDRESS ?? fileConfig.bindAddress ?? "127.0.0.1";
   let commandTimeout = fileConfig.commandTimeout ?? 30_000;
   let maxResultSize = fileConfig.maxResultSize ?? 512;
-  let gracePeriodMs = fileConfig.gracePeriodMs ?? 30_000;
+  let gracePeriodMs = fileConfig.gracePeriodMs ?? 120_000;
   let autoTmux = fileConfig.autoTmux ?? false;
   let watch = false;
   let vps = false;

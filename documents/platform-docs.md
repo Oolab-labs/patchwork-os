@@ -417,10 +417,11 @@ Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket
 - `elicitation: {}` capability enables the bridge to send `elicitation/create` mid-task to request structured user input via Claude Code's interactive dialog (Claude Code 2.1.76+). Pending elicitations are rejected on disconnect. API: `McpTransport.elicit(message, requestedSchema, timeoutMs?)` → resolves with the client's response object.
 
 ### Auth
-- Bridge generates random UUID auth token on startup
+- Bridge generates random UUID auth token on startup (persisted to `~/.claude/ide/bridge-token.json` — survives restarts)
 - Token written to lock file: `~/.claude/ide/<port>.lock`
-- Lock file contains: `{ authToken, pid, workspace, ideName, isBridge: true }`
+- Lock file contains: `{ authToken, pid, workspace, ideName, isBridge: true, startedAt }`
 - `isBridge: true` lets the stdio shim distinguish bridge lock files from IDE-owned lock files (e.g. Windsurf writes its own lock); shim always prefers a bridge lock over a non-bridge lock when auto-discovering
+- Extension rejects lock files older than **24 hours** (PID-reuse guard; was 2 hours before v2.22.2)
 - Claude Code reads lock file and connects with token in WebSocket upgrade headers
 - Extension authenticates via `x-claude-ide-extension` header
 
@@ -459,7 +460,7 @@ PKCE S256 is mandatory. Auth codes are single-use with 5-min TTL. Access tokens 
 - All `ws.send()` calls wrapped in readyState check + try-catch
 - Extension circuit breaker with exponential backoff (AWS full jitter)
 - Generation counter prevents stale handlers from responding
-- 30s grace period on disconnect (all session types — preserves in-flight state during brief interruptions)
+- 120s grace period on disconnect (all session types — preserves in-flight state during brief interruptions; was 30s before v2.22.2)
 - Send buffer monitoring (warns at >1MB buffered)
 - Backpressure-aware sending with drain waiting
 
@@ -474,15 +475,16 @@ The bridge supports up to 5 concurrent Claude Code sessions sharing a single bri
 | Terminal namespacing | Terminals prefixed per-session (e.g., `s1a2b3c4-build`) — each agent sees only its own |
 | File locking | `FileLock` promise-chain mutex serializes concurrent file edits across sessions. `tryAcquire()` (non-blocking) returns `{ release }` on success or `{ lockedBySession: string }` if already held — used by `editText`, `replaceBlock`, and `searchAndReplace`. |
 | Min connection interval | 50ms between connections (prevents connection-storm DoS) |
-| Grace period | 30s after disconnect — delays session cleanup; applies to all session types (CLI and Desktop shim) |
+| Grace period | 120s after disconnect — delays session cleanup; applies to all session types (CLI and Desktop shim). Configurable via `--grace-period`. |
 | Activation | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude` |
 
 Session lifecycle:
 1. Claude Code connects → new `AgentSession` created with unique ID
 2. Session gets isolated transport, opened-files set, terminal prefix
 3. Tool calls routed to the session's transport
-4. On disconnect → grace period starts (30s default, configurable via `--grace-period`); applies to all session types
-5. Reconnect always creates a new session — grace period delays cleanup of the old one (preserving in-flight tool call state); otherwise → old session cleaned up
+4. On disconnect → grace period starts (120s default, configurable via `--grace-period`); applies to all session types
+5. **Session resumption** (v2.22.2+): if the reconnecting client sends `X-Claude-Code-Session-Id` matching a grace-period session, the bridge reattaches the new WebSocket to the existing session (cancels cleanup, preserves `openedFiles`, rate-limit window, and tool registrations). The stdio shim sends a stable per-process UUID on every connect automatically. If no match → new session created.
+6. Otherwise → old session cleaned up after grace expires
 
 ### Health & Metrics
 - `/ping` endpoint: unauthenticated liveness check — returns `{"ok":true,"v":"<version>"}`. Safe for uptime monitors, Docker health checks, and CI wait scripts.
