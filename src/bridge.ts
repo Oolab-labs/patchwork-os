@@ -8,6 +8,7 @@ import { buildSummary } from "./analyticsAggregator.js";
 import { getAnalyticsPref } from "./analyticsPrefs.js";
 import { sendAnalytics } from "./analyticsSend.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
+import { loadOrCreateBridgeToken } from "./bridgeToken.js";
 import { createDriver } from "./claudeDriver.js";
 import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import type { Config } from "./config.js";
@@ -109,10 +110,15 @@ export class Bridge {
   constructor(private config: Config) {
     this.logger = new Logger(config.verbose, config.jsonl);
     this.lockFile = new LockFileManager(this.logger);
-    this.authToken = config.fixedToken ?? randomUUID();
+    const configDir =
+      process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+    this.authToken = config.fixedToken ?? loadOrCreateBridgeToken(configDir);
     this.server = new Server(this.authToken, this.logger, config.corsOrigins);
     if (config.issuerUrl) {
-      this.oauthServer = new OAuthServerImpl(this.authToken, config.issuerUrl);
+      this.oauthServer = new OAuthServerImpl(this.authToken, config.issuerUrl, {
+        configDir,
+        tokenTtlMs: config.oauthTokenTtlMs,
+      });
       this.server.setOAuthServer(this.oauthServer, config.issuerUrl);
       this.logger.info(`OAuth 2.0 enabled — issuer: ${config.issuerUrl}`);
     }

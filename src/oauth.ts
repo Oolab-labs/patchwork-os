@@ -20,7 +20,9 @@
  */
 
 import crypto from "node:crypto";
+import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import path from "node:path";
 import { URL } from "node:url";
 import { timingSafeStringEqual } from "./crypto.js";
 
@@ -126,9 +128,28 @@ export class OAuthServerImpl implements OAuthServer {
   private static readonly CIMD_CACHE_TTL_MS = 5 * 60 * 1_000; // 5 min
   private static readonly CIMD_MAX_BYTES = 8_192; // 8 KB max for metadata doc
 
-  constructor(bridgeToken: string, issuerUrl: string) {
+  /** Path to the persisted token file; null when persistence is disabled. */
+  private readonly tokenStorePath: string | null;
+  private readonly tokenTtlMs: number;
+  /**
+   * Tokens loaded from disk on startup: SHA-256(token) → AccessToken.
+   * In-memory issued tokens use `accessTokens` (raw key). Both are checked
+   * in resolveBearerToken — disk tokens are promoted to accessTokens on first use.
+   */
+  private readonly hashedTokens = new Map<string, AccessToken>();
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    bridgeToken: string,
+    issuerUrl: string,
+    opts?: { configDir?: string; tokenTtlMs?: number },
+  ) {
     this.bridgeToken = bridgeToken;
     this.issuerUrl = issuerUrl.replace(/\/$/, "");
+    this.tokenTtlMs = opts?.tokenTtlMs ?? TOKEN_TTL_MS;
+    this.tokenStorePath = opts?.configDir
+      ? path.join(opts.configDir, "ide", "oauth-tokens.json")
+      : null;
     this.gcTimer = setInterval(
       () => {
         const now = Date.now();
@@ -151,9 +172,16 @@ export class OAuthServerImpl implements OAuthServer {
       10 * 60 * 1_000,
     );
     this.gcTimer.unref();
+    this.loadTokens();
   }
 
   destroy(): void {
+    // Flush any pending debounced persist before shutdown
+    if (this.persistTimer !== null) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+      this.persistTokens();
+    }
     clearInterval(this.gcTimer);
   }
 
@@ -547,13 +575,14 @@ export class OAuthServerImpl implements OAuthServer {
     this.accessTokens.set(accessToken, {
       clientId,
       scope: record.scope,
-      expiresAt: Date.now() + TOKEN_TTL_MS,
+      expiresAt: Date.now() + this.tokenTtlMs,
     });
+    this.schedulePersist();
 
     this.sendJson(res, 200, {
       access_token: accessToken,
       token_type: "Bearer",
-      expires_in: Math.floor(TOKEN_TTL_MS / 1_000),
+      expires_in: Math.floor(this.tokenTtlMs / 1_000),
       scope: record.scope,
     });
   }
@@ -567,6 +596,10 @@ export class OAuthServerImpl implements OAuthServer {
       if (token) {
         this.accessTokens.delete(token);
         this.authCodes.delete(token);
+        // Also remove from hashed (disk-persisted) tokens
+        const hash = this.hashToken(token);
+        this.hashedTokens.delete(hash);
+        this.schedulePersist();
       }
     } catch {
       // RFC 7009: always 200
@@ -581,23 +614,128 @@ export class OAuthServerImpl implements OAuthServer {
   // ── Bearer resolution (called by server.ts) ───────────────────────────────
 
   resolveBearerToken(token: string): string | null {
-    const record = this.accessTokens.get(token);
+    const record = this.lookupToken(token);
     if (!record) return null;
-    if (record.expiresAt < Date.now()) {
-      this.accessTokens.delete(token);
-      return null;
-    }
     return this.bridgeToken;
   }
 
   resolveBearerScope(token: string): string | null {
-    const record = this.accessTokens.get(token);
+    const record = this.lookupToken(token);
     if (!record) return null;
-    if (record.expiresAt < Date.now()) {
-      this.accessTokens.delete(token);
-      return null;
-    }
     return record.scope;
+  }
+
+  /**
+   * Lookup a bearer token in memory first, then fall back to disk-loaded hashed
+   * tokens. Promotes disk tokens to the in-memory map on first use for fast
+   * subsequent lookups.
+   */
+  private lookupToken(token: string): AccessToken | null {
+    // 1. Check in-memory map (tokens issued this session)
+    const inMemory = this.accessTokens.get(token);
+    if (inMemory) {
+      if (inMemory.expiresAt < Date.now()) {
+        this.accessTokens.delete(token);
+        return null;
+      }
+      return inMemory;
+    }
+    // 2. Check disk-loaded hashed tokens (tokens issued before last restart)
+    const hash = this.hashToken(token);
+    const fromDisk = this.hashedTokens.get(hash);
+    if (fromDisk) {
+      if (fromDisk.expiresAt < Date.now()) {
+        this.hashedTokens.delete(hash);
+        return null;
+      }
+      // Promote to in-memory for fast subsequent lookups
+      this.accessTokens.set(token, fromDisk);
+      this.hashedTokens.delete(hash);
+      return fromDisk;
+    }
+    return null;
+  }
+
+  // ── Token persistence helpers ─────────────────────────────────────────────
+
+  private hashToken(token: string): string {
+    return crypto.createHash("sha256").update(token).digest("hex");
+  }
+
+  private loadTokens(): void {
+    if (!this.tokenStorePath) return;
+    try {
+      const raw = fs.readFileSync(this.tokenStorePath, "utf8");
+      const parsed = JSON.parse(raw) as {
+        version: number;
+        tokens: Record<
+          string,
+          { clientId: string; scope: string; expiresAt: number }
+        >;
+      };
+      if (parsed.version !== 1 || typeof parsed.tokens !== "object") return;
+      const now = Date.now();
+      for (const [hash, entry] of Object.entries(parsed.tokens)) {
+        if (entry.expiresAt > now) {
+          this.hashedTokens.set(hash, {
+            clientId: entry.clientId,
+            scope: entry.scope,
+            expiresAt: entry.expiresAt,
+          });
+        }
+      }
+    } catch {
+      // Missing or corrupt file — start fresh
+    }
+  }
+
+  private persistTokens(): void {
+    if (!this.tokenStorePath) return;
+    try {
+      const now = Date.now();
+      const tokens: Record<
+        string,
+        { clientId: string; scope: string; expiresAt: number }
+      > = {};
+      // Persist current in-memory tokens (keyed by hash)
+      for (const [rawToken, record] of this.accessTokens) {
+        if (record.expiresAt > now) {
+          tokens[this.hashToken(rawToken)] = {
+            clientId: record.clientId,
+            scope: record.scope,
+            expiresAt: record.expiresAt,
+          };
+        }
+      }
+      // Persist still-valid disk tokens that haven't been promoted yet
+      for (const [hash, record] of this.hashedTokens) {
+        if (record.expiresAt > now && !(hash in tokens)) {
+          tokens[hash] = {
+            clientId: record.clientId,
+            scope: record.scope,
+            expiresAt: record.expiresAt,
+          };
+        }
+      }
+      const data = JSON.stringify({ version: 1, tokens }, null, 2);
+      const tmpPath = `${this.tokenStorePath}.tmp`;
+      const dir = path.dirname(this.tokenStorePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(tmpPath, data, { mode: 0o600 });
+      fs.renameSync(tmpPath, this.tokenStorePath);
+      fs.chmodSync(this.tokenStorePath, 0o600);
+    } catch {
+      // Best-effort — never block operation
+    }
+  }
+
+  private schedulePersist(): void {
+    if (!this.tokenStorePath) return;
+    if (this.persistTimer !== null) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persistTokens();
+    }, 500);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
