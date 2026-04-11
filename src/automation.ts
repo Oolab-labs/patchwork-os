@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { minimatch } from "minimatch";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
+import type { ExtensionClient } from "./extensionClient.js";
 import { getPrompt } from "./prompts.js";
 
 /** Maximum length (chars) of a single diagnostic message before truncation */
@@ -35,11 +36,14 @@ const LAST_TRIGGER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
  * - `promptArgs`: static args passed to the named prompt. Values may contain
  *   `{{placeholder}}` tokens that are substituted with sanitized event data
  *   (control chars stripped, length capped) before the prompt is resolved.
+ * - `condition`: optional minimatch glob. If set, the hook only fires when the
+ *   primary event value (file path, branch name, tool name, etc.) matches.
  */
 export interface PromptSource {
   prompt?: string;
   promptName?: string;
   promptArgs?: Record<string, string>;
+  condition?: string;
 }
 
 export interface OnDiagnosticsErrorPolicy extends PromptSource {
@@ -220,6 +224,24 @@ export interface PermissionDeniedResult {
   reason: string;
 }
 
+export interface OnDiagnosticsClearedPolicy extends PromptSource {
+  enabled: boolean;
+  /** Placeholders (inline prompt only): {{file}} */
+  cooldownMs: number;
+}
+
+export interface OnTaskSuccessPolicy extends PromptSource {
+  enabled: boolean;
+  /** Placeholders (inline prompt only): {{taskId}}, {{output}} */
+  cooldownMs: number;
+}
+
+/** Minimal task-success result passed to handleTaskSuccess. */
+export interface TaskSuccessResult {
+  taskId: string;
+  output: string;
+}
+
 export interface AutomationPolicy {
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
@@ -245,6 +267,10 @@ export interface AutomationPolicy {
   onTaskCreated?: OnTaskCreatedPolicy;
   /** Fired by Claude Code 2.1.89+ PermissionDenied hook — fires when a tool call is blocked. */
   onPermissionDenied?: OnPermissionDeniedPolicy;
+  /** Fired when all errors/warnings clear for a file (non-zero → zero transition). */
+  onDiagnosticsCleared?: OnDiagnosticsClearedPolicy;
+  /** Fired when a Claude orchestrator task completes with status done. */
+  onTaskSuccess?: OnTaskSuccessPolicy;
 }
 
 export interface Diagnostic {
@@ -303,6 +329,13 @@ function validatePromptSource(hookName: string, cfg: PromptSource): void {
           throw new Error(`"${hookName}.promptArgs.${k}" must be a string`);
         }
       }
+    }
+  }
+  if (cfg.condition !== undefined) {
+    if (typeof cfg.condition !== "string" || cfg.condition.length > 1024) {
+      throw new Error(
+        `"${hookName}.condition" must be a string ≤ 1024 characters`,
+      );
     }
   }
 }
@@ -587,6 +620,42 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onDiagnosticsCleared
+  if (policy.onDiagnosticsCleared !== undefined) {
+    const dc = policy.onDiagnosticsCleared;
+    if (typeof dc !== "object" || dc === null) {
+      throw new Error(`"onDiagnosticsCleared" must be an object`);
+    }
+    if (typeof dc.enabled !== "boolean") {
+      throw new Error(`"onDiagnosticsCleared.enabled" must be a boolean`);
+    }
+    validatePromptSource("onDiagnosticsCleared", dc);
+    if (typeof dc.cooldownMs !== "number" || !Number.isFinite(dc.cooldownMs)) {
+      throw new Error(`"onDiagnosticsCleared.cooldownMs" must be a number`);
+    }
+    if (dc.cooldownMs < MIN_COOLDOWN_MS) {
+      dc.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
+  // Validate onTaskSuccess
+  if (policy.onTaskSuccess !== undefined) {
+    const ts = policy.onTaskSuccess;
+    if (typeof ts !== "object" || ts === null) {
+      throw new Error(`"onTaskSuccess" must be an object`);
+    }
+    if (typeof ts.enabled !== "boolean") {
+      throw new Error(`"onTaskSuccess.enabled" must be a boolean`);
+    }
+    validatePromptSource("onTaskSuccess", ts);
+    if (typeof ts.cooldownMs !== "number" || !Number.isFinite(ts.cooldownMs)) {
+      throw new Error(`"onTaskSuccess.cooldownMs" must be a number`);
+    }
+    if (ts.cooldownMs < MIN_COOLDOWN_MS) {
+      ts.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   return policy;
 }
 
@@ -619,11 +688,18 @@ export class AutomationHooks {
   private activeTaskCreatedTaskId: string | null = null;
   /** Active task ID for the permission-denied handler (workspace-global). */
   private activePermissionDeniedTaskId: string | null = null;
+  /** Active task IDs per file for the diagnostics-cleared handler. */
+  private activeDiagnosticsClearedTasks = new Map<string, string>();
+  /** Tracks previous error count per normalized file path for zero-transition detection. */
+  private prevDiagnosticErrors = new Map<string, number>();
+  /** Active task ID for the task-success handler (workspace-global). */
+  private activeTaskSuccessTaskId: string | null = null;
 
   constructor(
     private readonly policy: AutomationPolicy,
     private readonly orchestrator: ClaudeOrchestrator,
     private readonly log: (msg: string) => void,
+    private readonly extensionClient?: ExtensionClient,
   ) {}
 
   /**
@@ -666,12 +742,42 @@ export class AutomationHooks {
       .join("\n\n");
   }
 
+  private _matchesCondition(cfg: PromptSource, primaryValue: string): boolean {
+    if (!cfg.condition) return true;
+    return minimatch(primaryValue, cfg.condition, { dot: true });
+  }
+
   handleDiagnosticsChanged(file: string, diagnostics: Diagnostic[]): void {
+    // Normalize path before any processing
+    const normalizedFile = path.resolve(file);
+
+    // Track error count for zero-transition detection (needed regardless of which hooks are enabled)
+    const severityRankForClear: Record<string, number> = {
+      error: 2,
+      warning: 1,
+      info: 0,
+      information: 0,
+      hint: 0,
+    };
+    const currentErrorCount = diagnostics.filter(
+      (d) => (severityRankForClear[d.severity] ?? 0) >= 1,
+    ).length;
+    const prevErrorCount = this.prevDiagnosticErrors.get(normalizedFile) ?? 0;
+    this.prevDiagnosticErrors.set(normalizedFile, currentErrorCount);
+
+    // Fire onDiagnosticsCleared if transitioning from non-zero → zero
+    if (prevErrorCount > 0 && currentErrorCount === 0) {
+      this.handleDiagnosticsCleared(normalizedFile);
+    }
+
     const cfg = this.policy.onDiagnosticsError;
     if (!cfg?.enabled) return;
 
-    // Normalize path to prevent loop-guard bypass via equivalent paths
-    const normalizedFile = path.resolve(file);
+    // Condition filter
+    if (!this._matchesCondition(cfg, normalizedFile)) return;
+
+    // Skip onDiagnosticsError if there are no errors to report
+    if (currentErrorCount === 0) return;
 
     // Loop guard: skip if a task for this file is still pending/running
     const existingId = this.activeDiagnosticsTasks.get(normalizedFile);
@@ -784,6 +890,9 @@ export class AutomationHooks {
   handleCwdChanged(newCwd: string): void {
     const cfg = this.policy.onCwdChanged;
     if (!cfg?.enabled) return;
+
+    const safeCwdForCondition = newCwd.slice(0, MAX_FILE_PATH_CHARS);
+    if (!this._matchesCondition(cfg, safeCwdForCondition)) return;
 
     // Cap path before using as map key to prevent unbounded map growth from
     // an extension sending unique paths rapidly.
@@ -925,6 +1034,9 @@ export class AutomationHooks {
     // Normalize path to prevent loop-guard bypass via equivalent paths
     const normalizedFile = path.resolve(file);
 
+    // Condition filter
+    if (!this._matchesCondition(cfg, normalizedFile)) return;
+
     // Pattern matching
     const matched = cfg.patterns.some((pattern) =>
       minimatch(normalizedFile, pattern, { dot: true }),
@@ -1008,6 +1120,9 @@ export class AutomationHooks {
     if (type !== "change") return;
 
     const normalizedFile = path.resolve(file);
+
+    // Condition filter
+    if (!this._matchesCondition(cfg, normalizedFile)) return;
 
     // Pattern matching
     const matched = cfg.patterns.some((pattern) =>
@@ -1186,9 +1301,11 @@ export class AutomationHooks {
    * Called after a successful gitCommit tool call.
    * Fires the onGitCommit automation hook if configured.
    */
-  handleGitCommit(result: GitCommitResult): void {
+  async handleGitCommit(result: GitCommitResult): Promise<void> {
     const cfg = this.policy.onGitCommit;
     if (!cfg?.enabled) return;
+
+    if (!this._matchesCondition(cfg, result.branch)) return;
 
     // Loop guard: skip if a task is still pending/running
     if (this.activeGitCommitTaskId) {
@@ -1230,6 +1347,29 @@ export class AutomationHooks {
         ? `${fileList}\n… and ${result.files.length - 20} more`
         : fileList;
 
+    // B1: Fetch changeImpact if extensionClient is connected and files exist
+    // Uses getDiagnostics as a lightweight proxy: summarizes error/warning count
+    // across changed files as a blast-radius indicator.
+    let changeImpact: string | undefined;
+    if (this.extensionClient?.isConnected() && result.files.length > 0) {
+      try {
+        const diagResult = await Promise.race([
+          this.extensionClient.getDiagnostics(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+        ]);
+        if (diagResult) {
+          const diagArr = Array.isArray(diagResult) ? diagResult : [];
+          const errorCount = diagArr.filter(
+            (d: { severity?: string }) =>
+              d.severity === "error" || d.severity === "warning",
+          ).length;
+          changeImpact = `${result.count} file(s) changed; ${errorCount} diagnostic(s) in workspace`;
+        }
+      } catch {
+        // best-effort — changeImpact remains undefined
+      }
+    }
+
     let prompt: string;
     if (cfg.promptName) {
       const resolved = this._resolveNamedPrompt(
@@ -1263,6 +1403,12 @@ export class AutomationHooks {
         .replace(
           /\{\{files\}\}/g,
           untrustedBlock("COMMITTED FILES", filesText, nonce),
+        )
+        .replace(
+          /\{\{changeImpact\}\}/g,
+          changeImpact
+            ? untrustedBlock("CHANGE IMPACT", changeImpact, nonce)
+            : "(change impact unavailable)",
         );
     }
 
@@ -1290,6 +1436,8 @@ export class AutomationHooks {
   handleGitPush(result: GitPushResult): void {
     const cfg = this.policy.onGitPush;
     if (!cfg?.enabled) return;
+
+    if (!this._matchesCondition(cfg, result.branch)) return;
 
     // Loop guard: skip if a task is still pending/running
     if (this.activeGitPushTaskId) {
@@ -1366,6 +1514,8 @@ export class AutomationHooks {
   handleBranchCheckout(result: BranchCheckoutResult): void {
     const cfg = this.policy.onBranchCheckout;
     if (!cfg?.enabled) return;
+
+    if (!this._matchesCondition(cfg, result.branch)) return;
 
     // Loop guard: skip if a task is still pending/running
     if (this.activeBranchCheckoutTaskId) {
@@ -1452,6 +1602,8 @@ export class AutomationHooks {
     const cfg = this.policy.onPullRequest;
     if (!cfg?.enabled) return;
 
+    if (!this._matchesCondition(cfg, result.branch)) return;
+
     // Loop guard: skip if a task is still pending/running
     if (this.activePullRequestTaskId) {
       const existing = this.orchestrator.getTask(this.activePullRequestTaskId);
@@ -1534,6 +1686,8 @@ export class AutomationHooks {
     const cfg = this.policy.onTaskCreated;
     if (!cfg?.enabled) return;
 
+    if (!this._matchesCondition(cfg, result.taskId)) return;
+
     if (this.activeTaskCreatedTaskId) {
       const existing = this.orchestrator.getTask(this.activeTaskCreatedTaskId);
       if (
@@ -1602,6 +1756,8 @@ export class AutomationHooks {
     const cfg = this.policy.onPermissionDenied;
     if (!cfg?.enabled) return;
 
+    if (!this._matchesCondition(cfg, result.tool)) return;
+
     if (this.activePermissionDeniedTaskId) {
       const existing = this.orchestrator.getTask(
         this.activePermissionDeniedTaskId,
@@ -1668,6 +1824,155 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Fires the onDiagnosticsCleared hook when a file transitions from non-zero to zero errors.
+   * Called internally by handleDiagnosticsChanged.
+   */
+  handleDiagnosticsCleared(normalizedFile: string): void {
+    const cfg = this.policy.onDiagnosticsCleared;
+    if (!cfg?.enabled) return;
+
+    if (!this._matchesCondition(cfg, normalizedFile)) return;
+
+    // Loop guard: skip if a task for this file is still pending/running
+    const existingId = this.activeDiagnosticsClearedTasks.get(normalizedFile);
+    if (existingId) {
+      const existing = this.orchestrator.getTask(existingId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping diagnostics-cleared trigger for ${normalizedFile} — task ${existingId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeDiagnosticsClearedTasks.delete(normalizedFile);
+    }
+
+    const key = `diagnosticsCleared:${normalizedFile}`;
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for diagnostics-cleared ${normalizedFile} (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { file: safeFilePath },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt = cfg.prompt!.replace(
+        /\{\{file\}\}/g,
+        untrustedBlock("FILE PATH", safeFilePath, nonce),
+      );
+    }
+
+    try {
+      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      this.lastTrigger.set(key, now);
+      this.activeDiagnosticsClearedTasks.set(normalizedFile, taskId);
+      this.log(
+        `[automation] triggered diagnostics-cleared task ${taskId.slice(0, 8)} for ${normalizedFile}`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue diagnostics-cleared task for ${normalizedFile}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Fires the onTaskSuccess hook when a Claude orchestrator task completes with status "done".
+   * Call from bridge.ts when a task transitions to done.
+   */
+  handleTaskSuccess(result: TaskSuccessResult): void {
+    const cfg = this.policy.onTaskSuccess;
+    if (!cfg?.enabled) return;
+
+    if (!this._matchesCondition(cfg, result.taskId)) return;
+
+    // Loop guard: skip if a prior task-success task is still active
+    if (this.activeTaskSuccessTaskId) {
+      const existing = this.orchestrator.getTask(this.activeTaskSuccessTaskId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping task-success trigger — task ${this.activeTaskSuccessTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeTaskSuccessTaskId = null;
+    }
+
+    const key = "taskSuccess:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] skipping task-success trigger — cooldown active (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeTaskId = result.taskId.slice(0, MAX_FILE_PATH_CHARS);
+    const safeOutput = result.output.slice(0, 500);
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { taskId: safeTaskId, output: safeOutput },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt = cfg
+        .prompt!.replace(
+          /\{\{taskId\}\}/g,
+          untrustedBlock("TASK ID", safeTaskId, nonce),
+        )
+        .replace(
+          /\{\{output\}\}/g,
+          untrustedBlock("TASK OUTPUT", safeOutput, nonce),
+        );
+    }
+
+    try {
+      const taskId = this.orchestrator.enqueue({
+        prompt,
+        sessionId: "",
+        isAutomationTask: true,
+      });
+      this.lastTrigger.set(key, now);
+      this.activeTaskSuccessTaskId = taskId;
+      this.log(
+        `[automation] triggered task-success task ${taskId.slice(0, 8)} (completed task: ${result.taskId.slice(0, 8)})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue task-success task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
@@ -1686,6 +1991,8 @@ export class AutomationHooks {
     onPullRequest: { enabled: boolean; cooldownMs: number } | null;
     onTaskCreated: { enabled: boolean; cooldownMs: number } | null;
     onPermissionDenied: { enabled: boolean; cooldownMs: number } | null;
+    onDiagnosticsCleared: { enabled: boolean; cooldownMs: number } | null;
+    onTaskSuccess: { enabled: boolean; cooldownMs: number } | null;
   } {
     const p = this.policy;
     return {
@@ -1757,6 +2064,18 @@ export class AutomationHooks {
         ? {
             enabled: p.onPermissionDenied.enabled,
             cooldownMs: p.onPermissionDenied.cooldownMs,
+          }
+        : null,
+      onDiagnosticsCleared: p.onDiagnosticsCleared
+        ? {
+            enabled: p.onDiagnosticsCleared.enabled,
+            cooldownMs: p.onDiagnosticsCleared.cooldownMs,
+          }
+        : null,
+      onTaskSuccess: p.onTaskSuccess
+        ? {
+            enabled: p.onTaskSuccess.enabled,
+            cooldownMs: p.onTaskSuccess.cooldownMs,
           }
         : null,
     };
