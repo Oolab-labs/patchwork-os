@@ -106,7 +106,7 @@ describe("readLockFileForWorkspace", () => {
       {
         file: "10001.lock",
         workspace: "/project/a",
-        overrides: { startedAt: NOW - 3 * 60 * 60 * 1000 }, // 3h ago
+        overrides: { startedAt: NOW - 25 * 60 * 60 * 1000 }, // 25h ago — beyond 24h threshold
       },
     ]);
     const result = await readLockFileForWorkspace("/project/a");

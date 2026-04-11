@@ -20,6 +20,21 @@ function untrustedBlock(label: string, value: string, nonce: string): string {
 }
 /** Maximum length (chars) of a file path inserted into prompts */
 const MAX_FILE_PATH_CHARS = 500;
+
+/**
+ * Build a trusted metadata prefix that is prepended to every automation hook
+ * prompt BEFORE any untrustedBlock() substitutions. This allows Claude to
+ * identify which hook triggered the task and correlate it with IDE context.
+ */
+function buildHookMetadata(hookName: string, file?: string): string {
+  // Strip control characters from the file path before embedding in the trusted
+  // metadata prefix — prevents a crafted file name containing \n from injecting
+  // additional lines into the structured header block.
+  const safeFile = file
+    ? file.slice(0, MAX_FILE_PATH_CHARS).replace(/[\x00-\x1F\x7F]/g, "")
+    : "N/A";
+  return `@@ HOOK: ${hookName} | file: ${safeFile} | ts: ${new Date().toISOString()} @@\n`;
+}
 /** Maximum length (chars) of an automation policy prompt template (matches runClaudeTask cap) */
 const MAX_POLICY_PROMPT_CHARS = 32_768;
 /** Prune lastTrigger entries older than this to prevent unbounded Map growth */
@@ -38,6 +53,7 @@ const LAST_TRIGGER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
  *   (control chars stripped, length capped) before the prompt is resolved.
  * - `condition`: optional minimatch glob. If set, the hook only fires when the
  *   primary event value (file path, branch name, tool name, etc.) matches.
+ *   Prefix with `!` to negate: `"!**\/*.test.ts"` fires for all non-test files.
  */
 export interface PromptSource {
   prompt?: string;
@@ -49,6 +65,12 @@ export interface PromptSource {
 export interface OnDiagnosticsErrorPolicy extends PromptSource {
   enabled: boolean;
   minSeverity: "error" | "warning";
+  /**
+   * Optional list of diagnostic source or code strings to match (case-insensitive).
+   * If set, only diagnostics whose `source` or `code` matches any value in this
+   * list will trigger the hook. Example: ["typescript", "eslint"].
+   */
+  diagnosticTypes?: string[];
   /** Placeholders (inline prompt only): {{file}}, {{diagnostics}} */
   /** Minimum ms between triggers for the same file. Enforced minimum: 5000. */
   cooldownMs: number;
@@ -106,6 +128,11 @@ export interface OnTestRunPolicy extends PromptSource {
    */
   onFailureOnly: boolean;
   /**
+   * Only trigger when the test run duration meets or exceeds this threshold (ms).
+   * Useful to ignore fast unit test runs and only fire on slow integration runs.
+   */
+  minDuration?: number;
+  /**
    * Placeholders (inline prompt only): {{runner}}, {{failed}}, {{passed}}, {{total}}, {{failures}}
    */
   /** Minimum ms between triggers. Enforced minimum: 5000. */
@@ -121,6 +148,7 @@ export interface TestRunResult {
     failed: number;
     skipped: number;
     errored: number;
+    durationMs?: number;
   };
   failures: Array<{ name: string; file: string; message: string }>;
 }
@@ -387,6 +415,17 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (d.cooldownMs < MIN_COOLDOWN_MS) {
       d.cooldownMs = MIN_COOLDOWN_MS;
     }
+    if (d.diagnosticTypes !== undefined) {
+      if (
+        !Array.isArray(d.diagnosticTypes) ||
+        d.diagnosticTypes.length === 0 ||
+        !d.diagnosticTypes.every((t: unknown) => typeof t === "string")
+      ) {
+        throw new Error(
+          `"onDiagnosticsError.diagnosticTypes" must be a non-empty array of strings`,
+        );
+      }
+    }
   }
 
   // Validate onFileSave
@@ -509,6 +548,17 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
     if (tr.cooldownMs < MIN_COOLDOWN_MS) {
       tr.cooldownMs = MIN_COOLDOWN_MS;
+    }
+    if (tr.minDuration !== undefined) {
+      if (
+        typeof tr.minDuration !== "number" ||
+        !Number.isFinite(tr.minDuration) ||
+        tr.minDuration < 0
+      ) {
+        throw new Error(
+          `"onTestRun.minDuration" must be a non-negative number`,
+        );
+      }
     }
   }
 
@@ -805,10 +855,22 @@ export class AutomationHooks {
       hint: 0,
     };
     const minRank = severityRank[cfg.minSeverity] ?? 0;
-    const matching = diagnostics.filter(
+    let matching = diagnostics.filter(
       (d) => (severityRank[d.severity] ?? 0) >= minRank,
     );
     if (matching.length === 0) return;
+
+    // Optional diagnosticTypes filter: only fire for specific sources/codes
+    if (cfg.diagnosticTypes && cfg.diagnosticTypes.length > 0) {
+      const types = cfg.diagnosticTypes.map((t) => t.toLowerCase());
+      matching = matching.filter(
+        (d) =>
+          (d.source && types.includes(d.source.toLowerCase())) ||
+          (d.code !== undefined &&
+            types.includes(String(d.code).toLowerCase())),
+      );
+      if (matching.length === 0) return;
+    }
 
     // Cooldown check
     const key = `diagnostics:${normalizedFile}`;
@@ -859,6 +921,7 @@ export class AutomationHooks {
         );
     }
 
+    prompt = buildHookMetadata("onDiagnosticsError", normalizedFile) + prompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -928,6 +991,7 @@ export class AutomationHooks {
         untrustedBlock("CWD", safeCwd, nonce),
       );
     }
+    prompt = buildHookMetadata("onCwdChanged") + prompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -977,6 +1041,7 @@ export class AutomationHooks {
     } else {
       postCompactPrompt = cfg.prompt!;
     }
+    postCompactPrompt = buildHookMetadata("onPostCompact") + postCompactPrompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt: postCompactPrompt,
@@ -1014,6 +1079,7 @@ export class AutomationHooks {
     } else {
       instrPrompt = cfg.prompt!;
     }
+    instrPrompt = buildHookMetadata("onInstructionsLoaded") + instrPrompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt: instrPrompt,
@@ -1094,18 +1160,17 @@ export class AutomationHooks {
         untrustedBlock("FILE PATH", safeFilePath, nonce),
       );
     }
+    prompt = buildHookMetadata("onFileSave", normalizedFile) + prompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
         isAutomationTask: true,
       });
-      // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
-      // impose a spurious cooldown on the next trigger attempt.
       this.lastTrigger.set(key, now);
       this.activeSaveTasks.set(normalizedFile, taskId);
       this.log(
-        `[automation] triggered save task ${taskId.slice(0, 8)} for ${normalizedFile}`,
+        `[automation] triggered onFileSave task ${taskId.slice(0, 8)} for ${normalizedFile}`,
       );
     } catch (err) {
       this.log(
@@ -1181,6 +1246,7 @@ export class AutomationHooks {
         untrustedBlock("FILE PATH", safeFilePath, nonce),
       );
     }
+    prompt = buildHookMetadata("onFileChanged", normalizedFile) + prompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1211,6 +1277,21 @@ export class AutomationHooks {
 
     // Honour onFailureOnly: skip trigger when all tests pass
     if (cfg.onFailureOnly && failureCount === 0) return;
+
+    // Skip if test run was shorter than the configured minimum duration
+    // Only skip when durationMs is known and below the threshold.
+    // If durationMs is absent (runner didn't report timing), let the hook fire —
+    // silently suppressing based on missing data would be surprising behaviour.
+    if (
+      cfg.minDuration !== undefined &&
+      result.summary.durationMs !== undefined &&
+      result.summary.durationMs < cfg.minDuration
+    ) {
+      this.log(
+        `[automation] skipping test-run trigger — duration ${result.summary.durationMs}ms < minDuration ${cfg.minDuration}ms`,
+      );
+      return;
+    }
 
     // Loop guard: skip if a task is still pending/running
     if (this.activeTestRunTaskId) {
@@ -1286,6 +1367,7 @@ export class AutomationHooks {
         );
     }
 
+    prompt = buildHookMetadata("onTestRun") + prompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1419,6 +1501,7 @@ export class AutomationHooks {
         );
     }
 
+    prompt = buildHookMetadata("onGitCommit") + prompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1497,6 +1580,7 @@ export class AutomationHooks {
         .replace(/\{\{branch\}\}/g, untrustedBlock("BRANCH", safeBranch, nonce))
         .replace(/\{\{hash\}\}/g, safeHash);
     }
+    prompt = buildHookMetadata("onGitPush") + prompt;
 
     try {
       const taskId = this.orchestrator.enqueue({
@@ -1586,6 +1670,7 @@ export class AutomationHooks {
         )
         .replace(/\{\{created\}\}/g, String(result.created));
     }
+    prompt = buildHookMetadata("onBranchCheckout") + prompt;
 
     try {
       const taskId = this.orchestrator.enqueue({
@@ -1675,6 +1760,7 @@ export class AutomationHooks {
         );
     }
 
+    prompt = buildHookMetadata("onPullRequest") + prompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1749,6 +1835,7 @@ export class AutomationHooks {
         );
     }
 
+    prompt = buildHookMetadata("onTaskCreated") + prompt;
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
       this.lastTrigger.set(key, now);
@@ -1821,6 +1908,7 @@ export class AutomationHooks {
         );
     }
 
+    prompt = buildHookMetadata("onPermissionDenied") + prompt;
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
       this.lastTrigger.set(key, now);
@@ -1891,6 +1979,7 @@ export class AutomationHooks {
       );
     }
 
+    prompt = buildHookMetadata("onDiagnosticsCleared", normalizedFile) + prompt;
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
       this.lastTrigger.set(key, now);
@@ -1966,6 +2055,7 @@ export class AutomationHooks {
         );
     }
 
+    prompt = buildHookMetadata("onTaskSuccess") + prompt;
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,

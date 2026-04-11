@@ -485,3 +485,147 @@ describe("getSecurityAdvisories", () => {
     expect(mockExecSafe).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── onlyFixable filter ────────────────────────────────────────────────────────
+
+const NPM_AUDIT_MIXED_FIXABILITY = {
+  vulnerabilities: {
+    // Has a fix (specific upgrade available)
+    lodash: {
+      severity: "high",
+      via: [
+        { title: "Prototype Pollution", url: "https://npmjs.com/advisories/1" },
+      ],
+      fixAvailable: { name: "lodash", version: "4.17.21" },
+    },
+    // Has a fix (audit fix)
+    moment: {
+      severity: "moderate",
+      via: [{ title: "ReDoS" }],
+      fixAvailable: true,
+    },
+    // No fix available
+    "old-lib": {
+      severity: "critical",
+      via: [{ title: "RCE" }],
+      fixAvailable: false,
+    },
+  },
+  metadata: { vulnerabilities: { high: 1, moderate: 1, critical: 1 } },
+};
+
+describe("getSecurityAdvisories — onlyFixable", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockImplementation((p) =>
+      String(p).endsWith("package.json"),
+    );
+  });
+
+  it("returns all advisories when onlyFixable is false (default)", async () => {
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify(NPM_AUDIT_MIXED_FIXABILITY),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 300,
+    });
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({}));
+    expect(result.totalVulnerabilities).toBe(3);
+  });
+
+  it("filters to only fixable advisories when onlyFixable is true", async () => {
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify(NPM_AUDIT_MIXED_FIXABILITY),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 300,
+    });
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({ onlyFixable: true }));
+    expect(result.totalVulnerabilities).toBe(2);
+    expect(
+      result.advisories.every((a: { fix?: string }) => a.fix !== undefined),
+    ).toBe(true);
+    expect(
+      result.advisories.map((a: { package: string }) => a.package),
+    ).not.toContain("old-lib");
+  });
+
+  it("bySeverity counts are accurate after onlyFixable filter", async () => {
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify(NPM_AUDIT_MIXED_FIXABILITY),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 300,
+    });
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({ onlyFixable: true }));
+    // old-lib (critical, no fix) is excluded — critical count must be 0
+    expect(result.bySeverity.critical).toBe(0);
+    expect(result.bySeverity.high).toBe(1);
+    expect(result.bySeverity.moderate).toBe(1);
+  });
+
+  it("returns zero advisories when onlyFixable=true and no fixes exist", async () => {
+    const noFixResponse = {
+      vulnerabilities: {
+        pkg: {
+          severity: "high",
+          via: [{ title: "XSS" }],
+          fixAvailable: false,
+        },
+      },
+      metadata: { vulnerabilities: { high: 1 } },
+    };
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify(noFixResponse),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 300,
+    });
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    const result = parse(await tool.handler({ onlyFixable: true }));
+    expect(result.totalVulnerabilities).toBe(0);
+    expect(result.advisories).toHaveLength(0);
+  });
+
+  it("onlyFixable and severity filters compose correctly", async () => {
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify(NPM_AUDIT_MIXED_FIXABILITY),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 300,
+    });
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    // severity=high excludes moderate; onlyFixable=true excludes old-lib (critical, no fix)
+    // Result: only lodash (high, has fix)
+    const result = parse(
+      await tool.handler({ severity: "high", onlyFixable: true }),
+    );
+    expect(result.totalVulnerabilities).toBe(1);
+    expect(result.advisories[0].package).toBe("lodash");
+  });
+
+  it("onlyFixable uses cache and applies filter at read time", async () => {
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: JSON.stringify(NPM_AUDIT_MIXED_FIXABILITY),
+      stderr: "",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 300,
+    });
+    const tool = createGetSecurityAdvisoriesTool(WORKSPACE);
+    // First call without filter — seeds cache with all 3 advisories
+    await tool.handler({});
+    // Second call with onlyFixable — should hit cache and still filter correctly
+    const result = parse(await tool.handler({ onlyFixable: true }));
+    expect(mockExecSafe).toHaveBeenCalledTimes(1); // cache hit
+    expect(result.totalVulnerabilities).toBe(2);
+  });
+});
