@@ -408,6 +408,40 @@ export const PROMPTS: McpPrompt[] = [
       },
     ],
   },
+  {
+    name: "ide-coverage",
+    description:
+      "Fetch code coverage, generate an HTML heatmap of covered/uncovered files, and open it in the browser.",
+    arguments: [],
+  },
+  {
+    name: "ide-deps",
+    description:
+      "Build a D3 force-directed dependency graph for an entry point and open it in the browser.",
+    arguments: [
+      {
+        name: "file",
+        description: "Entry point file path.",
+        required: true,
+      },
+      {
+        name: "line",
+        description: "Line number (1-based).",
+        required: true,
+      },
+      {
+        name: "column",
+        description: "Column number (1-based).",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "ide-diagnostics-board",
+    description:
+      "Collect workspace-wide diagnostics, group by severity and file, and render a sortable HTML table in the browser.",
+    arguments: [],
+  },
 ];
 
 // ── Orient-project prompt text builder ────────────────────────────────────────
@@ -1791,6 +1825,86 @@ const TEMPLATES: Record<
             `  1. <file>:<line> — <signature>`,
             `  2. ...`,
             `If any step returns no results, note it clearly (e.g. "No declaration found").`,
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "ide-coverage": (_args) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            "Generate an HTML code-coverage heatmap and open it in the browser.",
+            "",
+            "Steps:",
+            "1. Call `getCodeCoverage` with no arguments to fetch the full coverage report.",
+            "2. Parse the returned file entries. For each file compute a coverage percentage (coveredLines / totalLines).",
+            "3. Build a self-contained HTML page:",
+            "   - Title: 'Code Coverage Heatmap'",
+            "   - A sortable table with columns: File, Lines, Covered, Uncovered, Coverage %",
+            "   - Color rows: green (≥80%), yellow (50–79%), red (<50%)",
+            "   - A summary bar at the top showing overall coverage %",
+            "4. Write the HTML to a temp file (e.g. /tmp/coverage-heatmap.html).",
+            "5. Call `openInBrowser` with that file path.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "ide-deps": (args) => {
+    const { file, line, column } = args;
+    return {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Build a D3 force-directed dependency graph for the symbol at ${file}:${line}:${column} and open it in the browser.`,
+              "",
+              "Steps:",
+              `1. Call \`getCallHierarchy\` at ${file}:${line}:${column} with direction="outgoing" to collect direct callees.`,
+              '2. For each callee (up to depth 2, max 30 nodes total), call `getCallHierarchy` with direction="outgoing" again.',
+              "3. Build a JSON graph: { nodes: [{id, label, file}], links: [{source, target}] }",
+              "4. Generate a self-contained HTML page with D3 v7 (use CDN) that renders a force-directed graph:",
+              "   - Nodes are labeled with the symbol name",
+              "   - Edges point from caller → callee",
+              "   - Hovering a node shows file:line in a tooltip",
+              "   - Include zoom/pan via d3.zoom()",
+              "5. Write the HTML to /tmp/dep-graph.html",
+              "6. Call `openInBrowser` with that path.",
+            ].join("\n"),
+          },
+        },
+      ],
+    };
+  },
+
+  "ide-diagnostics-board": (_args) => ({
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            "Collect workspace-wide diagnostics and render a sortable HTML board in the browser.",
+            "",
+            "Steps:",
+            "1. Call `getDiagnostics` with no file argument to get all workspace diagnostics.",
+            "2. Group diagnostics by severity (error, warning, info, hint) and then by file.",
+            "3. Build a self-contained HTML page:",
+            "   - Title: 'Diagnostics Board'",
+            "   - Severity summary pills at the top (e.g. '12 errors · 5 warnings')",
+            "   - A sortable table with columns: Severity, File, Line, Message",
+            "   - Color-code rows: red=error, orange=warning, blue=info/hint",
+            "   - Add a text filter input that filters rows by file or message",
+            "4. Write HTML to /tmp/diagnostics-board.html",
+            "5. Call `openInBrowser` with that path.",
           ].join("\n"),
         },
       },
