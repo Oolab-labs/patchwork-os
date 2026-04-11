@@ -73,6 +73,8 @@ interface AgentSession {
   terminalPrefix: string;
   graceTimer: ReturnType<typeof setTimeout> | null;
   connectedAt: number;
+  /** Cleared to false each heartbeat ping; reset to true on pong. Terminate if still false at next ping. */
+  wsAlive: boolean;
 }
 
 export class Bridge {
@@ -106,6 +108,7 @@ export class Bridge {
   private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
   private extensionConnectionGeneration = 0;
+  private wsHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(private config: Config) {
     this.logger = new Logger(config.verbose, config.jsonl);
@@ -160,7 +163,11 @@ export class Bridge {
           clearTimeout(existing.graceTimer);
           existing.graceTimer = null;
           existing.ws = ws;
+          existing.wsAlive = true;
           existing.transport.attach(ws);
+          ws.on("pong", () => {
+            existing.wsAlive = true;
+          });
           this.lastConnectAt = new Date().toISOString();
           this.logger.info(
             `Session ${clientSessionId.slice(0, 8)} resumed — grace period cancelled`,
@@ -285,7 +292,11 @@ export class Bridge {
         terminalPrefix: `s${sessionId.slice(0, 8)}-`,
         graceTimer: null,
         connectedAt: Date.now(),
+        wsAlive: true,
       };
+      ws.on("pong", () => {
+        session.wsAlive = true;
+      });
 
       // Register tools for this session — probes guaranteed non-null due to ready guard above
       const probes = this.probes ?? ({} as ProbeResults);
@@ -835,7 +846,10 @@ export class Bridge {
     }
     this.port = port;
 
-    // 4b. Load persisted tasks from previous sessions (best-effort)
+    // 4b. Start WebSocket keepalive heartbeat (keeps MCP session alive during long idle periods)
+    this._startWsHeartbeat();
+
+    // 4c. Load persisted tasks from previous sessions (best-effort)
     if (this.orchestrator) {
       await this.orchestrator.loadPersistedTasks(port).catch(() => {
         /* best-effort */
@@ -1007,6 +1021,32 @@ export class Bridge {
     }
   }
 
+  /** Start the bridge-level WebSocket keepalive heartbeat. Idempotent. */
+  private _startWsHeartbeat(): void {
+    if (this.wsHeartbeatInterval || this.config.wsPingIntervalMs === 0) return;
+    this.wsHeartbeatInterval = setInterval(() => {
+      for (const [id, session] of this.sessions) {
+        if (session.graceTimer) continue; // WS already closed, grace pending
+        const { ws } = session;
+        if (ws.readyState !== WebSocket.OPEN) continue;
+        if (!session.wsAlive) {
+          this.logger.warn(
+            `Session ${id.slice(0, 8)} missed pong — terminating stale WebSocket`,
+          );
+          ws.terminate(); // triggers 'close' → grace timer
+          continue;
+        }
+        session.wsAlive = false;
+        try {
+          ws.ping();
+        } catch {
+          // Socket already broken; close event will fire and start the grace timer
+        }
+      }
+    }, this.config.wsPingIntervalMs);
+    this.wsHeartbeatInterval.unref(); // don't prevent Node exit when idle
+  }
+
   async stop(): Promise<void> {
     if (this.stopped) return;
     this.stopped = true;
@@ -1014,6 +1054,10 @@ export class Bridge {
     this.pluginWatcher?.stop();
     this.pluginWatcher = null;
     this.httpMcpHandler?.close();
+    if (this.wsHeartbeatInterval) {
+      clearInterval(this.wsHeartbeatInterval);
+      this.wsHeartbeatInterval = null;
+    }
     if (this.listChangedTimer) {
       clearTimeout(this.listChangedTimer);
       this.listChangedTimer = null;
