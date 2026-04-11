@@ -20,6 +20,8 @@ interface AliveWebSocket extends WebSocket {
   lastPongTime: number;
   lastPingTime: number;
   disconnectReason?: string;
+  /** Session ID sent by the client via X-Claude-Code-Session-Id for grace-period resumption. */
+  clientSessionId?: string;
 }
 
 function enableTcpKeepalive(ws: WebSocket): void {
@@ -675,8 +677,14 @@ export class Server extends EventEmitter<ServerEvents> {
       });
     });
 
-    this.wss.on("connection", (raw) => {
+    this.wss.on("connection", (raw, req: http.IncomingMessage) => {
       const ws = raw as AliveWebSocket;
+      // Propagate the client-supplied session ID (for grace-period resumption) so
+      // the bridge handler can look up an in-grace session without needing the raw request.
+      const incomingSessionId = req.headers["x-claude-code-session-id"];
+      if (typeof incomingSessionId === "string" && incomingSessionId) {
+        ws.clientSessionId = incomingSessionId;
+      }
       this.logger.debug("Claude Code connected");
       ws.isAlive = true;
       ws.missedPongs = 0;

@@ -25,6 +25,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { randomUUID } = require("node:crypto");
 
 // Resolve ws from the bridge's own node_modules (script lives in scripts/)
 const { WebSocket } = require(path.join(__dirname, "..", "node_modules", "ws"));
@@ -99,6 +100,10 @@ function parseLock(lockPath) {
 }
 
 // --- State ---
+// Stable session identity for this shim process. Sent as X-Claude-Code-Session-Id
+// on every connection attempt so the bridge can reattach to the same session
+// during its grace period instead of creating a new one.
+const CLIENT_SESSION_ID = randomUUID();
 let ws = null;
 let currentPort = null;
 let hasConnectedSuccessfully = false; // true after first successful ws open
@@ -205,7 +210,12 @@ function connect(port, authToken) {
   process.stderr.write(`mcp-stdio-shim: Connecting to bridge at ${wsUrl}\n`);
 
   ws = new WebSocket(wsUrl, {
-    headers: { "x-claude-code-ide-authorization": authToken },
+    headers: {
+      "x-claude-code-ide-authorization": authToken,
+      // Stable per-process ID — lets the bridge resume the same session during
+      // its grace period rather than starting a fresh MCP handshake each time.
+      "x-claude-code-session-id": CLIENT_SESSION_ID,
+    },
   });
 
   // Per-connect flag: set when the error handler classifies this attempt as 429
