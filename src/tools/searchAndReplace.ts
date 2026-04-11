@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { resolveCommandPath } from "../probe.js";
 import {
   error,
@@ -146,11 +147,18 @@ export function createSearchAndReplaceTool(workspace: string) {
         rgArgs.push("-F", "-e", pattern);
       }
       if (glob) {
-        // Reject glob values starting with '-' — rg may interpret them as flags
-        // (e.g. '--no-ignore-vcs' would disable VCS ignore rules silently).
-        if (glob.startsWith("-")) {
+        // Reject glob values that rg could misinterpret as flags or path escapes.
+        // Strip an optional leading '!' negation prefix before checking, then validate
+        // that the remaining pattern doesn't start with '-' (flags), '../' (path escape),
+        // or is an absolute path.
+        const normalizedGlobCheck = glob.startsWith("!") ? glob.slice(1) : glob;
+        if (
+          normalizedGlobCheck.startsWith("-") ||
+          normalizedGlobCheck.startsWith("../") ||
+          path.isAbsolute(normalizedGlobCheck)
+        ) {
           return error(
-            `Invalid glob pattern "${glob}": must not start with '-'`,
+            `Invalid glob pattern "${glob}": must not start with '-', '../', or be an absolute path`,
           );
         }
         // rg applies --glob relative to the search root. A bare pattern like

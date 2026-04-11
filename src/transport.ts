@@ -5,7 +5,7 @@ import { ErrorCodes } from "./errors.js";
 import type { Logger } from "./logger.js";
 import { withSpan } from "./telemetry.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
-import { BACKPRESSURE_THRESHOLD, safeSend } from "./wsUtils.js";
+import { safeSend } from "./wsUtils.js";
 
 const TOOL_TIMEOUT_MS = 60_000; // 60s — prevents tools from blocking indefinitely
 const MAX_CONCURRENT_TOOLS = 10;
@@ -761,7 +761,8 @@ export class McpTransport {
               };
               break;
             }
-            // Per-session token-bucket rate limit — peek only; token consumed after validation
+            // Per-session token-bucket rate limit — consume token before dispatch
+            // (applies to both known tools and dynamic dispatch)
             if (!this.peekToolRateLimit()) {
               response = {
                 jsonrpc: "2.0",
@@ -795,6 +796,28 @@ export class McpTransport {
             };
             const tool = this.tools.get(params.name);
             if (!tool && this.dynamicToolDispatch) {
+              // Read-only scope check — unknown tools are not in the registry so
+              // we cannot inspect their annotations; block them under mcp:read.
+              if (this.sessionScope === "mcp:read") {
+                this.callCount++;
+                this.errorCount++;
+                response = {
+                  jsonrpc: "2.0",
+                  id: msg.id,
+                  result: {
+                    content: [
+                      {
+                        type: "text",
+                        text: `Tool "${params.name}" is not available with read-only scope.`,
+                      },
+                    ],
+                    isError: true,
+                  },
+                };
+                break;
+              }
+              // Consume rate-limit token before dynamic dispatch
+              this.consumeToolRateLimitToken();
               // Delegate to orchestrator proxy handler for unknown tool names
               const dynDispatch = this.dynamicToolDispatch;
               const dynId = msg.id;
@@ -959,8 +982,8 @@ export class McpTransport {
                   };
                   break;
                 }
+                this.consumeToolRateLimitToken(); // Consume after AJV passes — not on validation failures
                 this.callCount++; // Count after validation — only real execution attempts
-                this.consumeToolRateLimitToken(); // Consume rate limit token only for real calls
                 callLog.debug(`Calling tool: ${params.name}`);
                 this.logger.event("tool_call", { tool: params.name, callId });
                 const controller = new AbortController();
@@ -1354,16 +1377,10 @@ export class McpTransport {
         ...(message !== undefined && { message }),
       },
     };
-    if (
-      ws.readyState === WebSocket.OPEN &&
-      ws.bufferedAmount < BACKPRESSURE_THRESHOLD
-    ) {
-      try {
-        ws.send(JSON.stringify(msg));
-      } catch {
-        /* best-effort */
-      }
-    }
+    if (ws.readyState !== WebSocket.OPEN) return;
+    safeSend(ws, JSON.stringify(msg), this.logger).catch(() => {
+      /* best-effort */
+    });
   }
 
   /** Send a server-initiated notification */
@@ -1374,12 +1391,13 @@ export class McpTransport {
     logger?: { warn: (msg: string) => void },
   ): void {
     const msg: JsonRpcNotification = { jsonrpc: "2.0", method, params };
-    if (ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify(msg));
-      } catch (err) {
-        logger?.warn(`Failed to send notification ${method}: ${err}`);
-      }
-    }
+    if (ws.readyState !== WebSocket.OPEN) return;
+    safeSend(
+      ws,
+      JSON.stringify(msg),
+      (logger ?? { warn: () => {}, error: () => {} }) as unknown as Logger,
+    ).catch((err) => {
+      logger?.warn(`Failed to send notification ${method}: ${err}`);
+    });
   }
 }

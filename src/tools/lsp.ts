@@ -86,14 +86,19 @@ function encodeCursor(offset: number): string {
   return Buffer.from(String(offset)).toString("base64");
 }
 
-/** Decode a cursor from args, returning 0 for missing/invalid cursors. */
-function decodeCursor(cursor: unknown): number {
+/**
+ * Decode a cursor from args.
+ * - Missing/empty cursor → returns 0 (start of first page).
+ * - Non-empty string that fails to decode or parse as a valid non-negative integer
+ *   → returns null so callers can return an "Invalid cursor" error to the client.
+ */
+function decodeCursor(cursor: unknown): number | null {
   if (typeof cursor !== "string" || cursor === "") return 0;
   try {
     const n = parseInt(Buffer.from(cursor, "base64").toString("utf-8"), 10);
-    return Number.isFinite(n) && n >= 0 ? n : 0;
+    return Number.isFinite(n) && n >= 0 ? n : null;
   } catch {
-    return 0;
+    return null;
   }
 }
 
@@ -263,6 +268,9 @@ export function createFindReferencesTool(
       const column = requireInt(args, "column");
       const PAGE_SIZE = 100;
       const offset = decodeCursor(args.cursor);
+      if (offset === null) {
+        return error("Invalid cursor");
+      }
       const result = await lspWithRetry(
         () => extensionClient.findReferences(filePath, line, column, signal),
         signal,
@@ -865,6 +873,9 @@ export function createGetCallHierarchyTool(
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
       const PAGE_SIZE = 50;
       const offset = decodeCursor(args.cursor);
+      if (offset === null) {
+        return error("Invalid cursor");
+      }
       const result = await lspWithRetry(
         () =>
           extensionClient.getCallHierarchy(

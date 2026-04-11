@@ -18,15 +18,20 @@ import os from "node:os";
 import path from "node:path";
 
 /**
- * Validate that the resolved configDir is within the user's home directory or
- * is an absolute path that doesn't escape via `../` sequences embedded in an
- * env-var override.  Returns true when safe to use.
+ * Validate that the resolved configDir is within the user's home directory.
+ * Blocks path-traversal via crafted CLAUDE_CONFIG_DIR env-var values that
+ * contain `../` sequences pointing outside the home directory.
  */
 function isSafeConfigDir(configDir: string): boolean {
   const resolved = path.resolve(configDir);
-  // Allow any absolute path — we just block relative escapes that could write
-  // outside expected locations when CLAUDE_CONFIG_DIR contains `../` segments.
-  return path.resolve(resolved) === resolved && resolved.length > 0;
+  const home = path.resolve(os.homedir());
+  const tmp = path.resolve(os.tmpdir());
+  return (
+    resolved === home ||
+    resolved.startsWith(home + path.sep) ||
+    resolved === tmp ||
+    resolved.startsWith(tmp + path.sep)
+  );
 }
 
 const BRIDGE_TOKEN_FILE = "bridge-token.json";

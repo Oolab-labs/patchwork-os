@@ -30,6 +30,8 @@ import { registerAllTools } from "./tools/index.js";
 import { McpTransport } from "./transport.js";
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hour idle TTL — reduced from 24h to limit captured-session-ID reuse window
+const SESSION_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_HTTP_SESSIONS = 5;
 const BODY_SIZE_LIMIT = 1_048_576; // 1 MB
 const MAX_PENDING_SENDS = 100; // per-session response queue cap
@@ -245,6 +247,8 @@ interface HttpSession {
   openedFiles: Set<string>;
   terminalPrefix: string;
   lastActivity: number;
+  /** Number of POST requests currently being processed (tool calls in flight). */
+  inFlight: number;
   /** X-Claude-Code-Session-Id from the initialize request, if present. */
   claudeCodeSessionId: string | null;
 }
@@ -403,7 +407,7 @@ export class StreamableHttpHandler {
       session = this.createSession(sessionScope);
       sessionIsNew = true;
       const ccSessionId = req.headers["x-claude-code-session-id"];
-      if (typeof ccSessionId === "string" && ccSessionId.length > 0) {
+      if (typeof ccSessionId === "string" && SESSION_ID_RE.test(ccSessionId)) {
         session.claudeCodeSessionId = ccSessionId;
         session.transport.claudeCodeSessionId = ccSessionId;
       }
@@ -471,6 +475,7 @@ export class StreamableHttpHandler {
       );
       return;
     }
+    session.inFlight++;
     session.adapter.receive(body);
 
     let responseData: string;
@@ -484,6 +489,7 @@ export class StreamableHttpHandler {
         this.destroySession(session.id);
         res.removeHeader("Mcp-Session-Id");
       }
+      session.inFlight = Math.max(0, session.inFlight - 1);
       res.writeHead(504, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -495,6 +501,7 @@ export class StreamableHttpHandler {
       return;
     }
 
+    session.inFlight = Math.max(0, session.inFlight - 1);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(responseData);
   }
@@ -573,6 +580,7 @@ export class StreamableHttpHandler {
       openedFiles: new Set<string>(),
       terminalPrefix: `http-${id.slice(0, 8)}`,
       lastActivity: Date.now(),
+      inFlight: 0,
       claudeCodeSessionId: null,
     } as HttpSession;
     const adapter = new HttpAdapter(
@@ -689,6 +697,7 @@ export class StreamableHttpHandler {
     let oldestId: string | null = null;
     let oldestActivity = now;
     for (const [id, session] of this.sessions) {
+      if (session.inFlight > 0) continue; // skip sessions with in-flight tool calls
       if (session.lastActivity < oldestActivity) {
         oldestActivity = session.lastActivity;
         oldestId = id;

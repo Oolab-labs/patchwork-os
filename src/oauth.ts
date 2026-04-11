@@ -569,7 +569,9 @@ export class OAuthServerImpl implements OAuthServer {
       return;
     }
 
-    record.used = true;
+    // RFC 6749 §4.1.2: delete the auth code immediately on use.
+    // A missing code naturally rejects replay attempts (the !record check above).
+    this.authCodes.delete(code);
 
     const accessToken = this.randomToken(32);
     this.accessTokens.set(accessToken, {
@@ -674,8 +676,33 @@ export class OAuthServerImpl implements OAuthServer {
         >;
       };
       if (parsed.version !== 1 || typeof parsed.tokens !== "object") return;
+      const entries = Object.entries(parsed.tokens);
+      // Cap: refuse to load a file with suspiciously many entries to prevent DoS
+      if (entries.length > 10_000) {
+        console.warn(
+          "[claude-ide-bridge] oauth-tokens.json contains >10,000 entries — skipping load",
+        );
+        return;
+      }
       const now = Date.now();
-      for (const [hash, entry] of Object.entries(parsed.tokens)) {
+      for (const [hash, entry] of entries) {
+        // Validate each field before trusting the persisted data
+        if (
+          typeof entry.clientId !== "string" ||
+          typeof entry.scope !== "string" ||
+          typeof entry.expiresAt !== "number" ||
+          !Number.isFinite(entry.expiresAt) ||
+          entry.expiresAt <= 0 ||
+          !SUPPORTED_SCOPES.some(
+            (s) =>
+              entry.scope === s ||
+              entry.scope
+                .split(" ")
+                .every((tok: string) => SUPPORTED_SCOPES.includes(tok)),
+          )
+        ) {
+          continue; // skip invalid entries
+        }
         if (entry.expiresAt > now) {
           this.hashedTokens.set(hash, {
             clientId: entry.clientId,
@@ -833,11 +860,34 @@ export class OAuthServerImpl implements OAuthServer {
       const timeout = setTimeout(() => controller.abort(), 5_000);
       let body: string;
       try {
-        const resp = await fetch(clientIdUrl, {
-          signal: controller.signal,
-          headers: { Accept: "application/json" },
-          redirect: "follow",
-        });
+        // Manual redirect loop — max 5 hops; re-validate each Location hostname
+        // with isPrivateCimdHost() to prevent SSRF via open-redirect on the CIMD server.
+        const MAX_CIMD_REDIRECTS = 5;
+        let currentUrl = clientIdUrl;
+        let redirectCount = 0;
+        let resp: Response;
+        while (true) {
+          resp = await fetch(currentUrl, {
+            signal: controller.signal,
+            headers: { Accept: "application/json" },
+            redirect: "manual",
+          });
+          const isRedirect = resp.status >= 300 && resp.status < 400;
+          if (!isRedirect) break;
+          const location = resp.headers.get("location");
+          if (!location) break;
+          if (redirectCount >= MAX_CIMD_REDIRECTS) return null;
+          let nextUrl: URL;
+          try {
+            nextUrl = new URL(location, currentUrl);
+          } catch {
+            return null;
+          }
+          if (nextUrl.protocol !== "https:") return null;
+          if (isPrivateCimdHost(nextUrl.hostname)) return null;
+          currentUrl = nextUrl.toString();
+          redirectCount++;
+        }
         if (!resp.ok) return null;
         // Stream with size cap to prevent OOM
         const reader = resp.body?.getReader();

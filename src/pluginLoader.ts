@@ -223,6 +223,7 @@ export async function loadOnePluginFull(
   config: Config,
   logger: Logger,
   existingNames: Set<string> = new Set(),
+  isHotReload = false,
 ): Promise<LoadedPlugin | null> {
   // 1. Resolve directory
   let pluginDir: string;
@@ -291,9 +292,72 @@ export async function loadOnePluginFull(
   }
 
   let mod: unknown;
+  const ext = path.extname(entrypointPath).toLowerCase();
+  const isCjs =
+    ext === ".cjs" ||
+    (ext === ".js" &&
+      (() => {
+        // Detect CJS by reading the nearest package.json "type" field.
+        // A .js file is CJS unless "type": "module" is set.
+        try {
+          let dir = path.dirname(entrypointPath);
+          while (true) {
+            const pkgPath = path.join(dir, "package.json");
+            if (fs.existsSync(pkgPath)) {
+              const pkg = JSON.parse(
+                fs.readFileSync(pkgPath, "utf-8"),
+              ) as Record<string, unknown>;
+              return pkg.type !== "module";
+            }
+            const parent = path.dirname(dir);
+            if (parent === dir) break;
+            dir = parent;
+          }
+        } catch {
+          // Can't determine — assume ESM for safety (won't break ESM plugins)
+        }
+        return true; // default: CJS if no "type": "module" found
+      })());
+
   try {
-    const importUrl = `${pathToFileURL(entrypointPath).href}?t=${Date.now()}`;
-    mod = await import(importUrl);
+    if (isCjs) {
+      // For CJS plugins, use createRequire + delete require.cache for reliable hot-reload.
+      // The ESM ?t= query-string approach doesn't work for CJS modules loaded via require().
+      const req = createRequire(entrypointPath);
+      // Invalidate the module and all its CJS children from the require cache
+      const visited = new Set<string>();
+      function invalidateCjsCache(modPath: string): void {
+        if (visited.has(modPath)) return;
+        visited.add(modPath);
+        const cached = req.cache?.[modPath];
+        if (cached) {
+          // Recurse into children before deleting the parent
+          for (const child of cached.children ?? []) {
+            invalidateCjsCache(child.filename);
+          }
+          delete req.cache?.[modPath];
+        }
+      }
+      try {
+        invalidateCjsCache(require.resolve(entrypointPath));
+      } catch {
+        // resolve may fail if not yet loaded — that's fine, just load fresh
+      }
+      mod = req(entrypointPath);
+    } else {
+      // For ESM (.mjs or .js with "type": "module"), append a timestamp query string
+      // to attempt cache-busting. Note: Node's ESM loader may not honour query strings
+      // in all versions — this is a best-effort approach. Plugins should avoid top-level
+      // mutable state if hot-reload correctness is required.
+      const importUrl = `${pathToFileURL(entrypointPath).href}?t=${Date.now()}`;
+      if (isHotReload) {
+        logger.warn(
+          `Plugin "${manifest.name}" — ESM hot-reload uses query-string cache busting, which may ` +
+            `not be fully reliable in all Node versions. Avoid top-level mutable state for correct hot-reload behaviour.`,
+        );
+      }
+      mod = await import(importUrl);
+    }
   } catch (err) {
     logger.warn(
       `Plugin "${manifest.name}" — failed to import ${entrypointPath}: ${err instanceof Error ? err.message : String(err)}`,

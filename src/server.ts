@@ -11,6 +11,8 @@ import {
 } from "./version.js";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const SESSION_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 import type { ActivityListener } from "./activityTypes.js";
 
@@ -69,16 +71,12 @@ export function corsOrigin(
 const timingSafeTokenCompare = timingSafeStringEqual;
 
 function setupPongHandler(ws: AliveWebSocket): void {
-  ws.on("pong", (data: Buffer) => {
+  ws.on("pong", (_data: Buffer) => {
     ws.isAlive = true;
     ws.missedPongs = 0;
-    const now = Date.now();
-    const sentAt = Number.parseInt(data.toString(), 10);
-    // Accept the echoed timestamp only if it's within a plausible ping window
-    // (±60s from now). A spoofed pong payload with a far-future value would
-    // otherwise corrupt lastPongTime and skew diagnostics.
-    ws.lastPongTime =
-      !Number.isNaN(sentAt) && Math.abs(now - sentAt) <= 60_000 ? sentAt : now;
+    // Always record the current time — do not trust the client-echoed payload
+    // timestamp, which can be spoofed to make lastPongTime appear stale.
+    ws.lastPongTime = Date.now();
   });
 }
 
@@ -682,7 +680,10 @@ export class Server extends EventEmitter<ServerEvents> {
       // Propagate the client-supplied session ID (for grace-period resumption) so
       // the bridge handler can look up an in-grace session without needing the raw request.
       const incomingSessionId = req.headers["x-claude-code-session-id"];
-      if (typeof incomingSessionId === "string" && incomingSessionId) {
+      if (
+        typeof incomingSessionId === "string" &&
+        SESSION_ID_RE.test(incomingSessionId)
+      ) {
         ws.clientSessionId = incomingSessionId;
       }
       this.logger.debug("Claude Code connected");

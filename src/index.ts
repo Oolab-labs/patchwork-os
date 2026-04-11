@@ -54,8 +54,16 @@ function isBridgeToolsFileValid(filePath: string): boolean {
       content.includes("batchGetHover") && // stale files missing new tools fail here
       content.includes(`<!-- bridge-tools v${PACKAGE_VERSION} -->`) // version sentinel — forces rewrite on package update
     );
-  } catch {
-    return false;
+  } catch (err) {
+    // ENOENT → file doesn't exist yet; return false so the caller writes it.
+    // Any other error (EACCES, EISDIR, etc.) → log a warning and return true
+    // to skip the write attempt, which would also fail and fail silently.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    console.warn(
+      "[bridge] Could not read bridge-tools.md:",
+      (err as Error).message,
+    );
+    return true; // don't attempt overwrite if we can't read
   }
 }
 
