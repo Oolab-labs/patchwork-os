@@ -181,6 +181,7 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onPostCompact` — fires after Claude Code compacts context. Re-injects IDE state.
   - `onInstructionsLoaded` — fires at session start. Injects bridge status summary.
   - `onGitCommit` — fires after successful `gitCommit`. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`.
+  - `onGitPull` — fires after successful `gitPull`. Placeholders: `{{remote}}`, `{{branch}}`.
   - `onGitPush` — fires after successful `gitPush`. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`.
   - `onBranchCheckout` — fires after successful `gitCheckout`. Placeholders: `{{branch}}`, `{{previousBranch}}`, `{{created}}`.
   - `onPullRequest` — fires after successful `githubCreatePR`. Placeholders: `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}`.

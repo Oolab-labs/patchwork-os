@@ -1,0 +1,51 @@
+{
+  "_comment": "test-driven — enforces test coverage and runs tests automatically on every relevant change.",
+  "_usage": "Copy to automation-policy.json. Requires --automation --automation-policy <path> --claude-driver subprocess",
+
+  "onFileSave": {
+    "enabled": true,
+    "patterns": ["src/**/*.ts", "vscode-extension/src/**/*.ts"],
+    "condition": "!**/*.test.ts",
+    "cooldownMs": 10000,
+    "prompt": "Source file saved: {{file}}\n\n1. Call getDiagnostics on {{file}} — report any errors\n2. Call runTests (filtered to tests matching this file if possible)\n3. If no test file exists for {{file}}, call generateTests to scaffold one\nReport: error count, test pass/fail, coverage note."
+  },
+
+  "onDiagnosticsError": {
+    "enabled": true,
+    "cooldownMs": 15000,
+    "minSeverity": "error",
+    "diagnosticTypes": ["typescript"],
+    "prompt": "Type error in {{file}}:\n\n{{diagnostics}}\n\nDo NOT fix the error yet. First: call getCallHierarchy (incoming) to understand what depends on this symbol. Then explain what the type error means and what the safest fix would be. Keep response ≤12 lines."
+  },
+
+  "onDiagnosticsCleared": {
+    "enabled": true,
+    "cooldownMs": 10000,
+    "prompt": "Error cleared in {{file}}. Run the tests for that file to confirm the fix is correct and no regressions were introduced."
+  },
+
+  "onTestRun": {
+    "enabled": true,
+    "cooldownMs": 10000,
+    "onFailureOnly": true,
+    "prompt": "{{failed}} test(s) failed out of {{total}}.\n\nFailed:\n{{failures}}\n\n1. Call getDiagnostics on each failing test file\n2. Call getCallHierarchy (incoming) on the first failing symbol to trace the root cause\n3. Suggest the minimal fix — do not change test expectations unless the contract genuinely changed"
+  },
+
+  "onGitCommit": {
+    "enabled": true,
+    "cooldownMs": 12000,
+    "prompt": "Commit on {{branch}}: {{message}}\nFiles: {{files}}\n\nPost-commit health check:\n1. getDiagnostics — errors only\n2. If any non-test files changed in {{files}}, call runTests and report pass/fail\n3. Flag any changed files that lack test coverage"
+  },
+
+  "onBranchCheckout": {
+    "enabled": true,
+    "cooldownMs": 8000,
+    "prompt": "Switched to {{branch}} from {{previousBranch}}.\n\nBaseline check: getDiagnostics (error count), then runTests. Report: branch, error count, test pass/fail in ≤5 lines."
+  },
+
+  "onPostCompact": {
+    "enabled": true,
+    "cooldownMs": 5000,
+    "prompt": "Context compacted. Re-orient: getGitStatus (branch/changes), getDiagnostics (errors), getHandoffNote. Summarize in ≤8 lines."
+  }
+}

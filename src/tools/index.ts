@@ -360,7 +360,10 @@ export function registerAllTools(
     createGitBlameTool(workspace),
     createGitFetchTool(workspace),
     createGitListBranchesTool(workspace),
-    createGitPullTool(workspace),
+    createGitPullTool(
+      workspace,
+      automationHooks ? (r) => automationHooks.handleGitPull(r) : undefined,
+    ),
     createGitPushTool(
       workspace,
       automationHooks ? (r) => automationHooks.handleGitPush(r) : undefined,

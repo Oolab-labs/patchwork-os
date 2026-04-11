@@ -205,6 +205,22 @@ export interface GitPushResult {
   hash: string;
 }
 
+export interface OnGitPullPolicy extends PromptSource {
+  enabled: boolean;
+  /**
+   * Placeholders (inline prompt only): {{remote}}, {{branch}}
+   */
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
+/** Minimal pull result passed to handleGitPull — avoids importing from gitWrite. */
+export interface GitPullResult {
+  remote: string;
+  branch: string;
+  alreadyUpToDate: boolean;
+}
+
 export interface OnBranchCheckoutPolicy extends PromptSource {
   enabled: boolean;
   /**
@@ -305,6 +321,8 @@ export interface AutomationPolicy {
   onGitCommit?: OnGitCommitPolicy;
   /** Fired after every successful gitPush call. */
   onGitPush?: OnGitPushPolicy;
+  /** Fired after every successful gitPull call. */
+  onGitPull?: OnGitPullPolicy;
   /** Fired after every successful gitCheckout call (branch switch or creation). */
   onBranchCheckout?: OnBranchCheckoutPolicy;
   /** Fired after every successful githubCreatePR call. */
@@ -617,6 +635,27 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onGitPull
+  if (policy.onGitPull !== undefined) {
+    const gpl = policy.onGitPull;
+    if (typeof gpl !== "object" || gpl === null) {
+      throw new Error(`"onGitPull" must be an object`);
+    }
+    if (typeof gpl.enabled !== "boolean") {
+      throw new Error(`"onGitPull.enabled" must be a boolean`);
+    }
+    validatePromptSource("onGitPull", gpl);
+    if (
+      typeof gpl.cooldownMs !== "number" ||
+      !Number.isFinite(gpl.cooldownMs)
+    ) {
+      throw new Error(`"onGitPull.cooldownMs" must be a number`);
+    }
+    if (gpl.cooldownMs < MIN_COOLDOWN_MS) {
+      gpl.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   // Validate onBranchCheckout
   if (policy.onBranchCheckout !== undefined) {
     const bc = policy.onBranchCheckout;
@@ -749,6 +788,8 @@ export class AutomationHooks {
   private activeGitCommitTaskId: string | null = null;
   /** Active task ID for the git-push handler (workspace-global). */
   private activeGitPushTaskId: string | null = null;
+  /** Active task ID for the git-pull handler (workspace-global). */
+  private activeGitPullTaskId: string | null = null;
   /** Active task ID for the branch-checkout handler (workspace-global). */
   private activeBranchCheckoutTaskId: string | null = null;
   /** Active task ID for the pull-request handler (workspace-global). */
@@ -1630,6 +1671,86 @@ export class AutomationHooks {
   }
 
   /**
+   * Fires the onGitPull automation hook if configured.
+   */
+  handleGitPull(result: GitPullResult): void {
+    const cfg = this.policy.onGitPull;
+    if (!cfg?.enabled) return;
+
+    if (!this._matchesCondition(cfg, result.branch)) return;
+
+    // Loop guard: skip if a task is still pending/running
+    if (this.activeGitPullTaskId) {
+      const existing = this.orchestrator.getTask(this.activeGitPullTaskId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping git-pull trigger — task ${this.activeGitPullTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeGitPullTaskId = null;
+    }
+
+    // Cooldown check (workspace-global)
+    const key = "gitPull:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for git-pull (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeRemote = result.remote.slice(0, MAX_FILE_PATH_CHARS);
+    const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        { remote: safeRemote, branch: safeBranch },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt = cfg
+        .prompt!.replace(
+          /\{\{remote\}\}/g,
+          untrustedBlock("REMOTE", safeRemote, nonce),
+        )
+        .replace(
+          /\{\{branch\}\}/g,
+          untrustedBlock("BRANCH", safeBranch, nonce),
+        );
+    }
+    prompt = truncatePrompt(buildHookMetadata("onGitPull") + prompt);
+
+    try {
+      const taskId = this.orchestrator.enqueue({
+        prompt,
+        sessionId: "",
+        isAutomationTask: true,
+      });
+      this.lastTrigger.set(key, now);
+      this.activeGitPullTaskId = taskId;
+      this.log(
+        `[automation] triggered git-pull task ${taskId.slice(0, 8)} (${result.remote}/${result.branch}, alreadyUpToDate=${result.alreadyUpToDate})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue git-pull task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
    * Called after a successful gitCheckout tool call.
    * Fires the onBranchCheckout automation hook if configured.
    */
@@ -2125,6 +2246,7 @@ export class AutomationHooks {
     onPermissionDenied: { enabled: boolean; cooldownMs: number } | null;
     onDiagnosticsCleared: { enabled: boolean; cooldownMs: number } | null;
     onTaskSuccess: { enabled: boolean; cooldownMs: number } | null;
+    onGitPull: { enabled: boolean; cooldownMs: number } | null;
   } {
     const p = this.policy;
     return {
@@ -2208,6 +2330,12 @@ export class AutomationHooks {
         ? {
             enabled: p.onTaskSuccess.enabled,
             cooldownMs: p.onTaskSuccess.cooldownMs,
+          }
+        : null,
+      onGitPull: p.onGitPull
+        ? {
+            enabled: p.onGitPull.enabled,
+            cooldownMs: p.onGitPull.cooldownMs,
           }
         : null,
     };

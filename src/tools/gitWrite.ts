@@ -713,7 +713,10 @@ export function createGitListBranchesTool(workspace: string) {
   };
 }
 
-export function createGitPullTool(workspace: string) {
+export function createGitPullTool(
+  workspace: string,
+  onGitPull?: (result: GitPullCallbackResult) => void,
+) {
   return {
     schema: {
       name: "gitPull",
@@ -809,9 +812,23 @@ export function createGitPullTool(workspace: string) {
         pullOutput.includes("Already up to date") ||
         pullOutput.includes("Already up-to-date");
 
+      const branchResult = await execSafe(
+        "git",
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        { cwd: workspace, signal },
+      );
+      const currentBranch = branchResult.stdout.trim() || branch || remote;
+      onGitPull?.({ remote, branch: currentBranch, alreadyUpToDate });
+
       return successStructured({ alreadyUpToDate, output: pullOutput });
     },
   };
+}
+
+export interface GitPullCallbackResult {
+  remote: string;
+  branch: string;
+  alreadyUpToDate: boolean;
 }
 
 export interface GitPushCallbackResult {

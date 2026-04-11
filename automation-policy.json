@@ -2,6 +2,7 @@
   "onFileSave": {
     "enabled": true,
     "patterns": ["src/**/*.ts", "vscode-extension/src/**/*.ts"],
+    "condition": "!**/*.test.ts",
     "cooldownMs": 8000,
     "prompt": "File saved: {{file}}\n\nCall fixAllLintErrors on this file, then getDiagnostics. If any errors remain, explain them concisely."
   },
@@ -20,6 +21,21 @@
     "cooldownMs": 10000,
     "prompt": "Commit made on {{branch}}: {{message}}\nFiles: {{files}}\n\nCall getDiagnostics (report errors only). If any test files were in {{files}}, also call runTests and report pass/fail count."
   },
+  "onGitPull": {
+    "enabled": true,
+    "cooldownMs": 10000,
+    "prompt": "Pulled {{branch}} from {{remote}}.\n\nCall getDiagnostics to check for new errors introduced by the pull. If any errors are found, explain them concisely."
+  },
+  "onGitPush": {
+    "enabled": true,
+    "cooldownMs": 10000,
+    "prompt": "Pushed {{branch}} to {{remote}}.\n\nCall getDiagnostics (report errors only). If tests exist for any recently changed files, call runTests and report pass/fail count."
+  },
+  "onPullRequest": {
+    "enabled": true,
+    "cooldownMs": 10000,
+    "prompt": "PR #{{number}} opened: {{title}} ({{url}}).\n\nCall getDiagnostics workspace-wide. Report: error count, any new type errors, and whether the branch is clean."
+  },
   "onTestRun": {
     "enabled": true,
     "cooldownMs": 10000,
@@ -30,6 +46,7 @@
     "enabled": true,
     "cooldownMs": 15000,
     "minSeverity": "error",
+    "diagnosticTypes": ["typescript"],
     "prompt": "New TypeScript error in {{file}}:\n\n{{diagnostics}}\n\nExplain what's wrong and suggest a fix."
   },
   "onDiagnosticsCleared": {
