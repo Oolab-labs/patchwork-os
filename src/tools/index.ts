@@ -18,7 +18,7 @@ import {
   createBatchGoToDefinitionTool,
 } from "./batchLsp.js";
 import { createBridgeDoctorTool } from "./bridgeDoctor.js";
-import { createBridgeStatusTool } from "./bridgeStatus.js";
+import { createBridgeStatusTool, type DisconnectInfo } from "./bridgeStatus.js";
 import { createCancelClaudeTaskTool } from "./cancelClaudeTask.js";
 import { createCheckDocumentDirtyTool } from "./checkDocumentDirty.js";
 import {
@@ -293,6 +293,7 @@ export function registerAllTools(
   sessionId = "",
   pluginTools: LoadedPluginTool[] = [],
   automationHooks: AutomationHooks | null = null,
+  getDisconnectInfo?: () => DisconnectInfo,
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -404,6 +405,7 @@ export function registerAllTools(
       sessions,
       orchestrator,
       automationHooks,
+      getDisconnectInfo,
     ),
     createWatchFilesTool(extensionClient),
     createUnwatchFilesTool(extensionClient),

@@ -322,6 +322,11 @@ export class Bridge {
         sessionId,
         pluginTools,
         this.automationHooks,
+        () => ({
+          at: this.lastDisconnectAt,
+          code: this.lastDisconnectCode,
+          reason: this.lastDisconnectReason,
+        }),
       );
 
       transport.attach(ws);

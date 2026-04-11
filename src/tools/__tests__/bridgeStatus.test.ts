@@ -98,4 +98,39 @@ describe("createBridgeStatusTool", () => {
     expect(data.uptimeSeconds).toBeGreaterThanOrEqual(0);
     expect(Number.isInteger(data.uptimeSeconds)).toBe(true);
   });
+
+  it("includes lastDisconnect when getDisconnectInfo is provided", async () => {
+    const info = {
+      at: "2026-04-12T00:00:00.000Z",
+      code: 1006,
+      reason: null,
+    };
+    const tool = createBridgeStatusTool(
+      makeClient(true),
+      undefined,
+      undefined,
+      undefined,
+      () => info,
+    );
+    const data = parse(await tool.handler());
+    expect(data.lastDisconnect).toEqual(info);
+  });
+
+  it("omits lastDisconnect when getDisconnectInfo is not provided", async () => {
+    const tool = createBridgeStatusTool(makeClient(true));
+    const data = parse(await tool.handler());
+    expect(data.lastDisconnect).toBeUndefined();
+  });
+
+  it("returns lastDisconnect with null fields when no prior disconnect", async () => {
+    const tool = createBridgeStatusTool(
+      makeClient(true),
+      undefined,
+      undefined,
+      undefined,
+      () => ({ at: null, code: null, reason: null }),
+    );
+    const data = parse(await tool.handler());
+    expect(data.lastDisconnect).toEqual({ at: null, code: null, reason: null });
+  });
 });
