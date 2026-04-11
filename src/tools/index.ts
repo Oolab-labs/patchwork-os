@@ -176,6 +176,10 @@ import {
   createExecuteVSCodeCommandTool,
   createListVSCodeCommandsTool,
 } from "./vscodeCommands.js";
+import {
+  createListVSCodeTasksTool,
+  createRunVSCodeTaskTool,
+} from "./vscodeTasks.js";
 import { createWatchDiagnosticsTool } from "./watchDiagnostics.js";
 import { createSetWorkspaceSettingTool } from "./workspaceSettings.js";
 
@@ -444,6 +448,8 @@ export function registerAllTools(
     createCaptureScreenshotTool(extensionClient),
     createExecuteVSCodeCommandTool(extensionClient, config),
     createListVSCodeCommandsTool(extensionClient),
+    createListVSCodeTasksTool(extensionClient),
+    createRunVSCodeTaskTool(extensionClient),
     createGetInlayHintsTool(workspace, extensionClient),
     createGetHoverAtCursorTool(extensionClient),
     createGetTypeSignatureTool(extensionClient),

@@ -343,6 +343,12 @@ export const commands = {
   getCommands: vi.fn(async () => [] as string[]),
 };
 
+export const tasks = {
+  fetchTasks: vi.fn(async () => [] as any[]),
+  executeTask: vi.fn(async () => ({ terminate: vi.fn() }) as any),
+  onDidEndTaskProcess: vi.fn(() => ({ dispose: vi.fn() })),
+};
+
 export const env = {
   clipboard: {
     writeText: vi.fn(async () => {}),
@@ -514,4 +520,8 @@ export function __reset() {
   debug.stopDebugging.mockReset().mockResolvedValue(undefined);
   debug.addBreakpoints.mockReset();
   debug.removeBreakpoints.mockReset();
+
+  tasks.fetchTasks.mockReset().mockResolvedValue([]);
+  tasks.executeTask.mockReset().mockResolvedValue({ terminate: vi.fn() });
+  tasks.onDidEndTaskProcess.mockReset().mockReturnValue({ dispose: vi.fn() });
 }
