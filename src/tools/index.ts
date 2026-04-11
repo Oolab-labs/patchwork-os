@@ -27,6 +27,7 @@ import {
 } from "./clipboard.js";
 import { createCloseAllDiffTabsTool, createCloseTabTool } from "./closeTabs.js";
 import { createGetCodeLensTool } from "./codeLens.js";
+import { createContextBundleTool } from "./contextBundle.js";
 import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
 import {
   createEvaluateInDebuggerTool,
@@ -198,6 +199,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "closeTab",
   "captureScreenshot",
   "watchActivityLog",
+  "contextBundle",
   // LSP / code intelligence
   "getDiagnostics",
   "watchDiagnostics",
@@ -383,6 +385,7 @@ export function registerAllTools(
     createRefactorAnalyzeTool(workspace, extensionClient),
     createFoldingRangesTool(workspace, extensionClient),
     createSelectionRangesTool(workspace, extensionClient),
+    createContextBundleTool(workspace, extensionClient),
     // The Chosen Five
     ...createPlanTools(workspace),
     testsTool,

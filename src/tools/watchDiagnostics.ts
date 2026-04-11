@@ -122,7 +122,7 @@ export function createWatchDiagnosticsTool(
         }
 
         // Long-poll: wait for change or timeout
-        return new Promise<ReturnType<typeof success>>((resolve) => {
+        return new Promise<ReturnType<typeof successStructured>>((resolve) => {
           // Fast-path: if the signal is already aborted before we enter the
           // executor, settle immediately without allocating the timer or
           // registering the diagnostics listener.
