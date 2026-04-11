@@ -7,7 +7,13 @@
  *   @vscode/ripgrep  →  node_modules/.bin/rg
  */
 
-import { existsSync, mkdirSync, symlinkSync, unlinkSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +54,13 @@ function linkBin(pkgName, binaryName, linkName = binaryName) {
   } catch {
     // Package not installed — silently skip
   }
+}
+
+// Ensure the CLI entry point is executable (npm unpack strips +x on some systems)
+try {
+  chmodSync(path.join(root, "dist", "index.js"), 0o755);
+} catch {
+  // Non-POSIX systems (Windows) — silently skip
 }
 
 console.log("[postinstall] Linking optional local binaries...");
