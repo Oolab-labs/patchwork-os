@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FileLock } from "../fileLock.js";
+import { FileLock, type LockContention } from "../fileLock.js";
 
 describe("FileLock", () => {
   it("resolves immediately when no contention", async () => {
@@ -145,5 +145,68 @@ describe("FileLock", () => {
     const release2 = await p2;
     expect(secondAcquired).toBe(true);
     release2();
+  });
+});
+
+describe("FileLock.tryAcquire", () => {
+  it("grants lock when path is free", () => {
+    const lock = new FileLock();
+    const result = lock.tryAcquire("/tmp/x.ts", "session-A");
+    expect("release" in result).toBe(true);
+    (result as { release: () => void }).release();
+  });
+
+  it("returns LOCKED_BY_SESSION when held by a different session via tryAcquire", () => {
+    const lock = new FileLock();
+    const r1 = lock.tryAcquire("/tmp/x.ts", "session-A") as {
+      release: () => void;
+    };
+    const r2 = lock.tryAcquire("/tmp/x.ts", "session-B");
+    expect("lockedBySession" in r2).toBe(true);
+    expect((r2 as LockContention).lockedBySession).toBe("session-A");
+    r1.release();
+  });
+
+  it("returns LOCKED_BY_SESSION when held by acquire() (no session)", async () => {
+    const lock = new FileLock();
+    const release = await lock.acquire("/tmp/x.ts");
+    // acquire() doesn't set holders — tryAcquire must detect via locks map
+    const result = lock.tryAcquire("/tmp/x.ts", "session-B");
+    expect("lockedBySession" in result).toBe(true);
+    expect((result as LockContention).lockedBySession).toBe("unknown-session");
+    release();
+  });
+
+  it("allows re-entry by the same session", () => {
+    const lock = new FileLock();
+    const r1 = lock.tryAcquire("/tmp/x.ts", "session-A") as {
+      release: () => void;
+    };
+    const r2 = lock.tryAcquire("/tmp/x.ts", "session-A");
+    expect("release" in r2).toBe(true);
+    r1.release();
+    (r2 as { release: () => void }).release();
+  });
+
+  it("grants lock after previous holder releases", () => {
+    const lock = new FileLock();
+    const r1 = lock.tryAcquire("/tmp/x.ts", "session-A") as {
+      release: () => void;
+    };
+    r1.release();
+    const r2 = lock.tryAcquire("/tmp/x.ts", "session-B");
+    expect("release" in r2).toBe(true);
+    (r2 as { release: () => void }).release();
+  });
+
+  it("does not interfere with a different path", () => {
+    const lock = new FileLock();
+    const r1 = lock.tryAcquire("/tmp/a.ts", "session-A") as {
+      release: () => void;
+    };
+    const r2 = lock.tryAcquire("/tmp/b.ts", "session-B");
+    expect("release" in r2).toBe(true);
+    r1.release();
+    (r2 as { release: () => void }).release();
   });
 });

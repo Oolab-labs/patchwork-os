@@ -10,6 +10,7 @@ import {
 const WATCH_ACTIVITY_MAX_ENTRIES = 50;
 const WATCH_ACTIVITY_MIN_INTERVAL_MS = 1_000;
 const WATCH_ACTIVITY_DEFAULT_INTERVAL_MS = 2_000;
+const WATCH_ACTIVITY_MAX_INTERVAL_MS = 30_000;
 
 export function createGetActivityLogTool(activityLog: ActivityLog) {
   return {
@@ -94,7 +95,7 @@ export function createWatchActivityLogTool(activityLog: ActivityLog) {
           },
           timeoutMs: {
             type: "number" as const,
-            description: `Max wait in milliseconds (default: ${WATCH_ACTIVITY_DEFAULT_INTERVAL_MS}, min: ${WATCH_ACTIVITY_MIN_INTERVAL_MS})`,
+            description: `Max wait in milliseconds (default: ${WATCH_ACTIVITY_DEFAULT_INTERVAL_MS}, min: ${WATCH_ACTIVITY_MIN_INTERVAL_MS}, max: ${WATCH_ACTIVITY_MAX_INTERVAL_MS})`,
           },
         },
         additionalProperties: false as const,
@@ -116,10 +117,13 @@ export function createWatchActivityLogTool(activityLog: ActivityLog) {
         optionalInt(args, "maxEntries", 1, WATCH_ACTIVITY_MAX_ENTRIES) ?? 10,
         WATCH_ACTIVITY_MAX_ENTRIES,
       );
-      const timeoutMs = Math.max(
-        optionalInt(args, "timeoutMs", WATCH_ACTIVITY_MIN_INTERVAL_MS) ??
-          WATCH_ACTIVITY_DEFAULT_INTERVAL_MS,
-        WATCH_ACTIVITY_MIN_INTERVAL_MS,
+      const timeoutMs = Math.min(
+        Math.max(
+          optionalInt(args, "timeoutMs", WATCH_ACTIVITY_MIN_INTERVAL_MS) ??
+            WATCH_ACTIVITY_DEFAULT_INTERVAL_MS,
+          WATCH_ACTIVITY_MIN_INTERVAL_MS,
+        ),
+        WATCH_ACTIVITY_MAX_INTERVAL_MS,
       );
 
       // Collect buffered entries already past sinceId

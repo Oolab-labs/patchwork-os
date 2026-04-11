@@ -9,6 +9,10 @@ const execFileAsync = promisify(execFile);
 
 const BLAME_CACHE_TTL_MS = 30_000;
 const BLAME_TIMEOUT_MS = 2_000;
+/** Maximum concurrent git-blame subprocesses per enrichDiagnostics call. */
+const BLAME_CONCURRENCY = 8;
+/** Maximum blame cache entries per tool instance before FIFO eviction. */
+const BLAME_CACHE_MAX_SIZE = 1_000;
 
 interface BlameEntry {
   commitHash: string;
@@ -18,40 +22,6 @@ interface BlameEntry {
 interface DiagnosticHistory {
   firstSeenAt: number;
   recurrenceCount: number;
-}
-
-/** Module-level blame cache shared across all watchDiagnostics instances. */
-const blameCache = new Map<string, BlameEntry>();
-
-function blameKey(file: string, line: number): string {
-  return `${file}:${line}`;
-}
-
-async function getIntroducedByCommit(
-  file: string,
-  line: number,
-  workspace: string,
-): Promise<string | undefined> {
-  const key = blameKey(file, line);
-  const cached = blameCache.get(key);
-  if (cached && Date.now() - cached.cachedAt < BLAME_CACHE_TTL_MS) {
-    return cached.commitHash;
-  }
-  try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["blame", "-L", `${line},${line}`, "--porcelain", "--", file],
-      { cwd: workspace, timeout: BLAME_TIMEOUT_MS },
-    );
-    const hash = stdout.slice(0, 40).trim();
-    if (/^[0-9a-f]{40}$/.test(hash) && !hash.startsWith("0000000")) {
-      blameCache.set(key, { commitHash: hash, cachedAt: Date.now() });
-      return hash;
-    }
-  } catch {
-    // git not available, file not tracked, or timeout — silently omit
-  }
-  return undefined;
 }
 
 import { cargoLinter } from "./linters/cargo.js";
@@ -85,56 +55,102 @@ export function createWatchDiagnosticsTool(
   probes?: ProbeResults,
   linterFilter?: string[],
 ) {
-  // Per-instance diagnostic history: "file:line:message" → { firstSeenAt, recurrenceCount }
+  // Per-instance blame cache — scoped to this tool instance to prevent
+  // cross-test pollution and allow independent TTL/size management.
+  const blameCache = new Map<string, BlameEntry>();
+
+  function evictBlameCache(): void {
+    if (blameCache.size <= BLAME_CACHE_MAX_SIZE) return;
+    // FIFO eviction: delete the oldest inserted key
+    const firstKey = blameCache.keys().next().value;
+    if (firstKey !== undefined) blameCache.delete(firstKey);
+  }
+
+  async function getIntroducedByCommit(
+    file: string,
+    line: number,
+  ): Promise<string | undefined> {
+    const key = `${file}:${line}`;
+    const cached = blameCache.get(key);
+    if (cached && Date.now() - cached.cachedAt < BLAME_CACHE_TTL_MS) {
+      return cached.commitHash;
+    }
+    try {
+      const { stdout } = await execFileAsync(
+        "git",
+        ["blame", "-L", `${line},${line}`, "--porcelain", "--", file],
+        { cwd: workspace, timeout: BLAME_TIMEOUT_MS },
+      );
+      const hash = stdout.slice(0, 40).trim();
+      if (/^[0-9a-f]{40}$/.test(hash) && !hash.startsWith("0000000")) {
+        blameCache.set(key, { commitHash: hash, cachedAt: Date.now() });
+        evictBlameCache();
+        return hash;
+      }
+    } catch {
+      // git not available, file not tracked, or timeout — silently omit
+    }
+    return undefined;
+  }
+
+  // Per-instance diagnostic history: "file:line:message_prefix" → { firstSeenAt, recurrenceCount }
   const diagHistory = new Map<string, DiagnosticHistory>();
+
+  async function enrichOneDiagnostic(
+    d: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const file = typeof d.file === "string" ? d.file : "";
+    const line =
+      typeof d.line === "number"
+        ? d.line
+        : typeof d.range === "object" && d.range !== null
+          ? ((
+              (d.range as Record<string, unknown>).start as Record<
+                string,
+                number
+              >
+            )?.line ?? 0)
+          : 0;
+    // Truncate message to 120 chars to keep map keys bounded
+    const msgRaw = typeof d.message === "string" ? d.message : "";
+    const message = msgRaw.slice(0, 120);
+    const key = `${file}:${line}:${message}`;
+    const now = Date.now();
+    const existing = diagHistory.get(key);
+    if (existing) {
+      existing.recurrenceCount += 1;
+    } else {
+      diagHistory.set(key, { firstSeenAt: now, recurrenceCount: 1 });
+    }
+    const entry = diagHistory.get(key)!;
+    const enriched: Record<string, unknown> = {
+      ...d,
+      firstSeenAt: entry.firstSeenAt,
+      recurrenceCount: entry.recurrenceCount,
+    };
+    if (file && line > 0) {
+      const commit = await getIntroducedByCommit(file, line);
+      if (commit) enriched.introducedByCommit = commit;
+    }
+    return enriched;
+  }
 
   async function enrichDiagnostics(
     diagnostics: Array<Record<string, unknown>>,
   ): Promise<Array<Record<string, unknown>>> {
-    return Promise.all(
-      diagnostics.map(async (d) => {
-        const file = typeof d.file === "string" ? d.file : "";
-        const line =
-          typeof d.line === "number"
-            ? d.line
-            : typeof d.range === "object" && d.range !== null
-              ? ((
-                  (d.range as Record<string, unknown>).start as Record<
-                    string,
-                    number
-                  >
-                )?.line ?? 0)
-              : 0;
-        const message = typeof d.message === "string" ? d.message : "";
-        const key = `${file}:${line}:${message}`;
-        const now = Date.now();
-        const existing = diagHistory.get(key);
-        if (existing) {
-          existing.recurrenceCount += 1;
-          const enriched: Record<string, unknown> = {
-            ...d,
-            firstSeenAt: existing.firstSeenAt,
-            recurrenceCount: existing.recurrenceCount,
-          };
-          if (file && line > 0) {
-            const commit = await getIntroducedByCommit(file, line, workspace);
-            if (commit) enriched.introducedByCommit = commit;
-          }
-          return enriched;
-        }
-        diagHistory.set(key, { firstSeenAt: now, recurrenceCount: 1 });
-        const enriched: Record<string, unknown> = {
-          ...d,
-          firstSeenAt: now,
-          recurrenceCount: 1,
-        };
-        if (file && line > 0) {
-          const commit = await getIntroducedByCommit(file, line, workspace);
-          if (commit) enriched.introducedByCommit = commit;
-        }
-        return enriched;
-      }),
-    );
+    // Process in batches to cap concurrent git-blame subprocesses
+    const results: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < diagnostics.length; i += BLAME_CONCURRENCY) {
+      const batch = diagnostics.slice(i, i + BLAME_CONCURRENCY);
+      const enriched = await Promise.all(batch.map(enrichOneDiagnostic));
+      results.push(...enriched);
+    }
+    return results;
+  }
+
+  /** Shared error handler for floating enrichment promises. */
+  function onEnrichError(_err: unknown): void {
+    // enrichDiagnostics is best-effort; swallow errors silently
   }
 
   // Detect available linters at registration time (same logic as getDiagnostics)
@@ -240,16 +256,18 @@ export function createWatchDiagnosticsTool(
               extensionClient.getCachedDiagnostics(resolvedPath);
             enrichDiagnostics(
               rawDiagnostics as unknown as Array<Record<string, unknown>>,
-            ).then((diagnostics) => {
-              resolve(
-                successStructured({
-                  changed: false,
-                  timestamp: extensionClient.lastDiagnosticsUpdate,
-                  diagnostics,
-                  count: diagnostics.length,
-                }),
-              );
-            });
+            )
+              .then((diagnostics) => {
+                resolve(
+                  successStructured({
+                    changed: false,
+                    timestamp: extensionClient.lastDiagnosticsUpdate,
+                    diagnostics,
+                    count: diagnostics.length,
+                  }),
+                );
+              })
+              .catch(onEnrichError);
             return;
           }
 
@@ -278,16 +296,18 @@ export function createWatchDiagnosticsTool(
               extensionClient.getCachedDiagnostics(resolvedPath);
             enrichDiagnostics(
               rawDiagnostics as unknown as Array<Record<string, unknown>>,
-            ).then((diagnostics) => {
-              resolve(
-                successStructured({
-                  changed,
-                  timestamp: extensionClient.lastDiagnosticsUpdate,
-                  diagnostics,
-                  count: diagnostics.length,
-                }),
-              );
-            });
+            )
+              .then((diagnostics) => {
+                resolve(
+                  successStructured({
+                    changed,
+                    timestamp: extensionClient.lastDiagnosticsUpdate,
+                    diagnostics,
+                    count: diagnostics.length,
+                  }),
+                );
+              })
+              .catch(onEnrichError);
           };
 
           unsubscribe = extensionClient.addDiagnosticsListener((file) => {

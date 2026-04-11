@@ -863,6 +863,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       this.lastTrigger.set(key, now);
       this.activeDiagnosticsTasks.set(normalizedFile, taskId);
@@ -931,6 +932,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       this.lastTrigger.set(key, now);
       this.log(
@@ -979,6 +981,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt: postCompactPrompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
       // impose a spurious cooldown on the next trigger attempt.
@@ -1015,6 +1018,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt: instrPrompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       this.log(
         `[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`,
@@ -1094,6 +1098,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
       // impose a spurious cooldown on the next trigger attempt.
@@ -1180,6 +1185,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       this.lastTrigger.set(key, now);
       this.activeFileChangedTasks.set(normalizedFile, taskId);
@@ -1284,6 +1290,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       this.lastTrigger.set(key, now);
       this.activeTestRunTaskId = taskId;
@@ -1416,6 +1423,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       this.lastTrigger.set(key, now);
       this.activeGitCommitTaskId = taskId;
@@ -1494,6 +1502,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       this.lastTrigger.set(key, now);
       this.activeGitPushTaskId = taskId;
@@ -1582,6 +1591,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       this.lastTrigger.set(key, now);
       this.activeBranchCheckoutTaskId = taskId;
@@ -1669,6 +1679,7 @@ export class AutomationHooks {
       const taskId = this.orchestrator.enqueue({
         prompt,
         sessionId: "",
+        isAutomationTask: true,
       });
       this.lastTrigger.set(key, now);
       this.activePullRequestTaskId = taskId;

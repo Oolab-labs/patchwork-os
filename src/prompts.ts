@@ -411,13 +411,13 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "ide-coverage",
     description:
-      "Fetch code coverage, generate an HTML heatmap of covered/uncovered files, and open it in the browser.",
+      "Fetch code coverage, generate an HTML heatmap of covered/uncovered files, and open it in the browser. Requires --full mode (uses getCodeCoverage and openInBrowser).",
     arguments: [],
   },
   {
     name: "ide-deps",
     description:
-      "Build a D3 force-directed dependency graph for an entry point and open it in the browser.",
+      "Build a D3 force-directed dependency graph for an entry point and open it in the browser. Requires --full mode (uses openInBrowser).",
     arguments: [
       {
         name: "file",
@@ -1840,6 +1840,8 @@ const TEMPLATES: Record<
           text: [
             "Generate an HTML code-coverage heatmap and open it in the browser.",
             "",
+            "⚠️  This prompt requires --full mode. First call `getToolCapabilities` — if `getCodeCoverage` or `openInBrowser` are absent, stop and respond: 'This prompt requires --full mode. Restart the bridge with --full.'",
+            "",
             "Steps:",
             "1. Call `getCodeCoverage` with no arguments to fetch the full coverage report.",
             "2. Parse the returned file entries. For each file compute a coverage percentage (coveredLines / totalLines).",
@@ -1866,6 +1868,8 @@ const TEMPLATES: Record<
             type: "text",
             text: [
               `Build a D3 force-directed dependency graph for the symbol at ${file}:${line}:${column} and open it in the browser.`,
+              "",
+              "⚠️  This prompt requires --full mode for openInBrowser. First call `getToolCapabilities` — if `openInBrowser` is absent, stop and respond: 'This prompt requires --full mode. Restart the bridge with --full.'",
               "",
               "Steps:",
               `1. Call \`getCallHierarchy\` at ${file}:${line}:${column} with direction="outgoing" to collect direct callees.`,
