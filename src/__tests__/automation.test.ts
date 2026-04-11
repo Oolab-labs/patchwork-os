@@ -3695,4 +3695,234 @@ describe("AutomationHooks — hook metadata prefix", () => {
     expect(prompt).toContain("@@ HOOK: onFileSave");
     expect(prompt).toContain("app.ts");
   });
+
+  it("onFileChanged metadata includes the changed file path", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileChanged: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "File changed: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileChanged("id1", "change", "/workspace/src/widget.ts");
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onFileChanged");
+    expect(prompt).toContain("widget.ts");
+  });
+
+  it("onGitCommit metadata includes no file (N/A)", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt: "Committed {{hash}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitCommit(makeCommitResult());
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onGitCommit");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onGitPush metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPush: {
+          enabled: true,
+          prompt: "Pushed {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPush(makePushResult());
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onGitPush");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onBranchCheckout metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onBranchCheckout: {
+          enabled: true,
+          prompt: "Switched to {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleBranchCheckout(makeCheckoutResult());
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onBranchCheckout");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onPullRequest metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPullRequest: {
+          enabled: true,
+          prompt: "PR: {{url}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePullRequest(makePRResult());
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onPullRequest");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onTaskCreated metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskCreated: {
+          enabled: true,
+          prompt: "Task {{taskId}} created",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskCreated({ taskId: "t-abc", prompt: "do the thing" });
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onTaskCreated");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onTaskSuccess metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskSuccess: {
+          enabled: true,
+          prompt: "Task {{taskId}} done",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskSuccess({ taskId: "task-abc", output: "done" });
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onTaskSuccess");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onPermissionDenied metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPermissionDenied: {
+          enabled: true,
+          prompt: "{{tool}} blocked: {{reason}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePermissionDenied({ tool: "runCommand", reason: "blocked" });
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onPermissionDenied");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onDiagnosticsCleared metadata includes the cleared file path", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsCleared: {
+          enabled: true,
+          prompt: "Cleared: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    // Seed errors first so the transition non-zero → zero fires the hook
+    hooks.handleDiagnosticsChanged("/src/cleared.ts", errorDiag);
+    hooks.handleDiagnosticsChanged("/src/cleared.ts", []);
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onDiagnosticsCleared");
+    expect(prompt).toContain("cleared.ts");
+  });
+
+  it("onCwdChanged metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onCwdChanged: {
+          enabled: true,
+          prompt: "Cwd: {{cwd}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleCwdChanged("/new/workspace");
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onCwdChanged");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onPostCompact metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPostCompact: {
+          enabled: true,
+          prompt: "Re-orient.",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handlePostCompact();
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onPostCompact");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onInstructionsLoaded metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onInstructionsLoaded: {
+          enabled: true,
+          prompt: "Session started.",
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleInstructionsLoaded();
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onInstructionsLoaded");
+    expect(prompt).toContain("| file: N/A");
+  });
 });
