@@ -41,12 +41,19 @@ export class FileLock {
     path: string,
     sessionId: string,
   ): { release: () => void } | LockContention {
-    const holder = this.holders.get(path);
-    if (holder !== undefined && holder !== sessionId) {
-      return { lockedBySession: holder };
+    // Use the `locks` map as the primary contention signal — it is set by
+    // BOTH `acquire` and `tryAcquire`, so a lock held via the blocking path
+    // is visible here. `holders` is a secondary map that records *who* holds
+    // the lock (only set by `tryAcquire`).
+    if (this.locks.get(path) !== undefined) {
+      const holder = this.holders.get(path) ?? "unknown-session";
+      if (holder !== sessionId) {
+        return { lockedBySession: holder };
+      }
+      // Same session already holds the lock — grant re-entry. The new promise
+      // chains behind the existing one; the caller gets its own release handle.
     }
-    // Lock is free or held by same session — grant it synchronously.
-    // We use the same promise-chain approach but resolve immediately.
+    // Lock is free (or same-session re-entry) — grant it synchronously.
     let release!: () => void;
     const next = new Promise<void>((r) => {
       release = r;
