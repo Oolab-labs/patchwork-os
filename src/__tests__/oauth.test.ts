@@ -6,9 +6,12 @@
  */
 
 import crypto from "node:crypto";
+import fs from "node:fs";
 import type http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { OAuthServerImpl } from "../oauth.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -20,13 +23,16 @@ const REDIRECT_URI = "http://localhost:3000/callback";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeOAuth() {
-  return new OAuthServerImpl(BRIDGE_TOKEN, ISSUER);
+function makeOAuth(opts?: { configDir?: string; tokenTtlMs?: number }) {
+  return new OAuthServerImpl(BRIDGE_TOKEN, ISSUER, opts);
 }
 
 /** Pre-register CLIENT_ID with REDIRECT_URI so authorize flows succeed */
-function makeOAuthWithClient(): OAuthServerImpl {
-  const oauth = new OAuthServerImpl(BRIDGE_TOKEN, ISSUER);
+function makeOAuthWithClient(opts?: {
+  configDir?: string;
+  tokenTtlMs?: number;
+}): OAuthServerImpl {
+  const oauth = new OAuthServerImpl(BRIDGE_TOKEN, ISSUER, opts);
   // Seed the registered client directly (test-only private access)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (oauth as any).registeredClients.set(CLIENT_ID, {
@@ -705,5 +711,115 @@ describe("OAuthServerImpl — body size cap", () => {
     await oauth.handleRevoke(req, res as unknown as http.ServerResponse);
     // RFC 7009: revoke always returns 200, even on error — but request must be destroyed
     expect((req as unknown as { destroyed: boolean }).destroyed).toBe(true);
+  });
+});
+
+// ── Token persistence ─────────────────────────────────────────────────────────
+
+describe("OAuthServerImpl — token persistence", () => {
+  let tmpDir: string;
+
+  afterEach(() => {
+    if (tmpDir) {
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup errors
+      }
+    }
+  });
+
+  function makeTmpDir() {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "oauth-test-"));
+    return tmpDir;
+  }
+
+  async function issueTokenWithDir(
+    configDir: string,
+  ): Promise<{ token: string; oauth: OAuthServerImpl }> {
+    const oauth = makeOAuthWithClient({ configDir });
+    const { code, verifier } = await issueCode(oauth);
+    const { data } = await issueToken(oauth, code, verifier);
+    const token = data.access_token as string;
+    // Flush debounced persist
+    await new Promise((r) => setTimeout(r, 600));
+    return { token, oauth };
+  }
+
+  it("issued token survives restart — resolved from disk on new instance", async () => {
+    const configDir = makeTmpDir();
+    const { token, oauth } = await issueTokenWithDir(configDir);
+    oauth.destroy();
+
+    // New instance with same configDir — token should still resolve
+    const oauth2 = makeOAuth({ configDir });
+    expect(oauth2.resolveBearerToken(token)).toBe(BRIDGE_TOKEN);
+    oauth2.destroy();
+  });
+
+  it("expired tokens are not loaded on restart", async () => {
+    const configDir = makeTmpDir();
+    // Issue with 1ms TTL
+    const oauth = makeOAuthWithClient({ configDir, tokenTtlMs: 1 });
+    const { code, verifier } = await issueCode(oauth);
+    const { data } = await issueToken(oauth, code, verifier);
+    const token = data.access_token as string;
+    // Wait for expiry and debounce
+    await new Promise((r) => setTimeout(r, 600));
+    oauth.destroy();
+
+    // New instance — token should be gone (expired on load)
+    const oauth2 = makeOAuth({ configDir });
+    expect(oauth2.resolveBearerToken(token)).toBeNull();
+    oauth2.destroy();
+  });
+
+  it("revoked tokens are not persisted", async () => {
+    const configDir = makeTmpDir();
+    const { token, oauth } = await issueTokenWithDir(configDir);
+
+    // Revoke
+    const revokeBody = new URLSearchParams({ token }).toString();
+    const revokeReq = makePostReq(revokeBody);
+    const revokeRes = new MockResponse();
+    await oauth.handleRevoke(
+      revokeReq,
+      revokeRes as unknown as http.ServerResponse,
+    );
+    await new Promise((r) => setTimeout(r, 600));
+    oauth.destroy();
+
+    // New instance — token should not be found
+    const oauth2 = makeOAuth({ configDir });
+    expect(oauth2.resolveBearerToken(token)).toBeNull();
+    oauth2.destroy();
+  });
+
+  it("configurable TTL is reflected in expires_in response", async () => {
+    const oauth = makeOAuthWithClient({ tokenTtlMs: 1000 });
+    const { code, verifier } = await issueCode(oauth);
+    const { data } = await issueToken(oauth, code, verifier);
+    expect(data.expires_in).toBe(1);
+    oauth.destroy();
+  });
+
+  it("token store file has 0o600 permissions", async () => {
+    const configDir = makeTmpDir();
+    await issueTokenWithDir(configDir);
+    const tokenFile = path.join(configDir, "ide", "oauth-tokens.json");
+    const stat = fs.statSync(tokenFile);
+    expect(stat.mode & 0o777).toBe(0o600);
+  });
+
+  it("no persistence when configDir is not provided", async () => {
+    const oauth = makeOAuthWithClient();
+    const { code, verifier } = await issueCode(oauth);
+    const { data } = await issueToken(oauth, code, verifier);
+    const token = data.access_token as string;
+    // Should resolve in-memory fine
+    expect(oauth.resolveBearerToken(token)).toBe(BRIDGE_TOKEN);
+    oauth.destroy();
+    // No file written
+    // (no assertion needed — just verifying no crash)
   });
 });

@@ -33,6 +33,8 @@ export interface Config {
   allowPrivateHttp: boolean;
   fixedToken: string | null;
   issuerUrl: string | null;
+  /** Access token TTL in milliseconds (derived from oauthTokenTtlDays config; default 24h). */
+  oauthTokenTtlMs: number;
   corsOrigins: string[];
   auditLogPath: string | null;
   fullMode: boolean;
@@ -169,6 +171,7 @@ interface ConfigFile {
   pluginWatch?: boolean;
   fixedToken?: string;
   issuerUrl?: string;
+  oauthTokenTtlDays?: number;
   corsOrigins?: string[];
   fullMode?: boolean;
   maxSessions?: number;
@@ -197,6 +200,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "pluginWatch",
   "fixedToken",
   "issuerUrl",
+  "oauthTokenTtlDays",
   "corsOrigins",
   "fullMode",
   "maxSessions",
@@ -319,6 +323,11 @@ export function parseConfig(argv: string[]): Config {
   let pluginWatch = fileConfig.pluginWatch ?? false;
   let fixedToken: string | null = fileConfig.fixedToken ?? null;
   let issuerUrl: string | null = fileConfig.issuerUrl ?? null;
+  const rawTtlDays = fileConfig.oauthTokenTtlDays;
+  const oauthTokenTtlMs =
+    typeof rawTtlDays === "number" && rawTtlDays > 0
+      ? Math.min(Math.max(rawTtlDays, 1), 90) * 24 * 60 * 60 * 1_000
+      : 24 * 60 * 60 * 1_000; // default 24h
   let corsOrigins: string[] = fileConfig.corsOrigins ?? [];
   let claudeDriver: "subprocess" | "api" | "none" =
     fileConfig.claudeDriver ?? "none";
@@ -775,6 +784,7 @@ Environment Variables:
     pluginWatch,
     fixedToken,
     issuerUrl,
+    oauthTokenTtlMs,
     corsOrigins,
     vps,
     db,
