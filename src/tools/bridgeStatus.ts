@@ -5,11 +5,18 @@ import { successStructured } from "./utils.js";
 
 const startTime = Date.now();
 
+export interface DisconnectInfo {
+  at: string | null;
+  code: number | null;
+  reason: string | null;
+}
+
 export function createBridgeStatusTool(
   extensionClient: ExtensionClient,
   sessions?: Map<string, unknown>,
   orchestrator?: ClaudeOrchestrator | null,
   automationHooks?: AutomationHooks | null,
+  getDisconnectInfo?: () => DisconnectInfo,
 ) {
   return {
     schema: {
@@ -46,6 +53,15 @@ export function createBridgeStatusTool(
           tierDescription: { type: "string" },
           hint: { type: "string" },
           suggestedActions: { type: "array", items: { type: "string" } },
+          lastDisconnect: {
+            type: "object",
+            properties: {
+              at: { type: ["string", "null"] },
+              code: { type: ["integer", "null"] },
+              reason: { type: ["string", "null"] },
+            },
+            required: ["at", "code", "reason"],
+          },
         },
         required: [
           "extensionConnected",
@@ -113,6 +129,9 @@ export function createBridgeStatusTool(
           : "Extension disconnected — extension-dependent tools (LSP, terminal, debugging, etc.) are temporarily unavailable. " +
             "Native tools (file search, git, GitHub) still work. " +
             "The extension will auto-reconnect, or the user can run the 'Claude IDE Bridge: Reconnect' command.",
+        ...(getDisconnectInfo && {
+          lastDisconnect: getDisconnectInfo(),
+        }),
       });
     },
   };
