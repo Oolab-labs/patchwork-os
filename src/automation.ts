@@ -305,6 +305,7 @@ export interface Diagnostic {
   message: string;
   severity: "error" | "warning" | "info" | "information" | "hint";
   source?: string;
+  code?: string | number;
 }
 
 const MIN_COOLDOWN_MS = 5_000;
