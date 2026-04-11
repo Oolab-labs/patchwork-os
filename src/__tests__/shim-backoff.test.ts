@@ -4,7 +4,7 @@
  * Covers:
  *   - Exponential backoff on HTTP 429 (rate-limited upgrade rejection)
  *   - Exponential backoff on ECONNREFUSED
- *   - 5-minute give-up (controlled via SHIM_MAX_UNREACHABLE_MS env override)
+ *   - Passive reconnect mode after SHIM_MAX_UNREACHABLE_MS (no exit — auto-recovers when bridge restarts)
  *   - 401 upgrade rejection → immediate exit
  *   - stdin EPIPE → clean exit (no unhandled exception crash)
  */
@@ -173,23 +173,28 @@ describe("429 rate-limit backoff", () => {
     expect(stderr.join("")).toContain("429");
   }, 20_000);
 
-  it("exits with code 1 after SHIM_MAX_UNREACHABLE_MS", async () => {
+  it("switches to passive reconnect mode (does not exit) after SHIM_MAX_UNREACHABLE_MS", async () => {
     const srv = await startRejectServer(429);
     const port = (srv.address() as net.AddressInfo).port;
     writelock(path.join(tmpDir, "ide"), port, "tok");
 
-    const { proc } = spawnShim({ SHIM_MAX_UNREACHABLE_MS: "2000" });
+    const { proc, stderr } = spawnShim({ SHIM_MAX_UNREACHABLE_MS: "2000" });
 
     let exitCode: number | null = null;
     proc.on("exit", (code) => {
       exitCode = code;
     });
 
-    const exited = await waitFor(() => exitCode !== null, 10_000);
+    // Shim should log the passive-mode message and NOT exit
+    const loggedPassive = await waitFor(
+      () => stderr.join("").includes("passive reconnect mode"),
+      10_000,
+    );
     await closeServer(srv);
 
-    expect(exited).toBe(true);
-    expect(exitCode).toBe(1);
+    expect(loggedPassive).toBe(true);
+    expect(exitCode).toBeNull(); // still running
+    proc.kill();
   }, 15_000);
 });
 
@@ -216,20 +221,25 @@ describe("ECONNREFUSED backoff", () => {
     expect(stderr.join("")).toContain("ECONNREFUSED");
   }, 20_000);
 
-  it("exits with code 1 after SHIM_MAX_UNREACHABLE_MS on ECONNREFUSED", async () => {
+  it("switches to passive reconnect mode (does not exit) after SHIM_MAX_UNREACHABLE_MS on ECONNREFUSED", async () => {
     const deadPort = await freePort();
     writelock(path.join(tmpDir, "ide"), deadPort, "tok");
 
-    const { proc } = spawnShim({ SHIM_MAX_UNREACHABLE_MS: "2000" });
+    const { proc, stderr } = spawnShim({ SHIM_MAX_UNREACHABLE_MS: "2000" });
 
     let exitCode: number | null = null;
     proc.on("exit", (code) => {
       exitCode = code;
     });
 
-    const exited = await waitFor(() => exitCode !== null, 10_000);
-    expect(exited).toBe(true);
-    expect(exitCode).toBe(1);
+    // Shim should log the passive-mode message and NOT exit
+    const loggedPassive = await waitFor(
+      () => stderr.join("").includes("passive reconnect mode"),
+      10_000,
+    );
+    expect(loggedPassive).toBe(true);
+    expect(exitCode).toBeNull(); // still running
+    proc.kill();
   }, 15_000);
 });
 

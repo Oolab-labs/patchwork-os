@@ -116,6 +116,10 @@ const POLL_INTERVAL_MS = 3000; // fallback poll when disconnected
 const MAX_PENDING_LINES = 1000;
 
 // Backoff state — differentiated retry delays by error category
+// After MAX_UNREACHABLE_MS of consecutive ECONNREFUSED/429 errors the shim
+// switches to passive poll mode rather than exiting — it auto-recovers when
+// the bridge restarts without requiring the user to click "Reconnect" in the
+// MCP panel. Override with SHIM_MAX_UNREACHABLE_MS env var (ms).
 const MAX_UNREACHABLE_MS =
   Number(process.env.SHIM_MAX_UNREACHABLE_MS) || 5 * 60 * 1000;
 let firstUnreachableAt = 0; // epoch ms of first consecutive failure in current streak
@@ -235,10 +239,17 @@ function connect(port, authToken) {
     if (code === "ECONNREFUSED" || code === "ETIMEDOUT") {
       if (firstUnreachableAt === 0) firstUnreachableAt = Date.now();
       if (Date.now() - firstUnreachableAt > MAX_UNREACHABLE_MS) {
+        // Don't exit — switch to passive polling so we auto-recover when the
+        // bridge restarts (e.g. after a crash with --watch, or a sleep/wake cycle).
+        // The lock-dir watcher (below) fires immediately on bridge restart; this
+        // poll loop covers the edge case where the watcher missed the event.
         process.stderr.write(
-          "mcp-stdio-shim: Bridge unreachable for >5 minutes — giving up.\n",
+          "mcp-stdio-shim: Bridge unreachable for >5 minutes — switching to passive reconnect mode.\n",
         );
-        process.exit(1);
+        firstUnreachableAt = Date.now(); // reset streak to avoid repeated log spam
+        currentBackoffMs = 0; // reset backoff so next connect attempt is prompt
+        startPoll();
+        return;
       }
       scheduleBackoffReconnect("unreachable");
     } else if (err.message?.includes("429")) {
@@ -246,9 +257,12 @@ function connect(port, authToken) {
       if (firstUnreachableAt === 0) firstUnreachableAt = Date.now();
       if (Date.now() - firstUnreachableAt > MAX_UNREACHABLE_MS) {
         process.stderr.write(
-          "mcp-stdio-shim: Bridge rate-limiting for >5 minutes — giving up.\n",
+          "mcp-stdio-shim: Bridge rate-limiting for >5 minutes — switching to passive reconnect mode.\n",
         );
-        process.exit(1);
+        firstUnreachableAt = Date.now();
+        currentBackoffMs = 0;
+        startPoll();
+        return;
       }
       scheduleBackoffReconnect("429");
     } else if (
