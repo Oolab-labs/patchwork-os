@@ -754,6 +754,13 @@ describe("OAuthServerImpl — token persistence", () => {
     // New instance with same configDir — token should still resolve
     const oauth2 = makeOAuth({ configDir });
     expect(oauth2.resolveBearerToken(token)).toBe(BRIDGE_TOKEN);
+    // Resolves a second time (promotion to accessTokens worked)
+    expect(oauth2.resolveBearerToken(token)).toBe(BRIDGE_TOKEN);
+    // hashedTokens should be empty after promotion
+    expect(
+      (oauth2 as unknown as { hashedTokens: Map<string, unknown> }).hashedTokens
+        .size,
+    ).toBe(0);
     oauth2.destroy();
   });
 

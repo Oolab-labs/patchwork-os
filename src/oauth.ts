@@ -697,7 +697,10 @@ export class OAuthServerImpl implements OAuthServer {
         string,
         { clientId: string; scope: string; expiresAt: number }
       > = {};
-      // Persist current in-memory tokens (keyed by hash)
+      // Persist current in-memory tokens (keyed by hash).
+      // Invariant: a promoted disk token exists ONLY in `accessTokens` — it was
+      // deleted from `hashedTokens` at promotion time. Do not write it from both
+      // maps or revocation tracking breaks.
       for (const [rawToken, record] of this.accessTokens) {
         if (record.expiresAt > now) {
           tokens[this.hashToken(rawToken)] = {
@@ -707,7 +710,10 @@ export class OAuthServerImpl implements OAuthServer {
           };
         }
       }
-      // Persist still-valid disk tokens that haven't been promoted yet
+      // Persist still-valid disk tokens that have not yet been promoted.
+      // The `!(hash in tokens)` guard is a safety net — promoted tokens should
+      // already be absent from `hashedTokens`, but the check prevents any
+      // double-write if that invariant is ever violated.
       for (const [hash, record] of this.hashedTokens) {
         if (record.expiresAt > now && !(hash in tokens)) {
           tokens[hash] = {
@@ -735,7 +741,7 @@ export class OAuthServerImpl implements OAuthServer {
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;
       this.persistTokens();
-    }, 500);
+    }, 500).unref(); // unref so a pending flush doesn't prevent process exit
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

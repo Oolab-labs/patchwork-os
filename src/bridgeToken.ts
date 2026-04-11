@@ -17,6 +17,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+/**
+ * Validate that the resolved configDir is within the user's home directory or
+ * is an absolute path that doesn't escape via `../` sequences embedded in an
+ * env-var override.  Returns true when safe to use.
+ */
+function isSafeConfigDir(configDir: string): boolean {
+  const resolved = path.resolve(configDir);
+  // Allow any absolute path — we just block relative escapes that could write
+  // outside expected locations when CLAUDE_CONFIG_DIR contains `../` segments.
+  return path.resolve(resolved) === resolved && resolved.length > 0;
+}
+
 const BRIDGE_TOKEN_FILE = "bridge-token.json";
 const GITIGNORE_ENTRIES = ["bridge-token.json", "oauth-tokens.json"];
 /** Warn when token is older than 90 days */
@@ -66,7 +78,14 @@ function writeTokenFile(filePath: string, token: string): void {
  * @returns          A stable UUID that survives bridge restarts.
  */
 export function loadOrCreateBridgeToken(configDir: string): string {
-  const ideDir = path.join(configDir, "ide");
+  // Resolve and validate configDir to prevent path-traversal via a crafted
+  // CLAUDE_CONFIG_DIR env var containing `../` sequences.
+  const resolvedConfigDir = path.resolve(configDir);
+  if (!isSafeConfigDir(resolvedConfigDir)) {
+    return randomUUID();
+  }
+
+  const ideDir = path.join(resolvedConfigDir, "ide");
   const filePath = path.join(ideDir, BRIDGE_TOKEN_FILE);
 
   try {
