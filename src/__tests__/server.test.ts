@@ -6,8 +6,8 @@ import { Server } from "../server.js";
 const logger = new Logger(false);
 let server: Server | null = null;
 
-afterEach(() => {
-  server?.close();
+afterEach(async () => {
+  if (server) await server.close();
   server = null;
 });
 
