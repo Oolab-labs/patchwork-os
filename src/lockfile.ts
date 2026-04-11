@@ -143,30 +143,42 @@ export class LockFileManager {
           ) {
             try {
               process.kill(content.pid, 0); // check if alive — throws if dead
-              // PID appears alive — check nonce to detect PID reuse.
-              // If the lock file has a nonce that matches our own in-memory nonce,
-              // it is our own lock file — leave it alone.
-              // If nonces differ (or our nonce is unset), the PID was reused by
-              // another process and this lock is stale.
-              if (
-                typeof content.nonce === "string" &&
-                this.ownNonce !== null &&
-                content.nonce !== this.ownNonce
-              ) {
-                this.logger.warn(
-                  `Removing stale lock file: ${file} (PID ${content.pid} alive but nonce mismatch — likely PID reuse)`,
-                );
-                fs.unlinkSync(filePath);
-              } else if (typeof content.startedAt === "number") {
-                // Fallback for lock files without a nonce: use the 24h age heuristic.
-                const lockAgeMs = Date.now() - content.startedAt;
-                if (lockAgeMs > 24 * 60 * 60 * 1000) {
+              // PID appears alive.
+              // Only attempt stale-detection on our OWN PID (e.g. a previous crash
+              // that left our lock behind and the OS reused our PID for another
+              // process). A different live PID belongs to a legitimate sibling
+              // bridge — never delete it based on nonce comparison alone.
+              if (content.pid === process.pid) {
+                // Our own PID: check for stale lock left by a previous crash.
+                if (
+                  typeof content.nonce === "string" &&
+                  this.ownNonce !== null &&
+                  content.nonce !== this.ownNonce
+                ) {
+                  // Nonce mismatch — our PID was reused after a crash and this
+                  // lock belongs to the old instance.
                   this.logger.warn(
-                    `Removing stale lock file: ${file} (PID ${content.pid} alive but lock is ${Math.round(lockAgeMs / 3_600_000)}h old — likely PID reuse)`,
+                    `Removing stale lock file: ${file} (our PID ${content.pid} alive but nonce mismatch — likely PID reuse after crash)`,
                   );
                   fs.unlinkSync(filePath);
+                } else if (
+                  typeof content.nonce !== "string" &&
+                  typeof content.startedAt === "number"
+                ) {
+                  // Legacy lock format (no nonce): use 24h age heuristic only
+                  // for our own PID to catch old-format stale locks.
+                  const lockAgeMs = Date.now() - content.startedAt;
+                  if (lockAgeMs > 24 * 60 * 60 * 1000) {
+                    this.logger.warn(
+                      `Removing stale lock file: ${file} (our PID ${content.pid} alive but lock is ${Math.round(lockAgeMs / 3_600_000)}h old — legacy format, likely stale)`,
+                    );
+                    fs.unlinkSync(filePath);
+                  }
                 }
+                // else: it really is our own live lock — leave it alone
               }
+              // Different live PID → legitimate sibling bridge instance;
+              // never delete based on age or nonce alone.
             } catch {
               this.logger.warn(
                 `Removing stale lock file: ${file} (PID ${content.pid} not running)`,
