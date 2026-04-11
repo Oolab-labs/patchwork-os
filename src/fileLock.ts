@@ -1,12 +1,19 @@
 /** Maximum time to wait for a file lock before aborting the operation. */
 const LOCK_ACQUIRE_TIMEOUT_MS = 15_000;
 
+/** Returned by tryAcquire when the file is already locked by another session. */
+export interface LockContention {
+  lockedBySession: string;
+}
+
 /**
  * Promise-chain mutex keyed by absolute file path.
  * Serializes concurrent file edits across multiple agent sessions.
  */
 export class FileLock {
   private locks = new Map<string, Promise<void>>();
+  /** Session ID holding each lock (for tryAcquire contention reporting). */
+  private holders = new Map<string, string>();
   private readonly timeoutMs: number;
 
   constructor(timeoutMs = LOCK_ACQUIRE_TIMEOUT_MS) {
@@ -23,6 +30,37 @@ export class FileLock {
    *   blocked for the full timeout period. Callers should still use try/finally
    *   to guarantee release() is called in the normal path.
    */
+  /**
+   * Non-blocking variant of acquire. Returns immediately:
+   * - `{ release }` if the lock was granted (call release() in a finally block)
+   * - `{ lockedBySession }` if the file is currently locked by another session
+   *
+   * Falls back to regular acquire() when no other session holds the lock.
+   */
+  tryAcquire(
+    path: string,
+    sessionId: string,
+  ): { release: () => void } | LockContention {
+    const holder = this.holders.get(path);
+    if (holder !== undefined && holder !== sessionId) {
+      return { lockedBySession: holder };
+    }
+    // Lock is free or held by same session — grant it synchronously.
+    // We use the same promise-chain approach but resolve immediately.
+    let release!: () => void;
+    const next = new Promise<void>((r) => {
+      release = r;
+    });
+    this.locks.set(path, next);
+    this.holders.set(path, sessionId);
+    const wrappedRelease = () => {
+      release();
+      if (this.locks.get(path) === next) this.locks.delete(path);
+      if (this.holders.get(path) === sessionId) this.holders.delete(path);
+    };
+    return { release: wrappedRelease };
+  }
+
   async acquire(path: string, signal?: AbortSignal): Promise<() => void> {
     const prev = this.locks.get(path) ?? Promise.resolve();
     let release!: () => void;
@@ -74,6 +112,7 @@ export class FileLock {
       signal?.removeEventListener("abort", onAbort);
       release();
       if (this.locks.get(path) === next) this.locks.delete(path);
+      this.holders.delete(path);
     };
 
     // If the holder is aborted while holding the lock, release automatically

@@ -7,7 +7,10 @@ import type { FileLock } from "../fileLock.js";
 import type { LoadedPluginTool } from "../pluginLoader.js";
 import type { ProbeResults } from "../probe.js";
 import type { McpTransport } from "../transport.js";
-import { createGetActivityLogTool } from "./activityLog.js";
+import {
+  createGetActivityLogTool,
+  createWatchActivityLogTool,
+} from "./activityLog.js";
 import { createAuditDependenciesTool } from "./auditDependencies.js";
 import {
   createBatchFindImplementationsTool,
@@ -194,6 +197,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "openFile",
   "closeTab",
   "captureScreenshot",
+  "watchActivityLog",
   // LSP / code intelligence
   "getDiagnostics",
   "watchDiagnostics",
@@ -382,7 +386,12 @@ export function registerAllTools(
     // The Chosen Five
     ...createPlanTools(workspace),
     testsTool,
-    ...(activityLog ? [createGetActivityLogTool(activityLog)] : []),
+    ...(activityLog
+      ? [
+          createGetActivityLogTool(activityLog),
+          createWatchActivityLogTool(activityLog),
+        ]
+      : []),
     createBridgeStatusTool(
       extensionClient,
       sessions,
@@ -411,8 +420,8 @@ export function registerAllTools(
     createDeleteFileTool(workspace, extensionClient),
     createRenameFileTool(workspace, extensionClient),
     createGetBufferContentTool(workspace, extensionClient),
-    createReplaceBlockTool(workspace, extensionClient, fileLock),
-    createEditTextTool(workspace, extensionClient, fileLock),
+    createReplaceBlockTool(workspace, extensionClient, fileLock, sessionId),
+    createEditTextTool(workspace, extensionClient, fileLock, sessionId),
     createFormatDocumentTool(workspace, probes, extensionClient),
     createFixAllLintErrorsTool(workspace, probes, extensionClient),
     createOrganizeImportsTool(workspace, extensionClient),

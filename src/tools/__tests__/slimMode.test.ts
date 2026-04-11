@@ -5,8 +5,8 @@ import { registerAllTools, SLIM_TOOL_NAMES } from "../index.js";
 // ── SLIM_TOOL_NAMES invariants ─────────────────────────────────────────────
 
 describe("SLIM_TOOL_NAMES", () => {
-  it("contains exactly 54 entries", () => {
-    expect(SLIM_TOOL_NAMES.size).toBe(54);
+  it("contains exactly 55 entries", () => {
+    expect(SLIM_TOOL_NAMES.size).toBe(55);
   });
 
   it("all names match the valid tool name pattern", () => {
@@ -145,12 +145,19 @@ describe("registerAllTools tool set filtering", () => {
       ruff: false,
     };
 
+    const activityLog = {
+      query: vi.fn(() => []),
+      subscribe: vi.fn(() => () => {}),
+      stats: vi.fn(() => ({})),
+    };
+
     registerAllTools(
       transport as never,
       baseConfig({ fullMode: false }),
       new Set(),
       probes as never,
       extensionClient as never,
+      activityLog as never,
     );
 
     const registeredSet = new Set(registered);
@@ -198,12 +205,19 @@ describe("registerAllTools tool set filtering", () => {
       ruff: false,
     };
 
+    const al = {
+      query: vi.fn(() => []),
+      subscribe: vi.fn(() => () => {}),
+      stats: vi.fn(() => ({})),
+    };
+
     registerAllTools(
       t1 as never,
       baseConfig({ fullMode: false }),
       new Set(),
       probes as never,
       e1 as never,
+      al as never,
     );
     registerAllTools(
       t2 as never,
@@ -211,6 +225,7 @@ describe("registerAllTools tool set filtering", () => {
       new Set(),
       probes as never,
       e2 as never,
+      al as never,
     );
 
     expect(r2.length).toBeGreaterThan(r1.length);
