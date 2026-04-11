@@ -31,5 +31,15 @@
     "cooldownMs": 15000,
     "minSeverity": "error",
     "prompt": "New TypeScript error in {{file}}:\n\n{{diagnostics}}\n\nExplain what's wrong and suggest a fix."
+  },
+  "onDiagnosticsCleared": {
+    "enabled": true,
+    "cooldownMs": 10000,
+    "prompt": "All errors cleared in {{file}}. Run the tests for that file to confirm the fix is complete."
+  },
+  "onPermissionDenied": {
+    "enabled": true,
+    "cooldownMs": 15000,
+    "prompt": "The tool '{{tool}}' was blocked: {{reason}}. Call getBridgeStatus to check bridge health and getToolCapabilities to confirm available tools."
   }
 }
