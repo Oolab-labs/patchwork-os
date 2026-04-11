@@ -3,7 +3,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
-import type { FileLock } from "../fileLock.js";
+import type { FileLock, LockContention } from "../fileLock.js";
 import {
   error,
   optionalBool,
@@ -16,6 +16,7 @@ export function createReplaceBlockTool(
   workspace: string,
   extensionClient?: ExtensionClient,
   fileLock?: FileLock,
+  sessionId?: string,
 ) {
   return {
     schema: {
@@ -123,7 +124,21 @@ export function createReplaceBlockTool(
         text.slice(firstIndex + oldContent.length);
 
       // Acquire per-file lock before write to serialize concurrent edits from multiple sessions
-      const release = fileLock ? await fileLock.acquire(filePath) : null;
+      let release: (() => void) | null = null;
+      if (fileLock) {
+        if (sessionId) {
+          const result = fileLock.tryAcquire(filePath, sessionId);
+          if ("lockedBySession" in result) {
+            return error(
+              `File is locked by another session (${(result as LockContention).lockedBySession}) — retry after that session completes its edit`,
+              "LOCKED_BY_SESSION",
+            );
+          }
+          release = result.release;
+        } else {
+          release = await fileLock.acquire(filePath);
+        }
+      }
       try {
         // Optimistic concurrency check — detect concurrent modification
         const statAfter = await fs.stat(filePath);
