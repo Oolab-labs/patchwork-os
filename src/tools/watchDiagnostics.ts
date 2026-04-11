@@ -1,7 +1,59 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { ProbeResults } from "../probe.js";
 import type { ToolHandler } from "../transport.js";
 import { biomeLinter } from "./linters/biome.js";
+
+const execFileAsync = promisify(execFile);
+
+const BLAME_CACHE_TTL_MS = 30_000;
+const BLAME_TIMEOUT_MS = 2_000;
+
+interface BlameEntry {
+  commitHash: string;
+  cachedAt: number;
+}
+
+interface DiagnosticHistory {
+  firstSeenAt: number;
+  recurrenceCount: number;
+}
+
+/** Module-level blame cache shared across all watchDiagnostics instances. */
+const blameCache = new Map<string, BlameEntry>();
+
+function blameKey(file: string, line: number): string {
+  return `${file}:${line}`;
+}
+
+async function getIntroducedByCommit(
+  file: string,
+  line: number,
+  workspace: string,
+): Promise<string | undefined> {
+  const key = blameKey(file, line);
+  const cached = blameCache.get(key);
+  if (cached && Date.now() - cached.cachedAt < BLAME_CACHE_TTL_MS) {
+    return cached.commitHash;
+  }
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["blame", "-L", `${line},${line}`, "--porcelain", "--", file],
+      { cwd: workspace, timeout: BLAME_TIMEOUT_MS },
+    );
+    const hash = stdout.slice(0, 40).trim();
+    if (/^[0-9a-f]{40}$/.test(hash) && !hash.startsWith("0000000")) {
+      blameCache.set(key, { commitHash: hash, cachedAt: Date.now() });
+      return hash;
+    }
+  } catch {
+    // git not available, file not tracked, or timeout — silently omit
+  }
+  return undefined;
+}
+
 import { cargoLinter } from "./linters/cargo.js";
 import { eslintLinter } from "./linters/eslint.js";
 import { govetLinter } from "./linters/govet.js";
@@ -33,6 +85,58 @@ export function createWatchDiagnosticsTool(
   probes?: ProbeResults,
   linterFilter?: string[],
 ) {
+  // Per-instance diagnostic history: "file:line:message" → { firstSeenAt, recurrenceCount }
+  const diagHistory = new Map<string, DiagnosticHistory>();
+
+  async function enrichDiagnostics(
+    diagnostics: Array<Record<string, unknown>>,
+  ): Promise<Array<Record<string, unknown>>> {
+    return Promise.all(
+      diagnostics.map(async (d) => {
+        const file = typeof d.file === "string" ? d.file : "";
+        const line =
+          typeof d.line === "number"
+            ? d.line
+            : typeof d.range === "object" && d.range !== null
+              ? ((
+                  (d.range as Record<string, unknown>).start as Record<
+                    string,
+                    number
+                  >
+                )?.line ?? 0)
+              : 0;
+        const message = typeof d.message === "string" ? d.message : "";
+        const key = `${file}:${line}:${message}`;
+        const now = Date.now();
+        const existing = diagHistory.get(key);
+        if (existing) {
+          existing.recurrenceCount += 1;
+          const enriched: Record<string, unknown> = {
+            ...d,
+            firstSeenAt: existing.firstSeenAt,
+            recurrenceCount: existing.recurrenceCount,
+          };
+          if (file && line > 0) {
+            const commit = await getIntroducedByCommit(file, line, workspace);
+            if (commit) enriched.introducedByCommit = commit;
+          }
+          return enriched;
+        }
+        diagHistory.set(key, { firstSeenAt: now, recurrenceCount: 1 });
+        const enriched: Record<string, unknown> = {
+          ...d,
+          firstSeenAt: now,
+          recurrenceCount: 1,
+        };
+        if (file && line > 0) {
+          const commit = await getIntroducedByCommit(file, line, workspace);
+          if (commit) enriched.introducedByCommit = commit;
+        }
+        return enriched;
+      }),
+    );
+  }
+
   // Detect available linters at registration time (same logic as getDiagnostics)
   const availableLinters = probes
     ? ALL_LINTERS.filter((l) => {
@@ -84,6 +188,8 @@ export function createWatchDiagnosticsTool(
           note: { type: "string" },
         },
         required: ["changed", "timestamp", "diagnostics", "count"],
+        description:
+          "Diagnostic entries from extension path include firstSeenAt, recurrenceCount, and optional introducedByCommit fields.",
       },
     },
     timeoutMs: 120_000,
@@ -111,8 +217,11 @@ export function createWatchDiagnosticsTool(
           sinceTimestamp !== undefined &&
           extensionClient.lastDiagnosticsUpdate > sinceTimestamp
         ) {
-          const diagnostics =
+          const rawDiagnostics =
             extensionClient.getCachedDiagnostics(resolvedPath);
+          const diagnostics = await enrichDiagnostics(
+            rawDiagnostics as unknown as Array<Record<string, unknown>>,
+          );
           return successStructured({
             changed: true,
             timestamp: extensionClient.lastDiagnosticsUpdate,
@@ -127,16 +236,20 @@ export function createWatchDiagnosticsTool(
           // executor, settle immediately without allocating the timer or
           // registering the diagnostics listener.
           if (signal?.aborted) {
-            const diagnostics =
+            const rawDiagnostics =
               extensionClient.getCachedDiagnostics(resolvedPath);
-            resolve(
-              successStructured({
-                changed: false,
-                timestamp: extensionClient.lastDiagnosticsUpdate,
-                diagnostics,
-                count: diagnostics.length,
-              }),
-            );
+            enrichDiagnostics(
+              rawDiagnostics as unknown as Array<Record<string, unknown>>,
+            ).then((diagnostics) => {
+              resolve(
+                successStructured({
+                  changed: false,
+                  timestamp: extensionClient.lastDiagnosticsUpdate,
+                  diagnostics,
+                  count: diagnostics.length,
+                }),
+              );
+            });
             return;
           }
 
@@ -161,16 +274,20 @@ export function createWatchDiagnosticsTool(
             if (settled) return;
             settled = true;
             cleanup();
-            const diagnostics =
+            const rawDiagnostics =
               extensionClient.getCachedDiagnostics(resolvedPath);
-            resolve(
-              successStructured({
-                changed,
-                timestamp: extensionClient.lastDiagnosticsUpdate,
-                diagnostics,
-                count: diagnostics.length,
-              }),
-            );
+            enrichDiagnostics(
+              rawDiagnostics as unknown as Array<Record<string, unknown>>,
+            ).then((diagnostics) => {
+              resolve(
+                successStructured({
+                  changed,
+                  timestamp: extensionClient.lastDiagnosticsUpdate,
+                  diagnostics,
+                  count: diagnostics.length,
+                }),
+              );
+            });
           };
 
           unsubscribe = extensionClient.addDiagnosticsListener((file) => {

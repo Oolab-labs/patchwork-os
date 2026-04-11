@@ -70,7 +70,7 @@ describe("watchDiagnostics: sinceTimestamp early-return", () => {
 
     expect(data.changed).toBe(true);
     expect(data.timestamp).toBe(1000);
-    expect(data.diagnostics).toEqual(diags);
+    expect(data.diagnostics).toMatchObject(diags);
     expect(data.count).toBe(1);
   });
 
@@ -100,7 +100,7 @@ describe("watchDiagnostics: long-poll", () => {
     const data = JSON.parse(result.content[0].text);
 
     expect(data.changed).toBe(true);
-    expect(data.diagnostics).toEqual(diags);
+    expect(data.diagnostics).toMatchObject(diags);
   });
 
   it("resolves with changed=false on timeout", async () => {
