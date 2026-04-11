@@ -10,10 +10,12 @@ import type {
   PermissionDeniedResult,
   PullRequestResult,
   TaskCreatedResult,
+  TaskSuccessResult,
 } from "../automation.js";
 import { AutomationHooks, loadPolicy } from "../automation.js";
 import type { IClaudeDriver } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import type { ExtensionClient } from "../extensionClient.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -2613,5 +2615,544 @@ describe("AutomationHooks — promptName support", () => {
     const nonceMatches = prompt.match(/\[([a-f0-9]{12})\]/g) ?? [];
     expect(nonceMatches.length).toBeGreaterThanOrEqual(4);
     expect(nonceMatches[0]).toBe(nonceMatches[1]);
+  });
+});
+
+// ── B2: onDiagnosticsCleared tests ───────────────────────────────────────────
+
+describe("AutomationHooks.handleDiagnosticsCleared (B2)", () => {
+  it("fires when transitioning from non-zero to zero errors", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsCleared: {
+          enabled: true,
+          prompt: "Cleared: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    expect(orch.list().length).toBe(0); // onDiagnosticsError not configured
+    hooks.handleDiagnosticsChanged("/src/foo.ts", []);
+    expect(orch.list().length).toBe(1);
+    expect(orch.list()[0]?.prompt).toContain("foo.ts");
+  });
+
+  it("does not fire if already zero (zero-to-zero)", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsCleared: {
+          enabled: true,
+          prompt: "Cleared: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", []);
+    hooks.handleDiagnosticsChanged("/src/foo.ts", []);
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("does not fire if errors remain (non-zero to non-zero)", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsCleared: {
+          enabled: true,
+          prompt: "Cleared: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    hooks.handleDiagnosticsChanged("/src/foo.ts", warningDiag);
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("loop guard: skips if prior cleared task still active", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsCleared: {
+          enabled: true,
+          prompt: "Cleared: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    hooks.handleDiagnosticsChanged("/src/foo.ts", []);
+    expect(orch.list().length).toBe(1);
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    hooks.handleDiagnosticsChanged("/src/foo.ts", []);
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("cooldown prevents rapid re-trigger", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsCleared: {
+          enabled: true,
+          prompt: "Cleared: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    hooks.handleDiagnosticsChanged("/src/foo.ts", []);
+    expect(orch.list().length).toBe(1);
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    hooks.handleDiagnosticsChanged("/src/foo.ts", []);
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onDiagnosticsCleared", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsCleared: {
+          enabled: true,
+          prompt: "Cleared: {{file}}",
+          cooldownMs: 10_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    const status = hooks.getStatus();
+    expect(status.onDiagnosticsCleared).toEqual({
+      enabled: true,
+      cooldownMs: 10_000,
+    });
+  });
+});
+
+describe("loadPolicy onDiagnosticsCleared (B2)", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-b2-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onDiagnosticsCleared policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onDiagnosticsCleared: {
+          enabled: true,
+          prompt: "Cleared {{file}}",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onDiagnosticsCleared?.enabled).toBe(true);
+  });
+
+  it("enforces onDiagnosticsCleared cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onDiagnosticsCleared: {
+          enabled: true,
+          prompt: "Cleared {{file}}",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onDiagnosticsCleared?.cooldownMs).toBe(5_000);
+  });
+});
+
+// ── B3: condition field tests ─────────────────────────────────────────────────
+
+describe("AutomationHooks condition field (B3)", () => {
+  it("fires when file matches condition glob", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+          condition: "**/*.ts",
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("skips when file does not match condition glob", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+          condition: "**/*.ts",
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.py", errorDiag);
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("fires when no condition set", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.py", errorDiag);
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("condition on onFileSave filters correctly", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*"],
+          prompt: "Saved: {{file}}",
+          cooldownMs: 5_000,
+          condition: "**/*.ts",
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileSaved("id1", "save", "/src/foo.ts");
+    hooks.handleFileSaved("id2", "save", "/src/bar.py");
+    expect(orch.list().length).toBe(1);
+  });
+});
+
+describe("loadPolicy condition validation (B3)", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-b3-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("rejects condition > 1024 chars", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Review",
+          cooldownMs: 5_000,
+          condition: "a".repeat(1025),
+        },
+      }),
+    );
+    expect(() => loadPolicy(p)).toThrow(/condition/i);
+  });
+});
+
+// ── B1: {{changeImpact}} in onGitCommit tests ─────────────────────────────────
+
+describe("AutomationHooks.handleGitCommit {{changeImpact}} (B1)", () => {
+  it("includes (change impact unavailable) when no extensionClient", async () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt: "Committed: {{hash}} impact: {{changeImpact}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    await hooks.handleGitCommit(makeCommitResult());
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("(change impact unavailable)");
+  });
+
+  it("includes (change impact unavailable) when extensionClient disconnected", async () => {
+    const orch = makeInstantOrchestrator();
+    const mockClient = {
+      isConnected: () => false,
+      getDiagnostics: async () => null,
+    } as unknown as ExtensionClient;
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt: "Committed: {{changeImpact}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+      mockClient,
+    );
+    await hooks.handleGitCommit(makeCommitResult());
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("(change impact unavailable)");
+  });
+
+  it("injects changeImpact when extensionClient is connected", async () => {
+    const orch = makeInstantOrchestrator();
+    const mockClient = {
+      isConnected: () => true,
+      getDiagnostics: async () => [
+        { severity: "error" },
+        { severity: "warning" },
+      ],
+    } as unknown as ExtensionClient;
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt: "Impact: {{changeImpact}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+      mockClient,
+    );
+    await hooks.handleGitCommit(makeCommitResult());
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("2 diagnostic(s)");
+    expect(prompt).toContain("(untrusted)");
+  });
+
+  it("changeImpact is wrapped with untrustedBlock", async () => {
+    const orch = makeInstantOrchestrator();
+    const mockClient = {
+      isConnected: () => true,
+      getDiagnostics: async () => [{ severity: "error" }],
+    } as unknown as ExtensionClient;
+    const hooks = new AutomationHooks(
+      {
+        onGitCommit: {
+          enabled: true,
+          prompt: "{{changeImpact}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+      mockClient,
+    );
+    await hooks.handleGitCommit(makeCommitResult());
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("BEGIN CHANGE IMPACT");
+    expect(prompt).toContain("(untrusted)");
+  });
+});
+
+// ── B4: onTaskSuccess tests ───────────────────────────────────────────────────
+
+describe("AutomationHooks.handleTaskSuccess (B4)", () => {
+  it("fires when called with a task result", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskSuccess: {
+          enabled: true,
+          prompt: "Task {{taskId}} done: {{output}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskSuccess({ taskId: "task-abc", output: "all good" });
+    expect(orch.list().length).toBe(1);
+    expect(orch.list()[0]?.prompt).toContain("task-abc");
+    expect(orch.list()[0]?.prompt).toContain("all good");
+  });
+
+  it("{{output}} is nonce-wrapped", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskSuccess: {
+          enabled: true,
+          prompt: "Output: {{output}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskSuccess({ taskId: "task-abc", output: "result text" });
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("BEGIN TASK OUTPUT");
+    expect(prompt).toContain("(untrusted)");
+  });
+
+  it("loop guard: prior active task-success task suppresses new trigger", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskSuccess: {
+          enabled: true,
+          prompt: "Done: {{taskId}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskSuccess({ taskId: "task-1", output: "" });
+    hooks.handleTaskSuccess({ taskId: "task-2", output: "" });
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("cooldown prevents rapid re-trigger", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskSuccess: {
+          enabled: true,
+          prompt: "Done: {{taskId}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskSuccess({ taskId: "task-1", output: "" });
+    hooks.handleTaskSuccess({ taskId: "task-2", output: "" });
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onTaskSuccess", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskSuccess: {
+          enabled: true,
+          prompt: "Done",
+          cooldownMs: 10_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    const status = hooks.getStatus();
+    expect(status.onTaskSuccess).toEqual({ enabled: true, cooldownMs: 10_000 });
+  });
+
+  it("does not fire when hook is disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTaskSuccess: {
+          enabled: false,
+          prompt: "Done",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTaskSuccess({ taskId: "task-abc", output: "result" });
+    expect(orch.list().length).toBe(0);
+  });
+});
+
+describe("loadPolicy onTaskSuccess (B4)", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-b4-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onTaskSuccess policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTaskSuccess: {
+          enabled: true,
+          prompt: "Task {{taskId}} done",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onTaskSuccess?.enabled).toBe(true);
+  });
+
+  it("enforces onTaskSuccess cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTaskSuccess: { enabled: true, prompt: "Done", cooldownMs: 100 },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onTaskSuccess?.cooldownMs).toBe(5_000);
+  });
+});
+
+// ── isAutomationTask loop-guard in ClaudeOrchestrator ────────────────────────
+
+describe("ClaudeOrchestrator isAutomationTask (B4 loop guard)", () => {
+  it("stores isAutomationTask on enqueued task", () => {
+    const orch = makeInstantOrchestrator();
+    const id = orch.enqueue({
+      prompt: "do work",
+      sessionId: "",
+      isAutomationTask: true,
+    });
+    const task = orch.getTask(id);
+    expect(task?.isAutomationTask).toBe(true);
+  });
+
+  it("isAutomationTask is undefined when not set", () => {
+    const orch = makeInstantOrchestrator();
+    const id = orch.enqueue({ prompt: "do work", sessionId: "" });
+    const task = orch.getTask(id);
+    expect(task?.isAutomationTask).toBeUndefined();
   });
 });

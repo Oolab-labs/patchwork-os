@@ -602,8 +602,19 @@ export class Bridge {
           (msg) => this.logger.info(msg),
           (taskId, chunk) =>
             this.extensionClient.notifyTaskOutput(taskId, chunk),
-          (taskId, status) =>
-            this.extensionClient.notifyTaskDone(taskId, status),
+          (taskId, status) => {
+            this.extensionClient.notifyTaskDone(taskId, status);
+            if (status === "done" && this.automationHooks) {
+              const task = this.orchestrator?.getTask(taskId);
+              // Loop guard: skip automation-spawned tasks to prevent infinite chains
+              if (!task?.isAutomationTask) {
+                this.automationHooks.handleTaskSuccess({
+                  taskId,
+                  output: task?.output ?? "",
+                });
+              }
+            }
+          },
           {
             save: () => {
               if (this.checkpoint) {
@@ -634,6 +645,7 @@ export class Bridge {
         policy,
         this.orchestrator,
         (msg) => this.logger.info(msg),
+        this.extensionClient,
       );
       this.logger.info(
         `[bridge] Automation enabled (policy: ${this.config.automationPolicyPath})`,

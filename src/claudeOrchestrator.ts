@@ -35,6 +35,8 @@ export interface ClaudeTask {
   tokenEstimate: number;
   /** Optional model override passed to the driver (e.g. "claude-haiku-4-5-20251001"). */
   model?: string;
+  /** True when this task was spawned by an automation hook. */
+  isAutomationTask?: boolean;
 }
 
 /** Fast heuristic: ~4 chars per token for English code. */
@@ -52,6 +54,8 @@ export type EnqueueOpts = {
   model?: string;
   /** Original creation timestamp — used when re-enqueuing persisted tasks. */
   createdAt?: number;
+  /** True when this task was spawned by an automation hook (prevents infinite chain in onTaskSuccess). */
+  isAutomationTask?: boolean;
 };
 
 /** Shape of a task entry in the v1 tasks file. */
@@ -136,6 +140,9 @@ export class ClaudeOrchestrator {
       timeoutMs: opts.timeoutMs ?? ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
       tokenEstimate: estimateTokens(opts.prompt),
       ...(opts.model !== undefined && { model: opts.model }),
+      ...(opts.isAutomationTask !== undefined && {
+        isAutomationTask: opts.isAutomationTask,
+      }),
     };
 
     this.tasks.set(id, task);
