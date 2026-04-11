@@ -81,6 +81,22 @@ export async function lspWithRetry<T>(
   return "timeout";
 }
 
+/** Encode a numeric offset as a base64 cursor string. */
+function encodeCursor(offset: number): string {
+  return Buffer.from(String(offset)).toString("base64");
+}
+
+/** Decode a cursor from args, returning 0 for missing/invalid cursors. */
+function decodeCursor(cursor: unknown): number {
+  if (typeof cursor !== "string" || cursor === "") return 0;
+  try {
+    const n = parseInt(Buffer.from(cursor, "base64").toString("utf-8"), 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Returns a readiness checker for a given file path and extension client. */
 function readinessChecker(
   extensionClient: ExtensionClient,
@@ -203,6 +219,11 @@ export function createFindReferencesTool(
             type: "integer" as const,
             description: "Column number (1-based)",
           },
+          cursor: {
+            type: "string" as const,
+            description:
+              "Pagination cursor from a previous call's nextCursor. Omit on first call.",
+          },
         },
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
@@ -221,6 +242,8 @@ export function createFindReferencesTool(
               },
             },
           },
+          total: { type: "integer" },
+          nextCursor: { type: "string" },
         },
         required: ["found"],
       },
@@ -238,6 +261,8 @@ export function createFindReferencesTool(
       );
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
+      const PAGE_SIZE = 100;
+      const offset = decodeCursor(args.cursor);
       const result = await lspWithRetry(
         () => extensionClient.findReferences(filePath, line, column, signal),
         signal,
@@ -245,9 +270,23 @@ export function createFindReferencesTool(
       );
       if (result === "timeout") return lspColdStartError();
       if (result === null) {
-        return successStructured({ found: false, references: [] });
+        return successStructured({ found: false, references: [], total: 0 });
       }
-      return successStructured(result);
+      const allRefs = Array.isArray(
+        (result as { references?: unknown[] }).references,
+      )
+        ? (result as { references: unknown[] }).references
+        : [];
+      const page = allRefs.slice(offset, offset + PAGE_SIZE);
+      const out: Record<string, unknown> = {
+        ...(result as Record<string, unknown>),
+        references: page,
+        total: allRefs.length,
+      };
+      if (offset + PAGE_SIZE < allRefs.length) {
+        out.nextCursor = encodeCursor(offset + PAGE_SIZE);
+      }
+      return successStructured(out);
     },
   };
 }
@@ -785,6 +824,11 @@ export function createGetCallHierarchyTool(
             description:
               "Maximum callers/callees to return per direction (default: 50, max: 200)",
           },
+          cursor: {
+            type: "string" as const,
+            description:
+              "Pagination cursor from a previous call's nextCursor. Omit on first call.",
+          },
         },
         required: ["filePath", "line", "column"],
         additionalProperties: false as const,
@@ -796,6 +840,9 @@ export function createGetCallHierarchyTool(
           message: { type: "string" },
           incoming: { type: "array", items: { type: "object" } },
           outgoing: { type: "array", items: { type: "object" } },
+          incomingTotal: { type: "integer" },
+          outgoingTotal: { type: "integer" },
+          nextCursor: { type: "string" },
         },
         required: ["found"],
       },
@@ -816,6 +863,8 @@ export function createGetCallHierarchyTool(
         return error('direction must be "incoming", "outgoing", or "both"');
       }
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
+      const PAGE_SIZE = 50;
+      const offset = decodeCursor(args.cursor);
       const result = await lspWithRetry(
         () =>
           extensionClient.getCallHierarchy(
@@ -837,7 +886,29 @@ export function createGetCallHierarchyTool(
             "No call hierarchy available at this position — ensure a language server is active",
         });
       }
-      return successStructured(result);
+      const r = result as Record<string, unknown>;
+      const allIncoming = Array.isArray(r.incoming)
+        ? (r.incoming as unknown[])
+        : [];
+      const allOutgoing = Array.isArray(r.outgoing)
+        ? (r.outgoing as unknown[])
+        : [];
+      const pageIncoming = allIncoming.slice(offset, offset + PAGE_SIZE);
+      const pageOutgoing = allOutgoing.slice(offset, offset + PAGE_SIZE);
+      const out: Record<string, unknown> = {
+        ...r,
+        incoming: pageIncoming,
+        outgoing: pageOutgoing,
+        incomingTotal: allIncoming.length,
+        outgoingTotal: allOutgoing.length,
+      };
+      if (
+        offset + PAGE_SIZE < allIncoming.length ||
+        offset + PAGE_SIZE < allOutgoing.length
+      ) {
+        out.nextCursor = encodeCursor(offset + PAGE_SIZE);
+      }
+      return successStructured(out);
     },
   };
 }
