@@ -4,7 +4,7 @@ Complete feature reference for the Claude IDE Bridge MCP server and VS Code exte
 
 ## Overview
 
-Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 130+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state. The extension supports remote extension hosts (VS Code Remote-SSH, Cursor SSH) via `extensionKind: ["workspace"]`.
+Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 135+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state. The extension supports remote extension hosts (VS Code Remote-SSH, Cursor SSH) via `extensionKind: ["workspace"]`.
 
 The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code CLI** via WebSocket — both sessions share the same running bridge, enabling seamless context handoff between the two clients.
 
@@ -104,6 +104,8 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | `checkScope` | Verify current work stays within defined scope |
 | `expandScope` | Request scope expansion with justification |
 | `getActivityLog` | Session metrics — tool call counts, durations, errors |
+| `watchActivityLog` | Long-poll the activity log for new entries. Params: `sinceId` (resume from last seen entry), `maxEntries` (default 10, max 50), `timeoutMs` (1000–30000ms). Returns `{ entries, lastId }`. Slim mode. |
+| `contextBundle` | Composite snapshot: `activeFile`, file `content` (truncated 32KB), `diagnostics`, `diff`, `openEditors`, `gitStatus`, `handoffNote`, `bundledAt` — all fetched in parallel via `Promise.allSettled`. Slim mode. |
 | `getBridgeStatus` | Get current bridge status: extension connection state, circuit breaker status, active sessions, and uptime. Use to diagnose when tools are unavailable or the extension appears disconnected. |
 | `setHandoffNote` | Persist a free-text context summary to `~/.claude/ide/handoff-note.json`. Shared across all MCP sessions (Desktop, CLI, HTTP). Use when switching clients mid-task. Note content is capped at 10 000 chars. |
 | `getHandoffNote` | Read the handoff note left by a previous session. Returns `note`, `updatedAt`, `updatedBy` (`"cli"`), and human-readable `age`. Returns `null` note if none saved. |
@@ -127,14 +129,14 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | Tool | Description |
 |------|-------------|
 | `goToDefinition` | Jump to symbol definition |
-| `findReferences` | Find all references to a symbol |
+| `findReferences` | Find all references to a symbol. Accepts `cursor?: string` (base64 offset); returns `nextCursor` when more results exist (PAGE_SIZE=100). |
 | `getHover` | Get hover/type information at position |
 | `getHoverAtCursor` | Get hover info at current cursor position |
 | `getCodeActions` | List available code actions for a range |
 | `applyCodeAction` | Apply a specific code action |
 | `renameSymbol` | Rename symbol across entire workspace (15s timeout) |
 | `searchWorkspaceSymbols` | Search symbols across workspace |
-| `getCallHierarchy` | Get incoming/outgoing call hierarchy (15s timeout) |
+| `getCallHierarchy` | Get incoming/outgoing call hierarchy (15s timeout). Accepts `cursor?: string` (base64 offset); returns `nextCursor` when more results exist (PAGE_SIZE=50 per direction). |
 | `getDocumentSymbols` | List all symbols in a document |
 | `getInlayHints` | Get inlay hints for a line range |
 | `getTypeHierarchy` | Get type hierarchy (supertypes/subtypes, 15s timeout) |
@@ -168,7 +170,7 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 |------|-------------|
 | `fixAllLintErrors` | Auto-fix all lint errors via VS Code or CLI (eslint --fix, biome, ruff) |
 | `organizeImports` | Organize imports via VS Code |
-| `watchDiagnostics` | Long-poll for diagnostic changes |
+| `watchDiagnostics` | Long-poll for diagnostic changes. Each entry now includes `firstSeenAt` (epoch ms), `recurrenceCount`, and optional `introducedByCommit` (SHA from git blame). |
 
 ### Terminal
 | Tool | Description |
@@ -380,6 +382,16 @@ Multi-step LSP workflows composed from bridge primitives. Each instructs Claude 
 | `coverage-gap` | `file` (required) | Identify untested functions by correlating coverage with document symbols. Wraps `getCodeCoverage` + `getDocumentSymbols` |
 | `explore-type` | `file`, `line`, `column` (all required) | Explore a type's declaration, definition, and all implementations. Wraps `getHover` + `goToDeclaration` + `goToTypeDefinition` + `findImplementations` |
 
+### Visual Skills
+
+Three visual prompts that render browser-based HTML dashboards. All require `--full` mode.
+
+| Prompt | Argument | Description |
+|--------|----------|-------------|
+| `ide-coverage` | _(none)_ | Test coverage heatmap from lcov/JSON coverage data. Parses line coverage per file and renders a color-coded file-tree heatmap as HTML in the system browser. |
+| `ide-deps` | `file` or `symbol` (optional) | Dependency graph for a file or symbol. Calls `getCallHierarchy` + `findReferences`, builds a directed graph, and renders an interactive HTML force-directed graph in the system browser. |
+| `ide-diagnostics-board` | _(none)_ | Diagnostic dashboard across the workspace. Groups results by severity and file and renders a sortable color-coded HTML table in the system browser. |
+
 ### Agent Teams & Scheduled Tasks prompts
 
 | Prompt | Argument | Description |
@@ -423,6 +435,8 @@ Activated with `--issuer-url <public-https-url>`. Endpoints: `/.well-known/oauth
 
 PKCE S256 is mandatory. Auth codes are single-use with 5-min TTL. Access tokens are opaque with 24-hour TTL. No refresh tokens.
 
+**Token persistence:** the bridge token persists across restarts in `~/.claude/ide/bridge-token.json`. Access tokens are stored in `~/.claude/ide/oauth-tokens.json` keyed by SHA-256 hash of the client ID. TTL is configurable via the `oauthTokenTtlDays` config key (1–90 days; default 1 day / 24 h). Eliminates re-authorization on bridge restart.
+
 ### Tool Filtering
 - Tools with `extensionRequired: true` are **always visible** in `tools/list` regardless of extension state (changed in v2.1.33)
 - When the extension is disconnected, calling an `extensionRequired` tool returns `isError: true` with reconnect instructions instead of a "Tool Not Found" error
@@ -458,7 +472,7 @@ The bridge supports up to 5 concurrent Claude Code sessions sharing a single bri
 | Max concurrent sessions | 5 (active, non-grace) |
 | Session isolation | Each session gets its own `McpTransport`, `openedFiles`, `terminalPrefix` |
 | Terminal namespacing | Terminals prefixed per-session (e.g., `s1a2b3c4-build`) — each agent sees only its own |
-| File locking | `FileLock` promise-chain mutex serializes concurrent file edits across sessions |
+| File locking | `FileLock` promise-chain mutex serializes concurrent file edits across sessions. `tryAcquire()` (non-blocking) returns `{ release }` on success or `{ lockedBySession: string }` if already held — used by `editText`, `replaceBlock`, and `searchAndReplace`. |
 | Min connection interval | 50ms between connections (prevents connection-storm DoS) |
 | Grace period | 30s after disconnect — delays session cleanup; applies to all session types (CLI and Desktop shim) |
 | Activation | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude` |
@@ -662,6 +676,7 @@ Launches tmux session with 4 panes: orchestrator, bridge, Claude CLI, remote con
 | `CLAUDE_IDE_BRIDGE_TIMEOUT` | Command timeout in ms |
 | `CLAUDE_IDE_BRIDGE_MAX_RESULT_SIZE` | Max output size in KB |
 | `CLAUDE_CONFIG_DIR` | Override `~/.claude` directory |
+| `oauthTokenTtlDays` | (config key) OAuth access token TTL in days (1–90, default 1). Set in bridge config or via `--oauth-token-ttl-days`. |
 
 ### VS Code Extension
 - Status bar: connection state indicator (connected/disconnected/reconnecting)
