@@ -1,0 +1,43 @@
+{
+  "_comment": "security-first — monitors auth, payment, and API surface for vulnerabilities on every relevant change.",
+  "_usage": "Copy to automation-policy.json. Requires --automation --automation-policy <path> --claude-driver subprocess",
+
+  "onFileSave": {
+    "enabled": true,
+    "patterns": ["src/**/*.ts", "!src/**/*.test.ts", "!src/**/__tests__/**"],
+    "cooldownMs": 12000,
+    "prompt": "File saved: {{file}}\n\nFor security-sensitive files (auth, payment, session, API handlers):\n1. Call getDiagnostics — report any type errors that could cause null-dereference or undefined behavior\n2. Check for hardcoded secrets, tokens, or credentials in the diff\n3. If the file handles user input, note any missing validation\nKeep response ≤12 lines."
+  },
+
+  "onGitCommit": {
+    "enabled": true,
+    "cooldownMs": 15000,
+    "prompt": "Commit on {{branch}}: {{message}}\nFiles: {{files}}\n\nSecurity review of committed files:\n1. Call getDiagnostics — report errors only\n2. For each file in {{files}}, check: input validation present? auth required? no secrets committed?\n3. If auth/payment/session files changed, flag for manual security review\nReport in ≤15 lines."
+  },
+
+  "onGitPush": {
+    "enabled": true,
+    "cooldownMs": 15000,
+    "prompt": "Pushed {{branch}} to {{remote}}.\n\nCall getSecurityAdvisories and auditDependencies to check for known CVEs in dependencies. Report any high/critical findings."
+  },
+
+  "onPullRequest": {
+    "enabled": true,
+    "cooldownMs": 10000,
+    "prompt": "PR #{{number}}: {{title}} ({{url}}).\n\nSecurity checklist:\n1. getDiagnostics — any type errors?\n2. Do changed files touch auth, payments, or session management?\n3. Are all new API endpoints authenticated?\nReport a compact security readiness summary."
+  },
+
+  "onDiagnosticsError": {
+    "enabled": true,
+    "cooldownMs": 20000,
+    "minSeverity": "error",
+    "diagnosticTypes": ["typescript"],
+    "prompt": "Type error in {{file}}:\n\n{{diagnostics}}\n\nAssess security impact: could this cause null-dereference, injection, or auth bypass? Suggest the safest fix."
+  },
+
+  "onPostCompact": {
+    "enabled": true,
+    "cooldownMs": 5000,
+    "prompt": "Context compacted. Re-orient: getGitStatus, getDiagnostics. Are any security-sensitive files modified? Report in ≤8 lines."
+  }
+}

@@ -6,11 +6,9 @@ import type {
   BranchCheckoutResult,
   Diagnostic,
   GitCommitResult,
+  GitPullResult,
   GitPushResult,
-  PermissionDeniedResult,
   PullRequestResult,
-  TaskCreatedResult,
-  TaskSuccessResult,
 } from "../automation.js";
 import { AutomationHooks, loadPolicy } from "../automation.js";
 import type { IClaudeDriver } from "../claudeDriver.js";
@@ -1470,6 +1468,176 @@ describe("AutomationHooks.handleGitPush", () => {
     );
     const status = hooks.getStatus();
     expect(status.onGitPush).toEqual({ enabled: true, cooldownMs: 10_000 });
+  });
+});
+
+// ── onGitPull ─────────────────────────────────────────────────────────────────
+
+function makeGitPullResult(overrides?: Partial<GitPullResult>): GitPullResult {
+  return {
+    remote: "origin",
+    branch: "main",
+    alreadyUpToDate: false,
+    ...overrides,
+  };
+}
+
+describe("AutomationHooks.handleGitPull", () => {
+  it("enqueues a task on pull", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPull: {
+          enabled: true,
+          prompt: "Pulled {{branch}} from {{remote}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPull(makeGitPullResult());
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("replaces {{remote}} and {{branch}} placeholders", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPull: {
+          enabled: true,
+          prompt: "remote={{remote}} branch={{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPull(
+      makeGitPullResult({ remote: "upstream", branch: "feature/x" }),
+    );
+    const task = orch.list()[0];
+    expect(task?.prompt).toContain("upstream");
+    expect(task?.prompt).toContain("feature/x");
+  });
+
+  it("does not trigger when disabled", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPull: {
+          enabled: false,
+          prompt: "Pulled {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPull(makeGitPullResult());
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("respects cooldown between pulls", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPull: {
+          enabled: true,
+          prompt: "Pulled {{branch}}",
+          cooldownMs: 30_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPull(makeGitPullResult());
+    hooks.handleGitPull(makeGitPullResult({ branch: "other" }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("skips trigger when a task is still running (loop guard)", () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPull: {
+          enabled: true,
+          prompt: "Pulled {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPull(makeGitPullResult());
+    hooks.handleGitPull(makeGitPullResult({ branch: "feature/other" }));
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("getStatus includes onGitPull", () => {
+    const hooks = new AutomationHooks(
+      {
+        onGitPull: {
+          enabled: true,
+          prompt: "Pulled {{branch}}",
+          cooldownMs: 10_000,
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    const status = hooks.getStatus();
+    expect(status.onGitPull).toEqual({ enabled: true, cooldownMs: 10_000 });
+  });
+
+  it("getStatus returns null when onGitPull not configured", () => {
+    const hooks = new AutomationHooks({}, makeInstantOrchestrator(), () => {});
+    expect(hooks.getStatus().onGitPull).toBeNull();
+  });
+});
+
+describe("loadPolicy — onGitPull", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-gpl-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses a valid onGitPull policy", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onGitPull: {
+          enabled: true,
+          prompt: "Pulled {{branch}} from {{remote}}",
+          cooldownMs: 10_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onGitPull?.enabled).toBe(true);
+    expect(policy.onGitPull?.cooldownMs).toBe(10_000);
+  });
+
+  it("enforces onGitPull cooldownMs >= 5000", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onGitPull: {
+          enabled: true,
+          prompt: "Pulled {{branch}}",
+          cooldownMs: 100,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onGitPull?.cooldownMs).toBe(5_000);
   });
 });
 
@@ -3732,6 +3900,25 @@ describe("AutomationHooks — hook metadata prefix", () => {
     hooks.handleGitCommit(makeCommitResult());
     const prompt = orch.list()[0]?.prompt ?? "";
     expect(prompt).toContain("@@ HOOK: onGitCommit");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("onGitPull metadata uses N/A for file", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onGitPull: {
+          enabled: true,
+          prompt: "Pulled {{branch}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleGitPull(makeGitPullResult());
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onGitPull");
     expect(prompt).toContain("| file: N/A");
   });
 

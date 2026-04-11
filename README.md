@@ -528,6 +528,7 @@ When automation is active, VS Code save/change events, diagnostic errors, and Cl
 | `onInstructionsLoaded` | Claude loads CLAUDE.md at session start (Claude Code 2.1.76+) | `enabled`, `prompt` |
 | `onTestRun` | `runTests` completes | `enabled`, `onFailureOnly` (bool, default `true`), `prompt` (supports `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}`), `cooldownMs` |
 | `onGitCommit` | `gitCommit` tool succeeds | `enabled`, `prompt` (supports `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`), `cooldownMs` |
+| `onGitPull` | `gitPull` tool succeeds | `enabled`, `prompt` (supports `{{remote}}`, `{{branch}}`), `cooldownMs` |
 | `onGitPush` | `gitPush` tool succeeds | `enabled`, `prompt` (supports `{{remote}}`, `{{branch}}`, `{{hash}}`), `cooldownMs` |
 | `onBranchCheckout` | Git branch created or switched (via `gitCheckout` tool) | `enabled`, `prompt` (supports `{{branch}}`, `{{previousBranch}}`, `{{created}}`), `cooldownMs` |
 | `onPullRequest` | PR event occurs (via `githubCreatePR` or bridge PR tools) | `enabled`, `prompt` (supports `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}`), `cooldownMs` |
@@ -1105,7 +1106,7 @@ claude-ide-bridge/
     config.ts         CLI args & config
     claudeDriver.ts   IClaudeDriver interface + SubprocessDriver
     claudeOrchestrator.ts Task queue (MAX_CONCURRENT=10, MAX_QUEUE=20)
-    automation.ts     AutomationHooks — onDiagnosticsError / onFileSave / onFileChanged / onTestRun / onGitCommit / onGitPush / onBranchCheckout / onPullRequest / onCwdChanged / onPostCompact / onInstructionsLoaded policies
+    automation.ts     AutomationHooks — onDiagnosticsError / onFileSave / onFileChanged / onTestRun / onGitCommit / onGitPull / onGitPush / onBranchCheckout / onPullRequest / onCwdChanged / onPostCompact / onInstructionsLoaded policies
     tools/            136+ MCP tool implementations
   vscode-extension/
     src/extension.ts  VS Code extension
