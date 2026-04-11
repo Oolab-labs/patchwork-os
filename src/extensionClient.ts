@@ -1499,8 +1499,12 @@ export class ExtensionClient {
 
   // --- Tasks ---
 
-  async listTasks(): Promise<unknown> {
-    return this.requestOrNull("extension/listTasks", undefined, 15_000);
+  async listTasks(type?: string): Promise<unknown> {
+    return this.requestOrNull(
+      "extension/listTasks",
+      type ? { type } : undefined,
+      15_000,
+    );
   }
 
   async runTask(

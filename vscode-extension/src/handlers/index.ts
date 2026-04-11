@@ -26,6 +26,7 @@ import { handleGetInlayHints } from "./inlayHints";
 import { handleCaptureScreenshot } from "./screenshot";
 import { handleGetSelection } from "./selection";
 import { handleGetSemanticTokens } from "./semanticTokens";
+import { handleListTasks, handleRunTask } from "./tasks";
 import {
   handleCreateTerminal,
   handleDisposeTerminal,
@@ -87,4 +88,7 @@ export const baseHandlers: Record<string, RequestHandler> = {
   "extension/getDocumentLinks": handleGetDocumentLinks,
   "extension/getWorkspaceFolders": handleGetWorkspaceFolders,
   "extension/captureScreenshot": handleCaptureScreenshot,
+  "extension/listTasks": handleListTasks,
+  "extension/runTask": (params) =>
+    handleRunTask(params as Record<string, unknown>),
 };
