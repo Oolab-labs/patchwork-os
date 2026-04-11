@@ -214,6 +214,15 @@ export class ActivityLog {
     }
   }
 
+  /**
+   * Return the highest ID assigned so far, or 0 if nothing has been recorded.
+   * Used by watchActivityLog to return an accurate lastId on long-poll timeout
+   * so clients don't re-poll from the same position indefinitely.
+   */
+  getHighestId(): number {
+    return Math.max(0, this.nextId - 1);
+  }
+
   queryTimeline(opts?: { last?: number }): TimelineEntry[] {
     const tools: TimelineEntry[] = this.entries.map((e) => ({
       kind: "tool" as const,

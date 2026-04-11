@@ -87,7 +87,7 @@ describe("findReferences cursor pagination", () => {
     expect(p1.references.length + p2.references.length).toBe(150);
   });
 
-  it("malformed cursor falls back to offset 0", async () => {
+  it("malformed cursor returns an error", async () => {
     const refs = makeRefs(10);
     const client = makeExtensionClient({
       findReferences: vi.fn(async () => ({ found: true, references: refs })),
@@ -99,8 +99,7 @@ describe("findReferences cursor pagination", () => {
       column: 1,
       cursor: "!!!bad!!!",
     });
-    const out = parseTool(result);
-    expect(out.references).toHaveLength(10);
+    expect(result).toMatchObject({ isError: true });
   });
 
   it("small result set has no nextCursor", async () => {

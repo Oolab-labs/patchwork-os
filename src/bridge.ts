@@ -143,6 +143,15 @@ export class Bridge {
       // session in the grace period, reattach the new WebSocket to it instead
       // of creating a fresh session. This eliminates re-initialization overhead
       // after brief disconnects (sleep/wake, network blip, bridge restart).
+      //
+      // Session resumption trust boundary: any client presenting a valid auth
+      // token and a matching session ID can reattach to a grace-period session.
+      // Session IDs are random UUIDs (128-bit), so guessing is infeasible. In
+      // single-user local deployments this is safe. In remote deployments using
+      // --fixed-token with multiple agents sharing one token, agents can inherit
+      // each other's session state (openedFiles, etc.) — this is intentional
+      // for the orchestrator pattern. For strict isolation between agents, use
+      // separate bridge instances with separate tokens.
       const clientSessionId = (ws as WebSocket & { clientSessionId?: string })
         .clientSessionId;
       if (clientSessionId) {

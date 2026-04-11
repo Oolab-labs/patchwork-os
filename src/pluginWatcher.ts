@@ -118,6 +118,7 @@ export class PluginWatcher {
         this.config,
         this.logger,
         otherNames,
+        true, // isHotReload — enables ESM cache-bust warning
       );
     } catch (err) {
       this.logger.warn(

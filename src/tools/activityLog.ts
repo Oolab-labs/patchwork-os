@@ -142,6 +142,12 @@ export function createWatchActivityLogTool(activityLog: ActivityLog) {
         });
       }
 
+      // Capture the current high-water mark before entering the long-poll.
+      // If we time out with no new entries, we return this value as lastId so
+      // the client advances past entries that already existed — preventing it
+      // from re-polling forever with the same sinceId.
+      const highestKnownId = activityLog.getHighestId();
+
       // Long-poll: wait for a new entry or timeout
       const newEntries: ActivityEntry[] = [];
       let resolved = false;
@@ -177,7 +183,7 @@ export function createWatchActivityLogTool(activityLog: ActivityLog) {
       const lastId =
         result.entries.length > 0
           ? result.entries[result.entries.length - 1]!.id
-          : sinceId;
+          : highestKnownId;
 
       return successStructured({
         entries: result.entries,

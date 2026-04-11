@@ -15,6 +15,11 @@ const MAX_DIAGNOSTIC_MSG_CHARS = 500;
  * The nonce is stripped from the value itself before insertion.
  */
 function untrustedBlock(label: string, value: string, nonce: string): string {
+  if (!/^[A-Z][A-Z0-9 ]*$/.test(label)) {
+    throw new Error(
+      `untrustedBlock: label must be uppercase ASCII, got: ${JSON.stringify(label)}`,
+    );
+  }
   const safe = value.replace(new RegExp(nonce, "g"), "");
   return `\n--- BEGIN ${label} [${nonce}] (untrusted) ---\n${safe}\n--- END ${label} [${nonce}] ---\n`;
 }
@@ -37,6 +42,19 @@ function buildHookMetadata(hookName: string, file?: string): string {
 }
 /** Maximum length (chars) of an automation policy prompt template (matches runClaudeTask cap) */
 const MAX_POLICY_PROMPT_CHARS = 32_768;
+
+/**
+ * Truncate a final prompt to MAX_POLICY_PROMPT_CHARS at the last newline before
+ * the limit and append a truncation notice. Called after all placeholder
+ * substitutions and buildHookMetadata() prepends so the cap applies to the
+ * fully-assembled string, not just the raw template.
+ */
+function truncatePrompt(prompt: string): string {
+  if (prompt.length <= MAX_POLICY_PROMPT_CHARS) return prompt;
+  const cutoff = prompt.lastIndexOf("\n", MAX_POLICY_PROMPT_CHARS);
+  const end = cutoff > 0 ? cutoff : MAX_POLICY_PROMPT_CHARS;
+  return `${prompt.slice(0, end)}\n[... truncated to fit 32KB limit ...]`;
+}
 /** Prune lastTrigger entries older than this to prevent unbounded Map growth */
 const LAST_TRIGGER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 
@@ -922,7 +940,9 @@ export class AutomationHooks {
         );
     }
 
-    prompt = buildHookMetadata("onDiagnosticsError", normalizedFile) + prompt;
+    prompt = truncatePrompt(
+      buildHookMetadata("onDiagnosticsError", normalizedFile) + prompt,
+    );
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -992,7 +1012,7 @@ export class AutomationHooks {
         untrustedBlock("CWD", safeCwd, nonce),
       );
     }
-    prompt = buildHookMetadata("onCwdChanged") + prompt;
+    prompt = truncatePrompt(buildHookMetadata("onCwdChanged") + prompt);
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1042,7 +1062,9 @@ export class AutomationHooks {
     } else {
       postCompactPrompt = cfg.prompt!;
     }
-    postCompactPrompt = buildHookMetadata("onPostCompact") + postCompactPrompt;
+    postCompactPrompt = truncatePrompt(
+      buildHookMetadata("onPostCompact") + postCompactPrompt,
+    );
     try {
       const taskId = this.orchestrator.enqueue({
         prompt: postCompactPrompt,
@@ -1080,7 +1102,9 @@ export class AutomationHooks {
     } else {
       instrPrompt = cfg.prompt!;
     }
-    instrPrompt = buildHookMetadata("onInstructionsLoaded") + instrPrompt;
+    instrPrompt = truncatePrompt(
+      buildHookMetadata("onInstructionsLoaded") + instrPrompt,
+    );
     try {
       const taskId = this.orchestrator.enqueue({
         prompt: instrPrompt,
@@ -1161,7 +1185,9 @@ export class AutomationHooks {
         untrustedBlock("FILE PATH", safeFilePath, nonce),
       );
     }
-    prompt = buildHookMetadata("onFileSave", normalizedFile) + prompt;
+    prompt = truncatePrompt(
+      buildHookMetadata("onFileSave", normalizedFile) + prompt,
+    );
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1247,7 +1273,9 @@ export class AutomationHooks {
         untrustedBlock("FILE PATH", safeFilePath, nonce),
       );
     }
-    prompt = buildHookMetadata("onFileChanged", normalizedFile) + prompt;
+    prompt = truncatePrompt(
+      buildHookMetadata("onFileChanged", normalizedFile) + prompt,
+    );
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1368,7 +1396,7 @@ export class AutomationHooks {
         );
     }
 
-    prompt = buildHookMetadata("onTestRun") + prompt;
+    prompt = truncatePrompt(buildHookMetadata("onTestRun") + prompt);
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1502,7 +1530,7 @@ export class AutomationHooks {
         );
     }
 
-    prompt = buildHookMetadata("onGitCommit") + prompt;
+    prompt = truncatePrompt(buildHookMetadata("onGitCommit") + prompt);
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1581,7 +1609,7 @@ export class AutomationHooks {
         .replace(/\{\{branch\}\}/g, untrustedBlock("BRANCH", safeBranch, nonce))
         .replace(/\{\{hash\}\}/g, safeHash);
     }
-    prompt = buildHookMetadata("onGitPush") + prompt;
+    prompt = truncatePrompt(buildHookMetadata("onGitPush") + prompt);
 
     try {
       const taskId = this.orchestrator.enqueue({
@@ -1671,7 +1699,7 @@ export class AutomationHooks {
         )
         .replace(/\{\{created\}\}/g, String(result.created));
     }
-    prompt = buildHookMetadata("onBranchCheckout") + prompt;
+    prompt = truncatePrompt(buildHookMetadata("onBranchCheckout") + prompt);
 
     try {
       const taskId = this.orchestrator.enqueue({
@@ -1761,7 +1789,7 @@ export class AutomationHooks {
         );
     }
 
-    prompt = buildHookMetadata("onPullRequest") + prompt;
+    prompt = truncatePrompt(buildHookMetadata("onPullRequest") + prompt);
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,
@@ -1836,7 +1864,7 @@ export class AutomationHooks {
         );
     }
 
-    prompt = buildHookMetadata("onTaskCreated") + prompt;
+    prompt = truncatePrompt(buildHookMetadata("onTaskCreated") + prompt);
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
       this.lastTrigger.set(key, now);
@@ -1909,7 +1937,7 @@ export class AutomationHooks {
         );
     }
 
-    prompt = buildHookMetadata("onPermissionDenied") + prompt;
+    prompt = truncatePrompt(buildHookMetadata("onPermissionDenied") + prompt);
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
       this.lastTrigger.set(key, now);
@@ -1980,7 +2008,9 @@ export class AutomationHooks {
       );
     }
 
-    prompt = buildHookMetadata("onDiagnosticsCleared", normalizedFile) + prompt;
+    prompt = truncatePrompt(
+      buildHookMetadata("onDiagnosticsCleared", normalizedFile) + prompt,
+    );
     try {
       const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
       this.lastTrigger.set(key, now);
@@ -2056,7 +2086,7 @@ export class AutomationHooks {
         );
     }
 
-    prompt = buildHookMetadata("onTaskSuccess") + prompt;
+    prompt = truncatePrompt(buildHookMetadata("onTaskSuccess") + prompt);
     try {
       const taskId = this.orchestrator.enqueue({
         prompt,

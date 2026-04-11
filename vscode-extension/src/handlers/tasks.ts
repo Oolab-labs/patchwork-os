@@ -30,23 +30,18 @@ export async function handleRunTask(
     return { success: false, error: `Task not found: ${name}` };
   }
 
-  let exec: vscode.TaskExecution;
-  try {
-    exec = await vscode.tasks.executeTask(task);
-  } catch (err) {
-    return {
-      success: false,
-      name,
-      error: `Failed to execute task: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
+  // Register the completion listener BEFORE starting execution so that a
+  // fast-completing task (< 1 event-loop tick) cannot fire the event before
+  // the listener is attached.  The listener closes over `exec` via a `let`
+  // binding that is populated immediately after `executeTask` returns.
+  let exec: vscode.TaskExecution | undefined;
 
   return new Promise<unknown>((resolve) => {
     let disposable: vscode.Disposable | undefined;
 
     const timer = setTimeout(() => {
       disposable?.dispose();
-      exec.terminate();
+      exec?.terminate();
       resolve({
         success: false,
         name,
@@ -55,11 +50,28 @@ export async function handleRunTask(
       });
     }, timeoutMs);
 
+    // Listener is set up first; `exec` will be assigned below before any
+    // microtask/macrotask can deliver the end event.
     disposable = vscode.tasks.onDidEndTaskProcess((e) => {
       if (e.execution !== exec) return;
       clearTimeout(timer);
       disposable?.dispose();
       resolve({ success: true, name: task.name, exitCode: e.exitCode });
     });
+
+    vscode.tasks.executeTask(task).then(
+      (execution) => {
+        exec = execution;
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        disposable?.dispose();
+        resolve({
+          success: false,
+          name,
+          error: `Failed to execute task: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      },
+    );
   });
 }

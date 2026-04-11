@@ -226,14 +226,17 @@ export function createSendHttpRequestTool(options?: {
               `Header "${k}" contains invalid characters (CR, LF, or null byte)`,
             );
           }
-          headers[k] = v;
+          // Normalize header key to lowercase so user-supplied "Host" and "host"
+          // are treated as the same key and our override below reliably overwrites it.
+          headers[k.toLowerCase()] = v;
         }
       }
-      // Override Host AFTER user headers so a caller-supplied Host cannot
+      // Override host AFTER user headers so a caller-supplied host cannot
       // bypass IP-pinning SSRF protection. Virtual hosting / SNI still works
       // because we use the original hostname (before IP substitution).
+      // Written as lowercase "host" to match the normalized user headers above.
       if (resolvedIp !== null) {
-        headers.Host = parsedUrl.hostname;
+        headers["host"] = parsedUrl.hostname;
       }
 
       const body = optionalString(args, "body", 1024 * 1024);
@@ -333,7 +336,8 @@ export function createSendHttpRequestTool(options?: {
               ? `[${redirectIp}]`
               : redirectIp;
             // Preserve original Host for virtual hosting / SNI
-            headers.Host = new URL(location, currentUrl).hostname;
+            // Use lowercase "host" to stay consistent with the normalized headers above.
+            headers["host"] = new URL(location, currentUrl).hostname;
           } catch {
             // DNS failed — use un-pinned URL; fetch will fail naturally
           }

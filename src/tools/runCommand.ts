@@ -104,7 +104,11 @@ function validateCommand(command: string, allowlist: string[]): void {
   }
 }
 
-function validateArgs(args: unknown, command: string): string[] {
+function validateArgs(
+  args: unknown,
+  command: string,
+  workspace: string,
+): string[] {
   if (args === undefined || args === null) return [];
   if (!Array.isArray(args)) {
     throw new Error("args must be an array of strings");
@@ -142,6 +146,19 @@ function validateArgs(args: unknown, command: string): string[] {
       throw new Error(
         `Flag "${flag}" is blocked for command "${command}" — it can redirect command execution outside the workspace`,
       );
+    }
+    // Block positional arguments that are absolute paths (or ~/…) pointing outside
+    // the workspace. Relative paths (./…, ../…, bare names) are allowed — they
+    // resolve relative to the cwd which is already workspace-confined.
+    // Flags (starting with -) are handled by the blocklists above, not here.
+    if (!arg.startsWith("-") && (arg.startsWith("/") || arg.startsWith("~/"))) {
+      try {
+        resolveFilePath(arg, workspace);
+      } catch {
+        throw new Error(
+          `args[${i}] "${arg}" is an absolute path outside the workspace`,
+        );
+      }
     }
   }
   return args as string[];
@@ -203,7 +220,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
       const command = requireString(args, "command", 256).toLowerCase();
       validateCommand(command, config.commandAllowlist);
 
-      const cmdArgs = validateArgs(args.args, command);
+      const cmdArgs = validateArgs(args.args, command, workspace);
       const cwdRaw = optionalString(args, "cwd");
       const timeout =
         optionalInt(args, "timeout", 1000, 600_000) ?? config.commandTimeout;
