@@ -490,6 +490,26 @@ claude-ide-bridge --workspace /path/to/project \
     "enabled": true,
     "prompt": "PR #{{number}} opened: {{title}} ({{url}}). Run getDiagnostics on changed files.",
     "cooldownMs": 5000
+  },
+  "onDiagnosticsCleared": {
+    "enabled": true,
+    "prompt": "All errors cleared in {{file}}. Run the tests for that file to confirm the fix is complete.",
+    "cooldownMs": 10000
+  },
+  "onTaskCreated": {
+    "enabled": false,
+    "prompt": "A new task was created ({{taskId}}). Call getClaudeTaskStatus to monitor progress.",
+    "cooldownMs": 5000
+  },
+  "onTaskSuccess": {
+    "enabled": false,
+    "prompt": "Task {{taskId}} succeeded. Review the output and check for follow-up actions:\n\n{{output}}",
+    "cooldownMs": 5000
+  },
+  "onPermissionDenied": {
+    "enabled": false,
+    "prompt": "The tool '{{tool}}' was blocked: {{reason}}. Call getBridgeStatus to check bridge health.",
+    "cooldownMs": 15000
   }
 }
 ```
@@ -511,6 +531,12 @@ When automation is active, VS Code save/change events, diagnostic errors, and Cl
 | `onGitPush` | `gitPush` tool succeeds | `enabled`, `prompt` (supports `{{remote}}`, `{{branch}}`, `{{hash}}`), `cooldownMs` |
 | `onBranchCheckout` | Git branch created or switched (via `gitCheckout` tool) | `enabled`, `prompt` (supports `{{branch}}`, `{{previousBranch}}`, `{{created}}`), `cooldownMs` |
 | `onPullRequest` | PR event occurs (via `githubCreatePR` or bridge PR tools) | `enabled`, `prompt` (supports `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}`), `cooldownMs` |
+| `onDiagnosticsCleared` | File's error/warning count drops from non-zero to zero | `enabled`, `prompt` (supports `{{file}}`), `cooldownMs` |
+| `onTaskCreated` | A Claude Code `TaskCreated` hook fires (CC 2.1.84+) | `enabled`, `prompt` (supports `{{taskId}}`, `{{prompt}}`), `cooldownMs` |
+| `onTaskSuccess` | An orchestrator task completes successfully | `enabled`, `prompt` (supports `{{taskId}}`, `{{output}}`), `cooldownMs` |
+| `onPermissionDenied` | A Claude Code `PermissionDenied` hook fires (CC 2.1.89+) | `enabled`, `prompt` (supports `{{tool}}`, `{{reason}}`), `cooldownMs` |
+
+> **Every hook prompt is prefixed with `@@ HOOK: <name> | file: <path> | ts: <iso> @@`** before reaching the orchestrator. This lets Claude identify which hook triggered a task and correlate it with IDE context without needing to parse the prompt body.
 
 > **Cloud sessions**: If `CLAUDE_CODE_REMOTE=true` (Claude Code on the web), automation tasks will still enqueue but the bridge itself runs locally — those tasks will not execute. Guard policy prompts or the `onInstructionsLoaded` hook with an environment check if needed.
 
@@ -1098,7 +1124,7 @@ claude-ide-bridge/
 
 - **`bridgeDoctor`** — comprehensive environment health check. Verifies extension connection, git, TypeScript, linter, test runner, lock file, node_modules, and GitHub CLI. Returns actionable suggestions for anything broken. Call this first when tools are missing or the setup feels off.
 
-- **`getBridgeStatus`** — ask Claude to call this when things feel wrong. It returns extension connection state, circuit breaker status (including remaining suspension time), active session count, and uptime. Faster than reading logs.
+- **`getBridgeStatus`** — ask Claude to call this when things feel wrong. It returns extension connection state, circuit breaker status (including remaining suspension time), active session count, uptime, and `lastDisconnect` (timestamp, WebSocket close code, and reason for the most recent disconnect — useful for diagnosing 1006 abnormal-close events). Faster than reading logs.
 
 - **`getActivityLog`** — returns a history of all tool calls in the current bridge session. Pass `showStats: true` to get per-tool call counts, average durations, and error rates. Useful after long autonomous tasks.
 
@@ -1158,7 +1184,7 @@ This keeps the prompt clean and ensures Claude uses the bridge's structured git 
 ## Connection Hardening
 
 Production-grade reliability:
-- WebSocket heartbeat (20s) with automatic reconnect
+- WebSocket heartbeat (10s) with automatic reconnect
 - Sleep/wake detection via heartbeat gap monitoring
 - Circuit breaker with exponential backoff for timeout cascades
 - Generation counter preventing stale handler responses

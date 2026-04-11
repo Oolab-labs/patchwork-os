@@ -88,5 +88,17 @@
     "enabled": true,
     "prompt": "Context was just compacted. Re-orient: call getProjectInfo for workspace summary, getGitStatus for current changes, and getDiagnostics to check health. Report in ≤10 lines so the session can continue smoothly.",
     "cooldownMs": 60000
+  },
+
+  "onTaskCreated": {
+    "enabled": false,
+    "prompt": "A new Claude Code task was created ({{taskId}}): {{prompt}}. Call getClaudeTaskStatus once to confirm it started. If the task prompt mentions a file, call getDiagnostics on that file to baseline current state before the task modifies anything.",
+    "cooldownMs": 5000
+  },
+
+  "onPermissionDenied": {
+    "enabled": false,
+    "prompt": "The tool '{{tool}}' was blocked (reason: {{reason}}). Call getBridgeStatus to confirm bridge health, then call getToolCapabilities to list available tools. If the tool is an IDE tool, check whether the VS Code extension is still connected.",
+    "cooldownMs": 15000
   }
 }
