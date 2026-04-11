@@ -783,7 +783,7 @@ describe("AutomationHooks.handlePostCompact", () => {
     );
     hooks.handlePostCompact();
     expect(orch.list().length).toBe(1);
-    expect(orch.list()[0]?.prompt).toBe("Re-orient after compaction.");
+    expect(orch.list()[0]?.prompt).toContain("Re-orient after compaction.");
   });
 
   it("does nothing when disabled", () => {
@@ -1779,7 +1779,7 @@ describe("AutomationHooks — onPullRequest", () => {
     );
     hooks.handlePullRequest(makePRResult({ number: null }));
     const task = orch.list()[0];
-    expect(task?.prompt).toBe("PR #(unknown) created");
+    expect(task?.prompt).toContain("PR #(unknown) created");
   });
 
   it("does nothing when disabled", () => {
@@ -3154,5 +3154,545 @@ describe("ClaudeOrchestrator isAutomationTask (B4 loop guard)", () => {
     const id = orch.enqueue({ prompt: "do work", sessionId: "" });
     const task = orch.getTask(id);
     expect(task?.isAutomationTask).toBeUndefined();
+  });
+});
+
+// ── diagnosticTypes filter ────────────────────────────────────────────────────
+
+const tsDiag: Diagnostic[] = [
+  { message: "Type error", severity: "error", source: "typescript" },
+];
+const eslintDiag: Diagnostic[] = [
+  { message: "no-unused-vars", severity: "error", source: "eslint" },
+];
+const codeDiag: Diagnostic[] = [
+  { message: "Unused parameter", severity: "error", code: "TS6133" },
+];
+
+describe("AutomationHooks — diagnosticTypes filter", () => {
+  it("triggers when diagnostic source matches diagnosticTypes", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["typescript"],
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", tsDiag);
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("does NOT trigger when diagnostic source does not match diagnosticTypes", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["typescript"],
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", eslintDiag);
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("diagnosticTypes match is case-insensitive", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["TypeScript"],
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", tsDiag); // source: "typescript" lowercase
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("triggers when diagnostic code matches diagnosticTypes", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["ts6133"],
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", codeDiag); // code: "TS6133"
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("does NOT trigger when all diagnostics are filtered out by diagnosticTypes", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["typescript"],
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    // Mix of ts and eslint, but only asking for typescript — after severity+type filter,
+    // eslint diag is excluded; ts diag should still trigger
+    hooks.handleDiagnosticsChanged("/src/foo.ts", [...tsDiag, ...eslintDiag]);
+    expect(orch.list().length).toBe(1);
+    // Sending only eslint after cooldown reset — should not trigger
+    (hooks as any).lastTrigger.clear();
+    const orch2 = makeInstantOrchestrator();
+    const hooks2 = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["typescript"],
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch2,
+      () => {},
+    );
+    hooks2.handleDiagnosticsChanged("/src/foo.ts", eslintDiag);
+    expect(orch2.list().length).toBe(0);
+  });
+
+  it("diagnosticTypes and severity filters compose correctly", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["typescript"],
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    // Warning-severity typescript diag — filtered by severity, not type
+    const warnTs: Diagnostic[] = [
+      { message: "Unused variable", severity: "warning", source: "typescript" },
+    ];
+    hooks.handleDiagnosticsChanged("/src/foo.ts", warnTs);
+    expect(orch.list().length).toBe(0);
+  });
+});
+
+describe("loadPolicy — diagnosticTypes validation", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-dt-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("accepts a valid diagnosticTypes array", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["typescript", "eslint"],
+          prompt: "Fix",
+          cooldownMs: 5_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onDiagnosticsError?.diagnosticTypes).toEqual([
+      "typescript",
+      "eslint",
+    ]);
+  });
+
+  it("throws when diagnosticTypes is an empty array", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: [],
+          prompt: "Fix",
+          cooldownMs: 5_000,
+        },
+      }),
+    );
+    expect(() => loadPolicy(p)).toThrow(/diagnosticTypes/);
+  });
+
+  it("throws when diagnosticTypes contains non-strings", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: [123],
+          prompt: "Fix",
+          cooldownMs: 5_000,
+        },
+      }),
+    );
+    expect(() => loadPolicy(p)).toThrow(/diagnosticTypes/);
+  });
+});
+
+// ── minDuration filter ────────────────────────────────────────────────────────
+
+function makeTestResultWithDuration(overrides?: {
+  failed?: number;
+  passed?: number;
+  durationMs?: number;
+}) {
+  const failed = overrides?.failed ?? 1;
+  const passed = overrides?.passed ?? 0;
+  return {
+    runners: ["vitest"],
+    summary: {
+      total: failed + passed,
+      passed,
+      failed,
+      skipped: 0,
+      errored: 0,
+      durationMs: overrides?.durationMs,
+    },
+    failures: Array.from({ length: failed }, (_, i) => ({
+      name: `test ${i + 1}`,
+      file: "src/foo.test.ts",
+      message: `failed`,
+    })),
+  };
+}
+
+describe("AutomationHooks — onTestRun minDuration", () => {
+  it("does NOT trigger when durationMs is below minDuration", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          minDuration: 5_000,
+          prompt: "Tests failed",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(
+      makeTestResultWithDuration({ failed: 1, durationMs: 3_000 }),
+    );
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("triggers when durationMs equals minDuration", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          minDuration: 5_000,
+          prompt: "Tests failed",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(
+      makeTestResultWithDuration({ failed: 1, durationMs: 5_000 }),
+    );
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("triggers when durationMs exceeds minDuration", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          minDuration: 5_000,
+          prompt: "Tests failed",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(
+      makeTestResultWithDuration({ failed: 1, durationMs: 10_000 }),
+    );
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("triggers when durationMs is undefined (missing timing data)", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          minDuration: 5_000,
+          prompt: "Tests failed",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    // durationMs absent — should NOT suppress; fire rather than silently skip
+    hooks.handleTestRun(
+      makeTestResultWithDuration({ failed: 1, durationMs: undefined }),
+    );
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("minDuration=0 triggers for any run with reported duration", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          minDuration: 0,
+          prompt: "Tests failed",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(
+      makeTestResultWithDuration({ failed: 1, durationMs: 1 }),
+    );
+    expect(orch.list().length).toBe(1);
+  });
+});
+
+describe("loadPolicy — minDuration validation", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-policy-md-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("accepts a valid minDuration", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          minDuration: 10_000,
+          prompt: "Fix tests",
+          cooldownMs: 5_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onTestRun?.minDuration).toBe(10_000);
+  });
+
+  it("accepts minDuration=0", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          minDuration: 0,
+          prompt: "Fix tests",
+          cooldownMs: 5_000,
+        },
+      }),
+    );
+    const policy = loadPolicy(p);
+    expect(policy.onTestRun?.minDuration).toBe(0);
+  });
+
+  it("throws when minDuration is negative", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          minDuration: -100,
+          prompt: "Fix tests",
+          cooldownMs: 5_000,
+        },
+      }),
+    );
+    expect(() => loadPolicy(p)).toThrow(/minDuration/);
+  });
+
+  it("throws when minDuration is not a number", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          minDuration: "fast",
+          prompt: "Fix tests",
+          cooldownMs: 5_000,
+        },
+      }),
+    );
+    expect(() => loadPolicy(p)).toThrow(/minDuration/);
+  });
+});
+
+// ── buildHookMetadata ─────────────────────────────────────────────────────────
+
+describe("AutomationHooks — hook metadata prefix", () => {
+  it("prepends @@ HOOK: metadata to onDiagnosticsError prompts", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toMatch(
+      /^@@ HOOK: onDiagnosticsError \| file: .+ \| ts: \d{4}-\d{2}-\d{2}T/,
+    );
+  });
+
+  it("metadata appears before user prompt content", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "SENTINEL_CONTENT {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    const prompt = orch.list()[0]?.prompt ?? "";
+    const hookIdx = prompt.indexOf("@@ HOOK:");
+    const contentIdx = prompt.indexOf("SENTINEL_CONTENT");
+    expect(hookIdx).toBeGreaterThanOrEqual(0);
+    expect(contentIdx).toBeGreaterThan(hookIdx);
+  });
+
+  it("onTestRun metadata uses N/A for file when no file is associated", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          onFailureOnly: true,
+          prompt: "Tests failed",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun(makeTestResult({ failed: 1 }));
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onTestRun");
+    expect(prompt).toContain("| file: N/A");
+  });
+
+  it("strips control characters from file path in metadata", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix: {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    // Crafted path with embedded newline
+    hooks.handleDiagnosticsChanged("/src/foo\nINJECTED.ts", errorDiag);
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).not.toContain("\nINJECTED");
+    expect(prompt).toContain("@@ HOOK: onDiagnosticsError");
+  });
+
+  it("onFileSave metadata includes the saved file path", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "File saved: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileSaved("id1", "save", "/workspace/src/app.ts");
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("@@ HOOK: onFileSave");
+    expect(prompt).toContain("app.ts");
   });
 });

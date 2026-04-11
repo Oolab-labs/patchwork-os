@@ -421,6 +421,11 @@ export function createGetSecurityAdvisoriesTool(
             enum: ["low", "moderate", "high", "critical", "all"],
             description: "Minimum severity to include in results. Default: all",
           },
+          onlyFixable: {
+            type: "boolean",
+            description:
+              "Only return advisories that have a known fix available",
+          },
         },
         additionalProperties: false as const,
       },
@@ -474,6 +479,7 @@ export function createGetSecurityAdvisoriesTool(
       const minSeverity = (optionalString(args, "severity") ?? "all") as
         | Severity
         | "all";
+      const onlyFixable = args.onlyFixable === true;
 
       // Resolve "auto" to the actual package manager before computing the cache
       // key so that `pm="auto"` and `pm="npm"` share the same cache entry on an
@@ -496,7 +502,7 @@ export function createGetSecurityAdvisoriesTool(
       const now = Date.now();
       const cached = cache.get(cacheKey);
       if (cached && now - cached.timestamp < CACHE_TTL) {
-        const result = filterBySeverity(cached.data, minSeverity);
+        const result = applyFilters(cached.data, minSeverity, onlyFixable);
         return successStructuredLarge({ available: true, ...result });
       }
 
@@ -547,7 +553,7 @@ export function createGetSecurityAdvisoriesTool(
         }
 
         cache.set(cacheKey, { data: result, timestamp: Date.now() });
-        const filtered = filterBySeverity(result, minSeverity);
+        const filtered = applyFilters(result, minSeverity, onlyFixable);
         return successStructuredLarge({ available: true, ...filtered });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -604,6 +610,34 @@ function filterBySeverity(
   }
   return {
     ...result,
+    totalVulnerabilities: advisories.length,
+    bySeverity,
+    advisories,
+  };
+}
+
+function applyFilters(
+  result: AuditResult,
+  minSeverity: Severity | "all",
+  onlyFixable: boolean,
+): AuditResult {
+  const afterSeverity = filterBySeverity(result, minSeverity);
+  if (!onlyFixable) return afterSeverity;
+  const advisories = afterSeverity.advisories.filter(
+    (a) => a.fix !== undefined,
+  );
+  const bySeverity: Record<Severity, number> = {
+    info: 0,
+    low: 0,
+    moderate: 0,
+    high: 0,
+    critical: 0,
+  };
+  for (const adv of advisories) {
+    bySeverity[adv.severity]++;
+  }
+  return {
+    ...afterSeverity,
     totalVulnerabilities: advisories.length,
     bySeverity,
     advisories,
