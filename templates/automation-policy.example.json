@@ -28,6 +28,18 @@
     "cooldownMs": 20000
   },
 
+  "onDiagnosticsCleared": {
+    "enabled": true,
+    "prompt": "The error in {{file}} was just cleared. Run the tests for that file to confirm the fix.",
+    "cooldownMs": 10000
+  },
+
+  "onTaskSuccess": {
+    "enabled": false,
+    "prompt": "Task {{taskId}} completed. Review the output and check for any follow-up actions needed.",
+    "cooldownMs": 5000
+  },
+
   "onBranchCheckout": {
     "enabled": true,
     "prompt": "Switched to branch {{branch}} (from {{previousBranch}}). Run getDiagnostics with no uri to baseline workspace health. If there are errors, call explainSymbol on the first one. Report: branch name, error count, warning count, and first error (if any).",
