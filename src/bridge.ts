@@ -94,6 +94,8 @@ export class Bridge {
   private pendingListChanged = false;
   private lastConnectAt: string | null = null;
   private lastDisconnectAt: string | null = null;
+  private lastDisconnectCode: number | null = null;
+  private lastDisconnectReason: string | null = null;
   private checkpoint: SessionCheckpoint | null = null;
   private orchestrator: ClaudeOrchestrator | null = null;
   /** openedFiles restored from the previous-run checkpoint; consumed by the first connecting session. */
@@ -177,10 +179,12 @@ export class Bridge {
           });
           this.logger.event("session_resumed", { sessionId: clientSessionId });
           // Re-attach close/error handlers to the new WebSocket
-          ws.on("close", () => {
+          ws.on("close", (code: number, reason: Buffer) => {
             this.lastDisconnectAt = new Date().toISOString();
+            this.lastDisconnectCode = code;
+            this.lastDisconnectReason = reason.toString() || null;
             this.logger.info(
-              `Claude Code disconnected (session ${clientSessionId.slice(0, 8)})`,
+              `Claude Code disconnected (session ${clientSessionId.slice(0, 8)}) code=${code} reason=${reason.toString() || "(none)"}`,
             );
             this.activityLog.recordEvent("claude_disconnected", {
               sessionId: clientSessionId.slice(0, 8),
@@ -339,10 +343,12 @@ export class Bridge {
         this.extensionClient.notifyClaudeConnectionState(true);
       }
 
-      ws.on("close", () => {
+      ws.on("close", (code: number, reason: Buffer) => {
         this.lastDisconnectAt = new Date().toISOString();
+        this.lastDisconnectCode = code;
+        this.lastDisconnectReason = reason.toString() || null;
         this.logger.info(
-          `Claude Code disconnected (session ${sessionId.slice(0, 8)})`,
+          `Claude Code disconnected (session ${sessionId.slice(0, 8)}) code=${code} reason=${reason.toString() || "(none)"}`,
         );
         this.activityLog.recordEvent("claude_disconnected", {
           sessionId: sessionId.slice(0, 8),
@@ -750,6 +756,8 @@ export class Bridge {
         gracePeriodMs: this.config.gracePeriodMs,
         lastConnectAt: this.lastConnectAt,
         lastDisconnectAt: this.lastDisconnectAt,
+        lastDisconnectCode: this.lastDisconnectCode,
+        lastDisconnectReason: this.lastDisconnectReason,
         extension: this.extensionClient.isConnected(),
         extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
         recentActivity: this.activityLog.query({ last: 10 }),
@@ -801,6 +809,8 @@ export class Bridge {
         gracePeriodMs: this.config.gracePeriodMs,
         lastConnectAt: this.lastConnectAt,
         lastDisconnectAt: this.lastDisconnectAt,
+        lastDisconnectCode: this.lastDisconnectCode,
+        lastDisconnectReason: this.lastDisconnectReason,
         sessions: sessionList,
         extension: this.extensionClient.isConnected(),
         extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),

@@ -243,7 +243,10 @@ describe("bridgeDoctor", () => {
   });
 
   it("lock file present with isBridge=true → lock file check is ok", async () => {
-    const lockDir = path.join(os.homedir(), ".claude", "ide");
+    const lockDir = path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+      "ide",
+    );
     const port = 47999; // unlikely to be in use
     const lockPath = path.join(lockDir, `${port}.lock`);
     let createdLock = false;

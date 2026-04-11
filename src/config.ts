@@ -41,7 +41,7 @@ export interface Config {
   maxSessions: number;
   analyticsEnabled: boolean | null; // null = not set via CLI (use stored pref)
   githubDefaultRepo: string | null;
-  /** Interval in ms between WebSocket keepalive pings. 0 disables. Default: 30_000. */
+  /** Interval in ms between WebSocket keepalive pings. 0 disables. Default: 10_000. */
   wsPingIntervalMs: number;
 }
 
@@ -796,6 +796,6 @@ Environment Variables:
     maxSessions,
     analyticsEnabled,
     githubDefaultRepo,
-    wsPingIntervalMs: 30_000,
+    wsPingIntervalMs: 10_000,
   };
 }

@@ -201,7 +201,10 @@ async function checkTestRunner(
 }
 
 async function checkLockFile(port: number): Promise<CheckResult> {
-  const lockDir = path.join(os.homedir(), ".claude", "ide");
+  const lockDir = path.join(
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+    "ide",
+  );
   const pid = process.pid;
 
   // If port is known, check that specific lock file first
@@ -405,7 +408,7 @@ export function createBridgeDoctorTool(
         required: ["overallHealth", "checks", "summary"],
       },
     },
-    handler: async () => {
+    handler: async (_args: Record<string, unknown>) => {
       const checks = await Promise.all([
         checkWorkspacePath(workspace),
         checkExtension(extensionClient),
