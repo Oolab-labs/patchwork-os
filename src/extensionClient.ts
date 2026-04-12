@@ -471,6 +471,9 @@ export class ExtensionClient {
         this.logger.debug(
           `[extensionClient] received extension/fileSaved for: ${typeof p.file === "string" ? p.file : "(unknown)"}`,
         );
+        if (typeof p.file === "string") {
+          this.safeCallback(this.onFileChanged, p.file, "save", p.file);
+        }
         break;
       case "extension/debugSessionChanged": {
         if (typeof p.hasActiveSession !== "boolean") {

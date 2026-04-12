@@ -371,6 +371,49 @@ describe("AutomationHooks.handleFileSaved", () => {
     hooks.handleFileSaved("id2", "save", "/src/foo.ts");
     expect(orch.list().length).toBe(1);
   });
+
+  it("handleFileSaved matches absolute path against relative pattern when workspace provided", () => {
+    const workspace = "/Users/wesh/project";
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["src/**/*.ts"],
+          prompt: "Review {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+      undefined,
+      workspace,
+    );
+    // Absolute path — minimatch("abs/path", "src/**/*.ts") would be false without workspace-relative matching
+    hooks.handleFileSaved("id1", "save", `${workspace}/src/automation.ts`);
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("handleFileSaved still matches when pattern already starts with **", () => {
+    const workspace = "/Users/wesh/project";
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Review {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+      undefined,
+      workspace,
+    );
+    hooks.handleFileSaved("id1", "save", `${workspace}/src/foo.ts`);
+    expect(orch.list().length).toBe(1);
+  });
 });
 
 // ── handleFileChanged ─────────────────────────────────────────────────────────
@@ -489,6 +532,28 @@ describe("AutomationHooks.handleFileChanged", () => {
     );
     const status = hooks.getStatus();
     expect(status.onFileChanged).toEqual({ enabled: true, patternCount: 2 });
+  });
+
+  it("handleFileChanged matches absolute path against relative pattern when workspace provided", () => {
+    const workspace = "/Users/wesh/project";
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileChanged: {
+          enabled: true,
+          patterns: ["src/**/*.ts"],
+          prompt: "File changed: {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+      undefined,
+      workspace,
+    );
+    // Absolute path — without workspace-relative matching, "src/**/*.ts" won't match an absolute path
+    hooks.handleFileChanged("id1", "change", `${workspace}/src/bridge.ts`);
+    expect(orch.list().length).toBe(1);
   });
 });
 

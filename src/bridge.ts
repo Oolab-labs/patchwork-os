@@ -742,6 +742,7 @@ export class Bridge {
         this.orchestrator,
         (msg) => this.logger.info(msg),
         this.extensionClient,
+        this.config.workspace,
       );
       this.logger.info(
         `[bridge] Automation enabled (policy: ${this.config.automationPolicyPath})`,
