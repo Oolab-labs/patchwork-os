@@ -541,6 +541,26 @@ When automation is active, VS Code save/change events, diagnostic errors, and Cl
 
 > **Cloud sessions**: If `CLAUDE_CODE_REMOTE=true` (Claude Code on the web), automation tasks will still enqueue but the bridge itself runs locally — those tasks will not execute. Guard policy prompts or the `onInstructionsLoaded` hook with an environment check if needed.
 
+### Wiring Claude Code events to automation hooks
+
+Five hooks (`onPostCompact`, `onInstructionsLoaded`, `onTaskCreated`, `onPermissionDenied`, `onCwdChanged`) fire from Claude Code's own lifecycle — not from MCP tool calls. To activate them, add the bridge `notify` command to your `~/.claude/settings.json` hooks:
+
+```json
+{
+  "hooks": {
+    "PostCompact":        [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }],
+    "InstructionsLoaded": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }],
+    "TaskCreated":        [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }],
+    "PermissionDenied":   [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }],
+    "CwdChanged":         [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }]
+  }
+}
+```
+
+`claude-ide-bridge init` writes these entries automatically. `getBridgeStatus` reports which hooks are enabled in your policy but not yet wired in `settings.json`.
+
+The `notify` subcommand reads the running bridge's lock file for port and token, then POSTs `{ event, args }` to the bridge's `/notify` HTTP endpoint — no MCP session required.
+
 ### CLI flags
 
 | Flag | Description |
