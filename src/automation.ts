@@ -135,9 +135,12 @@ export interface OnPostCompactPolicy extends PromptSource {
 export interface OnInstructionsLoadedPolicy extends PromptSource {
   enabled: boolean;
   /**
-   * No placeholders — fired once at session start.
+   * No placeholders — fired once per interactive session start.
    * Use promptName (e.g. "orient-project") to inject tool capability summary.
+   * cooldownMs (default 60000) prevents cascade when automation subprocesses
+   * each fire their own InstructionsLoaded hook.
    */
+  cooldownMs?: number;
 }
 
 export interface OnCwdChangedPolicy extends PromptSource {
@@ -607,6 +610,13 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
     if (typeof il.enabled !== "boolean") {
       throw new Error(`"onInstructionsLoaded.enabled" must be a boolean`);
+    }
+    if (il.cooldownMs !== undefined) {
+      if (typeof il.cooldownMs !== "number" || il.cooldownMs < 5000) {
+        throw new Error(
+          `"onInstructionsLoaded.cooldownMs" must be a number >= 5000`,
+        );
+      }
     }
     validatePromptSource("onInstructionsLoaded", il);
   }
@@ -1269,6 +1279,19 @@ export class AutomationHooks {
     const cfg = this.policy.onInstructionsLoaded;
     if (!cfg?.enabled) return;
 
+    const cooldownMs = cfg.cooldownMs ?? 60_000;
+    const key = "instructions-loaded";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cooldownMs) {
+      this.log(
+        `[automation] cooldown active for InstructionsLoaded (${cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
     let instrPrompt: string;
     if (cfg.promptName) {
       const resolved = this._resolveNamedPrompt(
@@ -1290,6 +1313,7 @@ export class AutomationHooks {
         sessionId: "",
         isAutomationTask: true,
       });
+      this.lastTrigger.set(key, now);
       this.log(
         `[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`,
       );
@@ -2410,7 +2434,7 @@ export class AutomationHooks {
     onBranchCheckout: { enabled: boolean; cooldownMs: number } | null;
     onPullRequest: { enabled: boolean; cooldownMs: number } | null;
     onTaskCreated: { enabled: boolean; cooldownMs: number } | null;
-    onInstructionsLoaded: { enabled: boolean } | null;
+    onInstructionsLoaded: { enabled: boolean; cooldownMs: number } | null;
     onPermissionDenied: { enabled: boolean; cooldownMs: number } | null;
     onDiagnosticsCleared: { enabled: boolean; cooldownMs: number } | null;
     onTaskSuccess: { enabled: boolean; cooldownMs: number } | null;
@@ -2493,7 +2517,10 @@ export class AutomationHooks {
           }
         : null,
       onInstructionsLoaded: p.onInstructionsLoaded
-        ? { enabled: p.onInstructionsLoaded.enabled }
+        ? {
+            enabled: p.onInstructionsLoaded.enabled,
+            cooldownMs: p.onInstructionsLoaded.cooldownMs ?? 60_000,
+          }
         : null,
       onPermissionDenied: p.onPermissionDenied
         ? {
