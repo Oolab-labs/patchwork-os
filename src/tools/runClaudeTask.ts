@@ -8,6 +8,8 @@ const MIN_TIMEOUT_MS = 5_000;
 const MAX_TIMEOUT_MS = 600_000;
 /** 32 KB prompt cap — prevents ARG_MAX exhaustion and queue memory abuse */
 const MAX_PROMPT_BYTES = 32 * 1024;
+/** 4 KB system prompt cap — matches automationSystemPrompt validation in loadPolicy() */
+const MAX_SYSTEM_PROMPT_CHARS = 4096;
 
 export function createRunClaudeTaskTool(
   orchestrator: ClaudeOrchestrator,
@@ -71,6 +73,11 @@ export function createRunClaudeTaskTool(
             type: "integer",
             description:
               "Abort the task if no assistant output arrives within this many ms of spawn. Useful for detecting hung subprocesses early. Omit to disable.",
+          },
+          systemPrompt: {
+            type: "string",
+            maxLength: MAX_SYSTEM_PROMPT_CHARS,
+            description: `Custom system prompt passed via --system-prompt to the subprocess. Replaces the default Claude Code system prompt. Max ${MAX_SYSTEM_PROMPT_CHARS} characters. Omit to use the default.`,
           },
         },
         required: ["prompt"],
@@ -212,6 +219,20 @@ export function createRunClaudeTaskTool(
         startupTimeoutMs = s;
       }
 
+      let systemPrompt: string | undefined;
+      if (args.systemPrompt !== undefined) {
+        if (
+          typeof args.systemPrompt !== "string" ||
+          args.systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS
+        ) {
+          return error(
+            `systemPrompt must be a string of at most ${MAX_SYSTEM_PROMPT_CHARS} characters`,
+            ToolErrorCodes.INVALID_ARGS,
+          );
+        }
+        systemPrompt = args.systemPrompt;
+      }
+
       if (!stream) {
         // Non-streaming: enqueue and return taskId immediately
         try {
@@ -225,6 +246,7 @@ export function createRunClaudeTaskTool(
             fallbackModel,
             maxBudgetUsd,
             startupTimeoutMs,
+            systemPrompt,
           });
           return successStructured({ taskId, status: "pending" });
         } catch (e) {
@@ -247,6 +269,7 @@ export function createRunClaudeTaskTool(
           fallbackModel,
           maxBudgetUsd,
           startupTimeoutMs,
+          systemPrompt,
           onChunk: (chunk: string) => {
             progressFn?.(++chunkIndex, -1, chunk);
           },
