@@ -274,12 +274,12 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | `onBranchCheckout` | `gitCheckout` tool succeeds | `{{branch}}`, `{{previousBranch}}`, `{{created}}` | `{{previousBranch}}` is `"(detached HEAD)"` when applicable |
 | `onPullRequest` | `githubCreatePR` tool succeeds | `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}` | `{{number}}` is `"(unknown)"` if not returned |
 | `onTestRun` | `runTests` tool completes | `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` | `{{failures}}` is a **JSON array of strings** — each entry is one failure message/test name. `onFailureOnly: true` (default) skips passing runs |
-| `onTaskCreated` | Claude Code `TaskCreated` hook fires (Claude spawns a subagent) | `{{taskId}}`, `{{prompt}}` | Trigger via `notifyTaskCreated` MCP tool. `{{prompt}}` truncated to 500 chars. Requires CC 2.1.84+ |
+| `onTaskCreated` | Claude Code `TaskCreated` hook fires (Claude spawns a subagent) | `{{taskId}}`, `{{prompt}}` | Wired via `claude-ide-bridge notify TaskCreated` in CC `settings.json`. `{{prompt}}` truncated to 500 chars. Requires CC 2.1.84+ |
 | `onTaskSuccess` | Orchestrator Claude task completes with status `done` | `{{taskId}}`, `{{output}}` | — |
-| `onPermissionDenied` | Claude Code `PermissionDenied` hook fires (tool call blocked) | `{{tool}}`, `{{reason}}` | Trigger via `notifyPermissionDenied` MCP tool. Requires CC 2.1.89+ |
-| `onCwdChanged` | Claude Code working directory changes | `{{cwd}}` | Trigger via `notifyCwdChanged` MCP tool from a CC CwdChanged hook. Requires CC 2.1.83+ |
-| `onPostCompact` | Claude Code compacts conversation context | — | Trigger via `notifyPostCompact` MCP tool. Requires CC 2.1.76+ |
-| `onInstructionsLoaded` | Session starts / CLAUDE.md reloads | — | Trigger via `notifyInstructionsLoaded` MCP tool. No cooldown. Requires CC 2.1.76+ |
+| `onPermissionDenied` | Claude Code `PermissionDenied` hook fires (tool call blocked) | `{{tool}}`, `{{reason}}` | Wired via `claude-ide-bridge notify PermissionDenied` in CC `settings.json`. Requires CC 2.1.89+ |
+| `onCwdChanged` | Claude Code working directory changes | `{{cwd}}` | Wired via `claude-ide-bridge notify CwdChanged` in CC `settings.json`. Requires CC 2.1.83+ |
+| `onPostCompact` | Claude Code compacts conversation context | — | Wired via `claude-ide-bridge notify PostCompact` in CC `settings.json`. Requires CC 2.1.76+ |
+| `onInstructionsLoaded` | Session starts / CLAUDE.md reloads | — | Wired via `claude-ide-bridge notify InstructionsLoaded` in CC `settings.json`. No cooldown. Requires CC 2.1.76+ |
 
 **Shared options** (apply to all hooks):
 
@@ -321,7 +321,7 @@ Claude Code requires hook entries wrapped in `matcher` + `hooks` arrays (a flat 
 }
 ```
 
-All five notify tools are also accessible as MCP tools (`notifyPostCompact`, `notifyInstructionsLoaded`, etc.) for direct programmatic invocation. Hooks triggered directly by bridge tool calls (`onGitCommit`, `onFileSave`, etc.) need no extra wiring.
+All five CC hook events dispatch through the bridge's `/notify` HTTP endpoint — there are no corresponding MCP tools. Hooks triggered directly by bridge tool calls (`onGitCommit`, `onFileSave`, etc.) need no extra wiring.
 
 
 **Claude Code hooks (settings.json)** can narrow when bridge-invoked shell scripts fire using the `if` field (Claude Code 2.1.85+). Uses permission-rule syntax:

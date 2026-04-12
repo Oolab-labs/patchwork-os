@@ -141,13 +141,6 @@ import {
   createRenameSymbolTool,
   createSearchWorkspaceSymbolsTool,
 } from "./lsp.js";
-import { createNotifyCwdChangedTool } from "./notifyCwdChanged.js";
-import {
-  createNotifyInstructionsLoadedTool,
-  createNotifyPermissionDeniedTool,
-  createNotifyPostCompactTool,
-  createNotifyTaskCreatedTool,
-} from "./notifyHooks.js";
 import { createOpenDiffTool } from "./openDiff.js";
 import { createOpenFileTool } from "./openFile.js";
 import { createOpenInBrowserTool } from "./openInBrowser.js";
@@ -529,15 +522,6 @@ export function registerAllTools(
           createCancelClaudeTaskTool(orchestrator, sessionId),
           createListClaudeTasksTool(orchestrator, sessionId),
           createResumeClaudeTaskTool(orchestrator, sessionId),
-        ]
-      : []),
-    ...(automationHooks !== null
-      ? [
-          createNotifyCwdChangedTool(automationHooks),
-          createNotifyPostCompactTool(automationHooks),
-          createNotifyInstructionsLoadedTool(automationHooks),
-          createNotifyTaskCreatedTool(automationHooks),
-          createNotifyPermissionDeniedTool(automationHooks),
         ]
       : []),
   ];
