@@ -3,10 +3,11 @@
  * Uses a minimal mock orchestrator — no real ClaudeOrchestrator needed.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createCancelClaudeTaskTool } from "../cancelClaudeTask.js";
 import { createGetClaudeTaskStatusTool } from "../getClaudeTaskStatus.js";
 import { createListClaudeTasksTool } from "../listClaudeTasks.js";
+import { createRunClaudeTaskTool } from "../runClaudeTask.js";
 
 function parse(r: { content: Array<{ type: string; text: string }> }) {
   return JSON.parse(r.content[0]?.text ?? "{}");
@@ -47,6 +48,69 @@ function makeOrchestrator(
     },
   } as any;
 }
+
+// ── runClaudeTask ─────────────────────────────────────────────────────────────
+
+describe("runClaudeTask — effort/fallbackModel/maxBudgetUsd validation", () => {
+  function makeEnqueueOrchestrator() {
+    const enqueueOpts: Record<string, unknown>[] = [];
+    return {
+      orch: {
+        enqueue: vi.fn((opts: Record<string, unknown>) => {
+          enqueueOpts.push(opts);
+          return "task-xyz";
+        }),
+      } as any,
+      enqueueOpts,
+    };
+  }
+
+  it("returns error when effort is invalid", async () => {
+    const { orch } = makeEnqueueOrchestrator();
+    const tool = createRunClaudeTaskTool(orch, "session-A", "/tmp");
+    const result = parse(
+      await tool.handler({ prompt: "hello", effort: "extreme" }),
+    );
+    expect(result.error).toMatch(/effort must be one of/i);
+  });
+
+  it("returns error when maxBudgetUsd is zero or negative", async () => {
+    const { orch } = makeEnqueueOrchestrator();
+    const tool = createRunClaudeTaskTool(orch, "session-A", "/tmp");
+    const result = parse(
+      await tool.handler({ prompt: "hello", maxBudgetUsd: -1 }),
+    );
+    expect(result.error).toMatch(/positive number/i);
+  });
+
+  it("forwards effort, fallbackModel, maxBudgetUsd to enqueue()", async () => {
+    const { orch, enqueueOpts } = makeEnqueueOrchestrator();
+    const tool = createRunClaudeTaskTool(orch, "session-A", "/tmp");
+    const result = parse(
+      await tool.handler({
+        prompt: "hello",
+        effort: "high",
+        fallbackModel: "claude-haiku-4-5-20251001",
+        maxBudgetUsd: 0.5,
+      }),
+    );
+    expect(result.taskId).toBe("task-xyz");
+    expect(enqueueOpts[0]).toMatchObject({
+      effort: "high",
+      fallbackModel: "claude-haiku-4-5-20251001",
+      maxBudgetUsd: 0.5,
+    });
+  });
+
+  it("omits effort/fallbackModel/maxBudgetUsd from enqueue() when not provided", async () => {
+    const { orch, enqueueOpts } = makeEnqueueOrchestrator();
+    const tool = createRunClaudeTaskTool(orch, "session-A", "/tmp");
+    await tool.handler({ prompt: "hello" });
+    expect(enqueueOpts[0]!.effort).toBeUndefined();
+    expect(enqueueOpts[0]!.fallbackModel).toBeUndefined();
+    expect(enqueueOpts[0]!.maxBudgetUsd).toBeUndefined();
+  });
+});
 
 // ── cancelClaudeTask ──────────────────────────────────────────────────────────
 
