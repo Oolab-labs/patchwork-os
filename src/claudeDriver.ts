@@ -47,7 +47,25 @@ export class SubprocessDriver implements IClaudeDriver {
       tmpdir(),
       "claude-ide-bridge-subprocess-settings.json",
     );
-    this.settingsContent = JSON.stringify({ hooks: {} });
+
+    this.settingsContent = JSON.stringify({
+      hooks: {},
+      permissions: {
+        // Deny destructive publishing/deployment commands in headless automation tasks.
+        // These should never be triggered automatically — only by explicit user intent.
+        deny: [
+          "Bash(npm publish*)",
+          "Bash(npm version*)",
+          "Bash(yarn publish*)",
+          "Bash(pnpm publish*)",
+          "Bash(git push*)",
+          "Bash(git tag*)",
+          "Bash(gh release*)",
+          "Bash(npx semantic-release*)",
+          "Bash(npx release-it*)",
+        ],
+      },
+    });
     this._writeSettings();
   }
 

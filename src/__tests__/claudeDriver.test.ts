@@ -2,6 +2,7 @@
  * Unit tests for SubprocessDriver and ApiDriver.
  */
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mock child_process ─────────────────────────────────────────────────────
@@ -140,6 +141,19 @@ describe("SubprocessDriver", () => {
     await runPromise;
     const args = spawnMock.mock.calls[0]![1] as string[];
     expect(args).toContain("--dangerously-skip-permissions");
+  });
+
+  it("writes permissions.deny to settings file to block npm publish and similar", () => {
+    // The driver writes a settings file used by the subprocess (--settings flag).
+    // It must contain a deny list that prevents npm publish, git push, etc.
+    // This ensures automation hooks can't autonomously publish packages.
+    const settings = JSON.parse(
+      readFileSync((driver as any).settingsPath, "utf-8"),
+    ) as { hooks: object; permissions?: { deny?: string[] } };
+    const deny = settings.permissions?.deny ?? [];
+    expect(deny).toContain("Bash(npm publish*)");
+    expect(deny).toContain("Bash(git push*)");
+    expect(deny).toContain("Bash(npm version*)");
   });
 
   it("logs stderr on non-zero exit", async () => {
