@@ -1,5 +1,7 @@
 {
   "defaultModel": "claude-haiku-4-5-20251001",
+  "defaultEffort": "low",
+  "automationSystemPrompt": "You are a concise automation assistant. Respond in ≤5 lines. No preamble. Call the tools listed in the task, then report results only.",
   "maxTasksPerHour": 20,
   "onFileSave": {
     "enabled": true,
