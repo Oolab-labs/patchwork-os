@@ -849,18 +849,31 @@ export function checkCcHookWiring(): Record<string, boolean> {
       path.join(process.env.HOME ?? process.env.USERPROFILE ?? "~", ".claude");
     const settingsPath = path.join(configDir, "settings.json");
     const raw = fs.readFileSync(settingsPath, "utf-8");
+    type FlatHook = { command?: string };
+    type NestedHook = { matcher?: string; hooks?: FlatHook[] };
     const settings = JSON.parse(raw) as {
-      hooks?: Record<string, Array<{ command?: string }>>;
+      hooks?: Record<string, Array<NestedHook | FlatHook>>;
     };
     const hooks = settings.hooks ?? {};
+    const commandMatches = (
+      cmd: string | undefined,
+      ccEvent: string,
+      toolName: string,
+    ) =>
+      typeof cmd === "string" &&
+      (cmd.includes(toolName) || cmd.includes(`notify ${ccEvent}`));
     for (const [ccEvent, toolName] of Object.entries(CC_HOOK_TOOL_MAP)) {
       const entries = hooks[ccEvent] ?? [];
-      result[ccEvent] = entries.some(
-        (e) =>
-          typeof e.command === "string" &&
-          (e.command.includes(toolName) ||
-            e.command.includes(`notify ${ccEvent}`)),
-      );
+      result[ccEvent] = entries.some((e) => {
+        // New format: { matcher, hooks: [{ type, command }] }
+        if (e && Array.isArray((e as NestedHook).hooks)) {
+          return (e as NestedHook).hooks!.some((h) =>
+            commandMatches(h.command, ccEvent, toolName),
+          );
+        }
+        // Legacy flat format: { type, command }
+        return commandMatches((e as FlatHook).command, ccEvent, toolName);
+      });
     }
   } catch {
     // Settings file missing or unparseable — treat all as unwired

@@ -299,13 +299,25 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | `PermissionDenied` | `claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON` | 2.1.89+ |
 | `CwdChanged` | `claude-ide-bridge notify CwdChanged --cwd $CWD` | 2.1.83+ |
 
+Claude Code requires hook entries wrapped in `matcher` + `hooks` arrays (a flat `{type, command}` object is rejected by settings validation):
+
 ```json
 "hooks": {
-  "PostCompact": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }],
-  "InstructionsLoaded": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }],
-  "TaskCreated": [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }],
-  "PermissionDenied": [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }],
-  "CwdChanged": [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }]
+  "PostCompact": [
+    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }] }
+  ],
+  "InstructionsLoaded": [
+    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }] }
+  ],
+  "TaskCreated": [
+    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }] }
+  ],
+  "PermissionDenied": [
+    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }] }
+  ],
+  "CwdChanged": [
+    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }] }
+  ]
 }
 ```
 

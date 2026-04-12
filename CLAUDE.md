@@ -204,18 +204,26 @@ Event-driven hooks that trigger Claude tasks automatically.
 
   The `notify` subcommand reads the bridge lock file, looks up the running port and auth token, and POSTs to the bridge's `/notify` HTTP endpoint. The bridge must be running.
 
-  Example `~/.claude/settings.json` block:
+  Example `~/.claude/settings.json` block (Claude Code requires entries wrapped in `matcher` + `hooks` arrays):
   ```json
   "hooks": {
-    "PostCompact": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }],
-    "InstructionsLoaded": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }],
-    "TaskCreated": [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }],
-    "PermissionDenied": [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }],
-    "CwdChanged": [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }]
+    "PostCompact": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }] }
+    ],
+    "InstructionsLoaded": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }] }
+    ],
+    "TaskCreated": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }] }
+    ],
+    "PermissionDenied": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }] }
+    ],
+    "CwdChanged": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }] }
+    ]
   }
   ```
-
-  | `CwdChanged` | `notifyCwdChanged` | `"CwdChanged": [{"command": "claude --mcp ... notifyCwdChanged --cwd $CWD"}]` |
 
 ## Transport & Session Model
 
