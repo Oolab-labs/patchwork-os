@@ -19,7 +19,7 @@
   "onGitCommit": {
     "enabled": true,
     "cooldownMs": 10000,
-    "prompt": "Commit made on {{branch}}: {{message}}\nFiles: {{files}}\n\nCall getDiagnostics (report errors only). If any test files were in {{files}}, also call runTests and report pass/fail count."
+    "prompt": "Commit made on {{branch}}: {{message}}\nFiles: {{files}}\n\nCall getDiagnostics (report errors only). If any test files were in {{files}}, also call runTests and report pass/fail count.\n\nIMPORTANT: Do NOT run any shell commands. Do not publish packages, push to git, bump versions, or deploy."
   },
   "onGitPull": {
     "enabled": true,
