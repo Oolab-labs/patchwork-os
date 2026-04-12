@@ -67,6 +67,11 @@ export function createRunClaudeTaskTool(
             description:
               "Maximum spend cap in USD for this task. Passed as --max-budget-usd to the subprocess. Omit for no cap.",
           },
+          startupTimeoutMs: {
+            type: "integer",
+            description:
+              "Abort the task if no assistant output arrives within this many ms of spawn. Useful for detecting hung subprocesses early. Omit to disable.",
+          },
         },
         required: ["prompt"],
       },
@@ -190,6 +195,23 @@ export function createRunClaudeTaskTool(
         maxBudgetUsd = args.maxBudgetUsd;
       }
 
+      let startupTimeoutMs: number | undefined;
+      if (args.startupTimeoutMs !== undefined) {
+        const s = args.startupTimeoutMs;
+        if (
+          typeof s !== "number" ||
+          !Number.isInteger(s) ||
+          s < MIN_TIMEOUT_MS ||
+          s > MAX_TIMEOUT_MS
+        ) {
+          return error(
+            `startupTimeoutMs must be an integer between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS}`,
+            ToolErrorCodes.INVALID_ARGS,
+          );
+        }
+        startupTimeoutMs = s;
+      }
+
       if (!stream) {
         // Non-streaming: enqueue and return taskId immediately
         try {
@@ -202,6 +224,7 @@ export function createRunClaudeTaskTool(
             effort,
             fallbackModel,
             maxBudgetUsd,
+            startupTimeoutMs,
           });
           return successStructured({ taskId, status: "pending" });
         } catch (e) {
@@ -223,6 +246,7 @@ export function createRunClaudeTaskTool(
           effort,
           fallbackModel,
           maxBudgetUsd,
+          startupTimeoutMs,
           onChunk: (chunk: string) => {
             progressFn?.(++chunkIndex, -1, chunk);
           },
