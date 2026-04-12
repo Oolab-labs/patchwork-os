@@ -31,7 +31,7 @@
     "enabled": true,
     "cooldownMs": 20000,
     "minSeverity": "error",
-    "diagnosticTypes": ["typescript"],
+    "diagnosticTypes": ["ts"],
     "prompt": "Type error in {{file}}:\n\n{{diagnostics}}\n\nAssess security impact: could this cause null-dereference, injection, or auth bypass? Suggest the safest fix."
   },
 
