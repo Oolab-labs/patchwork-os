@@ -770,12 +770,44 @@ describe("AutomationHooks.handleInstructionsLoaded", () => {
       () => {},
     );
     const status = hooks.getStatus();
-    expect(status.onInstructionsLoaded).toEqual({ enabled: true });
+    expect(status.onInstructionsLoaded).toEqual({
+      enabled: true,
+      cooldownMs: 60_000,
+    });
   });
 
   it("getStatus returns null for onInstructionsLoaded when not configured", () => {
     const hooks = new AutomationHooks({}, makeInstantOrchestrator(), () => {});
     expect(hooks.getStatus().onInstructionsLoaded).toBeNull();
+  });
+
+  it("cooldown prevents cascade when multiple subprocesses fire InstructionsLoaded rapidly", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onInstructionsLoaded: {
+          enabled: true,
+          prompt: "Session started.",
+          cooldownMs: 60_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleInstructionsLoaded();
+    hooks.handleInstructionsLoaded();
+    hooks.handleInstructionsLoaded();
+    // Only the first call should enqueue a task; subsequent calls are within cooldown
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("cooldownMs defaults to 60000 in getStatus", () => {
+    const hooks = new AutomationHooks(
+      { onInstructionsLoaded: { enabled: true, prompt: "hi" } },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    expect(hooks.getStatus().onInstructionsLoaded?.cooldownMs).toBe(60_000);
   });
 });
 
