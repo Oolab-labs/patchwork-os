@@ -10,7 +10,11 @@ import type {
   GitPushResult,
   PullRequestResult,
 } from "../automation.js";
-import { AutomationHooks, loadPolicy } from "../automation.js";
+import {
+  AutomationHooks,
+  checkCcHookWiring,
+  loadPolicy,
+} from "../automation.js";
 import type { IClaudeDriver } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import type { ExtensionClient } from "../extensionClient.js";
@@ -4365,5 +4369,88 @@ describe("AutomationHooks — hook metadata prefix", () => {
     const prompt = orch.list()[0]?.prompt ?? "";
     expect(prompt).toContain("@@ HOOK: onInstructionsLoaded");
     expect(prompt).toContain("| file: N/A");
+  });
+});
+
+describe("checkCcHookWiring", () => {
+  let tmpDir: string;
+  let prevEnv: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cc-hooks-"));
+    prevEnv = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = tmpDir;
+  });
+
+  afterEach(() => {
+    if (prevEnv === undefined) {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    } else {
+      process.env.CLAUDE_CONFIG_DIR = prevEnv;
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const write = (settings: unknown) =>
+    fs.writeFileSync(
+      path.join(tmpDir, "settings.json"),
+      JSON.stringify(settings),
+    );
+
+  it("detects new matcher+hooks nested format as wired", () => {
+    write({
+      hooks: {
+        PostCompact: [
+          {
+            matcher: "",
+            hooks: [
+              {
+                type: "command",
+                command: "claude-ide-bridge notify PostCompact",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const wiring = checkCcHookWiring();
+    expect(wiring.PostCompact).toBe(true);
+    expect(wiring.InstructionsLoaded).toBe(false);
+  });
+
+  it("still detects legacy flat format as wired (backward-compat)", () => {
+    write({
+      hooks: {
+        InstructionsLoaded: [
+          {
+            type: "command",
+            command: "claude-ide-bridge notify InstructionsLoaded",
+          },
+        ],
+      },
+    });
+    const wiring = checkCcHookWiring();
+    expect(wiring.InstructionsLoaded).toBe(true);
+  });
+
+  it("does not match unrelated commands in nested format", () => {
+    write({
+      hooks: {
+        PostCompact: [
+          {
+            matcher: "",
+            hooks: [{ type: "command", command: "echo hello" }],
+          },
+        ],
+      },
+    });
+    const wiring = checkCcHookWiring();
+    expect(wiring.PostCompact).toBe(false);
+  });
+
+  it("returns all false when settings.json missing", () => {
+    const wiring = checkCcHookWiring();
+    expect(wiring.PostCompact).toBe(false);
+    expect(wiring.CwdChanged).toBe(false);
   });
 });

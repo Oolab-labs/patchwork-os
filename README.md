@@ -548,11 +548,11 @@ Five hooks (`onPostCompact`, `onInstructionsLoaded`, `onTaskCreated`, `onPermiss
 ```json
 {
   "hooks": {
-    "PostCompact":        [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }],
-    "InstructionsLoaded": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }],
-    "TaskCreated":        [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }],
-    "PermissionDenied":   [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }],
-    "CwdChanged":         [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }]
+    "PostCompact":        [{ "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }] }],
+    "InstructionsLoaded": [{ "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }] }],
+    "TaskCreated":        [{ "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }] }],
+    "PermissionDenied":   [{ "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }] }],
+    "CwdChanged":         [{ "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }] }]
   }
 }
 ```

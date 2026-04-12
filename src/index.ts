@@ -972,29 +972,54 @@ Steps performed:
         unknown
       >;
     }
-    const ccHooks = (ccSettings.hooks ?? {}) as Record<
-      string,
-      Array<{ type?: string; command?: string }>
-    >;
+    type FlatHook = { type?: string; command?: string };
+    type NestedHook = { matcher?: string; hooks?: FlatHook[] };
+    type HookEntry = NestedHook | FlatHook;
+    const ccHooks = (ccSettings.hooks ?? {}) as Record<string, HookEntry[]>;
+    const isNested = (e: HookEntry): e is NestedHook =>
+      !!e && Array.isArray((e as NestedHook).hooks);
+    const normalize = (e: HookEntry): NestedHook =>
+      isNested(e)
+        ? { matcher: e.matcher ?? "", hooks: e.hooks ?? [] }
+        : { matcher: "", hooks: [e as FlatHook] };
     const added: string[] = [];
+    const migrated: string[] = [];
     for (const [ccEvent, cmd] of Object.entries(CC_HOOK_NOTIFY_CMDS)) {
-      const entries = ccHooks[ccEvent] ?? [];
-      const alreadyWired = entries.some(
-        (e) =>
-          typeof e.command === "string" &&
-          (e.command.includes(cmd) || e.command.includes(`notify ${ccEvent}`)),
+      const rawEntries = ccHooks[ccEvent] ?? [];
+      const hadLegacy = rawEntries.some((e) => !isNested(e));
+      const normalized: NestedHook[] = rawEntries.map(normalize);
+      const alreadyWired = normalized.some((entry) =>
+        (entry.hooks ?? []).some(
+          (h) =>
+            typeof h.command === "string" &&
+            (h.command.includes(cmd) ||
+              h.command.includes(`notify ${ccEvent}`)),
+        ),
       );
       if (!alreadyWired) {
-        ccHooks[ccEvent] = [...entries, { type: "command", command: cmd }];
+        normalized.push({
+          matcher: "",
+          hooks: [{ type: "command", command: cmd }],
+        });
         added.push(ccEvent);
       }
+      if (!alreadyWired || hadLegacy) {
+        ccHooks[ccEvent] = normalized;
+        if (hadLegacy) migrated.push(ccEvent);
+      }
     }
-    if (added.length > 0) {
+    if (added.length > 0 || migrated.length > 0) {
       ccSettings.hooks = ccHooks;
       writeFileSync(ccSettingsPath, `${JSON.stringify(ccSettings, null, 2)}\n`);
-      process.stderr.write(
-        `  ✓ CC hooks — wired ${added.length} automation hook(s) in ${ccSettingsPath}\n     Added: ${added.join(", ")}\n\n`,
-      );
+      const addMsg =
+        added.length > 0
+          ? `  ✓ CC hooks — wired ${added.length} automation hook(s) in ${ccSettingsPath}\n     Added: ${added.join(", ")}\n`
+          : "";
+      const migMsg =
+        migrated.length > 0
+          ? `  ✓ CC hooks — migrated ${migrated.length} legacy entrie(s) to matcher+hooks format\n     Migrated: ${migrated.join(", ")}\n`
+          : "";
+      process.stderr.write(`${addMsg}${migMsg}\n`);
     } else {
       process.stderr.write(
         `  ✓ CC hooks — already wired in ${ccSettingsPath}\n\n`,
