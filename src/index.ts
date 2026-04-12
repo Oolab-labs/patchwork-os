@@ -1071,6 +1071,64 @@ Steps performed:
   );
   process.stdout.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
+  // Step 6: Verify setup
+  process.stdout.write("\n📋 Setup verification:\n");
+  process.stdout.write(
+    shimOnPath
+      ? "  ✓ bridge on PATH\n"
+      : '  ✗ bridge not on PATH — add npm global bin to your PATH (e.g. export PATH="$(npm bin -g):$PATH")\n',
+  );
+
+  let mcpWired = false;
+  try {
+    const claudeJsonPath = path.join(os.homedir(), ".claude.json");
+    const cj = JSON.parse(readFileSync(claudeJsonPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    mcpWired = !!(
+      cj?.mcpServers &&
+      typeof cj.mcpServers === "object" &&
+      (cj.mcpServers as Record<string, unknown>)["claude-ide-bridge"]
+    );
+  } catch {
+    /* file may not exist yet — non-fatal */
+  }
+  process.stdout.write(
+    mcpWired
+      ? "  ✓ MCP shim registered in ~/.claude.json\n"
+      : "  ✗ MCP shim not found in ~/.claude.json — re-run init or check Step 3 output above\n",
+  );
+
+  let hooksWired = false;
+  try {
+    const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
+    const sj = JSON.parse(readFileSync(settingsPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    const hooksObj = sj?.hooks;
+    if (hooksObj && typeof hooksObj === "object") {
+      hooksWired = (
+        Object.values(hooksObj as Record<string, unknown[]>).flat() as unknown[]
+      ).some(
+        (e) =>
+          typeof (e as Record<string, string | undefined>)?.command ===
+            "string" &&
+          ((e as Record<string, string>).command ?? "").includes(
+            "claude-ide-bridge",
+          ),
+      );
+    }
+  } catch {
+    /* file may not exist yet — non-fatal */
+  }
+  process.stdout.write(
+    hooksWired
+      ? "  ✓ CC hooks wired in ~/.claude/settings.json\n"
+      : "  ✗ CC hooks not wired — re-run init to add them\n",
+  );
+
   // Analytics opt-in prompt — only ask once; skip if preference already set
   const existingPref = getAnalyticsPref();
   if (existingPref === null) {

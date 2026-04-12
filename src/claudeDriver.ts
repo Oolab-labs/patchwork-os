@@ -54,15 +54,33 @@ export class SubprocessDriver implements IClaudeDriver {
         // Deny destructive publishing/deployment commands in headless automation tasks.
         // These should never be triggered automatically — only by explicit user intent.
         deny: [
+          // Publishing / release
           "Bash(npm publish*)",
           "Bash(npm version*)",
           "Bash(yarn publish*)",
           "Bash(pnpm publish*)",
+          "Bash(npx semantic-release*)",
+          "Bash(npx release-it*)",
+          // Git remote / tagging
           "Bash(git push*)",
           "Bash(git tag*)",
           "Bash(gh release*)",
-          "Bash(npx semantic-release*)",
-          "Bash(npx release-it*)",
+          // Destructive git operations
+          "Bash(git reset --hard*)",
+          "Bash(git clean -f*)",
+          // Filesystem destruction
+          "Bash(rm -rf *)",
+          "Bash(rm -rf/*)",
+          // Privilege escalation
+          "Bash(sudo *)",
+          "Bash(chmod 777*)",
+          // Arbitrary code execution
+          "Bash(eval *)",
+          "Bash(curl *|*)",
+          "Bash(wget *|*)",
+          // Process termination
+          "Bash(kill -9 *)",
+          "Bash(pkill *)",
         ],
       },
     });

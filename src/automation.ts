@@ -1030,8 +1030,8 @@ export class AutomationHooks {
         .join("\n");
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt
-          ?.replace(
+        (cfg.prompt ?? "")
+          .replace(
             /\{\{file\}\}/g,
             untrustedBlock("FILE PATH", safeFilePath, nonce),
           )
@@ -1109,7 +1109,7 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt?.replace(
+        (cfg.prompt ?? "").replace(
           /\{\{cwd\}\}/g,
           untrustedBlock("CWD", safeCwd, nonce),
         ) ?? "";
@@ -1291,7 +1291,7 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt?.replace(
+        (cfg.prompt ?? "").replace(
           /\{\{file\}\}/g,
           untrustedBlock("FILE PATH", safeFilePath, nonce),
         ) ?? "";
@@ -1388,7 +1388,7 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt?.replace(
+        (cfg.prompt ?? "").replace(
           /\{\{file\}\}/g,
           untrustedBlock("FILE PATH", safeFilePath, nonce),
         ) ?? "";
@@ -1503,8 +1503,8 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt
-          ?.replace(
+        (cfg.prompt ?? "")
+          .replace(
             /\{\{runner\}\}/g,
             untrustedBlock("TEST RUNNER", runnerStr, nonce),
           )
@@ -1626,8 +1626,8 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt
-          ?.replace(
+        (cfg.prompt ?? "")
+          .replace(
             /\{\{hash\}\}/g,
             untrustedBlock("COMMIT HASH", safeHash, nonce),
           )
@@ -1724,8 +1724,8 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt
-          ?.replace(
+        (cfg.prompt ?? "")
+          .replace(
             /\{\{remote\}\}/g,
             untrustedBlock("REMOTE", safeRemote, nonce),
           )
@@ -1806,8 +1806,8 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt
-          ?.replace(
+        (cfg.prompt ?? "")
+          .replace(
             /\{\{remote\}\}/g,
             untrustedBlock("REMOTE", safeRemote, nonce),
           )
@@ -1896,8 +1896,8 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt
-          ?.replace(
+        (cfg.prompt ?? "")
+          .replace(
             /\{\{branch\}\}/g,
             untrustedBlock("BRANCH", safeBranch, nonce),
           )
@@ -1985,8 +1985,8 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt
-          ?.replace(/\{\{url\}\}/g, untrustedBlock("PR URL", safeUrl, nonce))
+        (cfg.prompt ?? "")
+          .replace(/\{\{url\}\}/g, untrustedBlock("PR URL", safeUrl, nonce))
           .replace(/\{\{number\}\}/g, safeNumber)
           .replace(
             /\{\{title\}\}/g,
@@ -2136,8 +2136,8 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt
-          ?.replace(
+        (cfg.prompt ?? "")
+          .replace(
             /\{\{tool\}\}/g,
             untrustedBlock("TOOL NAME", safeTool, nonce),
           )
@@ -2213,7 +2213,7 @@ export class AutomationHooks {
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
-        cfg.prompt?.replace(
+        (cfg.prompt ?? "").replace(
           /\{\{file\}\}/g,
           untrustedBlock("FILE PATH", safeFilePath, nonce),
         ) ?? "";
