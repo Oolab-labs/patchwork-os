@@ -39,3 +39,8 @@ scripts/test-rg.mjs
 # Demo recording
 demo-script.md
 demo-project/
+
+# Visual skill output (/ide-diagnostics-board, /ide-coverage, /ide-deps)
+diagnostics-*.html
+coverage-*.html
+deps-*.html
