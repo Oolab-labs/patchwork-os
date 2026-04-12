@@ -192,6 +192,15 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onCwdChanged` — fires when Claude Code CWD changes (CC 2.1.83+). Placeholder: `{{cwd}}`.
 - **Shared options**: all hooks support inline `prompt` string or `promptName`/`promptArgs` named prompt references. All support `cooldownMs` (min 5000).
 - **Cooldown**: minimum 5 seconds between triggers for the same file/event. Max prompt size: 32KB.
+- **CC hook wiring** — hooks that rely on Claude Code's own hook system need MCP notify tools called from `settings.json`. The bridge registers these automatically when `--automation` is active:
+
+  | CC hook event | Bridge MCP tool to call | Example settings.json entry |
+  |---|---|---|
+  | `PostCompact` | `notifyPostCompact` | `"PostCompact": [{"command": "claude --mcp ... notifyPostCompact"}]` |
+  | `InstructionsLoaded` | `notifyInstructionsLoaded` | `"InstructionsLoaded": [{"command": "claude --mcp ... notifyInstructionsLoaded"}]` |
+  | `TaskCreated` | `notifyTaskCreated` | `"TaskCreated": [{"command": "claude --mcp ... notifyTaskCreated --taskId $TASK_ID --prompt $PROMPT"}]` |
+  | `PermissionDenied` | `notifyPermissionDenied` | `"PermissionDenied": [{"command": "claude --mcp ... notifyPermissionDenied --tool $TOOL --reason $REASON"}]` |
+  | `CwdChanged` | `notifyCwdChanged` | `"CwdChanged": [{"command": "claude --mcp ... notifyCwdChanged --cwd $CWD"}]` |
 
 ## Transport & Session Model
 
