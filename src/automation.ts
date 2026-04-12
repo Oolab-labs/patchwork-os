@@ -2405,6 +2405,7 @@ export class AutomationHooks {
     onBranchCheckout: { enabled: boolean; cooldownMs: number } | null;
     onPullRequest: { enabled: boolean; cooldownMs: number } | null;
     onTaskCreated: { enabled: boolean; cooldownMs: number } | null;
+    onInstructionsLoaded: { enabled: boolean } | null;
     onPermissionDenied: { enabled: boolean; cooldownMs: number } | null;
     onDiagnosticsCleared: { enabled: boolean; cooldownMs: number } | null;
     onTaskSuccess: { enabled: boolean; cooldownMs: number } | null;
@@ -2485,6 +2486,9 @@ export class AutomationHooks {
             enabled: p.onTaskCreated.enabled,
             cooldownMs: p.onTaskCreated.cooldownMs,
           }
+        : null,
+      onInstructionsLoaded: p.onInstructionsLoaded
+        ? { enabled: p.onInstructionsLoaded.enabled }
         : null,
       onPermissionDenied: p.onPermissionDenied
         ? {

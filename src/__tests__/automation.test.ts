@@ -757,6 +757,26 @@ describe("AutomationHooks.handleInstructionsLoaded", () => {
     expect(() => hooks.handleInstructionsLoaded()).not.toThrow();
     expect(threw).toBe(false);
   });
+
+  it("getStatus includes onInstructionsLoaded", () => {
+    const hooks = new AutomationHooks(
+      {
+        onInstructionsLoaded: {
+          enabled: true,
+          prompt: "Session started.",
+        },
+      },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    const status = hooks.getStatus();
+    expect(status.onInstructionsLoaded).toEqual({ enabled: true });
+  });
+
+  it("getStatus returns null for onInstructionsLoaded when not configured", () => {
+    const hooks = new AutomationHooks({}, makeInstantOrchestrator(), () => {});
+    expect(hooks.getStatus().onInstructionsLoaded).toBeNull();
+  });
 });
 
 // ── onPostCompact ─────────────────────────────────────────────────────────────
