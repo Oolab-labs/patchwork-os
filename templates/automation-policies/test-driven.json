@@ -14,7 +14,7 @@
     "enabled": true,
     "cooldownMs": 15000,
     "minSeverity": "error",
-    "diagnosticTypes": ["typescript"],
+    "diagnosticTypes": ["ts"],
     "prompt": "Type error in {{file}}:\n\n{{diagnostics}}\n\nDo NOT fix the error yet. First: call getCallHierarchy (incoming) to understand what depends on this symbol. Then explain what the type error means and what the safest fix would be. Keep response ≤12 lines."
   },
 

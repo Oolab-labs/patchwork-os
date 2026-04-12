@@ -14,7 +14,7 @@
     "enabled": true,
     "cooldownMs": 10000,
     "minSeverity": "warning",
-    "diagnosticTypes": ["typescript", "eslint", "biome"],
+    "diagnosticTypes": ["ts", "eslint", "biome"],
     "prompt": "Lint/type issue in {{file}}:\n\n{{diagnostics}}\n\nCall fixAllLintErrors to auto-fix, then explain any issues that require manual attention. Keep response ≤10 lines."
   },
 
