@@ -108,7 +108,7 @@ describe("createContextBundleTool", () => {
     expect(content.handoffNote).toBeUndefined();
   });
 
-  it("truncates activeFileContent at 32KB", async () => {
+  it("truncates activeFileContent at 16KB", async () => {
     const longContent = "x".repeat(40000);
     const client = makeExtensionClient({ fileContent: longContent });
     const tool = createContextBundleTool("/workspace", client as never);
@@ -117,7 +117,7 @@ describe("createContextBundleTool", () => {
       (result.content as Array<{ text: string }>)[0]!.text,
     );
     expect(content.activeFileContent?.length).toBeLessThan(40000);
-    expect(content.activeFileContent).toContain("[truncated]");
+    expect(content.activeFileContent).toContain("truncated at 16KB");
   });
 
   it("gracefully handles getDiagnostics failure", async () => {

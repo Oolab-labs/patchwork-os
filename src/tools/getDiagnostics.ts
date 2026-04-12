@@ -160,7 +160,7 @@ export function createGetDiagnosticsTool(
           maxResults: {
             type: "number",
             description:
-              "Limit the number of diagnostics returned. Default: 500. Use a lower value for large projects.",
+              "Limit the number of diagnostics returned. Default: 100, max: 2000.",
           },
         },
       },
@@ -216,7 +216,7 @@ export function createGetDiagnosticsTool(
       const maxResults =
         typeof args.maxResults === "number"
           ? Math.min(Math.max(1, Math.floor(args.maxResults)), 2000)
-          : 500;
+          : 100;
 
       const SEVERITY_RANK: Record<string, number> = {
         error: 3,
