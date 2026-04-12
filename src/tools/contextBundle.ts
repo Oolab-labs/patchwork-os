@@ -100,10 +100,11 @@ export function createContextBundleTool(
       ) {
         const content = activeFileContentResult.value;
         if (typeof content === "string") {
-          // Truncate to 32KB to keep context manageable
+          // Truncate to 16KB to keep context manageable
           bundle.activeFileContent =
-            content.length > 32768
-              ? content.slice(0, 32768) + "\n…[truncated]"
+            content.length > 16384
+              ? content.slice(0, 16384) +
+                "\n[file truncated at 16KB — use getBufferContent for full content]"
               : content;
         }
       }

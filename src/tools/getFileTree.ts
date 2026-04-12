@@ -23,7 +23,8 @@ const IGNORED_DIRS = new Set([
   "coverage",
   ".cache",
 ]);
-const MAX_ENTRIES = 2000;
+const MAX_ENTRIES = 500;
+const MAX_ENTRIES_HARD_CAP = 2000;
 
 export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
   return {
@@ -50,6 +51,12 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
             type: "boolean",
             description: "Include hidden files/dirs (default: false)",
           },
+          maxEntries: {
+            type: "integer",
+            description: "Max entries to return (default: 500, max: 2000)",
+            minimum: 1,
+            maximum: 2000,
+          },
         },
         additionalProperties: false as const,
       },
@@ -68,6 +75,10 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
       const directory = optionalString(args, "directory", 500);
       const maxDepth = optionalInt(args, "maxDepth", 1, 10) ?? 3;
       const includeHidden = optionalBool(args, "includeHidden") ?? false;
+      const effectiveLimit = Math.min(
+        optionalInt(args, "maxEntries", 1, MAX_ENTRIES_HARD_CAP) ?? MAX_ENTRIES,
+        MAX_ENTRIES_HARD_CAP,
+      );
 
       const targetDir = directory
         ? resolveFilePath(directory, workspace)
@@ -98,11 +109,11 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
             const rel = relBase ? e.slice(relBase.length + 1) : e;
             return rel.split("/").length <= maxDepth;
           });
-          entries = entries.slice(0, MAX_ENTRIES);
+          entries = entries.slice(0, effectiveLimit);
           return successStructuredLarge({
             entries,
             total: entries.length,
-            truncated: entries.length >= MAX_ENTRIES,
+            truncated: entries.length >= effectiveLimit,
             tool: "git",
           });
         }
@@ -111,7 +122,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
       // Fallback: async fs.readdir
       const entries: string[] = [];
       async function walk(dir: string, depth: number): Promise<void> {
-        if (depth > maxDepth || entries.length >= MAX_ENTRIES) return;
+        if (depth > maxDepth || entries.length >= effectiveLimit) return;
         let items: fs.Dirent[];
         try {
           items = await fs.promises.readdir(dir, { withFileTypes: true });
@@ -119,7 +130,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
           return;
         }
         for (const item of items) {
-          if (entries.length >= MAX_ENTRIES) break;
+          if (entries.length >= effectiveLimit) break;
           if (!includeHidden && item.name.startsWith(".")) continue;
           if (item.isDirectory() && IGNORED_DIRS.has(item.name)) continue;
           const rel = path.relative(workspace, path.join(dir, item.name));
@@ -132,7 +143,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
       return successStructuredLarge({
         entries,
         total: entries.length,
-        truncated: entries.length >= MAX_ENTRIES,
+        truncated: entries.length >= effectiveLimit,
         tool: "fs",
       });
     },
