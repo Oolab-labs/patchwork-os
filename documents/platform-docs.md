@@ -269,17 +269,17 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | `onDiagnosticsCleared` | Errors/warnings drop to zero for a file (non-zero → zero transition) | `{{file}}` | — |
 | `onFileSave` | Matching file saved (explicit save, Ctrl+S) | `{{file}}` | `patterns`: minimatch globs |
 | `onFileChanged` | Matching file buffer changes (before save; also external writes) | `{{file}}` | `patterns`: minimatch globs. Requires CC 2.1.83+ |
-| `onPostCompact` | Claude Code compacts conversation context | — | Use to re-inject IDE state. Requires CC 2.1.76+ |
-| `onInstructionsLoaded` | Session starts / CLAUDE.md reloads | — | No cooldown. Requires CC 2.1.76+ |
 | `onGitCommit` | `gitCommit` tool succeeds | `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}` | `{{files}}` is a delimiter-wrapped list (max 20 entries) |
 | `onGitPush` | `gitPush` tool succeeds | `{{remote}}`, `{{branch}}`, `{{hash}}` | — |
 | `onBranchCheckout` | `gitCheckout` tool succeeds | `{{branch}}`, `{{previousBranch}}`, `{{created}}` | `{{previousBranch}}` is `"(detached HEAD)"` when applicable |
 | `onPullRequest` | `githubCreatePR` tool succeeds | `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}` | `{{number}}` is `"(unknown)"` if not returned |
 | `onTestRun` | `runTests` tool completes | `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` | `{{failures}}` is a **JSON array of strings** — each entry is one failure message/test name. `onFailureOnly: true` (default) skips passing runs |
-| `onTaskCreated` | Claude Code `TaskCreated` hook fires (Claude spawns a subagent) | `{{taskId}}`, `{{prompt}}` | `{{prompt}}` truncated to 500 chars. Requires CC 2.1.84+ |
+| `onTaskCreated` | Claude Code `TaskCreated` hook fires (Claude spawns a subagent) | `{{taskId}}`, `{{prompt}}` | Trigger via `notifyTaskCreated` MCP tool. `{{prompt}}` truncated to 500 chars. Requires CC 2.1.84+ |
 | `onTaskSuccess` | Orchestrator Claude task completes with status `done` | `{{taskId}}`, `{{output}}` | — |
-| `onPermissionDenied` | Claude Code `PermissionDenied` hook fires (tool call blocked) | `{{tool}}`, `{{reason}}` | Requires CC 2.1.89+ |
+| `onPermissionDenied` | Claude Code `PermissionDenied` hook fires (tool call blocked) | `{{tool}}`, `{{reason}}` | Trigger via `notifyPermissionDenied` MCP tool. Requires CC 2.1.89+ |
 | `onCwdChanged` | Claude Code working directory changes | `{{cwd}}` | Trigger via `notifyCwdChanged` MCP tool from a CC CwdChanged hook. Requires CC 2.1.83+ |
+| `onPostCompact` | Claude Code compacts conversation context | — | Trigger via `notifyPostCompact` MCP tool. Requires CC 2.1.76+ |
+| `onInstructionsLoaded` | Session starts / CLAUDE.md reloads | — | Trigger via `notifyInstructionsLoaded` MCP tool. No cooldown. Requires CC 2.1.76+ |
 
 **Shared options** (apply to all hooks):
 
@@ -288,6 +288,18 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 - `promptArgs` (object) — arguments passed to the named prompt; values support `{{placeholder}}` substitution
 - `cooldownMs` (integer, min 5000) — minimum milliseconds between triggers for the same file/event
 - **Loop guard** — if the hook's own Claude task is still `pending` or `running`, a re-trigger is suppressed automatically
+
+**Claude Code hook wiring** — hooks that depend on CC's built-in hook events (`PostCompact`, `InstructionsLoaded`, `TaskCreated`, `PermissionDenied`, `CwdChanged`) require a `settings.json` entry that calls the corresponding bridge MCP notify tool:
+
+| CC hook event | Bridge MCP tool | CC version |
+|---|---|---|
+| `PostCompact` | `notifyPostCompact` | 2.1.76+ |
+| `InstructionsLoaded` | `notifyInstructionsLoaded` | 2.1.76+ |
+| `TaskCreated` | `notifyTaskCreated --taskId $TASK_ID --prompt $PROMPT` | 2.1.84+ |
+| `PermissionDenied` | `notifyPermissionDenied --tool $TOOL --reason $REASON` | 2.1.89+ |
+| `CwdChanged` | `notifyCwdChanged --cwd $CWD` | 2.1.83+ |
+
+All five notify tools are registered automatically when `--automation` is active. Hooks triggered directly by bridge tool calls (`onGitCommit`, `onFileSave`, etc.) need no extra wiring.
 
 **Claude Code hooks (settings.json)** can narrow when bridge-invoked shell scripts fire using the `if` field (Claude Code 2.1.85+). Uses permission-rule syntax:
 
