@@ -4,11 +4,11 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.23.10 — 2026-04-12)
+## Current State (v2.24.1 — 2026-04-12)
 
 - **Slim mode default**: 56 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection, `watchActivityLog`, `contextBundle`); `--full` restores all tools; plugin tools always bypass slim filter
 - **Token-efficient `tools/list`**: all tool descriptions ≤200 chars (slim ≤160), CI audit check #6 enforces limit; `scripts/measure-tools-list.mjs` tracks payload size
-- **2,040 bridge tests / 143 files + 564 extension tests / 35 files = 2,604 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **2,105 bridge tests / 147 files + 564 extension tests / 35 files = 2,669 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - **31 MCP prompts** (slash commands): 15 general/Dispatch + 13 LSP-composition + 3 visual skills (`/ide-coverage`, `/ide-deps`, `/ide-diagnostics-board`)
 - **12 plugin skills**, **4 subagents** (including `ide-architect`)
 - **59 tools with `outputSchema`/`structuredContent`**; CI audit enforces coverage
@@ -36,6 +36,23 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.24.1 shipped (2026-04-12) — Automation dedupe + timeout observability:**
+- Content-aware dedupe for `onDiagnosticsError`: `diagnosticSignature()` order-independent sha256 over `severity|code|source|message`; new policy fields `dedupeByContent` + `dedupeContentCooldownMs` (default 900s); cooldown key extends to `diagnostics:${file}:${sig}` when enabled. `automation-policy.json` opted in.
+- Driven by live `/tasks` data: 48 duplicate `onDiagnosticsError` tasks/day on a single file (LSP re-emission thrash); v2.24.1 expected to cut that to ≤2–3/day.
+- `SubprocessDriver.run()` now returns `{ wasAborted: true, stderrTail, exitCode: -1 }` on abort instead of throwing. Non-abort errors (ENOENT etc.) still throw. Orchestrator's try block handles `result.wasAborted`; fallback catch block preserves throw-on-abort driver compat.
+- `ClaudeTask.cancelReason`: `"timeout" | "user" | "shutdown"`. Private `cancelReasons` map populated by `cancel(id, reason?)` before `controller.abort()`. `_runTask` tracks `timedOut` flag in the setTimeout callback; distinguishes internal timeout from explicit cancels.
+- `GET /tasks` exposes `cancelReason`, `stderrTail` (500-char cap), `wasAborted`. Previously 24% of tasks timed out silently with empty output — now surface stderr tail for root-cause investigation.
+- Tests 2091→2105 (+14): 5 dedupe + 5 cancel-reason + 4 driver-contract.
+
+**v2.24.0 shipped (2026-04-12) — DX polish & stability:**
+- 13 sites in `src/automation.ts` converted from `cfg.prompt?.replace(...)` to `(cfg.prompt ?? "").replace(...)` — eliminates Biome-induced optional-chain type hazard where chained `.replace()` calls could silently return `undefined` at runtime.
+- CI grep gate (PCRE, `-P`) added after lint step in `.github/workflows/ci.yml` to guard against the pattern re-entering.
+- 2 new `diagnosticTypes` regression tests: `source: "ts"` + policy `["ts"]` fires; `source: "ts"` + policy `["typescript"]` does not — guards the v2.23.1 fix.
+- New `automation.integration.test.ts`: 5 end-to-end tests using real `Server` + `makeInstantOrchestrator` covering onDiagnosticsError, onFileSave, onGitCommit, onTestRun placeholder substitution, plus live `POST /notify` route for onPostCompact.
+- `SubprocessDriver` `permissions.deny` extended with 11 more `Bash(...)` entries: `rm -rf`, `git reset --hard`, `git clean -f`, `sudo`, `eval`, pipe-to-shell, `kill -9`, `pkill` — defends against crafted prompts or file paths triggering destructive shell.
+- `init` Step 6 verification: reports ✓/✗ for bridge-on-PATH, MCP shim in `~/.claude.json`, CC hooks in `~/.claude/settings.json`.
+- Tests 2084→2091 (+7).
 
 **v2.23.0–2.23.10 shipped (2026-04-12) — CC hook wiring + automation polish:**
 - `POST /notify` HTTP endpoint (auth-protected): dispatches CC lifecycle events directly to `AutomationHooks` handlers without a full MCP session; accepts `{ event, args }` JSON body
