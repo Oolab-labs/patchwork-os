@@ -465,6 +465,18 @@ function validatePromptSource(hookName: string, cfg: PromptSource): void {
       );
     }
   }
+  if (cfg.model !== undefined) {
+    if (typeof cfg.model !== "string" || cfg.model.trim() === "") {
+      throw new Error(`"${hookName}.model" must be a non-empty string`);
+    }
+  }
+  if (cfg.effort !== undefined) {
+    if (!["low", "medium", "high", "max"].includes(cfg.effort)) {
+      throw new Error(
+        `"${hookName}.effort" must be one of "low", "medium", "high", "max"`,
+      );
+    }
+  }
 }
 
 /** Load and validate a JSON automation policy file. Throws on any failure. */

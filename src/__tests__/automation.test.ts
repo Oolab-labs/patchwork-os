@@ -4626,6 +4626,58 @@ describe("token-efficiency: loadPolicy validation", () => {
       expect(() => loadPolicy(p)).not.toThrow();
     }
   });
+
+  it("rejects invalid effort value on a hook", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 10_000,
+          effort: "ultra",
+        },
+      }),
+    );
+    expect(() => loadPolicy(p)).toThrow(/onFileSave\.effort/);
+  });
+
+  it("rejects empty model string on a hook", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 10_000,
+          model: "",
+        },
+      }),
+    );
+    expect(() => loadPolicy(p)).toThrow(/onFileSave\.model/);
+  });
+
+  it("accepts valid per-hook model and effort", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 10_000,
+          model: "claude-sonnet-4-6",
+          effort: "high",
+        },
+      }),
+    );
+    expect(() => loadPolicy(p)).not.toThrow();
+  });
 });
 
 describe("token-efficiency: _enqueueAutomationTask passes model/effort/systemPrompt", () => {

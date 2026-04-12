@@ -204,3 +204,48 @@ describe("listClaudeTasks", () => {
     expect(result.isError).toBe(true);
   });
 });
+
+describe("runClaudeTask systemPrompt validation", () => {
+  it("accepts valid systemPrompt and stores it on the task", async () => {
+    let capturedSystemPrompt: string | undefined;
+    const driver: IClaudeDriver = {
+      name: "capture",
+      async run(input) {
+        capturedSystemPrompt = (input as any).systemPrompt;
+        return { text: "ok", exitCode: 0, durationMs: 1 };
+      },
+    };
+    const orch = makeOrchestrator(driver);
+    const tool = createRunClaudeTaskTool(orch, "s1", os.tmpdir());
+    const result = await tool.handler({
+      prompt: "hello",
+      systemPrompt: "Be concise.",
+    });
+    expect(result.isError).toBeUndefined();
+    // Task stores systemPrompt
+    const { taskId } = resultData(result) as { taskId: string };
+    const task = orch.list().find((t) => t.id === taskId);
+    expect(task?.systemPrompt).toBe("Be concise.");
+  });
+
+  it("rejects systemPrompt exceeding 4096 chars", async () => {
+    const orch = makeOrchestrator();
+    const tool = createRunClaudeTaskTool(orch, "s1", os.tmpdir());
+    const result = await tool.handler({
+      prompt: "hello",
+      systemPrompt: "x".repeat(4097),
+    });
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toMatch(/systemPrompt/);
+  });
+
+  it("accepts systemPrompt at exactly 4096 chars", async () => {
+    const orch = makeOrchestrator();
+    const tool = createRunClaudeTaskTool(orch, "s1", os.tmpdir());
+    const result = await tool.handler({
+      prompt: "hello",
+      systemPrompt: "x".repeat(4096),
+    });
+    expect(result.isError).toBeUndefined();
+  });
+});
