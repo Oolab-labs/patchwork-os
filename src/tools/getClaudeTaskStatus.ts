@@ -31,12 +31,16 @@ export function createGetClaudeTaskStatusTool(
         properties: {
           taskId: { type: "string" },
           status: { type: "string" },
+          cancelReason: { type: "string" },
           createdAt: { type: "number" },
           startedAt: { type: "number" },
           doneAt: { type: "number" },
           output: { type: "string" },
+          stderrTail: { type: "string" },
+          wasAborted: { type: "boolean" },
           errorMessage: { type: "string" },
           timeoutMs: { type: "number" },
+          hint: { type: "string" },
         },
         required: ["taskId", "status", "createdAt"],
       },
@@ -66,16 +70,25 @@ export function createGetClaudeTaskStatusTool(
         );
       }
 
+      const hint =
+        task.status === "cancelled" && task.cancelReason === "timeout"
+          ? "Task timed out. Use resumeClaudeTask to retry with a longer timeoutMs."
+          : undefined;
+
       return successStructured({
         taskId: task.id,
         status: task.status,
+        cancelReason: task.cancelReason,
         createdAt: task.createdAt,
         startedAt: task.startedAt,
         doneAt: task.doneAt,
         // Truncate output to 500 chars in the response — full output in task.output (50KB cap)
         output: task.output ? task.output.slice(0, 500) : undefined,
+        stderrTail: task.stderrTail ? task.stderrTail.slice(-500) : undefined,
+        wasAborted: task.wasAborted,
         errorMessage: task.errorMessage,
         timeoutMs: task.timeoutMs,
+        hint,
       });
     },
   };

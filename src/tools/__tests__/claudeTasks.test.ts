@@ -151,6 +151,41 @@ describe("getClaudeTaskStatus — task lookup and authorization", () => {
     const result = parse(await tool.handler({ taskId: "task-1" }));
     expect(result.output).toBeUndefined();
   });
+
+  it("adds resume hint when task cancelled due to timeout", async () => {
+    const orch = makeOrchestrator({
+      "task-1": makeTask({
+        status: "cancelled",
+        cancelReason: "timeout",
+        wasAborted: true,
+      }),
+    });
+    const tool = createGetClaudeTaskStatusTool(orch, "session-A");
+    const result = parse(await tool.handler({ taskId: "task-1" }));
+    expect(result.cancelReason).toBe("timeout");
+    expect(result.wasAborted).toBe(true);
+    expect(result.hint).toMatch(/resumeClaudeTask/i);
+  });
+
+  it("omits hint when cancelled by user (not timeout)", async () => {
+    const orch = makeOrchestrator({
+      "task-1": makeTask({ status: "cancelled", cancelReason: "user" }),
+    });
+    const tool = createGetClaudeTaskStatusTool(orch, "session-A");
+    const result = parse(await tool.handler({ taskId: "task-1" }));
+    expect(result.cancelReason).toBe("user");
+    expect(result.hint).toBeUndefined();
+  });
+
+  it("forwards stderrTail capped at 500 chars", async () => {
+    const longStderr = "e".repeat(600);
+    const orch = makeOrchestrator({
+      "task-1": makeTask({ stderrTail: longStderr }),
+    });
+    const tool = createGetClaudeTaskStatusTool(orch, "session-A");
+    const result = parse(await tool.handler({ taskId: "task-1" }));
+    expect(result.stderrTail).toHaveLength(500);
+  });
 });
 
 // ── listClaudeTasks ───────────────────────────────────────────────────────────
