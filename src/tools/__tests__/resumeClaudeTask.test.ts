@@ -122,4 +122,73 @@ describe("resumeClaudeTask", () => {
     expect(result.isError).toBe(true);
     expect(parse(result).error).toMatch(/queue full/);
   });
+
+  // ── effort / fallbackModel / maxBudgetUsd inheritance + overrides ───────────
+
+  it("inherits effort, fallbackModel, maxBudgetUsd from original task", async () => {
+    const task = makeTask({
+      status: "cancelled",
+      effort: "high",
+      fallbackModel: "claude-haiku-4-5-20251001",
+      maxBudgetUsd: 1.0,
+    });
+    const orch = makeOrchestrator(task);
+    const tool = createResumeClaudeTaskTool(orch, "session-1");
+    await tool.handler({ taskId: "task-abc" });
+    expect(orch.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effort: "high",
+        fallbackModel: "claude-haiku-4-5-20251001",
+        maxBudgetUsd: 1.0,
+      }),
+    );
+  });
+
+  it("overrides timeoutMs when provided", async () => {
+    const task = makeTask({ status: "cancelled", timeoutMs: 60_000 });
+    const orch = makeOrchestrator(task);
+    const tool = createResumeClaudeTaskTool(orch, "session-1");
+    await tool.handler({ taskId: "task-abc", timeoutMs: 300_000 });
+    expect(orch.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ timeoutMs: 300_000 }),
+    );
+  });
+
+  it("overrides effort when provided", async () => {
+    const task = makeTask({ status: "cancelled", effort: "medium" });
+    const orch = makeOrchestrator(task);
+    const tool = createResumeClaudeTaskTool(orch, "session-1");
+    await tool.handler({ taskId: "task-abc", effort: "max" });
+    expect(orch.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ effort: "max" }),
+    );
+  });
+
+  it("overrides maxBudgetUsd when provided", async () => {
+    const task = makeTask({ status: "cancelled", maxBudgetUsd: 0.5 });
+    const orch = makeOrchestrator(task);
+    const tool = createResumeClaudeTaskTool(orch, "session-1");
+    await tool.handler({ taskId: "task-abc", maxBudgetUsd: 2.0 });
+    expect(orch.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ maxBudgetUsd: 2.0 }),
+    );
+  });
+
+  it("returns error for invalid effort override", async () => {
+    const task = makeTask({ status: "cancelled" });
+    const orch = makeOrchestrator(task);
+    const tool = createResumeClaudeTaskTool(orch, "session-1");
+    const result = await tool.handler({ taskId: "task-abc", effort: "turbo" });
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toMatch(/effort must be one of/i);
+  });
+
+  it("returns error for non-positive maxBudgetUsd override", async () => {
+    const task = makeTask({ status: "cancelled" });
+    const orch = makeOrchestrator(task);
+    const tool = createResumeClaudeTaskTool(orch, "session-1");
+    const result = await tool.handler({ taskId: "task-abc", maxBudgetUsd: 0 });
+    expect(result.isError).toBe(true);
+    expect(parse(result).error).toMatch(/positive number/i);
+  });
 });

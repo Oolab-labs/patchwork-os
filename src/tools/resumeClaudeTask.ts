@@ -25,6 +25,27 @@ export function createResumeClaudeTaskTool(
             description:
               "The ID of the task to resume (must be in done, error, or cancelled state).",
           },
+          timeoutMs: {
+            type: "integer",
+            description:
+              "Override the timeout for the resumed task (ms, 5000–600000). Defaults to the original task's timeoutMs.",
+          },
+          effort: {
+            type: "string",
+            enum: ["low", "medium", "high", "max"],
+            description:
+              "Override the effort level for the resumed task. Defaults to the original task's effort.",
+          },
+          fallbackModel: {
+            type: "string",
+            description:
+              "Override the fallback model for the resumed task. Defaults to the original task's fallbackModel.",
+          },
+          maxBudgetUsd: {
+            type: "number",
+            description:
+              "Override the spend cap in USD for the resumed task. Defaults to the original task's maxBudgetUsd.",
+          },
         },
         required: ["taskId"],
       },
@@ -71,13 +92,71 @@ export function createResumeClaudeTaskTool(
         );
       }
 
+      // Validate optional overrides
+      const MIN_TIMEOUT_MS = 5_000;
+      const MAX_TIMEOUT_MS = 600_000;
+      let timeoutMs = original.timeoutMs;
+      if (args.timeoutMs !== undefined) {
+        const t = args.timeoutMs;
+        if (
+          typeof t !== "number" ||
+          !Number.isInteger(t) ||
+          t < MIN_TIMEOUT_MS ||
+          t > MAX_TIMEOUT_MS
+        ) {
+          return error(
+            `timeoutMs must be an integer between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS}`,
+            ToolErrorCodes.INVALID_ARGS,
+          );
+        }
+        timeoutMs = t;
+      }
+
+      const VALID_EFFORT = ["low", "medium", "high", "max"] as const;
+      type Effort = (typeof VALID_EFFORT)[number];
+      let effort: Effort | undefined = original.effort;
+      if (args.effort !== undefined) {
+        if (
+          typeof args.effort !== "string" ||
+          !(VALID_EFFORT as readonly string[]).includes(args.effort)
+        ) {
+          return error(
+            `effort must be one of: ${VALID_EFFORT.join(", ")}`,
+            ToolErrorCodes.INVALID_ARGS,
+          );
+        }
+        effort = args.effort as Effort;
+      }
+
+      const fallbackModel =
+        args.fallbackModel !== undefined
+          ? typeof args.fallbackModel === "string" &&
+            args.fallbackModel.trim() !== ""
+            ? args.fallbackModel.trim()
+            : original.fallbackModel
+          : original.fallbackModel;
+
+      let maxBudgetUsd = original.maxBudgetUsd;
+      if (args.maxBudgetUsd !== undefined) {
+        if (typeof args.maxBudgetUsd !== "number" || args.maxBudgetUsd <= 0) {
+          return error(
+            "maxBudgetUsd must be a positive number",
+            ToolErrorCodes.INVALID_ARGS,
+          );
+        }
+        maxBudgetUsd = args.maxBudgetUsd;
+      }
+
       try {
         const newTaskId = orchestrator.enqueue({
           prompt: original.prompt,
           contextFiles: original.contextFiles,
-          timeoutMs: original.timeoutMs,
+          timeoutMs,
           sessionId,
           model: original.model,
+          effort,
+          fallbackModel,
+          maxBudgetUsd,
         });
         return successStructured({
           newTaskId,
