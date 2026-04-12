@@ -3589,6 +3589,50 @@ describe("loadPolicy — diagnosticTypes validation", () => {
     expect(() => loadPolicy(p)).toThrow(/diagnosticTypes/);
   });
 
+  it('fires when source is "ts" (actual VS Code TypeScript LSP value) and policy lists "ts"', () => {
+    // regression guard for v2.23.1 fix — VS Code reports source "ts", not "typescript"
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["ts"],
+          prompt: "fix {{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "Type error", severity: "error", source: "ts" },
+    ]);
+    expect(orch.list().length).toBe(1);
+  });
+
+  it('does NOT fire when source is "ts" but policy lists "typescript"', () => {
+    // guards against accidental reversion of v2.23.1 fix
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          diagnosticTypes: ["typescript"],
+          prompt: "fix",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "Type error", severity: "error", source: "ts" },
+    ]);
+    expect(orch.list().length).toBe(0);
+  });
+
   it("throws when diagnosticTypes contains non-strings", () => {
     const p = path.join(tmpDir, "policy.json");
     fs.writeFileSync(

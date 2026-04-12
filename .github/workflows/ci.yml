@@ -25,6 +25,12 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
+      - name: Guard against optional-chaining on prompt variables
+        run: |
+          if grep -nP 'cfg\.prompt\?\..*replace\(' src/automation.ts || grep -nP '^\s+\?\.replace\(' src/automation.ts; then
+            echo "ERROR: optional-chain .replace() on prompt variable — use (cfg.prompt ?? '').replace()" >&2
+            exit 1
+          fi
       - name: Build
         run: npm run build
       - name: Test
