@@ -4,11 +4,16 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.24.1 — 2026-04-12)
+## Current State (v2.25.6 — 2026-04-12)
+
+**v2.25.4–2.25.6 shipped (2026-04-12) — CC hook wiring fixes + cleanup:**
+- v2.25.4: `init` now writes CC hook entries in Claude Code's required `{matcher, hooks:[...]}` nested format; auto-migrates legacy flat entries it manages. `checkCcHookWiring()` reads both formats for backward-compat. Fixes settings validation error that silently dropped the entire `hooks` block.
+- v2.25.5: Removed 5 redundant MCP notify tools (`notifyPostCompact`, `notifyInstructionsLoaded`, `notifyTaskCreated`, `notifyPermissionDenied`, `notifyCwdChanged`) — `claude-ide-bridge notify <Event>` → `POST /notify` is now the sole path. AutomationHooks handlers untouched.
+- v2.25.6: `onInstructionsLoaded` was missing from `getStatus()` return type and value — now correctly surfaces in `getBridgeStatus` automation block.
 
 - **Slim mode default**: 56 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection, `watchActivityLog`, `contextBundle`); `--full` restores all tools; plugin tools always bypass slim filter
 - **Token-efficient `tools/list`**: all tool descriptions ≤200 chars (slim ≤160), CI audit check #6 enforces limit; `scripts/measure-tools-list.mjs` tracks payload size
-- **2,105 bridge tests / 147 files + 564 extension tests / 35 files = 2,669 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **2,128 bridge tests / 145 files + 564 extension tests / 35 files = 2,692 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - **31 MCP prompts** (slash commands): 15 general/Dispatch + 13 LSP-composition + 3 visual skills (`/ide-coverage`, `/ide-deps`, `/ide-diagnostics-board`)
 - **12 plugin skills**, **4 subagents** (including `ide-architect`)
 - **59 tools with `outputSchema`/`structuredContent`**; CI audit enforces coverage
@@ -57,8 +62,8 @@ Development direction and exploration guidance. Living document — update as pr
 **v2.23.0–2.23.10 shipped (2026-04-12) — CC hook wiring + automation polish:**
 - `POST /notify` HTTP endpoint (auth-protected): dispatches CC lifecycle events directly to `AutomationHooks` handlers without a full MCP session; accepts `{ event, args }` JSON body
 - `claude-ide-bridge notify <CcEvent> [--taskId|--prompt|--tool|--reason|--cwd]` CLI subcommand: reads running bridge lock file for port+token, POSTs to `/notify`; usable in `~/.claude/settings.json` hooks
-- 4 new MCP notify tools (`notifyPostCompact`, `notifyInstructionsLoaded`, `notifyTaskCreated`, `notifyPermissionDenied`): MCP path for environments that prefer tool calls over shell commands; same handlers as `/notify`
-- `checkCcHookWiring()` upgraded: recognizes both `notify <CcEvent>` CLI pattern and `notify<CcEvent>` tool-name pattern; `getBridgeStatus` surfaces `unwiredEnabledHooks` and `ccHooksWired` map in `suggestedActions`
+- ~~4 new MCP notify tools~~ (removed in v2.25.5 — use `claude-ide-bridge notify <Event>` CLI + `/notify` HTTP instead)
+- `checkCcHookWiring()` upgraded: recognizes `notify <CcEvent>` CLI pattern in CC settings.json; `getBridgeStatus` surfaces `unwiredEnabledHooks` in `suggestedActions`
 - `init` auto-wires all 5 CC hook entries in `~/.claude/settings.json` (idempotent, step 5 of 6); eliminates most common new-user gap where `--automation` is active but CC-triggered hooks never fire
 - Mystery publish fix (v2.23.5): `SubprocessDriver._writeSettings()` now writes `permissions.deny` list blocking `Bash(npm publish*)`, `Bash(git push*)`, `Bash(npm version*)`; automation subprocess can no longer autonomously publish on release commits
 - `diagnosticTypes` filter bug (v2.23.1): `"typescript"` → `"ts"` in all policy files and preset templates
