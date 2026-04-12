@@ -1,17 +1,19 @@
 ## Claude IDE Bridge
 
 @import .claude/rules/bridge-tools.md
-
 > **BRIDGE TOOL ENFORCEMENT — mandatory when bridge is connected**
-> Do NOT run shell commands. Call MCP bridge tools instead:
+> Do NOT use native Claude Code tools or shell commands for workspace operations:
+> - File reading: `getBufferContent` (not `Read` tool)
+> - File editing: `editText` or `searchAndReplace` (not `Edit`/`Write` tools)
+> - File search: `searchWorkspace` / `findFiles` (not `Grep`/`Glob` tools)
 > - Testing: `runTests` (not `npm test` / `npx vitest`)
 > - Diagnostics: `getDiagnostics` (not `tsc --noEmit` / `npm run lint`)
 > - Git: `gitCommit`, `gitAdd`, `gitPush` (not `git commit` etc.)
-> - Search: `searchWorkspace` (not `grep` / `rg`)
-> - Hover/types: `batchGetHover` (not calling `getHover` in a loop)
+> - Shell commands: `runInTerminal` (not `Bash` tool)
+>
+> **Exceptions:** `Read`/`Edit`/`Write` on files outside the workspace (`~/.claude/`, system paths) have no bridge equivalent.
 >
 > Full substitution table: see `.claude/rules/bridge-tools.md` (loaded above via @import).
-
 The bridge is connected via MCP. The session-start hook reports connection status, tool count, and extension state automatically — check that summary before proceeding. If tools appear missing, call `getBridgeStatus` to diagnose.
 
 ### Bug fix methodology
