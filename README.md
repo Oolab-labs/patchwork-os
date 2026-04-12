@@ -523,7 +523,7 @@ When automation is active, VS Code save/change events, diagnostic errors, and Cl
 | `onDiagnosticsError` | VS Code reports new errors/warnings for a file | `enabled`, `minSeverity` (`error`/`warning`), `prompt` (supports `{{file}}` and `{{diagnostics}}`), `cooldownMs` |
 | `onFileSave` | A file matching `patterns` is explicitly saved (Ctrl+S) | `enabled`, `patterns` (minimatch globs), `prompt` (supports `{{file}}`), `cooldownMs` |
 | `onFileChanged` | Any buffer edit on a matching file (unsaved changes, external writes) — CC 2.1.83+ | `enabled`, `patterns` (minimatch globs), `prompt` (supports `{{file}}`), `cooldownMs` |
-| `onCwdChanged` | Claude Code's working directory changes — CC 2.1.83+; call via `notifyCwdChanged` tool from a CC `CwdChanged` hook | `enabled`, `prompt` (supports `{{cwd}}`), `cooldownMs` |
+| `onCwdChanged` | Claude Code's working directory changes — CC 2.1.83+; wired via `claude-ide-bridge notify CwdChanged` from a CC `CwdChanged` hook | `enabled`, `prompt` (supports `{{cwd}}`), `cooldownMs` |
 | `onPostCompact` | Claude compacts its context (Claude Code 2.1.76+) | `enabled`, `prompt`, `cooldownMs` |
 | `onInstructionsLoaded` | Claude loads CLAUDE.md at session start (Claude Code 2.1.76+) | `enabled`, `prompt` |
 | `onTestRun` | `runTests` completes | `enabled`, `onFailureOnly` (bool, default `true`), `prompt` (supports `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}`), `cooldownMs` |
