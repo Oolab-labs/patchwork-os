@@ -49,6 +49,8 @@ export interface ClaudeTask {
   isAutomationTask?: boolean;
   /** Hook name that triggered this task (e.g. "onFileSave", "onDiagnosticsError"). */
   triggerSource?: string;
+  /** Custom system prompt passed via --system-prompt to the subprocess. */
+  systemPrompt?: string;
   /** Set when status === "cancelled": what triggered the cancel. */
   cancelReason?: CancelReason;
   /** Last ~2KB of subprocess stderr — populated on timeout and other aborts. */
@@ -80,6 +82,8 @@ export type EnqueueOpts = {
   maxBudgetUsd?: number;
   /** Abort the task if no assistant output arrives within this many ms of spawn. */
   startupTimeoutMs?: number;
+  /** Custom system prompt passed via --system-prompt to the subprocess. */
+  systemPrompt?: string;
   /** Original creation timestamp — used when re-enqueuing persisted tasks. */
   createdAt?: number;
   /** True when this task was spawned by an automation hook (prevents infinite chain in onTaskSuccess). */
@@ -112,6 +116,7 @@ interface PersistedTask {
   wasAborted?: boolean;
   startupMs?: number;
   triggerSource?: string;
+  systemPrompt?: string;
 }
 
 export class ClaudeOrchestrator {
@@ -196,6 +201,9 @@ export class ClaudeOrchestrator {
       }),
       ...(opts.triggerSource !== undefined && {
         triggerSource: opts.triggerSource,
+      }),
+      ...(opts.systemPrompt !== undefined && {
+        systemPrompt: opts.systemPrompt,
       }),
     };
 
@@ -334,6 +342,7 @@ export class ClaudeOrchestrator {
         fallbackModel: task.fallbackModel,
         maxBudgetUsd: task.maxBudgetUsd,
         startupTimeoutMs: task.startupTimeoutMs,
+        systemPrompt: task.systemPrompt,
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
           this.taskCallbacks.get(id)?.(chunk);
@@ -447,6 +456,7 @@ export class ClaudeOrchestrator {
       ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
       ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
       ...(t.startupMs !== undefined && { startupMs: t.startupMs }),
+      ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
     }));
   }
 
@@ -585,6 +595,9 @@ export class ClaudeOrchestrator {
               ...(t.startupTimeoutMs !== undefined && {
                 startupTimeoutMs: t.startupTimeoutMs,
               }),
+              ...(t.systemPrompt !== undefined && {
+                systemPrompt: t.systemPrompt,
+              }),
             });
             reenqueued++;
           } else {
@@ -661,6 +674,7 @@ export class ClaudeOrchestrator {
         startupTimeoutMs: t.startupTimeoutMs,
       }),
       ...(typeof t.startupMs === "number" && { startupMs: t.startupMs }),
+      ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
     };
     this.tasks.set(task.id, task);
   }

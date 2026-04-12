@@ -20,6 +20,8 @@ export interface ClaudeTaskInput {
   maxBudgetUsd?: number;
   /** Abort the task if no assistant output arrives within this many ms of spawn. */
   startupTimeoutMs?: number;
+  /** Custom system prompt passed via --system-prompt to the subprocess. */
+  systemPrompt?: string;
 }
 
 export interface ClaudeTaskOutput {
@@ -157,6 +159,7 @@ export class SubprocessDriver implements IClaudeDriver {
     ];
     if (input.model) args.push("--model", input.model);
     if (input.effort) args.push("--effort", input.effort);
+    if (input.systemPrompt) args.push("--system-prompt", input.systemPrompt);
     if (input.fallbackModel) args.push("--fallback-model", input.fallbackModel);
     if (input.maxBudgetUsd !== undefined)
       args.push("--max-budget-usd", String(input.maxBudgetUsd));

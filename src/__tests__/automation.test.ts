@@ -4546,3 +4546,168 @@ describe("checkCcHookWiring", () => {
     expect(wiring.CwdChanged).toBe(false);
   });
 });
+
+// ── token-efficiency fields ───────────────────────────────────────────────────
+
+describe("token-efficiency: getStatus fields", () => {
+  it("defaultEffort defaults to 'low' when not set in policy", () => {
+    const hooks = new AutomationHooks({}, makeInstantOrchestrator(), () => {});
+    expect(hooks.getStatus().defaultEffort).toBe("low");
+  });
+
+  it("defaultEffort reflects policy value when set", () => {
+    const hooks = new AutomationHooks(
+      { defaultEffort: "medium" },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    expect(hooks.getStatus().defaultEffort).toBe("medium");
+  });
+
+  it("automationSystemPrompt defaults to lean constant when not set", () => {
+    const hooks = new AutomationHooks({}, makeInstantOrchestrator(), () => {});
+    const { automationSystemPrompt } = hooks.getStatus();
+    expect(typeof automationSystemPrompt).toBe("string");
+    expect(automationSystemPrompt.length).toBeGreaterThan(0);
+    // should start with the default constant (truncated to 80 chars)
+    expect(automationSystemPrompt).toMatch(/You are a concise automation/);
+  });
+
+  it("automationSystemPrompt reflects policy value (truncated to 80 chars)", () => {
+    const custom = "Custom prompt for automation tasks.";
+    const hooks = new AutomationHooks(
+      { automationSystemPrompt: custom },
+      makeInstantOrchestrator(),
+      () => {},
+    );
+    expect(hooks.getStatus().automationSystemPrompt).toBe(custom);
+  });
+});
+
+describe("token-efficiency: loadPolicy validation", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-token-eff-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("rejects automationSystemPrompt longer than 4096 chars", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({ automationSystemPrompt: "x".repeat(4097) }),
+    );
+    expect(() => loadPolicy(p)).toThrow(/automationSystemPrompt.*4096/);
+  });
+
+  it("accepts automationSystemPrompt at exactly 4096 chars", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(
+      p,
+      JSON.stringify({ automationSystemPrompt: "x".repeat(4096) }),
+    );
+    expect(() => loadPolicy(p)).not.toThrow();
+  });
+
+  it("rejects invalid defaultEffort value", () => {
+    const p = path.join(tmpDir, "policy.json");
+    fs.writeFileSync(p, JSON.stringify({ defaultEffort: "ultra" }));
+    expect(() => loadPolicy(p)).toThrow(/defaultEffort/);
+  });
+
+  it("accepts valid defaultEffort values", () => {
+    for (const val of ["low", "medium", "high", "max"]) {
+      const p = path.join(tmpDir, `policy-${val}.json`);
+      fs.writeFileSync(p, JSON.stringify({ defaultEffort: val }));
+      expect(() => loadPolicy(p)).not.toThrow();
+    }
+  });
+});
+
+describe("token-efficiency: _enqueueAutomationTask passes model/effort/systemPrompt", () => {
+  it("passes defaultEffort='low' to orchestrator when policy has no effort", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileSaved("id1", "save", "/src/foo.ts");
+    const tasks = orch.list();
+    expect(tasks.length).toBe(1);
+    expect(tasks[0].effort).toBe("low");
+    expect(tasks[0].model).toBe("claude-haiku-4-5-20251001");
+    expect(typeof tasks[0].systemPrompt).toBe("string");
+    expect(tasks[0].systemPrompt?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("per-hook effort overrides defaultEffort", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        defaultEffort: "medium",
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 5_000,
+          effort: "high",
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileSaved("id1", "save", "/src/foo.ts");
+    expect(orch.list()[0].effort).toBe("high");
+  });
+
+  it("per-hook model overrides defaultModel", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        defaultModel: "claude-haiku-4-5-20251001",
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 5_000,
+          model: "claude-sonnet-4-6",
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileSaved("id1", "save", "/src/foo.ts");
+    expect(orch.list()[0].model).toBe("claude-sonnet-4-6");
+  });
+
+  it("systemPrompt from policy overrides default constant", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        automationSystemPrompt: "Custom system prompt.",
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileSaved("id1", "save", "/src/foo.ts");
+    expect(orch.list()[0].systemPrompt).toBe("Custom system prompt.");
+  });
+});
