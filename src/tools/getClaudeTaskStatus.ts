@@ -40,6 +40,7 @@ export function createGetClaudeTaskStatusTool(
           wasAborted: { type: "boolean" },
           errorMessage: { type: "string" },
           timeoutMs: { type: "number" },
+          startupMs: { type: "number" },
           hint: { type: "string" },
         },
         required: ["taskId", "status", "createdAt"],
@@ -88,6 +89,7 @@ export function createGetClaudeTaskStatusTool(
         wasAborted: task.wasAborted,
         errorMessage: task.errorMessage,
         timeoutMs: task.timeoutMs,
+        startupMs: task.startupMs,
         hint,
       });
     },

@@ -12,6 +12,12 @@ export interface ClaudeTaskInput {
   onChunk?: (chunk: string) => void;
   /** Optional model override, e.g. "claude-haiku-4-5-20251001". Passed as --model to the subprocess. */
   model?: string;
+  /** Effort level for the task (low/medium/high/max). Passed as --effort to the subprocess. */
+  effort?: "low" | "medium" | "high" | "max";
+  /** Fallback model when the primary is overloaded. Passed as --fallback-model. */
+  fallbackModel?: string;
+  /** Maximum spend cap in USD for this task. Passed as --max-budget-usd. */
+  maxBudgetUsd?: number;
 }
 
 export interface ClaudeTaskOutput {
@@ -22,6 +28,8 @@ export interface ClaudeTaskOutput {
   stderrTail?: string;
   /** True if the subprocess was aborted (timeout or explicit cancel). */
   wasAborted?: boolean;
+  /** Milliseconds from spawn to first assistant output event. Undefined if no output arrived before timeout. */
+  startupMs?: number;
 }
 
 export interface IClaudeDriver {
@@ -33,6 +41,22 @@ export interface IClaudeDriver {
 }
 
 const OUTPUT_CAP = 50 * 1024; // 50KB
+
+/** Shape of a parsed stream-json event from `claude -p --output-format stream-json`. */
+interface StreamJsonEvent {
+  type: "system" | "assistant" | "result" | string;
+  /** Present on type === "assistant" */
+  message?: {
+    role?: string;
+    content?: Array<{ type: string; text?: string }>;
+  };
+  /** Present on type === "result" — canonical full response text. */
+  result?: string;
+  /** Present on type === "result" — true when claude hit an error (e.g. max_turns). */
+  is_error?: boolean;
+  /** Present on type === "system" — session identifier. */
+  session_id?: string;
+}
 
 export class SubprocessDriver implements IClaudeDriver {
   readonly name = "subprocess";
@@ -118,8 +142,19 @@ export class SubprocessDriver implements IClaudeDriver {
       // while preserving normal auth flows.
       "--settings",
       this.settingsPath,
+      // Stream JSONL events: each partial assistant chunk arrives immediately as
+      // it is generated, enabling real-time onChunk streaming and startup detection.
+      "--output-format",
+      "stream-json",
+      "--include-partial-messages",
+      // Avoid writing session files to disk for headless automation tasks.
+      "--no-session-persistence",
     ];
     if (input.model) args.push("--model", input.model);
+    if (input.effort) args.push("--effort", input.effort);
+    if (input.fallbackModel) args.push("--fallback-model", input.fallbackModel);
+    if (input.maxBudgetUsd !== undefined)
+      args.push("--max-budget-usd", String(input.maxBudgetUsd));
     // Always skip permissions: all bridge-spawned subprocesses run headless (stdin: 'ignore',
     // detached: true) so permission prompts can never be answered interactively.
     args.push("--dangerously-skip-permissions");
@@ -165,21 +200,83 @@ export class SubprocessDriver implements IClaudeDriver {
       detached: true,
     });
 
-    let output = "";
+    // JSONL output state
+    // -------------------------------------------------------------------
+    // With --output-format stream-json, claude emits one JSON object per line.
+    // lineBuf holds the incomplete last line across data events (chunk boundaries
+    // can split a JSON object mid-line).
+    let lineBuf = "";
+    // Accumulated text from assistant events — used as fallback for final text if
+    // the result event is missing (old binary, crash before result, etc.)
+    let accumulated = "";
+    // outputBytesSent tracks how many bytes have been forwarded to onChunk so we
+    // can apply OUTPUT_CAP without truncating the accumulated text used for analysis.
+    let outputBytesSent = 0;
+    // firstAssistantAt: set on the first assistant event; used to compute startupMs.
+    let firstAssistantAt: number | undefined;
+    // doneFromResult: set when a result event is received so the abort path can
+    // distinguish "abort fired just after completion" from a real mid-run abort.
+    let doneFromResult = false;
+    let resultText = "";
+    let resultIsError = false;
+
     child.stdout.setEncoding("utf-8");
     child.stdout.on("data", (chunk: string) => {
-      const prevLen = output.length;
-      if (prevLen >= OUTPUT_CAP) return; // already at cap — discard to prevent unbounded growth
-      output += chunk;
-      // Only forward chunks until we hit the cap — avoids flooding callers on large output
-      if (output.length <= OUTPUT_CAP) {
-        // Entire chunk fits within cap
-        input.onChunk?.(chunk);
-      } else {
-        // Partial chunk: send only the portion up to the cap; truncate accumulator
-        const remaining = chunk.slice(0, OUTPUT_CAP - prevLen);
-        if (remaining.length > 0) input.onChunk?.(remaining);
-        output = output.slice(0, OUTPUT_CAP);
+      lineBuf += chunk;
+      const lines = lineBuf.split("\n");
+      // The last element is either empty (chunk ended with \n) or a partial line.
+      lineBuf = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (line.trim() === "") continue; // skip blank separator lines
+
+        let event: StreamJsonEvent;
+        try {
+          event = JSON.parse(line) as StreamJsonEvent;
+        } catch {
+          // Non-JSON line — treat as plain text (backward compat for old binaries
+          // that don't support --output-format stream-json, or binary error output).
+          const text = line + "\n";
+          accumulated += text;
+          if (outputBytesSent < OUTPUT_CAP) {
+            const send = text.slice(0, OUTPUT_CAP - outputBytesSent);
+            if (send.length > 0) {
+              input.onChunk?.(send);
+              outputBytesSent += send.length;
+            }
+          }
+          continue;
+        }
+
+        if (event.type === "assistant") {
+          if (firstAssistantAt === undefined) firstAssistantAt = Date.now();
+          const content = event.message?.content;
+          if (Array.isArray(content)) {
+            // Concatenate all text blocks in this event before dispatching to onChunk
+            // to avoid many tiny single-character calls on tool_use-heavy responses.
+            const text = content
+              .filter((b) => b.type === "text")
+              .map((b) => b.text ?? "")
+              .join("");
+            if (text.length > 0) {
+              accumulated += text;
+              if (outputBytesSent < OUTPUT_CAP) {
+                const send = text.slice(0, OUTPUT_CAP - outputBytesSent);
+                if (send.length > 0) {
+                  input.onChunk?.(send);
+                  outputBytesSent += send.length;
+                }
+              }
+            }
+          }
+        } else if (event.type === "result") {
+          doneFromResult = true;
+          resultIsError = event.is_error === true;
+          // result.result is the canonical full response — prefer it over accumulated.
+          resultText =
+            typeof event.result === "string" ? event.result : accumulated;
+        }
+        // type === "system" → log session_id, no other action
       }
     });
 
@@ -196,6 +293,8 @@ export class SubprocessDriver implements IClaudeDriver {
     const start = Date.now();
     const stderrTailOf = (s: string): string | undefined =>
       s.length > 0 ? s.slice(-2048) : undefined;
+    const startupMsOf = (): number | undefined =>
+      firstAssistantAt !== undefined ? firstAssistantAt - start : undefined;
 
     let exitCode: number;
     try {
@@ -204,6 +303,18 @@ export class SubprocessDriver implements IClaudeDriver {
         child.on("error", reject);
       });
     } catch (err) {
+      // If the result event was already received before the abort signal fired
+      // (task completed just as the timeout fired), treat as a normal success
+      // rather than returning wasAborted: true with partial output.
+      if (doneFromResult) {
+        return {
+          text: resultText.slice(0, OUTPUT_CAP),
+          exitCode: resultIsError ? 1 : 0,
+          durationMs: Date.now() - start,
+          stderrTail: stderrTailOf(stderr),
+          startupMs: startupMsOf(),
+        };
+      }
       const isAbort =
         (err instanceof Error && err.name === "AbortError") ||
         input.signal.aborted;
@@ -211,25 +322,36 @@ export class SubprocessDriver implements IClaudeDriver {
         // Return rather than throw so the orchestrator can surface partial
         // output, stderrTail, and wasAborted to callers (e.g. /tasks).
         return {
-          text: output.slice(0, OUTPUT_CAP),
+          text: accumulated.slice(0, OUTPUT_CAP),
           exitCode: -1,
           durationMs: Date.now() - start,
           stderrTail: stderrTailOf(stderr),
           wasAborted: true,
+          startupMs: startupMsOf(),
         };
       }
       throw err;
     }
 
-    if (exitCode !== 0 && stderr) {
+    // Derive exit code from the result event when available — it is semantically
+    // authoritative. Fall back to the process exit code for crashes / old binaries.
+    const effectiveExitCode = doneFromResult
+      ? resultIsError
+        ? 1
+        : 0
+      : exitCode;
+    const finalText = doneFromResult ? resultText : accumulated;
+
+    if (effectiveExitCode !== 0 && stderr) {
       this.log(`[SubprocessDriver] stderr: ${stderr.slice(0, 500)}`);
     }
 
     return {
-      text: output.slice(0, OUTPUT_CAP),
-      exitCode,
+      text: finalText.slice(0, OUTPUT_CAP),
+      exitCode: effectiveExitCode,
       durationMs: Date.now() - start,
       stderrTail: stderrTailOf(stderr),
+      startupMs: startupMsOf(),
     };
   }
 }

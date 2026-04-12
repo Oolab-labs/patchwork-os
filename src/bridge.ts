@@ -786,6 +786,7 @@ export class Bridge {
         // env fragments, or user-code errors; match existing redaction policy.
         stderrTail: t.stderrTail ? t.stderrTail.slice(-500) : undefined,
         wasAborted: t.wasAborted,
+        startupMs: t.startupMs,
         errorMessage: t.errorMessage,
         timeoutMs: t.timeoutMs,
       })),

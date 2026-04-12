@@ -69,15 +69,37 @@ describe("SubprocessDriver", () => {
     driver = new SubprocessDriver("claude", log);
   });
 
-  it("assembles stdout chunks into result text", async () => {
+  it("assembles stream-json assistant events into result text", async () => {
     const chunks: string[] = [];
     const runPromise = driver.run(
       makeInput({ onChunk: (c) => chunks.push(c) }),
     );
 
     await new Promise<void>((r) => setTimeout(r, 0));
-    mockChild.stdout.emit("data", "Hello ");
-    mockChild.stdout.emit("data", "world");
+    // Emit two partial assistant events and a result event as JSONL
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "Hello " }] },
+      }) + "\n",
+    );
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "world" }] },
+      }) + "\n",
+    );
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({
+        type: "result",
+        subtype: "success",
+        result: "Hello world",
+        is_error: false,
+      }) + "\n",
+    );
     mockChild.emit("close", 0);
 
     const result = await runPromise;
@@ -86,7 +108,27 @@ describe("SubprocessDriver", () => {
     expect(chunks).toEqual(["Hello ", "world"]);
   });
 
-  it("returns exitCode from process exit code", async () => {
+  it("returns exitCode 1 when result event has is_error: true", async () => {
+    const runPromise = driver.run(makeInput());
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({
+        type: "result",
+        subtype: "error_max_turns",
+        result: "Max turns exceeded",
+        is_error: true,
+      }) + "\n",
+    );
+    mockChild.emit("close", 0);
+
+    const result = await runPromise;
+    expect(result.exitCode).toBe(1);
+    expect(result.text).toBe("Max turns exceeded");
+  });
+
+  it("returns exitCode from process when no result event (crash / old binary)", async () => {
     const runPromise = driver.run(makeInput());
 
     await new Promise<void>((r) => setTimeout(r, 0));
@@ -106,21 +148,38 @@ describe("SubprocessDriver", () => {
     await expect(runPromise).rejects.toThrow("ENOENT");
   });
 
-  it("caps output at OUTPUT_CAP (50KB)", async () => {
+  it("caps output at OUTPUT_CAP (50KB) via result event text", async () => {
     const chunks: string[] = [];
     const runPromise = driver.run(
       makeInput({ onChunk: (c) => chunks.push(c) }),
     );
 
     await new Promise<void>((r) => setTimeout(r, 0));
-    // Emit 60KB in one chunk
-    const bigChunk = "x".repeat(60 * 1024);
-    mockChild.stdout.emit("data", bigChunk);
+    // Emit many assistant events whose combined text exceeds 50KB
+    const chunkText = "x".repeat(1024);
+    for (let i = 0; i < 55; i++) {
+      mockChild.stdout.emit(
+        "data",
+        JSON.stringify({
+          type: "assistant",
+          message: { content: [{ type: "text", text: chunkText }] },
+        }) + "\n",
+      );
+    }
+    // result.result is 60KB — driver must cap the returned text at 50KB
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({
+        type: "result",
+        is_error: false,
+        result: "y".repeat(60 * 1024),
+      }) + "\n",
+    );
     mockChild.emit("close", 0);
 
     const result = await runPromise;
     expect(result.text.length).toBe(50 * 1024);
-    // onChunk only received up to cap
+    // onChunk bytes capped at OUTPUT_CAP
     const totalChunked = chunks.reduce((s, c) => s + c.length, 0);
     expect(totalChunked).toBeLessThanOrEqual(50 * 1024);
   });
@@ -213,6 +272,104 @@ describe("SubprocessDriver", () => {
     mockChild.emit("close", 0);
     const result = await runPromise;
     expect(result.stderrTail).toBeUndefined();
+  });
+
+  // ── v2.25.0: stream-json JSONL parsing + startupMs ─────────────────────────
+
+  it("handles JSONL split across two data events (chunk-boundary safety)", async () => {
+    const chunks: string[] = [];
+    const runPromise = driver.run(
+      makeInput({ onChunk: (c) => chunks.push(c) }),
+    );
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+    // Split a single JSON line across two data events
+    const line = JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "text", text: "split" }] },
+    });
+    mockChild.stdout.emit("data", line.slice(0, 20));
+    mockChild.stdout.emit("data", line.slice(20) + "\n");
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({ type: "result", is_error: false, result: "split" }) +
+        "\n",
+    );
+    mockChild.emit("close", 0);
+
+    const result = await runPromise;
+    expect(result.text).toBe("split");
+    expect(chunks).toEqual(["split"]);
+  });
+
+  it("treats non-JSON lines as plain text (backward compat for old binaries)", async () => {
+    const chunks: string[] = [];
+    const runPromise = driver.run(
+      makeInput({ onChunk: (c) => chunks.push(c) }),
+    );
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.stdout.emit("data", "plain text output\n");
+    mockChild.emit("close", 0);
+
+    const result = await runPromise;
+    expect(result.text).toContain("plain text");
+    expect(chunks.join("")).toContain("plain text");
+  });
+
+  it("skips blank separator lines between JSONL events without throwing", async () => {
+    const runPromise = driver.run(makeInput());
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+    // Blank lines between events (NDJSON convention)
+    mockChild.stdout.emit(
+      "data",
+      "\n" +
+        JSON.stringify({ type: "result", is_error: false, result: "ok" }) +
+        "\n\n",
+    );
+    mockChild.emit("close", 0);
+
+    const result = await runPromise;
+    expect(result.text).toBe("ok");
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("populates startupMs when an assistant event arrives before timeout", async () => {
+    const runPromise = driver.run(makeInput());
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "hi" }] },
+      }) + "\n",
+    );
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({ type: "result", is_error: false, result: "hi" }) + "\n",
+    );
+    mockChild.emit("close", 0);
+
+    const result = await runPromise;
+    expect(typeof result.startupMs).toBe("number");
+    expect(result.startupMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("leaves startupMs undefined when subprocess is aborted before any output", async () => {
+    const runPromise = driver.run(makeInput());
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+    // Abort with no stdout events
+    const abortErr = Object.assign(new Error("The operation was aborted"), {
+      name: "AbortError",
+    });
+    mockChild.emit("error", abortErr);
+
+    const result = await runPromise;
+    expect(result.wasAborted).toBe(true);
+    expect(result.startupMs).toBeUndefined();
   });
 });
 
