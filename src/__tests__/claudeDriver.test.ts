@@ -166,6 +166,54 @@ describe("SubprocessDriver", () => {
     await runPromise;
     expect(log).toHaveBeenCalledWith(expect.stringContaining("stderr"));
   });
+
+  // ── v2.24.1: abort-return contract + stderrTail ─────────────────────────
+
+  it("returns (not throws) with wasAborted: true + stderrTail on AbortError", async () => {
+    const runPromise = driver.run(makeInput());
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+    // Accumulate some stderr before the abort
+    mockChild.stderr.emit("data", "pre-abort stderr content");
+    // Simulate signal-driven abort (node spawn emits AbortError on error event)
+    const abortErr = Object.assign(new Error("The operation was aborted"), {
+      name: "AbortError",
+    });
+    mockChild.emit("error", abortErr);
+
+    const result = await runPromise;
+    expect(result.wasAborted).toBe(true);
+    expect(result.exitCode).toBe(-1);
+    expect(result.stderrTail).toBe("pre-abort stderr content");
+  });
+
+  it("still throws on non-abort spawn errors (ENOENT, etc.)", async () => {
+    // Duplicate of the existing ENOENT test scoped to the new contract —
+    // guards against accidentally swallowing non-abort errors.
+    const runPromise = driver.run(makeInput());
+    await new Promise<void>((r) => setTimeout(r, 0));
+    const err = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+    mockChild.emit("error", err);
+    await expect(runPromise).rejects.toThrow("ENOENT");
+  });
+
+  it("populates stderrTail on successful runs with stderr output", async () => {
+    const runPromise = driver.run(makeInput());
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.stderr.emit("data", "warning: deprecated");
+    mockChild.emit("close", 0);
+    const result = await runPromise;
+    expect(result.exitCode).toBe(0);
+    expect(result.stderrTail).toBe("warning: deprecated");
+  });
+
+  it("leaves stderrTail undefined when no stderr was written", async () => {
+    const runPromise = driver.run(makeInput());
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.emit("close", 0);
+    const result = await runPromise;
+    expect(result.stderrTail).toBeUndefined();
+  });
 });
 
 // ── ApiDriver ──────────────────────────────────────────────────────────────

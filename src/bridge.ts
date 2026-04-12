@@ -776,11 +776,16 @@ export class Bridge {
         taskId: t.id,
         sessionId: t.sessionId.slice(0, 8),
         status: t.status,
+        cancelReason: t.cancelReason,
         createdAt: t.createdAt,
         startedAt: t.startedAt,
         doneAt: t.doneAt,
         // Omit prompt (may contain sensitive content) and cap output
         output: t.output ? t.output.slice(0, 200) : undefined,
+        // Cap stderrTail at 500 chars — subprocess stderr may contain paths,
+        // env fragments, or user-code errors; match existing redaction policy.
+        stderrTail: t.stderrTail ? t.stderrTail.slice(-500) : undefined,
+        wasAborted: t.wasAborted,
         errorMessage: t.errorMessage,
         timeoutMs: t.timeoutMs,
       })),
@@ -1196,7 +1201,7 @@ export class Bridge {
         ...this.orchestrator.list("pending"),
         ...this.orchestrator.list("running"),
       ]) {
-        this.orchestrator.cancel(task.id);
+        this.orchestrator.cancel(task.id, "shutdown");
       }
     }
     try {

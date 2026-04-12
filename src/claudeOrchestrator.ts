@@ -18,6 +18,8 @@ export type TaskStatus =
   | "cancelled"
   | "interrupted";
 
+export type CancelReason = "timeout" | "user" | "shutdown";
+
 export interface ClaudeTask {
   id: string;
   sessionId: string;
@@ -37,6 +39,12 @@ export interface ClaudeTask {
   model?: string;
   /** True when this task was spawned by an automation hook. */
   isAutomationTask?: boolean;
+  /** Set when status === "cancelled": what triggered the cancel. */
+  cancelReason?: CancelReason;
+  /** Last ~2KB of subprocess stderr — populated on timeout and other aborts. */
+  stderrTail?: string;
+  /** True when the subprocess was aborted (signal). */
+  wasAborted?: boolean;
 }
 
 /** Fast heuristic: ~4 chars per token for English code. */
@@ -73,6 +81,9 @@ interface PersistedTask {
   timeoutMs: number;
   tokenEstimate: number;
   model?: string;
+  cancelReason?: CancelReason;
+  stderrTail?: string;
+  wasAborted?: boolean;
 }
 
 export class ClaudeOrchestrator {
@@ -91,6 +102,8 @@ export class ClaudeOrchestrator {
   private queue: string[] = [];
   private running = new Set<string>();
   private controllers = new Map<string, AbortController>();
+  /** Cancel-reason map populated by `cancel()` before aborting the controller. */
+  private cancelReasons = new Map<string, Exclude<CancelReason, "timeout">>();
   /** Sum of tokenEstimate for all currently-running tasks. */
   private _activeTokens = 0;
 
@@ -181,22 +194,35 @@ export class ClaudeOrchestrator {
 
   /**
    * Cancel a pending or running task.
+   * @param reason "user" (default) for explicit user cancellation, "shutdown"
+   * for bridge shutdown. Timeouts are detected internally in `_runTask` and
+   * do not flow through this method.
    * Returns true if the task was found and cancellation was initiated.
    */
-  cancel(id: string): boolean {
+  cancel(
+    id: string,
+    reason: Exclude<CancelReason, "timeout"> = "user",
+  ): boolean {
     const task = this.tasks.get(id);
     if (!task) return false;
     if (task.status === "pending") {
       task.status = "cancelled";
+      task.cancelReason = reason;
       task.doneAt = Date.now();
       this.queue = this.queue.filter((qid) => qid !== id);
       this._fireCompletion(id);
-      this.log(`[orchestrator] cancelled pending task ${id.slice(0, 8)}`);
+      this.log(
+        `[orchestrator] cancelled pending task ${id.slice(0, 8)} (reason=${reason})`,
+      );
       return true;
     }
     if (task.status === "running") {
+      // Record the reason *before* abort so _runTask can read it in its handler.
+      this.cancelReasons.set(id, reason);
       this.controllers.get(id)?.abort();
-      this.log(`[orchestrator] aborting running task ${id.slice(0, 8)}`);
+      this.log(
+        `[orchestrator] aborting running task ${id.slice(0, 8)} (reason=${reason})`,
+      );
       return true;
     }
     return false;
@@ -247,8 +273,11 @@ export class ClaudeOrchestrator {
       `[orchestrator] starting task ${id.slice(0, 8)} (~${task.tokenEstimate} tokens, ${this._activeTokens} in-flight)`,
     );
 
-    // Set up timeout
+    // Set up timeout. timedOut flag distinguishes timer-driven aborts from
+    // user/shutdown cancels (which populate this.cancelReasons via cancel()).
+    let timedOut = false;
     const timeoutHandle = setTimeout(() => {
+      timedOut = true;
       controller.abort();
     }, task.timeoutMs);
 
@@ -268,17 +297,37 @@ export class ClaudeOrchestrator {
         },
       });
 
-      task.output = result.text;
-      task.status = result.exitCode === 0 ? "done" : "error";
-      if (result.exitCode !== 0) {
-        task.errorMessage = `Process exited with code ${result.exitCode}`;
+      // v2.24.1: SubprocessDriver no longer throws on abort — it returns
+      // { wasAborted: true } so stderrTail and partial output can be surfaced.
+      if (result.wasAborted) {
+        task.status = "cancelled";
+        task.wasAborted = true;
+        task.stderrTail = result.stderrTail;
+        task.cancelReason = timedOut
+          ? "timeout"
+          : (this.cancelReasons.get(id) ?? "user");
+        // Preserve any partial stdout that made it through before abort.
+        if (result.text) task.output = result.text;
+      } else {
+        task.output = result.text;
+        task.stderrTail = result.stderrTail;
+        task.status = result.exitCode === 0 ? "done" : "error";
+        if (result.exitCode !== 0) {
+          task.errorMessage = `Process exited with code ${result.exitCode}`;
+        }
       }
     } catch (err) {
+      // Non-abort errors (spawn failure, driver bug, etc.)
       if (
         (err instanceof Error && err.name === "AbortError") ||
         controller.signal.aborted
       ) {
+        // Fallback for drivers that still throw on abort.
         task.status = "cancelled";
+        task.wasAborted = true;
+        task.cancelReason = timedOut
+          ? "timeout"
+          : (this.cancelReasons.get(id) ?? "user");
       } else {
         task.status = "error";
         task.errorMessage = err instanceof Error ? err.message : String(err);
@@ -289,6 +338,7 @@ export class ClaudeOrchestrator {
       this.running.delete(id);
       this._activeTokens = Math.max(0, this._activeTokens - task.tokenEstimate);
       this.controllers.delete(id);
+      this.cancelReasons.delete(id);
       this.taskCallbacks.delete(id);
       this.log(
         `[orchestrator] task ${id.slice(0, 8)} finished: ${task.status} (${task.doneAt - (task.startedAt ?? task.doneAt)}ms)`,
@@ -339,6 +389,9 @@ export class ClaudeOrchestrator {
       timeoutMs: t.timeoutMs,
       tokenEstimate: t.tokenEstimate,
       ...(t.model !== undefined && { model: t.model }),
+      ...(t.cancelReason !== undefined && { cancelReason: t.cancelReason }),
+      ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
+      ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
     }));
   }
 

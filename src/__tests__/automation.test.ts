@@ -3633,6 +3633,151 @@ describe("loadPolicy — diagnosticTypes validation", () => {
     expect(orch.list().length).toBe(0);
   });
 
+  // ── v2.24.1: dedupeByContent ──────────────────────────────────────────────
+
+  // Wait for the orchestrator's instant driver to finish so the loop guard
+  // on activeDiagnosticsTasks (per-file) is released before the next trigger.
+  const flushTasks = () => new Promise((r) => setTimeout(r, 10));
+
+  it("dedupeByContent: identical diagnostics within window → only 1 task fires", async () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          cooldownMs: 5_000,
+          dedupeByContent: true,
+          dedupeContentCooldownMs: 900_000,
+          prompt: "fix {{diagnostics}}",
+        },
+      },
+      orch,
+      () => {},
+    );
+    const diags: Diagnostic[] = [
+      {
+        message: "Type error",
+        severity: "error",
+        source: "ts",
+        code: "TS2322",
+      },
+    ];
+    hooks.handleDiagnosticsChanged("/a.ts", diags);
+    await flushTasks();
+    hooks.handleDiagnosticsChanged("/a.ts", diags);
+    await flushTasks();
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("dedupeByContent: changed diagnostic message → 2 tasks fire", async () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          cooldownMs: 5_000,
+          dedupeByContent: true,
+          prompt: "fix",
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "First error", severity: "error", source: "ts" },
+    ]);
+    await flushTasks();
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "Different error", severity: "error", source: "ts" },
+    ]);
+    await flushTasks();
+    expect(orch.list().length).toBe(2);
+  });
+
+  it("dedupeByContent: changed diagnostic code → 2 tasks fire", async () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          cooldownMs: 5_000,
+          dedupeByContent: true,
+          prompt: "fix",
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "err", severity: "error", source: "ts", code: "TS2322" },
+    ]);
+    await flushTasks();
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "err", severity: "error", source: "ts", code: "TS2345" },
+    ]);
+    await flushTasks();
+    expect(orch.list().length).toBe(2);
+  });
+
+  it("dedupeByContent is order-independent (same diagnostics in different order collide)", async () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          cooldownMs: 5_000,
+          dedupeByContent: true,
+          prompt: "fix",
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "A", severity: "error", source: "ts" },
+      { message: "B", severity: "error", source: "ts" },
+    ]);
+    await flushTasks();
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "B", severity: "error", source: "ts" },
+      { message: "A", severity: "error", source: "ts" },
+    ]);
+    await flushTasks();
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("dedupeByContent: false (default) preserves existing file-only cooldown behavior", async () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          cooldownMs: 60_000,
+          // dedupeByContent omitted — default false
+          prompt: "fix",
+        },
+      },
+      orch,
+      () => {},
+    );
+    // Two different diagnostics on same file, within cooldown → still only 1 task
+    // (file-only cooldown blocks the second)
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "A", severity: "error", source: "ts" },
+    ]);
+    await flushTasks();
+    hooks.handleDiagnosticsChanged("/a.ts", [
+      { message: "B", severity: "error", source: "ts" },
+    ]);
+    await flushTasks();
+    expect(orch.list().length).toBe(1);
+  });
+
   it("throws when diagnosticTypes contains non-strings", () => {
     const p = path.join(tmpDir, "policy.json");
     fs.writeFileSync(

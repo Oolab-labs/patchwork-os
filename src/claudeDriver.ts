@@ -18,6 +18,10 @@ export interface ClaudeTaskOutput {
   text: string;
   exitCode: number;
   durationMs: number;
+  /** Last ~2KB of stderr, if any. Used for investigating timeouts and crashes. */
+  stderrTail?: string;
+  /** True if the subprocess was aborted (timeout or explicit cancel). */
+  wasAborted?: boolean;
 }
 
 export interface IClaudeDriver {
@@ -190,10 +194,32 @@ export class SubprocessDriver implements IClaudeDriver {
     });
 
     const start = Date.now();
-    const exitCode = await new Promise<number>((resolve, reject) => {
-      child.on("close", (code) => resolve(code ?? 0));
-      child.on("error", reject);
-    });
+    const stderrTailOf = (s: string): string | undefined =>
+      s.length > 0 ? s.slice(-2048) : undefined;
+
+    let exitCode: number;
+    try {
+      exitCode = await new Promise<number>((resolve, reject) => {
+        child.on("close", (code) => resolve(code ?? 0));
+        child.on("error", reject);
+      });
+    } catch (err) {
+      const isAbort =
+        (err instanceof Error && err.name === "AbortError") ||
+        input.signal.aborted;
+      if (isAbort) {
+        // Return rather than throw so the orchestrator can surface partial
+        // output, stderrTail, and wasAborted to callers (e.g. /tasks).
+        return {
+          text: output.slice(0, OUTPUT_CAP),
+          exitCode: -1,
+          durationMs: Date.now() - start,
+          stderrTail: stderrTailOf(stderr),
+          wasAborted: true,
+        };
+      }
+      throw err;
+    }
 
     if (exitCode !== 0 && stderr) {
       this.log(`[SubprocessDriver] stderr: ${stderr.slice(0, 500)}`);
@@ -203,6 +229,7 @@ export class SubprocessDriver implements IClaudeDriver {
       text: output.slice(0, OUTPUT_CAP),
       exitCode,
       durationMs: Date.now() - start,
+      stderrTail: stderrTailOf(stderr),
     };
   }
 }
