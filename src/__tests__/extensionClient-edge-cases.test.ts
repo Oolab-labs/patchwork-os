@@ -520,3 +520,53 @@ describe("ExtensionClient: mid-flight request rejected on socket close", () => {
     expect(disconnectedFired).toBe(true);
   });
 });
+
+// ── extension/fileSaved routing ───────────────────────────────────────────────
+
+describe("ExtensionClient: extension/fileSaved routes to onFileChanged", () => {
+  it("fires onFileChanged with type='save' when extension sends fileSaved notification", async () => {
+    const { clientWs } = await connectExtension();
+
+    const calls: Array<{ id: string; type: string; file: string }> = [];
+    client.onFileChanged = (id, type, file) => {
+      calls.push({ id, type, file });
+    };
+
+    // Simulate VS Code extension sending a fileSaved notification
+    clientWs.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/fileSaved",
+        params: { file: "/Users/wesh/project/src/automation.ts" },
+      }),
+    );
+
+    // Allow the message to be processed
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(calls.length).toBe(1);
+    expect(calls[0]?.type).toBe("save");
+    expect(calls[0]?.file).toBe("/Users/wesh/project/src/automation.ts");
+  });
+
+  it("does NOT fire onFileChanged when fileSaved params.file is not a string", async () => {
+    const { clientWs } = await connectExtension();
+
+    const calls: Array<unknown> = [];
+    client.onFileChanged = (...args) => {
+      calls.push(args);
+    };
+
+    clientWs.send(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "extension/fileSaved",
+        params: { file: 42 },
+      }),
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(calls.length).toBe(0);
+  });
+});

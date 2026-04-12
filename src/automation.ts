@@ -810,6 +810,7 @@ export class AutomationHooks {
     private readonly orchestrator: ClaudeOrchestrator,
     private readonly log: (msg: string) => void,
     private readonly extensionClient?: ExtensionClient,
+    private readonly workspace?: string,
   ) {}
 
   /**
@@ -1173,9 +1174,17 @@ export class AutomationHooks {
     // Condition filter
     if (!this._matchesCondition(cfg, normalizedFile)) return;
 
-    // Pattern matching
-    const matched = cfg.patterns.some((pattern) =>
-      minimatch(normalizedFile, pattern, { dot: true }),
+    // Pattern matching — also try workspace-relative path so patterns like
+    // "src/**/*.ts" work when VS Code sends absolute paths.
+    const relFile =
+      this.workspace && path.isAbsolute(normalizedFile)
+        ? path.relative(this.workspace, normalizedFile)
+        : normalizedFile;
+    const matched = cfg.patterns.some(
+      (pattern) =>
+        minimatch(normalizedFile, pattern, { dot: true }) ||
+        (relFile !== normalizedFile &&
+          minimatch(relFile, pattern, { dot: true })),
     );
     if (!matched) return;
 
@@ -1262,9 +1271,17 @@ export class AutomationHooks {
     // Condition filter
     if (!this._matchesCondition(cfg, normalizedFile)) return;
 
-    // Pattern matching
-    const matched = cfg.patterns.some((pattern) =>
-      minimatch(normalizedFile, pattern, { dot: true }),
+    // Pattern matching — also try workspace-relative path so patterns like
+    // "src/**/*.ts" work when VS Code sends absolute paths.
+    const relFile =
+      this.workspace && path.isAbsolute(normalizedFile)
+        ? path.relative(this.workspace, normalizedFile)
+        : normalizedFile;
+    const matched = cfg.patterns.some(
+      (pattern) =>
+        minimatch(normalizedFile, pattern, { dot: true }) ||
+        (relFile !== normalizedFile &&
+          minimatch(relFile, pattern, { dot: true })),
     );
     if (!matched) return;
 
