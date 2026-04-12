@@ -18,8 +18,12 @@ interface JsonTestResult {
 }
 
 interface JsonTestFile {
+  /** Jest uses testFilePath; vitest uses name */
   testFilePath?: string;
+  name?: string;
+  /** Jest uses testResults; vitest uses assertionResults */
   testResults?: JsonTestResult[];
+  assertionResults?: JsonTestResult[];
 }
 
 interface JsonReport {
@@ -110,11 +114,10 @@ function parseJsonReport(
 
   const results: TestResult[] = [];
   for (const file of report.testResults ?? []) {
-    const filePath = file.testFilePath
-      ? path.relative(workspace, file.testFilePath)
-      : "";
+    const rawFilePath = file.testFilePath ?? file.name ?? "";
+    const filePath = rawFilePath ? path.relative(workspace, rawFilePath) : "";
 
-    for (const test of file.testResults ?? []) {
+    for (const test of file.assertionResults ?? file.testResults ?? []) {
       const name = test.fullName ?? test.title ?? "unknown";
       let status: TestStatus = "passed";
       if (test.status === "failed") status = "failed";
