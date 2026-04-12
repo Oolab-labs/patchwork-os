@@ -150,6 +150,7 @@ export class SubprocessDriver implements IClaudeDriver {
       // it is generated, enabling real-time onChunk streaming and startup detection.
       "--output-format",
       "stream-json",
+      "--verbose",
       "--include-partial-messages",
       // Avoid writing session files to disk for headless automation tasks.
       "--no-session-persistence",
