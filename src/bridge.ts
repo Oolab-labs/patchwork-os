@@ -824,6 +824,45 @@ export class Bridge {
       };
     };
 
+    // 3b-notify. Wire CC hook notify endpoint
+    this.server.notifyFn = (event, args) => {
+      if (!this.automationHooks) {
+        return { ok: false, error: "Automation not enabled" };
+      }
+      switch (event) {
+        case "PostCompact":
+          this.automationHooks.handlePostCompact();
+          return { ok: true };
+        case "InstructionsLoaded":
+          this.automationHooks.handleInstructionsLoaded();
+          return { ok: true };
+        case "TaskCreated":
+          if (!args.taskId || !args.prompt) {
+            return { ok: false, error: "Missing taskId or prompt" };
+          }
+          this.automationHooks.handleTaskCreated({
+            taskId: args.taskId,
+            prompt: args.prompt,
+          });
+          return { ok: true };
+        case "PermissionDenied":
+          if (!args.tool || !args.reason) {
+            return { ok: false, error: "Missing tool or reason" };
+          }
+          this.automationHooks.handlePermissionDenied({
+            tool: args.tool,
+            reason: args.reason,
+          });
+          return { ok: true };
+        case "CwdChanged":
+          if (!args.cwd) return { ok: false, error: "Missing cwd" };
+          this.automationHooks.handleCwdChanged(args.cwd);
+          return { ok: true };
+        default:
+          return { ok: false, error: `Unknown CC event: ${event}` };
+      }
+    };
+
     // 3b. Set up Streamable HTTP transport handler (POST/GET/DELETE /mcp)
     this.httpMcpHandler = new StreamableHttpHandler(
       this.config,

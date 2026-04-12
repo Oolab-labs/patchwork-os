@@ -289,17 +289,28 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 - `cooldownMs` (integer, min 5000) — minimum milliseconds between triggers for the same file/event
 - **Loop guard** — if the hook's own Claude task is still `pending` or `running`, a re-trigger is suppressed automatically
 
-**Claude Code hook wiring** — hooks that depend on CC's built-in hook events (`PostCompact`, `InstructionsLoaded`, `TaskCreated`, `PermissionDenied`, `CwdChanged`) require a `settings.json` entry that calls the corresponding bridge MCP notify tool:
+**Claude Code hook wiring** — hooks that depend on CC's built-in hook events (`PostCompact`, `InstructionsLoaded`, `TaskCreated`, `PermissionDenied`, `CwdChanged`) require a `settings.json` entry calling `claude-ide-bridge notify <EventName>`. The `notify` subcommand reads the bridge lock file to find the running port and auth token, then POSTs to the bridge's `/notify` HTTP endpoint.
 
-| CC hook event | Bridge MCP tool | CC version |
+| CC hook event | `settings.json` command | CC version |
 |---|---|---|
-| `PostCompact` | `notifyPostCompact` | 2.1.76+ |
-| `InstructionsLoaded` | `notifyInstructionsLoaded` | 2.1.76+ |
-| `TaskCreated` | `notifyTaskCreated --taskId $TASK_ID --prompt $PROMPT` | 2.1.84+ |
-| `PermissionDenied` | `notifyPermissionDenied --tool $TOOL --reason $REASON` | 2.1.89+ |
-| `CwdChanged` | `notifyCwdChanged --cwd $CWD` | 2.1.83+ |
+| `PostCompact` | `claude-ide-bridge notify PostCompact` | 2.1.76+ |
+| `InstructionsLoaded` | `claude-ide-bridge notify InstructionsLoaded` | 2.1.76+ |
+| `TaskCreated` | `claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT` | 2.1.84+ |
+| `PermissionDenied` | `claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON` | 2.1.89+ |
+| `CwdChanged` | `claude-ide-bridge notify CwdChanged --cwd $CWD` | 2.1.83+ |
 
-All five notify tools are registered automatically when `--automation` is active. Hooks triggered directly by bridge tool calls (`onGitCommit`, `onFileSave`, etc.) need no extra wiring.
+```json
+"hooks": {
+  "PostCompact": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }],
+  "InstructionsLoaded": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }],
+  "TaskCreated": [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }],
+  "PermissionDenied": [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }],
+  "CwdChanged": [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }]
+}
+```
+
+All five notify tools are also accessible as MCP tools (`notifyPostCompact`, `notifyInstructionsLoaded`, etc.) for direct programmatic invocation. Hooks triggered directly by bridge tool calls (`onGitCommit`, `onFileSave`, etc.) need no extra wiring.
+
 
 **Claude Code hooks (settings.json)** can narrow when bridge-invoked shell scripts fire using the `if` field (Claude Code 2.1.85+). Uses permission-rule syntax:
 

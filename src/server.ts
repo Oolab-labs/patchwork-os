@@ -117,6 +117,13 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
   /** Set by bridge to subscribe a caller to real-time activity events. Returns unsubscribe fn. */
   public streamFn: ((listener: ActivityListener) => () => void) | null = null;
+  /** Set by bridge to handle CC hook notify events via POST /notify */
+  public notifyFn:
+    | ((
+        event: string,
+        args: Record<string, string>,
+      ) => { ok: boolean; error?: string })
+    | null = null;
 
   /**
    * Attach an OAuth 2.0 Authorization Server.
@@ -540,6 +547,41 @@ export class Server extends EventEmitter<ServerEvents> {
             }),
           );
         }
+        return;
+      }
+      // CC hook notify endpoint — lightweight alternative to full MCP session for hook wiring.
+      if (parsedUrl.pathname === "/notify" && req.method === "POST") {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          try {
+            const body = Buffer.concat(chunks).toString("utf-8");
+            const parsed = JSON.parse(body) as {
+              event?: string;
+              args?: Record<string, string>;
+            };
+            const event = parsed.event ?? "";
+            const args = parsed.args ?? {};
+            if (!this.notifyFn) {
+              res.writeHead(503, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "Automation not enabled",
+                }),
+              );
+              return;
+            }
+            const result = this.notifyFn(event, args);
+            res.writeHead(result.ok ? 200 : 400, {
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify(result));
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+          }
+        });
         return;
       }
       // MCP Streamable HTTP transport — POST/GET/DELETE /mcp.
