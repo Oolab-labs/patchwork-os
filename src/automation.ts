@@ -320,6 +320,17 @@ export interface TaskSuccessResult {
 }
 
 export interface AutomationPolicy {
+  /**
+   * Default model for all automation tasks.
+   * Defaults to "claude-haiku-4-5-20251001" to minimise cost.
+   * Override with "claude-sonnet-4-6" etc. for hooks that need more reasoning.
+   */
+  defaultModel?: string;
+  /**
+   * Hard cap on automation tasks spawned per hour (rolling 60-min window).
+   * Defaults to 20. Set to 0 to disable.
+   */
+  maxTasksPerHour?: number;
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
   /** Fired by Claude Code 2.1.83+ FileChanged hook — reacts to any file edit, not just explicit saves. */
@@ -458,6 +469,23 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   }
 
   const policy = parsed as AutomationPolicy;
+
+  // Validate top-level fields
+  if (
+    policy.defaultModel !== undefined &&
+    typeof policy.defaultModel !== "string"
+  ) {
+    throw new Error(`"defaultModel" must be a string`);
+  }
+  if (policy.maxTasksPerHour !== undefined) {
+    if (
+      typeof policy.maxTasksPerHour !== "number" ||
+      !Number.isInteger(policy.maxTasksPerHour) ||
+      policy.maxTasksPerHour < 0
+    ) {
+      throw new Error(`"maxTasksPerHour" must be a non-negative integer`);
+    }
+  }
 
   // Validate onDiagnosticsError
   if (policy.onDiagnosticsError !== undefined) {
@@ -929,6 +957,11 @@ export class AutomationHooks {
   private prevDiagnosticErrors = new Map<string, number>();
   /** Active task ID for the task-success handler (workspace-global). */
   private activeTaskSuccessTaskId: string | null = null;
+  /**
+   * Rolling window of task enqueue timestamps for maxTasksPerHour enforcement.
+   * Entries older than 60 minutes are pruned on each enqueue.
+   */
+  private taskTimestamps: number[] = [];
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -937,6 +970,43 @@ export class AutomationHooks {
     private readonly extensionClient?: ExtensionClient,
     private readonly workspace?: string,
   ) {}
+
+  /**
+   * Central enqueue for all automation-triggered tasks.
+   * Applies defaultModel (Haiku by default) and enforces maxTasksPerHour.
+   * Throws with the same "Task queue is full" message on rate-limit breach so
+   * callers can handle it identically.
+   */
+  private _enqueueAutomationTask(opts: {
+    prompt: string;
+    triggerSource: string;
+  }): string {
+    const maxPerHour = this.policy.maxTasksPerHour ?? 20;
+    if (maxPerHour > 0) {
+      const now = Date.now();
+      const cutoff = now - 60 * 60 * 1_000;
+      // Prune old timestamps
+      let i = 0;
+      while (i < this.taskTimestamps.length && this.taskTimestamps[i]! < cutoff)
+        i++;
+      if (i > 0) this.taskTimestamps.splice(0, i);
+      if (this.taskTimestamps.length >= maxPerHour) {
+        throw new Error(
+          `Automation rate limit reached (max ${maxPerHour} tasks/hour)`,
+        );
+      }
+      this.taskTimestamps.push(now);
+    }
+
+    const model = this.policy.defaultModel ?? "claude-haiku-4-5-20251001";
+    return this.orchestrator.enqueue({
+      prompt: opts.prompt,
+      sessionId: "",
+      isAutomationTask: true,
+      triggerSource: opts.triggerSource,
+      model,
+    });
+  }
 
   /**
    * Resolve a named prompt, substituting any `{{placeholder}}` tokens in
@@ -1132,10 +1202,9 @@ export class AutomationHooks {
       buildHookMetadata("onDiagnosticsError", normalizedFile) + prompt,
     );
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onDiagnosticsError",
       });
       this.lastTrigger.set(key, now);
       this.activeDiagnosticsTasks.set(normalizedFile, taskId);
@@ -1203,10 +1272,9 @@ export class AutomationHooks {
     }
     prompt = truncatePrompt(buildHookMetadata("onCwdChanged") + prompt);
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onCwdChanged",
       });
       this.lastTrigger.set(key, now);
       this.log(
@@ -1255,10 +1323,9 @@ export class AutomationHooks {
       buildHookMetadata("onPostCompact") + postCompactPrompt,
     );
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt: postCompactPrompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onPostCompact",
       });
       // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
       // impose a spurious cooldown on the next trigger attempt.
@@ -1308,10 +1375,9 @@ export class AutomationHooks {
       buildHookMetadata("onInstructionsLoaded") + instrPrompt,
     );
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt: instrPrompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onInstructionsLoaded",
       });
       this.lastTrigger.set(key, now);
       this.log(
@@ -1401,10 +1467,9 @@ export class AutomationHooks {
       buildHookMetadata("onFileSave", normalizedFile) + prompt,
     );
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onFileSave",
       });
       this.lastTrigger.set(key, now);
       this.activeSaveTasks.set(normalizedFile, taskId);
@@ -1498,10 +1563,9 @@ export class AutomationHooks {
       buildHookMetadata("onFileChanged", normalizedFile) + prompt,
     );
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onFileChanged",
       });
       this.lastTrigger.set(key, now);
       this.activeFileChangedTasks.set(normalizedFile, taskId);
@@ -1620,10 +1684,9 @@ export class AutomationHooks {
 
     prompt = truncatePrompt(buildHookMetadata("onTestRun") + prompt);
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onTestRun",
       });
       this.lastTrigger.set(key, now);
       this.activeTestRunTaskId = taskId;
@@ -1755,10 +1818,9 @@ export class AutomationHooks {
 
     prompt = truncatePrompt(buildHookMetadata("onGitCommit") + prompt);
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onGitCommit",
       });
       this.lastTrigger.set(key, now);
       this.activeGitCommitTaskId = taskId;
@@ -1839,10 +1901,9 @@ export class AutomationHooks {
     prompt = truncatePrompt(buildHookMetadata("onGitPush") + prompt);
 
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onGitPush",
       });
       this.lastTrigger.set(key, now);
       this.activeGitPushTaskId = taskId;
@@ -1920,10 +1981,9 @@ export class AutomationHooks {
     prompt = truncatePrompt(buildHookMetadata("onGitPull") + prompt);
 
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onGitPull",
       });
       this.lastTrigger.set(key, now);
       this.activeGitPullTaskId = taskId;
@@ -2011,10 +2071,9 @@ export class AutomationHooks {
     prompt = truncatePrompt(buildHookMetadata("onBranchCheckout") + prompt);
 
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onBranchCheckout",
       });
       this.lastTrigger.set(key, now);
       this.activeBranchCheckoutTaskId = taskId;
@@ -2101,10 +2160,9 @@ export class AutomationHooks {
 
     prompt = truncatePrompt(buildHookMetadata("onPullRequest") + prompt);
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onPullRequest",
       });
       this.lastTrigger.set(key, now);
       this.activePullRequestTaskId = taskId;
@@ -2176,7 +2234,10 @@ export class AutomationHooks {
 
     prompt = truncatePrompt(buildHookMetadata("onTaskCreated") + prompt);
     try {
-      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      const taskId = this._enqueueAutomationTask({
+        prompt,
+        triggerSource: "onTaskCreated",
+      });
       this.lastTrigger.set(key, now);
       this.activeTaskCreatedTaskId = taskId;
       this.log(
@@ -2250,7 +2311,10 @@ export class AutomationHooks {
 
     prompt = truncatePrompt(buildHookMetadata("onPermissionDenied") + prompt);
     try {
-      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      const taskId = this._enqueueAutomationTask({
+        prompt,
+        triggerSource: "onPermissionDenied",
+      });
       this.lastTrigger.set(key, now);
       this.activePermissionDeniedTaskId = taskId;
       this.log(
@@ -2324,7 +2388,10 @@ export class AutomationHooks {
       buildHookMetadata("onDiagnosticsCleared", normalizedFile) + prompt,
     );
     try {
-      const taskId = this.orchestrator.enqueue({ prompt, sessionId: "" });
+      const taskId = this._enqueueAutomationTask({
+        prompt,
+        triggerSource: "onDiagnosticsCleared",
+      });
       this.lastTrigger.set(key, now);
       this.activeDiagnosticsClearedTasks.set(normalizedFile, taskId);
       this.log(
@@ -2400,10 +2467,9 @@ export class AutomationHooks {
 
     prompt = truncatePrompt(buildHookMetadata("onTaskSuccess") + prompt);
     try {
-      const taskId = this.orchestrator.enqueue({
+      const taskId = this._enqueueAutomationTask({
         prompt,
-        sessionId: "",
-        isAutomationTask: true,
+        triggerSource: "onTaskSuccess",
       });
       this.lastTrigger.set(key, now);
       this.activeTaskSuccessTaskId = taskId;
@@ -2440,6 +2506,9 @@ export class AutomationHooks {
     onTaskSuccess: { enabled: boolean; cooldownMs: number } | null;
     onGitPull: { enabled: boolean; cooldownMs: number } | null;
     unwiredEnabledHooks: string[];
+    defaultModel: string;
+    maxTasksPerHour: number;
+    tasksThisHour: number;
   } {
     const p = this.policy;
     const wiring = checkCcHookWiring();
@@ -2547,6 +2616,11 @@ export class AutomationHooks {
           }
         : null,
       unwiredEnabledHooks,
+      defaultModel: p.defaultModel ?? "claude-haiku-4-5-20251001",
+      maxTasksPerHour: p.maxTasksPerHour ?? 20,
+      tasksThisHour: this.taskTimestamps.filter(
+        (t) => t >= Date.now() - 60 * 60 * 1_000,
+      ).length,
     };
   }
 }
