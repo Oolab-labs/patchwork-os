@@ -451,6 +451,121 @@ Options:
   process.exit(0);
 }
 
+// Handle notify subcommand — called from CC hooks to fire bridge automation
+// Usage: claude-ide-bridge notify <CcEventName> [--cwd <p>] [--taskId <id>] [--prompt <t>] [--tool <n>] [--reason <r>] [--port <n>]
+if (process.argv[2] === "notify") {
+  const VALID_NOTIFY_EVENTS = new Set([
+    "PostCompact",
+    "InstructionsLoaded",
+    "TaskCreated",
+    "PermissionDenied",
+    "CwdChanged",
+  ]);
+  const notifyArgv = process.argv.slice(3);
+  const ccEvent = notifyArgv[0];
+
+  if (!ccEvent || !VALID_NOTIFY_EVENTS.has(ccEvent)) {
+    process.stderr.write(
+      `Usage: claude-ide-bridge notify <CcEventName> [options]\n\nValid events: ${[...VALID_NOTIFY_EVENTS].join(", ")}\n`,
+    );
+    process.exit(1);
+  }
+
+  const notifyRest = notifyArgv.slice(1);
+  const namedArgs: Record<string, string> = {};
+  for (let i = 0; i < notifyRest.length - 1; i++) {
+    if (notifyRest[i]!.startsWith("--")) {
+      namedArgs[notifyRest[i]!.slice(2)] = notifyRest[i + 1]!;
+      i++;
+    }
+  }
+
+  const notifyLockDir = path.join(
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+    "ide",
+  );
+
+  let notifyLockFile: string | undefined;
+  let notifyPort: number | undefined;
+
+  if (namedArgs.port) {
+    notifyPort = Number(namedArgs.port);
+    notifyLockFile = path.join(notifyLockDir, `${notifyPort}.lock`);
+    if (!existsSync(notifyLockFile)) {
+      process.stderr.write(
+        `Error: No lock file found for port ${notifyPort}\n`,
+      );
+      process.exit(1);
+    }
+  } else {
+    let bestMtime = 0;
+    try {
+      for (const f of readdirSync(notifyLockDir)) {
+        if (!f.endsWith(".lock")) continue;
+        const full = path.join(notifyLockDir, f);
+        const mtime = statSync(full).mtimeMs;
+        if (mtime > bestMtime) {
+          bestMtime = mtime;
+          notifyLockFile = full;
+          notifyPort = Number(path.basename(f, ".lock"));
+        }
+      }
+    } catch {
+      // lock dir doesn't exist
+    }
+  }
+
+  if (!notifyLockFile || !notifyPort) {
+    process.stderr.write(
+      `Error: No bridge lock file found in ${notifyLockDir}\n`,
+    );
+    process.stderr.write(
+      "Make sure the bridge is running first (claude-ide-bridge --watch ...).\n",
+    );
+    process.exit(1);
+  }
+
+  let notifyToken: string;
+  try {
+    const data = JSON.parse(readFileSync(notifyLockFile, "utf-8")) as {
+      authToken?: string;
+    };
+    if (!data.authToken) {
+      process.stderr.write(`Error: Lock file has no authToken field\n`);
+      process.exit(1);
+    }
+    notifyToken = data.authToken;
+  } catch {
+    process.stderr.write(`Error: Could not read lock file ${notifyLockFile}\n`);
+    process.exit(1);
+  }
+
+  try {
+    const resp = await fetch(`http://127.0.0.1:${notifyPort}/notify`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${notifyToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ event: ccEvent, args: namedArgs }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      process.stderr.write(`Error: Bridge returned ${resp.status}: ${text}\n`);
+      process.exit(1);
+    }
+  } catch (err) {
+    process.stderr.write(
+      `Error: Could not connect to bridge at port ${notifyPort}: ${
+        err instanceof Error ? err.message : String(err)
+      }\n`,
+    );
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 // Handle gen-plugin-stub subcommand — scaffolds a new plugin directory
 if (process.argv[2] === "gen-plugin-stub") {
   const argv = process.argv.slice(3);

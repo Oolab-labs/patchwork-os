@@ -194,12 +194,27 @@ Event-driven hooks that trigger Claude tasks automatically.
 - **Cooldown**: minimum 5 seconds between triggers for the same file/event. Max prompt size: 32KB.
 - **CC hook wiring** — hooks that rely on Claude Code's own hook system need MCP notify tools called from `settings.json`. The bridge registers these automatically when `--automation` is active:
 
-  | CC hook event | Bridge MCP tool to call | Example settings.json entry |
-  |---|---|---|
-  | `PostCompact` | `notifyPostCompact` | `"PostCompact": [{"command": "claude --mcp ... notifyPostCompact"}]` |
-  | `InstructionsLoaded` | `notifyInstructionsLoaded` | `"InstructionsLoaded": [{"command": "claude --mcp ... notifyInstructionsLoaded"}]` |
-  | `TaskCreated` | `notifyTaskCreated` | `"TaskCreated": [{"command": "claude --mcp ... notifyTaskCreated --taskId $TASK_ID --prompt $PROMPT"}]` |
-  | `PermissionDenied` | `notifyPermissionDenied` | `"PermissionDenied": [{"command": "claude --mcp ... notifyPermissionDenied --tool $TOOL --reason $REASON"}]` |
+  | CC hook event | Shell command (settings.json) |
+  |---|---|
+  | `PostCompact` | `claude-ide-bridge notify PostCompact` |
+  | `InstructionsLoaded` | `claude-ide-bridge notify InstructionsLoaded` |
+  | `TaskCreated` | `claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT` |
+  | `PermissionDenied` | `claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON` |
+  | `CwdChanged` | `claude-ide-bridge notify CwdChanged --cwd $CWD` |
+
+  The `notify` subcommand reads the bridge lock file, looks up the running port and auth token, and POSTs to the bridge's `/notify` HTTP endpoint. The bridge must be running.
+
+  Example `~/.claude/settings.json` block:
+  ```json
+  "hooks": {
+    "PostCompact": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }],
+    "InstructionsLoaded": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }],
+    "TaskCreated": [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }],
+    "PermissionDenied": [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }],
+    "CwdChanged": [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }]
+  }
+  ```
+
   | `CwdChanged` | `notifyCwdChanged` | `"CwdChanged": [{"command": "claude --mcp ... notifyCwdChanged --cwd $CWD"}]` |
 
 ## Transport & Session Model
