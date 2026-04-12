@@ -3117,6 +3117,46 @@ describe("AutomationHooks condition field (B3)", () => {
     hooks.handleFileSaved("id2", "save", "/src/bar.py");
     expect(orch.list().length).toBe(1);
   });
+
+  it("! negation condition fires for non-matching files", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*"],
+          prompt: "Saved: {{file}}",
+          cooldownMs: 5_000,
+          condition: "!**/*.test.ts",
+        },
+      },
+      orch,
+      () => {},
+    );
+    // Should fire — automation.ts does NOT match **/*.test.ts
+    hooks.handleFileSaved("id1", "save", "/src/automation.ts");
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("! negation condition skips matching files", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*"],
+          prompt: "Saved: {{file}}",
+          cooldownMs: 5_000,
+          condition: "!**/*.test.ts",
+        },
+      },
+      orch,
+      () => {},
+    );
+    // Should NOT fire — foo.test.ts DOES match **/*.test.ts
+    hooks.handleFileSaved("id1", "save", "/src/foo.test.ts");
+    expect(orch.list().length).toBe(0);
+  });
 });
 
 describe("loadPolicy condition validation (B3)", () => {
