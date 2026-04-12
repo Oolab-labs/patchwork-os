@@ -202,6 +202,39 @@ describe("SubprocessDriver", () => {
     expect(args).toContain("--dangerously-skip-permissions");
   });
 
+  it("passes --effort, --fallback-model, --max-budget-usd when set", async () => {
+    const runPromise = driver.run(
+      makeInput({
+        effort: "high",
+        fallbackModel: "claude-haiku-4-5-20251001",
+        maxBudgetUsd: 0.5,
+      }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.emit("close", 0);
+    await runPromise;
+    const args = spawnMock.mock.calls[0]![1] as string[];
+    expect(args).toContain("--effort");
+    expect(args[args.indexOf("--effort") + 1]).toBe("high");
+    expect(args).toContain("--fallback-model");
+    expect(args[args.indexOf("--fallback-model") + 1]).toBe(
+      "claude-haiku-4-5-20251001",
+    );
+    expect(args).toContain("--max-budget-usd");
+    expect(args[args.indexOf("--max-budget-usd") + 1]).toBe("0.5");
+  });
+
+  it("omits --effort, --fallback-model, --max-budget-usd when not set", async () => {
+    const runPromise = driver.run(makeInput());
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.emit("close", 0);
+    await runPromise;
+    const args = spawnMock.mock.calls[0]![1] as string[];
+    expect(args).not.toContain("--effort");
+    expect(args).not.toContain("--fallback-model");
+    expect(args).not.toContain("--max-budget-usd");
+  });
+
   it("writes permissions.deny to settings file to block npm publish and similar", () => {
     // The driver writes a settings file used by the subprocess (--settings flag).
     // It must contain a deny list that prevents npm publish, git push, etc.
