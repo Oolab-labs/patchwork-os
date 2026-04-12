@@ -52,9 +52,9 @@ export function createNotifyInstructionsLoadedTool(
     schema: {
       name: "notifyInstructionsLoaded",
       description:
-        "Notify the bridge that Claude Code loaded or reloaded its instructions. " +
+        "Notify the bridge that Claude Code loaded its instructions. " +
         "Triggers the onInstructionsLoaded automation policy if configured. " +
-        "Call this from a Claude Code InstructionsLoaded hook (CC 2.1.76+).",
+        "Call from a Claude Code InstructionsLoaded hook (CC 2.1.76+).",
       annotations: { readOnlyHint: false, destructiveHint: false },
       inputSchema: {
         type: "object" as const,
