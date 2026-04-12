@@ -46,7 +46,7 @@
     "enabled": true,
     "cooldownMs": 15000,
     "minSeverity": "error",
-    "diagnosticTypes": ["typescript"],
+    "diagnosticTypes": ["ts"],
     "prompt": "New TypeScript error in {{file}}:\n\n{{diagnostics}}\n\nExplain what's wrong and suggest a fix."
   },
   "onDiagnosticsCleared": {
