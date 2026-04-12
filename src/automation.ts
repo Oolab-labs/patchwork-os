@@ -970,7 +970,12 @@ export class AutomationHooks {
 
   private _matchesCondition(cfg: PromptSource, primaryValue: string): boolean {
     if (!cfg.condition) return true;
-    return minimatch(primaryValue, cfg.condition, { dot: true });
+    const pattern = cfg.condition;
+    // Support !-prefixed negation: "!**/*.test.ts" means "fire when NOT matching"
+    if (pattern.startsWith("!")) {
+      return !minimatch(primaryValue, pattern.slice(1), { dot: true });
+    }
+    return minimatch(primaryValue, pattern, { dot: true });
   }
 
   handleDiagnosticsChanged(file: string, diagnostics: Diagnostic[]): void {
