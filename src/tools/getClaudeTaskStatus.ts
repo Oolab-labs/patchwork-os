@@ -72,9 +72,11 @@ export function createGetClaudeTaskStatusTool(
       }
 
       const hint =
-        task.status === "cancelled" && task.cancelReason === "timeout"
-          ? "Task timed out. Use resumeClaudeTask to retry with a longer timeoutMs."
-          : undefined;
+        task.status === "cancelled" && task.cancelReason === "startup_timeout"
+          ? "Task timed out before producing any output (startup hang). Use resumeClaudeTask to retry, optionally with a longer startupTimeoutMs."
+          : task.status === "cancelled" && task.cancelReason === "timeout"
+            ? "Task timed out. Use resumeClaudeTask to retry with a longer timeoutMs."
+            : undefined;
 
       return successStructured({
         taskId: task.id,

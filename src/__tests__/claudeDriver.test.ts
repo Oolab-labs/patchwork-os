@@ -235,6 +235,59 @@ describe("SubprocessDriver", () => {
     expect(args).not.toContain("--max-budget-usd");
   });
 
+  // ── v2.25.3: startupTimeoutMs ───────────────────────────────────────────────
+
+  it("returns wasAborted:true + startupTimedOut:true when no assistant event arrives within startupTimeoutMs", async () => {
+    vi.useFakeTimers();
+    const runPromise = driver.run(makeInput({ startupTimeoutMs: 5000 }));
+
+    await Promise.resolve(); // let run() set up listeners
+    // Advance past the startup timeout without emitting any assistant events
+    vi.advanceTimersByTime(5001);
+    // child.kill() triggers close
+    mockChild.emit("close", 1);
+
+    const result = await runPromise;
+    expect(result.wasAborted).toBe(true);
+    expect(result.startupTimedOut).toBe(true);
+    expect(result.exitCode).toBe(-1);
+    expect(result.startupMs).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it("does NOT set startupTimedOut when assistant event arrives before startupTimeoutMs", async () => {
+    vi.useFakeTimers();
+    const runPromise = driver.run(makeInput({ startupTimeoutMs: 5000 }));
+
+    await Promise.resolve();
+    // Emit assistant event before the startup timer fires
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "hi" }] },
+      }) + "\n",
+    );
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({ type: "result", is_error: false, result: "hi" }) + "\n",
+    );
+    mockChild.emit("close", 0);
+
+    const result = await runPromise;
+    expect(result.startupTimedOut).toBeUndefined();
+    expect(result.wasAborted).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it("does not set startupTimedOut when startupTimeoutMs is not provided", async () => {
+    const runPromise = driver.run(makeInput());
+    await new Promise<void>((r) => setTimeout(r, 0));
+    mockChild.emit("close", 0);
+    const result = await runPromise;
+    expect(result.startupTimedOut).toBeUndefined();
+  });
+
   it("writes permissions.deny to settings file to block npm publish and similar", () => {
     // The driver writes a settings file used by the subprocess (--settings flag).
     // It must contain a deny list that prevents npm publish, git push, etc.

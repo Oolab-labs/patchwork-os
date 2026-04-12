@@ -18,6 +18,8 @@ export interface ClaudeTaskInput {
   fallbackModel?: string;
   /** Maximum spend cap in USD for this task. Passed as --max-budget-usd. */
   maxBudgetUsd?: number;
+  /** Abort the task if no assistant output arrives within this many ms of spawn. */
+  startupTimeoutMs?: number;
 }
 
 export interface ClaudeTaskOutput {
@@ -28,6 +30,8 @@ export interface ClaudeTaskOutput {
   stderrTail?: string;
   /** True if the subprocess was aborted (timeout or explicit cancel). */
   wasAborted?: boolean;
+  /** True if the task was aborted because no assistant output arrived within startupTimeoutMs. */
+  startupTimedOut?: boolean;
   /** Milliseconds from spawn to first assistant output event. Undefined if no output arrived before timeout. */
   startupMs?: number;
 }
@@ -296,6 +300,19 @@ export class SubprocessDriver implements IClaudeDriver {
     const startupMsOf = (): number | undefined =>
       firstAssistantAt !== undefined ? firstAssistantAt - start : undefined;
 
+    // Startup timeout: if no assistant event arrives within startupTimeoutMs,
+    // kill the child and set startupTimedOut so the orchestrator can surface
+    // cancelReason: "startup_timeout" rather than the generic "timeout".
+    let startupTimedOut = false;
+    const startupHandle = input.startupTimeoutMs
+      ? setTimeout(() => {
+          if (firstAssistantAt === undefined && !doneFromResult) {
+            startupTimedOut = true;
+            child.kill();
+          }
+        }, input.startupTimeoutMs)
+      : null;
+
     let exitCode: number;
     try {
       exitCode = await new Promise<number>((resolve, reject) => {
@@ -303,6 +320,7 @@ export class SubprocessDriver implements IClaudeDriver {
         child.on("error", reject);
       });
     } catch (err) {
+      if (startupHandle) clearTimeout(startupHandle);
       // If the result event was already received before the abort signal fired
       // (task completed just as the timeout fired), treat as a normal success
       // rather than returning wasAborted: true with partial output.
@@ -332,6 +350,7 @@ export class SubprocessDriver implements IClaudeDriver {
       }
       throw err;
     }
+    if (startupHandle) clearTimeout(startupHandle);
 
     // Derive exit code from the result event when available — it is semantically
     // authoritative. Fall back to the process exit code for crashes / old binaries.
@@ -341,6 +360,21 @@ export class SubprocessDriver implements IClaudeDriver {
         : 0
       : exitCode;
     const finalText = doneFromResult ? resultText : accumulated;
+
+    // Startup timeout fired: child was killed before any assistant output arrived.
+    // Surface as a wasAborted result with a distinct startupTimedOut flag so the
+    // orchestrator can set cancelReason: "startup_timeout".
+    if (startupTimedOut) {
+      return {
+        text: accumulated.slice(0, OUTPUT_CAP),
+        exitCode: -1,
+        durationMs: Date.now() - start,
+        stderrTail: stderrTailOf(stderr),
+        wasAborted: true,
+        startupTimedOut: true,
+        startupMs: undefined, // never set — that's what triggered the startup timeout
+      };
+    }
 
     if (effectiveExitCode !== 0 && stderr) {
       this.log(`[SubprocessDriver] stderr: ${stderr.slice(0, 500)}`);

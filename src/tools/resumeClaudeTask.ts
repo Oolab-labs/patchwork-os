@@ -46,6 +46,11 @@ export function createResumeClaudeTaskTool(
             description:
               "Override the spend cap in USD for the resumed task. Defaults to the original task's maxBudgetUsd.",
           },
+          startupTimeoutMs: {
+            type: "integer",
+            description:
+              "Override the startup timeout for the resumed task. Defaults to the original task's startupTimeoutMs.",
+          },
         },
         required: ["taskId"],
       },
@@ -147,6 +152,23 @@ export function createResumeClaudeTaskTool(
         maxBudgetUsd = args.maxBudgetUsd;
       }
 
+      let startupTimeoutMs = original.startupTimeoutMs;
+      if (args.startupTimeoutMs !== undefined) {
+        const s = args.startupTimeoutMs;
+        if (
+          typeof s !== "number" ||
+          !Number.isInteger(s) ||
+          s < MIN_TIMEOUT_MS ||
+          s > MAX_TIMEOUT_MS
+        ) {
+          return error(
+            `startupTimeoutMs must be an integer between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS}`,
+            ToolErrorCodes.INVALID_ARGS,
+          );
+        }
+        startupTimeoutMs = s;
+      }
+
       try {
         const newTaskId = orchestrator.enqueue({
           prompt: original.prompt,
@@ -157,6 +179,7 @@ export function createResumeClaudeTaskTool(
           effort,
           fallbackModel,
           maxBudgetUsd,
+          startupTimeoutMs,
         });
         return successStructured({
           newTaskId,

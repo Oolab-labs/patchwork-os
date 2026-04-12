@@ -18,7 +18,7 @@ export type TaskStatus =
   | "cancelled"
   | "interrupted";
 
-export type CancelReason = "timeout" | "user" | "shutdown";
+export type CancelReason = "timeout" | "startup_timeout" | "user" | "shutdown";
 
 export interface ClaudeTask {
   id: string;
@@ -43,6 +43,8 @@ export interface ClaudeTask {
   fallbackModel?: string;
   /** Maximum spend cap in USD for this task. */
   maxBudgetUsd?: number;
+  /** Abort the task if no assistant output arrives within this many ms of spawn. */
+  startupTimeoutMs?: number;
   /** True when this task was spawned by an automation hook. */
   isAutomationTask?: boolean;
   /** Set when status === "cancelled": what triggered the cancel. */
@@ -74,6 +76,8 @@ export type EnqueueOpts = {
   fallbackModel?: string;
   /** Maximum spend cap in USD for this task. */
   maxBudgetUsd?: number;
+  /** Abort the task if no assistant output arrives within this many ms of spawn. */
+  startupTimeoutMs?: number;
   /** Original creation timestamp — used when re-enqueuing persisted tasks. */
   createdAt?: number;
   /** True when this task was spawned by an automation hook (prevents infinite chain in onTaskSuccess). */
@@ -98,6 +102,7 @@ interface PersistedTask {
   effort?: "low" | "medium" | "high" | "max";
   fallbackModel?: string;
   maxBudgetUsd?: number;
+  startupTimeoutMs?: number;
   cancelReason?: CancelReason;
   stderrTail?: string;
   wasAborted?: boolean;
@@ -177,6 +182,9 @@ export class ClaudeOrchestrator {
       }),
       ...(opts.maxBudgetUsd !== undefined && {
         maxBudgetUsd: opts.maxBudgetUsd,
+      }),
+      ...(opts.startupTimeoutMs !== undefined && {
+        startupTimeoutMs: opts.startupTimeoutMs,
       }),
       ...(opts.isAutomationTask !== undefined && {
         isAutomationTask: opts.isAutomationTask,
@@ -317,6 +325,7 @@ export class ClaudeOrchestrator {
         effort: task.effort,
         fallbackModel: task.fallbackModel,
         maxBudgetUsd: task.maxBudgetUsd,
+        startupTimeoutMs: task.startupTimeoutMs,
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
           this.taskCallbacks.get(id)?.(chunk);
@@ -332,9 +341,11 @@ export class ClaudeOrchestrator {
         task.status = "cancelled";
         task.wasAborted = true;
         task.stderrTail = result.stderrTail;
-        task.cancelReason = timedOut
-          ? "timeout"
-          : (this.cancelReasons.get(id) ?? "user");
+        task.cancelReason = result.startupTimedOut
+          ? "startup_timeout"
+          : timedOut
+            ? "timeout"
+            : (this.cancelReasons.get(id) ?? "user");
         // Preserve any partial stdout that made it through before abort.
         if (result.text) task.output = result.text;
       } else {
@@ -421,6 +432,9 @@ export class ClaudeOrchestrator {
       ...(t.effort !== undefined && { effort: t.effort }),
       ...(t.fallbackModel !== undefined && { fallbackModel: t.fallbackModel }),
       ...(t.maxBudgetUsd !== undefined && { maxBudgetUsd: t.maxBudgetUsd }),
+      ...(t.startupTimeoutMs !== undefined && {
+        startupTimeoutMs: t.startupTimeoutMs,
+      }),
       ...(t.cancelReason !== undefined && { cancelReason: t.cancelReason }),
       ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
       ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
@@ -560,6 +574,9 @@ export class ClaudeOrchestrator {
               ...(t.maxBudgetUsd !== undefined && {
                 maxBudgetUsd: t.maxBudgetUsd,
               }),
+              ...(t.startupTimeoutMs !== undefined && {
+                startupTimeoutMs: t.startupTimeoutMs,
+              }),
             });
             reenqueued++;
           } else {
@@ -632,6 +649,9 @@ export class ClaudeOrchestrator {
       ...(t.effort !== undefined && { effort: t.effort }),
       ...(t.fallbackModel !== undefined && { fallbackModel: t.fallbackModel }),
       ...(t.maxBudgetUsd !== undefined && { maxBudgetUsd: t.maxBudgetUsd }),
+      ...(t.startupTimeoutMs !== undefined && {
+        startupTimeoutMs: t.startupTimeoutMs,
+      }),
       ...(typeof t.startupMs === "number" && { startupMs: t.startupMs }),
     };
     this.tasks.set(task.id, task);
