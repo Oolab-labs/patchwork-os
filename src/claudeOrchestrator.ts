@@ -47,6 +47,8 @@ export interface ClaudeTask {
   startupTimeoutMs?: number;
   /** True when this task was spawned by an automation hook. */
   isAutomationTask?: boolean;
+  /** Hook name that triggered this task (e.g. "onFileSave", "onDiagnosticsError"). */
+  triggerSource?: string;
   /** Set when status === "cancelled": what triggered the cancel. */
   cancelReason?: CancelReason;
   /** Last ~2KB of subprocess stderr — populated on timeout and other aborts. */
@@ -82,6 +84,8 @@ export type EnqueueOpts = {
   createdAt?: number;
   /** True when this task was spawned by an automation hook (prevents infinite chain in onTaskSuccess). */
   isAutomationTask?: boolean;
+  /** Hook name that created this task (e.g. "onFileSave", "onDiagnosticsError"). Logged at task start for observability. */
+  triggerSource?: string;
 };
 
 /** Shape of a task entry in the v1 tasks file. */
@@ -107,6 +111,7 @@ interface PersistedTask {
   stderrTail?: string;
   wasAborted?: boolean;
   startupMs?: number;
+  triggerSource?: string;
 }
 
 export class ClaudeOrchestrator {
@@ -188,6 +193,9 @@ export class ClaudeOrchestrator {
       }),
       ...(opts.isAutomationTask !== undefined && {
         isAutomationTask: opts.isAutomationTask,
+      }),
+      ...(opts.triggerSource !== undefined && {
+        triggerSource: opts.triggerSource,
       }),
     };
 
@@ -303,7 +311,7 @@ export class ClaudeOrchestrator {
     task.status = "running";
     task.startedAt = Date.now();
     this.log(
-      `[orchestrator] starting task ${id.slice(0, 8)} (~${task.tokenEstimate} tokens, ${this._activeTokens} in-flight)`,
+      `[orchestrator] starting task ${id.slice(0, 8)} (~${task.tokenEstimate} tokens, ${this._activeTokens} in-flight)${task.triggerSource ? ` [${task.triggerSource}]` : ""}`,
     );
 
     // Set up timeout. timedOut flag distinguishes timer-driven aborts from
