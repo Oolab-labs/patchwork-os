@@ -370,13 +370,13 @@ function validatePromptSource(hookName: string, cfg: PromptSource): void {
       `"${hookName}" must have a non-empty "prompt" or "promptName"`,
     );
   }
-  if (hasPrompt && cfg.prompt!.length > MAX_POLICY_PROMPT_CHARS) {
+  if (hasPrompt && (cfg.prompt?.length ?? 0) > MAX_POLICY_PROMPT_CHARS) {
     throw new Error(
       `"${hookName}.prompt" must be ≤ ${MAX_POLICY_PROMPT_CHARS} characters`,
     );
   }
   if (hasPromptName) {
-    if (cfg.promptName!.length > MAX_PROMPT_NAME_CHARS) {
+    if ((cfg.promptName?.length ?? 0) > MAX_PROMPT_NAME_CHARS) {
       throw new Error(
         `"${hookName}.promptName" must be ≤ ${MAX_PROMPT_NAME_CHARS} characters`,
       );
@@ -767,6 +767,61 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   return policy;
 }
 
+/**
+ * CC hook events that require a settings.json entry calling a bridge notify tool.
+ * Bridge-tool-triggered hooks (onFileSave, onGitCommit, etc.) need no CC wiring.
+ */
+const CC_HOOK_TOOL_MAP: Record<string, string> = {
+  PostCompact: "notifyPostCompact",
+  InstructionsLoaded: "notifyInstructionsLoaded",
+  TaskCreated: "notifyTaskCreated",
+  PermissionDenied: "notifyPermissionDenied",
+  CwdChanged: "notifyCwdChanged",
+};
+
+/** Policy hook names that correspond to CC hook events (need settings.json wiring). */
+const _POLICY_TO_CC_EVENT: Record<string, string> = {
+  onPostCompact: "PostCompact",
+  onInstructionsLoaded: "InstructionsLoaded",
+  onTaskCreated: "TaskCreated",
+  onPermissionDenied: "PermissionDenied",
+  onCwdChanged: "CwdChanged",
+};
+
+/**
+ * Check which CC hook events have at least one settings.json entry whose
+ * command references the matching bridge notify tool. Returns a map of
+ * CC event name → wired (boolean).
+ */
+export function checkCcHookWiring(): Record<string, boolean> {
+  const result: Record<string, boolean> = {};
+  for (const ccEvent of Object.keys(CC_HOOK_TOOL_MAP)) {
+    result[ccEvent] = false;
+  }
+
+  try {
+    const configDir =
+      process.env.CLAUDE_CONFIG_DIR ??
+      path.join(process.env.HOME ?? process.env.USERPROFILE ?? "~", ".claude");
+    const settingsPath = path.join(configDir, "settings.json");
+    const raw = fs.readFileSync(settingsPath, "utf-8");
+    const settings = JSON.parse(raw) as {
+      hooks?: Record<string, Array<{ command?: string }>>;
+    };
+    const hooks = settings.hooks ?? {};
+    for (const [ccEvent, toolName] of Object.entries(CC_HOOK_TOOL_MAP)) {
+      const entries = hooks[ccEvent] ?? [];
+      result[ccEvent] = entries.some(
+        (e) => typeof e.command === "string" && e.command.includes(toolName),
+      );
+    }
+  } catch {
+    // Settings file missing or unparseable — treat all as unwired
+  }
+
+  return result;
+}
+
 // ── AutomationHooks ───────────────────────────────────────────────────────────
 
 export class AutomationHooks {
@@ -971,15 +1026,16 @@ export class AutomationHooks {
         )
         .join("\n");
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{file\}\}/g,
-          untrustedBlock("FILE PATH", safeFilePath, nonce),
-        )
-        .replace(
-          /\{\{diagnostics\}\}/g,
-          untrustedBlock("DIAGNOSTIC DATA", diagnosticsText, nonce),
-        );
+      prompt =
+        cfg.prompt
+          ?.replace(
+            /\{\{file\}\}/g,
+            untrustedBlock("FILE PATH", safeFilePath, nonce),
+          )
+          .replace(
+            /\{\{diagnostics\}\}/g,
+            untrustedBlock("DIAGNOSTIC DATA", diagnosticsText, nonce),
+          ) ?? "";
     }
 
     prompt = truncatePrompt(
@@ -1049,10 +1105,11 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg.prompt!.replace(
-        /\{\{cwd\}\}/g,
-        untrustedBlock("CWD", safeCwd, nonce),
-      );
+      prompt =
+        cfg.prompt?.replace(
+          /\{\{cwd\}\}/g,
+          untrustedBlock("CWD", safeCwd, nonce),
+        ) ?? "";
     }
     prompt = truncatePrompt(buildHookMetadata("onCwdChanged") + prompt);
     try {
@@ -1102,7 +1159,7 @@ export class AutomationHooks {
       if (resolved === null) return;
       postCompactPrompt = resolved;
     } else {
-      postCompactPrompt = cfg.prompt!;
+      postCompactPrompt = cfg.prompt ?? "";
     }
     postCompactPrompt = truncatePrompt(
       buildHookMetadata("onPostCompact") + postCompactPrompt,
@@ -1142,7 +1199,7 @@ export class AutomationHooks {
       if (resolved === null) return;
       instrPrompt = resolved;
     } else {
-      instrPrompt = cfg.prompt!;
+      instrPrompt = cfg.prompt ?? "";
     }
     instrPrompt = truncatePrompt(
       buildHookMetadata("onInstructionsLoaded") + instrPrompt,
@@ -1230,10 +1287,11 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg.prompt!.replace(
-        /\{\{file\}\}/g,
-        untrustedBlock("FILE PATH", safeFilePath, nonce),
-      );
+      prompt =
+        cfg.prompt?.replace(
+          /\{\{file\}\}/g,
+          untrustedBlock("FILE PATH", safeFilePath, nonce),
+        ) ?? "";
     }
     prompt = truncatePrompt(
       buildHookMetadata("onFileSave", normalizedFile) + prompt,
@@ -1326,10 +1384,11 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg.prompt!.replace(
-        /\{\{file\}\}/g,
-        untrustedBlock("FILE PATH", safeFilePath, nonce),
-      );
+      prompt =
+        cfg.prompt?.replace(
+          /\{\{file\}\}/g,
+          untrustedBlock("FILE PATH", safeFilePath, nonce),
+        ) ?? "";
     }
     prompt = truncatePrompt(
       buildHookMetadata("onFileChanged", normalizedFile) + prompt,
@@ -1440,18 +1499,19 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{runner\}\}/g,
-          untrustedBlock("TEST RUNNER", runnerStr, nonce),
-        )
-        .replace(/\{\{failed\}\}/g, String(failureCount))
-        .replace(/\{\{passed\}\}/g, String(result.summary.passed))
-        .replace(/\{\{total\}\}/g, String(result.summary.total))
-        .replace(
-          /\{\{failures\}\}/g,
-          untrustedBlock("TEST FAILURES", failuresText, nonce),
-        );
+      prompt =
+        cfg.prompt
+          ?.replace(
+            /\{\{runner\}\}/g,
+            untrustedBlock("TEST RUNNER", runnerStr, nonce),
+          )
+          .replace(/\{\{failed\}\}/g, String(failureCount))
+          .replace(/\{\{passed\}\}/g, String(result.summary.passed))
+          .replace(/\{\{total\}\}/g, String(result.summary.total))
+          .replace(
+            /\{\{failures\}\}/g,
+            untrustedBlock("TEST FAILURES", failuresText, nonce),
+          ) ?? "";
     }
 
     prompt = truncatePrompt(buildHookMetadata("onTestRun") + prompt);
@@ -1562,30 +1622,31 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{hash\}\}/g,
-          untrustedBlock("COMMIT HASH", safeHash, nonce),
-        )
-        .replace(
-          /\{\{branch\}\}/g,
-          untrustedBlock("BRANCH", safeBranchCommit, nonce),
-        )
-        .replace(
-          /\{\{message\}\}/g,
-          untrustedBlock("COMMIT MESSAGE", safeMessage, nonce),
-        )
-        .replace(/\{\{count\}\}/g, String(result.count))
-        .replace(
-          /\{\{files\}\}/g,
-          untrustedBlock("COMMITTED FILES", filesText, nonce),
-        )
-        .replace(
-          /\{\{changeImpact\}\}/g,
-          changeImpact
-            ? untrustedBlock("CHANGE IMPACT", changeImpact, nonce)
-            : "(change impact unavailable)",
-        );
+      prompt =
+        cfg.prompt
+          ?.replace(
+            /\{\{hash\}\}/g,
+            untrustedBlock("COMMIT HASH", safeHash, nonce),
+          )
+          .replace(
+            /\{\{branch\}\}/g,
+            untrustedBlock("BRANCH", safeBranchCommit, nonce),
+          )
+          .replace(
+            /\{\{message\}\}/g,
+            untrustedBlock("COMMIT MESSAGE", safeMessage, nonce),
+          )
+          .replace(/\{\{count\}\}/g, String(result.count))
+          .replace(
+            /\{\{files\}\}/g,
+            untrustedBlock("COMMITTED FILES", filesText, nonce),
+          )
+          .replace(
+            /\{\{changeImpact\}\}/g,
+            changeImpact
+              ? untrustedBlock("CHANGE IMPACT", changeImpact, nonce)
+              : "(change impact unavailable)",
+          ) ?? "";
     }
 
     prompt = truncatePrompt(buildHookMetadata("onGitCommit") + prompt);
@@ -1659,13 +1720,17 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{remote\}\}/g,
-          untrustedBlock("REMOTE", safeRemote, nonce),
-        )
-        .replace(/\{\{branch\}\}/g, untrustedBlock("BRANCH", safeBranch, nonce))
-        .replace(/\{\{hash\}\}/g, safeHash);
+      prompt =
+        cfg.prompt
+          ?.replace(
+            /\{\{remote\}\}/g,
+            untrustedBlock("REMOTE", safeRemote, nonce),
+          )
+          .replace(
+            /\{\{branch\}\}/g,
+            untrustedBlock("BRANCH", safeBranch, nonce),
+          )
+          .replace(/\{\{hash\}\}/g, safeHash) ?? "";
     }
     prompt = truncatePrompt(buildHookMetadata("onGitPush") + prompt);
 
@@ -1737,15 +1802,16 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{remote\}\}/g,
-          untrustedBlock("REMOTE", safeRemote, nonce),
-        )
-        .replace(
-          /\{\{branch\}\}/g,
-          untrustedBlock("BRANCH", safeBranch, nonce),
-        );
+      prompt =
+        cfg.prompt
+          ?.replace(
+            /\{\{remote\}\}/g,
+            untrustedBlock("REMOTE", safeRemote, nonce),
+          )
+          .replace(
+            /\{\{branch\}\}/g,
+            untrustedBlock("BRANCH", safeBranch, nonce),
+          ) ?? "";
     }
     prompt = truncatePrompt(buildHookMetadata("onGitPull") + prompt);
 
@@ -1826,16 +1892,17 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{branch\}\}/g,
-          untrustedBlock("BRANCH", safeBranch, nonce),
-        )
-        .replace(
-          /\{\{previousBranch\}\}/g,
-          untrustedBlock("PREVIOUS BRANCH", safePreviousBranch, nonce),
-        )
-        .replace(/\{\{created\}\}/g, String(result.created));
+      prompt =
+        cfg.prompt
+          ?.replace(
+            /\{\{branch\}\}/g,
+            untrustedBlock("BRANCH", safeBranch, nonce),
+          )
+          .replace(
+            /\{\{previousBranch\}\}/g,
+            untrustedBlock("PREVIOUS BRANCH", safePreviousBranch, nonce),
+          )
+          .replace(/\{\{created\}\}/g, String(result.created)) ?? "";
     }
     prompt = truncatePrompt(buildHookMetadata("onBranchCheckout") + prompt);
 
@@ -1914,17 +1981,18 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{url\}\}/g,
-          untrustedBlock("PR URL", safeUrl, nonce),
-        )
-        .replace(/\{\{number\}\}/g, safeNumber)
-        .replace(/\{\{title\}\}/g, untrustedBlock("PR TITLE", safeTitle, nonce))
-        .replace(
-          /\{\{branch\}\}/g,
-          untrustedBlock("BRANCH", safeBranch, nonce),
-        );
+      prompt =
+        cfg.prompt
+          ?.replace(/\{\{url\}\}/g, untrustedBlock("PR URL", safeUrl, nonce))
+          .replace(/\{\{number\}\}/g, safeNumber)
+          .replace(
+            /\{\{title\}\}/g,
+            untrustedBlock("PR TITLE", safeTitle, nonce),
+          )
+          .replace(
+            /\{\{branch\}\}/g,
+            untrustedBlock("BRANCH", safeBranch, nonce),
+          ) ?? "";
     }
 
     prompt = truncatePrompt(buildHookMetadata("onPullRequest") + prompt);
@@ -2064,15 +2132,16 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{tool\}\}/g,
-          untrustedBlock("TOOL NAME", safeTool, nonce),
-        )
-        .replace(
-          /\{\{reason\}\}/g,
-          untrustedBlock("DENIAL REASON", safeReason, nonce),
-        );
+      prompt =
+        cfg.prompt
+          ?.replace(
+            /\{\{tool\}\}/g,
+            untrustedBlock("TOOL NAME", safeTool, nonce),
+          )
+          .replace(
+            /\{\{reason\}\}/g,
+            untrustedBlock("DENIAL REASON", safeReason, nonce),
+          ) ?? "";
     }
 
     prompt = truncatePrompt(buildHookMetadata("onPermissionDenied") + prompt);
@@ -2140,10 +2209,11 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg.prompt!.replace(
-        /\{\{file\}\}/g,
-        untrustedBlock("FILE PATH", safeFilePath, nonce),
-      );
+      prompt =
+        cfg.prompt?.replace(
+          /\{\{file\}\}/g,
+          untrustedBlock("FILE PATH", safeFilePath, nonce),
+        ) ?? "";
     }
 
     prompt = truncatePrompt(
@@ -2264,8 +2334,18 @@ export class AutomationHooks {
     onDiagnosticsCleared: { enabled: boolean; cooldownMs: number } | null;
     onTaskSuccess: { enabled: boolean; cooldownMs: number } | null;
     onGitPull: { enabled: boolean; cooldownMs: number } | null;
+    unwiredEnabledHooks: string[];
   } {
     const p = this.policy;
+    const wiring = checkCcHookWiring();
+    const unwiredEnabledHooks = Object.entries(_POLICY_TO_CC_EVENT)
+      .filter(([policyKey, ccEvent]) => {
+        const hookCfg = p[policyKey as keyof AutomationPolicy] as
+          | { enabled?: boolean }
+          | undefined;
+        return hookCfg?.enabled === true && wiring[ccEvent] === false;
+      })
+      .map(([policyKey]) => policyKey);
     return {
       onPostCompact: p.onPostCompact
         ? {
@@ -2355,6 +2435,7 @@ export class AutomationHooks {
             cooldownMs: p.onGitPull.cooldownMs,
           }
         : null,
+      unwiredEnabledHooks,
     };
   }
 }
