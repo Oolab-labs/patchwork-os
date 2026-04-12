@@ -37,6 +37,12 @@ export interface ClaudeTask {
   tokenEstimate: number;
   /** Optional model override passed to the driver (e.g. "claude-haiku-4-5-20251001"). */
   model?: string;
+  /** Effort level for the task (low/medium/high/max). */
+  effort?: "low" | "medium" | "high" | "max";
+  /** Fallback model when the primary is overloaded. */
+  fallbackModel?: string;
+  /** Maximum spend cap in USD for this task. */
+  maxBudgetUsd?: number;
   /** True when this task was spawned by an automation hook. */
   isAutomationTask?: boolean;
   /** Set when status === "cancelled": what triggered the cancel. */
@@ -62,6 +68,12 @@ export type EnqueueOpts = {
   onChunk?: (chunk: string) => void;
   /** Optional model override, e.g. "claude-haiku-4-5-20251001". */
   model?: string;
+  /** Effort level for the task (low/medium/high/max). */
+  effort?: "low" | "medium" | "high" | "max";
+  /** Fallback model when the primary is overloaded. */
+  fallbackModel?: string;
+  /** Maximum spend cap in USD for this task. */
+  maxBudgetUsd?: number;
   /** Original creation timestamp — used when re-enqueuing persisted tasks. */
   createdAt?: number;
   /** True when this task was spawned by an automation hook (prevents infinite chain in onTaskSuccess). */
@@ -83,6 +95,9 @@ interface PersistedTask {
   timeoutMs: number;
   tokenEstimate: number;
   model?: string;
+  effort?: "low" | "medium" | "high" | "max";
+  fallbackModel?: string;
+  maxBudgetUsd?: number;
   cancelReason?: CancelReason;
   stderrTail?: string;
   wasAborted?: boolean;
@@ -156,6 +171,13 @@ export class ClaudeOrchestrator {
       timeoutMs: opts.timeoutMs ?? ClaudeOrchestrator.DEFAULT_TIMEOUT_MS,
       tokenEstimate: estimateTokens(opts.prompt),
       ...(opts.model !== undefined && { model: opts.model }),
+      ...(opts.effort !== undefined && { effort: opts.effort }),
+      ...(opts.fallbackModel !== undefined && {
+        fallbackModel: opts.fallbackModel,
+      }),
+      ...(opts.maxBudgetUsd !== undefined && {
+        maxBudgetUsd: opts.maxBudgetUsd,
+      }),
       ...(opts.isAutomationTask !== undefined && {
         isAutomationTask: opts.isAutomationTask,
       }),
@@ -292,6 +314,9 @@ export class ClaudeOrchestrator {
         timeoutMs: task.timeoutMs,
         signal: controller.signal,
         model: task.model,
+        effort: task.effort,
+        fallbackModel: task.fallbackModel,
+        maxBudgetUsd: task.maxBudgetUsd,
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
           this.taskCallbacks.get(id)?.(chunk);
@@ -393,6 +418,9 @@ export class ClaudeOrchestrator {
       timeoutMs: t.timeoutMs,
       tokenEstimate: t.tokenEstimate,
       ...(t.model !== undefined && { model: t.model }),
+      ...(t.effort !== undefined && { effort: t.effort }),
+      ...(t.fallbackModel !== undefined && { fallbackModel: t.fallbackModel }),
+      ...(t.maxBudgetUsd !== undefined && { maxBudgetUsd: t.maxBudgetUsd }),
       ...(t.cancelReason !== undefined && { cancelReason: t.cancelReason }),
       ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
       ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
@@ -525,6 +553,13 @@ export class ClaudeOrchestrator {
               createdAt:
                 typeof t.createdAt === "number" ? t.createdAt : undefined,
               ...(t.model !== undefined && { model: t.model }),
+              ...(t.effort !== undefined && { effort: t.effort }),
+              ...(t.fallbackModel !== undefined && {
+                fallbackModel: t.fallbackModel,
+              }),
+              ...(t.maxBudgetUsd !== undefined && {
+                maxBudgetUsd: t.maxBudgetUsd,
+              }),
             });
             reenqueued++;
           } else {
@@ -594,6 +629,9 @@ export class ClaudeOrchestrator {
           ? t.tokenEstimate
           : estimateTokens(prompt),
       ...(t.model !== undefined && { model: t.model }),
+      ...(t.effort !== undefined && { effort: t.effort }),
+      ...(t.fallbackModel !== undefined && { fallbackModel: t.fallbackModel }),
+      ...(t.maxBudgetUsd !== undefined && { maxBudgetUsd: t.maxBudgetUsd }),
       ...(typeof t.startupMs === "number" && { startupMs: t.startupMs }),
     };
     this.tasks.set(task.id, task);

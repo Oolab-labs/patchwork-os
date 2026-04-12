@@ -51,6 +51,22 @@ export function createRunClaudeTaskTool(
             description:
               'Optional model override for this task, e.g. "claude-haiku-4-5-20251001". Defaults to the Claude CLI default.',
           },
+          effort: {
+            type: "string",
+            enum: ["low", "medium", "high", "max"],
+            description:
+              "Effort level for the task. Controls thinking budget: low=minimal, medium=default, high=extended, max=maximum. Omit to use the Claude CLI default.",
+          },
+          fallbackModel: {
+            type: "string",
+            description:
+              'Fallback model to use when the primary model is overloaded or unavailable. E.g. "claude-haiku-4-5-20251001".',
+          },
+          maxBudgetUsd: {
+            type: "number",
+            description:
+              "Maximum spend cap in USD for this task. Passed as --max-budget-usd to the subprocess. Omit for no cap.",
+          },
         },
         required: ["prompt"],
       },
@@ -143,6 +159,37 @@ export function createRunClaudeTaskTool(
           ? args.model.trim()
           : undefined;
 
+      const VALID_EFFORT = ["low", "medium", "high", "max"] as const;
+      type Effort = (typeof VALID_EFFORT)[number];
+      const effort: Effort | undefined =
+        typeof args.effort === "string" &&
+        (VALID_EFFORT as readonly string[]).includes(args.effort)
+          ? (args.effort as Effort)
+          : undefined;
+      if (args.effort !== undefined && effort === undefined) {
+        return error(
+          `effort must be one of: ${VALID_EFFORT.join(", ")}`,
+          ToolErrorCodes.INVALID_ARGS,
+        );
+      }
+
+      const fallbackModel =
+        typeof args.fallbackModel === "string" &&
+        args.fallbackModel.trim() !== ""
+          ? args.fallbackModel.trim()
+          : undefined;
+
+      let maxBudgetUsd: number | undefined;
+      if (args.maxBudgetUsd !== undefined) {
+        if (typeof args.maxBudgetUsd !== "number" || args.maxBudgetUsd <= 0) {
+          return error(
+            "maxBudgetUsd must be a positive number",
+            ToolErrorCodes.INVALID_ARGS,
+          );
+        }
+        maxBudgetUsd = args.maxBudgetUsd;
+      }
+
       if (!stream) {
         // Non-streaming: enqueue and return taskId immediately
         try {
@@ -152,6 +199,9 @@ export function createRunClaudeTaskTool(
             timeoutMs,
             sessionId,
             model,
+            effort,
+            fallbackModel,
+            maxBudgetUsd,
           });
           return successStructured({ taskId, status: "pending" });
         } catch (e) {
@@ -170,6 +220,9 @@ export function createRunClaudeTaskTool(
           timeoutMs,
           sessionId,
           model,
+          effort,
+          fallbackModel,
+          maxBudgetUsd,
           onChunk: (chunk: string) => {
             progressFn?.(++chunkIndex, -1, chunk);
           },
