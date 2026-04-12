@@ -86,6 +86,27 @@ export function createBridgeStatusTool(
               ? ("degraded" as const)
               : ("poor" as const);
 
+      const automationStatus = automationHooks?.getStatus() ?? null;
+      const unwired = automationStatus?.unwiredEnabledHooks ?? [];
+
+      const baseSuggestedActions = extensionConnected
+        ? [
+            "Use explainSymbol to understand any function in one call",
+            "Use refactorPreview to see what a refactoring would change before applying",
+            "Use setEditorDecorations to highlight code review findings inline",
+          ]
+        : [
+            "Connect the VS Code extension for LSP, debugger, and terminal tools",
+            "File operations, Git, GitHub, and CLI tools are available without the extension",
+          ];
+
+      if (unwired.length > 0) {
+        baseSuggestedActions.push(
+          `Automation hooks enabled but not wired in settings.json: ${unwired.join(", ")}. ` +
+            `Add CC hook entries calling the bridge notify tools (see CLAUDE.md Automation Policy section).`,
+        );
+      }
+
       return successStructured({
         extensionConnected,
         activeSessions: sessions?.size ?? 1,
@@ -109,21 +130,12 @@ export function createBridgeStatusTool(
               maxTokenBudget: ClaudeOrchestrator.MAX_TOKEN_BUDGET,
             },
           }),
-        ...(automationHooks && { automation: automationHooks.getStatus() }),
+        ...(automationStatus !== null && { automation: automationStatus }),
         tier: extensionConnected ? "full" : "basic",
         tierDescription: extensionConnected
           ? "All tools available including LSP, debugger, and terminal integration"
           : "File operations, Git, GitHub, and CLI tools available. Connect the VS Code extension for LSP, debugger, and terminal tools.",
-        suggestedActions: extensionConnected
-          ? [
-              "Use explainSymbol to understand any function in one call",
-              "Use refactorPreview to see what a refactoring would change before applying",
-              "Use setEditorDecorations to highlight code review findings inline",
-            ]
-          : [
-              "Connect the VS Code extension for LSP, debugger, and terminal tools",
-              "File operations, Git, GitHub, and CLI tools are available without the extension",
-            ],
+        suggestedActions: baseSuggestedActions,
         hint: extensionConnected
           ? "All tools available."
           : "Extension disconnected — extension-dependent tools (LSP, terminal, debugging, etc.) are temporarily unavailable. " +
