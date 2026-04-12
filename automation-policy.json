@@ -3,12 +3,12 @@
     "enabled": true,
     "patterns": ["src/**/*.ts", "vscode-extension/src/**/*.ts"],
     "condition": "!**/*.test.ts",
-    "cooldownMs": 8000,
-    "prompt": "File saved: {{file}}\n\nCall fixAllLintErrors on this file, then organizeImports, then getDiagnostics. If any errors remain, explain them concisely."
+    "cooldownMs": 120000,
+    "prompt": "File saved: {{file}}\n\nCall getDiagnostics on this file. If any errors exist, explain them concisely."
   },
   "onPostCompact": {
     "enabled": true,
-    "cooldownMs": 5000,
+    "cooldownMs": 30000,
     "prompt": "Context was just compacted. Re-orient by calling: getGitStatus (what branch/changes), getDiagnostics (any active errors), getHandoffNote (session context). Summarize in ≤10 lines."
   },
   "onInstructionsLoaded": {
