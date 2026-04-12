@@ -92,6 +92,18 @@ export interface OnDiagnosticsErrorPolicy extends PromptSource {
   /** Placeholders (inline prompt only): {{file}}, {{diagnostics}} */
   /** Minimum ms between triggers for the same file. Enforced minimum: 5000. */
   cooldownMs: number;
+  /**
+   * When true, dedupe by (file, diagnostic-content-hash) in addition to file path.
+   * Prevents re-triggering on repeated identical LSP emissions (the common "LSP
+   * republishes the same error after an unrelated workspace event" thrash pattern).
+   * Default: false — file-only dedupe via cooldownMs.
+   */
+  dedupeByContent?: boolean;
+  /**
+   * Cooldown (ms) for identical diagnostic content on the same file. Only used
+   * when `dedupeByContent` is true. Default: 900_000 (15 minutes). Enforced minimum: 5000.
+   */
+  dedupeContentCooldownMs?: number;
 }
 
 export interface OnFileSavePolicy extends PromptSource {
@@ -344,6 +356,19 @@ export interface Diagnostic {
   code?: string | number;
 }
 
+/**
+ * Deterministic signature over a diagnostic list — used for content-aware
+ * dedupe in onDiagnosticsError. Sorting by a stable key makes the signature
+ * order-independent so LSP re-emissions with the same diagnostics in a
+ * different order still collide.
+ */
+export function diagnosticSignature(diagnostics: Diagnostic[]): string {
+  const keyOf = (d: Diagnostic) =>
+    `${d.severity}|${d.code ?? ""}|${(d.source ?? "").toLowerCase()}|${d.message.slice(0, 200)}`;
+  const sigText = [...diagnostics].map(keyOf).sort().join("\n");
+  return crypto.createHash("sha256").update(sigText).digest("hex").slice(0, 12);
+}
+
 const MIN_COOLDOWN_MS = 5_000;
 /** Maximum length of a promptName value in a policy. */
 const MAX_PROMPT_NAME_CHARS = 64;
@@ -461,6 +486,25 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         throw new Error(
           `"onDiagnosticsError.diagnosticTypes" must be a non-empty array of strings`,
         );
+      }
+    }
+    if (
+      d.dedupeByContent !== undefined &&
+      typeof d.dedupeByContent !== "boolean"
+    ) {
+      throw new Error(`"onDiagnosticsError.dedupeByContent" must be a boolean`);
+    }
+    if (d.dedupeContentCooldownMs !== undefined) {
+      if (
+        typeof d.dedupeContentCooldownMs !== "number" ||
+        !Number.isFinite(d.dedupeContentCooldownMs)
+      ) {
+        throw new Error(
+          `"onDiagnosticsError.dedupeContentCooldownMs" must be a number`,
+        );
+      }
+      if (d.dedupeContentCooldownMs < MIN_COOLDOWN_MS) {
+        d.dedupeContentCooldownMs = MIN_COOLDOWN_MS;
       }
     }
   }
@@ -991,14 +1035,29 @@ export class AutomationHooks {
       if (matching.length === 0) return;
     }
 
-    // Cooldown check
-    const key = `diagnostics:${normalizedFile}`;
+    // Cooldown check. When dedupeByContent is enabled, extend the key with a
+    // diagnostic-content signature so identical LSP re-emissions collide but
+    // genuinely different errors on the same file still trigger.
+    let key = `diagnostics:${normalizedFile}`;
+    let effectiveCooldownMs = cfg.cooldownMs;
+    if (cfg.dedupeByContent) {
+      const sig = diagnosticSignature(matching);
+      key = `diagnostics:${normalizedFile}:${sig}`;
+      effectiveCooldownMs = cfg.dedupeContentCooldownMs ?? 900_000;
+    }
     const now = Date.now();
     const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for ${normalizedFile} (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
+    if (now - last < effectiveCooldownMs) {
+      const remaining = effectiveCooldownMs - (now - last);
+      if (cfg.dedupeByContent) {
+        this.log(
+          `[automation] dedupe suppressed onDiagnosticsError for ${normalizedFile} (${remaining}ms remaining, sig=${key.slice(-12)})`,
+        );
+      } else {
+        this.log(
+          `[automation] cooldown active for ${normalizedFile} (${remaining}ms remaining)`,
+        );
+      }
       return;
     }
 

@@ -578,3 +578,101 @@ describe("ClaudeOrchestrator — persistence", () => {
     expect(payload.tasks[0].status).toBe("done");
   });
 });
+
+// ── v2.24.1: cancelReason, stderrTail, wasAborted ─────────────────────────────
+
+describe("ClaudeOrchestrator — v2.24.1 cancel reasons", () => {
+  /** Driver that RETURNS (instead of throws) on abort, populating wasAborted + stderrTail. */
+  function makeAbortReturningDriver(stderrTail = "boom"): IClaudeDriver {
+    return {
+      name: "abort-returning",
+      async run(input: ClaudeTaskInput) {
+        return new Promise((resolve) => {
+          input.signal.addEventListener("abort", () => {
+            resolve({
+              text: "",
+              exitCode: -1,
+              durationMs: 10,
+              stderrTail,
+              wasAborted: true,
+            });
+          });
+        });
+      },
+    };
+  }
+
+  it('sets cancelReason: "timeout" when the internal timeout fires', async () => {
+    const driver = makeAbortReturningDriver("stderr after timeout");
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+    // Enqueue with a very short timeout so it trips immediately
+    const id = orch.enqueue({ prompt: "x", timeoutMs: 50 });
+    // Wait for the orchestrator to process and time out
+    await new Promise((r) => setTimeout(r, 200));
+    const task = orch.getTask(id);
+    expect(task?.status).toBe("cancelled");
+    expect(task?.cancelReason).toBe("timeout");
+    expect(task?.wasAborted).toBe(true);
+    expect(task?.stderrTail).toBe("stderr after timeout");
+  });
+
+  it('sets cancelReason: "user" when cancel() is called without a reason', async () => {
+    const driver = makeAbortReturningDriver("stderr after user cancel");
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+    const id = orch.enqueue({ prompt: "x", timeoutMs: 60_000 });
+    // Let _runTask kick in
+    await new Promise((r) => setTimeout(r, 20));
+    orch.cancel(id); // default reason: "user"
+    await new Promise((r) => setTimeout(r, 50));
+    const task = orch.getTask(id);
+    expect(task?.status).toBe("cancelled");
+    expect(task?.cancelReason).toBe("user");
+    expect(task?.wasAborted).toBe(true);
+    expect(task?.stderrTail).toBe("stderr after user cancel");
+  });
+
+  it('sets cancelReason: "shutdown" when cancel(id, "shutdown") is called', async () => {
+    const driver = makeAbortReturningDriver();
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+    const id = orch.enqueue({ prompt: "x", timeoutMs: 60_000 });
+    await new Promise((r) => setTimeout(r, 20));
+    orch.cancel(id, "shutdown");
+    await new Promise((r) => setTimeout(r, 50));
+    const task = orch.getTask(id);
+    expect(task?.status).toBe("cancelled");
+    expect(task?.cancelReason).toBe("shutdown");
+  });
+
+  it('sets cancelReason: "user" on a pending task when cancel() is called before it runs', () => {
+    // Fill the running slots so the new task stays pending
+    const driver = makeSlowDriver(60_000);
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+    // Saturate concurrency
+    for (let i = 0; i < ClaudeOrchestrator.MAX_CONCURRENT; i++) {
+      orch.enqueue({ prompt: `filler ${i}`, timeoutMs: 60_000 });
+    }
+    const pendingId = orch.enqueue({ prompt: "pending", timeoutMs: 60_000 });
+    const pending = orch.getTask(pendingId);
+    expect(pending?.status).toBe("pending");
+    orch.cancel(pendingId); // default "user"
+    const task = orch.getTask(pendingId);
+    expect(task?.status).toBe("cancelled");
+    expect(task?.cancelReason).toBe("user");
+  });
+
+  it("still handles throw-on-abort drivers (backward compat fallback)", async () => {
+    // makeSlowDriver rejects with AbortError — the orchestrator's catch block
+    // should still mark cancelled with the right reason.
+    const orch = new ClaudeOrchestrator(
+      makeSlowDriver(60_000),
+      "/tmp",
+      () => {},
+    );
+    const id = orch.enqueue({ prompt: "x", timeoutMs: 50 });
+    await new Promise((r) => setTimeout(r, 200));
+    const task = orch.getTask(id);
+    expect(task?.status).toBe("cancelled");
+    expect(task?.cancelReason).toBe("timeout");
+    expect(task?.wasAborted).toBe(true);
+  });
+});
