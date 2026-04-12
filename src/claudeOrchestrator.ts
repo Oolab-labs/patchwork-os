@@ -45,6 +45,8 @@ export interface ClaudeTask {
   stderrTail?: string;
   /** True when the subprocess was aborted (signal). */
   wasAborted?: boolean;
+  /** Milliseconds from spawn to first assistant output. Undefined if no output arrived before timeout. */
+  startupMs?: number;
 }
 
 /** Fast heuristic: ~4 chars per token for English code. */
@@ -84,6 +86,7 @@ interface PersistedTask {
   cancelReason?: CancelReason;
   stderrTail?: string;
   wasAborted?: boolean;
+  startupMs?: number;
 }
 
 export class ClaudeOrchestrator {
@@ -299,6 +302,7 @@ export class ClaudeOrchestrator {
 
       // v2.24.1: SubprocessDriver no longer throws on abort — it returns
       // { wasAborted: true } so stderrTail and partial output can be surfaced.
+      task.startupMs = result.startupMs;
       if (result.wasAborted) {
         task.status = "cancelled";
         task.wasAborted = true;
@@ -392,6 +396,7 @@ export class ClaudeOrchestrator {
       ...(t.cancelReason !== undefined && { cancelReason: t.cancelReason }),
       ...(t.stderrTail !== undefined && { stderrTail: t.stderrTail }),
       ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
+      ...(t.startupMs !== undefined && { startupMs: t.startupMs }),
     }));
   }
 
@@ -589,6 +594,7 @@ export class ClaudeOrchestrator {
           ? t.tokenEstimate
           : estimateTokens(prompt),
       ...(t.model !== undefined && { model: t.model }),
+      ...(typeof t.startupMs === "number" && { startupMs: t.startupMs }),
     };
     this.tasks.set(task.id, task);
   }
