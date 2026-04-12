@@ -724,7 +724,8 @@ Steps performed:
   2. Write bridge section to CLAUDE.md
   3. Write .claude/rules/bridge-tools.md
   4. Register MCP shim in ~/.claude.json
-  5. Verify claude-ide-bridge is on PATH
+  5. Wire CC automation hooks in ~/.claude/settings.json
+  6. Verify claude-ide-bridge is on PATHPATH
   6. Print next steps`);
     process.exit(0);
   }
@@ -946,6 +947,63 @@ Steps performed:
   } catch {
     process.stderr.write(
       `  [warn] Could not update ${claudeJsonAbs} — add manually:\n         { "mcpServers": { "claude-ide-bridge": { "command": "claude-ide-bridge", "args": ["shim"] } } }\n\n`,
+    );
+  }
+
+  // Step 3b: Wire CC hooks in ~/.claude/settings.json
+  const ccSettingsPath = path.join(
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+    "settings.json",
+  );
+  const CC_HOOK_NOTIFY_CMDS: Record<string, string> = {
+    PostCompact: "claude-ide-bridge notify PostCompact",
+    InstructionsLoaded: "claude-ide-bridge notify InstructionsLoaded",
+    TaskCreated:
+      "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT",
+    PermissionDenied:
+      "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON",
+    CwdChanged: "claude-ide-bridge notify CwdChanged --cwd $CWD",
+  };
+  try {
+    let ccSettings: Record<string, unknown> = {};
+    if (existsSync(ccSettingsPath)) {
+      ccSettings = JSON.parse(readFileSync(ccSettingsPath, "utf-8")) as Record<
+        string,
+        unknown
+      >;
+    }
+    const ccHooks = (ccSettings.hooks ?? {}) as Record<
+      string,
+      Array<{ type?: string; command?: string }>
+    >;
+    const added: string[] = [];
+    for (const [ccEvent, cmd] of Object.entries(CC_HOOK_NOTIFY_CMDS)) {
+      const entries = ccHooks[ccEvent] ?? [];
+      const alreadyWired = entries.some(
+        (e) =>
+          typeof e.command === "string" &&
+          (e.command.includes(cmd) || e.command.includes(`notify ${ccEvent}`)),
+      );
+      if (!alreadyWired) {
+        ccHooks[ccEvent] = [...entries, { type: "command", command: cmd }];
+        added.push(ccEvent);
+      }
+    }
+    if (added.length > 0) {
+      ccSettings.hooks = ccHooks;
+      writeFileSync(ccSettingsPath, `${JSON.stringify(ccSettings, null, 2)}\n`);
+      process.stderr.write(
+        `  ✓ CC hooks — wired ${added.length} automation hook(s) in ${ccSettingsPath}\n     Added: ${added.join(", ")}\n\n`,
+      );
+    } else {
+      process.stderr.write(
+        `  ✓ CC hooks — already wired in ${ccSettingsPath}\n\n`,
+      );
+    }
+  } catch {
+    process.stderr.write(
+      `  [warn] Could not update ${ccSettingsPath} — add CC hook entries manually.\n` +
+        `         See CLAUDE.md Automation Policy section for the settings.json snippet.\n\n`,
     );
   }
 
