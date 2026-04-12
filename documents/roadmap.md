@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.22.10 — 2026-04-12)
+## Current State (v2.23.10 — 2026-04-12)
 
 - **Slim mode default**: 56 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection, `watchActivityLog`, `contextBundle`); `--full` restores all tools; plugin tools always bypass slim filter
 - **Token-efficient `tools/list`**: all tool descriptions ≤200 chars (slim ≤160), CI audit check #6 enforces limit; `scripts/measure-tools-list.mjs` tracks payload size
@@ -36,6 +36,20 @@ Development direction and exploration guidance. Living document — update as pr
 - Scheduled Tasks support: 3 ready-made SKILL.md templates (nightly-review, health-check, dependency-audit); `health-check` prompt for ad-hoc runs
 - `captureScreenshot` tool: returns MCP image content block directly to Claude (macOS + Linux)
 - Full test coverage: all bridge tool files and extension handler files now have unit tests
+
+**v2.23.0–2.23.10 shipped (2026-04-12) — CC hook wiring + automation polish:**
+- `POST /notify` HTTP endpoint (auth-protected): dispatches CC lifecycle events directly to `AutomationHooks` handlers without a full MCP session; accepts `{ event, args }` JSON body
+- `claude-ide-bridge notify <CcEvent> [--taskId|--prompt|--tool|--reason|--cwd]` CLI subcommand: reads running bridge lock file for port+token, POSTs to `/notify`; usable in `~/.claude/settings.json` hooks
+- 4 new MCP notify tools (`notifyPostCompact`, `notifyInstructionsLoaded`, `notifyTaskCreated`, `notifyPermissionDenied`): MCP path for environments that prefer tool calls over shell commands; same handlers as `/notify`
+- `checkCcHookWiring()` upgraded: recognizes both `notify <CcEvent>` CLI pattern and `notify<CcEvent>` tool-name pattern; `getBridgeStatus` surfaces `unwiredEnabledHooks` and `ccHooksWired` map in `suggestedActions`
+- `init` auto-wires all 5 CC hook entries in `~/.claude/settings.json` (idempotent, step 5 of 6); eliminates most common new-user gap where `--automation` is active but CC-triggered hooks never fire
+- Mystery publish fix (v2.23.5): `SubprocessDriver._writeSettings()` now writes `permissions.deny` list blocking `Bash(npm publish*)`, `Bash(git push*)`, `Bash(npm version*)`; automation subprocess can no longer autonomously publish on release commits
+- `diagnosticTypes` filter bug (v2.23.1): `"typescript"` → `"ts"` in all policy files and preset templates
+- `runTests` 0-result bug (v2.23.2): `parseJsonReport` now uses `file.assertionResults ?? file.testResults` and `file.name ?? file.testFilePath` (Vitest vs Jest fields)
+- `onGitPull` hook: fires after `gitPull` succeeds; `{{remote}}`/`{{branch}}` placeholders; loop guard via `activeGitPullTaskId`
+- 3 preset automation policy templates: `templates/automation-policies/strict-lint.json`, `security-first.json`, `test-driven.json`
+- `@@ HOOK` metadata prefix on all 15 hook prompts (v2.23.0): `@@ HOOK: <name> | file: <path> | ts: <iso> @@` prepended for all hooks; 15 tests covering every hook variant
+- Bridge tests 2,040→2,084 / 143→146 files
 
 **v2.18–v2.22.10 shipped (2026-04-09–2026-04-12) — Tracks A–E + security sweep:**
 FileLock `tryAcquire` (non-blocking); `watchActivityLog` + `contextBundle` slim-mode tools; cursor pagination on `findReferences`/`getCallHierarchy`; diagnostic enrichment in `watchDiagnostics` (git blame, per-instance `blameCache`); visual skills (`/ide-coverage`, `/ide-deps`, `/ide-diagnostics-board`); Track B automation (`onDiagnosticsCleared`, condition expressions, `getChangeImpact` in `onGitCommit`, `onTaskSuccess` chained automation, hooks total 11→15); OAuth token persistence (bridge-token.json + oauth-tokens.json, SHA-256 keyed, configurable TTL); VS Code task tools (`listVSCodeTasks`, `runVSCodeTask`); local auth reliability (lock file age 2h→24h, WebSocket session resumption via `X-Claude-Code-Session-Id`, grace period 120s); 22-item security sweep (ws.send bypass fixed, test isolation — vitest no longer kills live MCP session). Bridge tests 1,850→2,040 / 133→143 files; extension tests 472→564 / 28→35 files.
