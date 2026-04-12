@@ -812,7 +812,10 @@ export function checkCcHookWiring(): Record<string, boolean> {
     for (const [ccEvent, toolName] of Object.entries(CC_HOOK_TOOL_MAP)) {
       const entries = hooks[ccEvent] ?? [];
       result[ccEvent] = entries.some(
-        (e) => typeof e.command === "string" && e.command.includes(toolName),
+        (e) =>
+          typeof e.command === "string" &&
+          (e.command.includes(toolName) ||
+            e.command.includes(`notify ${ccEvent}`)),
       );
     }
   } catch {
