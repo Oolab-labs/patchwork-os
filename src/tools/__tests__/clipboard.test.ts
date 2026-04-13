@@ -72,9 +72,14 @@ describe("writeClipboard — validation", () => {
   });
 
   it("allows text exactly at 1 MB boundary", async () => {
+    // Extension handler returns { written: true, byteLength } — the real
+    // shape from vscode-extension/src/handlers/clipboard.ts. Consumer
+    // normalizes this to { success: true, byteLength } post-v2.25.21.
     const ext = {
       isConnected: () => true,
-      writeClipboard: vi.fn().mockResolvedValue({ success: true }),
+      writeClipboard: vi
+        .fn()
+        .mockResolvedValue({ written: true, byteLength: 1024 * 1024 }),
     } as any;
     const tool = createWriteClipboardTool(ext);
     const exact = "x".repeat(1024 * 1024);
@@ -89,14 +94,18 @@ describe("writeClipboard — extension path", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("uses extension when connected and succeeds", async () => {
+    // Real extension shape (v2.25.21+): { written, byteLength }
     const ext = {
       isConnected: () => true,
-      writeClipboard: vi.fn().mockResolvedValue({ success: true }),
+      writeClipboard: vi
+        .fn()
+        .mockResolvedValue({ written: true, byteLength: 5 }),
     } as any;
     const tool = createWriteClipboardTool(ext);
     const result = parse(await tool.handler({ text: "hello" }));
     expect(ext.writeClipboard).toHaveBeenCalledWith("hello");
     expect(result.success).toBe(true);
+    expect(result.byteLength).toBe(5);
   });
 
   it("falls through to native when extension returns null", async () => {

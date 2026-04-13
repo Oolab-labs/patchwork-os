@@ -30,9 +30,7 @@ export function createFormatAndSaveTool(deps: {
     schema: {
       name: "formatAndSave",
       description:
-        "Format a file and save it in one call. Runs formatDocument, then saveDocument. " +
-        "Eliminates the race window where the on-disk copy lags the formatted buffer. " +
-        "Formatter errors are propagated unchanged; save is not attempted on format failure.",
+        "Format a file and save it in one call (formatDocument + saveDocument). Formatter errors propagate; save is not attempted on format failure.",
       annotations: { destructiveHint: true, idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
