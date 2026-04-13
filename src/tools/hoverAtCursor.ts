@@ -9,9 +9,7 @@ export function createGetHoverAtCursorTool(extensionClient: ExtensionClient) {
     schema: {
       name: "getHoverAtCursor",
       description:
-        "Get hover documentation for the symbol currently under the developer's cursor. " +
-        "Zero-input convenience wrapper around getHover — uses the active file and " +
-        "cursor position tracked by the extension.",
+        "Hover docs for symbol at current cursor. Zero-input wrapper around getHover.",
       annotations: { readOnlyHint: true },
       extensionRequired: true,
       inputSchema: {

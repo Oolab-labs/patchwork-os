@@ -372,8 +372,7 @@ export function createBridgeDoctorTool(
     schema: {
       name: "bridgeDoctor",
       description:
-        "Run a comprehensive health check of the bridge: extension, git, linters, test runners, and GitHub CLI. " +
-        "Use whenever tools are misbehaving or diagnostics are empty.",
+        "Health check: extension, git, linters, test runners, GitHub CLI. Use when tools misbehave.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

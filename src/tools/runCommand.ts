@@ -169,7 +169,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
     schema: {
       name: "runCommand",
       description:
-        "Execute an allowlisted command in the workspace. Returns stdout, stderr, exit code, and timing information. Commands run without a shell for security.",
+        "Execute allowlisted command. Returns stdout, stderr, exit code, timing. No shell for security.",
       annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
         type: "object" as const,

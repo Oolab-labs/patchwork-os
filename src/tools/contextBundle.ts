@@ -17,8 +17,7 @@ export function createContextBundleTool(
     schema: {
       name: "contextBundle",
       description:
-        "Collect IDE context in one call: active file + content, diagnostics, diff, open editors, handoff note, git status. " +
-        "Eliminates round-trips at session start. Fields absent if extension disconnected.",
+        "Collect IDE context in one call: active file, diagnostics, diff, editors, handoff note, git status.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

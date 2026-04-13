@@ -77,7 +77,7 @@ export function createGetImportTreeTool(workspace: string) {
     schema: {
       name: "getImportTree",
       description:
-        "Parse import statements in a file and build a tree of local (workspace-relative) imports. Useful for understanding module dependencies and finding circular imports.",
+        "Tree of local imports for a file. Useful for understanding deps and finding circular imports.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

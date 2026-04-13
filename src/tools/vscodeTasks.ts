@@ -17,7 +17,7 @@ export function createListVSCodeTasksTool(extensionClient: ExtensionClient) {
       name: "listVSCodeTasks",
       extensionRequired: true,
       description:
-        "List all VS Code tasks defined in tasks.json and extensions. Returns name, type, group (build/test/etc), and source for each task.",
+        "List VS Code tasks from tasks.json and extensions. Returns name, type, group, source.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -67,7 +67,7 @@ export function createRunVSCodeTaskTool(extensionClient: ExtensionClient) {
       name: "runVSCodeTask",
       extensionRequired: true,
       description:
-        "Execute a VS Code task by name (from listVSCodeTasks). Waits for completion and returns exit code. Use for build, test, lint tasks defined in tasks.json.",
+        "Run VS Code task by name. Waits for completion, returns exit code. For build/test/lint tasks.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

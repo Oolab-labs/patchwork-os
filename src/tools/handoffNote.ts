@@ -86,8 +86,7 @@ export function createSetHandoffNoteTool(
       name: "setHandoffNote",
       annotations: { destructiveHint: true, idempotentHint: true },
       description:
-        "Save a context note that persists across sessions for any MCP client. " +
-        "Use to hand off context when switching between CLI and Desktop.",
+        "Save context note that persists across sessions. Use when switching between CLI and Desktop.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -139,7 +138,7 @@ export function createGetHandoffNoteTool(
       name: "getHandoffNote",
       annotations: { readOnlyHint: true },
       description:
-        "Retrieve the handoff context note left by a previous session (Claude Desktop or Claude Code CLI). Call this at the start of a session to pick up where you left off.",
+        "Retrieve handoff note from prior session (Desktop or CLI). Call at session start to resume.",
       inputSchema: {
         type: "object" as const,
         properties: {},

@@ -19,7 +19,7 @@ export function createCloseTabTool(
       name: "closeTab",
       extensionRequired: true,
       description:
-        "Close a specific editor tab by file path. Uses VS Code when the extension is connected (prompts to save if dirty). Without the extension, this operation is not available.",
+        "Close editor tab by file path. Prompts to save if dirty. Requires ext.",
       annotations: { destructiveHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -86,8 +86,7 @@ export function createCloseAllDiffTabsTool() {
   return {
     schema: {
       name: "closeAllDiffTabs",
-      description:
-        "Close all diff tabs in the editor and clean up temporary diff directories",
+      description: "Close all diff tabs and clean up temp diff directories.",
       annotations: { destructiveHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

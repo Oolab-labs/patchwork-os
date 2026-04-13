@@ -40,8 +40,7 @@ export function createGitAddTool(workspace: string) {
     schema: {
       name: "gitAdd",
       description:
-        "Stage files for the next git commit. Omit files to stage all tracked changes (git add -u). " +
-        "Use addUntracked: true to also stage new untracked files. Check first with getGitStatus.",
+        "Stage files for commit. Omit to stage all tracked (git add -u). addUntracked:true for new files.",
       annotations: { destructiveHint: false },
       inputSchema: {
         type: "object" as const,
@@ -128,8 +127,7 @@ export function createGitCommitTool(
     schema: {
       name: "gitCommit",
       description:
-        "Create a git commit from staged changes. Use gitAdd first, or pass files to stage-and-commit in one step. " +
-        "Returns the new commit hash, branch, and list of committed files.",
+        "Commit staged changes. Pass files to stage-and-commit in one step. Returns hash, branch, files.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -403,8 +401,7 @@ export function createGitBlameTool(workspace: string) {
     schema: {
       name: "gitBlame",
       description:
-        "Show who last modified each line of a file and in which commit. " +
-        "Use to trace why code was written a certain way or find the commit that introduced a bug.",
+        "Per-line last modifier and commit. Trace why code was written or find the introducing commit.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

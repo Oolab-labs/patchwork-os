@@ -103,8 +103,7 @@ export function createRunTestsTool(
     schema: {
       name: "runTests",
       description:
-        "Run tests using auto-detected frameworks (Vitest, Jest, Pytest, Cargo test, Go test). " +
-        "Returns pass/fail, failure messages, and file:line locations. Cached 30s; use noCache: true after changes.",
+        "Run tests (Vitest/Jest/Pytest/Cargo/Go). Returns pass/fail, failures, file:line. Cached 30s.",
       timeoutMs: 300_000, // 5 min — large test suites (1800+ tests) routinely exceed the global 60s default
       annotations: {
         title: "Run Tests",

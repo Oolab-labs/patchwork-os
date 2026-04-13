@@ -10,8 +10,7 @@ export function createCaptureScreenshotTool(extensionClient: ExtensionClient) {
       name: "captureScreenshot",
       extensionRequired: true,
       description:
-        "Capture a screenshot. Returns base64-encoded PNG. " +
-        "Supported on macOS (screencapture) and Linux with a display (ImageMagick). Not available on headless servers. ",
+        "Capture screenshot → base64 PNG. macOS/Linux with display only. Not available on headless servers.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

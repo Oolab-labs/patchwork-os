@@ -19,8 +19,7 @@ export function createGetOpenEditorsTool(
     schema: {
       name: "getOpenEditors",
       description:
-        "Get list of currently open files/tabs. Returns isDirty, isActive, and all tabs when extension is connected. " +
-        "Without extension, returns only files opened in this session.",
+        "Open files/tabs with isDirty, isActive when ext connected. Fallback: session-opened files only.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

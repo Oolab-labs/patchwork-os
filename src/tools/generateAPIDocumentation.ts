@@ -30,7 +30,7 @@ export function createGenerateAPIDocumentationTool(workspace: string) {
     schema: {
       name: "generateAPIDocumentation",
       description:
-        "Generate markdown or JSON API documentation for TypeScript/JavaScript exported symbols by parsing source files. Extracts functions, classes, interfaces, types, consts, and JSDoc comments.",
+        "Generate API docs (markdown/JSON) for TS/JS exported symbols. Extracts fns, classes, interfaces, JSDoc.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

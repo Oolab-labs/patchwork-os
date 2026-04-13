@@ -12,8 +12,7 @@ export function createSaveDocumentTool(
     schema: {
       name: "saveDocument",
       description:
-        "Save a document with unsaved changes. Uses VS Code's buffer save when connected. " +
-        "Without the extension, this is a no-op — editText writes directly to disk.",
+        "Save document via VS Code buffer when ext connected. No-op otherwise (editText writes to disk).",
       annotations: { destructiveHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

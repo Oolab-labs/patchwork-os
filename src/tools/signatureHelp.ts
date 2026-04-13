@@ -17,8 +17,7 @@ export function createSignatureHelpTool(
       name: "signatureHelp",
       extensionRequired: true,
       description:
-        "Get function signature documentation and parameter info at a call site. " +
-        "Returns the active signature, parameter index, and all overloads with docs. ",
+        "Function signature and param info at a call site. Returns active sig, param index, overloads.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

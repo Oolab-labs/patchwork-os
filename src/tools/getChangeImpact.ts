@@ -35,9 +35,7 @@ export function createGetChangeImpactTool(
       name: "getChangeImpact",
       extensionRequired: true,
       description:
-        "Analyze the blast radius after editing a file. Returns diagnostics on the file " +
-        "and reference counts for changed symbols. Use after edits to understand what " +
-        "other code may be affected.",
+        "Blast radius after editing a file: diagnostics + reference counts for changed symbols.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

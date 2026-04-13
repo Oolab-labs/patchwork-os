@@ -115,7 +115,7 @@ export function createPlanTools(workspace: string) {
     schema: {
       name: "createPlan",
       description:
-        "Create a new plan file (.claude-plan.md) in the workspace root. Plans are markdown files with sections and task checklists that persist across sessions.",
+        "Create .claude-plan.md in workspace root. Markdown with sections and task checklists.",
       inputSchema: {
         type: "object" as const,
         required: ["title"],
@@ -226,7 +226,7 @@ export function createPlanTools(workspace: string) {
     schema: {
       name: "updatePlan",
       description:
-        "Update an existing plan file. Can mark tasks complete/incomplete, add tasks to sections, or add new sections.",
+        "Update plan file: mark tasks done/undone, add tasks or sections.",
       annotations: { idempotentHint: true },
       inputSchema: {
         type: "object" as const,
@@ -396,7 +396,7 @@ export function createPlanTools(workspace: string) {
     schema: {
       name: "getPlan",
       description:
-        "Read the current plan file and return its content as structured data with title, sections, tasks, and completion status.",
+        "Read plan file. Returns title, sections, tasks, and completion status.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

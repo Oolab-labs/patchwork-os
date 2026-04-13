@@ -260,8 +260,7 @@ export function createAuditDependenciesTool(
     schema: {
       name: "auditDependencies",
       description:
-        "Detect outdated packages. Reports current vs. latest versions. Supports npm, yarn, pnpm, cargo, and pip. " +
-        "Complement to getSecurityAdvisories which finds vulnerabilities.",
+        "Detect outdated packages (current vs latest). Supports npm, yarn, pnpm, cargo, pip. Complement to getSecurityAdvisories.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

@@ -141,7 +141,7 @@ export function createGetDiagnosticsTool(
     schema: {
       name: "getDiagnostics",
       description:
-        "Get diagnostics (errors, warnings) from linters. Supports TypeScript, ESLint, Pyright, Ruff, Cargo, Go vet, and Biome. Returns real-time LSP diagnostics when the extension is connected.",
+        "Errors/warnings from TS, ESLint, Pyright, Ruff, Cargo, Go vet, Biome. Real-time LSP when ext connected.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

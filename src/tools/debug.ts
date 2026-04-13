@@ -20,8 +20,7 @@ export function createEvaluateInDebuggerTool(extensionClient: ExtensionClient) {
       name: "evaluateInDebugger",
       extensionRequired: true,
       description:
-        "Evaluate an expression in the active debug session (REPL/watch). " +
-        "The session must be paused at a breakpoint for variables to be in scope. ",
+        "Evaluate expression in active debug session. Session must be paused at a breakpoint.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -92,8 +91,7 @@ export function createSetDebugBreakpointsTool(
       name: "setDebugBreakpoints",
       extensionRequired: true,
       description:
-        "Set breakpoints in a file, replacing any existing ones. " +
-        "Supports conditional breakpoints, logpoints, and hit-count conditions. ",
+        "Set breakpoints in a file (replaces existing). Supports conditions, logpoints, hit counts.",
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
@@ -181,7 +179,7 @@ export function createStartDebuggingTool(extensionClient: ExtensionClient) {
       name: "startDebugging",
       extensionRequired: true,
       description:
-        "Start a debug session from .vscode/launch.json. Pass configName to select a configuration by name. ",
+        "Start debug session from .vscode/launch.json. Pass configName to select configuration.",
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
@@ -229,8 +227,7 @@ export function createStopDebuggingTool(extensionClient: ExtensionClient) {
     schema: {
       name: "stopDebugging",
       extensionRequired: true,
-      description:
-        "Stop the active debug session. Has no effect if no session is running. ",
+      description: "Stop active debug session. No-op if none running.",
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

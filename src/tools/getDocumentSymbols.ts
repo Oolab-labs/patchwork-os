@@ -31,8 +31,7 @@ export function createGetDocumentSymbolsTool(
     schema: {
       name: "getDocumentSymbols",
       description:
-        "List all symbols (functions, classes, interfaces, methods) in a file. " +
-        "Returns names, kinds, line numbers, and parent relationships.",
+        "List symbols (fns, classes, interfaces, methods) in a file: names, kinds, lines, parents.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

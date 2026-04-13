@@ -10,7 +10,7 @@ export function createResumeClaudeTaskTool(
     schema: {
       name: "resumeClaudeTask",
       description:
-        "Resume a previously failed, cancelled, or completed Claude task by re-running it with the same prompt. Returns a new task ID.",
+        "Re-run a failed, cancelled, or completed Claude task with same prompt. Returns new taskId.",
       annotations: {
         title: "Resume Claude Task",
         readOnlyHint: false,

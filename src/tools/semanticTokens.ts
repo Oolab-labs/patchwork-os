@@ -17,7 +17,7 @@ export function createGetSemanticTokensTool(
       name: "getSemanticTokens",
       extensionRequired: true,
       description:
-        "Get semantic token classification for a file: token types and modifiers from the language server. ",
+        "Semantic token types and modifiers for a file from the language server.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

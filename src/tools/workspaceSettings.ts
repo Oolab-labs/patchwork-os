@@ -35,8 +35,7 @@ export function createSetWorkspaceSettingTool(
     schema: {
       name: "setWorkspaceSetting",
       description:
-        "Write a VS Code workspace setting (dot notation, e.g. editor.tabSize). " +
-        "Writes to workspace scope (.vscode/settings.json). Writes to security.* are blocked. ",
+        "Write VS Code workspace setting (dot notation e.g. editor.tabSize). security.* writes blocked.",
       annotations: { destructiveHint: true },
       extensionRequired: true,
       inputSchema: {

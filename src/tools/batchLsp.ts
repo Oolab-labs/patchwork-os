@@ -64,8 +64,7 @@ export function createBatchGetHoverTool(
       name: "batchGetHover",
       extensionRequired: true,
       description:
-        "Get hover information (type signatures, docs) for multiple positions in one call. " +
-        "More efficient than calling getHover repeatedly. Max 10 items. ",
+        "Hover info (type signatures, docs) for up to 10 positions. Prefer over repeated getHover.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -158,8 +157,7 @@ export function createBatchFindImplementationsTool(
       name: "batchFindImplementations",
       extensionRequired: true,
       description:
-        "Find implementations for multiple symbols in one call. " +
-        "More efficient than calling findImplementations repeatedly. Max 10 items. ",
+        "Find implementations for up to 10 symbols. Prefer over repeated findImplementations.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -256,8 +254,7 @@ export function createBatchGoToDefinitionTool(
       name: "batchGoToDefinition",
       extensionRequired: true,
       description:
-        "Go to definition for multiple symbols in one call. " +
-        "More efficient than calling goToDefinition repeatedly. Max 10 items. ",
+        "Go to definition for up to 10 symbols. Prefer over repeated goToDefinition.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

@@ -24,7 +24,7 @@ export function createDetectUnusedCodeTool(
     schema: {
       name: "detectUnusedCode",
       description:
-        "Find unused exports, locals, and parameters using TypeScript compiler analysis (tsc --noUnusedLocals) or ts-prune if available. Returns file paths, line numbers, and symbol names.",
+        "Find unused exports, locals, parameters via tsc --noUnusedLocals or ts-prune.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

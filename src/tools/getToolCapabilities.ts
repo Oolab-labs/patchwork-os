@@ -12,7 +12,7 @@ export function createGetToolCapabilitiesTool(
     schema: {
       name: "getToolCapabilities",
       description:
-        "Returns the actual capabilities of this IDE bridge — which CLI tools are available, whether the VS Code extension is connected, and which features are functional vs stub-only.",
+        "Available CLI tools, ext connection state, and which features are functional vs stub-only.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

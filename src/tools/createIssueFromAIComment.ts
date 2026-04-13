@@ -23,8 +23,7 @@ export function createCreateIssueFromAICommentTool(
     schema: {
       name: "createGithubIssueFromAIComment",
       description:
-        "Create a GitHub issue from an AI comment found in the codebase. " +
-        "Call getAIComments first to populate the cache, then use this to file an issue for a specific comment.",
+        "Create GitHub issue from AI comment. Call getAIComments first to populate cache.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

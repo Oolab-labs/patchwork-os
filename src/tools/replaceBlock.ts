@@ -22,8 +22,7 @@ export function createReplaceBlockTool(
     schema: {
       name: "replaceBlock",
       description:
-        "Replace an exact block of text in a file by content match — no line numbers needed. " +
-        "Safer than editText — fails clearly if content not found or ambiguous.",
+        "Replace exact text block by content match, no line numbers. Fails clearly if not found or ambiguous.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

@@ -9,7 +9,7 @@ export function createWatchFilesTool(extensionClient: ExtensionClient) {
     schema: {
       name: "watchFiles",
       description:
-        "Watch files matching a glob pattern for changes (created, modified, deleted). Notifications are pushed when matching files change. Use unwatchFiles to stop watching.",
+        "Watch glob pattern for file changes (created/modified/deleted). Use unwatchFiles to stop.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

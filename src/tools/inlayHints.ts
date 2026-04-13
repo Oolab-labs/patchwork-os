@@ -20,9 +20,7 @@ export function createGetInlayHintsTool(
       name: "getInlayHints",
       extensionRequired: true,
       description:
-        "Get inlay hints for a range of lines in a file. Inlay hints are the inline type " +
-        "annotations and parameter names shown by the language server (e.g. TypeScript types, " +
-        "Rust lifetimes).",
+        "Inlay hints (inline type annotations, param names) for a line range. e.g. TS types, Rust lifetimes.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

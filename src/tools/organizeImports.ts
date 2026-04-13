@@ -49,7 +49,7 @@ export function createOrganizeImportsTool(
     schema: {
       name: "organizeImports",
       description:
-        "Organize and sort imports in a file. Uses VS Code extension when connected; falls back to Biome or Prettier CLI otherwise.",
+        "Organize/sort imports. Uses VS Code ext when connected; falls back to Biome or Prettier.",
       annotations: { destructiveHint: true, idempotentHint: true },
       inputSchema: {
         type: "object" as const,

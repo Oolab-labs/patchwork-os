@@ -16,8 +16,7 @@ export function createGetDocumentLinksTool(
       name: "getDocumentLinks",
       extensionRequired: true,
       description:
-        "Get document links (file references, URLs) in a file. " +
-        "Useful for navigating to referenced files or external docs. File links are workspace-relative. ",
+        "Get file references and URLs in a document. File links are workspace-relative.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

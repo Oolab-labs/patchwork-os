@@ -17,8 +17,7 @@ export function createGetCommitDetailsTool(workspace: string) {
     schema: {
       name: "getCommitDetails",
       description:
-        "Get the full details of a git commit: author, date, commit message, changed files, " +
-        "and optionally the complete diff patch. Use getGitLog to find commit hashes first.",
+        "Full commit details: author, date, message, changed files, optional diff patch.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -105,8 +104,7 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
     schema: {
       name: "getDiffBetweenRefs",
       description:
-        "Get the diff between two git refs (branches, tags, or commit hashes). " +
-        "Use statOnly to get a quick file-level summary without the full patch.",
+        "Diff between two git refs (branches/tags/commits). statOnly for file-level summary only.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

@@ -10,8 +10,7 @@ export function createGetDebugStateTool(extensionClient: ExtensionClient) {
       name: "getDebugState",
       extensionRequired: true,
       description:
-        "Get the current VS Code debugger state: session info, paused location, " +
-        "call stack, and local variables. Returns hasActiveSession=false when not running. ",
+        "VS Code debugger state: session info, paused location, call stack, locals. hasActiveSession=false if idle.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

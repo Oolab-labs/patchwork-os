@@ -16,8 +16,7 @@ export function createGetCodeLensTool(
       name: "getCodeLens",
       extensionRequired: true,
       description:
-        "Get code lens items for a file: reference counts, Run Test/Debug buttons, and implementation counts " +
-        "shown above code by the language server. Useful for quantitative code coverage signals.",
+        "Code lens items for a file: ref counts, Run/Debug buttons, impl counts from language server.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

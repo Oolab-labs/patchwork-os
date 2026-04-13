@@ -20,7 +20,7 @@ export function createSearchWorkspaceTool(
     schema: {
       name: "searchWorkspace",
       description:
-        "Search for text patterns in workspace files using ripgrep (or grep fallback). Returns matching lines with file paths and line numbers.",
+        "Search workspace files via ripgrep. Returns matching lines with file paths and line numbers.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
