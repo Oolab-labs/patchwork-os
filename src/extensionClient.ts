@@ -877,6 +877,31 @@ export class ExtensionClient {
     return raw as T | null;
   }
 
+  /**
+   * Shape-validated request — handles shape-wrap bugs where the extension
+   * handler returns a different structural shape than the client expects
+   * (e.g. `{ folders, count }` vs `WorkspaceFolder[]`).
+   *
+   * Combines error-object detection from tryRequest with a runtime validator.
+   * If `validate` returns null, the response shape did not match and the
+   * client should return null — preventing silent data corruption downstream.
+   *
+   * Use for any handler whose success shape is non-trivial. Prefer over
+   * proxy<T> when the response is an object with specific required fields.
+   */
+  private async validatedRequest<T>(
+    method: string,
+    params: unknown,
+    validate: (raw: unknown) => T | null,
+    timeout?: number,
+    signal?: AbortSignal,
+  ): Promise<T | null> {
+    const raw = await this.requestOrNull(method, params, timeout, signal);
+    if (raw === null) return null;
+    if (this.isErrorResponse(raw)) return null;
+    return validate(raw);
+  }
+
   async getDiagnostics(file?: string): Promise<Diagnostic[] | null> {
     return this.proxy<Diagnostic[]>("extension/getDiagnostics", { file });
   }
@@ -1596,14 +1621,18 @@ export class ExtensionClient {
 
   async getWorkspaceFolders(): Promise<WorkspaceFolder[] | null> {
     // Extension returns { folders: [...], count: N } — unwrap to array.
-    const raw = await this.requestOrNull("extension/getWorkspaceFolders");
-    if (raw === null) return null;
-    if (typeof raw === "object" && "folders" in raw) {
-      const folders = (raw as { folders: unknown }).folders;
-      return Array.isArray(folders) ? (folders as WorkspaceFolder[]) : null;
-    }
-    // Back-compat: old extension versions returned the array directly.
-    return Array.isArray(raw) ? (raw as WorkspaceFolder[]) : null;
+    // Back-compat with legacy extension versions that returned the array directly.
+    return this.validatedRequest<WorkspaceFolder[]>(
+      "extension/getWorkspaceFolders",
+      undefined,
+      (raw) => {
+        if (typeof raw === "object" && raw !== null && "folders" in raw) {
+          const folders = (raw as { folders: unknown }).folders;
+          return Array.isArray(folders) ? (folders as WorkspaceFolder[]) : null;
+        }
+        return Array.isArray(raw) ? (raw as WorkspaceFolder[]) : null;
+      },
+    );
   }
 
   // --- Notebook ---
