@@ -123,6 +123,80 @@ describe("ExtensionClient", () => {
     ws.close();
   });
 
+  it("getWorkspaceFolders unwraps { folders, count } response (validatedRequest)", async () => {
+    const serverConn = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws);
+    const serverWs = await serverConn;
+    client.handleExtensionConnection(serverWs);
+
+    ws.on("message", (data) => {
+      const msg = JSON.parse(data.toString("utf-8"));
+      if (msg.method === "extension/getWorkspaceFolders") {
+        ws.send(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg.id,
+            result: {
+              folders: [
+                { name: "root", path: "/ws", uri: "file:///ws", index: 0 },
+                { name: "sub", path: "/ws2", uri: "file:///ws2", index: 1 },
+              ],
+              count: 2,
+            },
+          }),
+        );
+      }
+    });
+
+    const folders = await client.getWorkspaceFolders();
+    expect(folders).not.toBeNull();
+    expect(Array.isArray(folders)).toBe(true);
+    expect(folders?.length).toBe(2);
+    expect(folders?.[0]?.path).toBe("/ws");
+
+    ws.close();
+  });
+
+  it("getWorkspaceFolders accepts legacy array-shape response", async () => {
+    const serverConn = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws);
+    const serverWs = await serverConn;
+    client.handleExtensionConnection(serverWs);
+
+    ws.on("message", (data) => {
+      const msg = JSON.parse(data.toString("utf-8"));
+      if (msg.method === "extension/getWorkspaceFolders") {
+        ws.send(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg.id,
+            result: [
+              {
+                name: "legacy",
+                path: "/legacy",
+                uri: "file:///legacy",
+                index: 0,
+              },
+            ],
+          }),
+        );
+      }
+    });
+
+    const folders = await client.getWorkspaceFolders();
+    expect(folders).not.toBeNull();
+    expect(folders?.length).toBe(1);
+    expect(folders?.[0]?.path).toBe("/legacy");
+
+    ws.close();
+  });
+
   it("returns null when not connected", async () => {
     const result = await client.getDiagnostics();
     expect(result).toBeNull();
