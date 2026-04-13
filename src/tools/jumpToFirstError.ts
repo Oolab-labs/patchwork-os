@@ -86,7 +86,7 @@ export function createJumpToFirstErrorTool(deps: {
         signal,
         progress,
       );
-      if (diag.isError) return diag;
+      if ("isError" in diag && diag.isError) return diag;
 
       const diagData = (diag as { structuredContent?: Record<string, unknown> })
         .structuredContent;
@@ -120,7 +120,7 @@ export function createJumpToFirstErrorTool(deps: {
         filePath,
         startLine: line,
       });
-      if (openResult.isError) return openResult;
+      if ("isError" in openResult && openResult.isError) return openResult;
 
       // Step 3: decorate the error line (best-effort; extension-only)
       let decorationApplied = false;
@@ -142,7 +142,7 @@ export function createJumpToFirstErrorTool(deps: {
               },
             ],
           });
-          decorationApplied = !decoResult.isError;
+          decorationApplied = !("isError" in decoResult && decoResult.isError);
         } catch {
           // best-effort; decoration failure does not fail the jump
         }
