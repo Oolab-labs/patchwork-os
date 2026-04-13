@@ -840,7 +840,12 @@ export class ExtensionClient {
   }
 
   async getSelection(): Promise<SelectionState | null> {
-    return this.proxy<SelectionState>("extension/getSelection");
+    // Extension returns { error: "No active editor" } when no editor is active.
+    // Unwrap to null so consumers can distinguish "no selection" from a real result.
+    const raw = await this.requestOrNull("extension/getSelection");
+    if (raw === null || typeof raw !== "object") return null;
+    if ("error" in raw) return null;
+    return raw as SelectionState;
   }
 
   async getOpenFiles(): Promise<TabInfo[] | null> {
@@ -1533,7 +1538,15 @@ export class ExtensionClient {
   // --- Workspace Folders ---
 
   async getWorkspaceFolders(): Promise<WorkspaceFolder[] | null> {
-    return this.proxy<WorkspaceFolder[]>("extension/getWorkspaceFolders");
+    // Extension returns { folders: [...], count: N } — unwrap to array.
+    const raw = await this.requestOrNull("extension/getWorkspaceFolders");
+    if (raw === null) return null;
+    if (typeof raw === "object" && "folders" in raw) {
+      const folders = (raw as { folders: unknown }).folders;
+      return Array.isArray(folders) ? (folders as WorkspaceFolder[]) : null;
+    }
+    // Back-compat: old extension versions returned the array directly.
+    return Array.isArray(raw) ? (raw as WorkspaceFolder[]) : null;
   }
 
   // --- Notebook ---
