@@ -2,12 +2,14 @@
   "_comment": "strict-lint — triggers on every save and error, enforces zero-warning policy.",
   "_usage": "Copy to automation-policy.json. Requires --automation --automation-policy <path> --claude-driver subprocess",
 
+  "automationSystemPrompt": "Automation bot. Drop articles/filler. Fragments OK. Abbreviate: DB/auth/config/req/res/fn. X→Y arrows. ≤5 lines. No preamble. Call tools → report results only.",
+
   "onFileSave": {
     "enabled": true,
     "patterns": ["**/*.{ts,tsx,js,jsx}"],
     "condition": "!**/*.test.ts",
     "cooldownMs": 8000,
-    "prompt": "File saved: {{file}}\n\nCall fixAllLintErrors on this file (auto-fix all safe issues), then getDiagnostics. Report any remaining errors or warnings — we enforce zero warnings."
+    "prompt": "{{file}} saved. fixAllLintErrors → getDiagnostics. Remaining errors/warnings ≤10 lines. Zero-warning policy."
   },
 
   "onDiagnosticsError": {
@@ -15,24 +17,24 @@
     "cooldownMs": 10000,
     "minSeverity": "warning",
     "diagnosticTypes": ["ts", "eslint", "biome"],
-    "prompt": "Lint/type issue in {{file}}:\n\n{{diagnostics}}\n\nCall fixAllLintErrors to auto-fix, then explain any issues that require manual attention. Keep response ≤10 lines."
+    "prompt": "Lint/type issue {{file}}:\n{{diagnostics}}\nfixAllLintErrors → manual fixes needed? ≤10 lines."
   },
 
   "onDiagnosticsCleared": {
     "enabled": true,
     "cooldownMs": 10000,
-    "prompt": "All issues cleared in {{file}}. Confirm by calling getDiagnostics one more time to verify the workspace is clean."
+    "prompt": "{{file}} issues cleared. getDiagnostics → confirm workspace clean."
   },
 
   "onGitCommit": {
     "enabled": true,
     "cooldownMs": 10000,
-    "prompt": "Commit on {{branch}}: {{message}}\nFiles: {{files}}\n\nCall getDiagnostics workspace-wide. Block: if any errors remain, explain them. Zero-warning policy — report any warnings too."
+    "prompt": "Commit {{branch}}: {{message}}\nFiles: {{files}}\ngetDiagnostics workspace-wide. Errors → block. Warnings → report. Zero-warning policy."
   },
 
   "onPostCompact": {
     "enabled": true,
     "cooldownMs": 5000,
-    "prompt": "Context compacted. Re-orient: getGitStatus, getDiagnostics workspace-wide. Report branch, error count, warning count in ≤5 lines."
+    "prompt": "Compacted. getGitStatus + getDiagnostics workspace-wide. Drop articles/filler. Fragments OK. Abbreviate (DB/auth/config/req/res/fn). Stay terse. Branch, error count, warning count ≤5 lines."
   }
 }
