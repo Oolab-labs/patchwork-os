@@ -931,9 +931,24 @@ export class ExtensionClient {
     return result === true;
   }
 
-  async saveFile(file: string): Promise<boolean> {
+  async saveFile(
+    file: string,
+  ): Promise<{ saved: boolean; error?: string } | null> {
+    // Extension handler returns `true` on successful save,
+    // `{ success: false, error: "..." }` on error paths.
+    // Normalize both shapes so the caller can distinguish "saved ok" from
+    // "not saved + here is why" from "no response".
     const result = await this.requestOrNull("extension/saveFile", { file });
-    return result === true;
+    if (result === true) return { saved: true };
+    if (result === null) return null;
+    if (typeof result === "object") {
+      const r = result as Record<string, unknown>;
+      return {
+        saved: r.success === true,
+        ...(typeof r.error === "string" && { error: r.error }),
+      };
+    }
+    return null;
   }
 
   async closeTab(file: string): Promise<{

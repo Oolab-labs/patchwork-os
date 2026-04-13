@@ -17,9 +17,12 @@ function makeClient(opts: {
 }) {
   return {
     isConnected: vi.fn(() => opts.connected),
+    // saveFile returns { saved, error? } after v2.25.24 — normalize the
+    // legacy boolean test flag to the current client contract.
     saveFile: vi.fn(async () => {
       if (opts.throwTimeout) throw new ExtensionTimeoutError("timeout");
-      return opts.savedResult ?? true;
+      const saved = opts.savedResult ?? true;
+      return { saved };
     }),
   } as any;
 }
@@ -51,7 +54,7 @@ describe("createSaveDocumentTool", () => {
     expect(data.source).toBe("vscode-buffer");
   });
 
-  it("returns saved:false when file not open in editor (saveFile returns false)", async () => {
+  it("returns saved:false when file not open in editor (saveFile returns { saved: false })", async () => {
     const tool = createSaveDocumentTool(
       ws,
       makeClient({ connected: true, savedResult: false }),
@@ -60,6 +63,25 @@ describe("createSaveDocumentTool", () => {
     expect(data.success).toBe(true);
     expect(data.saved).toBe(false);
     expect(data.message).toContain("not open in VS Code");
+  });
+
+  it("surfaces handler error message when saveFile returns { saved: false, error }", async () => {
+    // Regression for v2.25.24 latent bug: handler returns
+    // { success: false, error: "Cannot save untitled document" } for untitled docs.
+    // Before v2.25.24 the client cast `result === true` on the object → false,
+    // and the consumer reported the generic "not open in editor" message,
+    // hiding the real error. New client returns { saved, error? }.
+    const client = {
+      isConnected: vi.fn(() => true),
+      saveFile: vi.fn(async () => ({
+        saved: false,
+        error: "Cannot save untitled document",
+      })),
+    } as never;
+    const tool = createSaveDocumentTool(ws, client);
+    const data = parse(await tool.handler({ filePath: `${ws}/a.ts` }));
+    expect(data.saved).toBe(false);
+    expect(data.message).toBe("Cannot save untitled document");
   });
 
   it("falls back to no-op on ExtensionTimeoutError", async () => {
