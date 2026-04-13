@@ -10,7 +10,7 @@ export function createGetGitStatusTool(workspace: string) {
     schema: {
       name: "getGitStatus",
       description:
-        "Get the current git status including branch, staged/unstaged/untracked files, and ahead/behind counts",
+        "Git status: branch, staged/unstaged/untracked files, ahead/behind counts.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

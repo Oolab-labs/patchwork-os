@@ -114,8 +114,7 @@ export function createGetPRTemplateTool(workspace: string) {
     schema: {
       name: "getPRTemplate",
       description:
-        "Generate a PR description from git commits and diff stats between the current branch and a base branch. " +
-        "Returns markdown body — pass directly to githubCreatePR.",
+        "PR description from commits and diff stats vs base branch. Returns markdown → pass to githubCreatePR.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

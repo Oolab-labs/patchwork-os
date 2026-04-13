@@ -405,8 +405,7 @@ export function createGetSecurityAdvisoriesTool(
     schema: {
       name: "getSecurityAdvisories",
       description:
-        "Run a security audit and return known vulnerabilities with severity, CVE IDs, and remediation steps. " +
-        "Auto-detects npm/yarn/pnpm, cargo, or pip-audit from lock files.",
+        "Security audit: CVEs with severity and remediation. Auto-detects npm/yarn/pnpm/cargo/pip-audit.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

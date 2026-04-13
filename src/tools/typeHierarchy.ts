@@ -21,7 +21,7 @@ export function createGetTypeHierarchyTool(
     schema: {
       name: "getTypeHierarchy",
       description:
-        "Get the type hierarchy for a symbol — supertypes (parent classes/interfaces) and subtypes (implementations/subclasses). Requires a language server with type hierarchy support.",
+        "Type hierarchy: supertypes (parents) and subtypes (impls/subclasses). Requires LSP support.",
       annotations: { readOnlyHint: true },
       extensionRequired: true,
       inputSchema: {

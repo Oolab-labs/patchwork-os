@@ -17,8 +17,7 @@ export function createSelectionRangesTool(
       name: "selectionRanges",
       extensionRequired: true,
       description:
-        "Get hierarchical selection boundaries at a position: from token to file. " +
-        "Returns identifier → expression → block → function → class ranges. ",
+        "Hierarchical selection ranges at position: identifier→expression→block→function→class.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

@@ -73,7 +73,7 @@ export function createBridgeStatusTool(
     schema: {
       name: "getBridgeStatus",
       description:
-        "Get the current status of the IDE bridge: extension connection state, circuit breaker status, and uptime.",
+        "IDE bridge status: ext connection, circuit breaker, uptime, tool availability.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

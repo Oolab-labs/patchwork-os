@@ -22,8 +22,7 @@ export function createSetEditorDecorationsTool(
       name: "setEditorDecorations",
       extensionRequired: true,
       description:
-        "Place visual decorations (highlights, inline text) on file lines. " +
-        "Grouped by logical ID; each call replaces that ID's set. ",
+        "Place visual decorations (highlights, inline text) on file lines. Grouped by ID; replaces on each call.",
       annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -142,8 +141,7 @@ export function createClearEditorDecorationsTool(
       name: "clearEditorDecorations",
       extensionRequired: true,
       description:
-        "Clear editor decorations. Pass an id to clear a specific decoration set, " +
-        "or omit to clear all Claude-managed decorations. ",
+        "Clear editor decorations by ID, or omit id to clear all Claude-managed decorations.",
       annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

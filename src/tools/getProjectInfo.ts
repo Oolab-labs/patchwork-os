@@ -171,8 +171,7 @@ export function createGetProjectInfoTool(workspace: string) {
     schema: {
       name: "getProjectInfo",
       description:
-        "Get a compact project overview: name/version, languages, package manager, scripts, " +
-        "dependencies, config files, structure, and git status. Call once at session start.",
+        "Project overview: name/version, languages, pkg manager, scripts, deps, config, git. Call at session start.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

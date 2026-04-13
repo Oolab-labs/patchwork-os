@@ -19,7 +19,7 @@ export function createRefactorPreviewTool(
     schema: {
       name: "refactorPreview",
       description:
-        "Preview what a code action or refactoring would change across files WITHOUT applying it. Use getCodeActions first to see available actions, then pass the action title here to see the diff preview.",
+        "Preview refactoring edits across files without applying. Use getCodeActions first.",
       extensionRequired: true,
       inputSchema: {
         type: "object" as const,

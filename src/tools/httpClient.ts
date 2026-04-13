@@ -81,8 +81,7 @@ export function createSendHttpRequestTool(options?: {
     schema: {
       name: "sendHttpRequest",
       description:
-        "Send an HTTP/HTTPS request and return the response status, headers, and body. " +
-        "Response body is truncated at maxResponseBytes (default 50 KB) to protect context.",
+        "HTTP/HTTPS request → status, headers, body. Body truncated at maxResponseBytes (default 50 KB).",
       annotations: { openWorldHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -523,9 +522,7 @@ export function createParseHttpFileTool(workspace: string) {
     schema: {
       name: "parseHttpFile",
       description:
-        "Parse a VS Code REST Client file (.http or .rest) and return the requests defined in it. " +
-        "Each entry includes method, URL, headers, and body. " +
-        "Pass any entry directly to sendHttpRequest to execute it.",
+        "Parse VS Code REST Client file (.http/.rest). Returns method, URL, headers, body per request.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

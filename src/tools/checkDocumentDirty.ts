@@ -10,7 +10,7 @@ export function createCheckDocumentDirtyTool(
     schema: {
       name: "checkDocumentDirty",
       description:
-        "Check if a document has unsaved changes. Uses real-time VS Code buffer state when the extension is connected. Without the extension, returns a heuristic result that may be inaccurate.",
+        "Check if file has unsaved changes. Uses VS Code buffer when ext connected; heuristic otherwise.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

@@ -22,7 +22,7 @@ export function createCreateFileTool(
     schema: {
       name: "createFile",
       description:
-        "Create a new file or directory in the workspace. Uses VS Code when connected, falls back to native fs otherwise (openAfterCreate ignored in fallback mode).",
+        "Create file or directory. Uses VS Code when connected, native fs fallback.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -154,7 +154,7 @@ export function createDeleteFileTool(
     schema: {
       name: "deleteFile",
       description:
-        "Delete a file or directory in the workspace. Uses VS Code when connected (supports trash), falls back to native fs for permanent deletion.",
+        "Delete file or directory. VS Code (with trash) when connected, native fs fallback.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -255,7 +255,7 @@ export function createRenameFileTool(
     schema: {
       name: "renameFile",
       description:
-        "Rename or move a file or directory within the workspace. Uses VS Code when connected, falls back to native fs otherwise.",
+        "Rename or move file/directory. Uses VS Code when connected, native fs fallback.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

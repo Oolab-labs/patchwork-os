@@ -46,12 +46,12 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "review-file",
     description:
-      "Thorough code review of a file: correctness, style, performance, security, and test coverage gaps.",
+      "Code review: correctness, style, performance, security, and coverage gaps.",
     arguments: [
       {
         name: "file",
         description:
-          "Workspace-relative or absolute path to the file to review.",
+          "Path to the file to review (workspace-relative or absolute).",
         required: true,
       },
     ],
@@ -59,12 +59,12 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "explain-diagnostics",
     description:
-      "Explain the current diagnostics (errors/warnings) for a file and suggest concrete fixes.",
+      "Explain diagnostics (errors/warnings) for a file and suggest fixes.",
     arguments: [
       {
         name: "file",
         description:
-          "Workspace-relative or absolute path to the file with diagnostics.",
+          "Path to the file with diagnostics (workspace-relative or absolute).",
         required: true,
       },
     ],
@@ -72,12 +72,12 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "generate-tests",
     description:
-      "Generate missing unit tests for a file, following the project's existing test conventions.",
+      "Generate missing unit tests for a file using the project's test conventions.",
     arguments: [
       {
         name: "file",
         description:
-          "Workspace-relative or absolute path to the file to generate tests for.",
+          "Path to the file to generate tests for (workspace-relative or absolute).",
         required: true,
       },
     ],
@@ -85,13 +85,13 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "debug-context",
     description:
-      "Snapshot the current IDE state — open editors, active diagnostics, and recent terminal output — as debugging context.",
+      "Snapshot IDE state (open editors, diagnostics, recent terminal output) as debugging context.",
     arguments: [],
   },
   {
     name: "git-review",
     description:
-      "Review uncommitted changes (staged + unstaged) against a base branch before committing or opening a PR.",
+      "Review uncommitted changes (staged + unstaged) against a base branch before commit or PR.",
     arguments: [
       {
         name: "base",
@@ -103,7 +103,7 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "cowork",
     description:
-      "Load full IDE context (open files, diagnostics, git status, project info, handoff note) and propose a concrete Cowork action plan. Invoke this before any computer-use task so Claude arrives informed.",
+      "Load IDE context (open files, diagnostics, git status, project info, handoff note) and propose a Cowork action plan. Run before any computer-use task.",
     arguments: [
       {
         name: "task",
@@ -116,13 +116,13 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "gen-claude-md",
     description:
-      "Generate a CLAUDE.md bridge workflow section for this project. Outputs the standard bridge workflow rules and quick-reference table, then writes it into the project's CLAUDE.md.",
+      "Generate bridge workflow rules and quick-reference table, then write them into CLAUDE.md.",
     arguments: [],
   },
   {
     name: "set-effort",
     description:
-      "Prepend a model-effort instruction to the next task. Use 'low' for quick answers, 'medium' for normal work, 'high' for complex refactors or deep analysis.",
+      "Prepend a model-effort instruction to the next task. low=quick, medium=normal, high=complex refactors/deep analysis.",
     arguments: [
       {
         name: "level",
@@ -136,13 +136,13 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "project-status",
     description:
-      "Quick project health check: git status, diagnostics summary, and test results. Designed for terse Dispatch triggers from mobile.",
+      "Quick health check: git status, diagnostics, and test results. Terse output for Dispatch/mobile.",
     arguments: [],
   },
   {
     name: "quick-tests",
     description:
-      "Run tests and return a concise pass/fail summary with failure details. Optimized for phone-friendly output.",
+      "Run tests and return a concise pass/fail summary with failure details.",
     arguments: [
       {
         name: "filter",
@@ -155,19 +155,18 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "quick-review",
     description:
-      "Review uncommitted changes: git diff summary plus diagnostics for changed files. Concise output for mobile.",
+      "Git diff summary plus diagnostics for changed files. Concise output.",
     arguments: [],
   },
   {
     name: "build-check",
     description:
-      "Check if the project builds/compiles successfully. Returns pass/fail with error summary.",
+      "Check if the project builds successfully. Returns pass/fail with error summary.",
     arguments: [],
   },
   {
     name: "recent-activity",
-    description:
-      "Show what changed recently: last N git log entries plus uncommitted changes summary.",
+    description: "Last N git log entries plus uncommitted changes summary.",
     arguments: [
       {
         name: "count",
@@ -181,13 +180,13 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "team-status",
     description:
-      "Overview of active agent sessions and recent tool activity. Designed for team leads coordinating parallel teammates.",
+      "Active agent sessions and recent tool activity. For team leads coordinating parallel agents.",
     arguments: [],
   },
   {
     name: "health-check",
     description:
-      "Comprehensive project health: tests, diagnostics, security advisories, git status, and dependency audit. Designed for scheduled nightly/hourly runs.",
+      "Full health check: tests, diagnostics, security advisories, git status, dependency audit. For scheduled nightly/hourly runs.",
     arguments: [],
   },
 
@@ -195,17 +194,12 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "orient-project",
     description:
-      "Set up a new or existing project to work with the Claude IDE Bridge. " +
-      "Discovers project type, generates/updates CLAUDE.md, scaffolds documents/ " +
-      "and docs/adr/ directories, creates .claude/rules/, and verifies connectivity. " +
-      "Safe to run multiple times.",
+      "Set up a project for Claude IDE Bridge: detects project type, generates/updates CLAUDE.md, scaffolds docs, and verifies connectivity. Idempotent.",
     arguments: [
       {
         name: "style",
         description:
-          "Scaffolding depth: 'minimal' (CLAUDE.md + bridge section only), " +
-          "'standard' (+ documents/, docs/adr/, .claude/rules/), " +
-          "'full' (+ commands, agents, use-cases). Default: standard.",
+          "Scaffolding depth: 'minimal' (CLAUDE.md only), 'standard' (+ documents/, docs/adr/, .claude/rules/), 'full' (+ commands, agents, use-cases). Default: standard.",
         required: false,
       },
     ],
@@ -217,7 +211,7 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "find-callers",
     description:
-      "Find every caller of a symbol with file:line locations. Wraps searchWorkspaceSymbols + getCallHierarchy(incoming) + findReferences. Answers: 'what breaks if I change this?'",
+      "Find every caller of a symbol with file:line locations. Wraps searchWorkspaceSymbols + getCallHierarchy(incoming) + findReferences.",
     arguments: [
       {
         name: "symbol",
@@ -229,11 +223,11 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "blast-radius",
     description:
-      "Compute the blast radius of a change at a specific position: diagnostics + reference counts + risk badge. Wraps getChangeImpact.",
+      "Blast radius at a position: diagnostics + reference counts + risk badge. Wraps getChangeImpact.",
     arguments: [
       {
         name: "file",
-        description: "Workspace-relative or absolute path to the file.",
+        description: "File path (workspace-relative or absolute).",
         required: true,
       },
       {
@@ -251,16 +245,16 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "why-error",
     description:
-      "Explain a diagnostic in plain English with surrounding type context. Wraps getDiagnostics + explainSymbol at the error position.",
+      "Explain a diagnostic in plain English with surrounding type context. Wraps getDiagnostics + explainSymbol.",
     arguments: [
       {
         name: "file",
-        description: "Workspace-relative or absolute path to the file.",
+        description: "File path (workspace-relative or absolute).",
         required: true,
       },
       {
         name: "line",
-        description: "Optional line number to focus on (default: first error).",
+        description: "Line number to focus on (default: first error).",
         required: false,
       },
     ],
@@ -268,11 +262,11 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "unused-in",
     description:
-      "List unused exports, parameters, and imports in a file with reference verification. Wraps detectUnusedCode + findReferences.",
+      "List unused exports, parameters, and imports in a file. Wraps detectUnusedCode + findReferences.",
     arguments: [
       {
         name: "file",
-        description: "Workspace-relative or absolute path to the file.",
+        description: "File path (workspace-relative or absolute).",
         required: true,
       },
     ],
@@ -280,7 +274,7 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "trace-to",
     description:
-      "Trace the call chain from entry points to a target symbol with type signatures at each hop. Wraps getCallHierarchy(outgoing) + getImportedSignatures.",
+      "Trace call chain to a target symbol with type signatures at each hop. Wraps getCallHierarchy(outgoing) + getImportedSignatures.",
     arguments: [
       {
         name: "symbol",
@@ -292,7 +286,7 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "imports-of",
     description:
-      "List every file that imports a given symbol with reference counts. Wraps findReferences + getImportTree.",
+      "List files importing a symbol with reference counts. Wraps findReferences + getImportTree.",
     arguments: [
       {
         name: "symbol",
@@ -304,17 +298,17 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "circular-deps",
     description:
-      "Detect circular import dependencies in the workspace. Wraps getImportTree with cycle detection.",
+      "Detect circular import dependencies. Wraps getImportTree with cycle detection.",
     arguments: [],
   },
   {
     name: "refactor-preview",
     description:
-      "Preview the exact edits a rename would make at a position, plus blast-radius risk. Wraps refactorAnalyze + refactorPreview.",
+      "Preview exact edits a rename would make plus blast-radius risk. Wraps refactorAnalyze + refactorPreview.",
     arguments: [
       {
         name: "file",
-        description: "Workspace-relative or absolute path to the file.",
+        description: "File path (workspace-relative or absolute).",
         required: true,
       },
       {
@@ -337,11 +331,11 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "module-exports",
     description:
-      "List a module's exported symbols with their type signatures, formatted as Markdown. Wraps getDocumentSymbols + getHover for each export.",
+      "List exported symbols with type signatures as Markdown. Wraps getDocumentSymbols + getHover.",
     arguments: [
       {
         name: "file",
-        description: "Workspace-relative or absolute path to the file.",
+        description: "File path (workspace-relative or absolute).",
         required: true,
       },
     ],
@@ -349,11 +343,11 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "type-of",
     description:
-      "Get just the type signature at a position (no documentation). Wraps getHoverAtCursor + getTypeSignature.",
+      "Type signature at a position (no docs). Wraps getHoverAtCursor + getTypeSignature.",
     arguments: [
       {
         name: "file",
-        description: "Workspace-relative or absolute path to the file.",
+        description: "File path (workspace-relative or absolute).",
         required: true,
       },
       {
@@ -371,17 +365,17 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "deprecations",
     description:
-      "Find @deprecated APIs across the workspace and count their callers. Wraps searchWorkspace for @deprecated + findReferences.",
+      "Find @deprecated APIs and count callers. Wraps searchWorkspace + findReferences.",
     arguments: [],
   },
   {
     name: "coverage-gap",
     description:
-      "Identify untested functions in a file by correlating coverage with document symbols. Wraps getCodeCoverage + getDocumentSymbols.",
+      "Identify untested functions by correlating coverage with document symbols. Wraps getCodeCoverage + getDocumentSymbols.",
     arguments: [
       {
         name: "file",
-        description: "Workspace-relative or absolute path to the file.",
+        description: "File path (workspace-relative or absolute).",
         required: true,
       },
     ],
@@ -393,7 +387,7 @@ export const PROMPTS: McpPrompt[] = [
     arguments: [
       {
         name: "file",
-        description: "Workspace-relative or absolute path to the file.",
+        description: "File path (workspace-relative or absolute).",
         required: true,
       },
       {
@@ -411,13 +405,13 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "ide-coverage",
     description:
-      "Fetch code coverage, generate an HTML heatmap of covered/uncovered files, and open it in the browser. Requires --full mode (uses getCodeCoverage and openInBrowser).",
+      "Generate an HTML coverage heatmap and open in browser. Requires --full mode (getCodeCoverage + openInBrowser).",
     arguments: [],
   },
   {
     name: "ide-deps",
     description:
-      "Build a D3 force-directed dependency graph for an entry point and open it in the browser. Requires --full mode (uses openInBrowser).",
+      "D3 force-directed dependency graph for an entry point, opened in browser. Requires --full mode.",
     arguments: [
       {
         name: "file",
@@ -439,7 +433,7 @@ export const PROMPTS: McpPrompt[] = [
   {
     name: "ide-diagnostics-board",
     description:
-      "Collect workspace-wide diagnostics, group by severity and file, and render a sortable HTML table in the browser.",
+      "Workspace diagnostics grouped by severity/file, rendered as a sortable HTML table in the browser.",
     arguments: [],
   },
 ];

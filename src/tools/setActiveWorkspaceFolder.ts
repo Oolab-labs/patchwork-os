@@ -7,8 +7,7 @@ export function createSetActiveWorkspaceFolderTool(config: Config) {
     schema: {
       name: "setActiveWorkspaceFolder",
       description:
-        "Set the active workspace folder for subsequent file operations. " +
-        "Useful in multi-root workspaces. Pass a path from getWorkspaceFolders.",
+        "Set active workspace folder for file ops. Useful in multi-root workspaces.",
       annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

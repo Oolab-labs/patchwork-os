@@ -15,6 +15,13 @@ coverage/
 # Claude Code runtime (agent-memory is auto-generated, skills/agents/commands are intentional)
 .claude/agent-memory/
 .claude/settings.json
+.agents/
+skills-lock.json
+.claude/skills/caveman
+.claude/skills/caveman-commit
+.claude/skills/caveman-compress
+.claude/skills/caveman-help
+.claude/skills/caveman-review
 
 # Local MCP config and project memory (machine-specific, not for version control)
 .mcp.json

@@ -81,8 +81,7 @@ export function createGetBufferContentTool(
     schema: {
       name: "getBufferContent",
       description:
-        "Read the current content of a file from the VS Code editor buffer, including unsaved changes. " +
-        "Use before editText for accurate line numbers. Returns isDirty:true when buffer differs from disk.",
+        "Read file from VS Code buffer including unsaved changes. Use before editText. Returns isDirty flag.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

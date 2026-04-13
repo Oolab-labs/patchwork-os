@@ -479,7 +479,7 @@ export function createApplyCodeActionTool(
       name: "applyCodeAction",
       extensionRequired: true,
       description:
-        "Apply a code action (quick fix, refactoring) by title. First use getCodeActions to see available actions, then use this tool to apply one.",
+        "Apply code action by title. Use getCodeActions first to see options.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -576,8 +576,7 @@ export function createPreviewCodeActionTool(
       name: "previewCodeAction",
       extensionRequired: true,
       description:
-        "Preview the text edits a code action would make without applying them. " +
-        "Returns files and edits that would be modified. Use before applyCodeAction to verify. ",
+        "Preview edits a code action would make without applying. Use before applyCodeAction.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -714,7 +713,7 @@ export function createRenameSymbolTool(
       name: "renameSymbol",
       extensionRequired: true,
       description:
-        "Rename a symbol at a given position across all files using the LSP rename provider. Returns list of affected files and edit counts.",
+        "Rename symbol across all files via LSP. Returns affected files and edit counts.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -937,7 +936,7 @@ export function createSearchWorkspaceSymbolsTool(
       name: "searchWorkspaceSymbols",
       extensionRequired: true,
       description:
-        "Search for symbols (classes, functions, variables, interfaces) by name across the entire workspace using VS Code LSP.",
+        "Search workspace symbols (classes, fns, vars, interfaces) by name via LSP.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -1010,7 +1009,7 @@ export function createPrepareRenameTool(
       name: "prepareRename",
       extensionRequired: true,
       description:
-        "Check whether a symbol can be safely renamed. Returns canRename:false (with reason) if the language server does not support renaming this symbol. Use before renameSymbol.",
+        "Check if symbol can be renamed. Returns canRename:false with reason if not. Use before renameSymbol.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -1087,7 +1086,7 @@ export function createFormatRangeTool(
       name: "formatRange",
       extensionRequired: true,
       description:
-        "Format a specific line range in a file using the language server formatter. Faster and safer than formatting the entire document for large files.",
+        "Format a line range via LSP formatter. Faster than full formatDocument for large files.",
       annotations: { readOnlyHint: false },
       inputSchema: {
         type: "object" as const,
@@ -1160,7 +1159,7 @@ export function createFindImplementationsTool(
       name: "findImplementations",
       extensionRequired: true,
       description:
-        "Find all implementations of an interface, abstract method, or abstract class. Useful for discovering concrete classes that implement an interface.",
+        "Find implementations of interface, abstract method, or abstract class.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

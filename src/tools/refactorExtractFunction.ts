@@ -17,7 +17,7 @@ export function createRefactorExtractFunctionTool(
     schema: {
       name: "refactorExtractFunction",
       description:
-        "Extract selected lines of code into a new named function. Uses VS Code's built-in Extract Function code action when available, with a text-manipulation fallback.",
+        "Extract lines into a named function. Uses VS Code Extract Function when available.",
       annotations: { destructiveHint: true },
       extensionRequired: true,
       inputSchema: {

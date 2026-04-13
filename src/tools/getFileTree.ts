@@ -31,7 +31,7 @@ export function createGetFileTreeTool(workspace: string, probes: ProbeResults) {
     schema: {
       name: "getFileTree",
       description:
-        "List files and directories in the workspace tree. Respects .gitignore. Always skips node_modules, .git, dist, __pycache__, .next, build, coverage, .cache.",
+        "Workspace file tree. Respects .gitignore. Skips node_modules, .git, dist, build, coverage.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

@@ -19,7 +19,7 @@ export function createListTerminalsTool(
       name: "listTerminals",
       extensionRequired: true,
       description:
-        "List all active VS Code integrated terminals. Returns terminal names, indices, and whether output capture is available. On headless VPS/SSH, use runInTerminal instead.",
+        "List active VS Code terminals: names, indices, output capture availability.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

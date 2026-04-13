@@ -1,55 +1,55 @@
 {
   "defaultModel": "claude-haiku-4-5-20251001",
   "defaultEffort": "low",
-  "automationSystemPrompt": "You are a concise automation assistant. Respond in ≤5 lines. No preamble. Call the tools listed in the task, then report results only.",
+  "automationSystemPrompt": "Automation bot. ≤5 lines. No preamble. Call tools → report results only.",
   "maxTasksPerHour": 20,
   "onFileSave": {
     "enabled": true,
     "patterns": ["src/**/*.ts", "vscode-extension/src/**/*.ts"],
     "condition": "!**/*.test.ts",
     "cooldownMs": 120000,
-    "prompt": "File saved: {{file}}\n\nCall getDiagnostics on this file. If any errors exist, explain them concisely."
+    "prompt": "{{file}} saved. getDiagnostics → report errors only."
   },
   "onPostCompact": {
     "enabled": true,
     "cooldownMs": 30000,
-    "prompt": "Context was just compacted. Re-orient by calling: getGitStatus (what branch/changes), getDiagnostics (any active errors), getHandoffNote (session context). Summarize in ≤10 lines."
+    "prompt": "Compacted. Call getGitStatus, getDiagnostics, getHandoffNote. Summarize ≤10 lines."
   },
   "onInstructionsLoaded": {
     "enabled": true,
     "cooldownMs": 60000,
-    "prompt": "Session started. Call contextBundle to get IDE state. Report in ≤5 lines: branch, error count, and any uncommitted changes."
+    "prompt": "Session start. contextBundle → report branch, error count, uncommitted changes."
   },
   "onBranchCheckout": {
     "enabled": true,
     "cooldownMs": 5000,
-    "prompt": "Branch switched to {{branch}} (from {{previousBranch}}). New branch: {{created}}.\n\nCall getGitStatus and getDiagnostics. Summarize what's different on this branch in ≤5 lines."
+    "prompt": "→{{branch}} (from {{previousBranch}}). New: {{created}}. getGitStatus + getDiagnostics → diff ≤5 lines."
   },
   "onGitCommit": {
     "enabled": true,
     "cooldownMs": 10000,
-    "prompt": "Commit made on {{branch}}: {{message}}\nFiles: {{files}}\n\nCall getDiagnostics (report errors only). If any test files were in {{files}}, also call runTests and report pass/fail count.\n\nIMPORTANT: Do NOT run any shell commands. Do not publish packages, push to git, bump versions, or deploy."
+    "prompt": "Commit {{branch}}: {{message}}\nFiles: {{files}}\n\ngetDiagnostics (errors only). If test files in {{files}}, runTests → pass/fail count.\n\nIMPORTANT: No shell cmds. No publish/push/version-bump/deploy."
   },
   "onGitPull": {
     "enabled": true,
     "cooldownMs": 10000,
-    "prompt": "Pulled {{branch}} from {{remote}}.\n\nCall getDiagnostics to check for new errors introduced by the pull. If any errors are found, explain them concisely."
+    "prompt": "Pulled {{branch}} from {{remote}}. getDiagnostics → new errors from pull. Explain concisely."
   },
   "onGitPush": {
     "enabled": true,
     "cooldownMs": 10000,
-    "prompt": "Pushed {{branch}} to {{remote}}.\n\nCall getDiagnostics (errors only). Then call searchWorkspace with pattern '(API_KEY|PASSWORD|PRIVATE_KEY|SECRET|TOKEN)\\s*[:=]' to check for leaked secrets in source files. Alert immediately if any match — include file path and line number."
+    "prompt": "Pushed {{branch}} to {{remote}}. getDiagnostics (errors only). searchWorkspace pattern '(API_KEY|PASSWORD|PRIVATE_KEY|SECRET|TOKEN)\\s*[:=]' → alert w/ file+line if match."
   },
   "onPullRequest": {
     "enabled": true,
     "cooldownMs": 10000,
-    "prompt": "PR #{{number}} opened: {{title}} ({{url}}).\n\nCall getPRTemplate to generate a draft description. Then call getDiagnostics workspace-wide. Report: draft PR summary, error count, any new type errors, and whether the branch is clean."
+    "prompt": "PR #{{number}}: {{title}} ({{url}}). getPRTemplate → draft. getDiagnostics workspace-wide. Report: draft summary, error count, type errors, branch clean?"
   },
   "onTestRun": {
     "enabled": true,
     "cooldownMs": 10000,
     "onFailureOnly": true,
-    "prompt": "Tests just ran and {{failed}} failed out of {{total}}.\n\nFailed tests:\n{{failures}}\n\nInvestigate the failures and suggest fixes."
+    "prompt": "{{failed}}/{{total}} tests failed.\n\nFailed:\n{{failures}}\n\nInvestigate → suggest fixes."
   },
   "onDiagnosticsError": {
     "enabled": true,
@@ -58,16 +58,16 @@
     "dedupeContentCooldownMs": 900000,
     "minSeverity": "error",
     "diagnosticTypes": ["ts"],
-    "prompt": "New TypeScript error in {{file}}:\n\n{{diagnostics}}\n\nExplain what's wrong and suggest a fix."
+    "prompt": "TS error in {{file}}:\n\n{{diagnostics}}\n\nExplain cause → suggest fix."
   },
   "onDiagnosticsCleared": {
     "enabled": true,
     "cooldownMs": 10000,
-    "prompt": "All errors cleared in {{file}}. Run the tests for that file to confirm the fix is complete."
+    "prompt": "{{file}} errors cleared. runTests for that file → confirm fix complete."
   },
   "onPermissionDenied": {
     "enabled": true,
     "cooldownMs": 15000,
-    "prompt": "The tool '{{tool}}' was blocked: {{reason}}. Call getBridgeStatus to check bridge health and getToolCapabilities to confirm available tools."
+    "prompt": "'{{tool}}' blocked: {{reason}}. getBridgeStatus → bridge health. getToolCapabilities → available tools."
   }
 }

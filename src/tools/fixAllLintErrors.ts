@@ -45,7 +45,7 @@ export function createFixAllLintErrorsTool(
     schema: {
       name: "fixAllLintErrors",
       description:
-        "Auto-fix all lint errors in a file. Uses VS Code's source.fixAll when connected, or falls back to CLI tools (eslint --fix, biome, ruff --fix). Returns a summary of changes.",
+        "Auto-fix lint errors. VS Code source.fixAll when connected, falls back to eslint/biome/ruff.",
       annotations: { destructiveHint: true, idempotentHint: true },
       inputSchema: {
         type: "object" as const,

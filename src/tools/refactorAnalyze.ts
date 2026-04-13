@@ -28,8 +28,7 @@ export function createRefactorAnalyzeTool(
       name: "refactorAnalyze",
       extensionRequired: true,
       description:
-        "Analyze refactoring impact: rename safety, reference count, caller count, and risk level (low/medium/high). " +
-        "Use before renameSymbol to understand scope. ",
+        "Refactor impact: rename safety, ref/caller counts, risk level (low/medium/high). Use before renameSymbol.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

@@ -35,9 +35,7 @@ export function createNavigateToSymbolByNameTool(
       name: "navigateToSymbolByName",
       extensionRequired: true,
       description:
-        "Find a workspace symbol by name and jump to its definition. " +
-        "Replaces the 2-call searchSymbols → goToDefinition pattern. " +
-        "Returns the chosen symbol, its definition, and up to 4 alternative matches.",
+        "Find symbol by name and jump to definition. Replaces searchSymbols→goToDefinition pattern.",
       annotations: { readOnlyHint: false, idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

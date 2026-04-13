@@ -16,7 +16,7 @@ export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
       name: "getTypeSignature",
       extensionRequired: true,
       description:
-        "Get the type signature or declaration for a symbol at a given position using VS Code LSP hover. Returns the clean signature string extracted from hover markdown.",
+        "Type signature for symbol at position via LSP hover. Returns clean signature from hover markdown.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

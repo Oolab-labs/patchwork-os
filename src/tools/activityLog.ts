@@ -16,8 +16,7 @@ export function createGetActivityLogTool(activityLog: ActivityLog) {
   return {
     schema: {
       name: "getActivityLog",
-      description:
-        "Query the log of recent tool calls. Shows what tools were called, their timing, and status. Useful for reviewing what actions have been taken in this session.",
+      description: "Query recent tool call log: names, timing, status.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -78,8 +77,7 @@ export function createWatchActivityLogTool(activityLog: ActivityLog) {
     schema: {
       name: "watchActivityLog",
       description:
-        "Long-poll for new activity log entries. Returns when new entries arrive or timeout elapses. " +
-        "Pass the returned lastId as sinceId on the next call to get only new entries.",
+        "Long-poll for new activity log entries. Pass lastId as sinceId on next call.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

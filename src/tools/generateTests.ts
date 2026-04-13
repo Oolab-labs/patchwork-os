@@ -159,8 +159,7 @@ export function createGenerateTestsTool(workspace: string) {
     schema: {
       name: "generateTests",
       description:
-        "Generate a test file scaffold for a source file by extracting its exported functions and classes. " +
-        "Returns ready-to-edit test content with describe/it blocks — does not write the file.",
+        "Generate test scaffold from exported fns/classes. Returns describe/it content; does not write file.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

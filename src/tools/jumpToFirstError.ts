@@ -50,7 +50,7 @@ export function createJumpToFirstErrorTool(deps: {
     schema: {
       name: "jumpToFirstError",
       description:
-        "Find the first workspace error and jump to it in one call (getDiagnostics → openFile → decoration). Returns { found: false } when the workspace has no errors.",
+        "Jump to first workspace error (getDiagnostics→openFile→decoration). Returns {found:false} if none.",
       annotations: { readOnlyHint: false, idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

@@ -284,7 +284,7 @@ export function createCreateTerminalTool(
       extensionRequired: true,
       annotations: { destructiveHint: true },
       description:
-        "Create a new VS Code integrated terminal. Optionally set a name, working directory, environment variables, and shell.",
+        "Create VS Code integrated terminal. Options: name, cwd, env vars, shell.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -400,8 +400,7 @@ export function createWaitForTerminalOutputTool(
       name: "waitForTerminalOutput",
       extensionRequired: true,
       description:
-        "Block until a regex pattern appears in terminal output, then return the matching line. " +
-        "Returns {matched, matchedLine, elapsed} on success or {matched: false, timedOut: true} on timeout.",
+        "Block until regex matches terminal output. Returns {matched, matchedLine, elapsed} or timedOut.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -514,8 +513,7 @@ export function createRunInTerminalTool(
       name: "runInTerminal",
       annotations: { destructiveHint: true, openWorldHint: true },
       description:
-        "Execute a command and wait for completion, returning exit code and full output. " +
-        "Falls back to subprocess on headless VPS/SSH. Prefer over runCommand when you need output capture.",
+        "Execute command and wait for completion. Returns exit code and output. Prefer over runCommand.",
       inputSchema: {
         type: "object" as const,
         required: ["command"],
@@ -649,8 +647,7 @@ export function createDisposeTerminalTool(
     schema: {
       name: "disposeTerminal",
       extensionRequired: true,
-      description:
-        "Close and dispose a VS Code integrated terminal. Identify the terminal by name or index (from listTerminals).",
+      description: "Close a VS Code terminal by name or index.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,
@@ -718,8 +715,7 @@ export function createSendTerminalCommandTool(
       extensionRequired: true,
       annotations: { destructiveHint: true, openWorldHint: true },
       description:
-        "Send text or a command to a VS Code integrated terminal. Identify by name or index. " +
-        "Fire-and-forget — use getTerminalOutput to check results. ",
+        "Send text/command to VS Code terminal. Fire-and-forget; use getTerminalOutput to check results.",
       inputSchema: {
         type: "object" as const,
         required: ["text"],

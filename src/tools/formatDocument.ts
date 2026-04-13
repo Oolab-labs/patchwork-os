@@ -57,7 +57,7 @@ export function createFormatDocumentTool(
     schema: {
       name: "formatDocument",
       description:
-        "Format a file using VS Code's configured formatter, or falls back to CLI formatters (prettier, biome, black, gofmt, rustfmt). Returns whether changes were made.",
+        "Format file via VS Code formatter or CLI fallback (prettier/biome/black/gofmt/rustfmt).",
       annotations: { destructiveHint: true, idempotentHint: true },
       inputSchema: {
         type: "object" as const,

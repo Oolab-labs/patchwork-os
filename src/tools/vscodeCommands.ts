@@ -19,7 +19,7 @@ export function createExecuteVSCodeCommandTool(
       name: "executeVSCodeCommand",
       extensionRequired: true,
       description:
-        "Execute any registered VS Code command by ID. Use listVSCodeCommands to discover IDs. ",
+        "Execute VS Code command by ID. Use listVSCodeCommands to discover IDs.",
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
@@ -96,8 +96,7 @@ export function createListVSCodeCommandsTool(extensionClient: ExtensionClient) {
       name: "listVSCodeCommands",
       extensionRequired: true,
       description:
-        "List all registered VS Code commands. Optionally filter by substring. " +
-        "Returns up to 2000 commands. Use this to discover command IDs for executeVSCodeCommand. ",
+        "List all registered VS Code commands (up to 2000). Filter by substring to find IDs.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

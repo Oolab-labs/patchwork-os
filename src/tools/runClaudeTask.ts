@@ -20,7 +20,7 @@ export function createRunClaudeTaskTool(
     schema: {
       name: "runClaudeTask",
       description:
-        "Enqueue a task for Claude to run as a subprocess. Returns a taskId to poll with getClaudeTaskStatus, or (if stream=true) blocks until the task completes and streams output via progress notifications.",
+        "Enqueue Claude subprocess task. Returns taskId for getClaudeTaskStatus, or stream=true to block.",
       annotations: {
         title: "Run Claude Task",
         readOnlyHint: false,

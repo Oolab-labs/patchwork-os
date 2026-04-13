@@ -11,8 +11,7 @@ export function createGetWorkspaceSettingsTool(
     schema: {
       name: "getWorkspaceSettings",
       description:
-        "Read VS Code workspace settings. Optionally filter by section (e.g. 'editor', 'typescript'). " +
-        "Returns values with their sources (workspace vs global). ",
+        "Read VS Code workspace settings. Filter by section (e.g. 'editor', 'typescript'). Returns source scope.",
       annotations: { readOnlyHint: true },
       extensionRequired: true,
       inputSchema: {

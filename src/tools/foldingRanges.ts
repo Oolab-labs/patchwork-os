@@ -16,8 +16,7 @@ export function createFoldingRangesTool(
       name: "foldingRanges",
       extensionRequired: true,
       description:
-        "Get foldable code regions in a file: functions, classes, imports, comments. " +
-        "Returns { startLine, endLine, kind } objects. ",
+        "Foldable regions in a file (functions, classes, imports, comments). Returns {startLine, endLine, kind}.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

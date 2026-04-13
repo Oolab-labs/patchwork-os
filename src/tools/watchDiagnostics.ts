@@ -167,8 +167,7 @@ export function createWatchDiagnosticsTool(
     schema: {
       name: "watchDiagnostics",
       description:
-        "Wait for diagnostic changes. Long-polls until change or timeout. " +
-        "Use after edits to wait for the language server to re-validate.",
+        "Long-poll for diagnostic changes. Use after edits to wait for LSP re-validation.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

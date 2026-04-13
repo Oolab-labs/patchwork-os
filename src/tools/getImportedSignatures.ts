@@ -141,8 +141,7 @@ export function createGetImportedSignaturesTool(
       name: "getImportedSignatures",
       extensionRequired: true,
       description:
-        "Resolve imported symbols to their type signatures. " +
-        "Prevents hallucinating API shapes — use before calling unfamiliar functions.",
+        "Resolve imported symbols → type signatures. Use before calling unfamiliar functions.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

@@ -113,10 +113,7 @@ export function createReadClipboardTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "readClipboard",
-      description:
-        "Read the current contents of the system clipboard. " +
-        "Returns up to 100 KB of text. Useful for reading error messages, stack traces, " +
-        "or code snippets the user has copied.",
+      description: "Read system clipboard. Returns up to 100 KB of text.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -155,10 +152,7 @@ export function createWriteClipboardTool(extensionClient: ExtensionClient) {
   return {
     schema: {
       name: "writeClipboard",
-      description:
-        "Write text to the system clipboard. " +
-        "Useful for placing formatted output, transformed snippets, or summaries " +
-        "directly on the clipboard for the user to paste. Max 1 MB.",
+      description: "Write text to system clipboard. Max 1 MB.",
       annotations: { idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
