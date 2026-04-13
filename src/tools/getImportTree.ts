@@ -164,6 +164,10 @@ export function createGetImportTreeTool(workspace: string) {
       visited.add(absFile);
       totalFiles++;
 
+      // Node cap — prevents runaway trees on large monorepos
+      const MAX_TREE_NODES = 5000;
+      let nodeCapReached = false;
+
       const queue: QueueItem[] = [
         { absPath: absFile, depth: 1, nodeRef: rootNode },
       ];
@@ -172,6 +176,11 @@ export function createGetImportTreeTool(workspace: string) {
         const item = queue.shift();
         if (!item) break;
         const { absPath, depth, nodeRef } = item;
+
+        if (totalFiles >= MAX_TREE_NODES) {
+          nodeCapReached = true;
+          break;
+        }
 
         let src: string;
         if (absPath === absFile) {
@@ -250,6 +259,10 @@ export function createGetImportTreeTool(workspace: string) {
         cycles,
         totalFiles,
         maxDepth,
+        ...(nodeCapReached && {
+          truncated: true,
+          nodeCapReached: MAX_TREE_NODES,
+        }),
         ...(includeExternal ? { external: [...allExternal].sort() } : {}),
       });
     },

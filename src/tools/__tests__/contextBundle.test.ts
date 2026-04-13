@@ -24,12 +24,23 @@ function makeExtensionClient(
     fileContent = "const x: string = 42;",
   } = overrides;
 
+  // getFileContent's real extension shape is an object with content + metadata
+  const fileContentResponse =
+    typeof fileContent === "string"
+      ? {
+          content: fileContent,
+          isDirty: false,
+          languageId: "typescript",
+          source: "vscode-buffer",
+        }
+      : fileContent;
+
   return {
     isConnected: () => isConnected,
     latestActiveFile,
     getDiagnostics: vi.fn(async () => diagnostics),
     getOpenFiles: vi.fn(async () => openFiles),
-    getFileContent: vi.fn(async () => fileContent),
+    getFileContent: vi.fn(async () => fileContentResponse),
   };
 }
 

@@ -91,21 +91,34 @@ export function createContextBundleTool(
       // Active file (from live extension state)
       if (extensionClient.latestActiveFile) {
         bundle.activeFile = extensionClient.latestActiveFile;
+        // Workspace-relative path for downstream tools
+        if (extensionClient.latestActiveFile.startsWith(workspace + "/")) {
+          bundle.activeFileRelativePath =
+            extensionClient.latestActiveFile.slice(workspace.length + 1);
+        }
       }
 
-      // Active file content
+      // Active file content — getFileContent returns { content, languageId, isDirty, ... }
       if (
         activeFileContentResult.status === "fulfilled" &&
-        activeFileContentResult.value !== null
+        activeFileContentResult.value !== null &&
+        typeof activeFileContentResult.value === "object"
       ) {
-        const content = activeFileContentResult.value;
-        if (typeof content === "string") {
+        const fc = activeFileContentResult.value as Record<string, unknown>;
+        if (typeof fc.content === "string") {
+          const content = fc.content;
           // Truncate to 16KB to keep context manageable
           bundle.activeFileContent =
             content.length > 16384
               ? content.slice(0, 16384) +
                 "\n[file truncated at 16KB — use getBufferContent for full content]"
               : content;
+        }
+        if (typeof fc.languageId === "string") {
+          bundle.activeFileLanguageId = fc.languageId;
+        }
+        if (typeof fc.isDirty === "boolean") {
+          bundle.activeFileIsDirty = fc.isDirty;
         }
       }
 

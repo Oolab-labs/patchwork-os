@@ -50,6 +50,24 @@ export function createGetWorkspaceSettingsTool(
           target,
         );
         if (result === null) return error("Failed to read workspace settings");
+        // Cap the number of keys in the returned settings object to avoid
+        // context bloat when a user has hundreds of workspace settings.
+        const WORKSPACE_SETTINGS_MAX_KEYS = 200;
+        if (result && typeof result === "object") {
+          const r = result as Record<string, unknown>;
+          const keys = Object.keys(r);
+          if (keys.length > WORKSPACE_SETTINGS_MAX_KEYS) {
+            const capped: Record<string, unknown> = {};
+            for (const k of keys.slice(0, WORKSPACE_SETTINGS_MAX_KEYS)) {
+              capped[k] = r[k];
+            }
+            return successStructured({
+              ...capped,
+              _truncated: true,
+              _totalKeys: keys.length,
+            });
+          }
+        }
         return successStructured(result);
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
