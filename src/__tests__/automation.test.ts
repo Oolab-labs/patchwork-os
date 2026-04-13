@@ -2843,6 +2843,31 @@ describe("AutomationHooks — promptName support", () => {
     expect(nonceMatches[0]).toBe(nonceMatches[1]);
   });
 
+  it("caps diagnostics at 20 in onDiagnosticsError and appends overflow note", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Errors:\n{{diagnostics}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+    const manyErrors: Diagnostic[] = Array.from({ length: 30 }, (_, i) => ({
+      message: `Error ${i}`,
+      severity: "error" as const,
+    }));
+    hooks.handleDiagnosticsChanged("/src/foo.ts", manyErrors);
+    const prompt = orch.list()[0]?.prompt ?? "";
+    expect(prompt).toContain("… and 10 more");
+    expect(prompt).toContain("Error 19");
+    expect(prompt).not.toContain("Error 20");
+  });
+
   it("wraps {{file}} with nonce delimiter in onFileSave", () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(

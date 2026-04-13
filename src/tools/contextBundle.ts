@@ -109,12 +109,18 @@ export function createContextBundleTool(
         }
       }
 
-      // Diagnostics
+      // Diagnostics — capped to avoid dwarfing the 16KB active-file budget
+      const CONTEXT_BUNDLE_MAX_DIAGNOSTICS = 50;
       if (
         diagnosticsResult.status === "fulfilled" &&
         Array.isArray(diagnosticsResult.value)
       ) {
-        bundle.diagnostics = diagnosticsResult.value;
+        const diags = diagnosticsResult.value;
+        bundle.diagnostics = diags.slice(0, CONTEXT_BUNDLE_MAX_DIAGNOSTICS);
+        if (diags.length > CONTEXT_BUNDLE_MAX_DIAGNOSTICS) {
+          bundle.diagnosticsTruncated = true;
+          bundle.diagnosticsTotalCount = diags.length;
+        }
       }
 
       // Open editors

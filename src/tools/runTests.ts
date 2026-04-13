@@ -326,13 +326,24 @@ export function createRunTestsTool(
         }
       }
 
+      // Cap results array to avoid overwhelming context; summary counts remain accurate
+      const RUN_TESTS_MAX_RESULTS = 200;
+      const resultsTruncated = results.length > RUN_TESTS_MAX_RESULTS;
+      const displayResults = resultsTruncated
+        ? results.slice(0, RUN_TESTS_MAX_RESULTS)
+        : results;
+
       progress?.(100, 100);
       return successStructured({
         available: true,
         runners: runners.map((r) => r.name),
         summary,
-        results,
+        results: displayResults,
         failures,
+        ...(resultsTruncated && {
+          resultsTruncated: true,
+          resultsTotalCount: results.length,
+        }),
         ...(Object.keys(errors).length > 0 && { runnerErrors: errors }),
       });
     },

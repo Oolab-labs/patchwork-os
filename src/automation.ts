@@ -8,6 +8,7 @@ import { getPrompt } from "./prompts.js";
 
 /** Maximum length (chars) of a single diagnostic message before truncation */
 const MAX_DIAGNOSTIC_MSG_CHARS = 500;
+const MAX_DIAGNOSTICS_IN_PROMPT = 20;
 
 /**
  * Wrap an untrusted user-controlled value in delimiters that include a
@@ -1242,12 +1243,16 @@ export class AutomationHooks {
       if (resolved === null) return;
       prompt = resolved;
     } else {
-      const diagnosticsText = matching
-        .map(
-          (d) =>
-            `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`,
-        )
-        .join("\n");
+      const displayMatching = matching.slice(0, MAX_DIAGNOSTICS_IN_PROMPT);
+      const omittedCount = matching.length - displayMatching.length;
+      const diagnosticsText =
+        displayMatching
+          .map(
+            (d) =>
+              `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`,
+          )
+          .join("\n") +
+        (omittedCount > 0 ? `\n… and ${omittedCount} more` : "");
       const nonce = crypto.randomBytes(6).toString("hex");
       prompt =
         (cfg.prompt ?? "")

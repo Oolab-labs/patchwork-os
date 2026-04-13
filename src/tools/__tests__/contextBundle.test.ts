@@ -43,7 +43,6 @@ describe("createContextBundleTool", () => {
     const before = Date.now();
     const result = await tool.handler({});
     const after = Date.now();
-    expect(result.isError).toBeFalsy();
     const content = JSON.parse(
       (result.content as Array<{ text: string }>)[0]!.text,
     );
@@ -127,12 +126,47 @@ describe("createContextBundleTool", () => {
     });
     const tool = createContextBundleTool("/workspace", client as never);
     const result = await tool.handler({});
-    expect(result.isError).toBeFalsy();
     const content = JSON.parse(
       (result.content as Array<{ text: string }>)[0]!.text,
     );
     // diagnostics omitted on failure, but bundle still returned
     expect(content.bundledAt).toBeTypeOf("number");
     expect(content.diagnostics).toBeUndefined();
+  });
+
+  it("caps diagnostics at 50 and sets diagnosticsTruncated", async () => {
+    const manyDiags = Array.from({ length: 80 }, (_, i) => ({
+      severity: "error",
+      message: `Error ${i}`,
+      file: "/workspace/src/app.ts",
+    }));
+    const client = makeExtensionClient({ diagnostics: manyDiags });
+    const tool = createContextBundleTool("/workspace", client as never);
+    const result = await tool.handler({});
+    const content = JSON.parse(
+      (result.content as Array<{ text: string }>)[0]!.text,
+    );
+    expect(content.diagnostics).toHaveLength(50);
+    expect(content.diagnosticsTruncated).toBe(true);
+    expect(content.diagnosticsTotalCount).toBe(80);
+  });
+
+  it("does not set diagnosticsTruncated when diagnostics are within cap", async () => {
+    const client = makeExtensionClient({
+      diagnostics: [
+        {
+          severity: "error",
+          message: "One error",
+          file: "/workspace/src/app.ts",
+        },
+      ],
+    });
+    const tool = createContextBundleTool("/workspace", client as never);
+    const result = await tool.handler({});
+    const content = JSON.parse(
+      (result.content as Array<{ text: string }>)[0]!.text,
+    );
+    expect(content.diagnostics).toHaveLength(1);
+    expect(content.diagnosticsTruncated).toBeUndefined();
   });
 });

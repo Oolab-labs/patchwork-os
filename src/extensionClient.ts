@@ -21,6 +21,13 @@ export interface Diagnostic {
   message: string;
   source?: string;
   code?: string | number;
+  /** Standard LSP relatedInformation — capped at 5 entries in getDiagnostics sanitizer. */
+  relatedInformation?: Array<{
+    message: string;
+    file?: string;
+    line?: number;
+    column?: number;
+  }>;
 }
 
 export interface SelectionState {
