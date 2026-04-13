@@ -190,7 +190,27 @@ export function createWriteClipboardTool(extensionClient: ExtensionClient) {
       if (extensionClient.isConnected()) {
         try {
           const result = await extensionClient.writeClipboard(text);
-          if (result !== null) return successStructured(result);
+          // Extension handler returns { written, byteLength } or
+          // { written: false, error }. Normalize to the tool's declared
+          // schema shape (required: success).
+          if (result !== null && typeof result === "object") {
+            const r = result as Record<string, unknown>;
+            if (r.written === true) {
+              return successStructured({
+                success: true,
+                ...(typeof r.byteLength === "number" && {
+                  byteLength: r.byteLength,
+                }),
+              });
+            }
+            if (r.written === false) {
+              return error(
+                typeof r.error === "string"
+                  ? r.error
+                  : "Clipboard write failed",
+              );
+            }
+          }
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
         }
