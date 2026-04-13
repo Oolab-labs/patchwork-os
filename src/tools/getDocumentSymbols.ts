@@ -85,6 +85,21 @@ export function createGetDocumentSymbolsTool(
           );
           if (result !== null && typeof result === "object") {
             const r = result as Record<string, unknown>;
+            // Cap symbols array at 500 to avoid bloating context on large bundled files.
+            const DOCUMENT_SYMBOLS_MAX = 500;
+            if (
+              Array.isArray(r.symbols) &&
+              r.symbols.length > DOCUMENT_SYMBOLS_MAX
+            ) {
+              const full = r.symbols;
+              return successStructured({
+                ...r,
+                symbols: full.slice(0, DOCUMENT_SYMBOLS_MAX),
+                source: "lsp",
+                truncated: true,
+                totalCount: full.length,
+              });
+            }
             return successStructured({ ...r, source: "lsp" });
           }
           // null means LSP not ready for this file — fall through to grep

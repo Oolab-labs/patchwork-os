@@ -79,7 +79,7 @@ export class SubprocessDriver implements IClaudeDriver {
     // the same hook-suppression goal while preserving normal auth flows.
     this.settingsPath = join(
       tmpdir(),
-      "claude-ide-bridge-subprocess-settings.json",
+      `claude-ide-bridge-subprocess-settings-${process.pid}.json`,
     );
 
     this.settingsContent = JSON.stringify({

@@ -13,6 +13,7 @@ export function createGetHoverAtCursorTool(extensionClient: ExtensionClient) {
         "Zero-input convenience wrapper around getHover — uses the active file and " +
         "cursor position tracked by the extension.",
       annotations: { readOnlyHint: true },
+      extensionRequired: true,
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
