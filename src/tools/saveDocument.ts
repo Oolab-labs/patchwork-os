@@ -44,8 +44,8 @@ export function createSaveDocumentTool(
       // Use extension for real buffer flush when available
       if (extensionClient?.isConnected()) {
         try {
-          const saved = await extensionClient.saveFile(filePath);
-          if (saved) {
+          const result = await extensionClient.saveFile(filePath);
+          if (result?.saved) {
             return successStructured({
               success: true,
               filePath,
@@ -53,13 +53,17 @@ export function createSaveDocumentTool(
               source: "vscode-buffer",
             });
           }
-          // false — file not open in editor (already on disk from editText or never opened)
+          // Not saved — handler returned a structured error (e.g. untitled
+          // document, document not open). Surface the handler's message when
+          // available; otherwise explain the "not open in editor" case.
+          const message =
+            result?.error ??
+            "File is not open in VS Code editor — content is already persisted to disk";
           return successStructured({
             success: true,
             filePath,
             saved: false,
-            message:
-              "File is not open in VS Code editor — content is already persisted to disk",
+            message,
           });
         } catch (err) {
           if (!(err instanceof ExtensionTimeoutError)) throw err;
