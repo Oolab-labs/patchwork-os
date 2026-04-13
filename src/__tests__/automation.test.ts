@@ -4842,3 +4842,118 @@ describe("token-efficiency: _enqueueAutomationTask passes model/effort/systemPro
     expect(orch.list()[0].systemPrompt).toBe("Custom system prompt.");
   });
 });
+
+// ── F3: phantom counter fix ───────────────────────────────────────────────────
+
+describe("_enqueueAutomationTask: tasksThisHour does not phantom-increment on enqueue failure", () => {
+  it("does not increment taskTimestamps when orchestrator.enqueue throws", () => {
+    let enqueueCount = 0;
+    const failOrch = {
+      enqueue: () => {
+        enqueueCount++;
+        throw new Error("queue full");
+      },
+      list: () => [],
+      getTask: () => undefined,
+    };
+    const hooks = new AutomationHooks(
+      {
+        maxTasksPerHour: 10,
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 0,
+        },
+      },
+      failOrch as unknown as ReturnType<typeof makeInstantOrchestrator>,
+      () => {},
+    );
+    // The hook swallows the error; tasksThisHour should not have incremented.
+    hooks.handleFileSaved("id1", "save", "/src/foo.ts");
+    expect(enqueueCount).toBe(1); // enqueue was attempted
+    // Fire again — if the timestamp was NOT phantom-pushed, the rate-limit
+    // counter is still 0 and a second attempt goes through.
+    hooks.handleFileSaved("id2", "save", "/src/bar.ts");
+    expect(enqueueCount).toBe(2);
+  });
+
+  it("increments taskTimestamps only on successful enqueue", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        maxTasksPerHour: 2,
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 0,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileSaved("id1", "save", "/src/a.ts");
+    hooks.handleFileSaved("id2", "save", "/src/b.ts");
+    expect(orch.list().length).toBe(2);
+    // Third call should be rate-limited (maxTasksPerHour=2)
+    hooks.handleFileSaved("id3", "save", "/src/c.ts");
+    expect(orch.list().length).toBe(2);
+  });
+});
+
+// ── F1: onInstructionsLoaded cross-hook cascade guard ────────────────────────
+
+describe("handleInstructionsLoaded: cascade guard suppresses when another automation task is active", () => {
+  it("does not enqueue when an automation task from a different hook is running", async () => {
+    const orch = makeSlowOrchestrator();
+    // First enqueue an automation task via a different hook
+    const otherHooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "check {{file}}",
+          cooldownMs: 0,
+        },
+        onInstructionsLoaded: {
+          enabled: true,
+          prompt: "Session started.",
+          cooldownMs: 0,
+        },
+      },
+      orch,
+      () => {},
+    );
+    // Trigger a slow-running automation task via onFileSave
+    otherHooks.handleFileSaved("id1", "save", "/src/foo.ts");
+    expect(orch.list().length).toBe(1);
+    const runningId = orch.list()[0]!.id;
+    // Wait for it to enter running state
+    await new Promise<void>((r) => setTimeout(r, 10));
+    expect(orch.list()[0]!.status).toBe("running");
+
+    // Now fire handleInstructionsLoaded — it should be suppressed by the
+    // cross-hook cascade guard because an automation task is active.
+    otherHooks.handleInstructionsLoaded();
+    expect(orch.list().length).toBe(1); // no new task
+    orch.cancel(runningId);
+  });
+
+  it("enqueues when no automation task is active", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onInstructionsLoaded: {
+          enabled: true,
+          prompt: "Session started.",
+          cooldownMs: 0,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleInstructionsLoaded();
+    expect(orch.list().length).toBe(1);
+  });
+});
