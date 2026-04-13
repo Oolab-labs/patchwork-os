@@ -56,17 +56,22 @@ export function createCloseTabTool(
 
       try {
         const result = await extensionClient.closeTab(filePath);
-        if (result === true) {
-          return successStructured({ success: true, filePath, closed: true });
+        if (result === null) {
+          return error("Failed to close tab — extension returned no result");
         }
-        if (result !== null && typeof result === "object") {
-          const r = result as Record<string, unknown>;
-          if (r.success === false) {
-            return error(String(r.error ?? "Failed to close tab"));
-          }
-          return successStructured(result);
+        if (result.success) {
+          return successStructured({
+            success: true,
+            filePath,
+            closed: true,
+            ...(result.promptedToSave !== undefined && {
+              promptedToSave: result.promptedToSave,
+            }),
+          });
         }
-        return error("Failed to close tab — file may not be open");
+        return error(
+          result.error ?? "Failed to close tab — file may not be open",
+        );
       } catch (err) {
         if (err instanceof ExtensionTimeoutError) {
           return error("Extension timed out while closing tab");
