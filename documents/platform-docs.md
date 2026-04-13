@@ -54,6 +54,13 @@ The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code 
 | Tool | Description |
 |------|-------------|
 | `formatDocument` | Format via VS Code's formatter (extension) or CLI fallback (prettier, black, gofmt, rustfmt, biome) |
+| `formatAndSave` | Composite: formatDocument + saveDocument in one call. Propagates formatter errors unchanged; save is not attempted on format failure. (v2.25.25+) |
+
+### Composite Navigation (v2.25.25+)
+| Tool | Description |
+|------|-------------|
+| `jumpToFirstError` | Find the first workspace error, open its file at the error line, and apply an inline decoration in one call. Replaces the 3-call getDiagnostics → openFile → setEditorDecorations pattern. Returns `{ found: false }` when the workspace is clean. |
+| `navigateToSymbolByName` | Search for a workspace symbol by name, resolve it to its definition, and open the target file. Returns the chosen symbol, its definition, and up to 4 alternative matches. Replaces the searchSymbols → goToDefinition dance. |
 
 ### Command Execution
 | Tool | Description |
