@@ -873,9 +873,23 @@ export class ExtensionClient {
     return result === true;
   }
 
-  async closeTab(file: string): Promise<boolean> {
+  async closeTab(file: string): Promise<{
+    success: boolean;
+    promptedToSave?: boolean;
+    error?: string;
+  } | null> {
+    // Extension returns { success: true, promptedToSave } on close,
+    // { success: false, error } when the tab cannot be found.
     const result = await this.requestOrNull("extension/closeTab", { file });
-    return result === true;
+    if (result === null || typeof result !== "object") return null;
+    const r = result as Record<string, unknown>;
+    return {
+      success: r.success === true,
+      ...(typeof r.promptedToSave === "boolean" && {
+        promptedToSave: r.promptedToSave,
+      }),
+      ...(typeof r.error === "string" && { error: r.error }),
+    };
   }
 
   async getAIComments(): Promise<AIComment[] | null> {
@@ -1248,11 +1262,40 @@ export class ExtensionClient {
   // --- Code Actions (format, fix, organize) ---
 
   async formatDocument(file: string): Promise<unknown> {
-    return this.requestOrNull("extension/formatDocument", { file }, 15_000);
+    // Extension returns { error: "..." } when the format command fails.
+    // Unwrap to null so consumers' `!== null` check correctly falls through
+    // to their CLI formatter fallback instead of reporting false success.
+    const result = await this.requestOrNull(
+      "extension/formatDocument",
+      { file },
+      15_000,
+    );
+    if (
+      result !== null &&
+      typeof result === "object" &&
+      "error" in (result as object)
+    ) {
+      return null;
+    }
+    return result;
   }
 
   async fixAllLintErrors(file: string): Promise<unknown> {
-    return this.requestOrNull("extension/fixAllLintErrors", { file }, 15_000);
+    // Extension returns { error: "..." } on command failure. Unwrap to null
+    // so consumers fall through to their CLI fallback cleanly.
+    const result = await this.requestOrNull(
+      "extension/fixAllLintErrors",
+      { file },
+      15_000,
+    );
+    if (
+      result !== null &&
+      typeof result === "object" &&
+      "error" in (result as object)
+    ) {
+      return null;
+    }
+    return result;
   }
 
   async organizeImports(file: string): Promise<unknown> {
