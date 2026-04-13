@@ -20,10 +20,24 @@ export interface DisconnectInfo {
  *
  * Used by the toolAvailability field in getBridgeStatus to answer
  * "why can't Claude call X?" in a single call.
+ *
+ * Spec flags:
+ * - `extensionRequired: true` — tool has no fallback. Unavailable when the
+ *   extension is disconnected or the circuit breaker is open.
+ * - `probe: <name>` — tool requires this CLI probe.
+ * - `extensionFallback: true` — tool prefers the extension path but can fall
+ *   back to the CLI probe. Available when EITHER the extension is connected
+ *   OR the probe is present. `formatDocument` is the canonical example: the
+ *   VS Code extension formats via its built-in TypeScript formatter; the CLI
+ *   path requires prettier/biome/etc.
  */
 const TOOL_AVAILABILITY_TABLE: Record<
   string,
-  { probe?: keyof ProbeResults; extensionRequired?: boolean }
+  {
+    probe?: keyof ProbeResults;
+    extensionRequired?: boolean;
+    extensionFallback?: boolean;
+  }
 > = {
   // Extension-required tools (schema.extensionRequired: true)
   findImplementations: { extensionRequired: true },
@@ -35,8 +49,9 @@ const TOOL_AVAILABILITY_TABLE: Record<
   clearEditorDecorations: { extensionRequired: true },
   getSemanticTokens: { extensionRequired: true },
   getCodeLens: { extensionRequired: true },
-  // Probe-gated CLI/formatter tools (extension path also works when connected)
-  formatDocument: { probe: "prettier" },
+  // Tools that prefer the extension path but can fall back to a CLI probe.
+  formatDocument: { probe: "prettier", extensionFallback: true },
+  // Pure-probe tools (no extension path)
   runTests: { probe: "vitest" },
   getGitStatus: { probe: "git" },
   getGitDiff: { probe: "git" },
@@ -171,6 +186,20 @@ export function createBridgeStatusTool(
             available: false,
             reason: "circuit_breaker_open",
           };
+        } else if (spec.extensionFallback) {
+          // Available if extension is connected (extension path) OR probe is present (CLI fallback).
+          if (extensionConnected && !circuitBreaker.suspended) {
+            toolAvailability[name] = { available: true };
+          } else if (spec.probe && probes[spec.probe]) {
+            toolAvailability[name] = { available: true };
+          } else {
+            toolAvailability[name] = {
+              available: false,
+              reason: spec.probe
+                ? `extension_disconnected_and_missing_probe:${spec.probe}`
+                : "extension_disconnected",
+            };
+          }
         } else if (spec.probe && !probes[spec.probe]) {
           toolAvailability[name] = {
             available: false,

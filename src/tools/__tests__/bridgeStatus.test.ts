@@ -222,19 +222,53 @@ describe("createBridgeStatusTool", () => {
     });
   });
 
-  it("toolAvailability: probe-gated tools report 'missing_probe' when the probe is false", async () => {
+  it("toolAvailability: pure-probe tools report 'missing_probe' when probe is false", async () => {
     const tool = createBridgeStatusTool(
       makeClient(true),
-      makeProbes({ prettier: false, vitest: false }),
+      makeProbes({ vitest: false, git: false }),
+    );
+    const data = parse(await tool.handler());
+    expect(data.toolAvailability.runTests).toEqual({
+      available: false,
+      reason: "missing_probe:vitest",
+    });
+    expect(data.toolAvailability.getGitStatus).toEqual({
+      available: false,
+      reason: "missing_probe:git",
+    });
+  });
+
+  it("toolAvailability: extensionFallback tools are available via extension even when probe is missing", async () => {
+    // Regression for v2.25.25 dogfood finding: formatDocument was reported
+    // missing_probe:prettier even though the VS Code extension formatter
+    // path was fully working. Dual-path tools should be available if either
+    // the extension OR the probe is present.
+    const tool = createBridgeStatusTool(
+      makeClient(true),
+      makeProbes({ prettier: false }),
+    );
+    const data = parse(await tool.handler());
+    expect(data.toolAvailability.formatDocument).toEqual({ available: true });
+  });
+
+  it("toolAvailability: extensionFallback tools are available via probe when extension is disconnected", async () => {
+    const tool = createBridgeStatusTool(
+      makeClient(false),
+      makeProbes({ prettier: true }),
+    );
+    const data = parse(await tool.handler());
+    expect(data.toolAvailability.formatDocument).toEqual({ available: true });
+  });
+
+  it("toolAvailability: extensionFallback tools report unavailable when BOTH extension disconnected AND probe missing", async () => {
+    const tool = createBridgeStatusTool(
+      makeClient(false),
+      makeProbes({ prettier: false }),
     );
     const data = parse(await tool.handler());
     expect(data.toolAvailability.formatDocument).toEqual({
       available: false,
-      reason: "missing_probe:prettier",
-    });
-    expect(data.toolAvailability.runTests).toEqual({
-      available: false,
-      reason: "missing_probe:vitest",
+      reason: "extension_disconnected_and_missing_probe:prettier",
     });
   });
 });
