@@ -18,7 +18,7 @@
   "onInstructionsLoaded": {
     "enabled": true,
     "cooldownMs": 60000,
-    "prompt": "Session started. Call getGitStatus, getDiagnostics, and getHandoffNote. Report in ≤5 lines: branch, error count, and any uncommitted changes."
+    "prompt": "Session started. Call contextBundle to get IDE state. Report in ≤5 lines: branch, error count, and any uncommitted changes."
   },
   "onBranchCheckout": {
     "enabled": true,

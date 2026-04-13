@@ -108,6 +108,26 @@ describe("SubprocessDriver", () => {
     expect(chunks).toEqual(["Hello ", "world"]);
   });
 
+  it("includes --verbose and --output-format stream-json in CLI args", async () => {
+    const runPromise = driver.run(makeInput());
+    mockChild.stdout.emit(
+      "data",
+      JSON.stringify({
+        type: "result",
+        subtype: "success",
+        result: "ok",
+        is_error: false,
+      }) + "\n",
+    );
+    mockChild.emit("close", 0);
+    await runPromise;
+
+    const args = spawnMock.mock.calls[0]![1] as string[];
+    expect(args).toContain("--verbose");
+    expect(args).toContain("--output-format");
+    expect(args[args.indexOf("--output-format") + 1]).toBe("stream-json");
+  });
+
   it("returns exitCode 1 when result event has is_error: true", async () => {
     const runPromise = driver.run(makeInput());
 
