@@ -2,36 +2,34 @@
 
 ## Documentation
 
-Read and comply with all documents in `/documents/`. Consult the relevant doc before making changes:
+Comply with all docs in `/documents/`. Consult before changes:
 
-- **[documents/platform-docs.md](documents/platform-docs.md)** — Complete feature reference (130+ tools). Consult before adding or modifying features.
-- **[documents/ICPs.md](documents/ICPs.md)** — Developer personas. Consider impact on all personas when making changes.
-- **[documents/styleguide.md](documents/styleguide.md)** — Code conventions, UI patterns, output formats. Follow all patterns for new tools, handlers, and responses.
-- **[documents/roadmap.md](documents/roadmap.md)** — Development direction. Check before starting exploratory work.
-- **[documents/data-reference.md](documents/data-reference.md)** — Data flows, state management, protocol details. Consult before modifying connection, auth, or state logic.
-- **[documents/plugin-authoring.md](documents/plugin-authoring.md)** — Plugin manifest schema, entrypoint API, and distribution.
-- **[docs/adr/](docs/adr/)** — Architecture Decision Records. Read before touching version numbers, lock files, error codes, session management, or reconnect logic.
+- **[documents/platform-docs.md](documents/platform-docs.md)** — Full feature reference (130+ tools). Consult before adding/modifying features.
+- **[documents/ICPs.md](documents/ICPs.md)** — Developer personas. Consider impact on all personas.
+- **[documents/styleguide.md](documents/styleguide.md)** — Code conventions, UI patterns, output formats. Follow for all new tools, handlers, responses.
+- **[documents/roadmap.md](documents/roadmap.md)** — Development direction. Check before exploratory work.
+- **[documents/data-reference.md](documents/data-reference.md)** — Data flows, state mgmt, protocol details. Consult before modifying connection/auth/state logic.
+- **[documents/plugin-authoring.md](documents/plugin-authoring.md)** — Plugin manifest schema, entrypoint API, distribution.
+- **[docs/adr/](docs/adr/)** — Architecture Decision Records. Read before touching version numbers, lock files, error codes, session mgmt, or reconnect logic.
 
-> **Cowork (computer-use) sessions:** MCP bridge tools are NOT available inside Cowork. Always run `/mcp__bridge__cowork` in regular Desktop chat first to capture IDE context, then switch to Cowork. Cowork runs in an isolated git worktree — output won't appear in `git status` on main until merged. (see [docs/cowork-workflow.md](docs/cowork-workflow.md))
+> **Cowork (computer-use) sessions:** MCP bridge tools NOT available inside Cowork. Run `/mcp__bridge__cowork` in regular Desktop chat first to capture IDE context, then switch to Cowork. Cowork runs in isolated git worktree — output won't appear in `git status` on main until merged. (see [docs/cowork-workflow.md](docs/cowork-workflow.md))
 
 ### CLI Subcommands
 
-`claude-ide-bridge` has several subcommands beyond the default server mode:
-
 - `init [--workspace <path>]` — One-command setup: install extension + write CLAUDE.md + print next steps
 - `start-all` — Launch tmux session with bridge + extension watcher panes
-- `install-extension` — Install the companion VS Code extension
-- `gen-claude-md` — Generate a starter CLAUDE.md for the current workspace
-- `print-token [--port N]` — Print the auth token from the active lock file
-- `gen-plugin-stub <dir> --name <org/name> --prefix <prefix>` — Scaffold a new plugin
-- `--watch` — Auto-restart supervisor with exponential backoff (2s → 30s). Safe for production use.
+- `install-extension` — Install companion VS Code extension
+- `gen-claude-md` — Generate starter CLAUDE.md for current workspace
+- `print-token [--port N]` — Print auth token from active lock file
+- `gen-plugin-stub <dir> --name <org/name> --prefix <prefix>` — Scaffold new plugin
+- `--watch` — Auto-restart supervisor with exponential backoff (2s → 30s). Safe for production.
 
 ## Bug Fix Protocol
 
-When a bug is reported, do NOT start by trying to fix it. Instead:
-1. Write a test that reproduces the bug (the test should fail)
-2. Have subagents try to fix the bug and prove it with a passing test
-3. Only then consider the bug fixed
+When bug reported, do NOT fix first. Instead:
+1. Write test that reproduces bug (test must fail)
+2. Have subagents fix bug and prove it with passing test
+3. Only then consider bug fixed
 
 ## Build & Test
 
@@ -48,11 +46,11 @@ npm run package        # create .vsix
 # Always rebuild bridge + extension + VSIX before testing changes
 ```
 
-Before staging files for commit, run `npx biome check --write <files>` on the files you changed. This auto-fixes formatting and safe lint issues before the pre-commit hook rejects the commit. Do not wait for the hook to fail — fix first, then stage.
+Before staging, run `npx biome check --write <files>` on changed files. Fix before stage — don't wait for hook to fail.
 
 ## LSP Workflows
 
-All LSP tools are available in default slim mode. Use these sequences for the most common tasks.
+All LSP tools available in default slim mode.
 
 **Adding a new tool**
 1. `searchWorkspaceSymbols` — confirm similar tool doesn't exist
@@ -61,7 +59,7 @@ All LSP tools are available in default slim mode. Use these sequences for the mo
 4. `getDiagnostics { uri: "src/tools/myTool.ts" }` — catch type errors before `npm run build`
 5. `getDiagnostics { uri: "src/tools/index.ts" }` — confirm no import errors after registering
 
-> Note: `getDiagnostics` uses `uri`, not `filePath`. Passing the wrong key silently returns all-workspace diagnostics.
+> `getDiagnostics` uses `uri`, not `filePath`. Wrong key silently returns all-workspace diagnostics.
 
 **Code review**
 1. `getCallHierarchy { direction: "incoming" }` on each changed symbol — blast radius
@@ -73,18 +71,18 @@ All LSP tools are available in default slim mode. Use these sequences for the mo
 **Refactoring**
 1. `refactorAnalyze` — returns `risk` (low/medium/high), `referenceCount`, `callerCount`. High risk (>20 refs or >10 callers) → write tests first per Bug Fix Protocol.
 2. `refactorPreview` — see exact edits before committing
-3. `renameSymbol` — execute; or `refactorExtractFunction { file, ... }` (note: param is `file`, not `filePath`)
-4. `getDiagnostics` with no `uri` — workspace-wide type check (uses CLI/tsc path when extension not connected, more complete)
+3. `renameSymbol` — execute; or `refactorExtractFunction { file, ... }` (param is `file`, not `filePath`)
+4. `getDiagnostics` with no `uri` — workspace-wide type check (uses CLI/tsc when extension not connected)
 
 **Debugging**
-1. `searchWorkspaceSymbols` — jump to a symbol from a stack trace
-2. `getCallHierarchy { direction: "outgoing" }` on the failing handler — trace data flow
+1. `searchWorkspaceSymbols` — jump to symbol from stack trace
+2. `getCallHierarchy { direction: "outgoing" }` on failing handler — trace data flow
 3. `getDocumentSymbols` on `src/extensionClient.ts` vs test mock — catch interface drift
 4. `setDebugBreakpoints` + `evaluateInDebugger` — inspect runtime state
 
 **Onboarding to unfamiliar code**
 1. `getDocumentSymbols` — instant file outline
-2. `explainSymbol` on the primary export — richer than hover alone
+2. `explainSymbol` on primary export — richer than hover alone
 3. `getCallHierarchy { direction: "incoming" }` — what depends on this module
 4. `getImportTree` — full downstream dependency chain
 
@@ -92,52 +90,52 @@ All LSP tools are available in default slim mode. Use these sequences for the mo
 
 | Situation | Tool |
 |---|---|
-| Does a tool for X exist? | `searchWorkspaceSymbols` |
-| What does this method accept? | `getHover` |
-| Hover for N symbols at once | `batchGetHover` |
-| Jump to definition for N symbols at once | `batchGoToDefinition` |
-| Find implementations for N symbols at once | `batchFindImplementations` |
-| Is this change breaking? | `getChangeImpact` (blast radius) or `getDiagnostics` + `findReferences` |
-| How many callers does this have? | `getCallHierarchy { direction: "incoming" }` |
+| Tool for X exist? | `searchWorkspaceSymbols` |
+| Method accepts what? | `getHover` |
+| Hover N symbols | `batchGetHover` |
+| Definition N symbols | `batchGoToDefinition` |
+| Implementations N symbols | `batchFindImplementations` |
+| Change breaking? | `getChangeImpact` or `getDiagnostics` + `findReferences` |
+| Caller count? | `getCallHierarchy { direction: "incoming" }` |
 | Safe to rename? | `refactorAnalyze` → `refactorPreview` → `renameSymbol` |
-| What does this file export? | `getDocumentSymbols` |
-| What does this file import (with signatures)? | `getImportedSignatures` |
-| Links / file references in a document? | `getDocumentLinks` |
-| Code lens counts (tests, refs)? | `getCodeLens` |
+| File exports? | `getDocumentSymbols` |
+| File imports (signatures)? | `getImportedSignatures` |
+| Links / file refs in doc? | `getDocumentLinks` |
+| Code lens counts? | `getCodeLens` |
 
 ## Architecture Rules
 
 - **Tools**: factory pattern `createXxxTool(deps)` returning `{ schema, handler }`. Register in `src/tools/index.ts`.
-- **Extension handlers**: standalone async functions in the `handlers` map. Register in `vscode-extension/src/handlers/index.ts`.
+- **Extension handlers**: standalone async functions in `handlers` map. Register in `vscode-extension/src/handlers/index.ts`.
 - **WebSocket safety**: all `ws.send()` calls must use `safeSend()` or readyState check + try-catch.
-- **Extension dependency**: tools requiring the extension must set `extensionRequired: true` in their schema.
+- **Extension dependency**: tools requiring extension must set `extensionRequired: true` in schema.
 - **Tool names**: must match `/^[a-zA-Z0-9_]+$/`.
-- **Error handling**: tool execution errors return `isError: true` in content (NOT JSON-RPC errors). JSON-RPC errors (`ErrorCodes`, -32xxx) are for protocol issues only. See [ADR-0004](docs/adr/0004-tool-errors-as-content.md).
-- **`extensionClient` shape validation**: `proxy<T>()` is a blind TypeScript cast with no runtime validation — **do NOT use it for new methods**. Eight latent shape-mismatch bugs (v2.25.18–v2.25.24) came from this pattern. For new methods, pick:
-  - `tryRequest<T>(method, params, timeout, signal)` — auto-unwraps `{error}` / `{success: false, error}` responses to `null`. Use when the handler's success path is a single T shape and error paths are error objects the caller doesn't need to distinguish.
-  - `validatedRequest<T>(method, params, validator)` — runtime shape predicate. Use when the success path is an object with specific required fields (e.g. `{items, count}` wrappers).
-  - Direct `requestOrNull` + inline unwrap — when the handler has a rich contract (e.g. `{success: true/false, data, error}`) and the caller genuinely needs the structured error (see `closeTab`, `saveFile`). Do NOT use `tryRequest` here — it would hide information the caller needs.
-  - When auditing: read the handler in `vscode-extension/src/handlers/*.ts` and enumerate ALL return statements (success AND error paths) before choosing the helper. Test mocks always lie — the handler file is the ground truth.
+- **Error handling**: tool execution errors return `isError: true` in content (NOT JSON-RPC errors). JSON-RPC errors (`ErrorCodes`, -32xxx) for protocol issues only. See [ADR-0004](docs/adr/0004-tool-errors-as-content.md).
+- **`extensionClient` shape validation**: `proxy<T>()` is blind TypeScript cast with no runtime validation — **do NOT use for new methods**. Eight latent shape-mismatch bugs (v2.25.18–v2.25.24) from this pattern. For new methods:
+  - `tryRequest<T>(method, params, timeout, signal)` — auto-unwraps `{error}` / `{success: false, error}` to `null`. Use when success path is single T shape and caller doesn't need to distinguish error paths.
+  - `validatedRequest<T>(method, params, validator)` — runtime shape predicate. Use when success path is object with specific required fields (e.g. `{items, count}` wrappers).
+  - Direct `requestOrNull` + inline unwrap — when handler has rich contract (e.g. `{success: true/false, data, error}`) and caller needs structured error (see `closeTab`, `saveFile`). Do NOT use `tryRequest` — hides info caller needs.
+  - When auditing: read handler in `vscode-extension/src/handlers/*.ts`, enumerate ALL return statements (success AND error paths) before choosing helper. Test mocks always lie — handler file is ground truth.
 
 ## Testing Requirements
 
-- New tools need unit tests in `src/tools/__tests__/`
-- New extension handlers need tests in `vscode-extension/src/__tests__/handlers/`
+- New tools: unit tests in `src/tools/__tests__/`
+- New extension handlers: tests in `vscode-extension/src/__tests__/handlers/`
 - Use vitest for both bridge and extension tests
 - Coverage gates: 75% lines, 70% branches, 75% functions
 - Test circuit breaker and reconnect behavior for connection-related changes
 
 ## Plugin System
 
-Plugins register additional MCP tools without forking the bridge. They run in-process alongside built-in tools.
+Plugins register additional MCP tools without forking bridge. Run in-process alongside built-in tools.
 
 - **Scaffold**: `claude-ide-bridge gen-plugin-stub <dir> --name "org/name" --prefix "myPrefix"`
 - **Load**: `--plugin <path-or-npm-package>` (repeatable). `--plugin-watch` enables hot reload.
-- **Manifest**: `claude-ide-bridge-plugin.json` with `schemaVersion: 1`. All tool names must start with the `toolNamePrefix` (2-20 chars, `/^[a-zA-Z][a-zA-Z0-9_]{1,19}$/`).
+- **Manifest**: `claude-ide-bridge-plugin.json` with `schemaVersion: 1`. Tool names must start with `toolNamePrefix` (2-20 chars, `/^[a-zA-Z][a-zA-Z0-9_]{1,19}$/`).
 - **Entrypoint**: exports `register(ctx)` where `ctx` provides `workspace`, `workspaceFolders`, `config`, `logger`.
 - **Distribution**: publish to npm with keyword `claude-ide-bridge-plugin`; install via package name.
-- **Lifecycle**: plugins are loaded after CLI probes, before sessions are accepted. On hot-reload, tools are re-registered atomically.
-- **No symlinks for plugin copies**: Files in `claude-ide-bridge-plugin/` are standalone copies, not symlinks. After modifying plugin source, manually sync the copies — they will NOT auto-update.
+- **Lifecycle**: loaded after CLI probes, before sessions accepted. On hot-reload, tools re-registered atomically.
+- **No symlinks**: Files in `claude-ide-bridge-plugin/` are standalone copies, not symlinks. After modifying plugin source, manually sync copies — they will NOT auto-update.
 
 Full reference: [documents/plugin-authoring.md](documents/plugin-authoring.md)
 
@@ -147,29 +145,28 @@ For remote deployments where claude.ai custom connectors need authenticated acce
 
 - **Activation**: `--issuer-url <public-https-url>` activates OAuth 2.0. `--cors-origin <origin>` (repeatable) sets `Access-Control-Allow-Origin` on all responses.
 - **Endpoints**: `/.well-known/oauth-authorization-server` (RFC 8414), `/.well-known/oauth-protected-resource` (RFC 9396), `/oauth/register` (RFC 7591 dynamic client registration), `/oauth/authorize` (approval page), `/oauth/token`, `/oauth/revoke` (RFC 7009).
-- **Design**: PKCE S256 mandatory. Auth codes are single-use with 5-min TTL. Access tokens are opaque base64url strings with 24-hour TTL. No refresh tokens — clients re-authorize.
-- **Bridge token**: the resource owner credential. Entered in the `/oauth/authorize` approval page. All string comparisons are timing-safe.
+- **Design**: PKCE S256 mandatory. Auth codes single-use, 5-min TTL. Access tokens opaque base64url, 24-hour TTL. No refresh tokens — clients re-authorize.
+- **Bridge token**: resource owner credential. Entered in `/oauth/authorize` approval page. All string comparisons timing-safe.
 - **CORS env var**: `CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai,https://other.example.com` (comma-separated alternative to `--cors-origin`).
-- **Never** include the bridge token, `--fixed-token` values, or real domain names in documentation or config checked into version control. Also never commit real domain names, `--issuer-url` values, or `--cors-origin` values to version control.
+- **Never** commit bridge token, `--fixed-token` values, real domain names, `--issuer-url` values, or `--cors-origin` values to version control.
 
 ## Remote Deployment
 
 - **VPS flags**: `--bind 0.0.0.0` exposes to all interfaces. `--vps` expands command allowlist (adds curl, systemctl, docker, etc.). `--fixed-token <uuid>` prevents token rotation on restart.
-- **Headless (no IDE)**: `print-token [--port N]` retrieves auth token from lock file. CLI tools work; LSP/debugger tools require the VS Code extension.
-- **VS Code Remote-SSH / Cursor SSH**: extension has `extensionKind: ["workspace"]` — loads on the VPS side automatically. Full tool support.
+- **Headless (no IDE)**: `print-token [--port N]` retrieves auth token from lock file. CLI tools work; LSP/debugger tools require VS Code extension.
+- **VS Code Remote-SSH / Cursor SSH**: extension has `extensionKind: ["workspace"]` — loads on VPS side automatically. Full tool support.
 - **Reverse proxy**: required for remote access (nginx or Caddy with TLS). See [docs/remote-access.md](docs/remote-access.md).
 - **Systemd + deploy scripts**: `deploy/bootstrap-new-vps.sh` (full provisioning), `deploy/install-vps-service.sh` (idempotent service install). See [deploy/README.md](deploy/README.md).
-
-- **Scheduled task templates not auto-installed**: Copy templates from `templates/scheduled-tasks/` to `~/.claude/scheduled-tasks/` manually, then restart Claude Desktop for the task to be detected.
+- **Scheduled task templates not auto-installed**: Copy from `templates/scheduled-tasks/` to `~/.claude/scheduled-tasks/` manually, then restart Claude Desktop.
 
 ## Claude Orchestration
 
-The bridge can spawn Claude Code subprocesses as background tasks.
+Bridge spawns Claude Code subprocesses as background tasks.
 
-- **Activation**: `--claude-driver subprocess` (or `api`). Default is `none` (disabled).
+- **Activation**: `--claude-driver subprocess` (or `api`). Default `none` (disabled).
 - **Tools**: `runClaudeTask` (enqueue prompt), `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`, `resumeClaudeTask`.
 - **Task lifecycle**: `pending` → `running` → `done | error | cancelled | interrupted`. Output streams to VS Code output channel, capped at 50KB.
-- **Binary**: `--claude-binary <path>` overrides the Claude CLI path (default: `claude` on PATH).
+- **Binary**: `--claude-binary <path>` overrides Claude CLI path (default: `claude` on PATH).
 
 Full reference: [documents/platform-docs.md](documents/platform-docs.md) (Claude orchestration section).
 
@@ -196,8 +193,8 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onPermissionDenied` — fires on Claude Code PermissionDenied hook (CC 2.1.89+). Placeholders: `{{tool}}`, `{{reason}}`.
   - `onCwdChanged` — fires when Claude Code CWD changes (CC 2.1.83+). Placeholder: `{{cwd}}`.
 - **Shared options**: all hooks support inline `prompt` string or `promptName`/`promptArgs` named prompt references. All support `cooldownMs` (min 5000).
-- **Cooldown**: minimum 5 seconds between triggers for the same file/event. Max prompt size: 32KB.
-- **CC hook wiring** — hooks that rely on Claude Code's own hook system need MCP notify tools called from `settings.json`. The bridge registers these automatically when `--automation` is active:
+- **Cooldown**: min 5s between triggers for same file/event. Max prompt size: 32KB.
+- **CC hook wiring** — hooks relying on Claude Code's hook system need MCP notify tools called from `settings.json`. Bridge registers these automatically when `--automation` active:
 
   | CC hook event | Shell command (settings.json) |
   |---|---|
@@ -207,9 +204,9 @@ Event-driven hooks that trigger Claude tasks automatically.
   | `PermissionDenied` | `claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON` |
   | `CwdChanged` | `claude-ide-bridge notify CwdChanged --cwd $CWD` |
 
-  The `notify` subcommand reads the bridge lock file, looks up the running port and auth token, and POSTs to the bridge's `/notify` HTTP endpoint. The bridge must be running.
+  `notify` subcommand reads bridge lock file, looks up running port and auth token, POSTs to `/notify` HTTP endpoint. Bridge must be running.
 
-  Example `~/.claude/settings.json` block (Claude Code requires entries wrapped in `matcher` + `hooks` arrays):
+  Example `~/.claude/settings.json` block (Claude Code requires `matcher` + `hooks` arrays):
   ```json
   "hooks": {
     "PostCompact": [
@@ -232,54 +229,50 @@ Event-driven hooks that trigger Claude tasks automatically.
 
 ## Transport & Session Model
 
-Three transports serve different clients:
-
 | Transport | Client | Protocol |
 |-----------|--------|----------|
 | WebSocket | Claude Code CLI | `ws://127.0.0.1:<port>` with `x-claude-code-ide-authorization` header |
 | stdio shim | Claude Desktop | stdin/stdout JSON-RPC, bridges to WebSocket internally |
 | Streamable HTTP | Remote MCP clients (claude.ai, Codex CLI) | `POST/GET/DELETE /mcp` with Bearer token |
 
-- **Lock file**: `~/.claude/ide/<port>.lock` — `{pid, workspace, authToken, isBridge: true, ...}`. Created with `O_EXCL` (prevents symlink attacks), permissions `0o600`. The `isBridge: true` flag distinguishes bridge locks from IDE-owned locks. See [ADR-0003](docs/adr/0003-isbridge-lock-file-flag.md).
+- **Lock file**: `~/.claude/ide/<port>.lock` — `{pid, workspace, authToken, isBridge: true, ...}`. Created with `O_EXCL` (prevents symlink attacks), permissions `0o600`. `isBridge: true` distinguishes bridge locks from IDE-owned locks. See [ADR-0003](docs/adr/0003-isbridge-lock-file-flag.md).
 - **Auth**: token from lock file, validated with `crypto.timingSafeEqual`. Host header DNS rebinding defense rejects non-loopback hosts.
 - **HTTP sessions**: max 5 concurrent, 10-min idle TTL, oldest idle (>60s) evicted on capacity. See [ADR-0005](docs/adr/0005-http-session-eviction.md).
-- **Grace period**: `--grace-period <ms>` (default 120s) preserves session state across brief disconnects. During grace, a reconnecting client that sends `X-Claude-Code-Session-Id` matching the in-grace session is reattached to it (no new session, no re-initialization). The stdio shim sends a stable per-process UUID automatically.
+- **Grace period**: `--grace-period <ms>` (default 120s) preserves session state across brief disconnects. Reconnecting client sending `X-Claude-Code-Session-Id` matching in-grace session is reattached (no new session, no re-initialization). stdio shim sends stable per-process UUID automatically.
 - **Version numbers**: `BRIDGE_PROTOCOL_VERSION` (wire format, bump rarely) vs `PACKAGE_VERSION` (npm, every release). See [ADR-0001](docs/adr/0001-dual-version-numbers.md).
-- **Generation guards**: every WebSocket callback checks `gen !== this.generation` to prevent stale callbacks from corrupting new connection state. See [ADR-0002](docs/adr/0002-generation-guards-on-reconnect.md).
+- **Generation guards**: every WebSocket callback checks `gen !== this.generation` to prevent stale callbacks corrupting new connection state. See [ADR-0002](docs/adr/0002-generation-guards-on-reconnect.md).
 
 ## Security Model
 
-- **Command allowlist**: `runCommand` only executes allowlisted commands. Interpreter commands (node, python, bash, etc.) are permanently blocked from `--allow-command`. Argument splitting prevents `--flag=value` injection.
+- **Command allowlist**: `runCommand` only executes allowlisted commands. Interpreter commands (node, python, bash, etc.) permanently blocked from `--allow-command`. Argument splitting prevents `--flag=value` injection.
 - **SSRF defense** (`sendHttpRequest`): hostname blocklist for private/loopback ranges, DNS pre-resolution re-check, Host header override after user headers.
-- **Path traversal** (`resolveFilePath` in `src/tools/utils.ts`): rejects null bytes, symlink escapes (ancestor chain walk), and paths outside workspace.
-- **Input validation**: AJV validates all tool arguments at the transport layer before execution. `isValidRef` rejects leading-dash git refs. `searchAndReplace` rejects null bytes and `-`-prefixed globs. Clipboard enforces 1MB cap via `Buffer.byteLength`.
+- **Path traversal** (`resolveFilePath` in `src/tools/utils.ts`): rejects null bytes, symlink escapes (ancestor chain walk), paths outside workspace.
+- **Input validation**: AJV validates all tool arguments at transport layer before execution. `isValidRef` rejects leading-dash git refs. `searchAndReplace` rejects null bytes and `-`-prefixed globs. Clipboard enforces 1MB cap via `Buffer.byteLength`.
 - **Rate limiting**: 200 requests/min (ring buffer), 500 notifications/min, per-session tool token bucket (default 60/min, configurable via `--tool-rate-limit`). Failed AJV validation does not consume rate limit tokens.
-- **Error codes**: `ToolErrorCodes` (string codes in `isError: true` content blocks) for tool failures; `ErrorCodes` (JSON-RPC -32xxx) for protocol issues. Never mix them. See [ADR-0004](docs/adr/0004-tool-errors-as-content.md).
+- **Error codes**: `ToolErrorCodes` (string codes in `isError: true` content blocks) for tool failures; `ErrorCodes` (JSON-RPC -32xxx) for protocol issues. Never mix. See [ADR-0004](docs/adr/0004-tool-errors-as-content.md).
 
 ## Claude IDE Bridge
 
 @import .claude/rules/bridge-tools.md
 
-The bridge is connected via MCP. The session-start hook reports connection status, tool count, and extension state automatically — check that summary before proceeding. If tools appear missing, call `getBridgeStatus` to diagnose.
+Bridge connected via MCP. Session-start hook reports connection status, tool count, and extension state automatically — check that summary before proceeding. If tools appear missing, call `getBridgeStatus` to diagnose.
 
 ### Bug fix methodology
 
-When a bug is reported, do NOT start by trying to fix it. Instead:
-1. Write a test that reproduces the bug (the test should fail)
-2. Fix the bug and confirm the test now passes
-3. Only then consider the bug fixed
+When bug reported, do NOT fix first. Instead:
+1. Write test that reproduces bug (must fail)
+2. Fix bug, confirm test passes
+3. Only then consider bug fixed
 
 ### Documentation & memory
 
-Keep project documentation and Claude's memory in sync with the code:
-
-- **After architectural changes** — update `CLAUDE.md` so future sessions have accurate context. If a pattern, rule, or constraint changes, the file should reflect it.
-- **At the end of a work session** — if meaningful decisions were made (why a pattern was chosen, what was tried and rejected, what the next steps are), save a summary to memory: *"Remember that we chose X approach because Y."*
-- **Prune stale instructions** — if `CLAUDE.md` contains outdated guidance, remove or correct it. Stale instructions cause confident mistakes in future sessions.
+- **After architectural changes** — update `CLAUDE.md` so future sessions have accurate context.
+- **At end of work session** — save meaningful decisions to memory: *"Remember that we chose X approach because Y."*
+- **Prune stale instructions** — remove/correct outdated guidance. Stale instructions cause confident mistakes.
 
 ### Modular rules (optional)
 
-For large projects, move individual rules out of CLAUDE.md into scoped files under `.claude/rules/`:
+Move rules out of CLAUDE.md into scoped files under `.claude/rules/`:
 
 ```
 .claude/rules/testing.md     — applies when working with test files
@@ -287,20 +280,20 @@ For large projects, move individual rules out of CLAUDE.md into scoped files und
 .claude/rules/typescript.md  — TypeScript-specific conventions
 ```
 
-Reference them from CLAUDE.md with:
+Reference from CLAUDE.md with:
 ```
 @import .claude/rules/testing.md
 ```
 
-Path globs on rule files mean Claude only loads them when working on matching files — keeps context focused and token-efficient.
+Path globs on rule files mean Claude only loads them when working on matching files.
 
 ### Workflow rules
 
-Bridge tool substitution rules are in `.claude/rules/bridge-tools.md` (loaded above). The Quick reference table below is a summary.
+Bridge tool substitution rules in `.claude/rules/bridge-tools.md` (loaded above). Quick reference table below is summary.
 
 ### Quick reference
 
-> Tools marked **[full]** require `--full` mode (not available in default slim mode). Slim mode exposes only IDE-exclusive tools (LSP, debugger, editor state). Call `getToolCapabilities` to confirm what is available in the current session.
+> Tools marked **[full]** require `--full` mode (not available in default slim mode). Slim mode exposes only IDE-exclusive tools (LSP, debugger, editor state). Call `getToolCapabilities` to confirm available tools.
 
 | Task | Tool | Mode |
 |---|---|---|
@@ -312,44 +305,44 @@ Bridge tool substitution rules are in `.claude/rules/bridge-tools.md` (loaded ab
 | Interactive debug | `setDebugBreakpoints`, `startDebugging`, `evaluateInDebugger` | slim |
 | Function signature at call site | `signatureHelp` | slim |
 | Type hierarchy (supertypes/subtypes) | `getTypeHierarchy` | slim |
-| Explain a symbol (composite) | `explainSymbol` | slim |
+| Explain symbol (composite) | `explainSymbol` | slim |
 | Inline type hints | `getInlayHints` | slim |
 | Refactor safely | `refactorAnalyze` → `refactorPreview` → `renameSymbol` | slim |
 | Extract function | `refactorExtractFunction` | slim |
-| Get bridge/extension health | `getBridgeStatus` | slim |
-| What tools are available? | `getToolCapabilities` | slim |
+| Bridge/extension health | `getBridgeStatus` | slim |
+| Available tools? | `getToolCapabilities` | slim |
 | Watch live diagnostics (long-poll) | `watchDiagnostics` | slim |
-| Bundle editor context into one call | `contextBundle` | slim |
+| Bundle editor context | `contextBundle` | slim |
 | Stream recent activity events | `watchActivityLog` | slim |
-| Take a screenshot | `captureScreenshot` | slim |
+| Screenshot | `captureScreenshot` | slim |
 | List open editors | `getOpenEditors` | slim |
-| Hover at current cursor position | `getHoverAtCursor` | slim |
+| Hover at cursor | `getHoverAtCursor` | slim |
 | Go to declaration | `goToDeclaration` | slim |
 | Go to type definition | `goToTypeDefinition` | slim |
 | Find all implementations | `findImplementations` | slim |
-| Batch find implementations (N symbols) | `batchFindImplementations` | slim |
+| Batch find implementations | `batchFindImplementations` | slim |
 | Selection range expand/shrink | `selectionRanges` | slim |
-| Folding ranges in document | `foldingRanges` | slim |
-| Preview a code action without applying | `previewCodeAction` | slim |
+| Folding ranges | `foldingRanges` | slim |
+| Preview code action | `previewCodeAction` | slim |
 | Git status / diff | `getGitStatus`, `getGitDiff` | **[full]** |
 | Stage, commit, push | `gitAdd`, `gitCommit`, `gitPush` | **[full]** |
-| Open a pull request | `githubCreatePR` | **[full]** |
+| Open pull request | `githubCreatePR` | **[full]** |
 | File tree | `getFileTree` | **[full]** |
-| Run a shell command | `runInTerminal`, `getTerminalOutput` | **[full]** |
-| Edit file text by line range | `editText` | **[full]** |
-| Open a file in the editor | `openFile` | **[full]** |
+| Run shell command | `runInTerminal`, `getTerminalOutput` | **[full]** |
+| Edit file by line range | `editText` | **[full]** |
+| Open file in editor | `openFile` | **[full]** |
 | Find + replace across workspace | `searchAndReplace` | **[full]** |
 | List VS Code tasks | `listVSCodeTasks` | **[full]** |
-| Run a VS Code task | `runVSCodeTask` | **[full]** |
-| Get project info (name, version, deps) | `getProjectInfo` | **[full]** |
-| Enqueue a Claude subprocess task | `runClaudeTask` | **[full]** |
+| Run VS Code task | `runVSCodeTask` | **[full]** |
+| Project info (name, version, deps) | `getProjectInfo` | **[full]** |
+| Enqueue Claude subprocess task | `runClaudeTask` | **[full]** |
 | List Claude subprocess tasks | `listClaudeTasks` | **[full]** |
-| Checkout a branch | `gitCheckout` | **[full]** |
-| Pull latest from remote | `gitPull` | **[full]** |
+| Checkout branch | `gitCheckout` | **[full]** |
+| Pull from remote | `gitPull` | **[full]** |
 | List branches | `gitListBranches` | **[full]** |
-| Blame a file | `gitBlame` | **[full]** |
+| Blame file | `gitBlame` | **[full]** |
 | Run VS Code command by ID | `executeVSCodeCommand` | **[full]** |
-| Capture/set cross-session context | `setHandoffNote` / `getHandoffNote` | **[full]** |
+| Cross-session context | `setHandoffNote` / `getHandoffNote` | **[full]** |
 | Lint / format | `fixAllLintErrors`, `formatDocument` | **[full]** |
 | Security audit | `getSecurityAdvisories`, `auditDependencies` | **[full]** |
 | Unused code | `detectUnusedCode` | **[full]** |
@@ -360,11 +353,9 @@ Bridge tool substitution rules are in `.claude/rules/bridge-tools.md` (loaded ab
 
 ### Dispatch prompts (mobile)
 
-When a terse message arrives via Claude Desktop Dispatch (phone/Siri), Claude automatically routes it to the appropriate bridge prompt. You can also invoke these prompts directly by name in any chat.
+Terse messages via Claude Desktop Dispatch (phone/Siri) are auto-routed to bridge prompts. Invoke directly by name in any chat. Keep responses under 20 lines for Dispatch.
 
-When responding to terse Dispatch messages from a phone, use these prompts for consistent, concise output.
-
-> These prompts use git, test, and project tools that require `--full` mode. They will not work in default slim mode.
+> Require `--full` mode. Won't work in slim mode.
 
 | Phone message | Prompt | Tools called |
 |---|---|---|
@@ -373,41 +364,39 @@ When responding to terse Dispatch messages from a phone, use these prompts for c
 | "Does it build?" | `build-check` | `getProjectInfo`, `getDiagnostics`, `runCommand` |
 | "What changed?" | `recent-activity` | `getGitLog`, `getGitStatus` |
 
-Keep responses concise (under 20 lines) when the conversation arrives via Dispatch.
-
 ### Agent Teams & Scheduled Tasks
 
 | Context | Prompt | What it does |
 |---|---|---|
-| Team lead checking on parallel agents | `team-status` | Workspace state, active tasks, recent activity across sessions |
+| Team lead checking parallel agents | `team-status` | Workspace state, active tasks, recent activity across sessions |
 | Scheduled nightly/hourly health check | `health-check` | Tests + diagnostics + security advisories + git status |
 
-> Prerequisite for `team-status`: multiple Claude Code sessions must be connected simultaneously. Solo sessions will show empty team activity.
+> `team-status` requires multiple Claude Code sessions connected simultaneously.
 
-> **Claude Code ≥ v2.1.77**: `SendMessage` auto-resumes stopped agents — no need to check whether a teammate is running before sending to it.
+> **Claude Code ≥ v2.1.77**: `SendMessage` auto-resumes stopped agents.
 
-Ready-made scheduled task templates (nightly-review, health-check, dependency-audit) are included with the bridge package. Copy the ones you want to `~/.claude/scheduled-tasks/` and restart Claude Desktop to activate them. Find them in the `templates/scheduled-tasks/` directory of the `claude-ide-bridge` npm package (typically `$(npm root -g)/claude-ide-bridge/templates/scheduled-tasks/`).
+Scheduled task templates (nightly-review, health-check, dependency-audit) included with bridge package. Copy to `~/.claude/scheduled-tasks/` and restart Claude Desktop. Find in `$(npm root -g)/claude-ide-bridge/templates/scheduled-tasks/`.
 
 ### Cowork (computer-use)
 
-**MCP bridge tools are NOT available inside Cowork sessions.** Always run `/mcp__bridge__cowork` in a regular Claude Code or Claude Desktop chat first to gather context and write a handoff note, then open Cowork.
+**MCP bridge tools NOT available inside Cowork.** Run `/mcp__bridge__cowork` in regular Claude Code or Desktop chat first to gather context and write handoff note, then open Cowork.
 
 Workflow:
 1. Regular chat: run `/mcp__bridge__cowork` → Claude collects IDE state → calls `setHandoffNote`
-2. Open Cowork (Cmd+2 on Mac) → Cowork reads the handoff note for context
+2. Open Cowork (Cmd+2 on Mac) → Cowork reads handoff note for context
 
-**If bridge tools are missing from your tool list inside Cowork:** you're in the wrong context. Exit, run the prompt in regular chat, then return.
+**If bridge tools missing inside Cowork:** wrong context. Exit, run prompt in regular chat, return.
 
 Full details: [docs/cowork-workflow.md](docs/cowork-workflow.md)
 
-**Cowork uses git worktrees:** Cowork sessions operate in an isolated git worktree (separate branch/working copy), not the main workspace root. Files written by Cowork land in the worktree. Always add "write all files to the workspace root, not a subdirectory" as the first instruction in your CLAUDE.md when using Cowork with a synced workspace. After Cowork finishes, review and merge the worktree branch back to main.
+**Cowork uses git worktrees:** Cowork operates in isolated git worktree, not main workspace root. Files land in worktree. Always add "write all files to workspace root, not subdirectory" as first instruction in CLAUDE.md when using Cowork with synced workspace. After Cowork finishes, review and merge worktree branch back to main.
 
 ### Session continuity
 
 | Scenario | Action |
 |---|---|
-| Switching CLI → Desktop | Call `setHandoffNote` before switching; bridge auto-snapshots if note is >5 min stale |
-| Session just started | Call `getHandoffNote` to pick up prior context (workspace-scoped). **Caution:** the `onInstructionsLoaded` automation hook may have auto-overwritten the note at session start — if the content looks generic or templated, treat it as stale and consult any persistent session log your project maintains (e.g. `docs/session-log.md`) for authoritative history. |
-| Bridge restarted | First connected client receives a "restored from checkpoint" notification |
+| Switching CLI → Desktop | Call `setHandoffNote` before switching; bridge auto-snapshots if note >5 min stale |
+| Session just started | Call `getHandoffNote` to pick up prior context (workspace-scoped). **Caution:** `onInstructionsLoaded` hook may have auto-overwritten note at session start — if content looks generic/templated, treat as stale and consult persistent session log (e.g. `docs/session-log.md`). |
+| Bridge restarted | First connected client receives "restored from checkpoint" notification |
 | Preparing for Cowork | Run `/mcp__bridge__cowork` in regular chat first — Cowork has no MCP access |
 | Multi-workspace | Notes are workspace-scoped; switching workspaces won't overwrite each other's notes |
