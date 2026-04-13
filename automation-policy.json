@@ -1,7 +1,7 @@
 {
   "defaultModel": "claude-haiku-4-5-20251001",
   "defaultEffort": "low",
-  "automationSystemPrompt": "Automation bot. ≤5 lines. No preamble. Call tools → report results only.",
+  "automationSystemPrompt": "Automation bot. Drop articles/filler/hedging. Fragments OK. Short synonyms. Abbreviate: DB/auth/config/req/res/fn. Arrows for causality (X→Y). ≤5 lines. No preamble. Call tools → report results only.",
   "maxTasksPerHour": 20,
   "onFileSave": {
     "enabled": true,
@@ -18,7 +18,7 @@
   "onInstructionsLoaded": {
     "enabled": true,
     "cooldownMs": 60000,
-    "prompt": "Session start. contextBundle → report branch, error count, uncommitted changes."
+    "prompt": "Session start. contextBundle → branch, error count, uncommitted changes. ≤5 lines. Drop articles/filler. Fragments OK. Abbreviate (DB/auth/config/req/res/fn). Arrows for causality. Stay terse all session."
   },
   "onBranchCheckout": {
     "enabled": true,
@@ -49,7 +49,7 @@
     "enabled": true,
     "cooldownMs": 10000,
     "onFailureOnly": true,
-    "prompt": "{{failed}}/{{total}} tests failed.\n\nFailed:\n{{failures}}\n\nInvestigate → suggest fixes."
+    "prompt": "{{failed}}/{{total}} fail.\n{{failures}}\nEach: 1-line cause + fix snippet. No prose."
   },
   "onDiagnosticsError": {
     "enabled": true,
@@ -58,7 +58,7 @@
     "dedupeContentCooldownMs": 900000,
     "minSeverity": "error",
     "diagnosticTypes": ["ts"],
-    "prompt": "TS error in {{file}}:\n\n{{diagnostics}}\n\nExplain cause → suggest fix."
+    "prompt": "TS err {{file}}:\n{{diagnostics}}\nCause+fix ≤3 lines. Code only. No prose."
   },
   "onDiagnosticsCleared": {
     "enabled": true,
