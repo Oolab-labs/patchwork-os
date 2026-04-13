@@ -1230,6 +1230,22 @@ export function createFindImplementationsTool(
           count: 0,
         });
       }
+      // Cap implementations array at 50 (matches getCallHierarchy baseline).
+      const FIND_IMPLEMENTATIONS_MAX = 50;
+      if (result && typeof result === "object") {
+        const r = result as Record<string, unknown>;
+        if (Array.isArray(r.implementations)) {
+          const full = r.implementations;
+          if (full.length > FIND_IMPLEMENTATIONS_MAX) {
+            return successStructured({
+              ...r,
+              implementations: full.slice(0, FIND_IMPLEMENTATIONS_MAX),
+              truncated: true,
+              totalCount: full.length,
+            });
+          }
+        }
+      }
       return successStructured(result);
     },
   };

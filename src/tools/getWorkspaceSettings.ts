@@ -14,6 +14,7 @@ export function createGetWorkspaceSettingsTool(
         "Read VS Code workspace settings. Optionally filter by section (e.g. 'editor', 'typescript'). " +
         "Returns values with their sources (workspace vs global). ",
       annotations: { readOnlyHint: true },
+      extensionRequired: true,
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,

@@ -23,6 +23,7 @@ export function createGetTypeHierarchyTool(
       description:
         "Get the type hierarchy for a symbol — supertypes (parent classes/interfaces) and subtypes (implementations/subclasses). Requires a language server with type hierarchy support.",
       annotations: { readOnlyHint: true },
+      extensionRequired: true,
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         type: "object" as const,
