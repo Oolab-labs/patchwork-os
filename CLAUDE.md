@@ -113,6 +113,11 @@ All LSP tools are available in default slim mode. Use these sequences for the mo
 - **Extension dependency**: tools requiring the extension must set `extensionRequired: true` in their schema.
 - **Tool names**: must match `/^[a-zA-Z0-9_]+$/`.
 - **Error handling**: tool execution errors return `isError: true` in content (NOT JSON-RPC errors). JSON-RPC errors (`ErrorCodes`, -32xxx) are for protocol issues only. See [ADR-0004](docs/adr/0004-tool-errors-as-content.md).
+- **`extensionClient` shape validation**: `proxy<T>()` is a blind TypeScript cast with no runtime validation — **do NOT use it for new methods**. Eight latent shape-mismatch bugs (v2.25.18–v2.25.24) came from this pattern. For new methods, pick:
+  - `tryRequest<T>(method, params, timeout, signal)` — auto-unwraps `{error}` / `{success: false, error}` responses to `null`. Use when the handler's success path is a single T shape and error paths are error objects the caller doesn't need to distinguish.
+  - `validatedRequest<T>(method, params, validator)` — runtime shape predicate. Use when the success path is an object with specific required fields (e.g. `{items, count}` wrappers).
+  - Direct `requestOrNull` + inline unwrap — when the handler has a rich contract (e.g. `{success: true/false, data, error}`) and the caller genuinely needs the structured error (see `closeTab`, `saveFile`). Do NOT use `tryRequest` here — it would hide information the caller needs.
+  - When auditing: read the handler in `vscode-extension/src/handlers/*.ts` and enumerate ALL return statements (success AND error paths) before choosing the helper. Test mocks always lie — the handler file is the ground truth.
 
 ## Testing Requirements
 
