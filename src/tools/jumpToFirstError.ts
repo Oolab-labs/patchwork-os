@@ -50,10 +50,7 @@ export function createJumpToFirstErrorTool(deps: {
     schema: {
       name: "jumpToFirstError",
       description:
-        "Find the first error in the workspace and jump to it in one call. " +
-        "Replaces the 3-call getDiagnostics → openFile → setEditorDecorations pattern. " +
-        "Returns { found: false } if the workspace has no errors. When the extension is " +
-        "connected, also applies a red decoration at the error line.",
+        "Find the first workspace error and jump to it in one call (getDiagnostics → openFile → decoration). Returns { found: false } when the workspace has no errors.",
       annotations: { readOnlyHint: false, idempotentHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",
