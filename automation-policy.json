@@ -13,7 +13,7 @@
   "onPostCompact": {
     "enabled": true,
     "cooldownMs": 30000,
-    "prompt": "Compacted. Call getGitStatus, getDiagnostics, getHandoffNote. Summarize ≤10 lines."
+    "prompt": "Compacted. getGitStatus + getDiagnostics + getHandoffNote → summarize ≤10 lines. Drop articles/filler. Fragments OK. Abbreviate (DB/auth/config/req/res/fn). Stay terse."
   },
   "onInstructionsLoaded": {
     "enabled": true,

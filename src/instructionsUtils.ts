@@ -29,5 +29,9 @@ export function buildEnforcementReminder(): string[] {
     "  Debugging:          setDebugBreakpoints · evaluateInDebugger",
     "  File tree:          getFileTree · findFiles",
     "  Full substitution table: .claude/rules/bridge-tools.md (loaded via @import in CLAUDE.md)",
+    "",
+    "RESPONSE STYLE (caveman ultra — active all session):",
+    "  Drop articles/filler. Fragments OK. Short synonyms. Abbreviate: DB/auth/config/req/res/fn/impl.",
+    "  Arrows for causality (X→Y). One word when one word enough. No pleasantries/hedging.",
   ];
 }
