@@ -809,6 +809,32 @@ describe("AutomationHooks.handleInstructionsLoaded", () => {
     );
     expect(hooks.getStatus().onInstructionsLoaded?.cooldownMs).toBe(60_000);
   });
+
+  it("skips when a task is still active", async () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onInstructionsLoaded: {
+          enabled: true,
+          prompt: "Session started.",
+          cooldownMs: 0,
+        },
+      },
+      orch,
+      () => {},
+    );
+    // First call enqueues a task that stays running
+    hooks.handleInstructionsLoaded();
+    expect(orch.list().length).toBe(1);
+    const firstId = orch.list()[0]!.id;
+    // Wait for task to enter running state
+    await new Promise<void>((r) => setTimeout(r, 10));
+    // Second call should be skipped while first is still running
+    hooks.handleInstructionsLoaded();
+    expect(orch.list().length).toBe(1);
+    expect(orch.list()[0]!.id).toBe(firstId);
+    orch.cancel(firstId);
+  });
 });
 
 // ── onPostCompact ─────────────────────────────────────────────────────────────
@@ -1032,6 +1058,32 @@ describe("AutomationHooks.handlePostCompact", () => {
     hooks.handlePostCompact();
     expect(orch.list().length).toBe(1);
     expect(orch.list()[0]?.prompt).toContain("findImplementations");
+  });
+
+  it("skips when a task is still active", async () => {
+    const orch = makeSlowOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onPostCompact: {
+          enabled: true,
+          prompt: "Context compacted.",
+          cooldownMs: 0,
+        },
+      },
+      orch,
+      () => {},
+    );
+    // First call enqueues a task that stays running
+    hooks.handlePostCompact();
+    expect(orch.list().length).toBe(1);
+    const firstId = orch.list()[0]!.id;
+    // Wait for task to enter running state
+    await new Promise<void>((r) => setTimeout(r, 10));
+    // Second call should be skipped while first is still running
+    hooks.handlePostCompact();
+    expect(orch.list().length).toBe(1);
+    expect(orch.list()[0]!.id).toBe(firstId);
+    orch.cancel(firstId);
   });
 });
 
@@ -1344,11 +1396,11 @@ describe("AutomationHooks.handleGitCommit", () => {
       }),
     );
     const task = orch.list()[0];
-    // {{hash}} is nonce-wrapped — check value is present, not adjacent to literal key
+    // All placeholders are nonce-wrapped — check values are present, not adjacent to literal keys
     expect(task?.prompt).toContain("deadbeef1234");
     expect(task?.prompt).toContain("feature/x");
     expect(task?.prompt).toContain("fix: bug");
-    expect(task?.prompt).toContain("count=1");
+    expect(task?.prompt).toContain("COMMIT COUNT");
     expect(task?.prompt).toContain("src/x.ts");
   });
 

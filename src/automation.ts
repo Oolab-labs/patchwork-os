@@ -1007,6 +1007,10 @@ export class AutomationHooks {
   private prevDiagnosticErrors = new Map<string, number>();
   /** Active task ID for the task-success handler (workspace-global). */
   private activeTaskSuccessTaskId: string | null = null;
+  /** Active task ID for the post-compact handler (workspace-global). */
+  private activePostCompactTaskId: string | null = null;
+  /** Active task ID for the instructions-loaded handler (workspace-global). */
+  private activeInstructionsLoadedTaskId: string | null = null;
   /**
    * Rolling window of task enqueue timestamps for maxTasksPerHour enforcement.
    * Entries older than 60 minutes are pruned on each enqueue.
@@ -1356,6 +1360,20 @@ export class AutomationHooks {
     const cfg = this.policy.onPostCompact;
     if (!cfg?.enabled) return;
 
+    if (this.activePostCompactTaskId) {
+      const existing = this.orchestrator.getTask(this.activePostCompactTaskId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping post-compact trigger — task ${this.activePostCompactTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activePostCompactTaskId = null;
+    }
+
     const key = "post-compact";
     const now = Date.now();
     const last = this.lastTrigger.get(key) ?? 0;
@@ -1392,6 +1410,7 @@ export class AutomationHooks {
       // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
       // impose a spurious cooldown on the next trigger attempt.
       this.lastTrigger.set(key, now);
+      this.activePostCompactTaskId = taskId;
       this.log(`[automation] triggered PostCompact task ${taskId.slice(0, 8)}`);
     } catch (err) {
       this.log(
@@ -1407,6 +1426,22 @@ export class AutomationHooks {
   handleInstructionsLoaded(): void {
     const cfg = this.policy.onInstructionsLoaded;
     if (!cfg?.enabled) return;
+
+    if (this.activeInstructionsLoadedTaskId) {
+      const existing = this.orchestrator.getTask(
+        this.activeInstructionsLoadedTaskId,
+      );
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping instructions-loaded trigger — task ${this.activeInstructionsLoadedTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeInstructionsLoadedTaskId = null;
+    }
 
     const cooldownMs = cfg.cooldownMs ?? 60_000;
     const key = "instructions-loaded";
@@ -1443,6 +1478,7 @@ export class AutomationHooks {
         hookCfg: cfg,
       });
       this.lastTrigger.set(key, now);
+      this.activeInstructionsLoadedTaskId = taskId;
       this.log(
         `[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`,
       );
@@ -1869,7 +1905,10 @@ export class AutomationHooks {
             /\{\{message\}\}/g,
             untrustedBlock("COMMIT MESSAGE", safeMessage, nonce),
           )
-          .replace(/\{\{count\}\}/g, String(result.count))
+          .replace(
+            /\{\{count\}\}/g,
+            untrustedBlock("COMMIT COUNT", String(result.count), nonce),
+          )
           .replace(
             /\{\{files\}\}/g,
             untrustedBlock("COMMITTED FILES", filesText, nonce),
