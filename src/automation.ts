@@ -1051,7 +1051,6 @@ export class AutomationHooks {
           `Automation rate limit reached (max ${maxPerHour} tasks/hour)`,
         );
       }
-      this.taskTimestamps.push(now);
     }
 
     const model =
@@ -1061,7 +1060,7 @@ export class AutomationHooks {
     const effort = opts.hookCfg?.effort ?? this.policy.defaultEffort ?? "low";
     const systemPrompt =
       this.policy.automationSystemPrompt ?? DEFAULT_AUTOMATION_SYSTEM_PROMPT;
-    return this.orchestrator.enqueue({
+    const taskId = this.orchestrator.enqueue({
       prompt: opts.prompt,
       sessionId: "",
       isAutomationTask: true,
@@ -1070,6 +1069,12 @@ export class AutomationHooks {
       effort,
       systemPrompt,
     });
+    // Push timestamp only after successful enqueue so tasksThisHour never
+    // diverges from the actual task row count (F3 phantom-increment fix).
+    if (maxPerHour > 0) {
+      this.taskTimestamps.push(Date.now());
+    }
+    return taskId;
   }
 
   /**
@@ -1446,6 +1451,24 @@ export class AutomationHooks {
         return;
       }
       this.activeInstructionsLoadedTaskId = null;
+    }
+
+    // Cross-hook cascade guard: each automation subprocess fires the
+    // InstructionsLoaded CC hook when it starts, which would spawn a second
+    // onInstructionsLoaded task without this check.  Suppress if any
+    // automation task is currently pending or running.
+    const anyAutomationActive = this.orchestrator
+      .list()
+      .some(
+        (t) =>
+          t.isAutomationTask &&
+          (t.status === "pending" || t.status === "running"),
+      );
+    if (anyAutomationActive) {
+      this.log(
+        "[automation] skipping instructions-loaded trigger — another automation task is active (cascade guard)",
+      );
+      return;
     }
 
     const cooldownMs = cfg.cooldownMs ?? 60_000;

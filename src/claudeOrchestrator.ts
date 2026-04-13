@@ -457,6 +457,7 @@ export class ClaudeOrchestrator {
       ...(t.wasAborted !== undefined && { wasAborted: t.wasAborted }),
       ...(t.startupMs !== undefined && { startupMs: t.startupMs }),
       ...(t.systemPrompt !== undefined && { systemPrompt: t.systemPrompt }),
+      ...(t.triggerSource !== undefined && { triggerSource: t.triggerSource }),
     }));
   }
 

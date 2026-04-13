@@ -676,3 +676,27 @@ describe("ClaudeOrchestrator — v2.24.1 cancel reasons", () => {
     expect(task?.wasAborted).toBe(true);
   });
 });
+
+// ── F4: triggerSource in tasks payload ───────────────────────────────────────
+
+describe("_buildTasksPayload: triggerSource is included", () => {
+  it("exposes triggerSource on task when set", async () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", () => {});
+    orch.enqueue({
+      prompt: "do something",
+      triggerSource: "onGitCommit",
+      isAutomationTask: true,
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const task = orch.getTask(orch.list()[0]!.id);
+    expect(task?.triggerSource).toBe("onGitCommit");
+  });
+
+  it("leaves triggerSource undefined when not set", async () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", () => {});
+    orch.enqueue({ prompt: "no source" });
+    await new Promise((r) => setTimeout(r, 50));
+    const task = orch.getTask(orch.list()[0]!.id);
+    expect(task?.triggerSource).toBeUndefined();
+  });
+});
