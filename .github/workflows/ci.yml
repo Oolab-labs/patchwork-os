@@ -21,6 +21,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Type check
         run: npm run typecheck
       - name: Lint
@@ -51,6 +53,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Audit LSP tool lists
         run: node scripts/audit-lsp-tools.mjs
 
@@ -136,6 +140,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build
         run: npm run build
       - name: Start bridge
