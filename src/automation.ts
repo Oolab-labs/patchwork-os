@@ -2007,7 +2007,10 @@ export class AutomationHooks {
             /\{\{branch\}\}/g,
             untrustedBlock("BRANCH", safeBranch, nonce),
           )
-          .replace(/\{\{hash\}\}/g, safeHash) ?? "";
+          .replace(
+            /\{\{hash\}\}/g,
+            untrustedBlock("COMMIT HASH", safeHash, nonce),
+          ) ?? "";
     }
     prompt = truncatePrompt(buildHookMetadata("onGitPush") + prompt);
 
@@ -2336,15 +2339,16 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{taskId\}\}/g,
-          untrustedBlock("TASK ID", safeTaskId, nonce),
-        )
-        .replace(
-          /\{\{prompt\}\}/g,
-          untrustedBlock("TASK PROMPT", safePrompt, nonce),
-        );
+      prompt =
+        (cfg.prompt ?? "")
+          .replace(
+            /\{\{taskId\}\}/g,
+            untrustedBlock("TASK ID", safeTaskId, nonce),
+          )
+          .replace(
+            /\{\{prompt\}\}/g,
+            untrustedBlock("TASK PROMPT", safePrompt, nonce),
+          ) ?? "";
     }
 
     prompt = truncatePrompt(buildHookMetadata("onTaskCreated") + prompt);
@@ -2572,15 +2576,16 @@ export class AutomationHooks {
       prompt = resolved;
     } else {
       const nonce = crypto.randomBytes(6).toString("hex");
-      prompt = cfg
-        .prompt!.replace(
-          /\{\{taskId\}\}/g,
-          untrustedBlock("TASK ID", safeTaskId, nonce),
-        )
-        .replace(
-          /\{\{output\}\}/g,
-          untrustedBlock("TASK OUTPUT", safeOutput, nonce),
-        );
+      prompt =
+        (cfg.prompt ?? "")
+          .replace(
+            /\{\{taskId\}\}/g,
+            untrustedBlock("TASK ID", safeTaskId, nonce),
+          )
+          .replace(
+            /\{\{output\}\}/g,
+            untrustedBlock("TASK OUTPUT", safeOutput, nonce),
+          ) ?? "";
     }
 
     prompt = truncatePrompt(buildHookMetadata("onTaskSuccess") + prompt);

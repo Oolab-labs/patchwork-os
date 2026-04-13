@@ -1571,7 +1571,9 @@ describe("AutomationHooks.handleGitPush", () => {
     const task = orch.list()[0];
     expect(task?.prompt).toContain("upstream");
     expect(task?.prompt).toContain("feature/y");
-    expect(task?.prompt).toContain("hash=deadbeef1234");
+    // {{hash}} now nonce-wrapped like other placeholders — check value is present
+    expect(task?.prompt).toContain("deadbeef1234");
+    expect(task?.prompt).toContain("COMMIT HASH");
   });
 
   it("does not trigger when disabled", () => {
