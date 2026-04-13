@@ -126,14 +126,29 @@ export function createGetGitStatusTool(workspace: string) {
         }
       }
 
+      const GIT_STATUS_MAX_FILES = 500;
+      const capList = (arr: string[]): { files: string[]; truncated?: true } =>
+        arr.length > GIT_STATUS_MAX_FILES
+          ? { files: arr.slice(0, GIT_STATUS_MAX_FILES), truncated: true }
+          : { files: arr };
+
+      const sc = capList(staged);
+      const uc = capList(unstaged);
+      const tc = capList(untracked);
+      const cc = capList(conflicts);
+
       return successStructured({
         branch,
         ahead,
         behind,
-        staged,
-        unstaged,
-        untracked,
-        conflicts,
+        staged: sc.files,
+        unstaged: uc.files,
+        untracked: tc.files,
+        conflicts: cc.files,
+        ...(sc.truncated && { stagedTruncated: true }),
+        ...(uc.truncated && { unstagedTruncated: true }),
+        ...(tc.truncated && { untrackedTruncated: true }),
+        ...(cc.truncated && { conflictsTruncated: true }),
       });
     },
   };

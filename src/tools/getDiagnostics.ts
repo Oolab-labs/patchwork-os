@@ -16,6 +16,8 @@ import { optionalString, successStructuredLarge, toFileUri } from "./utils.js";
 // Cap diagnostic message length and strip control characters to prevent
 // prompt injection from malicious LSP servers or linters.
 const MAX_MESSAGE_LEN = 500;
+const MAX_RELATED_INFORMATION = 5;
+const MAX_RELATED_MSG_LEN = 200;
 function sanitizeMessage(msg: unknown): string {
   const s = typeof msg === "string" ? msg : String(msg ?? "");
   return s.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, MAX_MESSAGE_LEN);
@@ -272,12 +274,33 @@ export function createGetDiagnosticsTool(
                 typeof d === "object" &&
                 "message" in (d as object)
               ) {
-                return {
-                  ...(d as object),
-                  message: sanitizeMessage(
-                    (d as Record<string, unknown>).message,
-                  ),
+                const rec = d as Record<string, unknown>;
+                const result: Record<string, unknown> = {
+                  ...rec,
+                  message: sanitizeMessage(rec.message),
                 };
+                if (Array.isArray(rec.relatedInformation)) {
+                  result.relatedInformation = rec.relatedInformation
+                    .slice(0, MAX_RELATED_INFORMATION)
+                    .map((ri: unknown) => {
+                      if (
+                        ri !== null &&
+                        typeof ri === "object" &&
+                        "message" in (ri as object)
+                      ) {
+                        const r = ri as Record<string, unknown>;
+                        return {
+                          ...r,
+                          message: sanitizeMessage(r.message).slice(
+                            0,
+                            MAX_RELATED_MSG_LEN,
+                          ),
+                        };
+                      }
+                      return ri;
+                    });
+                }
+                return result;
               }
               return d;
             });

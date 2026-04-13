@@ -131,3 +131,34 @@ describe("getDiagnostics — message sanitization", () => {
     expect((data.diagnostics[0].message as string).length).toBe(500);
   });
 });
+
+describe("getDiagnostics — extension path relatedInformation sanitization", () => {
+  it("caps relatedInformation at 5 entries and truncates messages to 200 chars", async () => {
+    const relatedInfo = Array.from({ length: 10 }, (_, i) => ({
+      message: "x".repeat(300) + ` related ${i}`,
+      file: "/ws/bar.ts",
+      line: i,
+      column: 0,
+    }));
+    const mockClient = {
+      isConnected: () => true,
+      getDiagnostics: vi.fn(async () => [
+        {
+          file: "/ws/foo.ts",
+          line: 1,
+          column: 1,
+          severity: "error",
+          message: "Type mismatch",
+          relatedInformation: relatedInfo,
+        },
+      ]),
+    };
+    const tool = createGetDiagnosticsTool("/ws", probes, mockClient as never);
+    const data = parse(await tool.handler({ uri: "/ws/foo.ts" }));
+    const diag = data.diagnostics[0];
+    expect(diag.relatedInformation).toHaveLength(5);
+    expect(
+      (diag.relatedInformation[0].message as string).length,
+    ).toBeLessThanOrEqual(200);
+  });
+});
