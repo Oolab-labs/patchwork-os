@@ -4,16 +4,26 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.25.6 — 2026-04-12)
+## Current State (v2.25.26 — 2026-04-13)
 
-**v2.25.4–2.25.6 shipped (2026-04-12) — CC hook wiring fixes + cleanup:**
-- v2.25.4: `init` now writes CC hook entries in Claude Code's required `{matcher, hooks:[...]}` nested format; auto-migrates legacy flat entries it manages. `checkCcHookWiring()` reads both formats for backward-compat. Fixes settings validation error that silently dropped the entire `hooks` block.
-- v2.25.5: Removed 5 redundant MCP notify tools (`notifyPostCompact`, `notifyInstructionsLoaded`, `notifyTaskCreated`, `notifyPermissionDenied`, `notifyCwdChanged`) — `claude-ide-bridge notify <Event>` → `POST /notify` is now the sole path. AutomationHooks handlers untouched.
-- v2.25.6: `onInstructionsLoaded` was missing from `getStatus()` return type and value — now correctly surfaces in `getBridgeStatus` automation block.
+**v2.25.15–v2.25.26 shipped (2026-04-13) — polish, bug saga, prevention, composites:**
+- v2.25.15–16: Loop guards for `onPostCompact`/`onInstructionsLoaded`; `--verbose` regression test; `{{count}}` nonce-wrap; token-efficiency caps on contextBundle/onDiagnosticsError/getDiagnostics relatedInformation/getGitStatus/runTests.
+- v2.25.17: Batch A polish — `extensionRequired: true` schema flag added to 4 tools; `findImplementations` cap 50; `getDocumentSymbols` cap 500; SubprocessDriver settings file includes `process.pid` to prevent multi-bridge races.
+- v2.25.18: contextBundle `activeFileContent` latent bug — checked `typeof string` on an object, field had never been populated since tool creation. Plus `onGitPush` hash nonce-wrap, `onTaskCreated/Success` non-null assertion cleanup, `getWorkspaceSettings` 200-key cap, `getImportTree` 5000-node cap.
+- v2.25.19–21: Five latent shape-mismatch bugs in `extensionClient` — `getWorkspaceFolders` (array wrapper), `getSelection` (error object), `closeTab` (blind boolean cast → always reported failure), `formatDocument`/`fixAllLintErrors` (errors masked as success → CLI fallback unreachable), `writeClipboard` (schema mismatch).
+- v2.25.22–23: Systemic prevention helpers — `tryRequest<T>` (auto-unwraps `{error}` convention) and `validatedRequest<T>` (runtime shape predicate) on `ExtensionClient`. `proxy<T>` doc-commented as dangerous. Regression tests for `getSelection`/`getWorkspaceFolders`.
+- v2.25.24: Eighth latent bug — `saveFile` same pattern as `closeTab`. Structured `{saved, error?}` return. Negative finding: 10 other methods that looked like migration candidates are actually fine as-is.
+- v2.25.25: **Three composite tools shipped** — `formatAndSave`, `jumpToFirstError`, `navigateToSymbolByName`. Plus `getBridgeStatus.toolAvailability` observability field (answers "why can't Claude call X?" in one call). New composite factory dep-injection pattern (dep tools extracted to `const` bindings in `src/tools/index.ts` before composites).
+- v2.25.26: Dogfood catch on `toolAvailability` — `extensionFallback: true` spec flag for dual-path tools like `formatDocument`. The observability feature caught its own bug on first live use.
+
+**Earlier baseline (v2.25.4–6, 2026-04-12):**
+- v2.25.4: `init` writes CC hooks in `{matcher, hooks:[...]}` nested format; auto-migrates legacy flat entries.
+- v2.25.5: Removed 5 redundant notify MCP tools — `claude-ide-bridge notify <Event>` → `POST /notify` is the sole path.
+- v2.25.6: `onInstructionsLoaded` now surfaces in `getBridgeStatus` automation block.
 
 - **Slim mode default**: 56 IDE-exclusive tools (LSP, debugger, editor state, bridge introspection, `watchActivityLog`, `contextBundle`); `--full` restores all tools; plugin tools always bypass slim filter
 - **Token-efficient `tools/list`**: all tool descriptions ≤200 chars (slim ≤160), CI audit check #6 enforces limit; `scripts/measure-tools-list.mjs` tracks payload size
-- **2,128 bridge tests / 145 files + 564 extension tests / 35 files = 2,692 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
+- **2,184 bridge tests / 148 files + 564 extension tests / 35 files = 2,748 total**, 0 failures; CI green on Node 20 + 22 (Ubuntu)
 - **31 MCP prompts** (slash commands): 15 general/Dispatch + 13 LSP-composition + 3 visual skills (`/ide-coverage`, `/ide-deps`, `/ide-diagnostics-board`)
 - **12 plugin skills**, **4 subagents** (including `ide-architect`)
 - **59 tools with `outputSchema`/`structuredContent`**; CI audit enforces coverage
