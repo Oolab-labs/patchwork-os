@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ProbeResults } from "../../probe.js";
 import { createBridgeStatusTool } from "../bridgeStatus.js";
 
 function makeClient(
@@ -11,20 +12,45 @@ function makeClient(
   } as any;
 }
 
+function makeProbes(overrides: Partial<ProbeResults> = {}): ProbeResults {
+  return {
+    rg: true,
+    fd: true,
+    git: true,
+    gh: true,
+    tsc: true,
+    eslint: true,
+    pyright: true,
+    ruff: true,
+    cargo: true,
+    go: true,
+    biome: true,
+    prettier: true,
+    black: true,
+    gofmt: true,
+    rustfmt: true,
+    vitest: true,
+    jest: true,
+    pytest: true,
+    codex: true,
+    ...overrides,
+  };
+}
+
 function parse(r: { content: Array<{ type: string; text: string }> }) {
   return JSON.parse(r.content[0]?.text ?? "{}");
 }
 
 describe("createBridgeStatusTool", () => {
   it("returns extensionConnected:true and all-available hint when connected", async () => {
-    const tool = createBridgeStatusTool(makeClient(true));
+    const tool = createBridgeStatusTool(makeClient(true), makeProbes());
     const data = parse(await tool.handler());
     expect(data.extensionConnected).toBe(true);
     expect(data.hint).toContain("All tools available");
   });
 
   it("returns extensionConnected:false and reconnect hint when disconnected", async () => {
-    const tool = createBridgeStatusTool(makeClient(false));
+    const tool = createBridgeStatusTool(makeClient(false), makeProbes());
     const data = parse(await tool.handler());
     expect(data.extensionConnected).toBe(false);
     expect(data.hint).toContain("auto-reconnect");
@@ -35,13 +61,17 @@ describe("createBridgeStatusTool", () => {
       ["s1", {}],
       ["s2", {}],
     ]);
-    const tool = createBridgeStatusTool(makeClient(true), sessions);
+    const tool = createBridgeStatusTool(
+      makeClient(true),
+      makeProbes(),
+      sessions,
+    );
     const data = parse(await tool.handler());
     expect(data.activeSessions).toBe(2);
   });
 
   it("defaults activeSessions to 1 when sessions map is omitted", async () => {
-    const tool = createBridgeStatusTool(makeClient(true));
+    const tool = createBridgeStatusTool(makeClient(true), makeProbes());
     const data = parse(await tool.handler());
     expect(data.activeSessions).toBe(1);
   });
@@ -49,6 +79,7 @@ describe("createBridgeStatusTool", () => {
   it("includes circuitBreaker state", async () => {
     const tool = createBridgeStatusTool(
       makeClient(true, { suspended: false, failures: 2, suspendedUntil: 0 }),
+      makeProbes(),
     );
     const data = parse(await tool.handler());
     expect(data.circuitBreaker.suspended).toBe(false);
@@ -63,6 +94,7 @@ describe("createBridgeStatusTool", () => {
         failures: 5,
         suspendedUntil: future,
       }),
+      makeProbes(),
     );
     const data = parse(await tool.handler());
     expect(data.circuitBreaker.suspended).toBe(true);
@@ -73,27 +105,28 @@ describe("createBridgeStatusTool", () => {
     const past = Date.now() - 1000;
     const tool = createBridgeStatusTool(
       makeClient(false, { suspended: true, failures: 5, suspendedUntil: past }),
+      makeProbes(),
     );
     const data = parse(await tool.handler());
     expect(data.circuitBreaker.resumesInMs).toBe(0);
   });
 
   it("returns tier 'full' when extension is connected", async () => {
-    const tool = createBridgeStatusTool(makeClient(true));
+    const tool = createBridgeStatusTool(makeClient(true), makeProbes());
     const data = parse(await tool.handler());
     expect(data.tier).toBe("full");
     expect(data.tierDescription).toContain("All tools available");
   });
 
   it("returns tier 'basic' when extension is disconnected", async () => {
-    const tool = createBridgeStatusTool(makeClient(false));
+    const tool = createBridgeStatusTool(makeClient(false), makeProbes());
     const data = parse(await tool.handler());
     expect(data.tier).toBe("basic");
     expect(data.tierDescription).toContain("Connect the VS Code extension");
   });
 
   it("returns uptimeSeconds as a non-negative integer", async () => {
-    const tool = createBridgeStatusTool(makeClient(true));
+    const tool = createBridgeStatusTool(makeClient(true), makeProbes());
     const data = parse(await tool.handler());
     expect(data.uptimeSeconds).toBeGreaterThanOrEqual(0);
     expect(Number.isInteger(data.uptimeSeconds)).toBe(true);
@@ -107,6 +140,7 @@ describe("createBridgeStatusTool", () => {
     };
     const tool = createBridgeStatusTool(
       makeClient(true),
+      makeProbes(),
       undefined,
       undefined,
       undefined,
@@ -117,7 +151,7 @@ describe("createBridgeStatusTool", () => {
   });
 
   it("omits lastDisconnect when getDisconnectInfo is not provided", async () => {
-    const tool = createBridgeStatusTool(makeClient(true));
+    const tool = createBridgeStatusTool(makeClient(true), makeProbes());
     const data = parse(await tool.handler());
     expect(data.lastDisconnect).toBeUndefined();
   });
@@ -125,6 +159,7 @@ describe("createBridgeStatusTool", () => {
   it("returns lastDisconnect with null fields when no prior disconnect", async () => {
     const tool = createBridgeStatusTool(
       makeClient(true),
+      makeProbes(),
       undefined,
       undefined,
       undefined,
@@ -132,5 +167,74 @@ describe("createBridgeStatusTool", () => {
     );
     const data = parse(await tool.handler());
     expect(data.lastDisconnect).toEqual({ at: null, code: null, reason: null });
+  });
+
+  // ── v2.25.25: toolAvailability field ─────────────────────────────────────
+
+  it("toolAvailability: every entry is { available: true } when all probes true and extension connected", async () => {
+    const tool = createBridgeStatusTool(makeClient(true), makeProbes());
+    const data = parse(await tool.handler());
+    expect(data.toolAvailability).toBeDefined();
+    // Spot-check: a few known entries
+    expect(data.toolAvailability.formatDocument).toEqual({ available: true });
+    expect(data.toolAvailability.findImplementations).toEqual({
+      available: true,
+    });
+    expect(data.toolAvailability.runTests).toEqual({ available: true });
+    // No entry should have a reason
+    for (const [, avail] of Object.entries(data.toolAvailability) as [
+      string,
+      { available: boolean; reason?: string },
+    ][]) {
+      expect(avail.available).toBe(true);
+      expect(avail.reason).toBeUndefined();
+    }
+  });
+
+  it("toolAvailability: extensionRequired tools report 'extension_disconnected' when disconnected", async () => {
+    const tool = createBridgeStatusTool(makeClient(false), makeProbes());
+    const data = parse(await tool.handler());
+    expect(data.toolAvailability.findImplementations).toEqual({
+      available: false,
+      reason: "extension_disconnected",
+    });
+    expect(data.toolAvailability.setEditorDecorations).toEqual({
+      available: false,
+      reason: "extension_disconnected",
+    });
+    // Probe-gated tools without extensionRequired are still available
+    expect(data.toolAvailability.formatDocument).toEqual({ available: true });
+  });
+
+  it("toolAvailability: extensionRequired tools report 'circuit_breaker_open' when breaker is tripped", async () => {
+    const tool = createBridgeStatusTool(
+      makeClient(true, {
+        suspended: true,
+        failures: 5,
+        suspendedUntil: Date.now() + 10_000,
+      }),
+      makeProbes(),
+    );
+    const data = parse(await tool.handler());
+    expect(data.toolAvailability.findImplementations).toEqual({
+      available: false,
+      reason: "circuit_breaker_open",
+    });
+  });
+
+  it("toolAvailability: probe-gated tools report 'missing_probe' when the probe is false", async () => {
+    const tool = createBridgeStatusTool(
+      makeClient(true),
+      makeProbes({ prettier: false, vitest: false }),
+    );
+    const data = parse(await tool.handler());
+    expect(data.toolAvailability.formatDocument).toEqual({
+      available: false,
+      reason: "missing_probe:prettier",
+    });
+    expect(data.toolAvailability.runTests).toEqual({
+      available: false,
+      reason: "missing_probe:vitest",
+    });
   });
 });

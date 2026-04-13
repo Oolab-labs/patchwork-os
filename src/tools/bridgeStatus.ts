@@ -1,6 +1,7 @@
 import type { AutomationHooks } from "../automation.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
 import type { ExtensionClient } from "../extensionClient.js";
+import type { ProbeResults } from "../probe.js";
 import { successStructured } from "./utils.js";
 
 const startTime = Date.now();
@@ -11,8 +12,43 @@ export interface DisconnectInfo {
   reason: string | null;
 }
 
+/**
+ * Table of known tools with their availability requirements. Populated manually
+ * from src/tools/index.ts registration — a drift-guard test that walks the
+ * registry is a follow-up. Tools NOT in this table are assumed always available
+ * (pure-bridge tools like gitCommit that don't depend on probes or the extension).
+ *
+ * Used by the toolAvailability field in getBridgeStatus to answer
+ * "why can't Claude call X?" in a single call.
+ */
+const TOOL_AVAILABILITY_TABLE: Record<
+  string,
+  { probe?: keyof ProbeResults; extensionRequired?: boolean }
+> = {
+  // Extension-required tools (schema.extensionRequired: true)
+  findImplementations: { extensionRequired: true },
+  getHoverAtCursor: { extensionRequired: true },
+  getTypeHierarchy: { extensionRequired: true },
+  getWorkspaceSettings: { extensionRequired: true },
+  setWorkspaceSetting: { extensionRequired: true },
+  setEditorDecorations: { extensionRequired: true },
+  clearEditorDecorations: { extensionRequired: true },
+  getSemanticTokens: { extensionRequired: true },
+  getCodeLens: { extensionRequired: true },
+  // Probe-gated CLI/formatter tools (extension path also works when connected)
+  formatDocument: { probe: "prettier" },
+  runTests: { probe: "vitest" },
+  getGitStatus: { probe: "git" },
+  getGitDiff: { probe: "git" },
+  getGitLog: { probe: "git" },
+  githubListPRs: { probe: "gh" },
+  githubCreatePR: { probe: "gh" },
+  githubViewPR: { probe: "gh" },
+};
+
 export function createBridgeStatusTool(
   extensionClient: ExtensionClient,
+  probes: ProbeResults,
   sessions?: Map<string, unknown>,
   orchestrator?: ClaudeOrchestrator | null,
   automationHooks?: AutomationHooks | null,
@@ -62,6 +98,17 @@ export function createBridgeStatusTool(
             },
             required: ["at", "code", "reason"],
           },
+          toolAvailability: {
+            type: "object",
+            additionalProperties: {
+              type: "object",
+              properties: {
+                available: { type: "boolean" },
+                reason: { type: "string" },
+              },
+              required: ["available"],
+            },
+          },
         },
         required: [
           "extensionConnected",
@@ -107,6 +154,33 @@ export function createBridgeStatusTool(
         );
       }
 
+      // Compute tool availability: answers "why can't Claude call X?" without
+      // requiring the caller to try the tool first and parse the error.
+      const toolAvailability: Record<
+        string,
+        { available: boolean; reason?: string }
+      > = {};
+      for (const [name, spec] of Object.entries(TOOL_AVAILABILITY_TABLE)) {
+        if (spec.extensionRequired && !extensionConnected) {
+          toolAvailability[name] = {
+            available: false,
+            reason: "extension_disconnected",
+          };
+        } else if (spec.extensionRequired && circuitBreaker.suspended) {
+          toolAvailability[name] = {
+            available: false,
+            reason: "circuit_breaker_open",
+          };
+        } else if (spec.probe && !probes[spec.probe]) {
+          toolAvailability[name] = {
+            available: false,
+            reason: `missing_probe:${spec.probe}`,
+          };
+        } else {
+          toolAvailability[name] = { available: true };
+        }
+      }
+
       return successStructured({
         extensionConnected,
         activeSessions: sessions?.size ?? 1,
@@ -144,6 +218,7 @@ export function createBridgeStatusTool(
         ...(getDisconnectInfo && {
           lastDisconnect: getDisconnectInfo(),
         }),
+        toolAvailability,
       });
     },
   };

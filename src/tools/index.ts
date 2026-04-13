@@ -52,6 +52,7 @@ import { createUnwatchFilesTool, createWatchFilesTool } from "./fileWatcher.js";
 import { createFindFilesTool } from "./findFiles.js";
 import { createFixAllLintErrorsTool } from "./fixAllLintErrors.js";
 import { createFoldingRangesTool } from "./foldingRanges.js";
+import { createFormatAndSaveTool } from "./formatAndSave.js";
 import { createFormatDocumentTool } from "./formatDocument.js";
 import { createGenerateAPIDocumentationTool } from "./generateAPIDocumentation.js";
 import { createGenerateTestsTool } from "./generateTests.js";
@@ -123,6 +124,7 @@ import {
   createSendHttpRequestTool,
 } from "./httpClient.js";
 import { createGetInlayHintsTool } from "./inlayHints.js";
+import { createJumpToFirstErrorTool } from "./jumpToFirstError.js";
 import { createListClaudeTasksTool } from "./listClaudeTasks.js";
 import { createListTerminalsTool } from "./listTerminals.js";
 import {
@@ -141,6 +143,7 @@ import {
   createRenameSymbolTool,
   createSearchWorkspaceSymbolsTool,
 } from "./lsp.js";
+import { createNavigateToSymbolByNameTool } from "./navigateToSymbolByName.js";
 import { createOpenDiffTool } from "./openDiff.js";
 import { createOpenFileTool } from "./openFile.js";
 import { createOpenInBrowserTool } from "./openInBrowser.js";
@@ -310,13 +313,27 @@ export function registerAllTools(
     automationHooks ? (r) => automationHooks.handleTestRun(r) : undefined,
   );
 
+  // Dep-injected tools for composite factories.
+  // Extract before `tools = [...]` so composite tools can receive them.
+  const formatDocumentTool = createFormatDocumentTool(
+    workspace,
+    probes,
+    extensionClient,
+  );
+  const saveDocumentTool = createSaveDocumentTool(workspace, extensionClient);
+  const openFileTool = createOpenFileTool(
+    workspace,
+    config.editorCommand,
+    openedFiles,
+    extensionClient,
+  );
+  const setEditorDecorationsToolInstance = createSetEditorDecorationsTool(
+    workspace,
+    extensionClient,
+  );
+
   const tools = [
-    createOpenFileTool(
-      workspace,
-      config.editorCommand,
-      openedFiles,
-      extensionClient,
-    ),
+    openFileTool,
     createOpenDiffTool(workspace, config.editorCommand),
     createOpenInBrowserTool(),
     createGetOpenEditorsTool(openedFiles, extensionClient, workspace),
@@ -326,7 +343,7 @@ export function registerAllTools(
     createGetLatestSelectionTool(extensionClient),
     diagnosticsTool,
     createCheckDocumentDirtyTool(workspace, extensionClient),
-    createSaveDocumentTool(workspace, extensionClient),
+    saveDocumentTool,
     createCloseTabTool(workspace, extensionClient),
     createCloseAllDiffTabsTool(),
     createGetToolCapabilitiesTool(probes, extensionClient, config),
@@ -404,6 +421,7 @@ export function registerAllTools(
       : []),
     createBridgeStatusTool(
       extensionClient,
+      probes,
       sessions,
       orchestrator,
       automationHooks,
@@ -433,7 +451,18 @@ export function registerAllTools(
     createGetBufferContentTool(workspace, extensionClient),
     createReplaceBlockTool(workspace, extensionClient, fileLock, sessionId),
     createEditTextTool(workspace, extensionClient, fileLock, sessionId),
-    createFormatDocumentTool(workspace, probes, extensionClient),
+    formatDocumentTool,
+    createFormatAndSaveTool({
+      formatDocument: formatDocumentTool,
+      saveDocument: saveDocumentTool,
+    }),
+    createJumpToFirstErrorTool({
+      getDiagnostics: diagnosticsTool,
+      openFile: openFileTool,
+      setEditorDecorations: setEditorDecorationsToolInstance,
+      extensionClient,
+    }),
+    createNavigateToSymbolByNameTool(extensionClient),
     createFixAllLintErrorsTool(workspace, probes, extensionClient),
     createOrganizeImportsTool(workspace, extensionClient),
     createWatchDiagnosticsTool(
@@ -472,7 +501,7 @@ export function registerAllTools(
     createSetDebugBreakpointsTool(workspace, extensionClient),
     createStartDebuggingTool(extensionClient),
     createStopDebuggingTool(extensionClient),
-    createSetEditorDecorationsTool(workspace, extensionClient),
+    setEditorDecorationsToolInstance,
     createClearEditorDecorationsTool(extensionClient),
     createSetActiveWorkspaceFolderTool(config),
     createSendHttpRequestTool({
