@@ -71,7 +71,7 @@ export function createFormatAndSaveTool(deps: {
         signal,
         progress,
       );
-      if (fmt.isError) return fmt;
+      if ("isError" in fmt && fmt.isError) return fmt;
 
       const fmtData = (fmt as { structuredContent?: Record<string, unknown> })
         .structuredContent;
@@ -83,7 +83,7 @@ export function createFormatAndSaveTool(deps: {
 
       // Step 2: save — reuse the existing tool's handler.
       const save = await deps.saveDocument.handler({ filePath });
-      if (save.isError) return save;
+      if ("isError" in save && save.isError) return save;
 
       const saveData = (save as { structuredContent?: Record<string, unknown> })
         .structuredContent;
