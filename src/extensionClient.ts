@@ -820,7 +820,17 @@ export class ExtensionClient {
     this.pendingRequests.clear();
   }
 
-  /** Typed shorthand for requestOrNull — returns T | null without an intermediate variable */
+  /**
+   * Typed shorthand for requestOrNull — returns T | null without an intermediate variable.
+   *
+   * WARNING: proxy<T> does a BLIND TypeScript cast with no runtime validation.
+   * If the extension handler can return a shape that does not match T (including
+   * error-object responses like { error: "..." }), use `tryRequest<T>` instead,
+   * which detects error-object responses and returns null.
+   *
+   * This is the root cause of seven latent shape-mismatch bugs fixed in
+   * v2.25.18–v2.25.21. Prefer tryRequest for new client methods.
+   */
   private async proxy<T>(
     method: string,
     params?: unknown,
@@ -835,17 +845,45 @@ export class ExtensionClient {
     ) as Promise<T | null>;
   }
 
+  /**
+   * Detect an extension error-object response. Extension handlers by convention
+   * return `{ error: string }` (sometimes with `success: false`) on failure
+   * instead of throwing. This predicate identifies that shape so tryRequest
+   * can convert it to null.
+   */
+  private isErrorResponse(r: unknown): boolean {
+    if (r === null || typeof r !== "object") return false;
+    const obj = r as Record<string, unknown>;
+    if ("error" in obj && typeof obj.error === "string") return true;
+    if (obj.success === false && typeof obj.error === "string") return true;
+    return false;
+  }
+
+  /**
+   * Safer shorthand for requestOrNull — converts extension error-object responses
+   * (see isErrorResponse) to null so consumers can distinguish "no result" from
+   * "corrupt data". Use this for any handler whose success and failure paths
+   * return different shapes. Does NOT guarantee the happy-path shape matches T;
+   * for that, do a runtime shape check in the client method.
+   */
+  private async tryRequest<T>(
+    method: string,
+    params?: unknown,
+    timeout?: number,
+    signal?: AbortSignal,
+  ): Promise<T | null> {
+    const raw = await this.requestOrNull(method, params, timeout, signal);
+    if (this.isErrorResponse(raw)) return null;
+    return raw as T | null;
+  }
+
   async getDiagnostics(file?: string): Promise<Diagnostic[] | null> {
     return this.proxy<Diagnostic[]>("extension/getDiagnostics", { file });
   }
 
   async getSelection(): Promise<SelectionState | null> {
     // Extension returns { error: "No active editor" } when no editor is active.
-    // Unwrap to null so consumers can distinguish "no selection" from a real result.
-    const raw = await this.requestOrNull("extension/getSelection");
-    if (raw === null || typeof raw !== "object") return null;
-    if ("error" in raw) return null;
-    return raw as SelectionState;
+    return this.tryRequest<SelectionState>("extension/getSelection");
   }
 
   async getOpenFiles(): Promise<TabInfo[] | null> {
@@ -1263,39 +1301,15 @@ export class ExtensionClient {
 
   async formatDocument(file: string): Promise<unknown> {
     // Extension returns { error: "..." } when the format command fails.
-    // Unwrap to null so consumers' `!== null` check correctly falls through
+    // tryRequest unwraps to null so consumers' `!== null` check falls through
     // to their CLI formatter fallback instead of reporting false success.
-    const result = await this.requestOrNull(
-      "extension/formatDocument",
-      { file },
-      15_000,
-    );
-    if (
-      result !== null &&
-      typeof result === "object" &&
-      "error" in (result as object)
-    ) {
-      return null;
-    }
-    return result;
+    return this.tryRequest("extension/formatDocument", { file }, 15_000);
   }
 
   async fixAllLintErrors(file: string): Promise<unknown> {
-    // Extension returns { error: "..." } on command failure. Unwrap to null
-    // so consumers fall through to their CLI fallback cleanly.
-    const result = await this.requestOrNull(
-      "extension/fixAllLintErrors",
-      { file },
-      15_000,
-    );
-    if (
-      result !== null &&
-      typeof result === "object" &&
-      "error" in (result as object)
-    ) {
-      return null;
-    }
-    return result;
+    // Extension returns { error: "..." } on command failure. tryRequest
+    // unwraps to null so consumers fall through to their CLI fallback.
+    return this.tryRequest("extension/fixAllLintErrors", { file }, 15_000);
   }
 
   async organizeImports(file: string): Promise<unknown> {

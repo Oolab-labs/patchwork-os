@@ -94,6 +94,35 @@ describe("ExtensionClient", () => {
     ws.close();
   });
 
+  it("getSelection returns null when handler returns an error object (tryRequest)", async () => {
+    const serverConn = new Promise<WebSocket>((resolve) => {
+      wss.on("connection", resolve);
+    });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    await waitForOpen(ws);
+    const serverWs = await serverConn;
+    client.handleExtensionConnection(serverWs);
+
+    ws.on("message", (data) => {
+      const msg = JSON.parse(data.toString("utf-8"));
+      if (msg.method === "extension/getSelection") {
+        ws.send(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg.id,
+            result: { error: "No active editor" },
+          }),
+        );
+      }
+    });
+
+    // Extension error-object response must NOT leak through as a valid SelectionState.
+    const selection = await client.getSelection();
+    expect(selection).toBeNull();
+
+    ws.close();
+  });
+
   it("returns null when not connected", async () => {
     const result = await client.getDiagnostics();
     expect(result).toBeNull();
