@@ -2,27 +2,27 @@
   "defaultModel": "claude-haiku-4-5-20251001",
   "defaultEffort": "low",
   "automationSystemPrompt": "Automation bot. Drop articles/filler/hedging. Fragments OK. Short synonyms. Abbreviate: DB/auth/config/req/res/fn. Arrows for causality (X→Y). ≤5 lines. No preamble. Call tools → report results only.",
-  "maxTasksPerHour": 20,
+  "maxTasksPerHour": 30,
   "onFileSave": {
     "enabled": true,
     "patterns": ["src/**/*.ts", "vscode-extension/src/**/*.ts"],
     "condition": "!**/*.test.ts",
-    "cooldownMs": 120000,
+    "cooldownMs": 240000,
     "prompt": "{{file}} saved. getDiagnostics → report errors only."
   },
   "onPostCompact": {
     "enabled": true,
     "cooldownMs": 30000,
-    "prompt": "Compacted. getGitStatus + getDiagnostics + getHandoffNote → summarize ≤10 lines. Drop articles/filler. Fragments OK. Abbreviate (DB/auth/config/req/res/fn). Stay terse."
+    "prompt": "Compacted. getActivityLog (last 10min) + getHandoffNote → what was in progress before compact. getDiagnostics errors only. ≤10 lines. Fragments OK. Abbreviate."
   },
   "onInstructionsLoaded": {
     "enabled": true,
     "cooldownMs": 60000,
-    "prompt": "Session start. contextBundle → branch, error count, uncommitted changes. ≤5 lines. Drop articles/filler. Fragments OK. Abbreviate (DB/auth/config/req/res/fn). Arrows for causality. Stay terse all session."
+    "prompt": "Session start. contextBundle + getHandoffNote → branch, error count, uncommitted changes, prior context. ≤5 lines. Fragments OK. Abbreviate. Stay terse all session."
   },
   "onBranchCheckout": {
     "enabled": true,
-    "cooldownMs": 5000,
+    "cooldownMs": 15000,
     "prompt": "→{{branch}} (from {{previousBranch}}). New: {{created}}. getGitStatus + getDiagnostics → diff ≤5 lines."
   },
   "onGitCommit": {
@@ -40,7 +40,7 @@
     "enabled": true,
     "cooldownMs": 10000,
     "timeoutMs": 180000,
-    "prompt": "Pushed {{branch}} to {{remote}}. getDiagnostics (errors only). searchWorkspace pattern '(API_KEY|PASSWORD|PRIVATE_KEY|SECRET|TOKEN)\\s*[:=]' → alert w/ file+line if match."
+    "prompt": "Pushed {{branch}} to {{remote}}. getDiagnostics (errors only). searchWorkspace pattern '(API_KEY|PASSWORD|PRIVATE_KEY|SECRET|TOKEN)\\s*[:=]' globs 'src/**/*.ts,vscode-extension/src/**/*.ts' → alert w/ file+line if match. Skip test files (**/*.test.ts, **/__tests__/**)."
   },
   "onPullRequest": {
     "enabled": true,
@@ -51,7 +51,7 @@
     "enabled": true,
     "cooldownMs": 10000,
     "onFailureOnly": true,
-    "prompt": "{{failed}}/{{total}} fail.\n{{failures}}\nEach: 1-line cause + fix snippet. No prose."
+    "prompt": "{{failed}}/{{total}} fail.\n{{failures}}\nFor each failure: getBufferContent on failing file ±10 lines of failure line → 1-line cause + fix snippet. No prose."
   },
   "onDiagnosticsError": {
     "enabled": true,
@@ -64,8 +64,8 @@
   },
   "onDiagnosticsCleared": {
     "enabled": true,
-    "cooldownMs": 10000,
-    "prompt": "{{file}} errors cleared. runTests for that file → confirm fix complete."
+    "cooldownMs": 30000,
+    "prompt": "{{file}} errors cleared. If non-test .ts file, runTests for that file → confirm fix complete."
   },
   "onPermissionDenied": {
     "enabled": true,
