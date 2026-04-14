@@ -365,4 +365,75 @@ describe("runCommand", () => {
     expect(data.exitCode).toBe(0);
     expect(data.stdout).toContain("marker.txt");
   });
+
+  describe("progress notifications (streaming)", () => {
+    it("emits one progress notification per stdout line when progress provided", async () => {
+      // Write a shell script that prints 3 lines
+      const script = path.join(tmpDir, "multiline.sh");
+      fs.writeFileSync(script, "printf 'line1\\nline2\\nline3\\n'", "utf-8");
+      fs.chmodSync(script, 0o755);
+
+      const cfg: Config = { ...config, commandAllowlist: ["printf"] };
+      const tool = createRunCommandTool(tmpDir, cfg);
+
+      const calls: Array<{ value: number; total: number; message?: string }> =
+        [];
+      const progressFn = (value: number, total: number, message?: string) => {
+        calls.push({ value, total, message });
+      };
+
+      const result = await (
+        tool.handler as (
+          args: Record<string, unknown>,
+          signal?: AbortSignal,
+          progress?: typeof progressFn,
+        ) => Promise<typeof result>
+      )(
+        { command: "printf", args: ["line1\\nline2\\nline3\\n"] },
+        undefined,
+        progressFn,
+      );
+
+      const data = parse(result);
+      expect(data.exitCode).toBe(0);
+      // Each progress call carries a line as message
+      const messages = calls.map((c) => c.message);
+      expect(messages).toContain("line1");
+      expect(messages).toContain("line2");
+      expect(messages).toContain("line3");
+      // Values increment per line
+      const values = calls.map((c) => c.value);
+      expect(values).toEqual([...values].sort((a, b) => a - b));
+    });
+
+    it("returns correct stdout in result even when streaming", async () => {
+      const cfg: Config = { ...config, commandAllowlist: ["echo"] };
+      const tool = createRunCommandTool(tmpDir, cfg);
+
+      const progressFn = () => {};
+      const result = await (
+        tool.handler as (
+          args: Record<string, unknown>,
+          signal?: AbortSignal,
+          progress?: typeof progressFn,
+        ) => Promise<typeof result>
+      )({ command: "echo", args: ["streaming-test"] }, undefined, progressFn);
+
+      const data = parse(result);
+      expect(data.exitCode).toBe(0);
+      expect(data.stdout).toContain("streaming-test");
+    });
+
+    it("falls back to heartbeat when no progress fn provided", async () => {
+      const tool = createRunCommandTool(tmpDir, config);
+      // No progress fn — should use withHeartbeat path, still work normally
+      const result = await tool.handler({
+        command: "echo",
+        args: ["no-progress"],
+      });
+      const data = parse(result);
+      expect(data.exitCode).toBe(0);
+      expect(data.stdout).toContain("no-progress");
+    });
+  });
 });
