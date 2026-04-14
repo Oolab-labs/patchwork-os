@@ -4,7 +4,7 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.25.33 — 2026-04-14)
+## Current State (v2.25.33 — 2026-04-14, dogfood verified)
 
 **v2.25.27–v2.25.33 shipped (2026-04-14) — token compression sprint:**
 - v2.25.27: Clipboard test mock + tool description ≤200 char enforcement.
