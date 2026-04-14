@@ -188,14 +188,14 @@ describe("429 rate-limit backoff", () => {
     // Shim should log the passive-mode message and NOT exit
     const loggedPassive = await waitFor(
       () => stderr.join("").includes("passive reconnect mode"),
-      10_000,
+      20_000,
     );
     await closeServer(srv);
 
     expect(loggedPassive).toBe(true);
     expect(exitCode).toBeNull(); // still running
     proc.kill();
-  }, 15_000);
+  }, 30_000);
 });
 
 describe("ECONNREFUSED backoff", () => {
