@@ -297,8 +297,28 @@ console.log(
   `\n${issues === 0 ? "All checks passed." : `${issues} issue(s) found — fix before merging.`}`,
 );
 
+// Count outputSchema across all subdirs (not just flat toolsDir)
+function countOutputSchemaAllDirs(dir) {
+  let count = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name !== "__tests__")
+        count += countOutputSchemaAllDirs(path.join(dir, entry.name));
+    } else if (
+      entry.name.endsWith(".ts") &&
+      !entry.name.endsWith(".d.ts") &&
+      !entry.name.endsWith(".test.ts")
+    ) {
+      const src = readFileSync(path.join(dir, entry.name), "utf8");
+      if (/\boutputSchema\s*:/.test(src)) count++;
+    }
+  }
+  return count;
+}
+const outputSchemaCount = countOutputSchemaAllDirs(toolsDir);
+
 console.log(
-  `\nStats: ${slimNames.size} slim tools · ${lspInCaps.size} LSP tools advertised · ${registeredNames.size} total registered · ${lspToolNames.size} LSP implementations · ${[...fileToNames.keys()].filter((f) => /\boutputSchema\s*:/.test(readFileSync(path.join(toolsDir, f), "utf8"))).length} outputSchema tools`,
+  `\nStats: ${slimNames.size} slim tools · ${lspInCaps.size} LSP tools advertised · ${registeredNames.size} total registered · ${lspToolNames.size} LSP implementations · ${outputSchemaCount} outputSchema tools`,
 );
 
 process.exit(issues > 0 ? 1 : 0);
