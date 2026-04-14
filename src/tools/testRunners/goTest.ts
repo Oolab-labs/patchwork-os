@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ProbeResults } from "../../probe.js";
-import { execSafe } from "../utils.js";
+import { execSafeStreaming } from "../utils.js";
 import type { TestResult, TestRunner, TestStatus } from "./types.js";
 
 const DEFAULT_TEST_TIMEOUT = 120_000;
@@ -31,6 +31,7 @@ export const goTestRunner: TestRunner = {
     filter?: string,
     signal?: AbortSignal,
     timeoutMs?: number,
+    onLine?: (line: string) => void,
   ): Promise<TestResult[]> {
     const args = ["test", "-json", "-count=1", "./..."];
     if (filter) {
@@ -38,11 +39,13 @@ export const goTestRunner: TestRunner = {
         throw new Error("filter must not start with '-'");
       args.splice(3, 0, "-run", filter);
     }
-    const result = await execSafe("go", args, {
+    // go test -json emits NDJSON on stdout — stream those lines as progress.
+    const result = await execSafeStreaming("go", args, {
       cwd,
       timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
+      onLine,
     });
 
     return parseNdjson(result.stdout, cwd);

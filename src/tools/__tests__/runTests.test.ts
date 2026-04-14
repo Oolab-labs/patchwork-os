@@ -125,6 +125,7 @@ describe("createRunTestsTool", () => {
       "someFilter",
       undefined,
       undefined,
+      undefined, // onLine — no progress fn provided
     );
   });
 
@@ -247,5 +248,94 @@ describe("createRunTestsTool", () => {
     // The runner should not have been called again (we're reading from cache)
     // and the result should be the fresh one
     expect(cachedData.results[0]?.name).toBe("fresh test");
+  });
+
+  describe("progress streaming", () => {
+    it("passes onLine fn to runner when progress fn provided", async () => {
+      const tool = createRunTestsTool(ws, probes);
+      const progress = vi.fn();
+      await tool.handler({ noCache: true }, undefined, progress);
+      // runner.run should be called with a non-undefined onLine callback as 5th arg
+      const callArgs = vi.mocked(vitestRunner.run).mock.calls[0];
+      expect(typeof callArgs?.[4]).toBe("function");
+    });
+
+    it("emits one progress notification per output line via onLine", async () => {
+      // Mock runner that calls onLine 3 times during execution
+      vi.mocked(vitestRunner.run).mockImplementationOnce(
+        async (
+          _cwd,
+          _filter,
+          _signal,
+          _timeout,
+          onLine?: (line: string) => void,
+        ) => {
+          onLine?.("test 1 passed");
+          onLine?.("test 2 passed");
+          onLine?.("test 3 failed");
+          return [
+            {
+              name: "t1",
+              status: "passed",
+              source: "vitest",
+              file: "t.test.ts",
+              line: 1,
+              durationMs: 1,
+            },
+          ] as any;
+        },
+      );
+
+      const calls: Array<{ value: number; message?: string }> = [];
+      const progress = (
+        value: number,
+        _total: number | undefined,
+        message?: string,
+      ) => {
+        calls.push({ value, message });
+      };
+      const tool = createRunTestsTool(ws, probes);
+      await tool.handler({ noCache: true }, undefined, progress);
+
+      const lineCalls = calls.filter((c) => c.message !== undefined);
+      expect(lineCalls).toHaveLength(3);
+      expect(lineCalls[0]?.message).toBe("test 1 passed");
+      expect(lineCalls[1]?.message).toBe("test 2 passed");
+      expect(lineCalls[2]?.message).toBe("test 3 failed");
+      // Values increment monotonically
+      const values = lineCalls.map((c) => c.value);
+      expect(values).toEqual([...values].sort((a, b) => a - b));
+    });
+
+    it("passes undefined onLine to runner when no progress fn provided", async () => {
+      const tool = createRunTestsTool(ws, probes);
+      await tool.handler({ noCache: true });
+      const callArgs = vi.mocked(vitestRunner.run).mock.calls[0];
+      expect(callArgs?.[4]).toBeUndefined();
+    });
+
+    it("total is undefined (indeterminate) for streaming progress calls", async () => {
+      vi.mocked(vitestRunner.run).mockImplementationOnce(
+        async (
+          _cwd,
+          _filter,
+          _signal,
+          _timeout,
+          onLine?: (line: string) => void,
+        ) => {
+          onLine?.("running…");
+          return [] as any;
+        },
+      );
+      const totals: Array<number | undefined> = [];
+      const progress = (_v: number, total: number | undefined) => {
+        totals.push(total);
+      };
+      const tool = createRunTestsTool(ws, probes);
+      await tool.handler({ noCache: true }, undefined, progress);
+      // The onLine-triggered call should have total=undefined (not 0 or 100)
+      const lineTotals = totals.slice(1, -1); // skip initial 0,100 and final 100,100
+      expect(lineTotals.every((t) => t === undefined)).toBe(true);
+    });
   });
 });

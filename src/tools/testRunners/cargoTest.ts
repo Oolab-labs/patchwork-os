@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ProbeResults } from "../../probe.js";
-import { execSafe } from "../utils.js";
+import { execSafeStreaming } from "../utils.js";
 import type { TestResult, TestRunner, TestStatus } from "./types.js";
 
 const DEFAULT_TEST_TIMEOUT = 120_000;
@@ -32,6 +32,7 @@ export const cargoTestRunner: TestRunner = {
     filter?: string,
     signal?: AbortSignal,
     timeoutMs?: number,
+    onLine?: (line: string) => void,
   ): Promise<TestResult[]> {
     const args = ["test"];
     if (filter) {
@@ -40,11 +41,13 @@ export const cargoTestRunner: TestRunner = {
       args.push(filter);
     }
     args.push("--", "--color=never");
-    const result = await execSafe("cargo", args, {
+    // cargo test emits per-test results on stdout — stream those lines as progress.
+    const result = await execSafeStreaming("cargo", args, {
       cwd,
       timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
+      onLine,
     });
 
     return parseOutput(`${result.stdout}\n${result.stderr}`, cwd);

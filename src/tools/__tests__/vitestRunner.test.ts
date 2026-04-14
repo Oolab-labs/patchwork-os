@@ -4,14 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const execFileAsync = promisify(execFile);
 
-// Test the JSON parsing logic by exercising vitestRunner.run via a fake execSafe
+// Test the JSON parsing logic by exercising vitestRunner.run via a fake execSafeStreaming
 vi.mock("../utils.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../utils.js")>();
-  return { ...actual, execSafe: vi.fn() };
+  return { ...actual, execSafe: vi.fn(), execSafeStreaming: vi.fn() };
 });
 
 import { vitestRunner } from "../testRunners/vitestJest.js";
-import { execSafe } from "../utils.js";
+import { execSafeStreaming } from "../utils.js";
 
 const workspace = "/workspace";
 
@@ -58,11 +58,11 @@ function makeJestReport() {
 
 describe("vitestRunner JSON parsing", () => {
   beforeEach(() => {
-    vi.mocked(execSafe).mockReset();
+    vi.mocked(execSafeStreaming).mockReset();
   });
 
   it("parses vitest assertionResults and name fields", async () => {
-    vi.mocked(execSafe).mockResolvedValue({
+    vi.mocked(execSafeStreaming).mockResolvedValue({
       exitCode: 0,
       stdout: makeVitestReport(),
       stderr: "",
@@ -84,7 +84,7 @@ describe("vitestRunner JSON parsing", () => {
   });
 
   it("falls back to testResults and testFilePath (Jest-style output)", async () => {
-    vi.mocked(execSafe).mockResolvedValue({
+    vi.mocked(execSafeStreaming).mockResolvedValue({
       exitCode: 0,
       stdout: makeJestReport(),
       stderr: "",
@@ -101,7 +101,7 @@ describe("vitestRunner JSON parsing", () => {
   });
 
   it("returns empty array when output has no parseable JSON report", async () => {
-    vi.mocked(execSafe).mockResolvedValue({
+    vi.mocked(execSafeStreaming).mockResolvedValue({
       exitCode: 0,
       stdout: "no json here",
       stderr: "",

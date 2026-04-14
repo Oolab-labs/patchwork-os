@@ -50,6 +50,7 @@ export function createRunTestsTool(
     filter?: string,
     signal?: AbortSignal,
     timeoutMs?: number,
+    onLine?: (line: string) => void,
   ): Promise<TestResult[]> {
     const cacheKey = `${runner.name}:${filter ?? ""}`;
     const now = Date.now();
@@ -62,7 +63,7 @@ export function createRunTestsTool(
     if (!running) {
       const myGeneration = cacheGenerations.get(cacheKey) ?? 0;
       running = runner
-        .run(workspace, filter, signal, timeoutMs)
+        .run(workspace, filter, signal, timeoutMs, onLine)
         .then((data) => {
           // Only write to cache if we are still the current generation.
           // noCache eviction bumps the generation so a stale in-flight run
@@ -276,14 +277,28 @@ export function createRunTestsTool(
       }
 
       const startTime = Date.now();
-      const allResults = await withHeartbeat(
-        () =>
-          Promise.all(
-            runners.map((r) => runRunner(r, filter, signal, timeoutMs)),
-          ),
-        progress,
-        { message: "running tests…" },
-      );
+      // When progress fn is provided, stream each output line as a notification.
+      // Counter is shared across all runners so values always increment monotonically.
+      let lineCount = 0;
+      const onLine = progress
+        ? (line: string) => {
+            lineCount++;
+            progress(lineCount, undefined, line);
+          }
+        : undefined;
+
+      const allResults = progress
+        ? await Promise.all(
+            runners.map((r) => runRunner(r, filter, signal, timeoutMs, onLine)),
+          )
+        : await withHeartbeat(
+            () =>
+              Promise.all(
+                runners.map((r) => runRunner(r, filter, signal, timeoutMs)),
+              ),
+            progress,
+            { message: "running tests…" },
+          );
       const results = allResults.flat();
       const durationMs = Date.now() - startTime;
 

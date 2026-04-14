@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ProbeResults } from "../../probe.js";
-import { execSafe } from "../utils.js";
+import { execSafeStreaming } from "../utils.js";
 import type { TestResult, TestRunner, TestStatus } from "./types.js";
 
 const DEFAULT_TEST_TIMEOUT = 120_000;
@@ -195,6 +195,7 @@ export const vitestRunner: TestRunner = {
     filter?: string,
     signal?: AbortSignal,
     timeoutMs?: number,
+    onLine?: (line: string) => void,
   ): Promise<TestResult[]> {
     // Prefer local node_modules/.bin to avoid npx auto-downloading packages
     const bin = resolveLocalBin(cwd, "vitest");
@@ -203,11 +204,14 @@ export const vitestRunner: TestRunner = {
       ? ["run", "--reporter=json"]
       : ["--no", "vitest", "run", "--reporter=json"];
     if (filter) args.push("--", filter);
-    const result = await execSafe(cmd, args, {
+    // vitest JSON reporter: stdout = JSON report, stderr = human progress output.
+    // Stream stderr lines as progress; collect stdout for JSON parsing.
+    const result = await execSafeStreaming(cmd, args, {
       cwd,
       timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
+      onStderrLine: onLine,
     });
     // exitCode 127 = command not found; null = killed by signal
     if (result.exitCode === 127 || result.exitCode === null) {
@@ -241,6 +245,7 @@ export const jestRunner: TestRunner = {
     filter?: string,
     signal?: AbortSignal,
     timeoutMs?: number,
+    onLine?: (line: string) => void,
   ): Promise<TestResult[]> {
     // Prefer local node_modules/.bin to avoid npx auto-downloading packages
     const bin = resolveLocalBin(cwd, "jest");
@@ -249,11 +254,14 @@ export const jestRunner: TestRunner = {
       ? ["--json", "--forceExit"]
       : ["--no", "jest", "--json", "--forceExit"];
     if (filter) args.push("--", filter);
-    const result = await execSafe(cmd, args, {
+    // jest JSON reporter: stdout = JSON report, stderr = human progress output.
+    // Stream stderr lines as progress; collect stdout for JSON parsing.
+    const result = await execSafeStreaming(cmd, args, {
       cwd,
       timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
+      onStderrLine: onLine,
     });
     // exitCode 127 = command not found; null = killed by signal
     if (result.exitCode === 127 || result.exitCode === null) {

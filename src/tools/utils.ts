@@ -453,9 +453,10 @@ export async function execSafe(
  *
  * Sends a progress ping every `intervalMs` (default 5s) until the operation
 /**
- * Streaming variant of execSafe — calls `onLine` for each complete stdout line as
- * the process runs, while still collecting stdout/stderr for the final result.
- * Falls back to regular execSafe behavior when onLine is undefined.
+ * Streaming variant of execSafe — calls `onLine` for each complete stdout line and
+ * `onStderrLine` for each complete stderr line as the process runs, while still
+ * collecting both streams for the final result.
+ * Falls back to regular execSafe behavior when neither callback is provided.
  */
 export async function execSafeStreaming(
   cmd: string,
@@ -467,10 +468,11 @@ export async function execSafeStreaming(
     signal?: AbortSignal;
     env?: NodeJS.ProcessEnv;
     onLine?: (line: string) => void;
+    onStderrLine?: (line: string) => void;
   } = {},
 ): Promise<ExecSafeResult> {
-  const { onLine, ...restOpts } = opts;
-  if (!onLine) return execSafe(cmd, args, restOpts);
+  const { onLine, onStderrLine, ...restOpts } = opts;
+  if (!onLine && !onStderrLine) return execSafe(cmd, args, restOpts);
 
   const timeout = opts.timeout ?? 30_000;
   const maxBuffer = opts.maxBuffer ?? 512 * 1024;
@@ -535,7 +537,7 @@ export async function execSafeStreaming(
         // Last element may be incomplete — keep it in buffer
         linePartial = lines.pop() ?? "";
         for (const line of lines) {
-          if (line.length > 0) onLine(line);
+          if (line.length > 0) onLine?.(line);
         }
       } else {
         // Overflow: discard further line buffering to avoid flushing a stale
@@ -544,16 +546,28 @@ export async function execSafeStreaming(
       }
     });
 
+    let stderrPartial = "";
     proc.stderr.on("data", (chunk: Buffer) => {
-      if (stderrBuf.length + chunk.length <= maxBuffer)
-        stderrBuf += chunk.toString("utf-8");
+      if (stderrBuf.length + chunk.length <= maxBuffer) {
+        const text = chunk.toString("utf-8");
+        stderrBuf += text;
+        if (onStderrLine) {
+          stderrPartial += text;
+          const lines = stderrPartial.split("\n");
+          stderrPartial = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.length > 0) onStderrLine(line);
+          }
+        }
+      }
     });
 
     proc.on("close", (code) => {
       clearTimeout(timer);
       opts.signal?.removeEventListener("abort", abortHandler);
-      // Flush any remaining partial stdout line (only non-empty, non-overflow)
-      if (linePartial.length > 0) onLine(linePartial);
+      // Flush any remaining partial lines (only non-empty, non-overflow)
+      if (linePartial.length > 0) onLine?.(linePartial);
+      if (stderrPartial.length > 0) onStderrLine?.(stderrPartial);
       resolve({
         stdout: stdoutFull,
         stderr: stderrBuf,
