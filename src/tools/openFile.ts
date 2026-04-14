@@ -140,13 +140,15 @@ export function createOpenFileTool(
             stdio: "ignore",
           },
         );
-        child.on("error", () => {}); // Prevent unhandled error events
+        child.on("error", (spawnErr) => {
+          console.warn("[openFile] editor spawn error:", spawnErr.message);
+        });
         child.unref();
         return successStructured({ success: true, filePath });
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         return error(
-          `Failed to launch "${editorCommand}": ${errMsg}. Try --editor or CLAUDE_IDE_BRIDGE_EDITOR env var.`,
+          `Failed to launch "${editorCommand}": ${errMsg}. Use the --editor flag to specify a different editor command.`,
         );
       }
     },

@@ -1427,7 +1427,7 @@ Options:
       process.stdout.write(`  IDE:        ${lockData.ideName ?? "unknown"}\n`);
       process.stdout.write(`  Uptime:     ${uptime}\n`);
       process.stdout.write(
-        `  Extension:  ${health.extension === true ? "connected" : health.extension === false ? "disconnected" : "unknown"}\n`,
+        `  Extension:  ${health.extensionConnected === true ? "connected" : health.extensionConnected === false ? "disconnected" : "unknown"}\n`,
       );
       process.stdout.write(`  Sessions:   ${health.connections ?? 0}\n`);
       if (health.toolCount !== undefined) {

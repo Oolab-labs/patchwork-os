@@ -928,6 +928,10 @@
         "includeSiblings": {
           "type": "boolean",
           "description": "Also fetch sibling symbols in the same file — other functions, classes, and variables defined alongside the target (default: false)"
+        },
+        "useMemoryGraph": {
+          "type": "boolean",
+          "description": "Query codebase-memory graph for architectural context: module ownership, ADRs, graph callers (default: false). Requires codebase-memory MCP connected + repo indexed."
         }
       },
       "required": ["filePath", "line", "column"],
@@ -1011,6 +1015,16 @@
           "anyOf": [
             {
               "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memoryGraph": {
+          "anyOf": [
+            {
+              "type": "object"
             },
             {
               "type": "null"
@@ -1549,6 +1563,67 @@
         }
       },
       "required": ["entries", "count"]
+    }
+  },
+  {
+    "name": "getArchitectureContext",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "aspects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Aspects to include: 'modules', 'dependencies', 'adrs', 'hotspots', 'all' (default: ['all'])"
+        },
+        "maxNodes": {
+          "type": "integer",
+          "description": "Max graph nodes to return per aspect (default: 20)",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "type": "string"
+        },
+        "aspects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "aspect": {
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": ["aspect", "tool", "params", "description"]
+          }
+        },
+        "hint": {
+          "type": "string"
+        }
+      },
+      "required": ["workspace", "aspects", "queries", "hint"]
     }
   },
   {
@@ -5103,6 +5178,21 @@
         },
         "timedOut": {
           "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "stdoutTruncated": {
+          "type": "boolean"
+        },
+        "stderrTruncated": {
+          "type": "boolean"
+        },
+        "maxBytes": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
         }
       },
       "required": ["exitCode", "stdout", "stderr", "durationMs", "timedOut"]
@@ -5899,6 +5989,9 @@
         },
         "updatedAt": {
           "type": "number"
+        },
+        "message": {
+          "type": "string"
         }
       },
       "required": ["saved", "updatedAt"]

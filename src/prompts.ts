@@ -44,6 +44,19 @@ export interface GetPromptResult {
 
 export const PROMPTS: McpPrompt[] = [
   {
+    name: "review-changes",
+    description:
+      "Review uncommitted changes to a specific file: diff, diagnostics, churn risk, and architectural context.",
+    arguments: [
+      {
+        name: "file",
+        description:
+          "Path to the changed file to review (workspace-relative or absolute).",
+        required: true,
+      },
+    ],
+  },
+  {
     name: "review-file",
     description:
       "Code review: correctness, style, performance, security, and coverage gaps.",
@@ -923,6 +936,29 @@ const TEMPLATES: Record<
   string,
   (args: Record<string, string>) => GetPromptResult
 > = {
+  "review-changes": ({ file }) => ({
+    description: `Review uncommitted changes to ${file}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Review uncommitted changes to \`${file}\`.`,
+            "",
+            "1. getGitDiff for the file — what changed",
+            "2. getDiagnostics for the file — current errors/warnings",
+            "3. getGitHotspots — is this a high-churn file?",
+            "",
+            "Format findings as one line each: [Category] file:line — issue — recommendation",
+            "Categories: Correctness | Style | Perf | Security | Tests | Design",
+            "End with a one-line commit message suggestion. No prose between findings.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
   "review-file": ({ file }) => ({
     description: `Code review of ${file}`,
     messages: [

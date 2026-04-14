@@ -680,6 +680,7 @@ Research (2026-03-17) against current Claude Code docs revealed gaps between the
 ### Remaining (deferred)
 - Verify Tool Search compatibility — with 135+ tools active; low priority (automatic, no bridge changes needed)
 - Agent Teams — when Claude Code's multi-session Teams feature ships; plan session namespacing then
+- **Claude Code Routines integration** — revisit when API exits research preview (`experimental-cc-routine-2026-04-01`). Immediate value: thin `runRoutine`/`getRoutineStatus`/`listRoutines` MCP tools (Phase 3 only — ~1 file, no driver changes). Full `RoutinesDriver` (`--claude-driver routines`) deferred until auth is stable (currently claude.ai accounts only, not open API). Policy-layer `routineId` on automation hooks also deferred. See: https://claude.ai/code/routines
 
 ---
 
