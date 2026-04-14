@@ -248,6 +248,24 @@ export class McpTransport {
     return this.tools.size;
   }
 
+  /**
+   * Return a static snapshot of all registered tool schemas.
+   * Used by scripts/audit-schema-changes.mjs to diff against a committed baseline.
+   */
+  getSchemaSnapshot(): Array<{
+    name: string;
+    inputSchema: unknown;
+    outputSchema?: unknown;
+  }> {
+    return Array.from(this.tools.values()).map((t) => ({
+      name: t.schema.name,
+      inputSchema: t.schema.inputSchema,
+      ...(t.schema.outputSchema !== undefined && {
+        outputSchema: t.schema.outputSchema,
+      }),
+    }));
+  }
+
   setExtensionConnectedFn(fn: () => boolean): void {
     this.isExtensionConnectedFn = fn;
   }

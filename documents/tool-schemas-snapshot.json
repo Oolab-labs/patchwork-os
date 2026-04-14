@@ -1,0 +1,6365 @@
+[
+  {
+    "name": "applyCodeAction",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "startLine": {
+          "type": "integer",
+          "description": "Start line (1-based)"
+        },
+        "startColumn": {
+          "type": "integer",
+          "description": "Start column (1-based)"
+        },
+        "endLine": {
+          "type": "integer",
+          "description": "End line (1-based)"
+        },
+        "endColumn": {
+          "type": "integer",
+          "description": "End column (1-based)"
+        },
+        "actionTitle": {
+          "type": "string",
+          "description": "Exact action title from getCodeActions output"
+        }
+      },
+      "required": [
+        "filePath",
+        "startLine",
+        "startColumn",
+        "endLine",
+        "endColumn",
+        "actionTitle"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "auditDependencies",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "packageManager": {
+          "type": "string",
+          "enum": ["auto", "npm", "yarn", "pnpm", "cargo", "pip"],
+          "description": "Package manager to use. Defaults to 'auto'."
+        },
+        "maxAge": {
+          "type": "number",
+          "description": "Only report packages where versions differ by major (1) or minor (2) increments — reserved for future use."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "packageManager": {
+          "type": ["string", "null"]
+        },
+        "total": {
+          "type": "integer"
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "current": {
+                "type": "string"
+              },
+              "wanted": {
+                "type": "string"
+              },
+              "latest": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "current", "wanted", "latest"]
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": ["available"]
+    }
+  },
+  {
+    "name": "batchFindImplementations",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "description": "List of positions to look up (max 10)",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "filePath": {
+                "type": "string",
+                "description": "Absolute or workspace-relative path"
+              },
+              "line": {
+                "type": "integer",
+                "description": "Line number (1-based)",
+                "minimum": 1
+              },
+              "column": {
+                "type": "integer",
+                "description": "Column (1-based)",
+                "minimum": 1
+              }
+            },
+            "required": ["filePath", "line", "column"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["items"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": ["results", "count"]
+    }
+  },
+  {
+    "name": "batchGetHover",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "description": "List of positions to hover (max 10)",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "filePath": {
+                "type": "string",
+                "description": "Absolute or workspace-relative path"
+              },
+              "line": {
+                "type": "integer",
+                "description": "Line number (1-based)",
+                "minimum": 1
+              },
+              "column": {
+                "type": "integer",
+                "description": "Column (1-based)",
+                "minimum": 1
+              }
+            },
+            "required": ["filePath", "line", "column"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["items"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": ["results", "count"]
+    }
+  },
+  {
+    "name": "batchGoToDefinition",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "description": "List of positions to look up (max 10)",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "filePath": {
+                "type": "string",
+                "description": "Absolute or workspace-relative path"
+              },
+              "line": {
+                "type": "integer",
+                "description": "Line number (1-based)",
+                "minimum": 1
+              },
+              "column": {
+                "type": "integer",
+                "description": "Column (1-based)",
+                "minimum": 1
+              }
+            },
+            "required": ["filePath", "line", "column"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["items"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "results": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": ["results", "count"]
+    }
+  },
+  {
+    "name": "bridgeDoctor",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "overallHealth": {
+          "type": "string",
+          "enum": ["healthy", "degraded", "unhealthy"]
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["ok", "warn", "error", "skip"]
+              },
+              "detail": {
+                "type": "string"
+              },
+              "suggestion": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "status"]
+          }
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": ["overallHealth", "checks", "summary"]
+    }
+  },
+  {
+    "name": "captureScreenshot",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "checkDocumentDirty",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filePath"],
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Path to the file to check"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "isDirty": {
+          "type": "boolean"
+        },
+        "isUntitled": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "unknown": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["success", "filePath"]
+    }
+  },
+  {
+    "name": "clearEditorDecorations",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Decoration set ID to clear. Omit to clear all."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "cleared": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": ["cleared"]
+    }
+  },
+  {
+    "name": "closeAllDiffTabs",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "closeTab",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filePath"],
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "File whose tab to close (absolute or workspace-relative)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "closed": {
+          "type": "boolean"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "contextBundle",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "includeDiff": {
+          "type": "boolean",
+          "description": "Include recent git diff (staged + unstaged). Default: true"
+        },
+        "includeHandoffNote": {
+          "type": "boolean",
+          "description": "Include the workspace handoff note. Default: true"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "activeFile": {
+          "type": "string"
+        },
+        "activeFileContent": {
+          "type": "string"
+        },
+        "diagnostics": {
+          "type": "array"
+        },
+        "diff": {
+          "type": "string"
+        },
+        "openEditors": {
+          "type": "array"
+        },
+        "handoffNote": {
+          "type": "string"
+        },
+        "gitStatus": {
+          "type": "object"
+        },
+        "bundledAt": {
+          "type": "number"
+        }
+      },
+      "required": ["bundledAt"]
+    }
+  },
+  {
+    "name": "createFile",
+    "inputSchema": {
+      "type": "object",
+      "required": ["filePath"],
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path for new file or directory"
+        },
+        "content": {
+          "type": "string",
+          "description": "Initial file content (default: empty)"
+        },
+        "isDirectory": {
+          "type": "boolean",
+          "description": "Create a directory instead of a file (default: false)"
+        },
+        "overwrite": {
+          "type": "boolean",
+          "description": "Overwrite if file already exists (default: false)"
+        },
+        "openAfterCreate": {
+          "type": "boolean",
+          "description": "Open file in editor after creation (default: true)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "created": {
+          "type": "boolean"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "isDirectory": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": ["created"]
+    }
+  },
+  {
+    "name": "createPlan",
+    "inputSchema": {
+      "type": "object",
+      "required": ["title"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Plan title"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Custom filename (default: .claude-plan.md). Must end in .md"
+        },
+        "sections": {
+          "type": "array",
+          "description": "Plan sections with tasks",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Section heading"
+              },
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Task descriptions (added as unchecked checkboxes)"
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "created": {
+          "type": "boolean"
+        },
+        "fileName": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sections": {
+          "type": "integer"
+        },
+        "tasks": {
+          "type": "integer"
+        }
+      },
+      "required": ["created", "fileName", "path"]
+    }
+  },
+  {
+    "name": "createTerminal",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name for the terminal"
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Working dir for terminal (must be within workspace)"
+        },
+        "env": {
+          "type": "object",
+          "description": "Extra env vars (key-value pairs, max 50 entries)",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "show": {
+          "type": "boolean",
+          "description": "Show terminal panel after creation (default: true)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "name": "deleteFile",
+    "inputSchema": {
+      "type": "object",
+      "required": ["filePath"],
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path to delete"
+        },
+        "recursive": {
+          "type": "boolean",
+          "description": "Delete directory contents recursively (default: false)"
+        },
+        "useTrash": {
+          "type": "boolean",
+          "description": "Move to trash instead of permanent delete (default: true)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "warning": {
+          "type": "string"
+        }
+      },
+      "required": ["deleted"]
+    }
+  },
+  {
+    "name": "deletePlan",
+    "inputSchema": {
+      "type": "object",
+      "required": ["fileName"],
+      "properties": {
+        "fileName": {
+          "type": "string",
+          "description": "Plan filename to delete (e.g., '.claude-plan.md')"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        },
+        "fileName": {
+          "type": "string"
+        }
+      },
+      "required": ["deleted", "fileName"]
+    }
+  },
+  {
+    "name": "detectUnusedCode",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "includePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Reserved for future use — accepted but ignored."
+        },
+        "maxResults": {
+          "type": "number",
+          "description": "Max unused symbols to return (default: 50)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean",
+          "description": "Whether a detector (ts-prune or tsc) was found"
+        },
+        "detector": {
+          "type": "string",
+          "description": "Which detector ran: 'ts-prune' or 'tsc'"
+        },
+        "total": {
+          "type": "integer",
+          "description": "Total unused symbols found before maxResults cap"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "symbol": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["export", "local", "parameter"]
+              }
+            },
+            "required": ["file", "line", "symbol", "kind"]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when total exceeds maxResults"
+        },
+        "error": {
+          "type": "string",
+          "description": "Set when available is false"
+        }
+      },
+      "required": ["available"]
+    }
+  },
+  {
+    "name": "disposeTerminal",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Terminal name to dispose"
+        },
+        "index": {
+          "type": "integer",
+          "description": "Terminal index (0-based) from listTerminals"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "disposed": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  {
+    "name": "editText",
+    "inputSchema": {
+      "type": "object",
+      "required": ["filePath", "edits"],
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path to the file"
+        },
+        "edits": {
+          "type": "array",
+          "description": "Array of edit operations to apply atomically",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["insert", "delete", "replace"],
+                "description": "Type of edit operation"
+              },
+              "line": {
+                "type": "integer",
+                "description": "Line number (1-based)"
+              },
+              "column": {
+                "type": "integer",
+                "description": "Column number (1-based)"
+              },
+              "endLine": {
+                "type": "integer",
+                "description": "End line number (1-based, for delete/replace)"
+              },
+              "endColumn": {
+                "type": "integer",
+                "description": "End column (1-based, for delete/replace)"
+              },
+              "text": {
+                "type": "string",
+                "description": "Text to insert or replace with"
+              }
+            }
+          }
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save the file after applying edits (default: false)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "editsApplied": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "warning": {
+          "type": "string"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "evaluateInDebugger",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["expression"],
+      "properties": {
+        "expression": {
+          "type": "string",
+          "description": "Expression to evaluate"
+        },
+        "frameId": {
+          "type": "integer",
+          "description": "Stack frame ID from getDebugState callStack (0=top frame)"
+        },
+        "context": {
+          "type": "string",
+          "enum": ["repl", "watch", "hover"],
+          "description": "Evaluation context (default: repl)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "variablesReference": {
+          "type": "integer"
+        }
+      },
+      "required": ["result"]
+    }
+  },
+  {
+    "name": "executeVSCodeCommand",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "VS Code command ID to execute"
+        },
+        "args": {
+          "type": "array",
+          "description": "Arguments to pass to the command",
+          "items": {}
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  {
+    "name": "explainSymbol",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative file path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column number (1-based)"
+        },
+        "includeTypeHierarchy": {
+          "type": "boolean",
+          "description": "Also fetch supertypes/subtypes hierarchy (default: false)"
+        },
+        "includeCodeActions": {
+          "type": "boolean",
+          "description": "Also fetch available code actions at this position (default: false)"
+        },
+        "includeSiblings": {
+          "type": "boolean",
+          "description": "Also fetch sibling symbols in the same file — other functions, classes, and variables defined alongside the target (default: false)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "hover": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "contents": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "range": {
+                  "type": "object"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "definition": {
+          "anyOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "callHierarchy": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "references": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "typeHierarchy": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "codeActions": {
+          "anyOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "siblings": {
+          "anyOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["hover", "definition", "callHierarchy", "references"]
+    }
+  },
+  {
+    "name": "findFiles",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Glob pattern (e.g. '*.config.ts', 'README*')"
+        },
+        "directory": {
+          "type": "string",
+          "description": "Subdirectory to search in (relative to workspace)"
+        }
+      },
+      "required": ["pattern"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "count": {
+          "type": "integer"
+        },
+        "totalMatches": {
+          "type": "integer"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": ["files", "count", "tool"]
+    }
+  },
+  {
+    "name": "findImplementations",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "implementations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "number"
+              },
+              "column": {
+                "type": "number"
+              },
+              "endLine": {
+                "type": "number"
+              },
+              "endColumn": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "findReferences",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Cursor from previous call's nextCursor. Omit on first call."
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string"
+              },
+              "range": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "total": {
+          "type": "integer"
+        },
+        "nextCursor": {
+          "type": "string"
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "fixAllLintErrors",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "File to fix (relative or absolute path)"
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "fixed": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "string"
+        },
+        "fixerUsed": {
+          "type": "string"
+        },
+        "linesBeforeCount": {
+          "type": "integer"
+        },
+        "linesAfterCount": {
+          "type": "integer"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        }
+      },
+      "required": ["fixed"]
+    }
+  },
+  {
+    "name": "foldingRanges",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative file path"
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ranges": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": ["ranges", "count"]
+    }
+  },
+  {
+    "name": "formatAndSave",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filePath"],
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Path to the file (absolute or workspace-relative)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "formatted": {
+          "type": "boolean"
+        },
+        "changes": {
+          "type": "string"
+        },
+        "saved": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "formatDocument",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "File to format (relative or absolute path)"
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "formatted": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "string"
+        },
+        "formatterUsed": {
+          "type": "string"
+        },
+        "linesBeforeCount": {
+          "type": "integer"
+        },
+        "linesAfterCount": {
+          "type": "integer"
+        }
+      },
+      "required": ["formatted"]
+    }
+  },
+  {
+    "name": "formatRange",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "startLine": {
+          "type": "integer",
+          "description": "1-based start line (inclusive)"
+        },
+        "endLine": {
+          "type": "integer",
+          "description": "1-based end line (inclusive)"
+        }
+      },
+      "required": ["filePath", "startLine", "endLine"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "formatted": {
+          "type": "boolean"
+        },
+        "editCount": {
+          "type": "number"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": ["formatted"]
+    }
+  },
+  {
+    "name": "generateAPIDocumentation",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Relative file paths to document (required)"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["markdown", "json"],
+          "description": "Output format (default: markdown)"
+        },
+        "includePrivate": {
+          "type": "boolean",
+          "description": "Include non-exported symbols (default: false)"
+        }
+      },
+      "required": ["files"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "symbols": {
+                "type": "integer"
+              },
+              "documentation": {
+                "type": "string"
+              }
+            },
+            "required": ["file", "symbols", "documentation"]
+          }
+        },
+        "totalSymbols": {
+          "type": "integer"
+        }
+      },
+      "required": ["files", "totalSymbols"]
+    }
+  },
+  {
+    "name": "generateTests",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Path to the source file"
+        },
+        "framework": {
+          "type": "string",
+          "enum": ["vitest", "jest", "pytest", "auto"],
+          "description": "Test framework (default: auto-detect)"
+        },
+        "outputFile": {
+          "type": "string",
+          "description": "Suggested output path (default: auto-derived)"
+        }
+      },
+      "required": ["file"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Absolute path to source file"
+        },
+        "outputFile": {
+          "type": "string",
+          "description": "Suggested output path for the test file"
+        },
+        "framework": {
+          "type": "string",
+          "description": "Detected test framework (vitest, jest, pytest)"
+        },
+        "exports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Exported names extracted from the source file"
+        },
+        "content": {
+          "type": "string",
+          "description": "Generated test scaffold ready to write to outputFile"
+        },
+        "exportCount": {
+          "type": "integer",
+          "description": "Number of exports detected"
+        }
+      },
+      "required": [
+        "file",
+        "outputFile",
+        "framework",
+        "exports",
+        "content",
+        "exportCount"
+      ]
+    }
+  },
+  {
+    "name": "getActivityLog",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool": {
+          "type": "string",
+          "description": "Filter by tool name"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["success", "error"],
+          "description": "Filter by status"
+        },
+        "last": {
+          "type": "number",
+          "description": "Recent entries to return (default: 50, max: 200)"
+        },
+        "showStats": {
+          "type": "boolean",
+          "description": "Include per-tool stats (call count, avg duration, error count). Default: false"
+        },
+        "showPercentiles": {
+          "type": "boolean",
+          "description": "Include per-tool p50/p95/p99 duration percentiles (requires showStats). Default: false"
+        },
+        "showCoOccurrence": {
+          "type": "boolean",
+          "description": "Include tool-pair co-occurrence within the time window. Default: false"
+        },
+        "coOccurrenceWindowMs": {
+          "type": "number",
+          "description": "Sliding window for co-occurrence in ms (default: 300000 = 5 min, max: 3600000)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "stats": {
+          "type": "object",
+          "description": "Per-tool stats: count, avgDurationMs, errors, and optional percentiles"
+        },
+        "percentiles": {
+          "type": "object",
+          "description": "Per-tool p50/p95/p99 duration in ms with sample count (only when showStats+showPercentiles)"
+        },
+        "coOccurrence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pair": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer"
+              }
+            },
+            "required": ["pair", "count"]
+          },
+          "description": "Tool pairs called within coOccurrenceWindowMs of each other, sorted by count desc"
+        }
+      },
+      "required": ["entries", "count"]
+    }
+  },
+  {
+    "name": "getBridgeStatus",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "extensionConnected": {
+          "type": "boolean"
+        },
+        "activeSessions": {
+          "type": "integer"
+        },
+        "circuitBreaker": {
+          "type": "object",
+          "properties": {
+            "suspended": {
+              "type": "boolean"
+            },
+            "consecutiveFailures": {
+              "type": "integer"
+            },
+            "resumesInMs": {
+              "type": "integer"
+            }
+          },
+          "required": ["suspended", "consecutiveFailures"]
+        },
+        "uptimeSeconds": {
+          "type": "integer"
+        },
+        "latencyMs": {
+          "type": ["integer", "null"]
+        },
+        "connectionQuality": {
+          "type": "string",
+          "enum": ["healthy", "degraded", "poor"]
+        },
+        "tier": {
+          "type": "string",
+          "enum": ["full", "basic"]
+        },
+        "tierDescription": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "suggestedActions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lastDisconnect": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "type": ["string", "null"]
+            },
+            "code": {
+              "type": ["integer", "null"]
+            },
+            "reason": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["at", "code", "reason"]
+        },
+        "toolAvailability": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": ["available"]
+          }
+        }
+      },
+      "required": [
+        "extensionConnected",
+        "activeSessions",
+        "circuitBreaker",
+        "uptimeSeconds",
+        "tier"
+      ]
+    }
+  },
+  {
+    "name": "getBufferContent",
+    "inputSchema": {
+      "type": "object",
+      "required": ["filePath"],
+      "additionalProperties": false,
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "startLine": {
+          "type": "integer",
+          "description": "First line to include (1-based, default: 1)",
+          "minimum": 1
+        },
+        "endLine": {
+          "type": "integer",
+          "description": "Last line to include (1-based, default: all lines)",
+          "minimum": 1
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "File or buffer content (may be sliced by startLine/endLine)"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "startLine": {
+          "type": "integer"
+        },
+        "endLine": {
+          "type": "integer"
+        },
+        "totalLines": {
+          "type": "integer"
+        },
+        "isDirty": {
+          "type": "boolean",
+          "description": "True when the buffer has unsaved changes (extension only)"
+        },
+        "languageId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["extension", "disk"],
+          "description": "Whether content came from the live VS Code buffer or disk"
+        }
+      },
+      "required": ["content", "filePath"]
+    }
+  },
+  {
+    "name": "getCallHierarchy",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["incoming", "outgoing", "both"],
+          "description": "\"incoming\"=callers, \"outgoing\"=callees, \"both\"=all (default)"
+        },
+        "maxResults": {
+          "type": "integer",
+          "description": "Max callers/callees per direction (default: 50, max: 200)"
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Cursor from previous call's nextCursor. Omit on first call."
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "incoming": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "outgoing": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "incomingTotal": {
+          "type": "integer"
+        },
+        "outgoingTotal": {
+          "type": "integer"
+        },
+        "nextCursor": {
+          "type": "string"
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "getChangeImpact",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path of the edited file"
+        },
+        "changedSymbols": {
+          "type": "array",
+          "description": "Symbols that were changed (optional). Each entry must have a name; optionally a line number to disambiguate overloads.",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        },
+        "workspaceOnly": {
+          "type": "boolean",
+          "description": "Filter references to workspace files only (default: true). External refs (node_modules, stdlib) are counted separately."
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "diagnostics": {
+          "type": "object"
+        },
+        "symbolImpact": {
+          "type": "array"
+        },
+        "blastRadius": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": ["diagnostics", "symbolImpact", "blastRadius", "summary"]
+    }
+  },
+  {
+    "name": "getCodeActions",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "startLine": {
+          "type": "integer",
+          "description": "Start line (1-based)"
+        },
+        "startColumn": {
+          "type": "integer",
+          "description": "Start column (1-based)"
+        },
+        "endLine": {
+          "type": "integer",
+          "description": "End line (1-based)"
+        },
+        "endColumn": {
+          "type": "integer",
+          "description": "End column (1-based)"
+        }
+      },
+      "required": [
+        "filePath",
+        "startLine",
+        "startColumn",
+        "endLine",
+        "endColumn"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": ["title"]
+          }
+        }
+      },
+      "required": ["actions"]
+    }
+  },
+  {
+    "name": "getCodeCoverage",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Coverage report path. Omit to auto-detect in coverage/"
+        },
+        "minCoverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Filter: only return files below this coverage %"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "reportFile": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "lines": {
+                "type": "number"
+              },
+              "branches": {
+                "type": ["number", "null"]
+              },
+              "functions": {
+                "type": ["number", "null"]
+              }
+            },
+            "required": ["file", "lines"]
+          }
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "totalFiles": {
+              "type": "integer"
+            },
+            "averageLineCoverage": {
+              "type": "number"
+            },
+            "belowThreshold": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "required": ["reportFile", "format", "files", "summary"]
+    }
+  },
+  {
+    "name": "getCodeLens",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative file path"
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "lenses": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": ["lenses", "count"]
+    }
+  },
+  {
+    "name": "getCommitDetails",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commitHash"],
+      "properties": {
+        "commitHash": {
+          "type": "string",
+          "description": "Full or abbreviated commit hash"
+        },
+        "includePatch": {
+          "type": "boolean",
+          "description": "Include full diff patch. Default: true. Set false for metadata/stats only."
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Limit diff to a single file (absolute or workspace-relative)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "output": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "getCurrentSelection",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "selection": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "startLine": {
+              "type": "integer"
+            },
+            "startColumn": {
+              "type": "integer"
+            },
+            "endLine": {
+              "type": "integer"
+            },
+            "endColumn": {
+              "type": "integer"
+            },
+            "selectedText": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "startLine",
+            "startColumn",
+            "endLine",
+            "endColumn",
+            "selectedText"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "getDebugState",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "hasActiveSession": {
+          "type": "boolean"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "sessionType": {
+          "type": "string"
+        },
+        "isPaused": {
+          "type": "boolean"
+        },
+        "pausedAt": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "line": {
+              "type": "integer"
+            },
+            "column": {
+              "type": "integer"
+            }
+          },
+          "required": ["file", "line", "column"]
+        },
+        "callStack": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "column": {
+                "type": "integer"
+              }
+            },
+            "required": ["id", "name", "file", "line", "column"]
+          }
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "variables": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["name", "value", "type"]
+                }
+              }
+            },
+            "required": ["name", "variables"]
+          }
+        },
+        "breakpoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "condition": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": ["file", "line", "enabled"]
+          }
+        }
+      },
+      "required": ["hasActiveSession", "isPaused", "breakpoints"]
+    }
+  },
+  {
+    "name": "getDependencyTree",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Max dependency depth (npm only). Default: 2"
+        },
+        "packageManager": {
+          "type": "string",
+          "enum": ["npm", "pip", "cargo", "go", "auto"],
+          "description": "Package manager to use. Default: auto-detect from manifest files"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "packageManager": {
+          "type": ["string", "null"]
+        },
+        "count": {
+          "type": "integer"
+        },
+        "tree": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": ["available", "packageManager"]
+    }
+  },
+  {
+    "name": "getDiagnostics",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uri": {
+          "type": "string",
+          "description": "File filter: absolute path, workspace-relative path, or file:// URI. Returns diagnostics for that file only."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning", "information", "hint"],
+          "description": "Min severity to return. Order: error > warning > information > hint. Use 'error' for build-breaking only."
+        },
+        "maxResults": {
+          "type": "number",
+          "description": "Max diagnostics to return (default: 100, max: 2000)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "linters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "linterErrors": {
+          "type": "object"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["error", "warning", "information", "hint"]
+              },
+              "message": {
+                "type": "string"
+              },
+              "rule": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "column": {
+                "type": "integer"
+              },
+              "endLine": {
+                "type": "integer"
+              },
+              "endColumn": {
+                "type": "integer"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": ["file", "severity", "message"]
+          }
+        },
+        "summary": {
+          "type": "object"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": ["available", "source", "diagnostics"]
+    }
+  },
+  {
+    "name": "getDiffBetweenRefs",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref1", "ref2"],
+      "properties": {
+        "ref1": {
+          "type": "string",
+          "description": "Base ref (branch, tag, or commit hash)"
+        },
+        "ref2": {
+          "type": "string",
+          "description": "Comparison ref (branch, tag, or commit hash)"
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Limit diff to a single file (absolute or workspace-relative)"
+        },
+        "context": {
+          "type": "integer",
+          "description": "Number of context lines around changes. Default: 3"
+        },
+        "statOnly": {
+          "type": "boolean",
+          "description": "Return file-level stat summary only (no patch). Default: false."
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "diff": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "getDocumentLinks",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative file path"
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "range": {
+                "type": "object"
+              },
+              "tooltip": {
+                "type": "string"
+              }
+            },
+            "required": ["url"]
+          }
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": ["links", "count"]
+    }
+  },
+  {
+    "name": "getDocumentSymbols",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path to the file"
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "column": {
+                "type": "integer"
+              },
+              "parent": {
+                "type": ["string", "null"]
+              }
+            },
+            "required": ["name", "kind", "line"]
+          }
+        },
+        "count": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string",
+          "enum": ["lsp", "grep-fallback", "unavailable"]
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": ["symbols", "count", "source"]
+    }
+  },
+  {
+    "name": "getFileTree",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "directory": {
+          "type": "string",
+          "description": "Subdirectory to list (relative to workspace, default: root)"
+        },
+        "maxDepth": {
+          "type": "integer",
+          "description": "Maximum directory depth (default: 3, max: 10)",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "includeHidden": {
+          "type": "boolean",
+          "description": "Include hidden files/dirs (default: false)"
+        },
+        "maxEntries": {
+          "type": "integer",
+          "description": "Max entries to return (default: 500, max: 2000)",
+          "minimum": 1,
+          "maximum": 2000
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "total": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "tool": {
+          "type": "string",
+          "enum": ["git", "fd", "fs"]
+        }
+      },
+      "required": ["entries", "total", "truncated", "tool"]
+    }
+  },
+  {
+    "name": "getGitDiff",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Filter diff to a single file (absolute or workspace-relative)"
+        },
+        "staged": {
+          "type": "boolean",
+          "description": "Show staged (cached) changes. Default: false"
+        },
+        "context": {
+          "type": "integer",
+          "description": "Number of context lines around changes. Default: 3"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "diff": {
+          "type": "string",
+          "description": "Unified diff output"
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when diff was capped at the size limit"
+        }
+      },
+      "required": ["diff"]
+    }
+  },
+  {
+    "name": "getGitHotspots",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365,
+          "description": "Lookback window in days (default: 90)"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Max hotspot files to return (default: 20)"
+        },
+        "path": {
+          "type": "string",
+          "description": "Subdirectory or glob to scope analysis (e.g. 'src/'). Default: entire repo"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": "string",
+          "description": "ISO date string — start of the lookback window"
+        },
+        "days": {
+          "type": "integer",
+          "description": "Lookback window in days"
+        },
+        "totalCommitsScanned": {
+          "type": "integer",
+          "description": "Total commits in the time window"
+        },
+        "hotspots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "commits": {
+                "type": "integer",
+                "description": "Number of commits touching this file"
+              },
+              "rank": {
+                "type": "integer",
+                "description": "1-based rank by commit count"
+              }
+            },
+            "required": ["file", "commits", "rank"]
+          }
+        },
+        "scopedTo": {
+          "type": "string",
+          "description": "Present when analysis was scoped to a subdirectory"
+        }
+      },
+      "required": ["since", "days", "totalCommitsScanned", "hotspots"]
+    }
+  },
+  {
+    "name": "getGitLog",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxEntries": {
+          "type": "integer",
+          "description": "Max log entries to return (default: 20, max: 100)"
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Filter log to a single file (absolute or workspace-relative)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "hash": {
+                "type": "string"
+              },
+              "author": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              }
+            },
+            "required": ["hash", "author", "date", "subject"]
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "getGitStatus",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Filter status to a single file (absolute or workspace-relative)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "ahead": {
+          "type": "integer"
+        },
+        "behind": {
+          "type": "integer"
+        },
+        "staged": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unstaged": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "untracked": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": ["available"]
+    }
+  },
+  {
+    "name": "getHandoffNote",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "type": ["string", "null"]
+        },
+        "message": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "updatedBy": {
+          "type": "string"
+        },
+        "age": {
+          "type": "string"
+        }
+      },
+      "required": ["note"]
+    }
+  },
+  {
+    "name": "getHover",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "contents": {
+          "type": "string"
+        },
+        "range": {
+          "type": "object"
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "getHoverAtCursor",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "number"
+        },
+        "column": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "hover": {
+          "type": "object"
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "getImportedSignatures",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative file path"
+        },
+        "maxImports": {
+          "type": "integer",
+          "description": "Maximum imports to resolve (default 15, max 20)",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "imports": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "resolved": {
+          "type": "integer"
+        },
+        "unresolved": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["imports", "count", "resolved", "unresolved"]
+    }
+  },
+  {
+    "name": "getImportTree",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["file"],
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "maxDepth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Max recursion depth (default: 3)"
+        },
+        "includeExternal": {
+          "type": "boolean",
+          "description": "Include external package imports (default: false)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "tree": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cycles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "totalFiles": {
+          "type": "integer"
+        },
+        "maxDepth": {
+          "type": "integer"
+        },
+        "external": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": ["file", "tree", "cycles", "totalFiles", "maxDepth"]
+    }
+  },
+  {
+    "name": "getInlayHints",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["file", "startLine", "endLine"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "startLine": {
+          "type": "integer",
+          "description": "First line (1-based)"
+        },
+        "endLine": {
+          "type": "integer",
+          "description": "Last line (1-based, inclusive)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "hints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "tooltip": {
+                "type": "string"
+              },
+              "paddingLeft": {
+                "type": "boolean"
+              },
+              "paddingRight": {
+                "type": "boolean"
+              }
+            },
+            "required": ["position", "label"]
+          }
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": ["hints", "count"]
+    }
+  },
+  {
+    "name": "getLatestSelection",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "selection": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "startLine": {
+              "type": "integer"
+            },
+            "startColumn": {
+              "type": "integer"
+            },
+            "endLine": {
+              "type": "integer"
+            },
+            "endColumn": {
+              "type": "integer"
+            },
+            "selectedText": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "startLine",
+            "startColumn",
+            "endLine",
+            "endColumn",
+            "selectedText"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "getOpenEditors",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "tabs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string"
+              },
+              "fileName": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "languageId": {
+                "type": "string"
+              },
+              "isActive": {
+                "type": "boolean"
+              },
+              "isDirty": {
+                "type": "boolean"
+              },
+              "lineCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "uri",
+              "fileName",
+              "label",
+              "languageId",
+              "isActive",
+              "isDirty"
+            ]
+          }
+        },
+        "source": {
+          "type": "string",
+          "enum": ["vscode", "local-tracking"]
+        }
+      },
+      "required": ["tabs", "source"]
+    }
+  },
+  {
+    "name": "getPlan",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "fileName": {
+          "type": "string",
+          "description": "Plan filename (default: .claude-plan.md)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "fileName": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "created": {
+          "type": "string"
+        },
+        "updated": {
+          "type": "string"
+        },
+        "sections": {
+          "type": "array"
+        },
+        "summary": {
+          "type": "object"
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "getProjectInfo",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "workspace": {
+          "type": "string"
+        },
+        "project": {
+          "description": "Single project object or array when multiple detected"
+        },
+        "directories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "configFiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "git": {
+          "type": "object"
+        },
+        "tip": {
+          "type": "string"
+        }
+      },
+      "required": ["workspace"]
+    }
+  },
+  {
+    "name": "getPRTemplate",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "type": "string",
+          "description": "Base branch (default: auto-detect main/master)"
+        },
+        "style": {
+          "type": "string",
+          "enum": ["bullet", "prose", "conventional"],
+          "description": "bullet (default), prose (paragraph), or conventional (grouped by commit type)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "commits": {
+          "type": "number"
+        },
+        "issueRefs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "filesChanged": {
+          "type": "number"
+        },
+        "base": {
+          "type": "string"
+        },
+        "style": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": ["body", "commits", "issueRefs", "filesChanged", "base"]
+    }
+  },
+  {
+    "name": "getSecurityAdvisories",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "packageManager": {
+          "type": "string",
+          "enum": ["auto", "npm", "yarn", "pnpm", "cargo", "pip"],
+          "description": "Package manager to audit. Default: auto-detect"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["low", "moderate", "high", "critical", "all"],
+          "description": "Minimum severity to include in results. Default: all"
+        },
+        "onlyFixable": {
+          "type": "boolean",
+          "description": "Only return advisories that have a known fix available"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "packageManager": {
+          "type": "string"
+        },
+        "totalVulnerabilities": {
+          "type": "integer"
+        },
+        "bySeverity": {
+          "type": "object",
+          "properties": {
+            "info": {
+              "type": "integer"
+            },
+            "low": {
+              "type": "integer"
+            },
+            "moderate": {
+              "type": "integer"
+            },
+            "high": {
+              "type": "integer"
+            },
+            "critical": {
+              "type": "integer"
+            }
+          }
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "package": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["info", "low", "moderate", "high", "critical"]
+              },
+              "title": {
+                "type": "string"
+              },
+              "fix": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "package", "severity", "title"]
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": ["available"]
+    }
+  },
+  {
+    "name": "getSemanticTokens",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "startLine": {
+          "type": "integer",
+          "description": "First line to include (1-based, optional)",
+          "minimum": 1
+        },
+        "endLine": {
+          "type": "integer",
+          "description": "Last line to include (1-based, inclusive, optional)",
+          "minimum": 1
+        },
+        "maxTokens": {
+          "type": "integer",
+          "description": "Max tokens to return (default: 2000, max: 5000)",
+          "minimum": 1,
+          "maximum": 5000
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "count": {
+          "type": "number"
+        },
+        "capped": {
+          "type": "boolean"
+        },
+        "legend": {
+          "type": "object",
+          "properties": {
+            "tokenTypes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "tokenModifiers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["tokenTypes", "tokenModifiers"]
+        }
+      },
+      "required": ["tokens", "count", "capped", "legend"]
+    }
+  },
+  {
+    "name": "getTerminalOutput",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Terminal name to retrieve output from"
+        },
+        "index": {
+          "type": "integer",
+          "description": "Terminal index (0-based) from listTerminals"
+        },
+        "lines": {
+          "type": "integer",
+          "description": "Recent lines to retrieve (default 100, max 5000)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "output": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "getToolCapabilities",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "extensionConnected": {
+          "type": "boolean"
+        },
+        "tier": {
+          "type": "string"
+        },
+        "tierDescription": {
+          "type": "string"
+        },
+        "editor": {
+          "type": "string"
+        },
+        "cliTools": {
+          "type": "object"
+        },
+        "linters": {
+          "type": "object"
+        },
+        "formatters": {
+          "type": "object"
+        },
+        "testRunners": {
+          "type": "object"
+        },
+        "features": {
+          "type": "object"
+        },
+        "commandAllowlist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "availableTools": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "extensionConnected",
+        "tier",
+        "tierDescription",
+        "cliTools",
+        "linters",
+        "formatters",
+        "testRunners",
+        "features",
+        "commandAllowlist",
+        "availableTools"
+      ]
+    }
+  },
+  {
+    "name": "getTypeHierarchy",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["file", "line", "column"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["supertypes", "subtypes", "both"],
+          "description": "Which direction to traverse (default: both)"
+        },
+        "maxResults": {
+          "type": "integer",
+          "description": "Max results per direction (default: 20)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "supertypes": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "subtypes": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "getTypeSignature",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["file", "line", "column"],
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "column": {
+          "type": "integer"
+        },
+        "signature": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["found", "file", "line", "column"]
+    }
+  },
+  {
+    "name": "getWorkspaceFolders",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "folders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              }
+            },
+            "required": ["name", "path", "uri", "index"]
+          }
+        },
+        "rootPath": {
+          "type": ["string", "null"]
+        },
+        "workspaceFile": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["success", "folders", "rootPath", "workspaceFile"]
+    }
+  },
+  {
+    "name": "getWorkspaceSettings",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "section": {
+          "type": "string",
+          "description": "Settings section to read (e.g. 'editor', 'typescript'). Omit for all."
+        },
+        "target": {
+          "type": "string",
+          "enum": ["workspace", "global"],
+          "description": "Which scope to read (default: workspace)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  {
+    "name": "gitAdd",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Paths to stage (absolute or workspace-relative). Omit to stage all modified tracked files."
+        },
+        "addUntracked": {
+          "type": "boolean",
+          "description": "Also stage new untracked files. Default: false."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "staged": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": ["staged", "count"]
+    }
+  },
+  {
+    "name": "gitBlame",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path to the file"
+        },
+        "startLine": {
+          "type": "number",
+          "description": "First line number to blame (1-based, inclusive). Omit for start of file."
+        },
+        "endLine": {
+          "type": "number",
+          "description": "Last line number to blame (1-based, inclusive). Omit for end of file."
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": ["lines", "count"]
+    }
+  },
+  {
+    "name": "gitCheckout",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string",
+          "description": "Branch name to switch to or create"
+        },
+        "create": {
+          "type": "boolean",
+          "description": "Create branch if it doesn't exist. Default: false."
+        },
+        "base": {
+          "type": "string",
+          "description": "Base branch or commit to create from (only when create: true). Defaults to HEAD."
+        }
+      },
+      "required": ["branch"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "previousBranch": {
+          "type": ["string", "null"]
+        },
+        "created": {
+          "type": "boolean"
+        }
+      },
+      "required": ["branch", "created"]
+    }
+  },
+  {
+    "name": "gitCommit",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "Commit message"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Files to stage before committing. Omit to commit already-staged changes."
+        },
+        "addAll": {
+          "type": "boolean",
+          "description": "Stage all tracked changes before committing (git add -u). Default: false."
+        }
+      },
+      "required": ["message"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "hash": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": ["hash", "branch", "message", "files", "count"]
+    }
+  },
+  {
+    "name": "gitFetch",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "remote": {
+          "type": "string",
+          "description": "Remote to fetch from (default: origin)"
+        },
+        "all": {
+          "type": "boolean",
+          "description": "Fetch from all configured remotes. Default: false."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "fetched": {
+          "type": "boolean"
+        },
+        "nothingNew": {
+          "type": "boolean"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": ["fetched"]
+    }
+  },
+  {
+    "name": "gitListBranches",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "includeRemote": {
+          "type": "boolean",
+          "description": "Include remote-tracking branches (e.g. origin/main). Default: false."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "local": {
+          "type": "array"
+        },
+        "current": {
+          "type": "string"
+        },
+        "remote": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["local", "current"]
+    }
+  },
+  {
+    "name": "gitPull",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "remote": {
+          "type": "string",
+          "description": "Remote name (default: origin)"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Remote branch to pull from (default: tracking branch for current branch)"
+        },
+        "rebase": {
+          "type": "boolean",
+          "description": "Rebase local commits on top of remote changes instead of merging. Default: false."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "alreadyUpToDate": {
+          "type": "boolean"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": ["alreadyUpToDate"]
+    }
+  },
+  {
+    "name": "gitPush",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "remote": {
+          "type": "string",
+          "description": "Remote name (default: origin)"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Branch to push (default: current branch)"
+        },
+        "setUpstream": {
+          "type": "boolean",
+          "description": "Set the upstream tracking branch (-u). Use on first push of a new branch. Default: false."
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Force push with --force-with-lease. Blocked on main/master. Default: false."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "remote": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "setUpstream": {
+          "type": "boolean"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": ["remote", "branch", "hash"]
+    }
+  },
+  {
+    "name": "gitStash",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "Optional description for the stash entry"
+        },
+        "includeUntracked": {
+          "type": "boolean",
+          "description": "Also stash untracked (new) files. Default: false."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "stashed": {
+          "type": "boolean"
+        },
+        "stashRef": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": ["stashed"]
+    }
+  },
+  {
+    "name": "gitStashList",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": ["entries", "count"]
+    }
+  },
+  {
+    "name": "gitStashPop",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "description": "Stash entry index to pop (0 = most recent). Default: 0."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "restored": {
+          "type": "boolean"
+        },
+        "stashRef": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": ["restored"]
+    }
+  },
+  {
+    "name": "goToDeclaration",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "number"
+              },
+              "column": {
+                "type": "number"
+              },
+              "endLine": {
+                "type": "number"
+              },
+              "endColumn": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "goToDefinition",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        },
+        "range": {
+          "type": "object",
+          "properties": {
+            "startLine": {
+              "type": "number"
+            },
+            "startColumn": {
+              "type": "number"
+            },
+            "endLine": {
+              "type": "number"
+            },
+            "endColumn": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "goToTypeDefinition",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "number"
+              },
+              "column": {
+                "type": "number"
+              },
+              "endLine": {
+                "type": "number"
+              },
+              "endColumn": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "jumpToFirstError",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "column": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "decorationApplied": {
+          "type": "boolean"
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "listPlans",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "plans": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": ["plans", "count"]
+    }
+  },
+  {
+    "name": "listTerminals",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "terminals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              },
+              "isActive": {
+                "type": "boolean"
+              },
+              "hasShellIntegration": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "required": ["terminals"]
+    }
+  },
+  {
+    "name": "listVSCodeCommands",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "filter": {
+          "type": "string",
+          "description": "Optional substring filter on command IDs"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "count": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "name": "listVSCodeTasks",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Filter tasks by type (e.g. 'shell', 'npm')"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "type": "array"
+        }
+      }
+    }
+  },
+  {
+    "name": "navigateToSymbolByName",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query"],
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Symbol name to search for"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "symbol": {
+          "type": "object"
+        },
+        "definition": {
+          "type": "object"
+        },
+        "alternatives": {
+          "type": "array"
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "openDiff",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["oldFilePath", "newFilePath", "newFileContents", "tabName"],
+      "properties": {
+        "oldFilePath": {
+          "type": "string",
+          "description": "Path to the old file"
+        },
+        "newFilePath": {
+          "type": "string",
+          "description": "Path to the new file"
+        },
+        "newFileContents": {
+          "type": "string",
+          "description": "Contents for the new file version"
+        },
+        "tabName": {
+          "type": "string",
+          "description": "Name for the diff tab"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "oldPath": {
+          "type": "string"
+        },
+        "newPath": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "openFile",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filePath"],
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path to the file to open"
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Line number to scroll to (1-based). If both startLine and startText are provided, startLine takes precedence."
+        },
+        "startText": {
+          "type": "string",
+          "description": "Text pattern to find and scroll to. If both startLine and startText are provided, startLine takes precedence."
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "via": {
+          "type": "string"
+        },
+        "tracked": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "openInBrowser",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["html"],
+      "properties": {
+        "html": {
+          "type": "string",
+          "description": "Full self-contained HTML document content"
+        },
+        "filename": {
+          "type": "string",
+          "description": "Basename only, must end in .html. Default: report-<timestamp>.html"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "headless": {
+          "type": "boolean"
+        },
+        "url": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": ["path"]
+    }
+  },
+  {
+    "name": "organizeImports",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "File to organize imports in (relative or absolute path)"
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "organized": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "string"
+        },
+        "linesBeforeCount": {
+          "type": "integer"
+        },
+        "linesAfterCount": {
+          "type": "integer"
+        }
+      },
+      "required": ["organized"]
+    }
+  },
+  {
+    "name": "parseHttpFile",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filePath"],
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Path to the .http or .rest file within the workspace"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "requests": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": ["requests", "count"]
+    }
+  },
+  {
+    "name": "prepareRename",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "1-based line number"
+        },
+        "column": {
+          "type": "integer",
+          "description": "1-based column number"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "canRename": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "range": {
+          "type": "object",
+          "properties": {
+            "startLine": {
+              "type": "number"
+            },
+            "startColumn": {
+              "type": "number"
+            },
+            "endLine": {
+              "type": "number"
+            },
+            "endColumn": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "required": ["canRename"]
+    }
+  },
+  {
+    "name": "previewCodeAction",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "startLine": {
+          "type": "integer",
+          "description": "Start line (1-based)"
+        },
+        "startColumn": {
+          "type": "integer",
+          "description": "Start column (1-based)"
+        },
+        "endLine": {
+          "type": "integer",
+          "description": "End line (1-based)"
+        },
+        "endColumn": {
+          "type": "integer",
+          "description": "End column (1-based)"
+        },
+        "actionTitle": {
+          "type": "string",
+          "description": "Exact action title from getCodeActions output"
+        }
+      },
+      "required": [
+        "filePath",
+        "startLine",
+        "startColumn",
+        "endLine",
+        "endColumn",
+        "actionTitle"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "edits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "range": {
+                      "type": "object",
+                      "properties": {
+                        "startLine": {
+                          "type": "number"
+                        },
+                        "startColumn": {
+                          "type": "number"
+                        },
+                        "endLine": {
+                          "type": "number"
+                        },
+                        "endColumn": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "startLine",
+                        "startColumn",
+                        "endLine",
+                        "endColumn"
+                      ]
+                    },
+                    "newText": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["range", "newText"]
+                }
+              }
+            },
+            "required": ["file", "edits"]
+          }
+        },
+        "totalFiles": {
+          "type": "number"
+        },
+        "totalEdits": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": ["title", "changes"]
+    }
+  },
+  {
+    "name": "readClipboard",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": ["text"]
+    }
+  },
+  {
+    "name": "refactorAnalyze",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "canRename": {
+          "type": "boolean"
+        },
+        "renameReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "renamePlaceholder": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "referenceCount": {
+          "type": "integer"
+        },
+        "callerCount": {
+          "type": "integer"
+        },
+        "hasInheritance": {
+          "type": "boolean"
+        },
+        "risk": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "canRename",
+        "referenceCount",
+        "callerCount",
+        "hasInheritance",
+        "risk",
+        "summary"
+      ]
+    }
+  },
+  {
+    "name": "refactorExtractFunction",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "File path (relative to workspace)"
+        },
+        "startLine": {
+          "type": "number",
+          "description": "Start line (1-indexed)"
+        },
+        "endLine": {
+          "type": "number",
+          "description": "End line (1-indexed)"
+        },
+        "functionName": {
+          "type": "string",
+          "description": "Name for the extracted function"
+        }
+      },
+      "required": ["file", "startLine", "endLine", "functionName"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "refactored": {
+          "type": "boolean"
+        },
+        "method": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["refactored", "method", "message"]
+    }
+  },
+  {
+    "name": "refactorPreview",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "startLine": {
+          "type": "integer",
+          "description": "Start line (1-based)"
+        },
+        "startColumn": {
+          "type": "integer",
+          "description": "Start column (1-based)"
+        },
+        "endLine": {
+          "type": "integer",
+          "description": "End line (1-based)"
+        },
+        "endColumn": {
+          "type": "integer",
+          "description": "End column (1-based)"
+        },
+        "actionTitle": {
+          "type": "string",
+          "description": "Exact action title from getCodeActions output"
+        }
+      },
+      "required": [
+        "filePath",
+        "startLine",
+        "startColumn",
+        "endLine",
+        "endColumn",
+        "actionTitle"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "totalFiles": {
+          "type": "number"
+        },
+        "totalEdits": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": ["title", "changes"]
+    }
+  },
+  {
+    "name": "renameFile",
+    "inputSchema": {
+      "type": "object",
+      "required": ["oldPath", "newPath"],
+      "properties": {
+        "oldPath": {
+          "type": "string",
+          "description": "Current absolute or workspace-relative path"
+        },
+        "newPath": {
+          "type": "string",
+          "description": "New absolute or workspace-relative path"
+        },
+        "overwrite": {
+          "type": "boolean",
+          "description": "Overwrite if target already exists (default: false)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "renamed": {
+          "type": "boolean"
+        },
+        "oldPath": {
+          "type": "string"
+        },
+        "newPath": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": ["renamed"]
+    }
+  },
+  {
+    "name": "renameSymbol",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        },
+        "newName": {
+          "type": "string",
+          "description": "New name for the symbol"
+        }
+      },
+      "required": ["filePath", "line", "column", "newName"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "newName": {
+          "type": "string"
+        },
+        "affectedFiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "editCount": {
+                "type": "number"
+              }
+            },
+            "required": ["file", "editCount"]
+          }
+        },
+        "totalEdits": {
+          "type": "number"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "replaceBlock",
+    "inputSchema": {
+      "type": "object",
+      "required": ["filePath", "oldContent", "newContent"],
+      "additionalProperties": false,
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative file path"
+        },
+        "oldContent": {
+          "type": "string",
+          "description": "The exact text to find and replace (must match precisely, including whitespace)"
+        },
+        "newContent": {
+          "type": "string",
+          "description": "The text to replace oldContent with"
+        },
+        "save": {
+          "type": "boolean",
+          "description": "Save after replacing (default: true)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "saved": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "runCommand",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Command basename (must be in allowlist, no paths)"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Command arguments"
+        },
+        "cwd": {
+          "type": "string",
+          "description": "Working dir (absolute or workspace-relative, default: workspace root)"
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout in milliseconds (default: undefined, max: 600000)"
+        }
+      },
+      "required": ["command"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "exitCode": {
+          "type": "integer"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "timedOut": {
+          "type": "boolean"
+        }
+      },
+      "required": ["exitCode", "stdout", "stderr", "durationMs", "timedOut"]
+    }
+  },
+  {
+    "name": "runInTerminal",
+    "inputSchema": {
+      "type": "object",
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Shell command to run (no metacharacters or newlines)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Terminal name (from listTerminals). Uses active if omitted."
+        },
+        "index": {
+          "type": "integer",
+          "description": "Terminal index (0-based) from listTerminals. Used if name omitted."
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Seconds to wait for completion (default: 30, max: 300)"
+        },
+        "show": {
+          "type": "boolean",
+          "description": "Focus terminal panel while running (default: true)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "exitCode": {
+          "type": "integer"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "fallback": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "runTests",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filter": {
+          "type": "string",
+          "description": "Test name pattern or file path to filter tests"
+        },
+        "runner": {
+          "type": "string",
+          "description": "Runner to use (vitest/jest/pytest/cargo-test/go-test). Default: all detected"
+        },
+        "noCache": {
+          "type": "boolean",
+          "description": "Skip cache and force a fresh run. Default: false"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "description": "Subprocess timeout in ms. Default: 120000 (2 min). Increase for large suites."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean",
+          "description": "Whether any test runners were detected"
+        },
+        "runners": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Names of runners that were executed"
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer"
+            },
+            "passed": {
+              "type": "integer"
+            },
+            "failed": {
+              "type": "integer"
+            },
+            "skipped": {
+              "type": "integer"
+            },
+            "errored": {
+              "type": "integer"
+            },
+            "durationMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "passed",
+            "failed",
+            "skipped",
+            "errored",
+            "durationMs"
+          ]
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["passed", "failed", "skipped", "errored"]
+              },
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              },
+              "durationMs": {
+                "type": "number"
+              }
+            },
+            "required": ["name", "status"]
+          }
+        },
+        "failures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              },
+              "durationMs": {
+                "type": "number"
+              }
+            },
+            "required": ["name", "status"]
+          },
+          "description": "Subset of results where status is failed or errored"
+        },
+        "error": {
+          "type": "string",
+          "description": "Set when a specific runner was requested but not found"
+        }
+      },
+      "required": ["available", "runners", "summary", "results", "failures"]
+    }
+  },
+  {
+    "name": "runVSCodeTask",
+    "inputSchema": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the task to run"
+        },
+        "type": {
+          "type": "string",
+          "description": "Task type filter (e.g. 'shell', 'npm') to disambiguate tasks with the same name"
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Seconds to wait for task completion (default: 60, max: 300)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "exitCode": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "name": "saveDocument",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filePath"],
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Path to the file to save"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "filePath": {
+          "type": "string"
+        },
+        "saved": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["success"]
+    }
+  },
+  {
+    "name": "searchAndReplace",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Text or regex pattern to search for"
+        },
+        "replacement": {
+          "type": "string",
+          "description": "Replacement text. For regex mode, supports $1, $2, etc. capture group references."
+        },
+        "glob": {
+          "type": "string",
+          "description": "File glob pattern to limit scope (e.g. '**/*.ts', 'src/**/*.py'). Omit to search all text files."
+        },
+        "isRegex": {
+          "type": "boolean",
+          "description": "Treat pattern as a JavaScript regex. Default: false (literal string match)."
+        },
+        "caseSensitive": {
+          "type": "boolean",
+          "description": "Case-sensitive match. Default: true."
+        },
+        "dryRun": {
+          "type": "boolean",
+          "description": "If true, returns what would change without writing any files. Useful for previewing impact. Default: false."
+        },
+        "includeIgnored": {
+          "type": "boolean",
+          "description": "Search inside .gitignored files (e.g. node_modules, build output). Default: false."
+        }
+      },
+      "required": ["pattern", "replacement"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "matched": {
+          "type": "integer"
+        },
+        "modified": {
+          "type": "integer"
+        },
+        "totalReplacements": {
+          "type": "integer"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "warning": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "replacements": {
+                "oneOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["skipped (file too large)"]
+                  }
+                ]
+              },
+              "written": {
+                "type": "boolean"
+              },
+              "writeError": {
+                "type": "string"
+              }
+            },
+            "required": ["file", "replacements"]
+          }
+        }
+      },
+      "required": ["matched", "modified", "dryRun", "files"]
+    }
+  },
+  {
+    "name": "searchWorkspace",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Search pattern (text or regex)"
+        },
+        "fileGlob": {
+          "type": "string",
+          "description": "Optional glob to filter files (e.g. '*.ts')"
+        },
+        "isRegex": {
+          "type": "boolean",
+          "description": "Treat query as regex (default: false)"
+        },
+        "caseSensitive": {
+          "type": "boolean",
+          "description": "Case-sensitive search (default: true)"
+        },
+        "maxResults": {
+          "type": "integer",
+          "description": "Max results to return (default: 100, max: 200)",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "contextLines": {
+          "type": "integer",
+          "description": "Lines of context around matches (default: 0, max: 5)",
+          "minimum": 0,
+          "maximum": 5
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "matchText": {
+                "type": "string"
+              }
+            },
+            "required": ["file", "line", "matchText"]
+          }
+        },
+        "totalMatches": {
+          "type": "integer"
+        },
+        "tool": {
+          "type": "string",
+          "enum": ["rg", "grep"],
+          "description": "Search backend used"
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True when maxResults was reached"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": ["matches", "totalMatches", "tool"]
+    }
+  },
+  {
+    "name": "searchWorkspaceSymbols",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Symbol name or partial name"
+        },
+        "maxResults": {
+          "type": "integer",
+          "description": "Max results (default: 50, max: 200)"
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              },
+              "range": {
+                "type": "object"
+              },
+              "containerName": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "kind", "uri"]
+          }
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": ["symbols", "count"]
+    }
+  },
+  {
+    "name": "selectionRanges",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ranges": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": ["ranges", "count"]
+    }
+  },
+  {
+    "name": "sendHttpRequest",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "url"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+          "description": "HTTP method"
+        },
+        "url": {
+          "type": "string",
+          "description": "Full URL (http:// or https://)"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional request headers as key/value pairs"
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body. JSON: pass serialized string + Content-Type: application/json. Ignored for GET/HEAD."
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "description": "Timeout in ms (default: 30000, max: 120000)"
+        },
+        "maxResponseBytes": {
+          "type": "integer",
+          "description": "Maximum bytes to read from response body. Default: 51200, max: 1048576."
+        },
+        "followRedirects": {
+          "type": "boolean",
+          "description": "Follow HTTP redirects (max 10 hops, default: true)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "integer"
+        },
+        "statusText": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object"
+        },
+        "body": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "integer"
+        },
+        "redirects": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "fullBytes": {
+          "type": "integer"
+        }
+      },
+      "required": ["status", "body", "durationMs"]
+    }
+  },
+  {
+    "name": "sendTerminalCommand",
+    "inputSchema": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Text or command to send to the terminal"
+        },
+        "name": {
+          "type": "string",
+          "description": "Terminal name to send to"
+        },
+        "index": {
+          "type": "integer",
+          "description": "Terminal index (0-based) from listTerminals"
+        },
+        "addNewline": {
+          "type": "boolean",
+          "description": "Append newline to execute as command (default: true)"
+        },
+        "isCommand": {
+          "type": "boolean",
+          "description": "False for short stdin responses to interactive prompts (max 512 chars, no shell metacharacters). Default: true."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "sent": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  {
+    "name": "setActiveWorkspaceFolder",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute path to the workspace folder to activate"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "set": {
+          "type": "boolean"
+        },
+        "activeWorkspaceFolder": {
+          "type": "string"
+        }
+      },
+      "required": ["set", "activeWorkspaceFolder"]
+    }
+  },
+  {
+    "name": "setDebugBreakpoints",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["file", "breakpoints"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Absolute path to the file"
+        },
+        "breakpoints": {
+          "type": "array",
+          "description": "Breakpoints to set (replaces existing ones for this file)",
+          "items": {
+            "type": "object",
+            "required": ["line"],
+            "properties": {
+              "line": {
+                "type": "integer",
+                "description": "Line number (1-based)"
+              },
+              "condition": {
+                "type": "string",
+                "description": "Conditional expression"
+              },
+              "logMessage": {
+                "type": "string",
+                "description": "Logpoint message (no pause, just log)"
+              },
+              "hitCondition": {
+                "type": "string",
+                "description": "Hit condition (e.g. '>5')"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "breakpoints": {
+          "type": "array"
+        }
+      },
+      "required": ["breakpoints"]
+    }
+  },
+  {
+    "name": "setEditorDecorations",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["id", "file", "decorations"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Group name for decorations (alphanumeric + hyphens)"
+        },
+        "file": {
+          "type": "string",
+          "description": "Absolute path to the file to decorate"
+        },
+        "decorations": {
+          "type": "array",
+          "description": "Decorations to apply",
+          "items": {
+            "type": "object",
+            "required": ["startLine"],
+            "properties": {
+              "startLine": {
+                "type": "integer",
+                "description": "Start line (1-based)"
+              },
+              "endLine": {
+                "type": "integer",
+                "description": "End line (1-based, defaults to startLine)"
+              },
+              "message": {
+                "type": "string",
+                "description": "Inline message shown after the line"
+              },
+              "hoverMessage": {
+                "type": "string",
+                "description": "Tooltip shown on hover"
+              },
+              "style": {
+                "type": "string",
+                "enum": [
+                  "info",
+                  "warning",
+                  "error",
+                  "focus",
+                  "strikethrough",
+                  "dim"
+                ],
+                "description": "Visual style (default: info)"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "applied": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": ["applied"]
+    }
+  },
+  {
+    "name": "setHandoffNote",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "type": "string",
+          "maxLength": 10000,
+          "description": "Free-text context summary. Keep it concise — one to a few sentences describing what you were working on, key findings, and the next step."
+        }
+      },
+      "required": ["note"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "saved": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": ["saved", "updatedAt"]
+    }
+  },
+  {
+    "name": "setWorkspaceSetting",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["key", "value"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Setting key in dot notation (e.g. 'editor.tabSize')"
+        },
+        "value": {
+          "description": "New value for the setting"
+        },
+        "target": {
+          "type": "string",
+          "enum": ["workspace", "global"],
+          "description": "Which scope to write to (default: workspace)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {},
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": ["key"]
+    }
+  },
+  {
+    "name": "signatureHelp",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number (1-based, inside a function call)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column (1-based, inside a function call)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "activeSignature": {
+          "type": "integer"
+        },
+        "activeParameter": {
+          "type": "integer"
+        },
+        "signatures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "documentation": {
+                "type": ["string", "null"]
+              },
+              "parameters": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": ["string", "array"]
+                    },
+                    "documentation": {
+                      "type": ["string", "null"]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": ["found"]
+    }
+  },
+  {
+    "name": "startDebugging",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "configName": {
+          "type": "string",
+          "description": "Name of the launch configuration to use"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "started": {
+          "type": "boolean"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": ["started"]
+    }
+  },
+  {
+    "name": "stopDebugging",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "stopped": {
+          "type": "boolean"
+        }
+      },
+      "required": ["stopped"]
+    }
+  },
+  {
+    "name": "unwatchFiles",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID of the watcher to remove"
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "unwatched": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "updatePlan",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "fileName": {
+          "type": "string",
+          "description": "Plan filename (default: .claude-plan.md)"
+        },
+        "markComplete": {
+          "type": "array",
+          "description": "Task texts to mark as complete (substring match)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "markIncomplete": {
+          "type": "array",
+          "description": "Task texts to mark as incomplete (substring match)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "addTasks": {
+          "type": "array",
+          "description": "Tasks to add to a section",
+          "items": {
+            "type": "object",
+            "required": ["section", "tasks"],
+            "additionalProperties": false,
+            "properties": {
+              "section": {
+                "type": "string",
+                "description": "Section name to add tasks to"
+              },
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "addSections": {
+          "type": "array",
+          "description": "New sections to append",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "updated": {
+          "type": "boolean"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["updated", "changes"]
+    }
+  },
+  {
+    "name": "waitForTerminalOutput",
+    "inputSchema": {
+      "type": "object",
+      "required": ["pattern"],
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "JS regex to match against terminal output lines"
+        },
+        "name": {
+          "type": "string",
+          "description": "Terminal name (from listTerminals). Uses active if omitted."
+        },
+        "index": {
+          "type": "integer",
+          "description": "Terminal index (0-based) from listTerminals. Used if name omitted."
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Seconds to wait (default: 30, max: 300)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "matched": {
+          "type": "boolean"
+        },
+        "matchedLine": {
+          "type": "string"
+        },
+        "elapsed": {
+          "type": "integer"
+        },
+        "timedOut": {
+          "type": "boolean"
+        }
+      },
+      "required": ["matched"]
+    }
+  },
+  {
+    "name": "watchActivityLog",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sinceId": {
+          "type": "number",
+          "description": "Return entries with id > sinceId. Omit on first call."
+        },
+        "maxEntries": {
+          "type": "number",
+          "description": "Max entries to return (default: 10, max: 50)"
+        },
+        "timeoutMs": {
+          "type": "number",
+          "description": "Max wait in milliseconds (default: 2000, min: 1000, max: 30000)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "lastId": {
+          "type": "number"
+        },
+        "timedOut": {
+          "type": "boolean"
+        }
+      },
+      "required": ["entries", "count", "lastId", "timedOut"]
+    }
+  },
+  {
+    "name": "watchDiagnostics",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Optional: only watch diagnostics for this specific file"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "description": "Max wait time in milliseconds (default: 10000, max: 30000)"
+        },
+        "sinceTimestamp": {
+          "type": "integer",
+          "description": "Only return if diagnostics changed after this timestamp (from a previous watchDiagnostics call)"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "changed": {
+          "type": "boolean"
+        },
+        "timestamp": {
+          "type": "integer"
+        },
+        "diagnostics": {
+          "type": "array"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "linters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": ["changed", "timestamp", "diagnostics", "count"],
+      "description": "Diagnostic entries from extension path include firstSeenAt, recurrenceCount, and optional introducedByCommit fields."
+    }
+  },
+  {
+    "name": "watchFiles",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique ID for this watcher (used to unwatch later)"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Glob pattern to watch (e.g., '**/*.ts', 'src/**/*.{js,jsx}')"
+        }
+      },
+      "required": ["id", "pattern"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "watching": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "writeClipboard",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Text to write to clipboard"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        }
+      },
+      "required": ["success"]
+    }
+  }
+]
