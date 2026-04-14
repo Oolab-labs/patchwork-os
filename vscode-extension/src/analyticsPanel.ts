@@ -16,11 +16,21 @@ export interface AnalyticsReport {
     id: string;
     status: string;
     triggerSource?: string;
+    prompt?: string;
     durationMs?: number;
     createdAt: string;
   }>;
   hint?: string;
 }
+
+const PRESETS: Record<string, string> = {
+  fixErrors:
+    "Fix all errors and warnings shown in the diagnostics panel. Run tests after to confirm.",
+  refactorFile:
+    "Refactor the active file for clarity and maintainability. Keep behaviour identical.",
+  addTests:
+    "Add comprehensive unit tests for the active file. Follow existing test patterns in the project.",
+};
 
 export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = "claudeIdeBridge.analyticsView";
@@ -31,7 +41,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly getReport: () => Promise<AnalyticsReport | null>,
-    private readonly getLockFile: () => Promise<LockFileData | null>,
+    private readonly _getLockFile: () => Promise<LockFileData | null>,
     private readonly vscodeApi: typeof import("vscode"),
   ) {}
 
@@ -42,9 +52,32 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     const refresh = async () => {
       try {
         const report = await this.getReport();
-        webviewView.webview.html = this._buildHtml(report);
+        let handoffPreview: string | null = null;
+        try {
+          const lock = await this._getLockFile();
+          if (lock) {
+            const noteResult = (await this._callBridgeTool(
+              lock,
+              "getHandoffNote",
+              {},
+            )) as { content?: Array<{ text?: string }> } | null;
+            if (noteResult?.content?.[0]?.text) {
+              try {
+                const parsed = JSON.parse(noteResult.content[0].text) as {
+                  note?: string;
+                };
+                handoffPreview = parsed.note ?? null;
+              } catch {
+                handoffPreview = noteResult.content[0].text ?? null;
+              }
+            }
+          }
+        } catch {
+          // non-fatal
+        }
+        webviewView.webview.html = this._buildHtml(report, handoffPreview);
       } catch {
-        webviewView.webview.html = this._buildHtml(null);
+        webviewView.webview.html = this._buildHtml(null, null);
       }
     };
 
@@ -55,10 +88,19 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       if (this._refreshTimer) clearInterval(this._refreshTimer);
     });
 
-    webviewView.webview.onDidReceiveMessage((msg: { command: string }) => {
-      if (msg.command === "refresh") void refresh();
-      if (msg.command === "startTask") void this._handleStartTask(webviewView);
-    });
+    webviewView.webview.onDidReceiveMessage(
+      (msg: { command: string; taskId?: string; key?: string }) => {
+        if (msg.command === "refresh") void refresh();
+        if (msg.command === "startTask")
+          void this._handleStartTask(webviewView);
+        if (msg.command === "resumeTask" && msg.taskId)
+          void this._handleResumeTask(webviewView, msg.taskId);
+        if (msg.command === "preset" && msg.key)
+          void this._handlePreset(webviewView, msg.key);
+        if (msg.command === "continueHandoff")
+          void this._handleContinueHandoff(webviewView);
+      },
+    );
   }
 
   /** Call a bridge MCP tool via Streamable HTTP transport. */
@@ -217,24 +259,16 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       : description;
   }
 
-  private async _handleStartTask(
-    webviewView: vscode.WebviewView,
+  /** Shared logic: gather context + run a task with a pre-known description. */
+  private async _launchWithDescription(
+    description: string,
+    view: vscode.WebviewView,
   ): Promise<void> {
-    const vscode = this.vscodeApi;
+    view.webview.postMessage({ command: "taskStarting" });
 
-    const description = await vscode.window.showInputBox({
-      prompt: "What should Claude do?",
-      placeHolder: "Describe the task…",
-      ignoreFocusOut: true,
-    });
-
-    if (!description) return;
-
-    webviewView.webview.postMessage({ command: "taskStarting" });
-
-    const lock = await this.getLockFile();
+    const lock = await this._getLockFile();
     if (!lock) {
-      webviewView.webview.postMessage({
+      view.webview.postMessage({
         command: "taskError",
         message: "Bridge not connected — start the bridge first.",
       });
@@ -309,16 +343,127 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
         }
       }
 
-      webviewView.webview.postMessage({ command: "taskStarted", taskId });
+      view.webview.postMessage({ command: "taskStarted", taskId });
     } catch (err: unknown) {
-      webviewView.webview.postMessage({
+      view.webview.postMessage({
         command: "taskError",
         message: err instanceof Error ? err.message : String(err),
       });
     }
   }
 
-  private _buildHtml(report: AnalyticsReport | null): string {
+  private async _handleStartTask(
+    webviewView: vscode.WebviewView,
+  ): Promise<void> {
+    const vscode = this.vscodeApi;
+
+    const description = await vscode.window.showInputBox({
+      prompt: "What should Claude do?",
+      placeHolder: "Describe the task…",
+      ignoreFocusOut: true,
+    });
+
+    if (!description) return;
+
+    await this._launchWithDescription(description, webviewView);
+  }
+
+  private async _handlePreset(
+    view: vscode.WebviewView,
+    key: string,
+  ): Promise<void> {
+    const description = PRESETS[key];
+    if (!description) return;
+    await this._launchWithDescription(description, view);
+  }
+
+  private async _handleResumeTask(
+    view: vscode.WebviewView,
+    taskId: string,
+  ): Promise<void> {
+    view.webview.postMessage({
+      command: "taskStarting",
+      message: `Resuming ${taskId.slice(0, 8)}…`,
+    });
+    try {
+      const lock = await this._getLockFile();
+      if (!lock) throw new Error("Bridge not running");
+      const result = (await this._callBridgeTool(lock, "resumeClaudeTask", {
+        taskId,
+      })) as { content?: Array<{ text?: string }> } | null;
+      let newTaskId = "unknown";
+      if (result?.content?.[0]?.text) {
+        try {
+          const parsed = JSON.parse(result.content[0].text) as {
+            newTaskId?: string;
+          };
+          newTaskId = parsed.newTaskId ?? newTaskId;
+        } catch {
+          // ignore
+        }
+      }
+      view.webview.postMessage({ command: "taskStarted", taskId: newTaskId });
+    } catch (err) {
+      view.webview.postMessage({
+        command: "taskError",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private async _handleContinueHandoff(
+    view: vscode.WebviewView,
+  ): Promise<void> {
+    view.webview.postMessage({ command: "taskStarting" });
+    try {
+      const lock = await this._getLockFile();
+      if (!lock) throw new Error("Bridge not running");
+      const noteResult = (await this._callBridgeTool(
+        lock,
+        "getHandoffNote",
+        {},
+      )) as { content?: Array<{ text?: string }> } | null;
+      let note: string | null = null;
+      if (noteResult?.content?.[0]?.text) {
+        try {
+          const parsed = JSON.parse(noteResult.content[0].text) as {
+            note?: string;
+          };
+          note = parsed.note ?? null;
+        } catch {
+          note = noteResult.content[0].text ?? null;
+        }
+      }
+      if (!note?.trim()) throw new Error("No handoff note found");
+      const prompt = `Continue from where we left off.\n\nHandoff note:\n${note}\n\nPick up the next action and proceed.`;
+      const taskResult = (await this._callBridgeTool(lock, "runClaudeTask", {
+        prompt,
+        runInBackground: true,
+      })) as { content?: Array<{ text?: string }> } | null;
+      let taskId = "unknown";
+      if (taskResult?.content?.[0]?.text) {
+        try {
+          const parsed = JSON.parse(taskResult.content[0].text) as {
+            taskId?: string;
+          };
+          taskId = parsed.taskId ?? taskId;
+        } catch {
+          // ignore
+        }
+      }
+      view.webview.postMessage({ command: "taskStarted", taskId });
+    } catch (err) {
+      view.webview.postMessage({
+        command: "taskError",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private _buildHtml(
+    report: AnalyticsReport | null,
+    handoffPreview: string | null,
+  ): string {
     if (!report) {
       return `<html><body style="font-family:var(--vscode-font-family);padding:8px;color:var(--vscode-foreground)"><p>Bridge not connected.</p></body></html>`;
     }
@@ -331,13 +476,35 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       )
       .join("");
 
-    const taskRows = report.recentAutomationTasks
+    const taskItems = report.recentAutomationTasks
       .slice(0, 5)
-      .map(
-        (t) =>
-          `<tr><td>${_escHtml(t.triggerSource ?? "manual")}</td><td>${_escHtml(t.status)}</td><td>${t.durationMs != null ? `${t.durationMs}ms` : "—"}</td></tr>`,
-      )
+      .map((t) => {
+        const statusClass = ["done", "error", "running", "pending"].includes(
+          t.status,
+        )
+          ? t.status
+          : "pending";
+        const promptPreview = t.prompt
+          ? _escHtml(t.prompt.slice(0, 60)) + (t.prompt.length > 60 ? "…" : "")
+          : "(no prompt)";
+        return `<div class="task-item">
+  <div class="task-meta">
+    <span class="task-source">${_escHtml(t.triggerSource ?? "manual")}</span>
+    <span class="task-status ${statusClass}">${_escHtml(t.status)}</span>
+  </div>
+  <div class="task-prompt">${promptPreview}</div>
+  <button onclick="vscodeApi.postMessage({command:'resumeTask',taskId:'${_escHtml(t.id)}'})">\u21a9 Resume</button>
+</div>`;
+      })
       .join("");
+
+    const handoffBtnStyle = handoffPreview
+      ? ""
+      : ' style="opacity:0.5;cursor:not-allowed"';
+    const handoffPreviewText = handoffPreview
+      ? _escHtml(handoffPreview.slice(0, 80)) +
+        (handoffPreview.length > 80 ? "…" : "")
+      : "No handoff note available.";
 
     return `<!DOCTYPE html>
 <html>
@@ -348,19 +515,42 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   table { width: 100%; border-collapse: collapse; font-size: 11px; }
   td, th { padding: 2px 4px; border-bottom: 1px solid var(--vscode-widget-border, #333); text-align: left; }
   .stat { font-size: 22px; font-weight: 600; }
-  button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 8px; cursor: pointer; font-size: 11px; margin-top: 8px; margin-right: 4px; }
+  button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 8px; cursor: pointer; font-size: 11px; margin-top: 4px; margin-right: 4px; }
   #taskStatus { font-size: 11px; margin-top: 6px; color: var(--vscode-descriptionForeground); min-height: 16px; }
+  .task-item { border-bottom: 1px solid var(--vscode-widget-border, #333); padding: 4px 0; }
+  .task-meta { display: flex; gap: 6px; align-items: center; margin-bottom: 2px; }
+  .task-source { font-size: 10px; color: var(--vscode-descriptionForeground); }
+  .task-status { font-size: 10px; padding: 1px 4px; border-radius: 2px; }
+  .task-status.done { background: var(--vscode-testing-iconPassed, #3fb950); color: #000; }
+  .task-status.error { background: var(--vscode-testing-iconFailed, #f85149); color: #fff; }
+  .task-status.running, .task-status.pending { background: var(--vscode-terminal-ansiYellow, #e3b341); color: #000; }
+  .task-prompt { font-size: 10px; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .presets { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+  .presets button { text-align: left; }
 </style>
 </head>
 <body>
+<h3>Session continuity</h3>
+<button id="handoffBtn"${handoffBtnStyle} onclick="vscodeApi.postMessage({command:'continueHandoff'})">\u27f3 Continue from handoff note</button>
+<div id="handoffPreview" style="font-size:10px;color:var(--vscode-descriptionForeground);margin:2px 0 8px;">${handoffPreviewText}</div>
+
+<h3>Quick tasks</h3>
+<div class="presets">
+  <button onclick="vscodeApi.postMessage({command:'preset',key:'fixErrors'})">&#x1F527; Fix all errors</button>
+  <button onclick="vscodeApi.postMessage({command:'preset',key:'refactorFile'})">&#x267B; Refactor this file</button>
+  <button onclick="vscodeApi.postMessage({command:'preset',key:'addTests'})">&#x2713; Add tests</button>
+</div>
+
 <h3>Hooks fired (${report.windowHours}h)</h3>
 <div class="stat">${report.hooksLast24h}</div>
 <h3>Top tools</h3>
 <table><tr><th>Tool</th><th>Calls</th><th>Err</th><th>Avg</th></tr>${toolRows || "<tr><td colspan=4>No data</td></tr>"}</table>
 <h3>Recent automation tasks</h3>
-<table><tr><th>Hook</th><th>Status</th><th>Duration</th></tr>${taskRows || "<tr><td colspan=3>No tasks</td></tr>"}</table>
-<button onclick="vscodeApi.postMessage({command:'refresh'})">&#8635; Refresh</button>
-<button onclick="vscodeApi.postMessage({command:'startTask'})">&#9654; Start Task</button>
+${taskItems || "<p style='font-size:11px'>No tasks yet.</p>"}
+<div style="margin-top:8px">
+  <button onclick="vscodeApi.postMessage({command:'refresh'})">&#8635; Refresh</button>
+  <button onclick="vscodeApi.postMessage({command:'startTask'})">&#9654; Start Task</button>
+</div>
 <div id="taskStatus"></div>
 <script>
 const vscodeApi = acquireVsCodeApi();
@@ -369,7 +559,7 @@ window.addEventListener('message', function(event) {
   var el = document.getElementById('taskStatus');
   if (!el) return;
   if (msg.command === 'taskStarting') {
-    el.textContent = 'Starting task\u2026';
+    el.textContent = msg.message || 'Starting task\u2026';
   } else if (msg.command === 'taskStarted') {
     el.textContent = 'Task started: ' + msg.taskId;
     setTimeout(function() { if (el.textContent && el.textContent.startsWith('Task started')) el.textContent = ''; }, 5000);
