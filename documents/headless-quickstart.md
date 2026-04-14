@@ -1,159 +1,382 @@
-# Headless / CI Quickstart
+# Headless Mode Quickstart
 
-Using claude-ide-bridge without VS Code — for CI pipelines, remote servers, and automated workflows.
+## What is Headless Mode?
 
-## What works without the extension
+The bridge runs without VS Code attached. No extension means no LSP, debugger, or editor state tools. BUT a subset of tools remain available via built-in fallbacks: filesystem, shell, git, and limited code navigation via `typescript-language-server` and `ctags`.
 
-Bridge runs fully headless (no VS Code extension required) for:
+Use cases: CI pipelines, Docker containers, VPS deployments, GitHub Actions, server-side automation.
 
-| Category | Tools |
-|---|---|
-| **Diagnostics** | `getDiagnostics` — falls back to tsc, eslint, biome, pyright, ruff, cargo check, go vet |
-| **Formatting** | `formatDocument` — falls back to prettier, biome, rustfmt, gofmt, black, ruff |
-| **Git** | `getGitStatus`, `getGitDiff`, `getGitLog`, `gitAdd`, `gitCommit`, `gitPush`, `gitBlame`, `gitCheckout`, `gitListBranches`, `gitPull`, `gitFetch`, `gitStash*`, `getDiffBetweenRefs`, `getCommitDetails`, `getGitHotspots` |
-| **GitHub** | `githubListPRs`, `githubCreatePR`, `githubViewPR`, `githubGetPRDiff`, `githubListIssues`, `githubCreateIssue`, `githubCommentIssue`, `githubListRuns`, `githubGetRunLogs` |
-| **Test runners** | `runTests` — vitest, jest, pytest, cargo test, go test |
-| **Terminal** | `runCommand`, `runInTerminal`, `getTerminalOutput`, `sendTerminalCommand`, `listTerminals` |
-| **File ops** | `getFileTree`, `findFiles`, `getBufferContent`, `editText`, `createFile`, `renameFile`, `deleteFile`, `searchAndReplace`, `searchWorkspace` |
-| **HTTP** | `sendHttpRequest`, `parseHttpFile` |
-| **Symbol search** | `getDocumentSymbols` (grep fallback), `searchWorkspace`, `searchWorkspaceSymbols` (with universal-ctags) |
-| **Automation** | All hooks (`onFileSave`, `onGitCommit`, `onTestRun`, etc.) |
-| **Bridge meta** | `getBridgeStatus`, `bridgeDoctor`, `getToolCapabilities`, `getActivityLog` |
+---
 
-## What requires the VS Code extension
+## Probe Table
 
-These tools return `isError: true` when the extension is disconnected:
+At startup the bridge probes for available CLIs. Tool availability depends on what is found:
 
-- **LSP tools**: `goToDefinition`, `findReferences`, `getHoverAtCursor`, `getTypeSignature`, `getCallHierarchy`, `getTypeHierarchy`, `getDocumentLinks`, `getInlayHints`, `getCodeLens`, `getSemanticTokens`, `signatureHelp`, `selectionRanges`, `foldingRanges`, `getImportedSignatures`, `getChangeImpact`
-- **Refactoring**: `refactorAnalyze`, `refactorPreview`, `renameSymbol`, `refactorExtractFunction`, `prepareRename`
-- **Debugger**: `setDebugBreakpoints`, `startDebugging`, `stopDebugging`, `evaluateInDebugger`, `getDebugState`
-- **Editor state**: `getOpenEditors`, `getBufferContent` (extension path), `setEditorDecorations`, `clearEditorDecorations`, `captureScreenshot`, `openFile`, `closeTab`, `openDiff`
-- **VS Code specific**: `getWorkspaceSettings`, `setWorkspaceSetting`, `executeVSCodeCommand`, `listVSCodeCommands`, `listVSCodeTasks`, `runVSCodeTask`
+| Probe | CLI checked | Tools unlocked | Notes |
+|-------|-------------|----------------|-------|
+| `rg` | `rg` (ripgrep) | `searchWorkspace`, `findRelatedTests` (rg path) | Alpine: `apk add ripgrep` |
+| `ctags` | `ctags --version \| grep "Universal Ctags"` | `searchWorkspaceSymbols` ctags fallback, `navigateToSymbolByName` | Alpine: `apk add ctags` |
+| `typescript-language-server` | `typescript-language-server --version` | `goToDefinition`, `findReferences`, `getTypeSignature` LSP fallback | `npm i -g typescript-language-server typescript` |
+| `gh` | `gh auth status` | `githubCreatePR`, `listPRs`, GitHub tools | Install GitHub CLI |
+| `git` | `git --version` | All git tools | Usually pre-installed |
 
-> **Planned**: `goToDefinition`, `findReferences`, and `getTypeSignature` will gain a headless fallback via `typescript-language-server` in a future release.
+Call `getBridgeStatus` after connecting to see which probes passed and which tools are available.
 
-## Required probes
+---
 
-Install these to unlock the corresponding headless tools:
+## What Works Without the Extension
 
-```bash
-# Git (usually pre-installed)
-git --version
+### Files
 
-# GitHub CLI — for all githubXxx tools
-brew install gh        # macOS
-sudo apt install gh    # Ubuntu
+| Tool | Notes |
+|------|-------|
+| `getFileTree` | Directory listing, depth-limited |
+| `findFiles` | Glob pattern search |
+| `getBufferContent` | Reads from disk (no open editor buffer) |
+| `createFile` | Write new file to workspace |
+| `editText` | Line-range edit on disk |
+| `deleteFile` | Remove file from workspace |
 
-# Test runners — bridge auto-detects
-npm install -g vitest  # or jest
-pip install pytest
-# cargo and go are checked via PATH
+### Search
 
-# ripgrep — for searchWorkspace
-brew install ripgrep
-sudo apt install ripgrep
+| Tool | Notes |
+|------|-------|
+| `searchWorkspace` | Requires `rg` probe |
+| `findFiles` | Glob, always available |
+| `findRelatedTests` | rg path; requires `rg` probe |
 
-# Universal Ctags — for searchWorkspaceSymbols headless fallback
-brew install universal-ctags
-sudo apt install universal-ctags   # NOT: apt install ctags (that's exuberant-ctags)
+### Git
 
-# typescript-language-server — planned LSP fallback (not yet active)
-npm install -g typescript-language-server typescript
+| Tool | Notes |
+|------|-------|
+| `getGitStatus` | Working tree status |
+| `getGitDiff` | Staged and unstaged diffs |
+| `getGitLog` | Commit history |
+| `gitAdd` | Stage files |
+| `gitCommit` | Create commit |
+| `gitPush` | Push to remote |
+| `gitBlame` | Line-level blame |
+| `gitCheckout` | Switch or create branch |
+| `gitPull` | Pull from remote |
+| `gitListBranches` | List local and remote branches |
+
+### GitHub (requires `gh`)
+
+| Tool | Notes |
+|------|-------|
+| `githubCreatePR` | Open pull request |
+| `listPRs` | List open PRs |
+| `getIssues` | List issues |
+
+### Shell
+
+| Tool | Notes |
+|------|-------|
+| `runInTerminal` | Spawn shell command |
+| `getTerminalOutput` | Read terminal output buffer |
+| `runCommand` | Allowlisted command execution |
+
+### Code Navigation (fallback paths)
+
+| Tool | Fallback | Requires |
+|------|----------|----------|
+| `goToDefinition` | `typescript-language-server` LSP | TSServer probe |
+| `findReferences` | `typescript-language-server` LSP | TSServer probe |
+| `getTypeSignature` | `typescript-language-server` LSP | TSServer probe |
+| `searchWorkspaceSymbols` | `ctags --output-format=json` | Universal Ctags probe |
+| `navigateToSymbolByName` | `rg` declaration-pattern search | `rg` probe |
+
+### Quality and Orchestration
+
+| Tool | Notes |
+|------|-------|
+| `auditDependencies` | Checks for outdated packages |
+| `getSecurityAdvisories` | CVE scan |
+| `runTests` | vitest / jest / pytest / cargo / go test |
+| `runClaudeTask` | Requires `--claude-driver subprocess` or `api` |
+| `listClaudeTasks` | Requires `--claude-driver` |
+| `getClaudeTaskStatus` | Requires `--claude-driver` |
+
+---
+
+## What Requires the Extension
+
+| Category | Tools | Why |
+|----------|-------|-----|
+| LSP (full) | `getDiagnostics`, `getDocumentSymbols`, `getHover`, `signatureHelp`, `getInlayHints`, `getCallHierarchy`, `getTypeHierarchy`, `getCodeActions`, `getCodeLens`, `getSemanticTokens`, `watchDiagnostics` | Language server runs inside VS Code |
+| Debugger | `setDebugBreakpoints`, `startDebugging`, `evaluateInDebugger`, `stopDebugging` | Debug adapter lives in VS Code |
+| Editor state | `getOpenEditors`, `captureScreenshot`, `contextBundle`, `getHoverAtCursor` | VS Code window required |
+| Formatting | `formatDocument`, `fixAllLintErrors` | Extension invokes VS Code formatter |
+| VS Code commands | `executeVSCodeCommand`, `listVSCodeTasks`, `runVSCodeTask` | VS Code runtime required |
+| Decorations | `setEditorDecorations`, `clearEditorDecorations` | VS Code renderer required |
+
+---
+
+## Docker Setup
+
+The official Docker image includes all probes pre-installed:
+
+```dockerfile
+FROM ghcr.io/oolab-labs/claude-ide-bridge:latest
 ```
 
-Run `getBridgeStatus` to see which probes are detected and which tools are available.
+Or build your own Dockerfile (Alpine base):
 
-## Checking probe status
+```dockerfile
+FROM node:20-alpine
+
+RUN apk add --no-cache tini ctags ripgrep git curl bash
+
+RUN npm install -g claude-ide-bridge typescript-language-server typescript
+
+WORKDIR /workspace
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["claude-ide-bridge", "--workspace", "/workspace", "--bind", "0.0.0.0", "--full"]
+```
+
+Start a container with workspace bind-mount:
+
+```bash
+docker run \
+  -v /your/project:/workspace \
+  -v ~/.claude:/root/.claude \
+  -p 18765:18765 \
+  ghcr.io/oolab-labs/claude-ide-bridge:latest \
+  --workspace /workspace --bind 0.0.0.0
+```
+
+The `~/.claude` bind-mount lets `print-token` work from the host:
+
+```bash
+claude-ide-bridge print-token --port 18765
+```
+
+### docker-compose example
+
+```yaml
+services:
+  bridge:
+    image: ghcr.io/oolab-labs/claude-ide-bridge:latest
+    ports:
+      - "18765:18765"
+    volumes:
+      - ./:/workspace
+      - ~/.claude:/root/.claude
+    command: >
+      --workspace /workspace
+      --bind 0.0.0.0
+      --full
+      --watch
+    restart: unless-stopped
+```
+
+---
+
+## GitHub Actions
+
+```yaml
+name: Bridge analysis
+
+on: [push]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bridge
+        run: npm install -g claude-ide-bridge typescript-language-server typescript
+
+      - name: Install probes
+        run: sudo apt-get install -y ripgrep universal-ctags
+
+      - name: Start bridge
+        run: |
+          claude-ide-bridge --workspace . --full &
+          sleep 2
+
+      - name: Print auth token
+        run: claude-ide-bridge print-token
+
+      - name: Run analysis via Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          TOKEN=$(claude-ide-bridge print-token)
+          # Use token with your MCP-aware Claude invocation
+```
+
+### Minimal CI config (no full probe install)
+
+If you only need git and shell tools, skip the probe installs — the bridge starts fine without them and degrades gracefully:
+
+```yaml
+- name: Start bridge (minimal)
+  run: |
+    npx claude-ide-bridge --workspace . &
+    sleep 2
+```
+
+Probes not found at startup emit a single `WARN probe not found: <name>` log line and those fallback paths are disabled. Everything else continues normally.
+
+---
+
+## Getting the Auth Token Headless
+
+The bridge writes a lock file at `$CLAUDE_CONFIG_DIR/ide/<port>.lock` containing the auth token:
+
+```bash
+# Print token for the default port (18765)
+claude-ide-bridge print-token
+
+# Specify port explicitly
+claude-ide-bridge print-token --port 18766
+
+# Read raw JSON from lock file
+cat ~/.claude/ide/18765.lock
+```
+
+The lock file JSON structure:
 
 ```json
-// Call getBridgeStatus tool
 {
-  "toolAvailability": {
-    "runTests": { "available": true, "probe": "vitest" },
-    "getGitStatus": { "available": true, "probe": "git" },
-    "githubCreatePR": { "available": false, "probe": "gh" },
-    "formatDocument": { "available": true, "extensionFallback": true, "probe": "prettier" }
-  },
-  "extensionConnected": false
+  "pid": 12345,
+  "workspace": "/your/project",
+  "authToken": "abc123...",
+  "isBridge": true,
+  "port": 18765
 }
 ```
 
-## GitHub Actions example
+Use the token in the `x-claude-code-ide-authorization` header for WebSocket connections, or as a Bearer token for Streamable HTTP (`Authorization: Bearer <token>`).
 
-```yaml
-name: Claude Bridge CI
-on: [push, pull_request]
+---
 
-jobs:
-  bridge-review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+## TypeScript LSP Fallback Details
 
-      - name: Install dependencies
-        run: npm ci
+When the extension is absent, the bridge spawns `typescript-language-server --stdio` lazily on the first LSP tool call. It targets the workspace root.
 
-      - name: Install bridge probes
-        run: |
-          sudo apt-get install -y universal-ctags ripgrep
-          npm install -g typescript-language-server typescript
+**Initialization:** ~2s on first call (cold start). Subsequent calls reuse the singleton process.
 
-      - name: Install and start bridge
-        run: |
-          npm install -g claude-ide-bridge
-          claude-ide-bridge --workspace $(pwd) --port 37100 &
-          # Wait for bridge to be ready
-          for i in $(seq 1 20); do
-            curl -sf http://127.0.0.1:37100/ping && break
-            sleep 0.5
-          done
+**Workspace requirements:** `node_modules` must be present. Run `npm install` before starting the bridge if you need accurate type resolution.
 
-      - name: Get bridge token
-        run: |
-          TOKEN=$(claude-ide-bridge print-token --port 37100)
-          echo "BRIDGE_TOKEN=$TOKEN" >> $GITHUB_ENV
-          echo "BRIDGE_PORT=37100" >> $GITHUB_ENV
+**Supported fallback tools:**
 
-      - name: Run diagnostics check
-        run: |
-          # Call bridge via MCP HTTP transport
-          curl -sf -X POST http://127.0.0.1:$BRIDGE_PORT/mcp \
-            -H "Authorization: Bearer $BRIDGE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1.0"}}}'
-```
+| Tool | Fallback behavior |
+|------|-------------------|
+| `goToDefinition` | TS LSP `textDocument/definition` |
+| `findReferences` | TS LSP `textDocument/references` |
+| `getTypeSignature` | TS LSP `textDocument/hover` (extracts type from hover markdown) |
 
-## VPS / remote deployment
+**Limitations vs extension-backed LSP:**
 
-For VPS deployments (bound to `0.0.0.0`):
+- `getDiagnostics` is not available headless — compilation errors require VS Code
+- `getDocumentSymbols` headless path is not implemented
+- Hover, references, and definition work but may be slower than the VS Code language client
+- Multi-root workspaces: fallback targets the first workspace folder only
+
+---
+
+## VPS / Remote Server
+
+For a persistent headless deployment on a VPS:
 
 ```bash
+# Install
+npm install -g claude-ide-bridge
+
+# Start with fixed token (prevents rotation on restart)
 claude-ide-bridge \
+  --workspace /srv/myproject \
   --bind 0.0.0.0 \
-  --port 18765 \
-  --vps \
-  --fixed-token <uuid> \
-  --workspace /var/www/myapp
+  --full \
+  --fixed-token "$(uuidgen)" \
+  --watch \
+  --vps
 ```
 
-See `deploy/` for systemd service templates and nginx reverse proxy configuration.
+Use a reverse proxy (nginx or Caddy) with TLS in front. See `docs/remote-access.md` for full proxy config.
 
-**Security note for VPS**: All HTTP endpoints (including any future status UI) should be restricted at the nginx/firewall level to trusted IPs for public-facing deployments. The bridge itself validates the Bearer token on all MCP requests but diagnostic endpoints (`/health`, `/metrics`) are unauthenticated.
-
-## Smoke-testing your headless setup
-
-After starting the bridge, verify tool availability:
+For systemd service installation:
 
 ```bash
-# Quick health check
-curl -s http://127.0.0.1:37100/health | jq .
-
-# Full bridge status including probe availability
-TOKEN=$(claude-ide-bridge print-token --port 37100)
-# Then call getBridgeStatus via your MCP client
+bash deploy/install-vps-service.sh
 ```
 
-Run `npm run test:smoke` from the bridge repo to validate all categories including headless-compatible categories (git, tools, rate limiting, health).
+Or full VPS provisioning (installs Node, bridge, nginx, systemd unit):
+
+```bash
+bash deploy/bootstrap-new-vps.sh
+```
+
+---
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Lock file and token location |
+| `BRIDGE_BIND_ADDRESS` | `127.0.0.1` | Bind address (`0.0.0.0` for containers) |
+| `PORT` | `18765` | Listen port |
+| `CLAUDE_IDE_BRIDGE_CORS_ORIGINS` | _(none)_ | Comma-separated CORS origins for OAuth mode |
+
+---
+
+## Checking Tool Availability at Runtime
+
+After connecting, call `getBridgeStatus` to see the full picture:
+
+```json
+{
+  "extensionConnected": false,
+  "probes": {
+    "rg": true,
+    "ctags": true,
+    "typescriptLanguageServer": true,
+    "gh": false,
+    "git": true
+  },
+  "toolAvailability": {
+    "goToDefinition": { "available": true, "extensionFallback": true },
+    "getDiagnostics": { "available": false, "extensionRequired": true },
+    "searchWorkspace": { "available": true, "probe": "rg" }
+  }
+}
+```
+
+Tools with `extensionRequired: true` and no fallback are unavailable until a VS Code extension connects. Tools with `extensionFallback: true` degrade to the CLI fallback path automatically.
+
+---
+
+## Troubleshooting
+
+**"Tool X unavailable" in headless mode**
+
+Check `getBridgeStatus.toolAvailability`. If the relevant probe shows `false`, install the CLI and restart the bridge.
+
+**`typescript-language-server` not finding types**
+
+Ensure `node_modules` is present in the workspace root. Run `npm install` first. The LSP server needs installed packages to resolve imports.
+
+**`getBufferContent` returns disk content, not editor buffer**
+
+Expected in headless mode — there is no open editor. Content is read directly from disk. This is correct behavior.
+
+**Ctags fallback returns no results**
+
+Run `ctags --version` and confirm "Universal Ctags" appears in the output. The standard `exuberant-ctags` package does not support `--output-format=json` and will not be detected. On Alpine use `apk add ctags`; on Ubuntu use `apt-get install universal-ctags`.
+
+**Bridge exits immediately in Docker**
+
+Ensure you are not running as PID 1 without a proper init. Use `tini` (`/sbin/tini --`) as the entrypoint, or add `--init` to `docker run`. The `SIGTERM` handler in the bridge expects a normal process tree.
+
+**`print-token` returns "no lock file found"**
+
+The bridge may not have started yet, or it is writing to a different `CLAUDE_CONFIG_DIR`. Check that `CLAUDE_CONFIG_DIR` matches between the bridge process and the `print-token` call. In Docker, verify the volume mount covers `~/.claude` (or whatever `CLAUDE_CONFIG_DIR` is set to).
+
+**Rate limiting in CI (`-32004` errors)**
+
+The bridge enforces 200 requests/min per session. CI scripts that hammer the bridge in a tight loop will hit this. Add a short delay between batched calls, or increase the limit with `--tool-rate-limit <n>`.
