@@ -53,6 +53,18 @@ const TOOL_AVAILABILITY_TABLE: Record<
   formatDocument: { probe: "prettier", extensionFallback: true },
   searchWorkspaceSymbols: { probe: "universalCtags", extensionFallback: true },
   navigateToSymbolByName: { probe: "rg", extensionFallback: true },
+  goToDefinition: {
+    probe: "typescriptLanguageServer",
+    extensionFallback: true,
+  },
+  findReferences: {
+    probe: "typescriptLanguageServer",
+    extensionFallback: true,
+  },
+  getTypeSignature: {
+    probe: "typescriptLanguageServer",
+    extensionFallback: true,
+  },
   // Pure-probe tools (no extension path)
   runTests: { probe: "vitest" },
   getGitStatus: { probe: "git" },

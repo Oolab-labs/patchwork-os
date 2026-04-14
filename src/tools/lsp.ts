@@ -2,6 +2,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
+import { lspDefinition, lspReferences } from "./headless/lspFallback.js";
 import {
   error,
   extensionRequired,
@@ -129,11 +130,12 @@ export function lspColdStartError() {
 export function createGoToDefinitionTool(
   workspace: string,
   extensionClient: ExtensionClient,
+  hasTypescriptLsp = false,
 ) {
   return {
     schema: {
       name: "goToDefinition",
-      extensionRequired: true,
+      extensionFallback: true,
       description:
         "Go to the definition of a symbol at a given position using VS Code LSP.",
       annotations: { readOnlyHint: true },
@@ -176,31 +178,65 @@ export function createGoToDefinitionTool(
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features", [
-          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
-          "Use getDiagnostics for lint/type-check results from CLI linters",
-        ]);
-      }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
         workspace,
       );
       const line = requireInt(args, "line");
       const column = requireInt(args, "column");
-      const result = await lspWithRetry(
-        () => extensionClient.goToDefinition(filePath, line, column, signal),
-        signal,
-        readinessChecker(extensionClient, filePath),
-      );
-      if (result === "timeout") return lspColdStartError();
-      if (result === null) {
-        return successStructured({
-          found: false,
-          message: "No definition found at this position",
-        });
+
+      if (extensionClient.isConnected()) {
+        const result = await lspWithRetry(
+          () => extensionClient.goToDefinition(filePath, line, column, signal),
+          signal,
+          readinessChecker(extensionClient, filePath),
+        );
+        if (result === "timeout") return lspColdStartError();
+        if (result === null) {
+          return successStructured({
+            found: false,
+            message: "No definition found at this position",
+          });
+        }
+        return successStructured(result);
       }
-      return successStructured(result);
+
+      // Headless fallback via typescript-language-server
+      if (hasTypescriptLsp && workspace) {
+        try {
+          const locs = await lspDefinition(filePath, line, column, workspace);
+          if (locs.length === 0) {
+            return successStructured({
+              found: false,
+              message: "No definition found at this position",
+            });
+          }
+          const first = locs[0];
+          if (!first) {
+            return successStructured({
+              found: false,
+              message: "No definition found at this position",
+            });
+          }
+          return successStructured({
+            found: true,
+            uri: first.uri,
+            range: {
+              startLine: first.range.start.line + 1,
+              startColumn: first.range.start.character + 1,
+              endLine: first.range.end.line + 1,
+              endColumn: first.range.end.character + 1,
+            },
+          });
+        } catch {
+          // fall through to extensionRequired
+        }
+      }
+
+      return extensionRequired("LSP features", [
+        "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+        "Use getDiagnostics for lint/type-check results from CLI linters",
+      ]);
     },
   };
 }
@@ -208,11 +244,12 @@ export function createGoToDefinitionTool(
 export function createFindReferencesTool(
   workspace: string,
   extensionClient: ExtensionClient,
+  hasTypescriptLsp = false,
 ) {
   return {
     schema: {
       name: "findReferences",
-      extensionRequired: true,
+      extensionFallback: true,
       description:
         "Find all references to a symbol at a given position using VS Code LSP.",
       annotations: { readOnlyHint: true },
@@ -261,12 +298,6 @@ export function createFindReferencesTool(
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
-      if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features", [
-          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
-          "Use getDiagnostics for lint/type-check results from CLI linters",
-        ]);
-      }
       const filePath = resolveFilePath(
         requireString(args, "filePath"),
         workspace,
@@ -278,30 +309,66 @@ export function createFindReferencesTool(
       if (offset === null) {
         return error("Invalid cursor");
       }
-      const result = await lspWithRetry(
-        () => extensionClient.findReferences(filePath, line, column, signal),
-        signal,
-        readinessChecker(extensionClient, filePath),
-      );
-      if (result === "timeout") return lspColdStartError();
-      if (result === null) {
-        return successStructured({ found: false, references: [], total: 0 });
+
+      if (extensionClient.isConnected()) {
+        const result = await lspWithRetry(
+          () => extensionClient.findReferences(filePath, line, column, signal),
+          signal,
+          readinessChecker(extensionClient, filePath),
+        );
+        if (result === "timeout") return lspColdStartError();
+        if (result === null) {
+          return successStructured({ found: false, references: [], total: 0 });
+        }
+        const allRefs = Array.isArray(
+          (result as { references?: unknown[] }).references,
+        )
+          ? (result as { references: unknown[] }).references
+          : [];
+        const page = allRefs.slice(offset, offset + PAGE_SIZE);
+        const out: Record<string, unknown> = {
+          ...(result as Record<string, unknown>),
+          references: page,
+          total: allRefs.length,
+        };
+        if (offset + PAGE_SIZE < allRefs.length) {
+          out.nextCursor = encodeCursor(offset + PAGE_SIZE);
+        }
+        return successStructured(out);
       }
-      const allRefs = Array.isArray(
-        (result as { references?: unknown[] }).references,
-      )
-        ? (result as { references: unknown[] }).references
-        : [];
-      const page = allRefs.slice(offset, offset + PAGE_SIZE);
-      const out: Record<string, unknown> = {
-        ...(result as Record<string, unknown>),
-        references: page,
-        total: allRefs.length,
-      };
-      if (offset + PAGE_SIZE < allRefs.length) {
-        out.nextCursor = encodeCursor(offset + PAGE_SIZE);
+
+      // Headless fallback via typescript-language-server
+      if (hasTypescriptLsp && workspace) {
+        try {
+          const locs = await lspReferences(filePath, line, column, workspace);
+          const page = locs.slice(offset, offset + PAGE_SIZE);
+          const refs = page.map((l) => ({
+            uri: l.uri,
+            range: {
+              startLine: l.range.start.line + 1,
+              startColumn: l.range.start.character + 1,
+              endLine: l.range.end.line + 1,
+              endColumn: l.range.end.character + 1,
+            },
+          }));
+          const out: Record<string, unknown> = {
+            found: locs.length > 0,
+            references: refs,
+            total: locs.length,
+          };
+          if (offset + PAGE_SIZE < locs.length) {
+            out.nextCursor = encodeCursor(offset + PAGE_SIZE);
+          }
+          return successStructured(out);
+        } catch {
+          // fall through to extensionRequired
+        }
       }
-      return successStructured(out);
+
+      return extensionRequired("LSP features", [
+        "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
+        "Use getDiagnostics for lint/type-check results from CLI linters",
+      ]);
     },
   };
 }
@@ -1054,7 +1121,7 @@ async function searchWithCtags(
           line?: number;
           scope?: string;
         };
-        if (!tag.name || !tag.name.toLowerCase().includes(lowerQuery)) continue;
+        if (!tag.name?.toLowerCase().includes(lowerQuery)) continue;
         symbols.push({
           name: tag.name,
           kind: tag.kind ?? "unknown",

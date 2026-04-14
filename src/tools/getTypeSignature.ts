@@ -2,6 +2,7 @@ import {
   type ExtensionClient,
   ExtensionTimeoutError,
 } from "../extensionClient.js";
+import { lspHover } from "./headless/lspFallback.js";
 import {
   error,
   extensionRequired,
@@ -10,11 +11,15 @@ import {
   successStructured,
 } from "./utils.js";
 
-export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
+export function createGetTypeSignatureTool(
+  extensionClient: ExtensionClient,
+  workspace = "",
+  hasTypescriptLsp = false,
+) {
   return {
     schema: {
       name: "getTypeSignature",
-      extensionRequired: true,
+      extensionFallback: true,
       description:
         "Type signature for symbol at position via LSP hover. Returns clean signature from hover markdown.",
       annotations: { readOnlyHint: true },
@@ -48,6 +53,38 @@ export function createGetTypeSignatureTool(extensionClient: ExtensionClient) {
       const column = requireInt(args, "column", 1);
 
       if (!extensionClient.isConnected()) {
+        // Headless fallback via typescript-language-server
+        if (hasTypescriptLsp && workspace) {
+          try {
+            const hoverText = await lspHover(file, line, column, workspace);
+            if (!hoverText) {
+              return successStructured({ found: false, file, line, column });
+            }
+            let signature: string | null = null;
+            const match = hoverText.match(
+              /```(?:typescript|ts)\n([\s\S]*?)```/,
+            );
+            if (match) {
+              signature = match[1]?.trim() ?? null;
+            }
+            if (!signature) {
+              signature = hoverText.trim() || null;
+            }
+            if (!signature) {
+              return successStructured({ found: false, file, line, column });
+            }
+            return successStructured({
+              found: true,
+              file,
+              line,
+              column,
+              signature,
+              raw: [hoverText],
+            });
+          } catch {
+            // fall through to extensionRequired
+          }
+        }
         return extensionRequired("getTypeSignature");
       }
 
