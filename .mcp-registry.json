@@ -1,0 +1,32 @@
+{
+  "name": "claude-ide-bridge",
+  "description": "140 VS Code LSP tools for Claude — diagnostics, refactoring, git, debugging, test runners, GitHub Actions, and more. Bridges Claude AI to VS Code via WebSockets with real-time IDE context.",
+  "homepage": "https://github.com/Oolab-labs/claude-ide-bridge",
+  "npm": "claude-ide-bridge",
+  "transports": ["stdio", "streamable-http"],
+  "tags": [
+    "vscode",
+    "lsp",
+    "ide",
+    "typescript",
+    "debugging",
+    "git",
+    "github",
+    "refactoring",
+    "testing"
+  ],
+  "license": "MIT",
+  "toolCount": 140,
+  "features": [
+    "LSP: go-to-definition, find-references, hover, call hierarchy, rename, code actions",
+    "Debugger: set breakpoints, start session, evaluate expressions",
+    "Git: status, diff, commit, push, pull, branch, stash",
+    "GitHub: PRs, issues, Actions runs and logs",
+    "Diagnostics: TypeScript, ESLint, Biome, Ruff, Pyright, and more",
+    "Test runners: Vitest, Jest, Pytest, Cargo",
+    "Automation: 12 event-driven hooks (file save, git events, diagnostics, PR)",
+    "Plugin system: extend with custom tools via npm packages",
+    "OAuth 2.0: remote deployment with claude.ai custom connectors"
+  ],
+  "note": "This file is a reference copy for registry re-submissions. Actual submission is a PR to modelcontextprotocol/registry."
+}

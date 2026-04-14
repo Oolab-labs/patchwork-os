@@ -183,6 +183,18 @@ export interface OnTestRunPolicy extends PromptSource {
   cooldownMs: number;
 }
 
+export interface OnTestPassAfterFailurePolicy extends PromptSource {
+  enabled: boolean;
+  /**
+   * Fired when a test run transitions from failing → passing for the same runner.
+   * Per-runner state is tracked so vitest passing after a jest failure does NOT
+   * trigger — only the runner that was previously failing then passes triggers the hook.
+   * Placeholders (inline prompt only): {{runner}}, {{passed}}, {{total}}
+   */
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
 /** Minimal test run result passed to handleTestRun — avoids importing TestResult from tool files. */
 export interface TestRunResult {
   runners: string[];
@@ -367,6 +379,8 @@ export interface AutomationPolicy {
   onInstructionsLoaded?: OnInstructionsLoadedPolicy;
   /** Fired after every runTests call (or only on failures, depending on onFailureOnly). */
   onTestRun?: OnTestRunPolicy;
+  /** Fired when a test run transitions from failing → passing for the same runner. */
+  onTestPassAfterFailure?: OnTestPassAfterFailurePolicy;
   /** Fired after every successful gitCommit call. */
   onGitCommit?: OnGitCommitPolicy;
   /** Fired after every successful gitPush call. */
@@ -732,6 +746,27 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onTestPassAfterFailure
+  if (policy.onTestPassAfterFailure !== undefined) {
+    const tpaf = policy.onTestPassAfterFailure;
+    if (typeof tpaf !== "object" || tpaf === null) {
+      throw new Error(`"onTestPassAfterFailure" must be an object`);
+    }
+    if (typeof tpaf.enabled !== "boolean") {
+      throw new Error(`"onTestPassAfterFailure.enabled" must be a boolean`);
+    }
+    validatePromptSource("onTestPassAfterFailure", tpaf);
+    if (
+      typeof tpaf.cooldownMs !== "number" ||
+      !Number.isFinite(tpaf.cooldownMs)
+    ) {
+      throw new Error(`"onTestPassAfterFailure.cooldownMs" must be a number`);
+    }
+    if (tpaf.cooldownMs < MIN_COOLDOWN_MS) {
+      tpaf.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   // Validate onGitCommit
   if (policy.onGitCommit !== undefined) {
     const gc = policy.onGitCommit;
@@ -988,6 +1023,15 @@ export class AutomationHooks {
   private activeFileChangedTasks = new Map<string, string>();
   /** Active task ID for the test-run handler (workspace-global). */
   private activeTestRunTaskId: string | null = null;
+  /** Active task ID for the test-pass-after-failure handler (workspace-global). */
+  private activeTestPassAfterFailureTaskId: string | null = null;
+  /**
+   * Per-runner last outcome — used to detect fail→pass transitions.
+   * Key: runner name (e.g. "vitest", "jest"). Value: "pass" | "fail".
+   * Stored separately per runner so a vitest pass doesn't incorrectly trigger
+   * when a jest run was the one that previously failed.
+   */
+  private lastTestOutcomeByRunner = new Map<string, "pass" | "fail">();
   /** Active task ID for the git-commit handler (workspace-global). */
   private activeGitCommitTaskId: string | null = null;
   /** Active task ID for the git-push handler (workspace-global). */
@@ -1713,10 +1757,21 @@ export class AutomationHooks {
    * Triggers an automation task when tests fail (or on every run if onFailureOnly is false).
    */
   handleTestRun(result: TestRunResult): void {
+    const failureCount = result.summary.failed + result.summary.errored;
+
+    // Update per-runner outcome state unconditionally so onTestPassAfterFailure
+    // can detect fail→pass transitions even when onTestRun is disabled/absent.
+    for (const runner of result.runners) {
+      const prev = this.lastTestOutcomeByRunner.get(runner);
+      const current = failureCount === 0 ? "pass" : "fail";
+      this.lastTestOutcomeByRunner.set(runner, current);
+      if (prev === "fail" && current === "pass") {
+        this._handleTestPassAfterFailure(result, runner);
+      }
+    }
+
     const cfg = this.policy.onTestRun;
     if (!cfg?.enabled) return;
-
-    const failureCount = result.summary.failed + result.summary.errored;
 
     // Honour onFailureOnly: skip trigger when all tests pass
     if (cfg.onFailureOnly && failureCount === 0) return;
@@ -1826,6 +1881,93 @@ export class AutomationHooks {
     } catch (err) {
       this.log(
         `[automation] failed to enqueue test-run task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Internal — fires onTestPassAfterFailure when a specific runner transitions
+   * from failing → passing. Called from handleTestRun after outcome state update.
+   */
+  private _handleTestPassAfterFailure(
+    result: TestRunResult,
+    runner: string,
+  ): void {
+    const cfg = this.policy.onTestPassAfterFailure;
+    if (!cfg?.enabled) return;
+
+    // Loop guard: skip if a task is still pending/running
+    if (this.activeTestPassAfterFailureTaskId) {
+      const existing = this.orchestrator.getTask(
+        this.activeTestPassAfterFailureTaskId,
+      );
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping test-pass-after-failure — task ${this.activeTestPassAfterFailureTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeTestPassAfterFailureTaskId = null;
+    }
+
+    // Cooldown check (workspace-global key)
+    const key = "testPassAfterFailure:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for test-pass-after-failure (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {
+          runner,
+          passed: String(result.summary.passed),
+          total: String(result.summary.total),
+        },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt =
+        (cfg.prompt ?? "")
+          .replace(
+            /\{\{runner\}\}/g,
+            untrustedBlock("TEST RUNNER", runner, nonce),
+          )
+          .replace(/\{\{passed\}\}/g, String(result.summary.passed))
+          .replace(/\{\{total\}\}/g, String(result.summary.total)) ?? "";
+    }
+
+    prompt = truncatePrompt(
+      buildHookMetadata("onTestPassAfterFailure") + prompt,
+    );
+    try {
+      const taskId = this._enqueueAutomationTask({
+        prompt,
+        triggerSource: "onTestPassAfterFailure",
+        hookCfg: cfg,
+      });
+      this.lastTrigger.set(key, now);
+      this.activeTestPassAfterFailureTaskId = taskId;
+      this.log(
+        `[automation] triggered test-pass-after-failure task ${taskId.slice(0, 8)} (runner: ${runner})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue test-pass-after-failure task: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -2642,6 +2784,7 @@ export class AutomationHooks {
       onFailureOnly: boolean;
       cooldownMs: number;
     } | null;
+    onTestPassAfterFailure: { enabled: boolean; cooldownMs: number } | null;
     onGitCommit: { enabled: boolean; cooldownMs: number } | null;
     onGitPush: { enabled: boolean; cooldownMs: number } | null;
     onBranchCheckout: { enabled: boolean; cooldownMs: number } | null;
@@ -2702,6 +2845,12 @@ export class AutomationHooks {
             enabled: p.onTestRun.enabled,
             onFailureOnly: p.onTestRun.onFailureOnly,
             cooldownMs: p.onTestRun.cooldownMs,
+          }
+        : null,
+      onTestPassAfterFailure: p.onTestPassAfterFailure
+        ? {
+            enabled: p.onTestPassAfterFailure.enabled,
+            cooldownMs: p.onTestPassAfterFailure.cooldownMs,
           }
         : null,
       onGitCommit: p.onGitCommit
