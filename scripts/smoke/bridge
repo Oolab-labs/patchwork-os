@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Thin wrapper so smoke tests can invoke the locally-built bridge
+# without a global npm install. BRIDGE=scripts/smoke/bridge
+exec node "$(dirname "$0")/../../dist/index.js" "$@"
