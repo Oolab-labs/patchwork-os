@@ -4,7 +4,16 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.25.26 — 2026-04-13)
+## Current State (v2.25.33 — 2026-04-14)
+
+**v2.25.27–v2.25.33 shipped (2026-04-14) — token compression sprint:**
+- v2.25.27: Clipboard test mock + tool description ≤200 char enforcement.
+- v2.25.28: F1/F3/F4 smoketest fixes — `onInstructionsLoaded` checks active automation task before enqueue; `taskTimestamps.push()` moved after enqueue succeeds; `triggerSource` in `_buildTasksPayload`. 6 regression tests.
+- v2.25.29: Tool-level descriptions compressed ~50% across 81 files using caveman-ultra rules (drop articles/filler, fragments OK, short synonyms). No logic changes. CI green.
+- v2.25.30: Caveman-ultra injected at 4 layers — `buildEnforcementReminder()` (every MCP handshake), `onInstructionsLoaded` hook, `onPostCompact` hook, automation system prompt. All 3 preset templates (strict-lint, security-first, test-driven) updated.
+- v2.25.31: MCP prompts in `src/prompts.ts` compressed — review-file, explain-diagnostics, health-check, 6 dispatch prompts, generate-tests, debug-context, 13 LSP-composition prompts.
+- v2.25.32: CLAUDE.md caveman-compress pass; `.gitignore` updated for `*.original.md` backup files; preset template hook prompts synced with live policy style.
+- v2.25.33: Arg-level descriptions compressed across all 78 tool files (392 entries). Combined with v2.25.29 tool-level compression: ~20% reduction in `tools/list` payload. Also fixed 3 pre-existing biome lint issues surfaced by pre-commit hook.
 
 **v2.25.15–v2.25.26 shipped (2026-04-13) — polish, bug saga, prevention, composites:**
 - v2.25.15–16: Loop guards for `onPostCompact`/`onInstructionsLoaded`; `--verbose` regression test; `{{count}}` nonce-wrap; token-efficiency caps on contextBundle/onDiagnosticsError/getDiagnostics relatedInformation/getGitStatus/runTests.
