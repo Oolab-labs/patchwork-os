@@ -4,7 +4,11 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Current State (v2.25.33 — 2026-04-14, dogfood verified)
+## Current State (v2.25.34 / ext v1.3.2 — 2026-04-14)
+
+**v2.25.34 + ext v1.3.2 shipped (2026-04-14) — outputSchema + extension version debugging:**
+- v2.25.34: Three bugs fixed from dogfood logs — `getGitStatus` success path missing `required` field `available: true` (outputSchema validation always failed → Claude got plain text); `getBufferContent` extension path returned `source:"vscode-buffer"` but enum only allows `"extension"|"disk"`; `onGitCommit`/`onGitPush` cancelled at default 120s timeout (added `timeoutMs: 180000`).
+- ext v1.3.2: Extension sends `packageVersion` (npm package version, e.g. `"1.3.2"`) in `extension/hello` alongside `extensionVersion` (protocol version). Bridge stores it, exposes as `getBridgeStatus.extensionPackageVersion`. Fixes misleading log `version=1.1.0` which looked like a stale extension but was the protocol version. Log now says `protocolVersion=1.1.0, packageVersion=1.3.2`.
 
 **v2.25.27–v2.25.33 shipped (2026-04-14) — token compression sprint:**
 - v2.25.27: Clipboard test mock + tool description ≤200 char enforcement.
@@ -40,7 +44,7 @@ Development direction and exploration guidance. Living document — update as pr
 - **OAuth token persistence**: bridge token in `~/.claude/ide/bridge-token.json`; access tokens in `~/.claude/ide/oauth-tokens.json` (SHA-256 keyed, configurable TTL via `oauthTokenTtlDays`, max 90d); eliminates re-auth on restart
 - **VS Code task tools**: `listVSCodeTasks` + `runVSCodeTask` (full mode); extension handlers use `vscode.tasks.fetchTasks`/`executeTask`/`onDidEndTaskProcess`
 - **Local auth reliability**: lock file age filter 2h→24h; WebSocket session resumption via `X-Claude-Code-Session-Id` header; grace period default 30s→120s
-- Extension v1.3.0 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
+- Extension v1.3.2 on VS Code Marketplace + Open VSX; installable into VS Code, Windsurf, Cursor, and Antigravity
 
 - **Multi-IDE Orchestrator**: meta-orchestrator routes across N bridges (validated: 2 Windsurf IDEs); each bridge has isolated LSP/git/terminal context enabling genuinely independent parallel agent verification; `claudeIdeBridge.port` extension setting enables fixed-port auto-start per IDE
 - **Three transports**: WebSocket (Claude Code), stdio shim (Claude Desktop), Streamable HTTP (remote MCP clients)
