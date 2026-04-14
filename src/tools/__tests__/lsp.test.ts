@@ -195,6 +195,48 @@ describe("createGetHoverTool", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("timed out");
   });
+
+  it("minimal verbosity strips documentation, keeps type sig", async () => {
+    const hover = {
+      contents: ["const x: number", "A numeric value used for counting."],
+      range: null,
+    };
+    const tool = createGetHoverTool(
+      workspace,
+      makeClient({ connected: true, result: hover }),
+      "minimal",
+    );
+    const result = await tool.handler(baseArgs());
+    expect((result as any).isError).toBeFalsy();
+    const data = parse(result);
+    expect(data.contents).toHaveLength(1);
+    expect(data.contents[0]).toBe("const x: number");
+  });
+
+  it("normal verbosity returns all contents", async () => {
+    const hover = {
+      contents: ["const x: number", "A numeric value."],
+      range: null,
+    };
+    const tool = createGetHoverTool(
+      workspace,
+      makeClient({ connected: true, result: hover }),
+      "normal",
+    );
+    const result = await tool.handler(baseArgs());
+    expect(parse(result).contents).toHaveLength(2);
+  });
+
+  it("minimal verbosity is no-op when contents has 0 or 1 items", async () => {
+    const hover = { contents: ["const x: number"], range: null };
+    const tool = createGetHoverTool(
+      workspace,
+      makeClient({ connected: true, result: hover }),
+      "minimal",
+    );
+    const result = await tool.handler(baseArgs());
+    expect(parse(result).contents).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

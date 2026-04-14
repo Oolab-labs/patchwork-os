@@ -167,6 +167,7 @@ import { createSaveDocumentTool } from "./saveDocument.js";
 import { createCaptureScreenshotTool } from "./screenshot.js";
 import { createScreenshotAndAnnotateTool } from "./screenshotAndAnnotate.js";
 import { createSearchAndReplaceTool } from "./searchAndReplace.js";
+import { createSearchToolsTool } from "./searchTools.js";
 import { createSearchWorkspaceTool } from "./searchWorkspace.js";
 import { createSelectionRangesTool } from "./selectionRanges.js";
 import { createGetSemanticTokensTool } from "./semanticTokens.js";
@@ -267,6 +268,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "getToolCapabilities",
   "bridgeDoctor",
   "getSessionUsage",
+  "searchTools",
 ]);
 
 /**
@@ -413,7 +415,7 @@ export function registerAllTools(
     createFindImplementationsTool(workspace, extensionClient),
     createGoToTypeDefinitionTool(workspace, extensionClient),
     createGoToDeclarationTool(workspace, extensionClient),
-    createGetHoverTool(workspace, extensionClient),
+    createGetHoverTool(workspace, extensionClient, config.lspVerbosity),
     createGetCodeActionsTool(workspace, extensionClient),
     createApplyCodeActionTool(workspace, extensionClient),
     createPreviewCodeActionTool(workspace, extensionClient),
@@ -516,7 +518,7 @@ export function registerAllTools(
     createGetImportTreeTool(workspace),
     createGetImportedSignaturesTool(workspace, extensionClient),
     createGetDocumentLinksTool(workspace, extensionClient),
-    createBatchGetHoverTool(workspace, extensionClient),
+    createBatchGetHoverTool(workspace, extensionClient, config.lspVerbosity),
     createBatchGoToDefinitionTool(workspace, extensionClient),
     createBatchFindImplementationsTool(workspace, extensionClient),
     createGetTypeHierarchyTool(workspace, extensionClient),
@@ -546,6 +548,7 @@ export function registerAllTools(
     createGetSymbolHistoryTool(workspace, extensionClient),
     createGetProjectContextTool(workspace, extensionClient, probes),
     createGetSessionUsageTool(transport),
+    createSearchToolsTool(transport),
     ...(activityLog !== undefined
       ? [createGetAnalyticsReportTool(activityLog, orchestrator ?? null)]
       : []),
@@ -598,4 +601,190 @@ export function registerAllTools(
   for (const tool of [...activeTools, ...pluginTools]) {
     transport.registerTool(tool.schema, tool.handler);
   }
+
+  // Apply category tags for searchTools discovery.
+  transport.applyToolCategories(TOOL_CATEGORIES);
 }
+
+/**
+ * Category map for searchTools discovery.
+ * Maps tool name → category list. Categories: lsp, git, terminal, debug,
+ * editor, analysis, github, bridge, automation, http.
+ */
+export const TOOL_CATEGORIES: Record<string, string[]> = {
+  // LSP / code intelligence
+  getDiagnostics: ["lsp", "analysis"],
+  watchDiagnostics: ["lsp", "analysis"],
+  getDocumentSymbols: ["lsp"],
+  goToDefinition: ["lsp"],
+  findReferences: ["lsp"],
+  findImplementations: ["lsp"],
+  goToTypeDefinition: ["lsp"],
+  goToDeclaration: ["lsp"],
+  getHover: ["lsp"],
+  getCodeActions: ["lsp"],
+  applyCodeAction: ["lsp"],
+  previewCodeAction: ["lsp"],
+  refactorPreview: ["lsp"],
+  renameSymbol: ["lsp"],
+  searchWorkspaceSymbols: ["lsp"],
+  getCallHierarchy: ["lsp"],
+  explainSymbol: ["lsp"],
+  prepareRename: ["lsp"],
+  signatureHelp: ["lsp"],
+  refactorAnalyze: ["lsp"],
+  selectionRanges: ["lsp"],
+  foldingRanges: ["lsp"],
+  refactorExtractFunction: ["lsp"],
+  getImportTree: ["lsp"],
+  getImportedSignatures: ["lsp"],
+  getDocumentLinks: ["lsp"],
+  batchGetHover: ["lsp"],
+  batchGoToDefinition: ["lsp"],
+  batchFindImplementations: ["lsp"],
+  getSemanticTokens: ["lsp"],
+  getCodeLens: ["lsp"],
+  getChangeImpact: ["lsp", "analysis"],
+  getTypeHierarchy: ["lsp"],
+  getInlayHints: ["lsp"],
+  getHoverAtCursor: ["lsp"],
+  getTypeSignature: ["lsp"],
+  // Git
+  getGitStatus: ["git"],
+  getGitDiff: ["git"],
+  getGitLog: ["git"],
+  getCommitDetails: ["git"],
+  getDiffBetweenRefs: ["git"],
+  gitAdd: ["git"],
+  gitCommit: ["git"],
+  gitCheckout: ["git"],
+  gitBlame: ["git"],
+  gitFetch: ["git"],
+  gitListBranches: ["git"],
+  gitPull: ["git"],
+  gitPush: ["git"],
+  gitStash: ["git"],
+  gitStashPop: ["git"],
+  gitStashList: ["git"],
+  getGitHotspots: ["git", "analysis"],
+  getSymbolHistory: ["git", "lsp"],
+  // Terminal / shell
+  runInTerminal: ["terminal"],
+  getTerminalOutput: ["terminal"],
+  sendTerminalCommand: ["terminal"],
+  waitForTerminalOutput: ["terminal"],
+  createTerminal: ["terminal"],
+  disposeTerminal: ["terminal"],
+  listTerminals: ["terminal"],
+  runCommand: ["terminal"],
+  // Debug
+  getDebugState: ["debug"],
+  evaluateInDebugger: ["debug"],
+  setDebugBreakpoints: ["debug"],
+  startDebugging: ["debug"],
+  stopDebugging: ["debug"],
+  // Editor state
+  getOpenEditors: ["editor"],
+  getCurrentSelection: ["editor"],
+  getLatestSelection: ["editor"],
+  checkDocumentDirty: ["editor"],
+  saveDocument: ["editor"],
+  openFile: ["editor"],
+  closeTab: ["editor"],
+  captureScreenshot: ["editor"],
+  setEditorDecorations: ["editor"],
+  clearEditorDecorations: ["editor"],
+  openDiff: ["editor"],
+  openInBrowser: ["editor"],
+  executeVSCodeCommand: ["editor"],
+  listVSCodeCommands: ["editor"],
+  listVSCodeTasks: ["editor"],
+  runVSCodeTask: ["editor"],
+  getWorkspaceFolders: ["editor"],
+  setActiveWorkspaceFolder: ["editor"],
+  getWorkspaceSettings: ["editor"],
+  setWorkspaceSetting: ["editor"],
+  formatDocument: ["editor", "lsp"],
+  formatRange: ["editor", "lsp"],
+  formatAndSave: ["editor", "lsp"],
+  fixAllLintErrors: ["editor", "lsp"],
+  organizeImports: ["editor", "lsp"],
+  // File operations
+  getBufferContent: ["editor"],
+  editText: ["editor"],
+  createFile: ["editor"],
+  deleteFile: ["editor"],
+  renameFile: ["editor"],
+  replaceBlock: ["editor"],
+  searchAndReplace: ["editor"],
+  findFiles: ["editor"],
+  getFileTree: ["editor"],
+  // Analysis / quality
+  runTests: ["analysis"],
+  getCodeCoverage: ["analysis"],
+  detectUnusedCode: ["analysis"],
+  auditDependencies: ["analysis"],
+  getSecurityAdvisories: ["analysis"],
+  generateTests: ["analysis"],
+  generateAPIDocumentation: ["analysis"],
+  findRelatedTests: ["analysis"],
+  getDependencyTree: ["analysis"],
+  getGitHotspot: ["analysis", "git"],
+  screenshotAndAnnotate: ["analysis", "editor"],
+  // GitHub
+  githubCreatePR: ["github"],
+  githubListPRs: ["github"],
+  githubViewPR: ["github"],
+  githubListIssues: ["github"],
+  githubGetIssue: ["github"],
+  githubCreateIssue: ["github"],
+  githubCommentIssue: ["github"],
+  githubListRuns: ["github"],
+  githubGetRunLogs: ["github"],
+  githubGetPRDiff: ["github"],
+  githubPostPRReview: ["github"],
+  getPRTemplate: ["github"],
+  getAIComments: ["github"],
+  createGithubIssueFromAIComment: ["github"],
+  // Bridge / orchestration
+  getBridgeStatus: ["bridge"],
+  getToolCapabilities: ["bridge"],
+  bridgeDoctor: ["bridge"],
+  getSessionUsage: ["bridge"],
+  searchTools: ["bridge"],
+  getProjectInfo: ["bridge"],
+  getProjectContext: ["bridge"],
+  getArchitectureContext: ["bridge"],
+  contextBundle: ["bridge"],
+  watchActivityLog: ["bridge"],
+  getActivityLog: ["bridge"],
+  getAnalyticsReport: ["bridge"],
+  getHandoffNote: ["bridge"],
+  setHandoffNote: ["bridge"],
+  // Claude orchestration
+  runClaudeTask: ["automation"],
+  getClaudeTaskStatus: ["automation"],
+  cancelClaudeTask: ["automation"],
+  listClaudeTasks: ["automation"],
+  resumeClaudeTask: ["automation"],
+  // HTTP
+  sendHttpRequest: ["http"],
+  parseHttpFile: ["http"],
+  // Clipboard
+  readClipboard: ["editor"],
+  writeClipboard: ["editor"],
+  // Plans
+  createPlan: ["bridge"],
+  updatePlan: ["bridge"],
+  deletePlan: ["bridge"],
+  getPlan: ["bridge"],
+  listPlans: ["bridge"],
+  // Navigation helpers
+  jumpToFirstError: ["lsp"],
+  navigateToSymbolByName: ["lsp"],
+  // File watching
+  watchFiles: ["editor"],
+  unwatchFiles: ["editor"],
+  // Search
+  searchWorkspace: ["analysis"],
+};

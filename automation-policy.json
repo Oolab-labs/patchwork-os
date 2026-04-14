@@ -5,8 +5,12 @@
   "maxTasksPerHour": 30,
   "onFileSave": {
     "enabled": true,
-    "patterns": ["src/**/*.ts", "vscode-extension/src/**/*.ts"],
-    "condition": "!**/*.test.ts",
+    "patterns": [
+      "src/**/*.ts",
+      "vscode-extension/src/**/*.ts",
+      "!src/**/*.test.ts",
+      "!vscode-extension/src/**/__tests__/**/*.ts"
+    ],
     "cooldownMs": 600000,
     "prompt": "{{file}} saved. getDiagnostics → report errors only."
   },
@@ -18,7 +22,7 @@
   "onInstructionsLoaded": {
     "enabled": true,
     "cooldownMs": 60000,
-    "prompt": "Session start. contextBundle + getHandoffNote → branch, error count, uncommitted changes, prior context. ≤5 lines. Fragments OK. Abbreviate. Stay terse all session."
+    "prompt": "Session start. contextBundle(summarize:true) + getHandoffNote → branch, error count, uncommitted changes, prior context. ≤5 lines. Fragments OK. Abbreviate. Stay terse all session."
   },
   "onBranchCheckout": {
     "enabled": true,
@@ -29,7 +33,8 @@
     "enabled": true,
     "cooldownMs": 10000,
     "timeoutMs": 180000,
-    "prompt": "Commit {{branch}}: {{message}}\nFiles: {{files}}\n\ngetDiagnostics (errors only). If test files in {{files}}, runTests → pass/fail count.\n\nIMPORTANT: No shell cmds. No publish/push/version-bump/deploy."
+    "onFailureOnly": false,
+    "prompt": "Commit {{branch}}: {{message}}\nFiles: {{files}}\n\ngetDiagnostics (errors only). If test files in {{files}}, runTests → pass/fail count only.\n\nIMPORTANT: No shell cmds. No publish/push/version-bump/deploy."
   },
   "onGitPull": {
     "enabled": true,

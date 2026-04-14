@@ -55,9 +55,26 @@ function parseBatchItems(
 
 // ── batchGetHover ─────────────────────────────────────────────────────────────
 
+function applyBatchLspVerbosity(
+  result: unknown,
+  verbosity: "minimal" | "normal" | "verbose",
+): unknown {
+  if (
+    verbosity !== "minimal" ||
+    typeof result !== "object" ||
+    result === null
+  ) {
+    return result;
+  }
+  const r = result as Record<string, unknown>;
+  if (!Array.isArray(r.contents)) return result;
+  return { ...r, contents: (r.contents as unknown[]).slice(0, 1) };
+}
+
 export function createBatchGetHoverTool(
   workspace: string,
   extensionClient: ExtensionClient,
+  lspVerbosity: "minimal" | "normal" | "verbose" = "normal",
 ) {
   return {
     schema: {
@@ -133,11 +150,12 @@ export function createBatchGetHoverTool(
 
       const results = items.map((item, i) => {
         const r = settled[i];
+        const raw = r?.status === "fulfilled" ? (r.value ?? null) : null;
         return {
           filePath: item.filePath,
           line: item.line,
           column: item.column,
-          result: r?.status === "fulfilled" ? (r.value ?? null) : null,
+          result: applyBatchLspVerbosity(raw, lspVerbosity),
         };
       });
 
