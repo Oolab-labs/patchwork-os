@@ -14,6 +14,8 @@ Install the companion extension, start the bridge, open Claude. That's it. Claud
 Claude Code ──── bridge ──── VS Code extension ──── your editor state
 ```
 
+![claude-ide-bridge demo](demo.gif)
+
 **Works from your phone.** SSH into your dev machine, send a message, watch Claude fix bugs and run tests on your home machine while you're away.
 
 ## Pick your path
