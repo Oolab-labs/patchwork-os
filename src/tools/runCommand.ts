@@ -213,7 +213,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
     handler: async (
       args: Record<string, unknown>,
       signal?: AbortSignal,
-      progress?: (value: number, total: number, message?: string) => void,
+      progress?: (value: number, total?: number, message?: string) => void,
     ) => {
       // Normalize to lowercase before all validation — prevents case-sensitivity bypass
       // on case-insensitive filesystems (macOS HFS+, Windows) where "NODE" resolves to "node"
@@ -241,7 +241,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
             signal,
             onLine: (line) => {
               lineCount++;
-              progress(lineCount, 0, line);
+              progress(lineCount, undefined, line);
             },
           })
         : await withHeartbeat(

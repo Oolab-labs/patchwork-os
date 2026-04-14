@@ -41,7 +41,10 @@ export function isBridgeToolsFileValid(filePath: string): boolean {
 }
 
 function writeRulesFileAtomic(rulesFilePath: string, content: string): void {
-  const tmpPath = `${rulesFilePath}.tmp`;
+  // Use a PID+timestamp suffix so concurrent bridge instances each get a unique
+  // tmp path — eliminates the unlink+wx TOCTOU race where two processes both
+  // unlink the shared .tmp then one throws EEXIST on wx.
+  const tmpPath = `${rulesFilePath}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmpPath, content, { encoding: "utf-8", flag: "wx" });
   try {
     renameSync(tmpPath, rulesFilePath);
@@ -81,13 +84,6 @@ export function repairBridgeToolsRulesIfStale(
   if (!existsSync(templatePath)) return false;
 
   try {
-    // Clean up any leftover .tmp from a previous crashed write
-    const tmpPath = `${rulesFilePath}.tmp`;
-    try {
-      unlinkSync(tmpPath);
-    } catch {
-      /* ignore ENOENT */
-    }
     mkdirSync(rulesDir, { recursive: true });
     writeRulesFileAtomic(
       rulesFilePath,
