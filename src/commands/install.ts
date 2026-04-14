@@ -37,6 +37,13 @@ function getClaudeDesktopConfigPath(): string {
   );
 }
 
+/** Return Claude Code CLI user config path (~/.claude.json), respecting CLAUDE_CONFIG_DIR. */
+function getClaudeCliConfigPath(): string {
+  // Claude Code CLI reads user MCPs from ~/.claude.json (not ~/.claude/settings.json)
+  const base = process.env.CLAUDE_CONFIG_DIR ?? os.homedir();
+  return path.join(base, ".claude.json");
+}
+
 interface DesktopConfig {
   mcpServers?: Record<string, unknown>;
   [key: string]: unknown;
@@ -82,11 +89,38 @@ export async function runInstall(argv: string[]): Promise<void> {
         console.log(`  ${" ".repeat(maxLen + 2)}Requires env: ${envStr}`);
       }
     }
-    console.log(`\nUsage: claude-ide-bridge install <companion>`);
+    console.log(
+      `\nUsage: claude-ide-bridge install <companion> [--target cli|desktop] [--env KEY=VALUE ...]`,
+    );
     return;
   }
 
-  const companionName = argv[0];
+  // Parse --target, --env KEY=VALUE pairs from argv
+  let target: "desktop" | "cli" = "desktop";
+  const envOverrides: Record<string, string> = {};
+  const filteredArgv: string[] = [];
+
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--target" && argv[i + 1]) {
+      const t = argv[i + 1] ?? "";
+      if (t === "cli" || t === "desktop") target = t;
+      i++;
+    } else if (argv[i] === "--env" && argv[i + 1]) {
+      const raw = argv[i + 1] ?? "";
+      const eqIdx = raw.indexOf("=");
+      if (eqIdx > 0) {
+        const k = raw.slice(0, eqIdx);
+        const v = raw.slice(eqIdx + 1);
+        envOverrides[k] = v;
+      }
+      i++;
+    } else {
+      const arg = argv[i];
+      if (arg !== undefined) filteredArgv.push(arg);
+    }
+  }
+
+  const companionName = filteredArgv[0];
 
   if (!companionName || companionName.startsWith("-")) {
     process.stderr.write(
@@ -104,27 +138,32 @@ export async function runInstall(argv: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Install npm package globally
-  console.log(`Installing ${entry.npmPackage}...`);
-  try {
-    execFileSync("npm", ["install", "-g", entry.npmPackage], {
-      stdio: "inherit",
-    });
-  } catch {
-    process.stderr.write(
-      `Error: Failed to install ${entry.npmPackage}. Check npm permissions.\n`,
-    );
-    process.exit(1);
+  // Install npm package globally (skip for binary-only companions)
+  if (!entry.skipNpmInstall) {
+    console.log(`Installing ${entry.npmPackage}...`);
+    try {
+      execFileSync("npm", ["install", "-g", entry.npmPackage], {
+        stdio: "inherit",
+      });
+    } catch {
+      process.stderr.write(
+        `Error: Failed to install ${entry.npmPackage}. Check npm permissions.\n`,
+      );
+      process.exit(1);
+    }
   }
 
-  // Merge into Claude Desktop config
-  const configPath = getClaudeDesktopConfigPath();
+  // Select config path based on target
+  const configPath =
+    target === "cli" ? getClaudeCliConfigPath() : getClaudeDesktopConfigPath();
+  const targetLabel = target === "cli" ? "Claude Code CLI" : "Claude Desktop";
+
   const config = readConfig(configPath);
   if (!config.mcpServers) config.mcpServers = {};
 
   if (config.mcpServers[companionName] !== undefined) {
     console.log(
-      `\n✓ '${companionName}' already configured in Claude Desktop — no changes made.`,
+      `\n✓ '${companionName}' already configured in ${targetLabel} — no changes made.`,
     );
     return;
   }
@@ -134,14 +173,16 @@ export async function runInstall(argv: string[]): Promise<void> {
     args: entry.args,
   };
   if (entry.requiredEnv) {
-    mcpEntry.env = entry.requiredEnv;
+    mcpEntry.env = { ...entry.requiredEnv, ...envOverrides };
+  } else if (Object.keys(envOverrides).length > 0) {
+    mcpEntry.env = envOverrides;
   }
 
   config.mcpServers[companionName] = mcpEntry;
   writeConfigAtomic(configPath, config);
 
   console.log(`\n✓ Added '${companionName}' to ${configPath}`);
-  if (entry.requiredEnv) {
+  if (entry.requiredEnv && Object.keys(envOverrides).length === 0) {
     console.log(
       `\nNote: Set the following environment variables before using:`,
     );
@@ -149,5 +190,16 @@ export async function runInstall(argv: string[]): Promise<void> {
       console.log(`  export ${k}=${v}`);
     }
   }
-  console.log(`\nRestart Claude Desktop to activate.`);
+
+  if (target === "cli") {
+    console.log(
+      `\nRun /mcp in Claude Code to reload, or restart the CLI session.`,
+    );
+  } else {
+    console.log(`\nRestart Claude Desktop to activate.`);
+  }
+
+  if (entry.postInstallMessage) {
+    console.log(`\n${entry.postInstallMessage}`);
+  }
 }
