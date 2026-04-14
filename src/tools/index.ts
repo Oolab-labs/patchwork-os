@@ -57,6 +57,7 @@ import { createFormatDocumentTool } from "./formatDocument.js";
 import { createGenerateAPIDocumentationTool } from "./generateAPIDocumentation.js";
 import { createGenerateTestsTool } from "./generateTests.js";
 import { createGetAICommentsTool } from "./getAIComments.js";
+import { createGetArchitectureContextTool } from "./getArchitectureContext.js";
 import { createGetBufferContentTool } from "./getBufferContent.js";
 import { createGetChangeImpactTool } from "./getChangeImpact.js";
 import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
@@ -338,6 +339,7 @@ export function registerAllTools(
     createOpenInBrowserTool(),
     createGetOpenEditorsTool(openedFiles, extensionClient, workspace),
     createGetWorkspaceFoldersTool(workspaceFolders, extensionClient),
+    createGetArchitectureContextTool(workspace),
     createGetProjectInfoTool(workspace),
     createGetCurrentSelectionTool(extensionClient),
     createGetLatestSelectionTool(extensionClient),

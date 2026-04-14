@@ -140,8 +140,12 @@ export function createJumpToFirstErrorTool(deps: {
             ],
           });
           decorationApplied = !("isError" in decoResult && decoResult.isError);
-        } catch {
+        } catch (decoErr) {
           // best-effort; decoration failure does not fail the jump
+          console.warn(
+            "[jumpToFirstError] decoration failed:",
+            decoErr instanceof Error ? decoErr.message : String(decoErr),
+          );
         }
       }
 

@@ -750,7 +750,7 @@ export class Bridge {
         lastDisconnectAt: this.lastDisconnectAt,
         lastDisconnectCode: this.lastDisconnectCode,
         lastDisconnectReason: this.lastDisconnectReason,
-        extension: this.extensionClient.isConnected(),
+        extensionConnected: this.extensionClient.isConnected(),
         extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
         recentActivity: this.activityLog.query({ last: 10 }),
       };

@@ -104,6 +104,7 @@ export function createSetHandoffNoteTool(
         properties: {
           saved: { type: "boolean" },
           updatedAt: { type: "number" },
+          message: { type: "string" },
         },
         required: ["saved", "updatedAt"],
       },
