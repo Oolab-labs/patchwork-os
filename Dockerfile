@@ -7,7 +7,7 @@ COPY src/ ./src/
 RUN npm run build && npm prune --omit=dev
 
 FROM node:20-alpine AS runtime
-RUN apk add --no-cache tini universal-ctags
+RUN apk add --no-cache tini ctags
 RUN npm install -g typescript-language-server typescript
 RUN addgroup -S bridge && adduser -S bridge -G bridge
 WORKDIR /app
