@@ -1193,6 +1193,70 @@
     }
   },
   {
+    "name": "findRelatedTests",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Source file to find tests for (absolute or workspace-relative)"
+        },
+        "includeCoverage": {
+          "type": "boolean",
+          "description": "Cross-reference coverage report if available (default: false)"
+        }
+      },
+      "required": ["filePath"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "sourceFile": {
+          "type": "string"
+        },
+        "testFiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "matchReason": {
+                "type": "string"
+              },
+              "importLine": {
+                "type": "string"
+              },
+              "coveragePct": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["file", "matchReason"]
+          }
+        },
+        "totalFound": {
+          "type": "integer"
+        },
+        "coverageAvailable": {
+          "type": "boolean"
+        },
+        "memoryGraphHint": {
+          "type": "string"
+        }
+      },
+      "required": ["sourceFile", "testFiles", "totalFound", "coverageAvailable"]
+    }
+  },
+  {
     "name": "fixAllLintErrors",
     "inputSchema": {
       "type": "object",
@@ -5579,6 +5643,88 @@
         }
       },
       "required": ["success"]
+    }
+  },
+  {
+    "name": "screenshotAndAnnotate",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "URL to screenshot. If omitted, derived from package.json dev script."
+        },
+        "waitForSelector": {
+          "type": "string",
+          "description": "CSS selector to wait for before screenshotting (e.g. '#app')"
+        },
+        "fullPage": {
+          "type": "boolean",
+          "description": "Capture full scrollable page (default: false)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "targetUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "playwrightSteps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "integer"
+              },
+              "tool": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": ["step", "tool", "params", "label"]
+          }
+        },
+        "ideState": {
+          "type": "object",
+          "properties": {
+            "errorCount": {
+              "type": "integer"
+            },
+            "warningCount": {
+              "type": "integer"
+            },
+            "changedFiles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "diagnosticSummary": {
+              "type": "string"
+            }
+          },
+          "required": ["errorCount", "warningCount", "changedFiles"]
+        },
+        "hint": {
+          "type": "string"
+        }
+      },
+      "required": ["targetUrl", "playwrightSteps", "ideState"]
     }
   },
   {

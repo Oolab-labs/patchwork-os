@@ -50,6 +50,7 @@ import {
 } from "./fileOperations.js";
 import { createUnwatchFilesTool, createWatchFilesTool } from "./fileWatcher.js";
 import { createFindFilesTool } from "./findFiles.js";
+import { createFindRelatedTestsTool } from "./findRelatedTests.js";
 import { createFixAllLintErrorsTool } from "./fixAllLintErrors.js";
 import { createFoldingRangesTool } from "./foldingRanges.js";
 import { createFormatAndSaveTool } from "./formatAndSave.js";
@@ -161,6 +162,7 @@ import { createRunCommandTool } from "./runCommand.js";
 import { createRunTestsTool } from "./runTests.js";
 import { createSaveDocumentTool } from "./saveDocument.js";
 import { createCaptureScreenshotTool } from "./screenshot.js";
+import { createScreenshotAndAnnotateTool } from "./screenshotAndAnnotate.js";
 import { createSearchAndReplaceTool } from "./searchAndReplace.js";
 import { createSearchWorkspaceTool } from "./searchWorkspace.js";
 import { createSelectionRangesTool } from "./selectionRanges.js";
@@ -536,6 +538,8 @@ export function registerAllTools(
     createRefactorExtractFunctionTool(workspace, extensionClient),
     createGetGitHotspotsTool(workspace),
     createGetSymbolHistoryTool(workspace, extensionClient),
+    createFindRelatedTestsTool(workspace, probes),
+    createScreenshotAndAnnotateTool(workspace, extensionClient),
     createGetPRTemplateTool(workspace),
     createGetCodeCoverageTool(workspace),
     createGenerateTestsTool(workspace),
