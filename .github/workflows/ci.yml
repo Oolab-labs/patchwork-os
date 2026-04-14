@@ -57,6 +57,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Audit LSP tool lists
         run: node scripts/audit-lsp-tools.mjs
+      - name: Audit shape safety (proxy<T> usage)
+        run: node scripts/audit-shape-safety.mjs
 
   plugin-validate:
     name: Validate plugin manifest
