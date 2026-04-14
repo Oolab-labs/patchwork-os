@@ -159,6 +159,17 @@ export interface OnFileChangedPolicy extends PromptSource {
   cooldownMs: number;
 }
 
+export interface OnPreCompactPolicy extends PromptSource {
+  enabled: boolean;
+  /**
+   * No placeholders — fired just before Claude Code compacts the context window.
+   * Use to snapshot IDE state, write a handoff note, or complete an in-flight task
+   * before Claude loses context. Pairs with onPostCompact.
+   */
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
 export interface OnPostCompactPolicy extends PromptSource {
   enabled: boolean;
   /**
@@ -247,6 +258,24 @@ export interface OnDebugSessionEndPolicy extends PromptSource {
 export interface DebugSessionEndResult {
   sessionName: string;
   sessionType: string;
+}
+
+export interface OnDebugSessionStartPolicy extends PromptSource {
+  enabled: boolean;
+  /**
+   * Placeholders (inline prompt only): {{sessionName}}, {{sessionType}}
+   */
+  cooldownMs: number;
+}
+
+/** Minimal debug session result passed to handleDebugSessionStart. */
+export interface DebugSessionStartResult {
+  sessionName: string;
+  sessionType: string;
+  /** Number of breakpoints active at session start. */
+  breakpointCount: number;
+  /** Active file at session start (first breakpoint file, if any). */
+  activeFile: string;
 }
 
 export interface OnGitCommitPolicy extends PromptSource {
@@ -415,6 +444,8 @@ export interface AutomationPolicy {
   onCwdChanged?: OnCwdChangedPolicy;
   /** Fired by Claude Code 2.1.76+ PostCompact hook — re-injects IDE context after compaction. */
   onPostCompact?: OnPostCompactPolicy;
+  /** Fired by Claude Code PreCompact hook — runs before context window is trimmed. */
+  onPreCompact?: OnPreCompactPolicy;
   /** Fired by Claude Code 2.1.76+ InstructionsLoaded hook — injects bridge status at session start. */
   onInstructionsLoaded?: OnInstructionsLoadedPolicy;
   /** Fired after every runTests call (or only on failures, depending on onFailureOnly). */
@@ -441,6 +472,8 @@ export interface AutomationPolicy {
   onTaskSuccess?: OnTaskSuccessPolicy;
   /** Fired when a VS Code debug session terminates (hasActiveSession transitions true→false). */
   onDebugSessionEnd?: OnDebugSessionEndPolicy;
+  /** Fired when a VS Code debug session starts (hasActiveSession transitions false→true). */
+  onDebugSessionStart?: OnDebugSessionStartPolicy;
 }
 
 export interface Diagnostic {
@@ -719,6 +752,24 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onPreCompact
+  if (policy.onPreCompact !== undefined) {
+    const p = policy.onPreCompact;
+    if (typeof p !== "object" || p === null) {
+      throw new Error(`"onPreCompact" must be an object`);
+    }
+    if (typeof p.enabled !== "boolean") {
+      throw new Error(`"onPreCompact.enabled" must be a boolean`);
+    }
+    validatePromptSource("onPreCompact", p);
+    if (typeof p.cooldownMs !== "number" || !Number.isFinite(p.cooldownMs)) {
+      throw new Error(`"onPreCompact.cooldownMs" must be a number`);
+    }
+    if (p.cooldownMs < MIN_COOLDOWN_MS) {
+      p.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   // Validate onPostCompact
   if (policy.onPostCompact !== undefined) {
     const p = policy.onPostCompact;
@@ -974,6 +1025,27 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onDebugSessionStart
+  if (policy.onDebugSessionStart !== undefined) {
+    const dss = policy.onDebugSessionStart;
+    if (typeof dss !== "object" || dss === null) {
+      throw new Error(`"onDebugSessionStart" must be an object`);
+    }
+    if (typeof dss.enabled !== "boolean") {
+      throw new Error(`"onDebugSessionStart.enabled" must be a boolean`);
+    }
+    validatePromptSource("onDebugSessionStart", dss);
+    if (
+      typeof dss.cooldownMs !== "number" ||
+      !Number.isFinite(dss.cooldownMs)
+    ) {
+      throw new Error(`"onDebugSessionStart.cooldownMs" must be a number`);
+    }
+    if (dss.cooldownMs < MIN_COOLDOWN_MS) {
+      dss.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   // Validate onDebugSessionEnd
   if (policy.onDebugSessionEnd !== undefined) {
     const dse = policy.onDebugSessionEnd;
@@ -1003,6 +1075,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
  * Bridge-tool-triggered hooks (onFileSave, onGitCommit, etc.) need no CC wiring.
  */
 const CC_HOOK_TOOL_MAP: Record<string, string> = {
+  PreCompact: "notifyPreCompact",
   PostCompact: "notifyPostCompact",
   InstructionsLoaded: "notifyInstructionsLoaded",
   TaskCreated: "notifyTaskCreated",
@@ -1012,6 +1085,7 @@ const CC_HOOK_TOOL_MAP: Record<string, string> = {
 
 /** Policy hook names that correspond to CC hook events (need settings.json wiring). */
 const _POLICY_TO_CC_EVENT: Record<string, string> = {
+  onPreCompact: "PreCompact",
   onPostCompact: "PostCompact",
   onInstructionsLoaded: "InstructionsLoaded",
   onTaskCreated: "TaskCreated",
@@ -1121,8 +1195,12 @@ export class AutomationHooks {
   private activeTaskSuccessTaskId: string | null = null;
   /** Active task ID for the debug-session-end handler (workspace-global). */
   private activeDebugSessionEndTaskId: string | null = null;
+  /** Active task ID for the debug-session-start handler (workspace-global). */
+  private activeDebugSessionStartTaskId: string | null = null;
   /** Active task ID for the post-compact handler (workspace-global). */
   private activePostCompactTaskId: string | null = null;
+  /** Active task ID for the pre-compact handler (workspace-global). */
+  private activePreCompactTaskId: string | null = null;
   /** Active task ID for the instructions-loaded handler (workspace-global). */
   private activeInstructionsLoadedTaskId: string | null = null;
   /**
@@ -1158,7 +1236,10 @@ export class AutomationHooks {
       const cutoff = now - 60 * 60 * 1_000;
       // Prune old timestamps
       let i = 0;
-      while (i < this.taskTimestamps.length && this.taskTimestamps[i]! < cutoff)
+      while (
+        i < this.taskTimestamps.length &&
+        (this.taskTimestamps[i] ?? 0) < cutoff
+      )
         i++;
       if (i > 0) this.taskTimestamps.splice(0, i);
       if (this.taskTimestamps.length >= maxPerHour) {
@@ -1581,6 +1662,72 @@ export class AutomationHooks {
     } catch (err) {
       this.log(
         `[automation] failed to enqueue cwd-changed task for ${newCwd}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Called when Claude Code fires a PreCompact hook.
+   * Fires the onPreCompact automation hook before context trimming — use to snapshot state or
+   * write a handoff note before Claude loses context.
+   */
+  handlePreCompact(): void {
+    const cfg = this.policy.onPreCompact;
+    if (!cfg?.enabled) return;
+
+    if (this.activePreCompactTaskId) {
+      const existing = this.orchestrator.getTask(this.activePreCompactTaskId);
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping pre-compact trigger — task ${this.activePreCompactTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activePreCompactTaskId = null;
+    }
+
+    const key = "pre-compact";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for PreCompact (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    let preCompactPrompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {},
+      );
+      if (resolved === null) return;
+      preCompactPrompt = resolved;
+    } else {
+      preCompactPrompt = cfg.prompt ?? "";
+    }
+    preCompactPrompt = truncatePrompt(
+      buildHookMetadata("onPreCompact") + preCompactPrompt,
+    );
+    try {
+      const taskId = this._enqueueAutomationTask({
+        prompt: preCompactPrompt,
+        triggerSource: "onPreCompact",
+        hookCfg: cfg,
+      });
+      this.lastTrigger.set(key, now);
+      this.activePreCompactTaskId = taskId;
+      this.log(`[automation] triggered PreCompact task ${taskId.slice(0, 8)}`);
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue PreCompact task: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -3044,8 +3191,106 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Called when a VS Code debug session starts (hasActiveSession transitions false→true).
+   * Fires the onDebugSessionStart automation hook if configured.
+   */
+  async handleDebugSessionStart(
+    result: DebugSessionStartResult,
+  ): Promise<void> {
+    const cfg = this.policy.onDebugSessionStart;
+    if (!cfg?.enabled) return;
+
+    // Loop guard: skip if a task is still pending/running
+    if (this.activeDebugSessionStartTaskId) {
+      const existing = this.orchestrator.getTask(
+        this.activeDebugSessionStartTaskId,
+      );
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping debug-session-start trigger — task ${this.activeDebugSessionStartTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeDebugSessionStartTaskId = null;
+    }
+
+    // Cooldown check (workspace-global)
+    const key = "debugSessionStart:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for debug-session-start (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeSessionName = result.sessionName.slice(0, MAX_FILE_PATH_CHARS);
+    const safeSessionType = result.sessionType.slice(0, MAX_FILE_PATH_CHARS);
+    const safeActiveFile = result.activeFile.slice(0, MAX_FILE_PATH_CHARS);
+    const breakpointCount = String(result.breakpointCount);
+
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {
+          sessionName: safeSessionName,
+          sessionType: safeSessionType,
+          activeFile: safeActiveFile,
+          breakpointCount,
+        },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt =
+        (cfg.prompt ?? "")
+          .replace(
+            /\{\{sessionName\}\}/g,
+            untrustedBlock("SESSION NAME", safeSessionName, nonce),
+          )
+          .replace(
+            /\{\{sessionType\}\}/g,
+            untrustedBlock("SESSION TYPE", safeSessionType, nonce),
+          )
+          .replace(
+            /\{\{activeFile\}\}/g,
+            untrustedBlock("ACTIVE FILE", safeActiveFile, nonce),
+          )
+          .replace(/\{\{breakpointCount\}\}/g, breakpointCount) ?? "";
+    }
+
+    prompt = truncatePrompt(buildHookMetadata("onDebugSessionStart") + prompt);
+    try {
+      const taskId = this._enqueueAutomationTask({
+        prompt,
+        triggerSource: "onDebugSessionStart",
+        hookCfg: cfg,
+      });
+      this.lastTrigger.set(key, now);
+      this.activeDebugSessionStartTaskId = taskId;
+      this.log(
+        `[automation] triggered debug-session-start task ${taskId.slice(0, 8)} (session: ${result.sessionName}, type: ${result.sessionType}, breakpoints: ${result.breakpointCount})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue debug-session-start task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
+    onPreCompact: { enabled: boolean; cooldownMs: number } | null;
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
     onDiagnosticsError: { enabled: boolean } | null;
     onFileSave: { enabled: boolean; patternCount: number } | null;
@@ -3068,6 +3313,7 @@ export class AutomationHooks {
     onTaskSuccess: { enabled: boolean; cooldownMs: number } | null;
     onGitPull: { enabled: boolean; cooldownMs: number } | null;
     onDebugSessionEnd: { enabled: boolean; cooldownMs: number } | null;
+    onDebugSessionStart: { enabled: boolean; cooldownMs: number } | null;
     unwiredEnabledHooks: string[];
     defaultModel: string;
     maxTasksPerHour: number;
@@ -3086,6 +3332,12 @@ export class AutomationHooks {
       })
       .map(([policyKey]) => policyKey);
     return {
+      onPreCompact: p.onPreCompact
+        ? {
+            enabled: p.onPreCompact.enabled,
+            cooldownMs: p.onPreCompact.cooldownMs,
+          }
+        : null,
       onPostCompact: p.onPostCompact
         ? {
             enabled: p.onPostCompact.enabled,
@@ -3190,6 +3442,12 @@ export class AutomationHooks {
         ? {
             enabled: p.onDebugSessionEnd.enabled,
             cooldownMs: p.onDebugSessionEnd.cooldownMs,
+          }
+        : null,
+      onDebugSessionStart: p.onDebugSessionStart
+        ? {
+            enabled: p.onDebugSessionStart.enabled,
+            cooldownMs: p.onDebugSessionStart.cooldownMs,
           }
         : null,
       unwiredEnabledHooks,

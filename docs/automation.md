@@ -89,6 +89,8 @@ Call `getBridgeStatus` and inspect the `ccHookWiring` field. If `unwiredEnabledH
 | `onTaskSuccess` | A bridge orchestrator task completes with status `done` | any | `{{taskId}}`, `{{output}}` | — |
 | `onPermissionDenied` | A tool call is blocked (PermissionDenied hook) | ≥ 2.1.89 | `{{tool}}`, `{{reason}}` | — |
 | `onDebugSessionEnd` | A VS Code debug session terminates | any | `{{sessionName}}`, `{{sessionType}}` | — |
+| `onDebugSessionStart` | A VS Code debug session starts | any | `{{sessionName}}`, `{{sessionType}}`, `{{breakpointCount}}`, `{{activeFile}}` | — |
+| `onPreCompact` | Claude Code is about to compact the conversation context | ≥ 2.1.76 | _(none)_ | — |
 
 All hooks default to disabled (`"enabled": false` if omitted). You must set `"enabled": true` explicitly.
 
@@ -415,6 +417,50 @@ All hooks default to disabled (`"enabled": false` if omitted). You must set `"en
   "cooldownMs": 10000,
   "prompt": "Debug session '{{sessionName}}' ({{sessionType}}) ended. runTests → pass/fail. ≤6 lines."
 }
+```
+
+---
+
+### onDebugSessionStart
+
+**Trigger:** A VS Code debug session starts (`hasActiveSession` transitions `false` → `true`).
+
+**Placeholders:** `{{sessionName}}`, `{{sessionType}}`, `{{breakpointCount}}`, `{{activeFile}}`
+
+**Use case:** Brief Claude on debugging context before you start stepping through code.
+
+```json
+"onDebugSessionStart": {
+  "enabled": true,
+  "cooldownMs": 10000,
+  "prompt": "Debug session '{{sessionName}}' ({{sessionType}}) started. {{breakpointCount}} breakpoints set; active file: {{activeFile}}. Summarise what could cause failures here."
+}
+```
+
+---
+
+### onPreCompact
+
+**Trigger:** Claude Code is about to compact the conversation context window (fires before `onPostCompact`). Requires the `PreCompact` CC hook wired in `settings.json` (auto-wired by `init`).
+
+**Placeholders:** _(none)_
+
+**Use case:** Snapshot critical state before context is trimmed — write a handoff note, flush pending decisions, or summarise the current task so the post-compact session can pick up cleanly.
+
+```json
+"onPreCompact": {
+  "enabled": true,
+  "cooldownMs": 60000,
+  "prompt": "Context compaction is about to happen. Call setHandoffNote with a concise summary of: (1) what we are building, (2) last 3 decisions made, (3) next action needed."
+}
+```
+
+**CC hook wiring** — add to `~/.claude/settings.json` (auto-added by `claude-ide-bridge init`):
+
+```json
+"PreCompact": [
+  { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PreCompact" }] }
+]
 ```
 
 ---

@@ -80,6 +80,7 @@ import { createGetImportedSignaturesTool } from "./getImportedSignatures.js";
 import { createGetImportTreeTool } from "./getImportTree.js";
 import { createGetOpenEditorsTool } from "./getOpenEditors.js";
 import { createGetPRTemplateTool } from "./getPRTemplate.js";
+import { createGetProjectContextTool } from "./getProjectContext.js";
 import { createGetProjectInfoTool } from "./getProjectInfo.js";
 import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
 import { createGetSymbolHistoryTool } from "./getSymbolHistory.js";
@@ -210,6 +211,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "captureScreenshot",
   "watchActivityLog",
   "contextBundle",
+  "getProjectContext",
   // LSP / code intelligence
   "getDiagnostics",
   "watchDiagnostics",
@@ -538,6 +540,7 @@ export function registerAllTools(
     createRefactorExtractFunctionTool(workspace, extensionClient),
     createGetGitHotspotsTool(workspace),
     createGetSymbolHistoryTool(workspace, extensionClient),
+    createGetProjectContextTool(workspace, extensionClient, probes),
     createFindRelatedTestsTool(workspace, probes),
     createScreenshotAndAnnotateTool(workspace, extensionClient),
     createGetPRTemplateTool(workspace),

@@ -402,6 +402,7 @@ Options:
 // Usage: claude-ide-bridge notify <CcEventName> [--cwd <p>] [--taskId <id>] [--prompt <t>] [--tool <n>] [--reason <r>] [--port <n>]
 if (process.argv[2] === "notify") {
   const VALID_NOTIFY_EVENTS = new Set([
+    "PreCompact",
     "PostCompact",
     "InstructionsLoaded",
     "TaskCreated",
@@ -906,6 +907,7 @@ Steps performed:
     "settings.json",
   );
   const CC_HOOK_NOTIFY_CMDS: Record<string, string> = {
+    PreCompact: "claude-ide-bridge notify PreCompact",
     PostCompact: "claude-ide-bridge notify PostCompact",
     InstructionsLoaded: "claude-ide-bridge notify InstructionsLoaded",
     TaskCreated:
