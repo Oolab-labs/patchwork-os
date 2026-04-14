@@ -4,7 +4,8 @@ import {
   optionalBool,
   optionalInt,
   optionalString,
-  success,
+  successStructured,
+  successStructuredLarge,
 } from "../utils.js";
 import {
   GH_NOT_AUTHED,
@@ -50,6 +51,32 @@ export function createGithubListRunsTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          runs: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                databaseId: { type: "integer" },
+                name: { type: "string" },
+                status: { type: "string" },
+                conclusion: { type: ["string", "null"] },
+                headBranch: { type: "string" },
+                headSha: { type: "string" },
+                url: { type: "string" },
+                createdAt: { type: "string" },
+                updatedAt: { type: "string" },
+                workflowName: { type: "string" },
+                event: { type: "string" },
+              },
+            },
+          },
+          count: { type: "integer" },
+        },
+        required: ["runs", "count"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const branch = optionalString(args, "branch", 256);
@@ -90,7 +117,10 @@ export function createGithubListRunsTool(
         return error(`Failed to parse gh output: ${result.stdout.trim()}`);
       }
 
-      return success({ runs, count: Array.isArray(runs) ? runs.length : 0 });
+      return successStructured({
+        runs,
+        count: Array.isArray(runs) ? runs.length : 0,
+      });
     },
   };
 }
@@ -122,6 +152,17 @@ export function createGithubGetRunLogsTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          runId: { type: "integer" },
+          failedOnly: { type: "boolean" },
+          logs: { type: "string" },
+          truncated: { type: "boolean" },
+          note: { type: "string" },
+        },
+        required: ["logs"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const runId =
@@ -148,7 +189,7 @@ export function createGithubGetRunLogsTool(
         if (isNotFound(msg)) return error(GH_NOT_FOUND);
         if (isNotAuthed(msg)) return error(GH_NOT_AUTHED);
         if (msg.includes("no failed") || msg.includes("no logs")) {
-          return success({
+          return successStructured({
             logs: "",
             note: "No failed step logs found — the run may have succeeded or logs may have expired.",
           });
@@ -171,7 +212,7 @@ export function createGithubGetRunLogsTool(
         truncated = true;
       }
 
-      return success({
+      return successStructuredLarge({
         runId,
         failedOnly,
         logs,

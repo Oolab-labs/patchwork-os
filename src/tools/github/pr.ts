@@ -7,7 +7,8 @@ import {
   optionalString,
   requireInt,
   requireString,
-  success,
+  successStructured,
+  successStructuredLarge,
   truncateOutput,
 } from "../utils.js";
 import {
@@ -82,6 +83,15 @@ export function createGithubCreatePRTool(
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          number: { type: ["integer", "null"] },
+          title: { type: "string" },
+        },
+        required: ["url", "number", "title"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const title = requireString(args, "title", 256);
@@ -150,7 +160,7 @@ export function createGithubCreatePRTool(
         onPullRequest({ url, number, title, branch });
       }
 
-      return success({ url, number, title });
+      return successStructured({ url, number, title });
     },
   };
 }
@@ -181,6 +191,30 @@ export function createGithubListPRsTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          prs: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                number: { type: "integer" },
+                title: { type: "string" },
+                state: { type: "string" },
+                url: { type: "string" },
+                headRefName: { type: "string" },
+                baseRefName: { type: "string" },
+                author: { type: "object" },
+                createdAt: { type: "string" },
+                isDraft: { type: "boolean" },
+              },
+            },
+          },
+          count: { type: "integer" },
+        },
+        required: ["prs", "count"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -226,7 +260,10 @@ export function createGithubListPRsTool(workspace: string) {
         return error(`Failed to parse gh output: ${result.stdout.trim()}`);
       }
 
-      return success({ prs, count: Array.isArray(prs) ? prs.length : 0 });
+      return successStructured({
+        prs,
+        count: Array.isArray(prs) ? prs.length : 0,
+      });
     },
   };
 }
@@ -249,6 +286,26 @@ export function createGithubViewPRTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          number: { type: "integer" },
+          title: { type: "string" },
+          state: { type: "string" },
+          url: { type: "string" },
+          body: { type: "string" },
+          author: { type: "object" },
+          createdAt: { type: "string" },
+          updatedAt: { type: "string" },
+          baseRefName: { type: "string" },
+          headRefName: { type: "string" },
+          isDraft: { type: "boolean" },
+          mergeable: { type: "string" },
+          reviewDecision: { type: ["string", "null"] },
+          reviews: { type: "array" },
+        },
+        required: ["number", "title", "state", "url"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -293,7 +350,7 @@ export function createGithubViewPRTool(workspace: string) {
         return error(`Failed to parse gh output: ${result.stdout.trim()}`);
       }
 
-      return success(pr);
+      return successStructured(pr);
     },
   };
 }
@@ -321,6 +378,31 @@ export function createGithubGetPRDiffTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          number: { type: "integer" },
+          title: { type: "string" },
+          body: { type: ["string", "null"] },
+          state: { type: "string" },
+          baseRefName: { type: "string" },
+          headRefName: { type: "string" },
+          additions: { type: "integer" },
+          deletions: { type: "integer" },
+          changedFiles: { type: "integer" },
+          files: { type: "array" },
+          author: { type: "object" },
+          createdAt: { type: "string" },
+          isDraft: { type: "boolean" },
+          mergeable: { type: "string" },
+          diff: { type: "string" },
+          truncated: { type: "boolean" },
+          note: { type: "string" },
+          filesIncomplete: { type: "boolean" },
+          filesNote: { type: "string" },
+        },
+        required: ["diff"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -389,7 +471,7 @@ export function createGithubGetPRDiffTool(workspace: string) {
         diff = `(diff unavailable: ${diffErr || "unknown error"})`;
       }
 
-      return success({
+      return successStructuredLarge({
         ...meta,
         diff,
         ...(diffTruncated
@@ -475,6 +557,16 @@ export function createGithubPostPRReviewTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          reviewId: { type: ["integer", "null"] },
+          url: { type: "string" },
+          event: { type: "string" },
+          commentsPosted: { type: "integer" },
+        },
+        required: ["reviewId", "url", "event", "commentsPosted"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -600,7 +692,7 @@ export function createGithubPostPRReviewTool(workspace: string) {
         // Non-fatal — return what we know
       }
 
-      return success({
+      return successStructured({
         reviewId: reviewData.id ?? null,
         url:
           reviewData.html_url ?? `https://github.com/${repo}/pull/${prNumber}`,

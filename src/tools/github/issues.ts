@@ -4,7 +4,7 @@ import {
   optionalInt,
   optionalString,
   requireString,
-  success,
+  successStructured,
 } from "../utils.js";
 import {
   GH_NOT_AUTHED,
@@ -49,6 +49,30 @@ export function createGithubListIssuesTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          issues: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                number: { type: "integer" },
+                title: { type: "string" },
+                state: { type: "string" },
+                url: { type: "string" },
+                author: { type: "object" },
+                assignees: { type: "array" },
+                labels: { type: "array" },
+                createdAt: { type: "string" },
+                updatedAt: { type: "string" },
+              },
+            },
+          },
+          count: { type: "integer" },
+        },
+        required: ["issues", "count"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -98,7 +122,7 @@ export function createGithubListIssuesTool(workspace: string) {
         return error(`Failed to parse gh output: ${result.stdout.trim()}`);
       }
 
-      return success({
+      return successStructured({
         issues,
         count: Array.isArray(issues) ? issues.length : 0,
       });
@@ -124,6 +148,24 @@ export function createGithubGetIssueTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          number: { type: "integer" },
+          title: { type: "string" },
+          state: { type: "string" },
+          url: { type: "string" },
+          body: { type: ["string", "null"] },
+          author: { type: "object" },
+          assignees: { type: "array" },
+          labels: { type: "array" },
+          createdAt: { type: "string" },
+          updatedAt: { type: "string" },
+          comments: { type: "array" },
+          milestone: { type: ["object", "null"] },
+        },
+        required: ["number", "title", "state", "url"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -163,7 +205,7 @@ export function createGithubGetIssueTool(workspace: string) {
         return error(`Failed to parse gh output: ${result.stdout.trim()}`);
       }
 
-      return success(issue);
+      return successStructured(issue);
     },
   };
 }
@@ -204,6 +246,15 @@ export function createGithubCreateIssueTool(workspace: string) {
         },
         additionalProperties: false as const,
       },
+      outputSchema: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          number: { type: ["integer", "null"] },
+          title: { type: "string" },
+        },
+        required: ["url", "number", "title"],
+      },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
       const title = requireString(args, "title", 256);
@@ -242,7 +293,7 @@ export function createGithubCreateIssueTool(workspace: string) {
         ? Number.parseInt(numberMatch[1] ?? "0", 10)
         : null;
 
-      return success({ url, number, title });
+      return successStructured({ url, number, title });
     },
   };
 }
@@ -269,6 +320,14 @@ export function createGithubCommentIssueTool(workspace: string) {
           },
         },
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          issueNumber: { type: "integer" },
+        },
+        required: ["url", "issueNumber"],
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -304,7 +363,7 @@ export function createGithubCommentIssueTool(workspace: string) {
       }
 
       const url = result.stdout.trim();
-      return success({ url, issueNumber: number });
+      return successStructured({ url, issueNumber: number });
     },
   };
 }
