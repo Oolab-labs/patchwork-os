@@ -21,6 +21,7 @@ export interface TestRunner {
     filter?: string,
     signal?: AbortSignal,
     timeoutMs?: number,
+    onLine?: (line: string) => void,
   ): Promise<TestResult[]>;
   cacheTtl: number;
 }

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../utils.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../utils.js")>();
-  return { ...actual, execSafe: vi.fn() };
+  return { ...actual, execSafe: vi.fn(), execSafeStreaming: vi.fn() };
 });
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -26,9 +26,9 @@ import { cargoTestRunner } from "../testRunners/cargoTest.js";
 import { goTestRunner } from "../testRunners/goTest.js";
 import { pytestRunner } from "../testRunners/pytest.js";
 import { jestRunner, vitestRunner } from "../testRunners/vitestJest.js";
-import { execSafe } from "../utils.js";
+import { execSafeStreaming } from "../utils.js";
 
-const mockExecSafe = vi.mocked(execSafe);
+const mockExecSafe = vi.mocked(execSafeStreaming);
 const mockExistsSync = vi.mocked(fs.existsSync);
 const mockReadFileSync = vi.mocked(fs.readFileSync);
 

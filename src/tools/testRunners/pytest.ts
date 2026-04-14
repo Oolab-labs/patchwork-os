@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ProbeResults } from "../../probe.js";
-import { execSafe } from "../utils.js";
+import { execSafeStreaming } from "../utils.js";
 import type { TestResult, TestRunner } from "./types.js";
 
 const DEFAULT_TEST_TIMEOUT = 120_000;
@@ -35,6 +35,7 @@ export const pytestRunner: TestRunner = {
     filter?: string,
     signal?: AbortSignal,
     timeoutMs?: number,
+    onLine?: (line: string) => void,
   ): Promise<TestResult[]> {
     const args = ["--tb=short", "-q"];
     if (filter) {
@@ -44,11 +45,13 @@ export const pytestRunner: TestRunner = {
         throw new Error("filter must not contain path traversal");
       args.push("--", filter);
     }
-    const result = await execSafe("pytest", args, {
+    // pytest emits test progress on stdout — stream those lines as progress.
+    const result = await execSafeStreaming("pytest", args, {
       cwd,
       timeout: timeoutMs ?? DEFAULT_TEST_TIMEOUT,
       maxBuffer: MAX_BUFFER,
       signal,
+      onLine,
     });
 
     return parseOutput(`${result.stdout}\n${result.stderr}`, cwd);
