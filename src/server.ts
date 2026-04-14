@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import { timingSafeStringEqual } from "./crypto.js";
+import { renderDashboardHtml } from "./dashboard.js";
 import type { Logger } from "./logger.js";
 import type { OAuthServer } from "./oauth.js";
 import {
@@ -117,6 +118,8 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
   /** Set by bridge to subscribe a caller to real-time activity events. Returns unsubscribe fn. */
   public streamFn: ((listener: ActivityListener) => () => void) | null = null;
+  /** Set to true via --no-dashboard to disable the /dashboard route. */
+  public noDashboard = false;
   /** Set by bridge to handle CC hook notify events via POST /notify */
   public notifyFn:
     | ((
@@ -357,10 +360,41 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       // Unauthenticated liveness probe — safe to expose; contains no sensitive data.
-      // NOTE: Any future unauthenticated UI routes (e.g. /dashboard) must not
-      // expose workspace paths, tool outputs, or session data. For public VPS
-      // deployments (--bind 0.0.0.0) such routes should be restricted at the
-      // nginx/firewall level or disabled via a --no-dashboard flag.
+      // NOTE: /dashboard and /dashboard/data are unauthenticated. They expose only
+      // version, uptime, session count, and extension state — no workspace paths
+      // or tool outputs. For public VPS deployments (--bind 0.0.0.0), restrict
+      // at nginx/firewall or disable with --no-dashboard.
+      if (
+        (req.url === "/dashboard" || req.url === "/dashboard/") &&
+        req.method === "GET" &&
+        !this.noDashboard
+      ) {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderDashboardHtml(PACKAGE_VERSION));
+        return;
+      }
+      if (
+        req.url === "/dashboard/data" &&
+        req.method === "GET" &&
+        !this.noDashboard
+      ) {
+        const health = this.healthDataFn?.() ?? {};
+        const status = this.statusFn?.() ?? {};
+        const data = {
+          version: PACKAGE_VERSION,
+          uptimeMs: Date.now() - this.startTime,
+          sessions: this.wss.clients.size,
+          extensionConnected:
+            (health as { extensionConnected?: boolean }).extensionConnected ??
+            false,
+          extensionVersion: (health as { extensionVersion?: string })
+            .extensionVersion,
+          events: (status as { events?: unknown[] }).events ?? [],
+        };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(data));
+        return;
+      }
       if (req.url === "/ping" && req.method === "GET") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, v: PACKAGE_VERSION }));
