@@ -69,6 +69,8 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:smoke": "bash scripts/smoke/run-all.sh",
+    "schema:check": "node scripts/audit-schema-changes.mjs",
+    "schema:update": "node scripts/audit-schema-changes.mjs --update",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "biome check .",
