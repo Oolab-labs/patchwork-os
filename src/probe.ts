@@ -27,6 +27,7 @@ export interface ProbeResults {
   codex: boolean;
   universalCtags: boolean;
   typescriptLanguageServer: boolean;
+  ant: boolean;
 }
 
 const PROBE_TIMEOUT = 3000;
@@ -143,14 +144,16 @@ export async function probeAll(workspace = ""): Promise<ProbeResults> {
     }),
   );
 
-  const [universalCtags, typescriptLanguageServer] = await Promise.all([
+  const [universalCtags, typescriptLanguageServer, ant] = await Promise.all([
     probeUniversalCtags(),
     probeTypescriptLanguageServer(),
+    probeCommand("ant"),
   ]);
 
   const base = Object.fromEntries(entries) as unknown as ProbeResults;
   base.universalCtags = universalCtags;
   base.typescriptLanguageServer = typescriptLanguageServer;
+  base.ant = ant;
   return base;
 }
 

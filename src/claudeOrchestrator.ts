@@ -51,6 +51,8 @@ export interface ClaudeTask {
   triggerSource?: string;
   /** Custom system prompt passed via --system-prompt to the subprocess. */
   systemPrompt?: string;
+  /** If true, this task was dispatched to the ant binary instead of claude. */
+  useAnt?: boolean;
   /** Set when status === "cancelled": what triggered the cancel. */
   cancelReason?: CancelReason;
   /** Last ~2KB of subprocess stderr — populated on timeout and other aborts. */
@@ -90,6 +92,8 @@ export type EnqueueOpts = {
   isAutomationTask?: boolean;
   /** Hook name that created this task (e.g. "onFileSave", "onDiagnosticsError"). Logged at task start for observability. */
   triggerSource?: string;
+  /** If true, spawn ant binary instead of claude. */
+  useAnt?: boolean;
 };
 
 /** Shape of a task entry in the v1 tasks file. */
@@ -205,6 +209,7 @@ export class ClaudeOrchestrator {
       ...(opts.systemPrompt !== undefined && {
         systemPrompt: opts.systemPrompt,
       }),
+      ...(opts.useAnt !== undefined && { useAnt: opts.useAnt }),
     };
 
     this.tasks.set(id, task);
@@ -343,6 +348,7 @@ export class ClaudeOrchestrator {
         maxBudgetUsd: task.maxBudgetUsd,
         startupTimeoutMs: task.startupTimeoutMs,
         systemPrompt: task.systemPrompt,
+        useAnt: task.useAnt,
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
           this.taskCallbacks.get(id)?.(chunk);

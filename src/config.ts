@@ -22,6 +22,7 @@ export interface Config {
   autoTmux: boolean;
   claudeDriver: "subprocess" | "api" | "none";
   claudeBinary: string;
+  antBinary: string;
   automationEnabled: boolean;
   automationPolicyPath: string | null;
   toolRateLimit: number;
@@ -167,6 +168,7 @@ interface ConfigFile {
   autoTmux?: boolean;
   claudeDriver?: "subprocess" | "api" | "none";
   claudeBinary?: string;
+  antBinary?: string;
   automationEnabled?: boolean;
   automationPolicyPath?: string;
   plugins?: string[];
@@ -196,6 +198,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "autoTmux",
   "claudeDriver",
   "claudeBinary",
+  "antBinary",
   "automationEnabled",
   "automationPolicyPath",
   "plugins",
@@ -334,6 +337,7 @@ export function parseConfig(argv: string[]): Config {
   let claudeDriver: "subprocess" | "api" | "none" =
     fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
+  let antBinary = fileConfig.antBinary ?? "ant";
   let automationEnabled = fileConfig.automationEnabled ?? false;
   let automationPolicyPath: string | null =
     fileConfig.automationPolicyPath ?? null;
@@ -472,6 +476,11 @@ export function parseConfig(argv: string[]): Config {
         claudeBinary = requireArg(args, ++i, "--claude-binary");
         if (claudeBinary.length > 4096)
           throw new Error("--claude-binary value too long (max 4096 chars)");
+        break;
+      case "--ant-binary":
+        antBinary = requireArg(args, ++i, "--ant-binary");
+        if (antBinary.length > 4096)
+          throw new Error("--ant-binary value too long (max 4096 chars)");
         break;
       case "--automation":
         automationEnabled = true;
@@ -778,6 +787,7 @@ Environment Variables:
     autoTmux,
     claudeDriver,
     claudeBinary,
+    antBinary,
     automationEnabled,
     automationPolicyPath,
     toolRateLimit,

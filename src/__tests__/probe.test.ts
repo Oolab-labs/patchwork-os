@@ -40,11 +40,13 @@ const ALL_KEYS: Array<keyof ProbeResults> = [
   "codex",
   "universalCtags",
   "typescriptLanguageServer",
+  "ant",
 ];
 
 // COMMANDS-based probes only (excludes custom probes with non-which invocations)
 const COMMANDS_KEYS = ALL_KEYS.filter(
-  (k) => k !== "universalCtags" && k !== "typescriptLanguageServer",
+  (k) =>
+    k !== "universalCtags" && k !== "typescriptLanguageServer" && k !== "ant",
 );
 
 beforeEach(() => {
