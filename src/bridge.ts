@@ -486,6 +486,16 @@ export class Bridge {
     this.extensionClient.onDebugSessionChanged = (state) => {
       this.logger.event("debug_session_changed");
       this.sendListChanged();
+      // Detect false→true transition (session started)
+      if (!this._lastDebugSessionActive && state.hasActiveSession) {
+        const breakpoints = state.breakpoints ?? [];
+        this.automationHooks?.handleDebugSessionStart({
+          sessionName: state.sessionName ?? "unknown",
+          sessionType: state.sessionType ?? "unknown",
+          breakpointCount: breakpoints.filter((b) => b.enabled).length,
+          activeFile: breakpoints[0]?.file ?? "",
+        });
+      }
       // Detect true→false transition (session ended)
       if (this._lastDebugSessionActive && !state.hasActiveSession) {
         this.automationHooks?.handleDebugSessionEnd({
@@ -832,6 +842,9 @@ export class Bridge {
         return { ok: false, error: "Automation not enabled" };
       }
       switch (event) {
+        case "PreCompact":
+          this.automationHooks.handlePreCompact();
+          return { ok: true };
         case "PostCompact":
           this.automationHooks.handlePostCompact();
           return { ok: true };

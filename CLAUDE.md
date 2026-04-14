@@ -180,6 +180,7 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onDiagnosticsCleared` — errors/warnings drop to zero. Placeholder: `{{file}}`. Cooldown.
   - `onFileSave` — matching files saved. Minimatch glob patterns. Placeholder: `{{file}}`.
   - `onFileChanged` — matching files changed (buffer change, not save). Minimatch glob patterns. Placeholder: `{{file}}`.
+  - `onPreCompact` — fires before Claude Code compacts context. Snapshot state before trimming.
   - `onPostCompact` — fires after Claude Code compacts context. Re-injects IDE state.
   - `onInstructionsLoaded` — fires at session start. Injects bridge status summary.
   - `onGitCommit` — fires after successful `gitCommit`. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`.
@@ -192,12 +193,15 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onTaskSuccess` — fires when orchestrator task completes successfully. Placeholders: `{{taskId}}`, `{{output}}`.
   - `onPermissionDenied` — fires on Claude Code PermissionDenied hook (CC 2.1.89+). Placeholders: `{{tool}}`, `{{reason}}`.
   - `onCwdChanged` — fires when Claude Code CWD changes (CC 2.1.83+). Placeholder: `{{cwd}}`.
+  - `onDebugSessionStart` — fires when a VS Code debug session starts. Placeholders: `{{sessionName}}`, `{{sessionType}}`, `{{breakpointCount}}`, `{{activeFile}}`.
+  - `onDebugSessionEnd` — fires when a VS Code debug session terminates. Placeholders: `{{sessionName}}`, `{{sessionType}}`.
 - **Shared options**: all hooks support inline `prompt` string or `promptName`/`promptArgs` named prompt references. All support `cooldownMs` (min 5000).
 - **Cooldown**: min 5s between triggers for same file/event. Max prompt size: 32KB.
 - **CC hook wiring** — hooks relying on Claude Code's hook system need MCP notify tools called from `settings.json`. Bridge registers these automatically when `--automation` active:
 
   | CC hook event | Shell command (settings.json) |
   |---|---|
+  | `PreCompact` | `claude-ide-bridge notify PreCompact` |
   | `PostCompact` | `claude-ide-bridge notify PostCompact` |
   | `InstructionsLoaded` | `claude-ide-bridge notify InstructionsLoaded` |
   | `TaskCreated` | `claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT` |
@@ -209,6 +213,9 @@ Event-driven hooks that trigger Claude tasks automatically.
   Example `~/.claude/settings.json` block (Claude Code requires `matcher` + `hooks` arrays):
   ```json
   "hooks": {
+    "PreCompact": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PreCompact" }] }
+    ],
     "PostCompact": [
       { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }] }
     ],
