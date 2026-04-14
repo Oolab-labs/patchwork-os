@@ -348,15 +348,20 @@ export function createGetDiagnosticsTool(
       progress?.(0, total, `Running ${total} linter${total !== 1 ? "s" : ""}…`);
       const results = await Promise.all(
         availableLinters.map((l) =>
-          runLinter(l, signal).then((r) => {
-            completed++;
-            progress?.(
-              completed,
-              total,
-              `${l.name} done (${completed}/${total})`,
-            );
-            return r;
-          }),
+          runLinter(l, signal)
+            .then((r) => {
+              completed++;
+              progress?.(
+                completed,
+                total,
+                `${l.name} done (${completed}/${total})`,
+              );
+              return r;
+            })
+            .catch((err) => {
+              linterErrors.set(l.name, String(err));
+              return [] as LintDiagnostic[];
+            }),
         ),
       );
       let diagnostics = results.flat();

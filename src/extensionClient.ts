@@ -128,6 +128,9 @@ export class ExtensionClient {
 
   // State pushed by extension via notifications
   public latestDiagnostics = new Map<string, Diagnostic[]>();
+  /** Parallel timestamp map — tracks when each file's diagnostics were last updated. */
+  private latestDiagnosticsUpdatedAt = new Map<string, number>();
+  private static readonly DIAGNOSTICS_TTL_MS = 3_600_000; // 1 hour
   public latestSelection: SelectionState | null = null;
   public latestActiveFile: string | null = null;
   public lastDiagnosticsUpdate = 0;
@@ -298,6 +301,7 @@ export class ExtensionClient {
         let sanitized: Diagnostic[];
         if (diagnostics.length === 0) {
           this.latestDiagnostics.delete(file);
+          this.latestDiagnosticsUpdatedAt.delete(file);
           sanitized = [];
         } else {
           // Sanitize: extract only known-safe fields to prevent prototype pollution
@@ -336,10 +340,14 @@ export class ExtensionClient {
           });
           sanitized = safe as Diagnostic[];
           this.latestDiagnostics.set(file, sanitized);
+          this.latestDiagnosticsUpdatedAt.set(file, Date.now());
           // Cap diagnostics cache at 500 entries
           if (this.latestDiagnostics.size > 500) {
             const firstKey = this.latestDiagnostics.keys().next().value;
-            if (firstKey !== undefined) this.latestDiagnostics.delete(firstKey);
+            if (firstKey !== undefined) {
+              this.latestDiagnostics.delete(firstKey);
+              this.latestDiagnosticsUpdatedAt.delete(firstKey);
+            }
           }
         }
         // Update timestamp and forward sanitized data to Claude Code
@@ -1687,7 +1695,24 @@ export class ExtensionClient {
   // --- Diagnostics Helpers ---
 
   getCachedDiagnostics(file?: string): Diagnostic[] {
-    if (file) return this.latestDiagnostics.get(file) ?? [];
+    const now = Date.now();
+    const ttl = ExtensionClient.DIAGNOSTICS_TTL_MS;
+    if (file) {
+      const updatedAt = this.latestDiagnosticsUpdatedAt.get(file);
+      if (updatedAt !== undefined && now - updatedAt > ttl) {
+        this.latestDiagnostics.delete(file);
+        this.latestDiagnosticsUpdatedAt.delete(file);
+        return [];
+      }
+      return this.latestDiagnostics.get(file) ?? [];
+    }
+    // Evict stale entries across entire map on a full scan
+    for (const [f, updatedAt] of this.latestDiagnosticsUpdatedAt) {
+      if (now - updatedAt > ttl) {
+        this.latestDiagnostics.delete(f);
+        this.latestDiagnosticsUpdatedAt.delete(f);
+      }
+    }
     return Array.from(this.latestDiagnostics.values()).flat();
   }
 
