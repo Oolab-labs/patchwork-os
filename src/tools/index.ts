@@ -400,7 +400,11 @@ export function registerAllTools(
     createPreviewCodeActionTool(workspace, extensionClient),
     createRefactorPreviewTool(workspace, extensionClient),
     createRenameSymbolTool(workspace, extensionClient),
-    createSearchWorkspaceSymbolsTool(workspace, extensionClient),
+    createSearchWorkspaceSymbolsTool(
+      workspace,
+      extensionClient,
+      probes.universalCtags,
+    ),
     createGetCallHierarchyTool(workspace, extensionClient),
     createExplainSymbolTool(workspace, extensionClient),
     createPrepareRenameTool(workspace, extensionClient),
@@ -462,7 +466,7 @@ export function registerAllTools(
       setEditorDecorations: setEditorDecorationsToolInstance,
       extensionClient,
     }),
-    createNavigateToSymbolByNameTool(extensionClient),
+    createNavigateToSymbolByNameTool(extensionClient, workspace, probes.rg),
     createFixAllLintErrorsTool(workspace, probes, extensionClient),
     createOrganizeImportsTool(workspace, extensionClient),
     createWatchDiagnosticsTool(

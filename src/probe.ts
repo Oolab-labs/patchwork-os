@@ -25,6 +25,8 @@ export interface ProbeResults {
   jest: boolean;
   pytest: boolean;
   codex: boolean;
+  universalCtags: boolean;
+  typescriptLanguageServer: boolean;
 }
 
 const PROBE_TIMEOUT = 3000;
@@ -103,7 +105,32 @@ const COMMANDS: Array<[keyof ProbeResults, string]> = [
   ["jest", "jest"],
   ["pytest", "pytest"],
   ["codex", "codex"],
+  // universalCtags and typescriptLanguageServer use custom probes below
 ];
+
+/**
+ * Probe for Universal Ctags specifically.
+ * Exuberant Ctags (macOS /usr/bin/ctags, apt install ctags) does NOT support
+ * --output-format=json. We check `ctags --version` output for "Universal Ctags".
+ */
+async function probeUniversalCtags(): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("ctags", ["--version"], {
+      timeout: PROBE_TIMEOUT,
+    });
+    return stdout.toLowerCase().includes("universal ctags");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Probe for typescript-language-server (npm package).
+ * `tsc` in PATH does NOT imply typescript-language-server is installed.
+ */
+async function probeTypescriptLanguageServer(): Promise<boolean> {
+  return probeCommand("typescript-language-server");
+}
 
 export async function probeAll(workspace = ""): Promise<ProbeResults> {
   const entries = await Promise.all(
@@ -116,7 +143,15 @@ export async function probeAll(workspace = ""): Promise<ProbeResults> {
     }),
   );
 
-  return Object.fromEntries(entries) as unknown as ProbeResults;
+  const [universalCtags, typescriptLanguageServer] = await Promise.all([
+    probeUniversalCtags(),
+    probeTypescriptLanguageServer(),
+  ]);
+
+  const base = Object.fromEntries(entries) as unknown as ProbeResults;
+  base.universalCtags = universalCtags;
+  base.typescriptLanguageServer = typescriptLanguageServer;
+  return base;
 }
 
 /**

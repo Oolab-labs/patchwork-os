@@ -929,17 +929,14 @@ export function createGetCallHierarchyTool(
 }
 
 export function createSearchWorkspaceSymbolsTool(
-  // _workspace is intentionally unused: symbol search is delegated entirely to
-  // the VS Code extension's LSP provider, which handles its own workspace scope.
-  // The parameter is retained so the factory signature stays consistent with
-  // all other tools in this file and allows future workspace-scoped filtering.
-  _workspace: string,
+  workspace: string,
   extensionClient: ExtensionClient,
+  hasUniversalCtags = false,
 ) {
   return {
     schema: {
       name: "searchWorkspaceSymbols",
-      extensionRequired: true,
+      extensionFallback: true,
       description:
         "Search workspace symbols (classes, fns, vars, interfaces) by name via LSP.",
       annotations: { readOnlyHint: true },
@@ -985,24 +982,96 @@ export function createSearchWorkspaceSymbolsTool(
       if (query.trim().length === 0) {
         return error("query must not be empty");
       }
-      if (!extensionClient.isConnected()) {
-        return extensionRequired("LSP features", [
-          "Use runCommand with tsc, eslint, pyright, or biome for CLI-based analysis",
-          "Use getDiagnostics for lint/type-check results from CLI linters",
-        ]);
-      }
       const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
-      const result = await lspWithRetry(
-        () => extensionClient.searchSymbols(query, maxResults, signal),
-        signal,
-      );
-      if (result === "timeout") return lspColdStartError();
-      if (result === null) {
-        return successStructured({ symbols: [], count: 0 });
+
+      if (extensionClient.isConnected()) {
+        const result = await lspWithRetry(
+          () => extensionClient.searchSymbols(query, maxResults, signal),
+          signal,
+        );
+        if (result === "timeout") return lspColdStartError();
+        if (result === null) {
+          return successStructured({ symbols: [], count: 0 });
+        }
+        return successStructured(result);
       }
-      return successStructured(result);
+
+      // Headless fallback: Universal Ctags JSON output
+      if (hasUniversalCtags && workspace) {
+        return searchWithCtags(workspace, query, maxResults, signal);
+      }
+
+      return extensionRequired("LSP symbol search", [
+        "Install universal-ctags for headless fallback: sudo apt-get install universal-ctags (Linux) or brew install universal-ctags (macOS)",
+        "Use searchWorkspace with a grep pattern as an alternative",
+      ]);
     },
   };
+}
+
+/** Universal Ctags headless fallback for searchWorkspaceSymbols. */
+async function searchWithCtags(
+  workspace: string,
+  query: string,
+  maxResults: number,
+  signal?: AbortSignal,
+): Promise<ReturnType<typeof successStructured>> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFileAsync = promisify(execFile);
+
+  try {
+    const { stdout } = await execFileAsync(
+      "ctags",
+      [
+        "--output-format=json",
+        "--fields=+KSn",
+        "--recurse",
+        "--totals=no",
+        `-f`,
+        `-`,
+        workspace,
+      ],
+      { timeout: 15_000, maxBuffer: 10 * 1024 * 1024, signal },
+    );
+
+    const lowerQuery = query.toLowerCase();
+    const symbols: Array<{
+      name: string;
+      kind: string;
+      uri: string;
+      line: number;
+      containerName?: string;
+    }> = [];
+
+    for (const line of stdout.split("\n")) {
+      if (!line.trim() || line.startsWith("!_")) continue;
+      try {
+        const tag = JSON.parse(line) as {
+          name?: string;
+          kind?: string;
+          path?: string;
+          line?: number;
+          scope?: string;
+        };
+        if (!tag.name || !tag.name.toLowerCase().includes(lowerQuery)) continue;
+        symbols.push({
+          name: tag.name,
+          kind: tag.kind ?? "unknown",
+          uri: tag.path ?? "",
+          line: tag.line ?? 0,
+          ...(tag.scope ? { containerName: tag.scope } : {}),
+        });
+        if (symbols.length >= maxResults) break;
+      } catch {
+        // skip malformed lines
+      }
+    }
+
+    return successStructured({ symbols, count: symbols.length });
+  } catch {
+    return successStructured({ symbols: [], count: 0 });
+  }
 }
 
 export function createPrepareRenameTool(

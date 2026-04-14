@@ -38,7 +38,14 @@ const ALL_KEYS: Array<keyof ProbeResults> = [
   "jest",
   "pytest",
   "codex",
+  "universalCtags",
+  "typescriptLanguageServer",
 ];
+
+// COMMANDS-based probes only (excludes custom probes with non-which invocations)
+const COMMANDS_KEYS = ALL_KEYS.filter(
+  (k) => k !== "universalCtags" && k !== "typescriptLanguageServer",
+);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -97,14 +104,14 @@ describe("probeAll", () => {
 
     await probeAll();
 
-    // execFile should have been called once for each command
+    // execFile called once per COMMANDS entry (via which) + once for ctags --version + once for which typescript-language-server
     expect(mockedExecFile).toHaveBeenCalledTimes(ALL_KEYS.length);
 
-    // Verify each command was probed via "which"
+    // Verify each COMMANDS-based key was probed via "which"
     const calledCommands = mockedExecFile.mock.calls.map(
       (call) => (call[1] as string[])[0],
     );
-    for (const key of ALL_KEYS) {
+    for (const key of COMMANDS_KEYS) {
       expect(calledCommands).toContain(key);
     }
   });
