@@ -1428,3 +1428,86 @@ describe("McpTransport", () => {
     ).toThrow(/invalid tool name/i);
   });
 });
+
+// ── C1: Per-session tool deny list ────────────────────────────────────────────
+
+describe("setDenyTools", () => {
+  it("returns isError:true when a denied tool is called", async () => {
+    const { ws } = await setup("deny-tools-test-token-abc123456789", (t) => {
+      t.registerTool(
+        {
+          name: "allowedTool",
+          description: "ok",
+          inputSchema: { type: "object", properties: {}, required: [] },
+        },
+        async () => ({ content: [{ type: "text", text: "allowed" }] }),
+      );
+      t.registerTool(
+        {
+          name: "deniedTool",
+          description: "blocked",
+          inputSchema: { type: "object", properties: {}, required: [] },
+        },
+        async () => ({ content: [{ type: "text", text: "should not run" }] }),
+      );
+      t.setDenyTools(new Set(["deniedTool"]));
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 10,
+      method: "tools/call",
+      params: { name: "deniedTool", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 10);
+    expect(resp.result.isError).toBe(true);
+    expect(resp.result.content[0].text).toMatch(/denied/);
+  });
+
+  it("allows non-denied tools when deny list is set", async () => {
+    const { ws } = await setup("deny-tools-test-token-xyz987654321", (t) => {
+      t.registerTool(
+        {
+          name: "allowedTool",
+          description: "ok",
+          inputSchema: { type: "object", properties: {}, required: [] },
+        },
+        async () => ({ content: [{ type: "text", text: "allowed" }] }),
+      );
+      t.setDenyTools(new Set(["somethingElse"]));
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 11,
+      method: "tools/call",
+      params: { name: "allowedTool", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 11);
+    expect(resp.result.isError).toBeUndefined();
+    expect(resp.result.content[0].text).toBe("allowed");
+  });
+
+  it("empty deny set allows all tools", async () => {
+    const { ws } = await setup("deny-tools-test-token-empty00000000", (t) => {
+      t.registerTool(
+        {
+          name: "someTools",
+          description: "ok",
+          inputSchema: { type: "object", properties: {}, required: [] },
+        },
+        async () => ({ content: [{ type: "text", text: "yes" }] }),
+      );
+      t.setDenyTools(new Set());
+    });
+
+    send(ws, {
+      jsonrpc: "2.0",
+      id: 12,
+      method: "tools/call",
+      params: { name: "someTools", arguments: {} },
+    });
+    const resp = await waitFor(ws, (m) => m.id === 12);
+    expect(resp.result.isError).toBeUndefined();
+  });
+});

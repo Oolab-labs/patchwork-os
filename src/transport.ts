@@ -132,6 +132,8 @@ export class McpTransport {
   public claudeCodeSessionId: string | null = null;
   /** OAuth scope for this session. null = full access (static bridge token). "mcp:read" = read-only. */
   private sessionScope: string | null = null;
+  /** Per-session tool deny list. Tools in this set return isError:true at dispatch. */
+  private denyTools: Set<string> = new Set();
   /** Called on each progress notification — HTTP sessions use this to refresh lastActivity. */
   public onActivity: (() => void) | undefined = undefined;
   private activityLog: ActivityLog | null = null;
@@ -162,6 +164,15 @@ export class McpTransport {
    */
   setSessionScope(scope: string | null): void {
     this.sessionScope = scope;
+  }
+
+  /**
+   * Set a per-session tool deny list. Tools whose name is in this set will
+   * return isError:true at dispatch time (they still appear in tools/list).
+   * Called at HTTP session initialize time from X-Bridge-Deny-Tools header.
+   */
+  setDenyTools(tools: Set<string>): void {
+    this.denyTools = tools;
   }
 
   /** Configure per-session tool call rate limiting (calls/minute, 0 = disabled). */
@@ -892,6 +903,22 @@ export class McpTransport {
                     {
                       type: "text",
                       text: `Tool "${params.name}" requires full mcp scope. This session has mcp:read (read-only) scope.`,
+                    },
+                  ],
+                  isError: true,
+                },
+              };
+            } else if (this.denyTools.has(params.name)) {
+              this.callCount++;
+              this.errorCount++;
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                result: {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Tool "${params.name}" is denied for this session.`,
                     },
                   ],
                   isError: true,

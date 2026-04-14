@@ -4957,3 +4957,96 @@ describe("handleInstructionsLoaded: cascade guard suppresses when another automa
     expect(orch.list().length).toBe(1);
   });
 });
+
+// ── B2: Hook retry logic ──────────────────────────────────────────────────────
+
+describe("hook retry logic (retryCount / retryDelayMs)", () => {
+  it("does not retry when retryCount is 0 (default)", async () => {
+    const driver: IClaudeDriver = {
+      name: "error",
+      async run() {
+        return { text: "", exitCode: 1, durationMs: 1 };
+      },
+    };
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Fix {{file}}",
+          cooldownMs: 0,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileSaved("id", "save", "/workspace/foo.ts");
+    await new Promise<void>((r) => setTimeout(r, 50));
+    // Only 1 task — no retry
+    expect(orch.list().length).toBe(1);
+    expect(orch.list()[0]!.status).toBe("error");
+  });
+
+  it("re-enqueues once when retryCount: 1 and task errors", async () => {
+    const driver: IClaudeDriver = {
+      name: "error",
+      async run() {
+        return { text: "", exitCode: 1, durationMs: 1 };
+      },
+    };
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Fix {{file}}",
+          cooldownMs: 0,
+          retryCount: 1,
+          retryDelayMs: 5_000, // 5s minimum enforced
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleFileSaved("id", "save", "/workspace/foo.ts");
+    // Wait for first task to error + polling interval (2s) + retryDelay (5s) + execution
+    await new Promise<void>((r) => setTimeout(r, 8_500));
+    // Should have 2 tasks: original + 1 retry
+    expect(orch.list().length).toBe(2);
+    expect(orch.list()[1]!.status).toBe("error");
+  }, 12_000);
+
+  it("logs drop message when max retries exhausted", async () => {
+    const driver: IClaudeDriver = {
+      name: "error",
+      async run() {
+        return { text: "", exitCode: 1, durationMs: 1 };
+      },
+    };
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+    const logs: string[] = [];
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Fix {{file}}",
+          cooldownMs: 0,
+          retryCount: 1,
+          retryDelayMs: 5_000,
+        },
+      },
+      orch,
+      (msg) => logs.push(msg),
+    );
+    hooks.handleFileSaved("id", "save", "/workspace/bar.ts");
+    await new Promise<void>((r) => setTimeout(r, 16_000));
+    // Both original + retry errored; drop message logged after 2nd failure
+    expect(
+      logs.some((l) => l.includes("max retries") && l.includes("dropping")),
+    ).toBe(true);
+    expect(orch.list().length).toBe(2);
+  }, 20_000);
+});
