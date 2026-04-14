@@ -6,6 +6,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRIDGE="${BRIDGE:-claude-ide-bridge}"
+export BRIDGE
 PORT=37210
 TMPWS="$(mktemp -d)"
 CLAUDE_CFG="$(mktemp -d)"
@@ -77,6 +78,7 @@ run_cat "CAT-5 (http)"        "$SCRIPT_DIR/cat5-http.mjs"       "$PORT" "$TOKEN"
 run_cat "CAT-6 (oauth)"       "$SCRIPT_DIR/cat6-oauth.mjs"
 run_cat "CAT-7 (plugin)"      "$SCRIPT_DIR/cat7-plugin.mjs"
 run_cat "CAT-8 (ratelimit)"   "$SCRIPT_DIR/cat8-ratelimit.mjs"  "$PORT" "$TOKEN"
+sleep 1  # CAT-8 saturates rate limiter + connection throttle; give bridge 1s to reset
 run_cat "CAT-9 (prompts/res)"  "$SCRIPT_DIR/cat9-prompts-resources.mjs" "$PORT" "$TOKEN"
 run_cat "CAT-10 (health)"     "$SCRIPT_DIR/cat10-health.mjs"    "$PORT" "$TOKEN"
 run_cat "CAT-11 (shutdown)"   "$SCRIPT_DIR/cat11-shutdown.mjs"
