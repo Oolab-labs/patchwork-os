@@ -80,11 +80,26 @@ const DEFAULT_AUTOMATION_SYSTEM_PROMPT =
  *   primary event value (file path, branch name, tool name, etc.) matches.
  *   Prefix with `!` to negate: `"!**\/*.test.ts"` fires for all non-test files.
  */
+/**
+ * Optional runtime condition checked before a hook fires.
+ * All specified fields must pass for the hook to trigger.
+ */
+export interface AutomationCondition {
+  /** Only fire if the active file's diagnostic count meets this threshold. */
+  minDiagnosticCount?: number;
+  /** Only fire if the active file has a diagnostic of at least this severity. */
+  diagnosticsMinSeverity?: "error" | "warning";
+  /** Only fire if the last test run for any runner had this outcome. */
+  testRunnerLastStatus?: "passed" | "failed";
+}
+
 export interface PromptSource {
   prompt?: string;
   promptName?: string;
   promptArgs?: Record<string, string>;
   condition?: string;
+  /** Optional runtime condition evaluated before the hook fires. */
+  when?: AutomationCondition;
   /** Per-hook model override. Falls back to policy.defaultModel (Haiku). */
   model?: string;
   /** Per-hook effort override. Falls back to policy.defaultEffort ("low"). */
@@ -1002,7 +1017,7 @@ export function checkCcHookWiring(): Record<string, boolean> {
       result[ccEvent] = entries.some((e) => {
         // New format: { matcher, hooks: [{ type, command }] }
         if (e && Array.isArray((e as NestedHook).hooks)) {
-          return (e as NestedHook).hooks!.some((h) =>
+          return (e as NestedHook).hooks?.some((h) =>
             commandMatches(h.command, ccEvent, toolName),
           );
         }
@@ -1061,6 +1076,10 @@ export class AutomationHooks {
   private activeDiagnosticsClearedTasks = new Map<string, string>();
   /** Tracks previous error count per normalized file path for zero-transition detection. */
   private prevDiagnosticErrors = new Map<string, number>();
+  /** Latest diagnostics by file — used by _evaluateWhen() for conditional hooks. */
+  private latestDiagnosticsByFile = new Map<string, Diagnostic[]>();
+  /** Last test runner outcome per runner name — used by _evaluateWhen(). */
+  private lastTestRunnerStatusByRunner = new Map<string, "passed" | "failed">();
   /** Active task ID for the task-success handler (workspace-global). */
   private activeTaskSuccessTaskId: string | null = null;
   /** Active task ID for the post-compact handler (workspace-global). */
@@ -1231,6 +1250,54 @@ export class AutomationHooks {
       .join("\n\n");
   }
 
+  /**
+   * Evaluate the optional `when` condition block on a hook.
+   * Called after _matchesCondition() succeeds and before cooldown checks.
+   * Returns true if all specified conditions pass (or no `when` block present).
+   */
+  private _evaluateWhen(cfg: PromptSource, file?: string): boolean {
+    const when = cfg.when;
+    if (!when) return true;
+
+    if (
+      when.minDiagnosticCount !== undefined ||
+      when.diagnosticsMinSeverity !== undefined
+    ) {
+      const diags =
+        (file ? this.latestDiagnosticsByFile.get(file) : undefined) ?? [];
+      if (
+        when.minDiagnosticCount !== undefined &&
+        diags.length < when.minDiagnosticCount
+      ) {
+        return false;
+      }
+      if (when.diagnosticsMinSeverity !== undefined) {
+        const targetRank = when.diagnosticsMinSeverity === "error" ? 2 : 1;
+        const severityRank: Record<string, number> = {
+          error: 2,
+          warning: 1,
+          info: 0,
+          information: 0,
+          hint: 0,
+        };
+        const hasMatchingSeverity = diags.some(
+          (d) => (severityRank[d.severity] ?? 0) >= targetRank,
+        );
+        if (!hasMatchingSeverity) return false;
+      }
+    }
+
+    if (when.testRunnerLastStatus !== undefined) {
+      // Check any runner's last status (wildcard: first match wins)
+      const statuses = Array.from(this.lastTestRunnerStatusByRunner.values());
+      if (statuses.length === 0) return false;
+      const hasMatch = statuses.some((s) => s === when.testRunnerLastStatus);
+      if (!hasMatch) return false;
+    }
+
+    return true;
+  }
+
   private _matchesCondition(cfg: PromptSource, primaryValue: string): boolean {
     if (!cfg.condition) return true;
     const pattern = cfg.condition;
@@ -1258,6 +1325,8 @@ export class AutomationHooks {
     ).length;
     const prevErrorCount = this.prevDiagnosticErrors.get(normalizedFile) ?? 0;
     this.prevDiagnosticErrors.set(normalizedFile, currentErrorCount);
+    // Keep latest diagnostics for _evaluateWhen() condition checks
+    this.latestDiagnosticsByFile.set(normalizedFile, diagnostics);
 
     // Fire onDiagnosticsCleared if transitioning from non-zero → zero
     if (prevErrorCount > 0 && currentErrorCount === 0) {
@@ -1269,6 +1338,7 @@ export class AutomationHooks {
 
     // Condition filter
     if (!this._matchesCondition(cfg, normalizedFile)) return;
+    if (!this._evaluateWhen(cfg, normalizedFile)) return;
 
     // Skip onDiagnosticsError if there are no errors to report
     if (currentErrorCount === 0) return;
@@ -1641,6 +1711,7 @@ export class AutomationHooks {
 
     // Condition filter
     if (!this._matchesCondition(cfg, normalizedFile)) return;
+    if (!this._evaluateWhen(cfg, normalizedFile)) return;
 
     // Pattern matching — also try workspace-relative path so patterns like
     // "src/**/*.ts" work when VS Code sends absolute paths.
@@ -1831,10 +1902,13 @@ export class AutomationHooks {
 
     // Update per-runner outcome state unconditionally so onTestPassAfterFailure
     // can detect fail→pass transitions even when onTestRun is disabled/absent.
+    const testStatus = failureCount === 0 ? "passed" : "failed";
     for (const runner of result.runners) {
       const prev = this.lastTestOutcomeByRunner.get(runner);
       const current = failureCount === 0 ? "pass" : "fail";
       this.lastTestOutcomeByRunner.set(runner, current);
+      // Update lastTestRunnerStatusByRunner for _evaluateWhen() condition checks
+      this.lastTestRunnerStatusByRunner.set(runner, testStatus);
       if (prev === "fail" && current === "pass") {
         this._handleTestPassAfterFailure(result, runner);
       }
@@ -1860,6 +1934,9 @@ export class AutomationHooks {
       );
       return;
     }
+
+    // Evaluate optional when condition
+    if (!this._evaluateWhen(cfg)) return;
 
     // Loop guard: skip if a task is still pending/running
     if (this.activeTestRunTaskId) {

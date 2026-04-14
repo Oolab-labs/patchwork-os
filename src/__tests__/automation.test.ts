@@ -5050,3 +5050,136 @@ describe("hook retry logic (retryCount / retryDelayMs)", () => {
     expect(orch.list().length).toBe(2);
   }, 20_000);
 });
+
+describe("conditional when logic (_evaluateWhen)", () => {
+  function makeOrch() {
+    return {
+      tasks: new Map<string, { status: string }>(),
+      enqueue(opts: { prompt: string }) {
+        const id = Math.random().toString(36).slice(2);
+        this.tasks.set(id, { status: "done" });
+        return id;
+      },
+      getTask(id: string) {
+        return this.tasks.get(id) ?? null;
+      },
+      list() {
+        return Array.from(this.tasks.values());
+      },
+    };
+  }
+
+  it("when.minDiagnosticCount: skips hook when diagnostic count below threshold", () => {
+    const orch = makeOrch();
+    const logs: string[] = [];
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix {{file}}",
+          cooldownMs: 0,
+          when: { minDiagnosticCount: 3 },
+        },
+      },
+      orch,
+      (msg) => logs.push(msg),
+    );
+    // Only 2 diagnostics — below threshold of 3
+    hooks.handleDiagnosticsChanged("/workspace/x.ts", [
+      { severity: "error", message: "e1", source: "ts", code: "1" },
+      { severity: "error", message: "e2", source: "ts", code: "2" },
+    ]);
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("when.minDiagnosticCount: fires hook when diagnostic count meets threshold", () => {
+    const orch = makeOrch();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix {{file}}",
+          cooldownMs: 0,
+          when: { minDiagnosticCount: 3 },
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/workspace/x.ts", [
+      { severity: "error", message: "e1", source: "ts", code: "1" },
+      { severity: "error", message: "e2", source: "ts", code: "2" },
+      { severity: "error", message: "e3", source: "ts", code: "3" },
+    ]);
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("when.testRunnerLastStatus: skips hook when last run passed", () => {
+    const orch = makeOrch();
+    const logs: string[] = [];
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          prompt: "Fix tests",
+          cooldownMs: 0,
+          when: { testRunnerLastStatus: "failed" },
+        },
+      },
+      orch,
+      (msg) => logs.push(msg),
+    );
+    // First run: all pass — status stored as "passed"
+    hooks.handleTestRun({
+      runners: ["vitest"],
+      summary: { passed: 10, failed: 0, errored: 0, skipped: 0, total: 10 },
+      failures: [],
+    });
+    // Hook should NOT fire because last status is "passed", not "failed"
+    expect(orch.list().length).toBe(0);
+  });
+
+  it("when.testRunnerLastStatus: fires hook when last run failed", () => {
+    const orch = makeOrch();
+    const hooks = new AutomationHooks(
+      {
+        onTestRun: {
+          enabled: true,
+          prompt: "Fix tests",
+          cooldownMs: 0,
+          when: { testRunnerLastStatus: "failed" },
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleTestRun({
+      runners: ["vitest"],
+      summary: { passed: 8, failed: 2, errored: 0, skipped: 0, total: 10 },
+      failures: [{ name: "test1", file: "x.test.ts", message: "fail" }],
+    });
+    expect(orch.list().length).toBe(1);
+  });
+
+  it("no when block: hook fires as before (backward compat)", () => {
+    const orch = makeOrch();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          minSeverity: "error",
+          prompt: "Fix {{file}}",
+          cooldownMs: 0,
+        },
+      },
+      orch,
+      () => {},
+    );
+    hooks.handleDiagnosticsChanged("/workspace/x.ts", [
+      { severity: "error", message: "e1", source: "ts", code: "1" },
+    ]);
+    expect(orch.list().length).toBe(1);
+  });
+});
