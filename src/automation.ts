@@ -235,6 +235,20 @@ export interface TestRunResult {
   failures: Array<{ name: string; file: string; message: string }>;
 }
 
+export interface OnDebugSessionEndPolicy extends PromptSource {
+  enabled: boolean;
+  /**
+   * Placeholders (inline prompt only): {{sessionName}}, {{sessionType}}
+   */
+  cooldownMs: number;
+}
+
+/** Minimal debug session result passed to handleDebugSessionEnd. */
+export interface DebugSessionEndResult {
+  sessionName: string;
+  sessionType: string;
+}
+
 export interface OnGitCommitPolicy extends PromptSource {
   enabled: boolean;
   /**
@@ -425,6 +439,8 @@ export interface AutomationPolicy {
   onDiagnosticsCleared?: OnDiagnosticsClearedPolicy;
   /** Fired when a Claude orchestrator task completes with status done. */
   onTaskSuccess?: OnTaskSuccessPolicy;
+  /** Fired when a VS Code debug session terminates (hasActiveSession transitions true→false). */
+  onDebugSessionEnd?: OnDebugSessionEndPolicy;
 }
 
 export interface Diagnostic {
@@ -958,6 +974,27 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
+  // Validate onDebugSessionEnd
+  if (policy.onDebugSessionEnd !== undefined) {
+    const dse = policy.onDebugSessionEnd;
+    if (typeof dse !== "object" || dse === null) {
+      throw new Error(`"onDebugSessionEnd" must be an object`);
+    }
+    if (typeof dse.enabled !== "boolean") {
+      throw new Error(`"onDebugSessionEnd.enabled" must be a boolean`);
+    }
+    validatePromptSource("onDebugSessionEnd", dse);
+    if (
+      typeof dse.cooldownMs !== "number" ||
+      !Number.isFinite(dse.cooldownMs)
+    ) {
+      throw new Error(`"onDebugSessionEnd.cooldownMs" must be a number`);
+    }
+    if (dse.cooldownMs < MIN_COOLDOWN_MS) {
+      dse.cooldownMs = MIN_COOLDOWN_MS;
+    }
+  }
+
   return policy;
 }
 
@@ -1082,6 +1119,8 @@ export class AutomationHooks {
   private lastTestRunnerStatusByRunner = new Map<string, "passed" | "failed">();
   /** Active task ID for the task-success handler (workspace-global). */
   private activeTaskSuccessTaskId: string | null = null;
+  /** Active task ID for the debug-session-end handler (workspace-global). */
+  private activeDebugSessionEndTaskId: string | null = null;
   /** Active task ID for the post-compact handler (workspace-global). */
   private activePostCompactTaskId: string | null = null;
   /** Active task ID for the instructions-loaded handler (workspace-global). */
@@ -2919,6 +2958,92 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Called when a VS Code debug session ends (hasActiveSession transitions true→false).
+   * Fires the onDebugSessionEnd automation hook if configured.
+   */
+  async handleDebugSessionEnd(result: DebugSessionEndResult): Promise<void> {
+    const cfg = this.policy.onDebugSessionEnd;
+    if (!cfg?.enabled) return;
+
+    // Loop guard: skip if a task is still pending/running
+    if (this.activeDebugSessionEndTaskId) {
+      const existing = this.orchestrator.getTask(
+        this.activeDebugSessionEndTaskId,
+      );
+      if (
+        existing &&
+        (existing.status === "pending" || existing.status === "running")
+      ) {
+        this.log(
+          `[automation] skipping debug-session-end trigger — task ${this.activeDebugSessionEndTaskId.slice(0, 8)} still active`,
+        );
+        return;
+      }
+      this.activeDebugSessionEndTaskId = null;
+    }
+
+    // Cooldown check (workspace-global)
+    const key = "debugSessionEnd:global";
+    const now = Date.now();
+    const last = this.lastTrigger.get(key) ?? 0;
+    if (now - last < cfg.cooldownMs) {
+      this.log(
+        `[automation] cooldown active for debug-session-end (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      );
+      return;
+    }
+
+    this._pruneLastTrigger(now);
+
+    const safeSessionName = result.sessionName.slice(0, MAX_FILE_PATH_CHARS);
+    const safeSessionType = result.sessionType.slice(0, MAX_FILE_PATH_CHARS);
+
+    let prompt: string;
+    if (cfg.promptName) {
+      const resolved = this._resolveNamedPrompt(
+        cfg.promptName,
+        cfg.promptArgs ?? {},
+        {
+          sessionName: safeSessionName,
+          sessionType: safeSessionType,
+        },
+      );
+      if (resolved === null) return;
+      prompt = resolved;
+    } else {
+      const nonce = crypto.randomBytes(6).toString("hex");
+      prompt =
+        (cfg.prompt ?? "")
+          .replace(
+            /\{\{sessionName\}\}/g,
+            untrustedBlock("SESSION NAME", safeSessionName, nonce),
+          )
+          .replace(
+            /\{\{sessionType\}\}/g,
+            untrustedBlock("SESSION TYPE", safeSessionType, nonce),
+          ) ?? "";
+    }
+
+    prompt = truncatePrompt(buildHookMetadata("onDebugSessionEnd") + prompt);
+    try {
+      const taskId = this._enqueueAutomationTask({
+        prompt,
+        triggerSource: "onDebugSessionEnd",
+        hookCfg: cfg,
+      });
+      this.lastTrigger.set(key, now);
+      this.activeDebugSessionEndTaskId = taskId;
+      this.log(
+        `[automation] triggered debug-session-end task ${taskId.slice(0, 8)} (session: ${result.sessionName}, type: ${result.sessionType})`,
+      );
+    } catch (err) {
+      this.log(
+        `[automation] failed to enqueue debug-session-end task: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   /** Summary of automation policy for getBridgeStatus. */
   getStatus(): {
     onPostCompact: { enabled: boolean; cooldownMs: number } | null;
@@ -2942,6 +3067,7 @@ export class AutomationHooks {
     onDiagnosticsCleared: { enabled: boolean; cooldownMs: number } | null;
     onTaskSuccess: { enabled: boolean; cooldownMs: number } | null;
     onGitPull: { enabled: boolean; cooldownMs: number } | null;
+    onDebugSessionEnd: { enabled: boolean; cooldownMs: number } | null;
     unwiredEnabledHooks: string[];
     defaultModel: string;
     maxTasksPerHour: number;
@@ -3058,6 +3184,12 @@ export class AutomationHooks {
         ? {
             enabled: p.onGitPull.enabled,
             cooldownMs: p.onGitPull.cooldownMs,
+          }
+        : null,
+      onDebugSessionEnd: p.onDebugSessionEnd
+        ? {
+            enabled: p.onDebugSessionEnd.enabled,
+            cooldownMs: p.onDebugSessionEnd.cooldownMs,
           }
         : null,
       unwiredEnabledHooks,

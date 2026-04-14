@@ -110,6 +110,8 @@ export class Bridge {
   private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
   private extensionConnectionGeneration = 0;
+  /** Tracks whether a debug session was active — detects true→false transition for onDebugSessionEnd. */
+  private _lastDebugSessionActive = false;
   private wsHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(private config: Config) {
@@ -481,9 +483,17 @@ export class Bridge {
     };
 
     // Forward debug session changes from extension to Claude Code
-    this.extensionClient.onDebugSessionChanged = (_state) => {
+    this.extensionClient.onDebugSessionChanged = (state) => {
       this.logger.event("debug_session_changed");
       this.sendListChanged();
+      // Detect true→false transition (session ended)
+      if (this._lastDebugSessionActive && !state.hasActiveSession) {
+        this.automationHooks?.handleDebugSessionEnd({
+          sessionName: state.sessionName ?? "unknown",
+          sessionType: state.sessionType ?? "unknown",
+        });
+      }
+      this._lastDebugSessionActive = state.hasActiveSession;
     };
   }
 
