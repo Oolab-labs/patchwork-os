@@ -67,6 +67,10 @@ describe("runInstall", () => {
     expect(out).toContain("memory");
     expect(out).toContain("superpowers");
     expect(out).toContain("devtools");
+    expect(out).toContain("database");
+    expect(out).toContain("slack");
+    expect(out).toContain("playwright");
+    expect(out).toContain("codebase-memory");
   });
 
   it("no args prints companion list", async () => {
@@ -125,5 +129,146 @@ describe("runInstall", () => {
     expect(mockedWriteFileSync).not.toHaveBeenCalled();
     const output = stdoutOutput.join("\n");
     expect(output).toContain("already configured");
+  });
+
+  it("--env overrides land in written config env block", async () => {
+    await runInstall([
+      "slack",
+      "--env",
+      "SLACK_BOT_TOKEN=xoxb-real",
+      "--env",
+      "SLACK_TEAM_ID=T12345",
+    ]);
+
+    const writeCalls = mockedWriteFileSync.mock.calls;
+    expect(writeCalls.length).toBeGreaterThan(0);
+    const written = JSON.parse(writeCalls[0]?.[1] as string);
+    expect(written.mcpServers.slack.env.SLACK_BOT_TOKEN).toBe("xoxb-real");
+    expect(written.mcpServers.slack.env.SLACK_TEAM_ID).toBe("T12345");
+  });
+
+  it("--env values with = in value are parsed correctly", async () => {
+    await runInstall([
+      "database",
+      "--env",
+      "DSN=postgresql://user:p@ss=word@localhost/db",
+    ]);
+
+    const writeCalls = mockedWriteFileSync.mock.calls;
+    const written = JSON.parse(writeCalls[0]?.[1] as string);
+    expect(written.mcpServers.database.env.DSN).toBe(
+      "postgresql://user:p@ss=word@localhost/db",
+    );
+  });
+
+  it("postInstallMessage is printed after install", async () => {
+    await runInstall(["playwright"]);
+    const out = stdoutOutput.join("\n");
+    expect(out).toContain("npx playwright install chromium");
+  });
+
+  it("skipNpmInstall skips execFileSync but still writes config", async () => {
+    await runInstall(["codebase-memory"]);
+
+    // npm install should NOT have been called
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+
+    // config should still be written
+    const writeCalls = mockedWriteFileSync.mock.calls;
+    expect(writeCalls.length).toBeGreaterThan(0);
+    const written = JSON.parse(writeCalls[0]?.[1] as string);
+    expect(written.mcpServers["codebase-memory"]).toBeDefined();
+
+    // postInstallMessage should be shown
+    const out = stdoutOutput.join("\n");
+    expect(out).toContain("curl -fsSL");
+  });
+
+  it("devtools entry has no requiredEnv", async () => {
+    await runInstall(["devtools"]);
+
+    const writeCalls = mockedWriteFileSync.mock.calls;
+    const written = JSON.parse(writeCalls[0]?.[1] as string);
+    // env block should be absent (Puppeteer auto-launches Chrome)
+    expect(written.mcpServers.devtools.env).toBeUndefined();
+  });
+
+  it("requiredEnv note is suppressed when --env overrides provided", async () => {
+    await runInstall([
+      "slack",
+      "--env",
+      "SLACK_BOT_TOKEN=xoxb-real",
+      "--env",
+      "SLACK_TEAM_ID=T123",
+    ]);
+    const out = stdoutOutput.join("\n");
+    // Should NOT print "export SLACK_BOT_TOKEN=..." since overrides were supplied
+    expect(out).not.toContain("export SLACK_BOT_TOKEN");
+  });
+
+  describe("--target cli", () => {
+    // CLAUDE_CONFIG_DIR overrides the home dir base for the CLI config path
+    const testHomeDir = "/tmp/test-home";
+
+    beforeEach(() => {
+      process.env.CLAUDE_CONFIG_DIR = testHomeDir;
+    });
+
+    afterEach(() => {
+      delete process.env.CLAUDE_CONFIG_DIR;
+    });
+
+    it("writes to ~/.claude.json not Desktop config", async () => {
+      await runInstall(["playwright", "--target", "cli"]);
+
+      const writeCalls = mockedWriteFileSync.mock.calls;
+      expect(writeCalls.length).toBeGreaterThan(0);
+      // atomic write uses .tmp suffix; check any call targets the right base path
+      const allPaths = writeCalls.map((c) => c[0] as string);
+      const hasCli = allPaths.some((p) =>
+        p.startsWith(`${testHomeDir}/.claude.json`),
+      );
+      expect(hasCli).toBe(true);
+      expect(allPaths.every((p) => !p.includes("claude_desktop_config"))).toBe(
+        true,
+      );
+    });
+
+    it("prints CLI reload message not Desktop restart message", async () => {
+      await runInstall(["playwright", "--target", "cli"]);
+      const out = stdoutOutput.join("\n");
+      expect(out).toContain("Run /mcp in Claude Code");
+      expect(out).not.toContain("Restart Claude Desktop");
+    });
+
+    it("idempotency message says Claude Code CLI", async () => {
+      const existingConfig = JSON.stringify({
+        mcpServers: {
+          playwright: { command: "npx", args: ["-y", "@playwright/mcp"] },
+        },
+      });
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(existingConfig);
+
+      await runInstall(["playwright", "--target", "cli"]);
+      const out = stdoutOutput.join("\n");
+      expect(out).toContain("Claude Code CLI");
+    });
+
+    it("--target desktop (explicit) writes to Desktop config", async () => {
+      await runInstall(["playwright", "--target", "desktop"]);
+
+      const writeCalls = mockedWriteFileSync.mock.calls;
+      const writtenPath = writeCalls[0]?.[0] as string;
+      expect(writtenPath).toContain("claude_desktop_config");
+    });
+
+    it("default (no --target) writes to Desktop config for backwards compat", async () => {
+      await runInstall(["playwright"]);
+
+      const writeCalls = mockedWriteFileSync.mock.calls;
+      const writtenPath = writeCalls[0]?.[0] as string;
+      expect(writtenPath).toContain("claude_desktop_config");
+    });
   });
 });
