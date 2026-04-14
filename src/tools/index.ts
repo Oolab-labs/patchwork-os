@@ -81,6 +81,7 @@ import { createGetOpenEditorsTool } from "./getOpenEditors.js";
 import { createGetPRTemplateTool } from "./getPRTemplate.js";
 import { createGetProjectInfoTool } from "./getProjectInfo.js";
 import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
+import { createGetSymbolHistoryTool } from "./getSymbolHistory.js";
 import { createGetToolCapabilitiesTool } from "./getToolCapabilities.js";
 import { createGetTypeSignatureTool } from "./getTypeSignature.js";
 import { createGetWorkspaceFoldersTool } from "./getWorkspaceFolders.js";
@@ -534,6 +535,7 @@ export function registerAllTools(
     createGenerateAPIDocumentationTool(workspace),
     createRefactorExtractFunctionTool(workspace, extensionClient),
     createGetGitHotspotsTool(workspace),
+    createGetSymbolHistoryTool(workspace, extensionClient),
     createGetPRTemplateTool(workspace),
     createGetCodeCoverageTool(workspace),
     createGenerateTestsTool(workspace),

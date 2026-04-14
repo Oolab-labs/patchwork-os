@@ -3461,6 +3461,134 @@
     }
   },
   {
+    "name": "getSymbolHistory",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "Absolute or workspace-relative file path"
+        },
+        "line": {
+          "type": "integer",
+          "description": "Line number of symbol (1-based)"
+        },
+        "column": {
+          "type": "integer",
+          "description": "Column number of symbol (1-based)"
+        },
+        "maxCommits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Max commits to return from file history (default: 10)"
+        },
+        "blameLines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Lines of blame context around definition site (default: 5)"
+        }
+      },
+      "required": ["filePath", "line", "column"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "symbol": {
+          "type": "object",
+          "properties": {
+            "queryFile": {
+              "type": "string"
+            },
+            "queryLine": {
+              "type": "integer"
+            },
+            "queryColumn": {
+              "type": "integer"
+            }
+          },
+          "required": ["queryFile", "queryLine", "queryColumn"]
+        },
+        "definition": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "column": {
+                  "type": "integer"
+                }
+              },
+              "required": ["file", "line"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blame": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "line": {
+                "type": "integer"
+              },
+              "hash": {
+                "type": "string"
+              },
+              "author": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": ["line", "hash", "author", "summary"]
+          }
+        },
+        "recentCommits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "hash": {
+                "type": "string"
+              },
+              "shortHash": {
+                "type": "string"
+              },
+              "author": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["hash", "shortHash", "author", "date", "message"]
+          }
+        },
+        "definitionFile": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": ["symbol", "definition", "blame", "recentCommits"]
+    }
+  },
+  {
     "name": "getTerminalOutput",
     "inputSchema": {
       "type": "object",
