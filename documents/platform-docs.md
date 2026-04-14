@@ -1,811 +1,569 @@
 # Claude IDE Bridge — Platform Documentation
 
-Complete feature reference for the Claude IDE Bridge MCP server and VS Code extension.
-
-## Overview
-
-Claude IDE Bridge is a standalone MCP (Model Context Protocol) server that gives Claude Code full IDE integration. It exposes 135+ tools over WebSocket, handling file operations, diagnostics, LSP features, terminal control, git, and more. It works with any editor (VS Code, Windsurf, Cursor) and optionally pairs with a companion VS Code extension for real-time editor state. The extension supports remote extension hosts (VS Code Remote-SSH, Cursor SSH) via `extensionKind: ["workspace"]`.
-
-The bridge connects to **Claude Desktop** via a stdio shim and to **Claude Code CLI** via WebSocket — both sessions share the same running bridge, enabling seamless context handoff between the two clients.
+Version **2.30.1** · 137 tools · 72 MCP prompts · 18 automation hooks
 
 ---
 
-## Bridge Native Tools (no extension required)
+## Table of Contents
 
-### File Operations
-| Tool | Description |
-|------|-------------|
-| `openFile` | Open files in editor with optional line navigation; tracks opened files |
-| `openDiff` | Open side-by-side diff view between two files or file versions |
-| `closeAllDiffTabs` | Close all open diff tabs |
-| `findFiles` | File search using `fd` (preferred) or `find` fallback |
-| `getFileTree` | Directory tree view with configurable depth |
-| `searchWorkspace` | Content search using `rg` (preferred) or `grep` fallback |
-| `searchAndReplace` | Find and replace across workspace files. Glob values starting with `-` are rejected to prevent flag injection into `rg`. |
-
-### Git
-| Tool | Description |
-|------|-------------|
-| `getGitStatus` | Working tree status (staged, unstaged, untracked) |
-| `getGitDiff` | Diff output — staged, unstaged, or between commit ranges |
-| `getGitLog` | Commit history with formatting options |
-| `getCommitDetails` | Detailed info for a specific commit |
-| `getDiffBetweenRefs` | Diff between any two git refs |
-| `gitAdd` | Stage files |
-| `gitCommit` | Create commits |
-| `gitCheckout` | Switch branches or create new ones. When switching away from detached HEAD, the response includes `previousBranch: null`, `previousCommit` (12-char hash of prior HEAD), and `wasDetached: true` — callers should use `previousCommit` to navigate back, not `previousBranch`. |
-| `gitBlame` | Line-by-line blame annotation |
-| `gitFetch` | Fetch from remotes |
-| `gitListBranches` | List local and remote branches |
-| `gitPull` | Pull from remote |
-| `gitPush` | Push to remote |
-| `gitStash` | Stash changes |
-| `gitStashPop` | Pop stashed changes |
-| `gitStashList` | List stashes |
-
-### Linting & Testing
-| Tool | Description |
-|------|-------------|
-| `getDiagnostics` | Errors/warnings — uses extension if connected, falls back to CLI linters (`tsc --noEmit`, `eslint`, `pyright`, `ruff`, `cargo check`, `go vet`, `biome`). Returns `[]` immediately if the caller's AbortSignal is already aborted (no subprocess spawned). |
-| `runTests` | Run tests via auto-detected runner (vitest, jest, pytest, cargo test, go test) |
-| `diffDebugger` | Combined diagnostics + test failure analysis in one call |
-
-### Formatting
-| Tool | Description |
-|------|-------------|
-| `formatDocument` | Format via VS Code's formatter (extension) or CLI fallback (prettier, black, gofmt, rustfmt, biome) |
-| `formatAndSave` | Composite: formatDocument + saveDocument in one call. Propagates formatter errors unchanged; save is not attempted on format failure. (v2.25.25+) |
-
-### Composite Navigation (v2.25.25+)
-| Tool | Description |
-|------|-------------|
-| `jumpToFirstError` | Find the first workspace error, open its file at the error line, and apply an inline decoration in one call. Replaces the 3-call getDiagnostics → openFile → setEditorDecorations pattern. Returns `{ found: false }` when the workspace is clean. |
-| `navigateToSymbolByName` | Search for a workspace symbol by name, resolve it to its definition, and open the target file. Returns the chosen symbol, its definition, and up to 4 alternative matches. Replaces the searchSymbols → goToDefinition dance. |
-
-### Command Execution
-| Tool | Description |
-|------|-------------|
-| `runCommand` | Execute allowlisted shell commands with configurable timeout (default 30s, max 120s). Dangerous flags are blocked: some flags (e.g. `curl -o`/`--output`/`-O`/`--remote-name`/`-D`/`--dump-header`/`-K`) are blocked globally via `DANGEROUS_PATH_FLAGS`; others are blocked only per-command via a `DANGEROUS_FLAGS_FOR_COMMAND` table (e.g. `make -f`/`--file` and `node`/`ts-node`/`tsx -r`). Common uses like `grep -r`, `docker -f`, and `sort -f` are unaffected. |
-
-### HTTP
-| Tool | Description |
-|------|-------------|
-| `sendHttpRequest` | Send HTTP requests with configurable method, headers, body |
-| `parseHttpFile` | Parse `.http` files into structured request objects |
-
-### GitHub Integration (requires `gh` CLI)
-| Tool | Description |
-|------|-------------|
-| `githubCreatePR` | Create pull requests |
-| `githubListPRs` | List pull requests with filters |
-| `githubViewPR` | View PR details |
-| `githubGetPRDiff` | Get PR diff content |
-| `githubPostPRReview` | Post review comments on PRs |
-| `githubListIssues` | List issues with filters |
-| `githubGetIssue` | View issue details |
-| `githubCreateIssue` | Create new issues |
-| `githubCommentIssue` | Comment on issues |
-| `githubListRuns` | List GitHub Actions workflow runs |
-| `githubGetRunLogs` | Get logs from workflow runs |
-
-### Workspace Management
-| Tool | Description |
-|------|-------------|
-| `getProjectInfo` | Auto-detect project type, dependencies, structure |
-| `getToolCapabilities` | List available CLI tools, linters, and features |
-| `getWorkspaceFolders` | Workspace path info (enhanced with extension data when connected) |
-| `setActiveWorkspaceFolder` | Switch active workspace in multi-root setups |
-
-### Plans
-| Tool | Description |
-|------|-------------|
-| `createPlan` | Persist an implementation plan to disk |
-| `updatePlan` | Update a saved plan |
-| `getPlan` | Load a saved plan by name |
-| `deletePlan` | Remove a saved plan |
-| `listPlans` | List all saved plans |
-
-### Flow & Activity
-| Tool | Description |
-|------|-------------|
-| `checkScope` | Verify current work stays within defined scope |
-| `expandScope` | Request scope expansion with justification |
-| `getActivityLog` | Session metrics — tool call counts, durations, errors |
-| `watchActivityLog` | Long-poll the activity log for new entries. Params: `sinceId` (resume from last seen entry), `maxEntries` (default 10, max 50), `timeoutMs` (1000–30000ms). Returns `{ entries, lastId }`. Slim mode. |
-| `contextBundle` | Composite snapshot: `activeFile`, file `content` (truncated 32KB), `diagnostics`, `diff`, `openEditors`, `gitStatus`, `handoffNote`, `bundledAt` — all fetched in parallel via `Promise.allSettled`. Slim mode. |
-| `getBridgeStatus` | Get current bridge status: extension connection state, circuit breaker status, active sessions, and uptime. Use to diagnose when tools are unavailable or the extension appears disconnected. |
-| `setHandoffNote` | Persist a free-text context summary to `~/.claude/ide/handoff-note.json`. Shared across all MCP sessions (Desktop, CLI, HTTP). Use when switching clients mid-task. Note content is capped at 10 000 chars. |
-| `getHandoffNote` | Read the handoff note left by a previous session. Returns `note`, `updatedAt`, `updatedBy` (`"cli"`), and human-readable `age`. Returns `null` note if none saved. |
+- [Tool Modes](#tool-modes)
+- [Extension-Required Tools](#extension-required-tools)
+- [Tool Reference](#tool-reference)
+  - [Editor State](#editor-state)
+  - [LSP / Code Intelligence](#lsp--code-intelligence)
+  - [Debugger](#debugger)
+  - [Editor Decorations](#editor-decorations)
+  - [Bridge Introspection](#bridge-introspection)
+  - [Composite Tools](#composite-tools)
+  - [Git](#git)
+  - [GitHub](#github)
+  - [Terminal](#terminal)
+  - [File Operations](#file-operations)
+  - [Formatting and Quality](#formatting-and-quality)
+  - [Workspace and Settings](#workspace-and-settings)
+  - [HTTP and Clipboard](#http-and-clipboard)
+  - [Plans](#plans)
+  - [Handoff and Session](#handoff-and-session)
+  - [VS Code Integration](#vs-code-integration)
+  - [File Watching](#file-watching)
+  - [Code Generation](#code-generation)
+  - [AI Workflow Composite](#ai-workflow-composite)
+  - [Orchestrator / Claude Subprocesses](#orchestrator--claude-subprocesses)
+- [When to Use X vs Y](#when-to-use-x-vs-y)
+- [MCP Prompts](#mcp-prompts)
+- [Automation Hooks](#automation-hooks)
+- [Headless / CI Mode](#headless--ci-mode)
 
 ---
 
-## Extension-Enhanced Tools (require VS Code extension)
+## Tool Modes
+
+The bridge operates in two modes controlled at startup:
+
+| Mode | Flag | Tool count | Description |
+|------|------|-----------|-------------|
+| Slim | _(default)_ | 56 | IDE-exclusive tools only — LSP, debugger, editor state, bridge introspection |
+| Full | `--full` | 137 | All tools including git, GitHub, terminal, file ops, HTTP, orchestration |
+
+**Slim mode** exposes only tools that Claude cannot replicate via its native Read/Write/Bash capabilities. This keeps the `tools/list` payload small and focused on what the IDE uniquely provides.
+
+**Full mode** adds 81 additional tools covering every workspace operation. Use full mode when Claude needs to perform git operations, run terminal commands, edit files, or interact with GitHub without falling back to shell commands.
+
+The `SLIM_TOOL_NAMES` set in `src/tools/index.ts` is the canonical source of truth for which 56 tools are available in slim mode.
+
+**Slim tool categories:**
+
+| Category | Count |
+|----------|-------|
+| Editor State | 10 |
+| LSP / Code Intelligence | 37 |
+| Debugger | 5 |
+| Editor Decorations | 2 |
+| Bridge Introspection | 3 |
+| VS Code escape hatch (`executeVSCodeCommand`) | 1 |
+
+**Full-only tool categories (require `--full`):**
+
+| Category | Count |
+|----------|-------|
+| Git | 16 |
+| GitHub (gh CLI required) | 13 |
+| Terminal | 7 |
+| File Operations | 10 |
+| Formatting and Quality | 9 |
+| Workspace and Settings (partial) | 5 |
+| HTTP and Clipboard (partial) | 2 |
+| Plans | 5 |
+| Handoff and Session | 2 |
+| VS Code Integration (partial) | 3 |
+| Code Generation | 2 |
+| AI Workflow Composite | 5 |
+| Orchestrator / Claude Subprocesses | 5 |
+
+**Runtime introspection:** call `getToolCapabilities` at session start to confirm which tools are available and whether the VS Code extension is connected. This is especially important in headless or CI environments where some tools may have missing probes.
+
+---
+
+## Extension-Required Tools
+
+Tools marked `extensionRequired: true` need the VS Code extension connected. They behave differently from optional extension tools:
+
+- They are **always visible** in `tools/list` regardless of extension state.
+- If the extension is disconnected, calling them returns `isError: true` with structured reconnect instructions rather than a "Tool Not Found" error.
+- This allows Claude to report the problem clearly instead of silently missing the tool.
+
+**Tools with `extensionFallback: true`** have a secondary code path that works without the extension:
+
+| Tool | Fallback mechanism |
+|------|--------------------|
+| `goToDefinition` | `typescript-language-server --stdio` (LSP JSON-RPC) |
+| `findReferences` | `typescript-language-server --stdio` |
+| `getTypeSignature` | `typescript-language-server --stdio` |
+| `searchWorkspaceSymbols` | Universal Ctags (`ctags --output-format=json`) |
+| `navigateToSymbolByName` | ripgrep declaration-pattern search |
+| `getDiagnostics` | CLI linters: `tsc --noEmit`, `eslint`, `pyright`, `ruff`, `cargo check`, `go vet`, `biome` |
+| `watchDiagnostics` | CLI linters (same fallback as `getDiagnostics`) |
+
+The fallback activates only when the probe for the required CLI tool succeeded at startup. Call `getBridgeStatus` to see which fallback paths are available (`toolAvailability` field).
+
+---
+
+## Tool Reference
+
+**Mode column:** `S` = slim (available by default), `F` = full-only (`--full` required)
+
+---
 
 ### Editor State
-| Tool | Description |
-|------|-------------|
-| `getCurrentSelection` | Get current editor selection (text + position) |
-| `getLatestSelection` | Get cached selection state (no round-trip) |
-| `getOpenEditors` | List open editor tabs with dirty/language info |
-| `checkDocumentDirty` | Check if a file has unsaved changes |
-| `saveDocument` | Save an open document |
-| `closeTab` | Close a specific editor tab |
-| `getBufferContent` | Get current in-memory content of an open file. Falls back to disk. `startLine`/`endLine` work on files of any size — large files (>512KB) are streamed line-by-line when a range is given. |
 
-### LSP Features
-| Tool | Description |
-|------|-------------|
-| `goToDefinition` | Jump to symbol definition |
-| `findReferences` | Find all references to a symbol. Accepts `cursor?: string` (base64 offset); returns `nextCursor` when more results exist (PAGE_SIZE=100). |
-| `getHover` | Get hover/type information at position |
-| `getHoverAtCursor` | Get hover info at current cursor position |
-| `getCodeActions` | List available code actions for a range |
-| `applyCodeAction` | Apply a specific code action |
-| `renameSymbol` | Rename symbol across entire workspace (15s timeout) |
-| `searchWorkspaceSymbols` | Search symbols across workspace |
-| `getCallHierarchy` | Get incoming/outgoing call hierarchy (15s timeout). Accepts `cursor?: string` (base64 offset); returns `nextCursor` when more results exist (PAGE_SIZE=50 per direction). |
-| `getDocumentSymbols` | List all symbols in a document |
-| `getInlayHints` | Get inlay hints for a line range |
-| `getTypeHierarchy` | Get type hierarchy (supertypes/subtypes, 15s timeout) |
-| `explainSymbol` | Composite: hover + definition + references + optional type hierarchy + code actions |
-| `prepareRename` | Check if a symbol can be renamed before attempting (rename safety check) |
-| `signatureHelp` | Function signature docs and parameter info at a call site |
-| `foldingRanges` | Foldable code regions (functions, classes, imports) for a file |
-| `selectionRanges` | Hierarchical selection boundaries at a position (innermost → outermost) |
-| `refactorAnalyze` | Composite: assess refactoring impact — refs, callers, inheritance, risk level |
-| `getSemanticTokens` | Token-level semantic classification (type/variable/function + modifiers like readonly/deprecated). Decodes VS Code delta-encoded Uint32Array; `startLine`/`endLine` filter; caps at 2000 tokens |
-| `getCodeLens` | Code lens items at each location (reference counts, test run indicators). Omits `commandId`; truncates titles to 200 chars |
-| `getChangeImpact` | Blast-radius composite after editing: live diagnostics + reference counts for changed symbols. Returns `blastRadius: low/medium/high` |
-| `getImportedSignatures` | Resolve imported symbols to their type signatures via `goToDefinition` → `getHover`. Prevents hallucinated API shapes; 5-concurrent; hover truncated to 4000 chars |
-| `getDocumentLinks` | Extract document links (file references, URLs). Filters `file://` paths through workspace containment; caps at 100 links |
-| `batchGetHover` | Fan-out `getHover` for up to 10 positions in one call via `Promise.allSettled` |
-| `batchGoToDefinition` | Fan-out `goToDefinition` for up to 10 positions in one call via `Promise.allSettled` |
-| `batchFindImplementations` | Fan-out `findImplementations` for up to 10 positions in one call via `Promise.allSettled` |
-| `goToDeclaration` | Navigate to the declaration of a symbol (distinct from definition; relevant in languages with separate declaration/definition such as C/C++ headers). Returns file path + line/column. |
-| `goToTypeDefinition` | Navigate to the type definition of a symbol (e.g. from a variable to the interface or class it implements). Returns file path + line/column. |
-| `findImplementations` | Find all concrete implementations of an interface, abstract class, or method. Returns array of locations. Use `batchFindImplementations` for multiple symbols. |
-| `previewCodeAction` | Show the exact text edits a code action would make without applying them. Safe to call before `applyCodeAction`. Returns `{ title, changes[{ file, edits[{ range, newText }] }], totalFiles, totalEdits }`. |
-| `formatRange` | Format a specific line range via VS Code formatter |
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `getOpenEditors` | S | List open editor tabs with dirty/language info | extensionRequired |
+| `getCurrentSelection` | S | Current editor selection — text and position | extensionRequired |
+| `getLatestSelection` | S | Cached selection state, no extension round-trip | extensionRequired |
+| `checkDocumentDirty` | S | Check if a file has unsaved changes | extensionRequired |
+| `saveDocument` | S | Save an open document | extensionRequired |
+| `openFile` | S | Open a file in the editor with optional line navigation | extensionRequired |
+| `closeTab` | S | Close a specific editor tab | extensionRequired |
+| `captureScreenshot` | S | Capture current display as MCP image block. Uses `screencapture -x` on macOS, ImageMagick on Linux | extensionRequired |
+| `watchActivityLog` | S | Long-poll activity log for new entries. Params: `sinceId`, `maxEntries` (default 10, max 50), `timeoutMs` (1000–30000 ms). Returns `{ entries, lastId }` | |
+| `contextBundle` | S | Composite snapshot: active file + content (32 KB cap) + diagnostics + diff + open editors + git status + handoff note, fetched in parallel via `Promise.allSettled` | |
 
-### Text Editing
-| Tool | Description |
-|------|-------------|
-| `editText` | Apply precise text edits through VS Code API |
-| `replaceBlock` | Replace a block of text by matching old content |
-| `createFile` | Create files/directories via extension |
-| `deleteFile` | Delete files with optional trash/recursive |
-| `renameFile` | Rename/move files |
+---
 
-### Code Quality
-| Tool | Description |
-|------|-------------|
-| `fixAllLintErrors` | Auto-fix all lint errors via VS Code or CLI (eslint --fix, biome, ruff) |
-| `organizeImports` | Organize imports via VS Code |
-| `watchDiagnostics` | Long-poll for diagnostic changes. Each entry now includes `firstSeenAt` (epoch ms), `recurrenceCount`, and optional `introducedByCommit` (SHA from git blame). |
+### LSP / Code Intelligence
+
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `getDiagnostics` | S | Errors and warnings — extension if connected, CLI linters as fallback | extensionFallback |
+| `watchDiagnostics` | S | Long-poll for diagnostic changes. Each entry includes `firstSeenAt`, `recurrenceCount`, and optional `introducedByCommit` | extensionFallback |
+| `getDocumentSymbols` | S | List all symbols in a document (classes, functions, variables) | extensionRequired |
+| `goToDefinition` | S | Jump to symbol definition | extensionFallback via typescript-language-server |
+| `findReferences` | S | Find all references to a symbol. Supports cursor-based pagination (`cursor` param, `nextCursor` in response, PAGE_SIZE=100) | extensionFallback via typescript-language-server |
+| `findImplementations` | S | Find all concrete implementations of an interface or abstract class | extensionRequired |
+| `goToTypeDefinition` | S | Navigate to the type definition of a symbol (e.g. variable → interface) | extensionRequired |
+| `goToDeclaration` | S | Navigate to the declaration (distinct from definition; relevant in C/C++ headers) | extensionRequired |
+| `getHover` | S | Hover info and type documentation at a file position | extensionRequired |
+| `getCodeActions` | S | List available code actions for a range | extensionRequired |
+| `applyCodeAction` | S | Apply a specific code action | extensionRequired |
+| `previewCodeAction` | S | Show exact edits a code action would make without applying. Returns `{ title, changes, totalFiles, totalEdits }` | extensionRequired |
+| `refactorPreview` | S | Preview exact edits a rename/refactor would make before committing | extensionRequired |
+| `renameSymbol` | S | Rename a symbol across the entire workspace (15 s timeout) | extensionRequired |
+| `searchWorkspaceSymbols` | S | Search symbols across the workspace by name | extensionFallback via Universal Ctags |
+| `getCallHierarchy` | S | Incoming or outgoing call hierarchy (15 s timeout). Cursor pagination supported (PAGE_SIZE=50 per direction) | extensionRequired |
+| `explainSymbol` | S | Composite: hover + definition + references + optional type hierarchy + code actions in one call | extensionRequired |
+| `prepareRename` | S | Check if a symbol can be renamed before attempting (rename safety check) | extensionRequired |
+| `signatureHelp` | S | Function signature docs and parameter info at a call site | extensionRequired |
+| `refactorAnalyze` | S | Assess refactoring impact: refs, callers, inheritance, risk level (low/medium/high) | extensionRequired |
+| `foldingRanges` | S | Foldable code regions (functions, classes, imports) for a file | extensionRequired |
+| `selectionRanges` | S | Hierarchical selection boundaries at a position (innermost → outermost) | extensionRequired |
+| `refactorExtractFunction` | S | Extract a code range into a new function with signature inference. Param is `file`, not `filePath` | extensionRequired |
+| `getImportTree` | S | BFS traversal of static/dynamic imports and CommonJS `require()` from a file. Returns tree with depths and cycle detection | |
+| `getImportedSignatures` | S | Resolve imported symbols to type signatures via `goToDefinition` → `getHover`. 5-concurrent; hover truncated to 4000 chars | extensionRequired |
+| `getDocumentLinks` | S | Extract file references and URLs from a document. Filters `file://` through workspace containment; caps at 100 links | extensionRequired |
+| `batchGetHover` | S | Fan-out `getHover` for up to 10 positions in one call via `Promise.allSettled` | extensionRequired |
+| `batchGoToDefinition` | S | Fan-out `goToDefinition` for up to 10 positions in one call | extensionRequired |
+| `batchFindImplementations` | S | Fan-out `findImplementations` for up to 10 positions in one call | extensionRequired |
+| `getSemanticTokens` | S | Token-level semantic classification (type/variable/function + modifiers like readonly/deprecated). Decodes VS Code delta-encoded Uint32Array; `startLine`/`endLine` filter; caps at 2000 tokens | extensionRequired |
+| `getCodeLens` | S | Code lens items at each location (reference counts, test run indicators). Omits `commandId`; truncates titles to 200 chars | extensionRequired |
+| `getChangeImpact` | S | Blast-radius composite: live diagnostics + reference counts for changed symbols. Returns `blastRadius: low/medium/high` | extensionRequired |
+| `getTypeHierarchy` | S | Type hierarchy — supertypes and subtypes (15 s timeout) | extensionRequired |
+| `getInlayHints` | S | Inline type annotations and parameter name hints for a line range | extensionRequired |
+| `getHoverAtCursor` | S | Hover info at the current cursor position (no coordinates needed) | extensionRequired |
+| `getTypeSignature` | S | TypeScript/language type signature at a file position. Returns the first fenced code block from hover markdown | extensionFallback via typescript-language-server |
+| `formatRange` | S | Format a specific line range via VS Code formatter | extensionRequired |
+
+---
+
+### Debugger
+
+All debugger tools are slim and require the VS Code extension.
+
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `getDebugState` | S | Active debug session state: breakpoints, call stack, scopes | extensionRequired |
+| `evaluateInDebugger` | S | Evaluate expressions in the active debug context | extensionRequired |
+| `setDebugBreakpoints` | S | Set breakpoints with optional conditions | extensionRequired |
+| `startDebugging` | S | Start a debug session (15 s timeout) | extensionRequired |
+| `stopDebugging` | S | Stop the active debug session | extensionRequired |
+
+---
+
+### Editor Decorations
+
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `setEditorDecorations` | S | Apply visual decorations (info, warning, error, focus, strikethrough, dim). Param: `id` (decoration set name), `style`, `hoverMessage`, `message` | extensionRequired |
+| `clearEditorDecorations` | S | Remove all decorations for a decoration set by `id` | extensionRequired |
+
+---
+
+### Bridge Introspection
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `getBridgeStatus` | S | Bridge status: extension connection state, circuit breaker, active sessions, uptime, tool availability flags, automation hook wiring. Call to diagnose missing tools or disconnected extension. |
+| `getToolCapabilities` | S | List available CLI probes (rg, ctags, typescript-language-server, gh, etc.) and which tools they enable. Call once at session start. |
+| `bridgeDoctor` | S | Automated diagnostics: checks lock file, extension connection, probe availability, and common misconfiguration. Returns actionable fix suggestions. |
+
+---
+
+### Composite Tools
+
+These tools combine multiple primitives to replace common multi-step patterns.
+
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `formatAndSave` | S | `formatDocument` + `saveDocument` in one call. Propagates formatter errors; save is not attempted on format failure | extensionRequired |
+| `jumpToFirstError` | S | `getDiagnostics` → `openFile` at error line → `setEditorDecorations` in one call. Returns `{ found: false }` when workspace is clean | extensionRequired |
+| `navigateToSymbolByName` | S | `searchWorkspaceSymbols` → `goToDefinition` → `openFile`. Returns chosen symbol, its definition, and up to 4 alternatives | extensionFallback via ripgrep |
+
+---
+
+### Git
+
+All git tools are full-only.
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `getGitStatus` | F | Working tree status: staged, unstaged, untracked |
+| `getGitDiff` | F | Diff output — staged, unstaged, or between commit ranges |
+| `getGitLog` | F | Commit history with formatting options |
+| `getCommitDetails` | F | Detailed info for a specific commit |
+| `getDiffBetweenRefs` | F | Diff between any two git refs |
+| `gitAdd` | F | Stage files |
+| `gitCommit` | F | Create commits. Triggers `onGitCommit` automation hook on success |
+| `gitCheckout` | F | Switch branches or create new ones. Triggers `onBranchCheckout` hook. When leaving detached HEAD, response includes `previousCommit` (12-char hash) and `wasDetached: true` |
+| `gitBlame` | F | Line-by-line blame annotation |
+| `gitFetch` | F | Fetch from remotes |
+| `gitListBranches` | F | List local and remote branches |
+| `gitPull` | F | Pull from remote. Triggers `onGitPull` hook on success |
+| `gitPush` | F | Push to remote. Triggers `onGitPush` hook on success |
+| `gitStash` | F | Stash changes |
+| `gitStashPop` | F | Pop stashed changes |
+| `gitStashList` | F | List stashes |
+
+---
+
+### GitHub
+
+All GitHub tools are full-only and require the `gh` CLI. Tools are only registered when `gh` is found in the probe results at startup.
+
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `githubCreatePR` | F | Create a pull request. Triggers `onPullRequest` hook on success | gh required |
+| `githubListPRs` | F | List pull requests with filters | gh required |
+| `githubViewPR` | F | View PR details | gh required |
+| `githubListIssues` | F | List issues with filters | gh required |
+| `githubGetIssue` | F | View issue details | gh required |
+| `githubCreateIssue` | F | Create a new issue | gh required |
+| `githubCommentIssue` | F | Post a comment on an issue | gh required |
+| `githubListRuns` | F | List GitHub Actions workflow runs | gh required |
+| `githubGetRunLogs` | F | Get logs from a workflow run | gh required |
+| `githubGetPRDiff` | F | Get PR diff content | gh required |
+| `githubPostPRReview` | F | Post review comments on a PR | gh required |
+| `getAIComments` | F | Scan open files for `// AI:` comments with severity levels (fix, todo, question, warn, task) | extensionRequired |
+| `createGithubIssueFromAIComment` | F | Create a GitHub issue from a cached `// AI:` comment. Derives title from comment text | gh required, extensionRequired |
+
+---
 
 ### Terminal
-| Tool | Description |
-|------|-------------|
-| `listTerminals` | List VS Code integrated terminals |
-| `getTerminalOutput` | Get recent output (ring buffer, up to 5000 lines) |
-| `createTerminal` | Create new terminal with optional name/cwd/env |
-| `disposeTerminal` | Close a terminal |
-| `sendTerminalCommand` | Send text to terminal (allowlist enforced); use `isCommand: false` to send raw stdin to a running process |
-| `runInTerminal` | Execute command and capture output (allowlist enforced) |
-| `waitForTerminalOutput` | Wait for pattern match in terminal output |
 
-> **`runInTerminal` timeout behavior**: when the VS Code extension times out waiting for shell integration output, the tool returns an error (`runInTerminal timed out waiting for shell integration output`) instead of falling through to a subprocess fallback. If you need reliable output capture for non-interactive commands, use `runCommand` instead.
+All terminal tools are full-only and require the VS Code extension. `isCommand: false` on `sendTerminalCommand` bypasses allowlist validation and sends raw text to the PTY — use for stdin responses to interactive prompts.
 
-**Long-running processes and interactive prompts**
+| Tool | Mode | Description |
+|------|------|-------------|
+| `createTerminal` | F | Create a new VS Code integrated terminal with optional name/cwd/env |
+| `disposeTerminal` | F | Close a terminal |
+| `listTerminals` | F | List VS Code integrated terminals |
+| `getTerminalOutput` | F | Get recent output (ring buffer, up to 5000 lines) |
+| `sendTerminalCommand` | F | Send text to a terminal (allowlist enforced unless `isCommand: false`) |
+| `runInTerminal` | F | Execute a command and capture output (allowlist enforced). Returns error on shell integration timeout — use `runCommand` for reliable non-interactive output capture |
+| `waitForTerminalOutput` | F | Wait for a pattern match in terminal output |
 
-The bridge can start, monitor, and interact with long-running processes without any manual terminal input.
+---
 
-Starting a dev server and waiting for it to be ready:
-```
-1. createTerminal       → name: "dev-server"
-2. sendTerminalCommand  → "npm run dev", name: "dev-server"
-3. waitForTerminalOutput → pattern: "ready|listening|Local:", timeout: 60
-4. ✅ Server is up — proceed with other tasks
-5. getTerminalOutput    → check logs at any point later
-```
+### File Operations
 
-Responding to an interactive prompt mid-execution (e.g. `prisma migrate dev`):
-```
-1. sendTerminalCommand  → "prisma migrate dev", isCommand: true
-2. waitForTerminalOutput → pattern: "Enter a name"
-3. sendTerminalCommand  → "add_user_table", isCommand: false, addNewline: true
-4. waitForTerminalOutput → pattern: "migrations applied|Your database"
-```
+All file operation tools are full-only.
 
-The VS Code terminal persists independently — processes keep running after tool calls return. `isCommand: false` bypasses allowlist validation and sends raw text directly to the PTY, making it suitable for stdin responses to interactive prompts.
+| Tool | Mode | Description |
+|------|------|-------------|
+| `editText` | F | Apply precise line-range text edits via VS Code API |
+| `createFile` | F | Create files or directories |
+| `deleteFile` | F | Delete files with optional trash/recursive |
+| `renameFile` | F | Rename or move files |
+| `getBufferContent` | F | In-memory content of an open file. Falls back to disk. `startLine`/`endLine` range works on files of any size |
+| `replaceBlock` | F | Replace a block of text by matching old content |
+| `searchAndReplace` | F | Find and replace across workspace files using regex. Globs starting with `-` are rejected to prevent `rg` flag injection |
+| `searchWorkspace` | F | Content search via `rg` (preferred) or `grep` fallback |
+| `findFiles` | F | File search via `fd` (preferred) or `find` fallback |
+| `getFileTree` | F | Directory tree with configurable depth |
 
-### File Watching
-| Tool | Description |
-|------|-------------|
-| `watchFiles` | Watch file patterns for changes |
-| `unwatchFiles` | Stop watching a file pattern |
+---
 
-### Dependency & Security
-| Tool | Description |
-|------|-------------|
-| `getDependencyTree` | Unified dependency graph across npm, pip, cargo, and go mod. Auto-detects from manifest files. Supports configurable depth. |
-| `auditDependencies` | Detect outdated packages and report current vs. latest versions. Supports npm, yarn, pnpm, cargo, and pip. Auto-detects package manager from lock files (pnpm-lock.yaml → yarn.lock → package.json) and manifests. Cache is keyed on the resolved manager — `"auto"` and `"npm"` (when npm is detected) share the same entry and won't re-run the subprocess. |
-| `getSecurityAdvisories` | Run a security audit and return known vulnerabilities with severity, CVE IDs, and remediation steps. Supports npm, yarn, pnpm, cargo audit, and pip-audit. Auto-detects from lock files and manifests. Filter by minimum severity. |
-| `getGitHotspots` | Identify most frequently changed files in git history over a time window. Useful for prioritizing refactoring and code review focus. |
-| `getPRTemplate` | Generate a pull request body from git commit messages and diff stats. Supports bullet, prose, and conventional commit styles. Pairs with `githubCreatePR`. |
+### Formatting and Quality
 
-### Code Analysis
-| Tool | Description |
-|------|-------------|
-| `getTypeSignature` | Extract the TypeScript/language type signature at a file position using VS Code hover. Returns the first fenced code block from hover markdown. |
-| `getImportTree` | BFS traversal of static/dynamic imports and CommonJS require() starting from a file. Returns tree with depths, cycle detection, and optional external packages. |
-| `getCodeCoverage` | Parse coverage reports (lcov, coverage-summary.json, clover.xml). Auto-detects report in workspace. Supports minCoverage filter and sorts worst-covered files first. |
-| `generateTests` | Extract exported symbols from a source file and generate a test scaffold (vitest/jest/pytest). Auto-detects framework from config files. |
-| `detectUnusedCode` | Scan for unused exports, functions, and variables by combining LSP references with static analysis. Reports file, line, and kind for each unused symbol. |
-| `refactorExtractFunction` | Extract a code range into a new function with signature inference. Returns the refactored source and a unified diff patch. |
-| `generateAPIDocumentation` | Generate API documentation from JSDoc/docstring comments in a file or directory. Outputs Markdown with function signatures, descriptions, and parameters. |
-| `createIssueFromAIComment` | Create a GitHub issue from a cached `// AI:` comment. Derives title from the comment text; supports labels and assignee. Requires `gh` CLI. |
+All tools in this category are full-only.
 
-### Claude Orchestration (requires `--claude-driver != none`)
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `formatDocument` | F | Format via VS Code formatter (extension) or CLI fallback (prettier, black, gofmt, rustfmt, biome) | |
+| `fixAllLintErrors` | F | Auto-fix all lint errors via VS Code or CLI (eslint --fix, biome, ruff) | |
+| `organizeImports` | F | Organize imports via VS Code | extensionRequired |
+| `detectUnusedCode` | F | Scan for unused exports, functions, and variables combining LSP references with static analysis | |
+| `getCodeCoverage` | F | Parse coverage reports (lcov, coverage-summary.json, clover.xml). Auto-detects report in workspace. Supports `minCoverage` filter | |
+| `auditDependencies` | F | Detect outdated packages and report current vs latest versions. Auto-detects package manager from lock files | |
+| `getSecurityAdvisories` | F | Run security audit returning vulnerabilities with severity, CVE IDs, and remediation steps. Supports npm, yarn, pnpm, cargo audit, pip-audit | |
+| `getDependencyTree` | F | Unified dependency graph across npm, pip, cargo, and go mod | |
+| `getGitHotspots` | F | Most frequently changed files in git history. Useful for prioritizing refactoring focus | |
 
-These tools are only registered when the bridge is started with `--claude-driver subprocess` (or `api`). They are hidden from `tools/list` otherwise.
+---
 
-| Tool | Description |
-|------|-------------|
-| `runClaudeTask` | Enqueue a Claude task. Params: `prompt` (required, max 32 KB), `contextFiles` (optional, max 20, workspace-confined), `timeoutMs` (5000–600000, default 120000), `stream` (bool, default false), `model` (optional, e.g. `"claude-haiku-4-5-20251001"` — passed as `--model` to subprocess). Returns `{ taskId, status }` immediately, or blocks and streams output if `stream: true`. |
-| `getClaudeTaskStatus` | Poll a task by ID. Returns `{ taskId, status, output (truncated 500 chars), startedAt?, completedAt?, durationMs? }`. Session-scoped — callers can only see their own tasks. |
-| `cancelClaudeTask` | Cancel a pending or running task by ID. Returns `{ taskId, cancelled }`. No-op if task already completed. |
-| `listClaudeTasks` | List session-scoped tasks. Optional `status` filter: `pending` \| `running` \| `done` \| `error` \| `cancelled`. Returns array of task summaries (no prompt text, output capped at 200 chars). |
-| `resumeClaudeTask` | Re-enqueue a previously completed or failed task by ID. Preserves original `prompt`, `contextFiles`, `timeoutMs`, and `model`. Session-scoped — can only resume own tasks. |
+### Workspace and Settings
 
-Task status lifecycle: `pending → running → done | error | cancelled`.
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `getWorkspaceFolders` | S | Workspace path info. Enhanced with extension data when connected | |
+| `getWorkspaceSettings` | F | Read VS Code settings | extensionRequired |
+| `setWorkspaceSetting` | F | Write VS Code settings | extensionRequired |
+| `setActiveWorkspaceFolder` | F | Switch active workspace in multi-root setups | |
+| `getProjectInfo` | F | Auto-detect project type, dependencies, and structure | |
+| `openInBrowser` | F | Open a URL in the system browser | |
+| `openDiff` | F | Open side-by-side diff view between two files or versions | |
 
-**Security hardening:**
-- Prompt injection: diagnostic messages sanitized (control character stripping + 500-char cap) on both extension LSP and CLI linter paths; file paths at 500 chars; delimited with `--- BEGIN/END DIAGNOSTIC DATA ---`
-- `CLAUDECODE` env var stripped from subprocess to prevent nested-session panic
-- 32 KB prompt cap on `runClaudeTask`
-- `contextFiles` confined to workspace path
+---
 
-### Automation Policy
+### HTTP and Clipboard
 
-When started with `--automation --automation-policy <file>`, the bridge enqueues Claude tasks in response to IDE events. Policy is a JSON file with any of these keys:
+| Tool | Mode | Description |
+|------|------|-------------|
+| `sendHttpRequest` | F | Send HTTP requests. SSRF defense: private/loopback ranges blocked by default (override with `--allow-private-http`) |
+| `parseHttpFile` | F | Parse `.http` files into structured request objects |
+| `readClipboard` | S | Read system clipboard (1 MB cap) |
+| `writeClipboard` | S | Write to system clipboard (1 MB cap) |
 
-| Hook | Trigger | Placeholders | Notes |
-|------|---------|--------------|-------|
-| `onDiagnosticsError` | New error/warning diagnostics appear | `{{file}}`, `{{diagnostics}}` | Severity filter: `minSeverity` — `"error"` or `"warning"` (default `"warning"`) |
-| `onDiagnosticsCleared` | Errors/warnings drop to zero for a file (non-zero → zero transition) | `{{file}}` | — |
-| `onFileSave` | Matching file saved (explicit save, Ctrl+S) | `{{file}}` | `patterns`: minimatch globs |
-| `onFileChanged` | Matching file buffer changes (before save; also external writes) | `{{file}}` | `patterns`: minimatch globs. Requires CC 2.1.83+ |
-| `onGitCommit` | `gitCommit` tool succeeds | `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}` | `{{files}}` is a delimiter-wrapped list (max 20 entries) |
-| `onGitPush` | `gitPush` tool succeeds | `{{remote}}`, `{{branch}}`, `{{hash}}` | — |
-| `onBranchCheckout` | `gitCheckout` tool succeeds | `{{branch}}`, `{{previousBranch}}`, `{{created}}` | `{{previousBranch}}` is `"(detached HEAD)"` when applicable |
-| `onPullRequest` | `githubCreatePR` tool succeeds | `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}` | `{{number}}` is `"(unknown)"` if not returned |
-| `onTestRun` | `runTests` tool completes | `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` | `{{failures}}` is a **JSON array of strings** — each entry is one failure message/test name. `onFailureOnly: true` (default) skips passing runs |
-| `onTaskCreated` | Claude Code `TaskCreated` hook fires (Claude spawns a subagent) | `{{taskId}}`, `{{prompt}}` | Wired via `claude-ide-bridge notify TaskCreated` in CC `settings.json`. `{{prompt}}` truncated to 500 chars. Requires CC 2.1.84+ |
-| `onTaskSuccess` | Orchestrator Claude task completes with status `done` | `{{taskId}}`, `{{output}}` | — |
-| `onPermissionDenied` | Claude Code `PermissionDenied` hook fires (tool call blocked) | `{{tool}}`, `{{reason}}` | Wired via `claude-ide-bridge notify PermissionDenied` in CC `settings.json`. Requires CC 2.1.89+ |
-| `onCwdChanged` | Claude Code working directory changes | `{{cwd}}` | Wired via `claude-ide-bridge notify CwdChanged` in CC `settings.json`. Requires CC 2.1.83+ |
-| `onPostCompact` | Claude Code compacts conversation context | — | Wired via `claude-ide-bridge notify PostCompact` in CC `settings.json`. Requires CC 2.1.76+ |
-| `onInstructionsLoaded` | Session starts / CLAUDE.md reloads | — | Wired via `claude-ide-bridge notify InstructionsLoaded` in CC `settings.json`. No cooldown. Requires CC 2.1.76+ |
+---
 
-**Shared options** (apply to all hooks):
+### Plans
 
-- `prompt` (string) — inline prompt template with `{{placeholder}}` substitution
-- `promptName` (string) — name of a registered MCP prompt to use instead of `prompt`
-- `promptArgs` (object) — arguments passed to the named prompt; values support `{{placeholder}}` substitution
-- `cooldownMs` (integer, min 5000) — minimum milliseconds between triggers for the same file/event
-- **Loop guard** — if the hook's own Claude task is still `pending` or `running`, a re-trigger is suppressed automatically
+All plan tools are full-only.
 
-**Claude Code hook wiring** — hooks that depend on CC's built-in hook events (`PostCompact`, `InstructionsLoaded`, `TaskCreated`, `PermissionDenied`, `CwdChanged`) require a `settings.json` entry calling `claude-ide-bridge notify <EventName>`. The `notify` subcommand reads the bridge lock file to find the running port and auth token, then POSTs to the bridge's `/notify` HTTP endpoint.
+| Tool | Mode | Description |
+|------|------|-------------|
+| `createPlan` | F | Persist an implementation plan to disk |
+| `updatePlan` | F | Update a saved plan |
+| `getPlan` | F | Load a saved plan by name |
+| `deletePlan` | F | Remove a saved plan |
+| `listPlans` | F | List all saved plans |
 
-| CC hook event | `settings.json` command | CC version |
-|---|---|---|
-| `PostCompact` | `claude-ide-bridge notify PostCompact` | 2.1.76+ |
-| `InstructionsLoaded` | `claude-ide-bridge notify InstructionsLoaded` | 2.1.76+ |
-| `TaskCreated` | `claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT` | 2.1.84+ |
-| `PermissionDenied` | `claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON` | 2.1.89+ |
-| `CwdChanged` | `claude-ide-bridge notify CwdChanged --cwd $CWD` | 2.1.83+ |
+---
 
-Claude Code requires hook entries wrapped in `matcher` + `hooks` arrays (a flat `{type, command}` object is rejected by settings validation):
+### Handoff and Session
 
-```json
-"hooks": {
-  "PostCompact": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PostCompact" }] }
-  ],
-  "InstructionsLoaded": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify InstructionsLoaded" }] }
-  ],
-  "TaskCreated": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT" }] }
-  ],
-  "PermissionDenied": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON" }] }
-  ],
-  "CwdChanged": [
-    { "matcher": "", "hooks": [{ "type": "command", "command": "claude-ide-bridge notify CwdChanged --cwd $CWD" }] }
-  ]
-}
-```
+| Tool | Mode | Description |
+|------|------|-------------|
+| `setHandoffNote` | F | Persist a context summary to `~/.claude/ide/handoff-note.json`. Shared across all MCP sessions. Content capped at 10 000 chars |
+| `getHandoffNote` | F | Read handoff note from a previous session. Returns `note`, `updatedAt`, `updatedBy`, and human-readable `age` |
 
-All five CC hook events dispatch through the bridge's `/notify` HTTP endpoint — there are no corresponding MCP tools. Hooks triggered directly by bridge tool calls (`onGitCommit`, `onFileSave`, etc.) need no extra wiring.
-
-
-**Claude Code hooks (settings.json)** can narrow when bridge-invoked shell scripts fire using the `if` field (Claude Code 2.1.85+). Uses permission-rule syntax:
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [{
-      "command": "echo '{\"hookSpecificOutput\":{\"sessionTitle\":\"Bridge — myproject\"}}'",
-      "if": "Bash(*)"
-    }]
-  }
-}
-```
-
-`hookSpecificOutput.sessionTitle` (Claude Code 2.1.94+) sets the session title from a `UserPromptSubmit` hook — useful for auto-labelling bridge sessions by workspace name.
-
-**`MCP_CONNECTION_NONBLOCKING=true`**: set in environment to skip the MCP connection wait in `-p` / `--print` mode (Claude Code 2.1.89+). Speeds up headless bridge invocations when MCP startup latency is acceptable to skip.
-
-> **Cloud sessions**: `CLAUDE_CODE_REMOTE=true` is set in Anthropic cloud VMs (Claude Code on the web). Automation events will enqueue tasks, but the bridge runs locally and those tasks won't execute remotely. Add a guard in hook scripts if needed: `if [ "$CLAUDE_CODE_REMOTE" = "true" ]; then exit 0; fi`.
-
-### AI Comments
-| Tool | Description |
-|------|-------------|
-| `getAIComments` | Scan for `// AI:` comments with severity levels (fix, todo, question, warn, task) |
-
-### Debug
-| Tool | Description |
-|------|-------------|
-| `getDebugState` | Get active debug session state (breakpoints, call stack, scopes) |
-| `evaluateInDebugger` | Evaluate expressions in debug context |
-| `setDebugBreakpoints` | Set breakpoints with conditions |
-| `startDebugging` | Start a debug session (15s timeout) |
-| `stopDebugging` | Stop active debug session |
-
-### Screen Capture
-| Tool | Description |
-|------|-------------|
-| `captureScreenshot` | Capture a screenshot of the current display and return it as an MCP image block. Uses `screencapture -x` on macOS and ImageMagick `import` on Linux. Returns `{ type: "image", data, mimeType: "image/png" }` directly — Claude receives and can reason about the visual output. |
-
-### Decorations
-| Tool | Description |
-|------|-------------|
-| `setEditorDecorations` | Apply visual decorations (info, warning, error, focus, strikethrough, dim) |
-| `clearEditorDecorations` | Remove decorations |
+---
 
 ### VS Code Integration
-| Tool | Description |
-|------|-------------|
-| `executeVSCodeCommand` | Execute arbitrary VS Code commands |
-| `listVSCodeCommands` | List available commands with optional filter |
-| `getWorkspaceSettings` | Read VS Code settings |
-| `setWorkspaceSetting` | Write VS Code settings |
-| `readClipboard` | Read system clipboard |
-| `writeClipboard` | Write to system clipboard |
-| `listVSCodeTasks` | List all VS Code tasks defined in `.vscode/tasks.json` plus detected Makefile targets. Optional `type` filter (e.g. `"shell"`, `"npm"`). Returns `{ tasks[{ label, type, group, detail }] }`. |
-| `runVSCodeTask` | Execute a named VS Code task and wait for it to complete. Returns `{ exitCode, success }`. Task must be defined in `.vscode/tasks.json`. |
+
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `executeVSCodeCommand` | S | Execute arbitrary VS Code commands by ID | extensionRequired |
+| `listVSCodeCommands` | F | List available VS Code commands with optional filter | extensionRequired |
+| `listVSCodeTasks` | F | List tasks from `.vscode/tasks.json` plus detected Makefile targets. Optional `type` filter | extensionRequired |
+| `runVSCodeTask` | F | Execute a named VS Code task and wait for completion. Returns `{ exitCode, success }` | extensionRequired |
+
+---
+
+### File Watching
+
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `watchFiles` | S | Watch file glob patterns for changes | extensionRequired |
+| `unwatchFiles` | S | Stop watching a file pattern | extensionRequired |
+
+---
+
+### Code Generation
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `generateTests` | F | Extract exported symbols from a source file and generate a test scaffold (vitest/jest/pytest). Auto-detects framework from config files |
+| `generateAPIDocumentation` | F | Generate API documentation from JSDoc/docstring comments. Outputs Markdown with function signatures, descriptions, and parameters |
+
+---
+
+### AI Workflow Composite
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `getArchitectureContext` | F | Query codebase memory for an architecture overview: entry points, key modules, dependency patterns |
+| `getSymbolHistory` | F | Composite: `goToDefinition` + `git blame` porcelain + `git log --follow`. Returns definition location, blame for the definition line, and commit history for the defining file |
+| `findRelatedTests` | F | Name-pattern and import-reference search for test files related to a source file. Optional coverage from `coverage-summary.json` |
+| `screenshotAndAnnotate` | F | Derives dev URL from `package.json` scripts, fans out to diagnostics and diff, returns a `playwrightSteps` action plan and `ideState` snapshot | extensionRequired |
+| `getPRTemplate` | F | Generate a pull request body from git commit messages and diff stats. Supports bullet, prose, and conventional commit styles |
+
+---
+
+### Orchestrator / Claude Subprocesses
+
+These tools require `--claude-driver subprocess` (or `api`) at startup. They are not registered otherwise.
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `runClaudeTask` | F | Enqueue a Claude subprocess task. Params: `prompt` (max 32 KB), `contextFiles` (max 20, workspace-confined), `timeoutMs` (5000–600000, default 120000), `stream` (bool), `model`. Returns `{ taskId, status }` immediately, or blocks and streams if `stream: true` |
+| `getClaudeTaskStatus` | F | Poll a task by ID. Returns `{ taskId, status, output (500 char cap), startedAt, completedAt, durationMs }`. Session-scoped |
+| `cancelClaudeTask` | F | Cancel a pending or running task. No-op if already completed. Session-scoped |
+| `listClaudeTasks` | F | List session-scoped tasks with optional `status` filter. Output capped at 200 chars per task |
+| `resumeClaudeTask` | F | Re-enqueue a completed or failed task. Preserves original prompt, contextFiles, timeoutMs, and model. Session-scoped |
+
+Task lifecycle: `pending → running → done | error | cancelled`.
+
+---
+
+## When to Use X vs Y
+
+| Decision | Use this | Not this | Reason |
+|----------|----------|----------|--------|
+| Jump to where a symbol is defined (know file/position) | `goToDefinition` | `navigateToSymbolByName` | LSP precision — returns exact definition site |
+| Jump to symbol by name (don't know file/position) | `navigateToSymbolByName` | `searchWorkspaceSymbols` + `goToDefinition` | Composite tool handles both steps and opens the file |
+| Find type errors and lint issues | `getDiagnostics` | `runTests` | `runTests` is for functional failures; `getDiagnostics` is for static analysis |
+| Run test suite | `runTests` | `getDiagnostics` | `getDiagnostics` does not execute code |
+| Find files by name or path pattern | `findFiles` | `searchWorkspace` | `searchWorkspace` searches file content; `findFiles` searches file paths |
+| Search file content with regex | `searchWorkspace` | `findFiles` | `findFiles` matches filenames, not content |
+| Edit specific line numbers | `editText` | `replaceBlock` or `searchAndReplace` | `editText` uses precise line-range targeting |
+| Replace a block identified by its current content | `replaceBlock` | `editText` | `replaceBlock` matches by content; safer when line numbers may drift |
+| Find and replace a pattern across many files | `searchAndReplace` | `editText` | `searchAndReplace` operates across the entire workspace |
+| Symbol definition + blame + commit history in one call | `getSymbolHistory` | `gitBlame` + `goToDefinition` separately | `getSymbolHistory` is a composite; `gitBlame` returns raw line-by-line blame for any file |
+| How many things reference this symbol | `getChangeImpact` | `findReferences` | `getChangeImpact` returns a `blastRadius` summary; `findReferences` returns the full reference list with locations |
 
 ---
 
 ## MCP Prompts
 
-The bridge serves 15 built-in prompts via `prompts/list` + `prompts/get`. These appear as `/mcp__bridge__<name>` in any MCP client that supports the MCP prompts protocol. No extension required.
+The bridge serves **72 built-in prompts** via `prompts/list` and `prompts/get`. They appear as `/mcp__bridge__<name>` in any MCP client supporting the MCP prompts protocol.
 
-### Core prompts
+### Core Prompts
 
-| Prompt | Argument | Description |
-|--------|----------|-------------|
+| Prompt | Argument(s) | Description |
+|--------|-------------|-------------|
 | `review-file` | `file` (required) | Code review for a specific file using current diagnostics |
 | `explain-diagnostics` | `file` (required) | Explain all diagnostics in a file and suggest fixes |
-| `generate-tests` | `file` (required) | Generate a test scaffold for exported symbols in a file |
-| `debug-context` | _(none)_ | Snapshot current debug state, open editors, and diagnostics |
-| `git-review` | `base` (optional, default: `main`) | Review all changes since a git base branch |
-| `set-effort` | `level` (optional: `low`/`medium`/`high`, default: `medium`) | Prepend an effort-level instruction to tune Claude's thoroughness for the next task |
-| `cowork` | `task` (optional) | **Load full IDE context and propose a Cowork action plan.** Calls `getHandoffNote`, `getOpenEditors`, `getDiagnostics`, `getGitStatus`, `getProjectInfo` automatically — user only needs to describe the goal. |
-| `gen-claude-md` | _(none)_ | Generate a CLAUDE.md bridge workflow section for the project |
+| `generate-tests` | `file` (required) | Generate a test scaffold for exported symbols |
+| `debug-context` | — | Snapshot current debug state, open editors, and diagnostics |
+| `git-review` | `base` (default: `main`) | Review all changes since a git base branch |
+| `set-effort` | `level` (low/medium/high, default: medium) | Prepend an effort-level instruction for the next task |
+| `cowork` | `task` (optional) | Load full IDE context and propose a Cowork action plan. Auto-calls `getHandoffNote`, `getOpenEditors`, `getDiagnostics`, `getGitStatus`, `getProjectInfo` |
+| `gen-claude-md` | — | Generate a CLAUDE.md bridge workflow section for the current project |
+| `review-changes` | — | Review all uncommitted changes with diagnostics and diff |
 
-### Dispatch prompts (mobile)
+### Dispatch Prompts (Mobile)
 
-Optimized for terse phone triggers via Claude Desktop's Dispatch feature. Each instructs Claude to call specific bridge tools and return concise, phone-screen-friendly output (under 20 lines).
+Optimized for terse phone triggers via Claude Desktop Dispatch. Returns concise output (under 20 lines).
 
-| Prompt | Argument | Description |
-|--------|----------|-------------|
-| `project-status` | _(none)_ | Git status + diagnostics + test summary ("How's the build?") |
-| `quick-tests` | `filter` (optional) | Run tests, pass/fail summary with failure details |
-| `quick-review` | _(none)_ | Diff summary + diagnostics for changed files |
-| `build-check` | _(none)_ | Build/compile check with error summary |
-| `recent-activity` | `count` (optional, default: 10) | Recent git log + uncommitted changes |
+| Prompt | Argument(s) | Description |
+|--------|-------------|-------------|
+| `project-status` | — | Git status + diagnostics + test summary |
+| `quick-tests` | `filter` (optional) | Run tests; pass/fail summary with failure details |
+| `quick-review` | — | Diff summary + diagnostics for changed files |
+| `build-check` | — | Build/compile check with error summary |
+| `recent-activity` | `count` (default: 10) | Recent git log + uncommitted changes |
 
 ### LSP Composition Prompts
 
-Multi-step LSP workflows composed from bridge primitives. Each instructs Claude to call a sequence of tools and return a structured report.
+Multi-step LSP workflows composed from bridge primitives.
 
 | Prompt | Arguments | Description |
 |--------|-----------|-------------|
-| `find-callers` | `symbol` (required) | Find every caller of a symbol with file:line locations. Wraps `searchWorkspaceSymbols` + `getCallHierarchy(incoming)` + `findReferences` |
-| `blast-radius` | `file`, `line`, `column` (all required) | Compute blast radius of a change: diagnostics + reference counts + risk badge. Wraps `getChangeImpact` |
-| `why-error` | `file` (required), `line` (optional) | Explain a diagnostic in plain English with surrounding type context. Wraps `getDiagnostics` + `explainSymbol` |
-| `unused-in` | `file` (required) | List unused exports, parameters, and imports with reference verification. Wraps `detectUnusedCode` + `findReferences` |
-| `trace-to` | `symbol` (required) | Trace call chain to a target symbol with type signatures at each hop. Wraps `getCallHierarchy(outgoing)` + `getImportedSignatures` |
-| `imports-of` | `symbol` (required) | List every file that imports a symbol with reference counts. Wraps `findReferences` + `getImportTree` |
-| `circular-deps` | _(none)_ | Detect circular import dependencies in the workspace. Wraps `getImportTree` with cycle detection |
-| `refactor-preview` | `file`, `line`, `column`, `newName` (all required) | Preview exact edits a rename would make, plus blast-radius risk. Wraps `refactorAnalyze` + `refactorPreview` |
-| `module-exports` | `file` (required) | List a module's exported symbols with type signatures as Markdown. Wraps `getDocumentSymbols` + `getHover` |
-| `type-of` | `file`, `line`, `column` (all required) | Get the type signature at a position (no documentation). Wraps `getHoverAtCursor` + `getTypeSignature` |
-| `deprecations` | _(none)_ | Find `@deprecated` APIs across the workspace and count their callers. Wraps `searchWorkspace` + `findReferences` |
-| `coverage-gap` | `file` (required) | Identify untested functions by correlating coverage with document symbols. Wraps `getCodeCoverage` + `getDocumentSymbols` |
-| `explore-type` | `file`, `line`, `column` (all required) | Explore a type's declaration, definition, and all implementations. Wraps `getHover` + `goToDeclaration` + `goToTypeDefinition` + `findImplementations` |
+| `find-callers` | `symbol` (required) | Every caller of a symbol with file:line. Wraps `searchWorkspaceSymbols` + `getCallHierarchy(incoming)` + `findReferences` |
+| `blast-radius` | `file`, `line`, `column` (required) | Diagnostics + ref counts + risk badge. Wraps `getChangeImpact` |
+| `why-error` | `file` (required), `line` (optional) | Explain a diagnostic in plain English with type context. Wraps `getDiagnostics` + `explainSymbol` |
+| `unused-in` | `file` (required) | Unused exports, parameters, imports with reference verification. Wraps `detectUnusedCode` + `findReferences` |
+| `trace-to` | `symbol` (required) | Call chain to target symbol with type signatures at each hop. Wraps `getCallHierarchy(outgoing)` + `getImportedSignatures` |
+| `imports-of` | `symbol` (required) | Every file that imports a symbol with reference counts. Wraps `findReferences` + `getImportTree` |
+| `circular-deps` | — | Detect circular import dependencies. Wraps `getImportTree` with cycle detection |
+| `refactor-preview` | `file`, `line`, `column`, `newName` (required) | Preview exact edits a rename would make plus blast-radius risk. Wraps `refactorAnalyze` + `refactorPreview` |
+| `module-exports` | `file` (required) | Module exported symbols with type signatures as Markdown. Wraps `getDocumentSymbols` + `getHover` |
+| `type-of` | `file`, `line`, `column` (required) | Type signature at a position. Wraps `getHoverAtCursor` + `getTypeSignature` |
+| `deprecations` | — | Find `@deprecated` APIs and count callers. Wraps `searchWorkspace` + `findReferences` |
+| `coverage-gap` | `file` (required) | Untested functions by correlating coverage with document symbols. Wraps `getCodeCoverage` + `getDocumentSymbols` |
+| `explore-type` | `file`, `line`, `column` (required) | Type declaration, definition, and all implementations. Wraps `getHover` + `goToDeclaration` + `goToTypeDefinition` + `findImplementations` |
 
-### Visual Skills
+### Agent Teams and Scheduled Tasks
 
-Three visual prompts that render browser-based HTML dashboards. All require `--full` mode.
-
-| Prompt | Argument | Description |
-|--------|----------|-------------|
-| `ide-coverage` | _(none)_ | Test coverage heatmap from lcov/JSON coverage data. Parses line coverage per file and renders a color-coded file-tree heatmap as HTML in the system browser. |
-| `ide-deps` | `file` or `symbol` (optional) | Dependency graph for a file or symbol. Calls `getCallHierarchy` + `findReferences`, builds a directed graph, and renders an interactive HTML force-directed graph in the system browser. |
-| `ide-diagnostics-board` | _(none)_ | Diagnostic dashboard across the workspace. Groups results by severity and file and renders a sortable color-coded HTML table in the system browser. |
-
-### Agent Teams & Scheduled Tasks prompts
-
-| Prompt | Argument | Description |
-|--------|----------|-------------|
-| `team-status` | _(none)_ | Workspace state, active tasks, recent activity for team leads coordinating parallel agents |
-| `health-check` | _(none)_ | Comprehensive project health (tests, diagnostics, security) with HEALTHY/DEGRADED/FAILING grading. Designed for scheduled nightly/hourly runs. |
-
-Implementation: `src/prompts.ts`. Tests: `src/__tests__/prompts.test.ts`, `src/__tests__/transport-prompts.test.ts`.
+| Prompt | Argument(s) | Description |
+|--------|-------------|-------------|
+| `team-status` | — | Workspace state, active tasks, recent activity for coordinating parallel agents. Requires multiple Claude Code sessions simultaneously |
+| `health-check` | — | Tests + diagnostics + security advisories + git status. HEALTHY/DEGRADED/FAILING grading. Designed for nightly/hourly scheduled runs |
 
 ---
 
-## Architecture
+## Automation Hooks
 
-### Connection Model
-```
-Claude Code CLI  <--WebSocket (MCP/JSON-RPC 2.0)-->  Bridge Server  <--WebSocket-->  VS Code Extension
-```
+When started with `--automation --automation-policy <file>`, the bridge enqueues Claude tasks in response to IDE events. The policy is a JSON file with any of these 18 hook keys:
 
-### Protocol
-- JSON-RPC 2.0 over WebSocket
-- MCP protocol version: `2025-11-25`
-- Server capabilities: `tools` (with `listChanged`), `logging`, `prompts`, `resources`, `elicitation: {}`
-- `elicitation: {}` capability enables the bridge to send `elicitation/create` mid-task to request structured user input via Claude Code's interactive dialog (Claude Code 2.1.76+). Pending elicitations are rejected on disconnect. API: `McpTransport.elicit(message, requestedSchema, timeoutMs?)` → resolves with the client's response object.
+| Hook | Trigger | Placeholders |
+|------|---------|--------------|
+| `onDiagnosticsError` | New error/warning diagnostics appear | `{{file}}`, `{{diagnostics}}` |
+| `onDiagnosticsCleared` | Errors/warnings drop to zero (non-zero → zero) | `{{file}}` |
+| `onFileSave` | Matching file saved. `patterns`: minimatch globs | `{{file}}` |
+| `onFileChanged` | Matching file buffer changes before save. `patterns`: minimatch globs | `{{file}}` |
+| `onGitCommit` | `gitCommit` tool succeeds | `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}` |
+| `onGitPull` | `gitPull` tool succeeds | `{{remote}}`, `{{branch}}` |
+| `onGitPush` | `gitPush` tool succeeds | `{{remote}}`, `{{branch}}`, `{{hash}}` |
+| `onBranchCheckout` | `gitCheckout` tool succeeds | `{{branch}}`, `{{previousBranch}}`, `{{created}}` |
+| `onPullRequest` | `githubCreatePR` tool succeeds | `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}` |
+| `onTestRun` | `runTests` tool completes. `onFailureOnly: true` (default) skips passing runs | `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array) |
+| `onTestPassAfterFailure` | Test runner transitions from fail → pass | `{{runner}}`, `{{passed}}`, `{{total}}` |
+| `onTaskCreated` | Claude Code `TaskCreated` hook (CC 2.1.84+) | `{{taskId}}`, `{{prompt}}` (truncated 500 chars) |
+| `onTaskSuccess` | Orchestrator task completes with status `done` | `{{taskId}}`, `{{output}}` |
+| `onPermissionDenied` | Claude Code `PermissionDenied` hook (CC 2.1.89+) | `{{tool}}`, `{{reason}}` |
+| `onCwdChanged` | Claude Code working directory changes (CC 2.1.83+) | `{{cwd}}` |
+| `onPostCompact` | Claude Code compacts conversation context (CC 2.1.76+) | — |
+| `onInstructionsLoaded` | Session starts or CLAUDE.md reloads (CC 2.1.76+). No cooldown | — |
+| `onGitCommit` (via `when` condition) | Conditional evaluation with `AutomationCondition` | — |
 
-### Auth
-- Bridge generates random UUID auth token on startup (persisted to `~/.claude/ide/bridge-token.json` — survives restarts)
-- Token written to lock file: `~/.claude/ide/<port>.lock`
-- Lock file contains: `{ authToken, pid, workspace, ideName, isBridge: true, startedAt }`
-- `isBridge: true` lets the stdio shim distinguish bridge lock files from IDE-owned lock files (e.g. Windsurf writes its own lock); shim always prefers a bridge lock over a non-bridge lock when auto-discovering
-- Extension rejects lock files older than **24 hours** (PID-reuse guard; was 2 hours before v2.22.2)
-- Claude Code reads lock file and connects with token in WebSocket upgrade headers
-- Extension authenticates via `x-claude-ide-extension` header
+**Shared options (all hooks):**
 
-### OAuth 2.0 (remote deployments)
+- `prompt` — inline prompt template with `{{placeholder}}` substitution
+- `promptName` / `promptArgs` — named MCP prompt reference with argument substitution
+- `cooldownMs` — minimum ms between triggers for the same file/event (min 5000)
+- `when` — `AutomationCondition`: `minDiagnosticCount`, `diagnosticsMinSeverity`, `testRunnerLastStatus`
+- Loop guard — if the hook's own Claude task is still `pending` or `running`, re-trigger is suppressed
 
-Activated with `--issuer-url <public-https-url>`. Endpoints: `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`, `/oauth/register`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke`.
+**CC hook wiring:** hooks that depend on Claude Code's built-in hook events need entries in `~/.claude/settings.json`. The bridge auto-wires these when `--automation` is active.
 
-**`POST /oauth/register` validation** (RFC 7591 dynamic client registration):
-- Each `redirect_uri` must use `https` scheme, or `http` with `localhost`/`127.0.0.1` as host. Other URIs are rejected.
-- `scope` must be a subset of `SUPPORTED_SCOPES` (currently `["mcp"]`). Unknown scopes are rejected.
-- Registered `redirect_uri` values are stored per `client_id` and validated at the `/oauth/authorize` endpoint — the `redirect_uri` in the authorization request must exactly match a registered one, preventing open redirect attacks.
-
-PKCE S256 is mandatory. Auth codes are single-use with 5-min TTL. Access tokens are opaque with 24-hour TTL. No refresh tokens.
-
-**Token persistence:** the bridge token persists across restarts in `~/.claude/ide/bridge-token.json`. Access tokens are stored in `~/.claude/ide/oauth-tokens.json` keyed by SHA-256 hash of the client ID. TTL is configurable via the `oauthTokenTtlDays` config key (1–90 days; default 1 day / 24 h). Eliminates re-authorization on bridge restart.
-
-### Tool Filtering
-- Tools with `extensionRequired: true` are **always visible** in `tools/list` regardless of extension state (changed in v2.1.33)
-- When the extension is disconnected, calling an `extensionRequired` tool returns `isError: true` with reconnect instructions instead of a "Tool Not Found" error
-- Extension connect/disconnect triggers `notifications/tools/list_changed` to Claude Code (still sent — allows clients to refresh state)
-
-### Limits & Timeouts
-| Setting | Default | Max |
-|---------|---------|-----|
-| Tool timeout | 60s | per-tool override |
-| Command timeout | 30s | 120s |
-| Max result size | 512 KB | 4096 KB |
-| Rate limit | 200 req/min | — |
-| Tool call rate limit | 60 calls/min per session | configurable via `--tool-rate-limit` |
-| Concurrent tools | 10 | — |
-| Extension request timeout | 10s | — |
-
-### Connection Hardening
-- WebSocket heartbeat (20s ping/pong) with automatic reconnect
-- Sleep/wake detection via heartbeat gap monitoring
-- All `ws.send()` calls wrapped in readyState check + try-catch
-- Extension circuit breaker with exponential backoff (AWS full jitter)
-- Generation counter prevents stale handlers from responding
-- 120s grace period on disconnect (all session types — preserves in-flight state during brief interruptions; was 30s before v2.22.2)
-- Send buffer monitoring (warns at >1MB buffered)
-- Backpressure-aware sending with drain waiting
-
-### Agent Team Support (Multi-Session)
-
-The bridge supports up to 5 concurrent Claude Code sessions sharing a single bridge instance.
-
-| Property | Details |
-|----------|---------|
-| Max concurrent sessions | 5 (active, non-grace) |
-| Session isolation | Each session gets its own `McpTransport`, `openedFiles`, `terminalPrefix` |
-| Terminal namespacing | Terminals prefixed per-session (e.g., `s1a2b3c4-build`) — each agent sees only its own |
-| File locking | `FileLock` promise-chain mutex serializes concurrent file edits across sessions. `tryAcquire()` (non-blocking) returns `{ release }` on success or `{ lockedBySession: string }` if already held — used by `editText`, `replaceBlock`, and `searchAndReplace`. |
-| Min connection interval | 50ms between connections (prevents connection-storm DoS) |
-| Grace period | 120s after disconnect — delays session cleanup; applies to all session types (CLI and Desktop shim). Configurable via `--grace-period`. |
-| Activation | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude` |
-
-Session lifecycle:
-1. Claude Code connects → new `AgentSession` created with unique ID
-2. Session gets isolated transport, opened-files set, terminal prefix
-3. Tool calls routed to the session's transport
-4. On disconnect → grace period starts (120s default, configurable via `--grace-period`); applies to all session types
-5. **Session resumption** (v2.22.2+): if the reconnecting client sends `X-Claude-Code-Session-Id` matching a grace-period session, the bridge reattaches the new WebSocket to the existing session (cancels cleanup, preserves `openedFiles`, rate-limit window, and tool registrations). The stdio shim sends a stable per-process UUID on every connect automatically. If no match → new session created.
-6. Otherwise → old session cleaned up after grace expires
-
-### Health & Metrics
-- `/ping` endpoint: unauthenticated liveness check — returns `{"ok":true,"v":"<version>"}`. Safe for uptime monitors, Docker health checks, and CI wait scripts.
-- `/health` endpoint: Claude Code connected, extension connected, circuit breaker state (Bearer auth required)
-- `/status` endpoint: full session and activity summary (JSON)
-- `/ready` endpoint: 200 when bridge is initialized and ready to accept connections; 503 while still starting
-- `/stream` endpoint: `GET /stream` — SSE stream of real-time tool + lifecycle events from the activity log (Bearer auth required). Each event is a `data:` line containing JSON with `kind`, `tool`/`event`, `durationMs`, `outcome`, and timestamp. Keep-alive `: ping` comment sent every 15 seconds.
-- `/metrics` endpoint: Prometheus-format session metrics (tool calls, durations, errors)
-- `/tasks` endpoint: sanitized task list (Bearer-auth required; no prompt text, output capped at 200 chars). Only present when `--claude-driver != none`.
+| CC hook event | Settings.json command |
+|---|---|
+| `PostCompact` | `claude-ide-bridge notify PostCompact` |
+| `InstructionsLoaded` | `claude-ide-bridge notify InstructionsLoaded` |
+| `TaskCreated` | `claude-ide-bridge notify TaskCreated --taskId $TASK_ID --prompt $PROMPT` |
+| `PermissionDenied` | `claude-ide-bridge notify PermissionDenied --tool $TOOL --reason $REASON` |
+| `CwdChanged` | `claude-ide-bridge notify CwdChanged --cwd $CWD` |
 
 ---
 
-## Claude Desktop & Cowork Integration
+## Headless / CI Mode
 
-### Claude Desktop
+For use without VS Code — see `documents/headless-quickstart.md` for the full setup guide.
 
-The bridge connects to Claude Desktop via the stdio shim (`scripts/mcp-stdio-shim.cjs`). All bridge tools are available inside Claude Desktop chat alongside any other Desktop integrations. Set up with:
+**What works headless (no extension):**
 
-```bash
-bash scripts/gen-claude-desktop-config.sh
-```
+- All full-mode tools that do not require the extension: git, GitHub, terminal, file operations, formatting (CLI fallback), dependency/security analysis, orchestration.
+- `getDiagnostics` and `watchDiagnostics` via CLI linters.
+- `goToDefinition`, `findReferences`, `getTypeSignature` via `typescript-language-server --stdio` (TypeScript projects only).
+- `searchWorkspaceSymbols` via Universal Ctags.
+- `navigateToSymbolByName` via ripgrep.
 
-The shim auto-discovers the bridge lock file (`~/.claude/ide/<port>.lock`) by preferring files with `isBridge: true`. This prevents the shim from accidentally connecting to an IDE-owned lock file (e.g. Windsurf writes its own lock in the same directory).
+**What requires the extension:**
 
-The shim handles bridge restarts fully automatically — **Claude Desktop never needs a quit and relaunch**:
+- All pure LSP tools not listed above (`getHover`, `getCallHierarchy`, `explainSymbol`, `renameSymbol`, `getDocumentSymbols`, etc.).
+- All debugger tools.
+- All editor state tools (open editors, selections, buffer content from memory, decorations).
+- Terminal tools (`createTerminal`, `runInTerminal`, etc.) — these use VS Code shell integration.
 
-- **Startup wait**: if no lock file exists when the shim starts (e.g. Claude Desktop launches before the bridge), the shim polls every 3 s instead of exiting. It connects as soon as the bridge writes its lock file.
-- **`fs.watch` reconnect**: the shim watches `~/.claude/ide/` with a 500 ms debounce and reconnects immediately when a new lock appears.
-- **Polling fallback**: after any WebSocket disconnect, a 3 s interval poll runs in parallel with `fs.watch`. This recovers the connection even if macOS FSEvents misses a watch event.
-- **Pending list-changed**: if `notifications/tools/list_changed` fires while no sessions have an open WebSocket (e.g. during the grace period), the bridge sets a `pendingListChanged` flag. The next session to complete the MCP handshake (`notifications/initialized`) immediately receives the notification so it re-queries the tool list with the current extension state.
-
-### Cowork (Computer Use)
-
-Cowork is Claude Desktop's ability to control the OS, browser, and desktop apps. When used alongside the bridge, the two capabilities compose:
-
-| Bridge | Cowork |
-|--------|--------|
-| Reads IDE state (diagnostics, open files, git, terminals) | Acts on the world (clicks, types, navigates apps) |
-| Understands *why* something is broken | Can fix it in tools outside the editor |
-
-**Example workflows:**
-
-- **End-to-end deploy**: Bridge runs tests and checks git status → Cowork opens CI dashboard in Chrome, monitors the run, approves the deploy gate
-- **Bug report to ticket**: Bridge reads the failing stack trace → Claude writes the fix → Cowork opens Linear/Jira, creates the ticket with the diff
-- **Live API testing**: Bridge watches terminal output → Cowork fires requests in the browser, reads responses
-- **Code review**: Bridge reads diagnostics and call hierarchy → Cowork navigates GitHub PR in Chrome, leaves inline comments
-- **Config sync**: Bridge reads environment variables → Cowork opens the cloud console, updates the service config
-
-### Session Context Handoff
-
-Claude Desktop and Claude Code CLI are separate MCP sessions on the same bridge. Use `setHandoffNote` / `getHandoffNote` to pass context between them:
-
-```
-# In Claude Desktop (finishing a debug session):
-setHandoffNote("auth bug in login.ts:42 — token expiry off by 1s in verifyJWT(). Next: fix the ±1s skew.")
-
-# In Claude Code CLI (picking up the work):
-getHandoffNote()  →  { note: "auth bug in login.ts:42 ...", age: "4m ago" }
-```
-
-### Cowork Workflow — One Prompt to Start
-
-> **Why Cowork sessions can't use MCP bridge tools**
-> Cowork (computer-use) sessions connect to Claude Desktop as a separate process with no VS Code extension attached. Tools marked `extensionRequired: true` are still visible in `tools/list`, but calling them while the extension is disconnected returns `isError: true` with reconnect instructions — without a real editor session they cannot do useful IDE work. This is an architectural constraint of how Cowork sessions are isolated; it is not a bug. The two-step workflow below (gather context first, then hand off) is the correct workaround.
-
-The `/mcp__bridge__cowork` prompt is the recommended entry point for any Cowork session. It eliminates the need to manually invoke context tools before describing a task.
-
-**Minimal usage** — just type in Claude Desktop chat:
-```
-/mcp__bridge__cowork
-```
-Claude auto-calls `getHandoffNote`, `getOpenEditors`, `getDiagnostics`, `getGitStatus`, and `getProjectInfo`, then summarises the workspace state and proposes a Cowork action plan.
-
-**With a task description:**
-```
-/mcp__bridge__cowork fix all TypeScript errors in src/
-```
-Same context gathering, but the summary and action plan are focused on the stated goal.
-
-**What Claude does automatically (no user action required):**
-1. Checks `getHandoffNote` for prior session context or an in-progress task
-2. Lists open files and unsaved changes via `getOpenEditors`
-3. Surfaces all errors and warnings via `getDiagnostics`
-4. Shows uncommitted work via `getGitStatus`
-5. Detects project type, scripts, and key dependencies via `getProjectInfo`
-6. Produces a 3–5 bullet workspace summary and a step-by-step Cowork plan
-7. Asks for confirmation before taking any action outside the editor
-
-**End of session — save context for next time:**
-```
-setHandoffNote("Finished fixing TS errors in auth/. 3 files changed. Remaining: update tests.")
-```
-The next `/mcp__bridge__cowork` invocation (in any session — CLI or Desktop) will pick this up via `getHandoffNote`.
-
-### Remote-Controlling Claude Desktop from the CLI — Assessment
-
-It is tempting to drive Claude Desktop programmatically from a CLI bridge session (e.g. to trigger a Cowork task without touching the keyboard). Three approaches were researched and assessed:
-
-**Approach 1 — AppleScript via `osascript`**
-
-```applescript
-tell application "Claude" to activate
-delay 0.5
-tell application "System Events"
-  keystroke "n" using command down   -- new conversation
-  delay 0.3
-  keystroke "Start a Cowork task: fix all TypeScript errors"
-  key code 36  -- Enter
-end tell
-```
-
-Executed via `runCommand` with `osascript` on the allowlist. **Not recommended:**
-
-- Fragile — breaks whenever Claude Desktop changes a keyboard shortcut
-- Requires Accessibility permissions granted to the Terminal / IDE running the bridge
-- Screen must be unlocked and Claude Desktop must be in the foreground
-- No way to read the result back programmatically (fire-and-forget only)
-- `osascript` is intentionally absent from the `runCommand` allowlist; adding it opens a broad UI-automation attack surface
-
-**Approach 2 — Claude Desktop local HTTP API**
-
-Use `sendHttpRequest` to call a hypothetical `http://localhost:<port>/api/...` endpoint that Claude Desktop might expose. **Blocked:**
-
-- `sendHttpRequest` rejects all private/loopback addresses (SSRF protection — by design)
-- Whether Claude Desktop exposes a local HTTP API is unverified; would require reverse engineering with a proxy (Charles, mitmproxy). A significant research project with no guaranteed payoff.
-
-**Approach 3 — Electron IPC reverse engineering**
-
-Find the Cowork IPC trigger in Claude Desktop's Electron internals and call it directly from Node. Possible in theory but a multi-day research project with high fragility on every Desktop update.
-
-**Recommended pattern instead — `setHandoffNote` + `runClaudeTask`**
-
-`runClaudeTask` spawns an autonomous Claude subprocess directly on the machine — the same capability Cowork provides, without any UI fragility:
-
-```
-# From Claude Code CLI:
-setHandoffNote("Trigger point: fix all TS errors in src/. Use strict mode. Report back.")
-
-runClaudeTask(
-  prompt: "Read the handoff note and fix all TypeScript errors in the workspace.",
-  stream: true
-)
-```
-
-The subprocess runs at full capability with access to all bridge tools, streams output in real time to the VS Code output channel, and completes without requiring screen access or Accessibility permissions. **This is the right answer for 90% of the "trigger autonomous work from CLI" use cases.**
-
-### "Browse Plugins" Compatibility
-
-The bridge is not yet listed in Claude's plugin marketplace ("Browse plugins" — Anthropic-curated). It works via **manual MCP config** (the stdio shim), which is equivalent in capability. The `/.well-known/mcp/server-card.json` endpoint (SEP-1649) is in place for future registry discovery. When Anthropic opens plugin submission to third parties, the bridge will need: an updated manifest with icon/category fields, and submission through Anthropic's partner portal.
-
----
-
-## Deployment
-
-### Single Command
-```bash
-npm start -- --workspace /path/to/project
-```
-
-### Full Orchestrator
-```bash
-npm run start-all -- --workspace /path/to/project
-```
-Launches tmux session with 4 panes: orchestrator, bridge, Claude CLI, remote control.
-
-### CLI Options
-```
---workspace <path>        Workspace folder (default: cwd)
---ide-name <name>         IDE name shown to Claude (default: "External")
---editor <cmd>            Editor CLI command (default: auto-detect)
---port <number>           Force specific port (default: random)
---linter <name>           Enable specific linter (repeatable)
---allow-command <cmd>     Add to command allowlist (repeatable)
---timeout <ms>            Command timeout (default: 30000)
---max-result-size <KB>    Max output size (default: 512)
---claude-driver <mode>    Claude subprocess driver: subprocess | api | none (default: none)
---claude-binary <path>    Path to claude binary (default: claude)
---automation              Enable event-driven automation hooks
---automation-policy <path> Path to JSON automation policy file
---plugin <path>           Load a plugin from a directory (repeatable; requires manifest)
---plugin-watch            Hot-reload plugins on file change (requires --plugin)
---verbose                 Debug logging
---jsonl                   Structured JSONL events to stderr
-```
-
-### Environment Variables
-| Variable | Description |
-|----------|-------------|
-| `CLAUDE_IDE_BRIDGE_EDITOR` | Editor command override |
-| `CLAUDE_IDE_BRIDGE_LINTERS` | Comma-separated linter list |
-| `CLAUDE_IDE_BRIDGE_TIMEOUT` | Command timeout in ms |
-| `CLAUDE_IDE_BRIDGE_MAX_RESULT_SIZE` | Max output size in KB |
-| `CLAUDE_CONFIG_DIR` | Override `~/.claude` directory |
-| `oauthTokenTtlDays` | (config key) OAuth access token TTL in days (1–90, default 1). Set in bridge config or via `--oauth-token-ttl-days`. |
-
-### VS Code Extension
-- Status bar: connection state indicator (connected/disconnected/reconnecting)
-- Output channel: "Claude IDE Bridge" structured logs
-- Commands: Reconnect, Show Logs, Copy Connection Info
-- Auto-reconnect: exponential backoff with jitter, sleep detection, escalating notifications
-- Real-time push: diagnostics, selections, active file, AI comments, file saves, debug state
-- **Auto-install** (`autoInstallBridge: true`): extension installs `claude-ide-bridge` npm package globally on first activation; version-pinned to the bundled `BRIDGE_VERSION` (read from `PACKAGE_VERSION` in `version.ts` — no longer hardcoded)
-- **Auto-start** (`autoStartBridge: true`): extension spawns a bridge process per workspace folder; polls lock dir (250ms) to detect readiness; uses exponential restart backoff (max 5 restarts, 30s cap)
-- **Untrusted workspace**: bridge install and auto-start are skipped in untrusted workspaces (VS Code workspace trust). The extension still watches for a manually-started bridge via lock file discovery.
-- **`extensionKind: ["workspace"]`** (v1.0.2+): extension runs in the remote extension host when using VS Code Remote-SSH or Cursor SSH — bridge spawns on the VPS, connects over VPS localhost, all tools available remotely.
-
-### Remote Deployment
-
-**VS Code Remote-SSH / Cursor SSH (full tools)**
-No extra setup. The extension activates on the VPS automatically when you connect via SSH and open a remote folder. Claude Code on your local machine connects normally.
-
-**Headless VPS (CLI tools only — no IDE)**
-```bash
-# On VPS
-claude-ide-bridge --bind 0.0.0.0 --port 9000 --workspace /project
-claude-ide-bridge print-token --port 9000     # prints auth token
-
-# On local machine
-bash scripts/gen-mcp-config.sh remote \
-  --host vps-ip:9000 --token <token> --write
-```
-
-CLI subcommands added in v2.1.16:
-- `print-token [--port N]` — prints authToken from most recent (or specified) lock file
-- `gen-mcp-config.sh remote --host <h:p> --token <t>` — generates HTTP MCP config, no local lock file needed
-
-Available tools headless: file operations, git, terminals, search, CLI linters, dependency audits, HTTP client. Missing without extension: LSP, debugger, editor state.
-
----
-
-## Token Efficiency
-
-### Why it matters
-
-The `tools/list` response is sent to the model on every request and is a prime candidate for prompt caching. Shorter tool descriptions reduce token usage per request and improve cache hit rates — especially important when 130+ tools are registered.
-
-**Rule:** Every tool `description` field must be ≤ 200 characters (collapsed, with string concatenation removed). This limit is enforced by check #6 in `scripts/audit-lsp-tools.mjs`.
-
-### Prompt caching
-
-Enable prompt caching in your Claude API client or MCP host to avoid re-encoding the full tool list on every request. With caching enabled, the first request pays the full token cost; subsequent requests with the same tool list are served from cache.
-
-### Measuring current token cost
-
-Use `scripts/measure-tools-list.mjs` to measure the tools/list response size from a running bridge:
-
-```bash
-# With a running bridge on the default port:
-node scripts/measure-tools-list.mjs
-
-# Custom port and token:
-node scripts/measure-tools-list.mjs --port 9000 --token <tok>
-```
-
-Output includes:
-- Total response bytes
-- Estimated token count (bytes ÷ 4)
-- Per-tool breakdown sorted by description length
-
-### Description guidelines
-
-- **≤ 160 chars** for slim-mode tools (the 53 in `SLIM_TOOL_NAMES`) — these are included in every session
-- **≤ 200 chars** for all other tools
-- Strip phrases like "Requires the VS Code extension" — the `extensionRequired: true` flag enforces this at dispatch time
-- Prefer imperative one-liners: "Get X" or "List Y" rather than "This tool gets X and returns Y"
-- Omit obvious caveats that are already enforced by the schema or transport layer
-
-The `audit-lsp-tools.mjs` check #6 runs in CI and will fail the build if any description exceeds 200 chars.
+**CI pattern:** run the bridge with `--full` and `--headless` (no extension), configure `typescript-language-server` and `ctags` in the Docker image, and use `getToolCapabilities` in the first step to confirm which fallback paths are active. See `documents/headless-quickstart.md` for Docker and GitHub Actions examples.

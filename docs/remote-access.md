@@ -1,118 +1,85 @@
-# Remote Access — Streamable HTTP Transport
+# Remote Access Guide
 
-The bridge exposes a **Streamable HTTP** MCP endpoint (`POST/GET/DELETE /mcp`) that lets
-any MCP client with network access connect — not just Claude Code CLI.
+## Overview
 
-This enables the core "chat with your IDE from anywhere" workflow:
+The bridge can run on a remote VPS or container and be accessed by:
 
-- **Claude Desktop app** → Custom Connectors UI → bridge running on your laptop
-- **claude.ai web** → Custom Connectors → bridge behind a reverse proxy
-- **OpenAI Codex CLI** → `~/.codex/config.toml` → bridge HTTP endpoint
-- **Any MCP-compatible tool** → standard Streamable HTTP spec (2025-03-26)
+- **Claude Code CLI** — connecting over SSH tunnel or direct WebSocket
+- **claude.ai custom connectors** — via Streamable HTTP transport with OAuth 2.0
 
 ---
 
-## Quick Start (local)
+## Option 1: VS Code Remote-SSH (Recommended for Dev)
 
-The `/mcp` endpoint is available immediately on the same port as the WebSocket server.
-No extra flags needed — it starts with the bridge.
+The VS Code extension has `extensionKind: ["workspace"]` — it runs on the remote machine automatically when you open a Remote-SSH connection.
 
-```bash
-# Start the bridge
-npm run start-all
+**Steps:**
 
-# Test the endpoint
-LOCK=~/.claude/ide/*.lock
-PORT=$(basename $LOCK .lock)
-TOKEN=$(python3 -c "import json; d=json.load(open('$LOCK')); print(d['authToken'])")
+1. Connect to remote via VS Code Remote-SSH (or Cursor SSH)
+2. Install the claude-ide-bridge extension in the remote workspace (VS Code auto-prompts when connecting)
+3. SSH into the remote and start the bridge:
 
-curl -s -X POST "http://localhost:$PORT/mcp" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
-```
+   ```bash
+   claude-ide-bridge --full --watch --workspace /path/to/project
+   ```
+
+4. Claude Code (local) connects to the bridge on the remote automatically via the MCP config
+
+Full tool support: LSP, debugger, editor state, git — all work through the extension on the remote machine.
 
 ---
 
-## Connect Claude Desktop (local machine)
+## Option 2: Systemd Service (VPS Long-Running)
 
-Claude Desktop supports two connection methods:
-
-### Option A — stdio shim (recommended, no network required)
+### Bootstrap a new VPS
 
 ```bash
-bash scripts/gen-claude-desktop-config.sh --write
-# Restart Claude Desktop
+# On the VPS
+curl -fsSL https://raw.githubusercontent.com/Oolab-labs/claude-ide-bridge/main/deploy/bootstrap-new-vps.sh | bash
 ```
 
-This uses the existing stdio shim, which reads the lock file and connects over WebSocket
-on the loopback interface. No TLS, no extra config. Works out of the box.
+Or manually:
 
-### Option B — Custom Connectors (Streamable HTTP)
-
-In Claude Desktop: **Settings → Integrations → Custom Connectors → Add**
-
-```
-URL: http://127.0.0.1:<PORT>/mcp
-Headers:
-  Authorization: Bearer <TOKEN>
-```
-
-Retrieve port and token from the lock file:
 ```bash
-LOCK=$(ls -t ~/.claude/ide/*.lock | head -1)
-PORT=$(basename "$LOCK" .lock)
-python3 -c "import json; d=json.load(open('$LOCK')); print('PORT:', '$PORT', '| TOKEN:', d['authToken'])"
+npm install -g claude-ide-bridge
+claude-ide-bridge install-extension  # if VS Code is available on the remote
 ```
+
+### Install as a systemd service
+
+```bash
+# Idempotent — safe to run again to update config
+bash $(npm root -g)/claude-ide-bridge/deploy/install-vps-service.sh
+```
+
+The script writes a service unit to `/etc/systemd/system/claude-ide-bridge.service`. It starts the bridge with `--bind 0.0.0.0 --fixed-token <uuid> --watch --full`.
+
+```bash
+# Check service status
+systemctl status claude-ide-bridge
+
+# Follow logs
+journalctl -u claude-ide-bridge -f
+```
+
+### Fixed token
+
+Use `--fixed-token <uuid>` to prevent token rotation on restart:
+
+```bash
+claude-ide-bridge --fixed-token $(uuidgen) --bind 0.0.0.0 --full --watch
+```
+
+Store the token in a secrets manager or environment variable — never commit it to version control.
 
 ---
 
-## Remote Access (across machines / internet)
+## Option 3: Reverse Proxy with TLS (Required for claude.ai)
 
-The bridge binds to `127.0.0.1` by default. To access it from another machine
-you need a **reverse proxy with TLS**. Claude Desktop's Custom Connectors require HTTPS.
+claude.ai custom connectors require HTTPS. Place nginx or Caddy in front of the bridge.
 
-### Setup with Caddy (recommended)
+### nginx config
 
-[Caddy](https://caddyserver.com) handles TLS automatically via Let's Encrypt.
-
-**1. Install Caddy** on the machine running the bridge:
-```bash
-# macOS
-brew install caddy
-
-# Linux
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo apt-key add -
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update && sudo apt install caddy
-```
-
-**2. Configure Caddy** (`Caddyfile`):
-```
-bridge.yourdomain.com {
-    # Proxy all paths — OAuth endpoints (/.well-known/*, /oauth/*)
-    # must be reachable alongside /mcp for claude.ai connectors.
-    reverse_proxy 127.0.0.1:{$BRIDGE_PORT}
-}
-```
-
-**3. Start Caddy**:
-```bash
-BRIDGE_PORT=<your-bridge-port> caddy run
-```
-
-**4. Connect Claude Desktop**:
-```
-URL: https://bridge.yourdomain.com/mcp
-Headers:
-  Authorization: Bearer <TOKEN>
-```
-
----
-
-### Setup with nginx
-
-**nginx config** (`/etc/nginx/sites-available/bridge`):
 ```nginx
 server {
     listen 443 ssl;
@@ -121,212 +88,229 @@ server {
     ssl_certificate     /etc/letsencrypt/live/bridge.yourdomain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/bridge.yourdomain.com/privkey.pem;
 
-    # Proxy all paths — OAuth endpoints (/.well-known/*, /oauth/*) must be reachable
-    # alongside the MCP endpoint (/mcp) for claude.ai custom connectors to work.
     location / {
-        proxy_pass http://127.0.0.1:<BRIDGE_PORT>;
+        proxy_pass http://127.0.0.1:18765;
         proxy_http_version 1.1;
-
-        # Required for SSE (GET /mcp) and WebSocket upgrades
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
+        proxy_set_header Host       $host;
 
         # Required for SSE streaming — disable buffering
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 86400s;
-
-        # Forward auth header
-        proxy_set_header Authorization $http_authorization;
-        proxy_pass_header Authorization;
     }
 }
 ```
 
-Get a certificate with Certbot:
-```bash
-certbot --nginx -d bridge.yourdomain.com
+> `proxy_read_timeout 86400` is required. nginx's default of 60 seconds kills long-lived WebSocket and SSE connections.
+
+### Caddy config (simpler, auto-TLS)
+
+```
+bridge.yourdomain.com {
+    reverse_proxy localhost:18765
+}
 ```
 
-Then generate your MCP config and update the URL to `https://`:
-```bash
-bash scripts/gen-mcp-config.sh remote --host bridge.yourdomain.com --token <TOKEN>
-```
+Caddy handles certificate provisioning and renewal automatically via Let's Encrypt.
 
-> **Note:** `gen-mcp-config.sh remote` outputs `http://` — change it to `https://` manually after TLS is in place.
+### Firewall
+
+Only expose port 443 (HTTPS) publicly. Keep the bridge port bound to `127.0.0.1`:
+
+```bash
+ufw allow 443/tcp
+ufw deny 18765/tcp   # keep internal only
+```
 
 ---
 
-### Bind flag
+## Option 4: OAuth 2.0 for claude.ai Connectors
 
-By default the bridge only listens on `127.0.0.1`. If your reverse proxy is on a
-different machine (e.g. a VPS front-end), you may need to bind to all interfaces:
-
-```bash
-npm run start-all -- --bind 0.0.0.0
-```
-
-> **Warning**: `--bind 0.0.0.0` exposes the bridge to all network interfaces.
-> Always place it behind a TLS reverse proxy and ensure firewall rules are in place.
-> The auth token is still required for every request.
-
----
-
-## OAuth 2.0 (for claude.ai Custom Connectors)
-
-claude.ai uses OAuth 2.0 + PKCE to authenticate with the bridge. Pass two extra flags when running the bridge remotely:
+Activate OAuth mode by passing `--issuer-url`:
 
 ```bash
 claude-ide-bridge \
-  --bind 0.0.0.0 \
-  --fixed-token $TOKEN \
   --issuer-url https://bridge.yourdomain.com \
-  --cors-origin https://claude.ai
+  --cors-origin https://claude.ai \
+  --fixed-token <bridge-token> \
+  --full --watch
 ```
 
-| Flag | Purpose |
-|------|---------|
-| `--issuer-url <url>` | Your public HTTPS URL. Activates OAuth 2.0 and sets the issuer in all discovery documents. |
-| `--cors-origin <url>` | Adds `Access-Control-Allow-Origin` for the given origin on all responses (including 401s). Repeatable for multiple origins. |
+### OAuth endpoints
 
-**Authorization flow:**
+| Endpoint | Purpose |
+|---|---|
+| `/.well-known/oauth-authorization-server` | RFC 8414 server metadata discovery |
+| `/.well-known/oauth-protected-resource` | RFC 9396 protected resource metadata |
+| `/oauth/register` | Dynamic client registration (RFC 7591) |
+| `/oauth/authorize` | Authorization approval page — enter bridge token here |
+| `/oauth/token` | Token exchange |
+| `/oauth/revoke` | Token revocation (RFC 7009) |
 
-1. claude.ai discovers OAuth metadata at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
-2. claude.ai registers a dynamic client at `POST /oauth/register` (RFC 7591)
-3. claude.ai redirects you to `GET /oauth/authorize` — enter your bridge token and click **Authorize**
-4. claude.ai exchanges the auth code for an access token at `POST /oauth/token`
-5. claude.ai uses the access token as a `Bearer` token on all subsequent `/mcp` requests
+### Adding to claude.ai
 
-Access tokens expire after **24 hours**. claude.ai re-authorizes automatically.
+1. In claude.ai → Settings → Connectors → Add custom connector
+2. Enter `https://bridge.yourdomain.com` as the server URL
+3. claude.ai discovers OAuth metadata automatically via the `/.well-known/` endpoints
+4. Authorize: enter your bridge token in the `/oauth/authorize` approval page
+5. Access tokens are valid 24 hours; re-authorize when expired (no refresh tokens)
 
 ### CORS
 
-The `--cors-origin` flag is required for claude.ai because its connector makes browser-side requests. Without it, the browser blocks the 401 challenge response and the OAuth flow never starts.
+Allow the claude.ai origin:
 
-You can repeat the flag for multiple trusted origins:
 ```bash
---cors-origin https://claude.ai --cors-origin https://app.yourdomain.com
+--cors-origin https://claude.ai
 ```
 
-Or set via environment variable (comma-separated):
+Or via environment variable:
+
 ```bash
-CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai,https://app.yourdomain.com
+export CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai
 ```
+
+For multiple origins, comma-separate them:
+
+```bash
+export CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai,https://other.example.com
+```
+
+### Design notes
+
+- PKCE S256 is mandatory — plain PKCE is rejected
+- Auth codes: single-use, 5-minute TTL
+- Access tokens: opaque base64url, 24-hour TTL
+- No refresh tokens — clients re-authorize after expiry
+- All string comparisons are timing-safe (`crypto.timingSafeEqual`)
+- OAuth access tokens work for **HTTP/MCP transport only** — WebSocket auth only accepts the bridge token via the `x-claude-code-ide-authorization` header
 
 ---
 
-## Security Model
+## SSH Tunnel (No Public Domain Needed)
 
-- **Bearer token required** on every request to `/mcp` (POST, GET, DELETE)
-- Token is stored in `~/.claude/ide/<port>.lock` with `chmod 600`
-- CORS `OPTIONS` preflight does not require auth — browsers send it automatically
-- OAuth access tokens are opaque 32-byte base64url strings; auth codes are single-use with 5 min TTL
-- Session IDs are `crypto.randomUUID()` (122 bits of entropy)
-- Sessions expire after **10 minutes of inactivity** and are pruned every 2 minutes
-- Maximum **5 concurrent HTTP sessions**; oldest idle session (inactive >60s) is evicted when at capacity. New connections beyond the limit receive `503 Service Unavailable` — see [Troubleshooting Issue 10](troubleshooting.md#issue-10-http-session-capacity-exceeded-503-error)
-
-### Token rotation
-
-The auth token changes every restart unless `--fixed-token` is set. For claude.ai connectors, always use `--fixed-token` — the OAuth access token issued to claude.ai stays valid independently, but a new bridge token invalidates it, requiring re-authorization.
+If you don't have a domain or TLS certificate, forward the bridge port locally:
 
 ```bash
-TOKEN=$(uuidgen)   # generate once, store securely
-claude-ide-bridge --fixed-token $TOKEN --issuer-url https://... --cors-origin https://claude.ai
+ssh -L 18765:localhost:18765 user@vps-ip -N
 ```
 
-### Env var expansion in `.mcp.json`
+Then configure Claude Code to connect to `ws://127.0.0.1:18765` as if the bridge were running locally. No reverse proxy or HTTPS required for this path.
 
-Claude Code supports `${VAR:-default}` syntax in `.mcp.json` values. Keep the token out of the file:
+---
 
-```json
-{
-  "mcpServers": {
-    "claude-ide-bridge-remote": {
-      "type": "http",
-      "url": "https://bridge.yourdomain.com/mcp",
-      "headers": {
-        "Authorization": "Bearer ${BRIDGE_TOKEN}"
-      }
-    }
-  }
-}
-```
+## `--vps` Flag
 
-Set `BRIDGE_TOKEN` in your shell profile (`.zshrc`, `.bashrc`) or via a secrets manager. Retrieve the current token with:
+Expands the `runCommand` allowlist to include common server administration tools:
 
 ```bash
+claude-ide-bridge --vps --full --watch
+```
+
+Additional allowed commands when `--vps` is active: `curl`, `systemctl`, `docker`, `docker-compose`, `pm2`, `nginx`, `certbot`.
+
+---
+
+## Getting the Auth Token on a Remote Server
+
+```bash
+# SSH into the server, then:
 claude-ide-bridge print-token
+
+# Or specify a port explicitly:
+claude-ide-bridge print-token --port 18765
+
+# Or read the lock file directly:
+cat ~/.claude/ide/18765.lock | python3 -m json.tool
 ```
 
-This way the token never appears in version-controlled config files.
+The lock file is at `~/.claude/ide/<port>.lock` and contains `pid`, `workspace`, `authToken`, and `isBridge: true`.
 
 ---
 
-## Endpoint reference
+## Headless Mode (No IDE)
 
-### MCP endpoints
+The bridge runs headlessly without a VS Code connection. CLI tools (`runCommand`, `getGitStatus`, `getGitDiff`, etc.) work in headless mode. LSP and debugger tools require the VS Code extension.
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `OPTIONS` | `/mcp` | None | CORS preflight |
-| `POST` | `/mcp` | Bearer | Send JSON-RPC request/notification. `initialize` creates a session. |
-| `GET` | `/mcp` | Bearer + `Mcp-Session-Id` | Open SSE stream for server-push notifications |
-| `DELETE` | `/mcp` | Bearer + `Mcp-Session-Id` | Terminate session |
-| `GET` | `/ping` | None | Health check — returns `{"ok":true,"v":"<version>"}` |
+Start the bridge without opening VS Code:
 
-### OAuth 2.0 endpoints (enabled with `--issuer-url`)
+```bash
+claude-ide-bridge --full --watch --workspace /path/to/project
+```
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/.well-known/oauth-authorization-server` | None | RFC 8414 authorization server metadata |
-| `GET` | `/.well-known/oauth-protected-resource` | None | RFC 9396 protected resource metadata |
-| `POST` | `/oauth/register` | None | RFC 7591 dynamic client registration |
-| `GET` | `/oauth/authorize` | None | Authorization page (enter bridge token to approve) |
-| `POST` | `/oauth/authorize` | None | Form submission — issues auth code on approval |
-| `POST` | `/oauth/token` | None | Exchange auth code for access token |
-| `POST` | `/oauth/revoke` | None | Revoke an access token (RFC 7009) |
+The bridge will report extension status as disconnected in `getBridgeStatus`. Tools marked `extensionRequired: true` return an error with reconnect instructions when the extension is not connected.
 
-### Headers
+For LSP fallback in headless mode, `typescript-language-server` must be installed globally:
 
-| Header | Direction | Description |
-|--------|-----------|-------------|
-| `Authorization: Bearer <token>` | Request | Required on all POST/GET/DELETE to `/mcp` |
-| `Mcp-Session-Id: <uuid>` | Request | Required on all requests after initialize |
-| `Mcp-Session-Id: <uuid>` | Response | Returned by server on successful initialize |
+```bash
+npm install -g typescript-language-server typescript
+```
+
+When installed, `goToDefinition`, `findReferences`, and `getTypeSignature` fall back to the local LSP automatically.
 
 ---
 
 ## Troubleshooting
 
-**`401 Unauthorized`** — Wrong or missing Bearer token. Retrieve the current token:
+### Systemd service fails to start
+
 ```bash
-python3 -c "import json; d=json.load(open('$(ls -t ~/.claude/ide/*.lock | head -1)')); print(d['authToken'])"
+journalctl -u claude-ide-bridge --no-pager -n 50
 ```
 
-**MCP config updated but Claude Code still uses the old URL** — Claude Code reads MCP config from two places. Check and update both:
+Common causes:
+
+- Port 18765 is already in use — check with `ss -tlnp | grep 18765`
+- `node` is not on `PATH` in the systemd environment — use an absolute path in `ExecStart` (e.g. `/usr/local/bin/claude-ide-bridge`)
+- Missing `--workspace` flag — the service must know which directory to serve
+
+### nginx returns 502 Bad Gateway
+
+The bridge is not running or is bound to the wrong address. Verify:
+
 ```bash
-# Project-level (takes precedence for Claude Code CLI)
-cat .mcp.json
-
-# User-level
-cat ~/.claude/settings.json
+systemctl status claude-ide-bridge
+ss -tlnp | grep 18765
 ```
-Update the `url` and `Authorization` header in whichever file has the stale entry.
 
-**`503 HTTP session capacity reached`** — Max 5 HTTP sessions active. The bridge evicts
-the oldest idle session (idle > 60s) automatically. If all 5 are genuinely active, wait
-for sessions to expire (10 min idle TTL) or DELETE an existing session.
+Confirm the bridge was started with `--bind 0.0.0.0` (default binds to `127.0.0.1` only, which is correct when nginx is on the same host).
 
-**`404 Session not found or expired — re-initialize`** — Session expired (10 min idle)
-or bridge restarted. Send a new `initialize` request to get a fresh session.
+### WebSocket or SSE connections drop after ~60 seconds
 
-**SSE stream disconnects every few seconds** — A reverse proxy is timing out the
-connection. Ensure `proxy_read_timeout` is set to at least 3600s (nginx) or that
-`proxy_buffering off` is configured.
+Add `proxy_read_timeout 86400;` to the nginx `location` block. The default timeout of 60 seconds terminates long-lived WebSocket and SSE connections.
 
-**CORS errors in browser** — The bridge only sends `Access-Control-Allow-Origin` for
-origins listed via `--cors-origin`. If you see CORS errors, ensure you passed
-`--cors-origin https://claude.ai` (or the appropriate client origin) when starting the
-bridge. You can also set `CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai` in the
-environment. Note: OPTIONS preflight requests are always allowed regardless of origin.
+### OAuth authorization page returns 400
+
+`--issuer-url` must match the public HTTPS URL exactly — no trailing slash, must be `https://`. Example: `--issuer-url https://bridge.yourdomain.com`.
+
+### claude.ai connector shows "Unauthorized"
+
+The access token has expired (24-hour TTL). Re-authorize by visiting `/oauth/authorize` and entering your bridge token again.
+
+### SSL certificate renewal breaks nginx
+
+For Caddy: certificates renew automatically, no action needed.
+
+For certbot with nginx:
+
+```bash
+# Add to cron or systemd timer
+certbot renew --nginx
+```
+
+Or use the certbot systemd timer that ships with most distros:
+
+```bash
+systemctl enable --now certbot.timer
+```
+
+### Bridge token lost after restart
+
+Use `--fixed-token <uuid>` to pin the token across restarts. Without this flag the bridge generates a new token each start, which invalidates any stored client configs.
+
+```bash
+# Generate a stable token once, store it securely
+export BRIDGE_TOKEN=$(uuidgen)
+claude-ide-bridge --fixed-token "$BRIDGE_TOKEN" --bind 0.0.0.0 --full --watch
+```
