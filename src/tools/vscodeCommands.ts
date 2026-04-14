@@ -31,7 +31,7 @@ export function createExecuteVSCodeCommandTool(
           },
           args: {
             type: "array" as const,
-            description: "Optional arguments to pass to the command",
+            description: "Arguments to pass to the command",
             items: {},
           },
         },

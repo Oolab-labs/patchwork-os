@@ -32,13 +32,12 @@ export function createGetActivityLogTool(activityLog: ActivityLog) {
           },
           last: {
             type: "number" as const,
-            description:
-              "Number of recent entries to return (default: 50, max: 200)",
+            description: "Recent entries to return (default: 50, max: 200)",
           },
           showStats: {
             type: "boolean" as const,
             description:
-              "If true, include per-tool statistics (call count, avg duration, error count). Default: false",
+              "Include per-tool stats (call count, avg duration, error count). Default: false",
           },
         },
         additionalProperties: false as const,
@@ -85,7 +84,7 @@ export function createWatchActivityLogTool(activityLog: ActivityLog) {
           sinceId: {
             type: "number" as const,
             description:
-              "Return only entries with id > sinceId. Omit on first call to get recent entries.",
+              "Return entries with id > sinceId. Omit on first call.",
           },
           maxEntries: {
             type: "number" as const,
@@ -131,7 +130,7 @@ export function createWatchActivityLogTool(activityLog: ActivityLog) {
         .slice(-maxEntries);
 
       if (existing.length > 0) {
-        const lastId = existing[existing.length - 1]!.id;
+        const lastId = existing[existing.length - 1]?.id;
         return successStructured({
           entries: existing,
           count: existing.length,
@@ -180,7 +179,7 @@ export function createWatchActivityLogTool(activityLog: ActivityLog) {
 
       const lastId =
         result.entries.length > 0
-          ? result.entries[result.entries.length - 1]!.id
+          ? result.entries[result.entries.length - 1]?.id
           : highestKnownId;
 
       return successStructured({

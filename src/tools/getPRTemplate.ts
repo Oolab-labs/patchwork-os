@@ -121,14 +121,13 @@ export function createGetPRTemplateTool(workspace: string) {
         properties: {
           base: {
             type: "string",
-            description:
-              "Base branch to compare against (default: auto-detect main/master)",
+            description: "Base branch (default: auto-detect main/master)",
           },
           style: {
             type: "string",
             enum: ["bullet", "prose", "conventional"],
             description:
-              "Output style: bullet (default), prose (paragraph), or conventional (grouped by commit type)",
+              "bullet (default), prose (paragraph), or conventional (grouped by commit type)",
           },
         },
         additionalProperties: false as const,

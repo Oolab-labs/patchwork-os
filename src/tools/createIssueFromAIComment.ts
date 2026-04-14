@@ -40,7 +40,7 @@ export function createCreateIssueFromAICommentTool(
           },
           title: {
             type: "string",
-            description: "Issue title (default: derived from comment text)",
+            description: "Issue title (default: derived from comment)",
           },
           labels: {
             type: "string",

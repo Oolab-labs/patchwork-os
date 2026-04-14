@@ -24,15 +24,15 @@ export function createSignatureHelpTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
-            description: "1-based line number (inside a function call)",
+            description: "Line number (1-based, inside a function call)",
           },
           column: {
             type: "integer" as const,
-            description: "1-based column number (inside a function call)",
+            description: "Column (1-based, inside a function call)",
           },
         },
         required: ["filePath", "line", "column"],

@@ -64,12 +64,12 @@ export function createGithubCreatePRTool(
           body: {
             type: "string",
             description:
-              "Pull request description. If omitted, uses commit messages to fill the body.",
+              "PR description. Omit to use commit messages (--fill).",
           },
           base: {
             type: "string",
             description:
-              "Base branch to merge into (default: repository default branch)",
+              "Base branch to merge into (default: repo default branch)",
           },
           draft: {
             type: "boolean",
@@ -173,8 +173,7 @@ export function createGithubListPRsTool(workspace: string) {
           },
           limit: {
             type: "integer",
-            description:
-              "Maximum number of PRs to return (default: 20, max: 100)",
+            description: "Max PRs to return (default: 20, max: 100)",
           },
           author: {
             type: "string",
@@ -246,8 +245,7 @@ export function createGithubViewPRTool(workspace: string) {
         properties: {
           number: {
             type: "integer",
-            description:
-              "PR number to view. Omit to view the PR associated with the current branch.",
+            description: "PR number. Omit to view PR for current branch.",
           },
         },
         additionalProperties: false as const,
@@ -319,7 +317,7 @@ export function createGithubGetPRDiffTool(workspace: string) {
           repo: {
             type: "string",
             description:
-              "Repository in owner/repo format. Defaults to the repository of the current workspace.",
+              "Repo in owner/repo format. Defaults to workspace repo.",
           },
         },
         additionalProperties: false as const,
@@ -431,12 +429,12 @@ export function createGithubPostPRReviewTool(workspace: string) {
           body: {
             type: "string",
             description:
-              "Overview review comment in Markdown. Summarize findings, severity, and any patterns noticed.",
+              "Review summary in Markdown. Summarize findings and severity.",
           },
           comments: {
             type: "array",
             description:
-              "Inline comments on specific diff lines. Only lines present in the diff can be annotated.",
+              "Inline comments on diff lines. Only lines in the diff can be annotated.",
             items: {
               type: "object",
               required: ["path", "line", "body"],
@@ -454,12 +452,11 @@ export function createGithubPostPRReviewTool(workspace: string) {
                   type: "string",
                   enum: ["LEFT", "RIGHT"],
                   description:
-                    "Diff side: RIGHT for added/context lines (default), LEFT for deleted lines.",
+                    "Diff side: RIGHT=added/context (default), LEFT=deleted.",
                 },
                 body: {
                   type: "string",
-                  description:
-                    "Comment text describing the issue found on this line",
+                  description: "Comment text for this line",
                 },
               },
               additionalProperties: false,
@@ -474,7 +471,7 @@ export function createGithubPostPRReviewTool(workspace: string) {
           repo: {
             type: "string",
             description:
-              "Repository in owner/repo format. Defaults to the repository of the current workspace.",
+              "Repo in owner/repo format. Defaults to workspace repo.",
           },
         },
         additionalProperties: false as const,

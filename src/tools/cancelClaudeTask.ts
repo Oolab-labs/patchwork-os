@@ -21,7 +21,7 @@ export function createCancelClaudeTaskTool(
         properties: {
           taskId: {
             type: "string",
-            description: "The task ID to cancel.",
+            description: "Task ID to cancel",
           },
         },
         required: ["taskId"],

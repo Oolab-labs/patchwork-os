@@ -32,13 +32,12 @@ export function createGetCommitDetailsTool(workspace: string) {
           includePatch: {
             type: "boolean",
             description:
-              "Include the full diff patch in the output. Default: true. " +
-              "Set false to retrieve only metadata and file stats.",
+              "Include full diff patch. Default: true. Set false for metadata/stats only.",
           },
           filePath: {
             type: "string",
             description:
-              "Optional absolute or workspace-relative file path to limit the diff output to a single file",
+              "Limit diff to a single file (absolute or workspace-relative)",
           },
         },
       },
@@ -114,16 +113,16 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
         properties: {
           ref1: {
             type: "string",
-            description: "The base ref (branch, tag, or commit hash)",
+            description: "Base ref (branch, tag, or commit hash)",
           },
           ref2: {
             type: "string",
-            description: "The comparison ref (branch, tag, or commit hash)",
+            description: "Comparison ref (branch, tag, or commit hash)",
           },
           filePath: {
             type: "string",
             description:
-              "Optional absolute or workspace-relative file path to limit the diff to a single file",
+              "Limit diff to a single file (absolute or workspace-relative)",
           },
           context: {
             type: "integer",
@@ -132,7 +131,7 @@ export function createGetDiffBetweenRefsTool(workspace: string) {
           statOnly: {
             type: "boolean",
             description:
-              "Return only the file-level stat summary instead of the full patch. Default: false.",
+              "Return file-level stat summary only (no patch). Default: false.",
           },
         },
       },

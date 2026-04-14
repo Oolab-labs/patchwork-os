@@ -32,7 +32,7 @@ export function createRunClaudeTaskTool(
         properties: {
           prompt: {
             type: "string",
-            description: "The prompt to send to Claude.",
+            description: "Prompt to send to Claude",
           },
           contextFiles: {
             type: "array",

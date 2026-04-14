@@ -26,7 +26,7 @@ export function createRefactorPreviewTool(
         properties: {
           filePath: {
             type: "string",
-            description: "Path to the file (absolute or workspace-relative)",
+            description: "Absolute or workspace-relative path",
           },
           startLine: {
             type: "integer",
@@ -46,8 +46,7 @@ export function createRefactorPreviewTool(
           },
           actionTitle: {
             type: "string",
-            description:
-              "Exact title of the code action (from getCodeActions output)",
+            description: "Exact action title from getCodeActions output",
           },
         },
         required: [

@@ -91,7 +91,7 @@ export function createContextBundleTool(
       if (extensionClient.latestActiveFile) {
         bundle.activeFile = extensionClient.latestActiveFile;
         // Workspace-relative path for downstream tools
-        if (extensionClient.latestActiveFile.startsWith(workspace + "/")) {
+        if (extensionClient.latestActiveFile.startsWith(`${workspace}/`)) {
           bundle.activeFileRelativePath =
             extensionClient.latestActiveFile.slice(workspace.length + 1);
         }

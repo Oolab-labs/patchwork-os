@@ -122,7 +122,10 @@ export function createWatchDiagnosticsTool(
     } else {
       diagHistory.set(key, { firstSeenAt: now, recurrenceCount: 1 });
     }
-    const entry = diagHistory.get(key)!;
+    const entry = diagHistory.get(key) ?? {
+      firstSeenAt: now,
+      recurrenceCount: 1,
+    };
     const enriched: Record<string, unknown> = {
       ...d,
       firstSeenAt: entry.firstSeenAt,

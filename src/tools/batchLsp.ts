@@ -78,7 +78,7 @@ export function createBatchGetHoverTool(
               properties: {
                 filePath: {
                   type: "string" as const,
-                  description: "Absolute or workspace-relative file path",
+                  description: "Absolute or workspace-relative path",
                 },
                 line: {
                   type: "integer" as const,
@@ -87,7 +87,7 @@ export function createBatchGetHoverTool(
                 },
                 column: {
                   type: "integer" as const,
-                  description: "Column number (1-based)",
+                  description: "Column (1-based)",
                   minimum: 1,
                 },
               },
@@ -171,7 +171,7 @@ export function createBatchFindImplementationsTool(
               properties: {
                 filePath: {
                   type: "string" as const,
-                  description: "Absolute or workspace-relative file path",
+                  description: "Absolute or workspace-relative path",
                 },
                 line: {
                   type: "integer" as const,
@@ -180,7 +180,7 @@ export function createBatchFindImplementationsTool(
                 },
                 column: {
                   type: "integer" as const,
-                  description: "Column number (1-based)",
+                  description: "Column (1-based)",
                   minimum: 1,
                 },
               },
@@ -268,7 +268,7 @@ export function createBatchGoToDefinitionTool(
               properties: {
                 filePath: {
                   type: "string" as const,
-                  description: "Absolute or workspace-relative file path",
+                  description: "Absolute or workspace-relative path",
                 },
                 line: {
                   type: "integer" as const,
@@ -277,7 +277,7 @@ export function createBatchGoToDefinitionTool(
                 },
                 column: {
                   type: "integer" as const,
-                  description: "Column number (1-based)",
+                  description: "Column (1-based)",
                   minimum: 1,
                 },
               },

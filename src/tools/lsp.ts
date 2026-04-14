@@ -135,7 +135,7 @@ export function createGoToDefinitionTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -143,7 +143,7 @@ export function createGoToDefinitionTool(
           },
           column: {
             type: "integer" as const,
-            description: "Column number (1-based)",
+            description: "Column (1-based)",
           },
         },
         required: ["filePath", "line", "column"],
@@ -214,7 +214,7 @@ export function createFindReferencesTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -222,12 +222,12 @@ export function createFindReferencesTool(
           },
           column: {
             type: "integer" as const,
-            description: "Column number (1-based)",
+            description: "Column (1-based)",
           },
           cursor: {
             type: "string" as const,
             description:
-              "Pagination cursor from a previous call's nextCursor. Omit on first call.",
+              "Cursor from previous call's nextCursor. Omit on first call.",
           },
         },
         required: ["filePath", "line", "column"],
@@ -315,7 +315,7 @@ export function createGetHoverTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -323,7 +323,7 @@ export function createGetHoverTool(
           },
           column: {
             type: "integer" as const,
-            description: "Column number (1-based)",
+            description: "Column (1-based)",
           },
         },
         required: ["filePath", "line", "column"],
@@ -386,7 +386,7 @@ export function createGetCodeActionsTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           startLine: {
             type: "integer" as const,
@@ -486,7 +486,7 @@ export function createApplyCodeActionTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           startLine: {
             type: "integer" as const,
@@ -506,8 +506,7 @@ export function createApplyCodeActionTool(
           },
           actionTitle: {
             type: "string" as const,
-            description:
-              "Exact title of the code action to apply (from getCodeActions output)",
+            description: "Exact action title from getCodeActions output",
           },
         },
         required: [
@@ -583,7 +582,7 @@ export function createPreviewCodeActionTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           startLine: {
             type: "integer" as const,
@@ -603,8 +602,7 @@ export function createPreviewCodeActionTool(
           },
           actionTitle: {
             type: "string" as const,
-            description:
-              "Exact title of the code action to preview (from getCodeActions output)",
+            description: "Exact action title from getCodeActions output",
           },
         },
         required: [
@@ -720,7 +718,7 @@ export function createRenameSymbolTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -728,7 +726,7 @@ export function createRenameSymbolTool(
           },
           column: {
             type: "integer" as const,
-            description: "Column number (1-based)",
+            description: "Column (1-based)",
           },
           newName: {
             type: "string" as const,
@@ -810,7 +808,7 @@ export function createGetCallHierarchyTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -818,23 +816,23 @@ export function createGetCallHierarchyTool(
           },
           column: {
             type: "integer" as const,
-            description: "Column number (1-based)",
+            description: "Column (1-based)",
           },
           direction: {
             type: "string" as const,
             enum: ["incoming", "outgoing", "both"],
             description:
-              '"incoming" = callers of this function, "outgoing" = functions this calls, "both" = all (default)',
+              '"incoming"=callers, "outgoing"=callees, "both"=all (default)',
           },
           maxResults: {
             type: "integer" as const,
             description:
-              "Maximum callers/callees to return per direction (default: 50, max: 200)",
+              "Max callers/callees per direction (default: 50, max: 200)",
           },
           cursor: {
             type: "string" as const,
             description:
-              "Pagination cursor from a previous call's nextCursor. Omit on first call.",
+              "Cursor from previous call's nextCursor. Omit on first call.",
           },
         },
         required: ["filePath", "line", "column"],
@@ -943,11 +941,11 @@ export function createSearchWorkspaceSymbolsTool(
         properties: {
           query: {
             type: "string" as const,
-            description: "Symbol name or partial name to search for",
+            description: "Symbol name or partial name",
           },
           maxResults: {
             type: "integer" as const,
-            description: "Maximum results to return (default: 50, max: 200)",
+            description: "Max results (default: 50, max: 200)",
           },
         },
         required: ["query"],
@@ -1016,7 +1014,7 @@ export function createPrepareRenameTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -1093,7 +1091,7 @@ export function createFormatRangeTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           startLine: {
             type: "integer" as const,
@@ -1166,7 +1164,7 @@ export function createFindImplementationsTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -1174,7 +1172,7 @@ export function createFindImplementationsTool(
           },
           column: {
             type: "integer" as const,
-            description: "Column number (1-based)",
+            description: "Column (1-based)",
           },
         },
         required: ["filePath", "line", "column"],
@@ -1266,7 +1264,7 @@ export function createGoToTypeDefinitionTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -1274,7 +1272,7 @@ export function createGoToTypeDefinitionTool(
           },
           column: {
             type: "integer" as const,
-            description: "Column number (1-based)",
+            description: "Column (1-based)",
           },
         },
         required: ["filePath", "line", "column"],
@@ -1349,7 +1347,7 @@ export function createGoToDeclarationTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -1357,7 +1355,7 @@ export function createGoToDeclarationTool(
           },
           column: {
             type: "integer" as const,
-            description: "Column number (1-based)",
+            description: "Column (1-based)",
           },
         },
         required: ["filePath", "line", "column"],

@@ -151,18 +151,17 @@ export function createGetDiagnosticsTool(
           uri: {
             type: "string",
             description:
-              "Optional file filter — accepts an absolute path, workspace-relative path, or file:// URI. When provided, returns diagnostics for that file only.",
+              "File filter: absolute path, workspace-relative path, or file:// URI. Returns diagnostics for that file only.",
           },
           severity: {
             type: "string",
             enum: ["error", "warning", "information", "hint"],
             description:
-              "Only return diagnostics at or above this severity level. Ordered from highest to lowest: 'error', 'warning', 'information', 'hint'. Use 'error' to focus on build-breaking issues only.",
+              "Min severity to return. Order: error > warning > information > hint. Use 'error' for build-breaking only.",
           },
           maxResults: {
             type: "number",
-            description:
-              "Limit the number of diagnostics returned. Default: 100, max: 2000.",
+            description: "Max diagnostics to return (default: 100, max: 2000)",
           },
         },
       },

@@ -123,7 +123,7 @@ export function createGetCodeCoverageTool(workspace: string) {
           file: {
             type: "string",
             description:
-              "Path to coverage report. If omitted, auto-detects in coverage/",
+              "Coverage report path. Omit to auto-detect in coverage/",
           },
           minCoverage: {
             type: "number",

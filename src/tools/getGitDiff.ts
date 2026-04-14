@@ -25,12 +25,11 @@ export function createGetGitDiffTool(workspace: string) {
           filePath: {
             type: "string",
             description:
-              "Optional absolute or workspace-relative file path to diff",
+              "Filter diff to a single file (absolute or workspace-relative)",
           },
           staged: {
             type: "boolean",
-            description:
-              "If true, show staged (cached) changes. Default: false",
+            description: "Show staged (cached) changes. Default: false",
           },
           context: {
             type: "integer",

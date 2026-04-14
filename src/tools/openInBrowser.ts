@@ -70,7 +70,7 @@ export function createOpenInBrowserTool() {
           filename: {
             type: "string",
             description:
-              "Optional filename (basename only, must end in .html). Defaults to report-<timestamp>.html",
+              "Basename only, must end in .html. Default: report-<timestamp>.html",
           },
         },
       },

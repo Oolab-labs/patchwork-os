@@ -26,19 +26,18 @@ export function createGetGitHotspotsTool(workspace: string) {
             type: "integer",
             minimum: 1,
             maximum: 365,
-            description:
-              "How far back to look in git history (days). Default: 90",
+            description: "Lookback window in days (default: 90)",
           },
           limit: {
             type: "integer",
             minimum: 1,
             maximum: 100,
-            description: "Max number of hotspot files to return. Default: 20",
+            description: "Max hotspot files to return (default: 20)",
           },
           path: {
             type: "string",
             description:
-              "Subdirectory or file glob to scope the analysis (e.g. 'src/'). Default: entire repo",
+              "Subdirectory or glob to scope analysis (e.g. 'src/'). Default: entire repo",
           },
         },
         additionalProperties: false as const,

@@ -176,8 +176,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
         properties: {
           command: {
             type: "string",
-            description:
-              "Command basename to run (must be in the allowlist, no paths)",
+            description: "Command basename (must be in allowlist, no paths)",
           },
           args: {
             type: "array",
@@ -187,7 +186,7 @@ export function createRunCommandTool(workspace: string, config: Config) {
           cwd: {
             type: "string",
             description:
-              "Working directory for the command (absolute or workspace-relative, default: workspace root)",
+              "Working dir (absolute or workspace-relative, default: workspace root)",
           },
           timeout: {
             type: "integer",
