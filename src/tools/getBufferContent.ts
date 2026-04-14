@@ -155,7 +155,7 @@ export function createGetBufferContentTool(
               meta = {
                 isDirty: r.isDirty ?? false,
                 languageId: r.languageId,
-                source: r.source ?? "vscode-buffer",
+                source: "extension",
               };
             }
           }

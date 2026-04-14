@@ -138,6 +138,7 @@ export function createGetGitStatusTool(workspace: string) {
       const cc = capList(conflicts);
 
       return successStructured({
+        available: true,
         branch,
         ahead,
         behind,

@@ -28,6 +28,7 @@
   "onGitCommit": {
     "enabled": true,
     "cooldownMs": 10000,
+    "timeoutMs": 180000,
     "prompt": "Commit {{branch}}: {{message}}\nFiles: {{files}}\n\ngetDiagnostics (errors only). If test files in {{files}}, runTests → pass/fail count.\n\nIMPORTANT: No shell cmds. No publish/push/version-bump/deploy."
   },
   "onGitPull": {
@@ -38,6 +39,7 @@
   "onGitPush": {
     "enabled": true,
     "cooldownMs": 10000,
+    "timeoutMs": 180000,
     "prompt": "Pushed {{branch}} to {{remote}}. getDiagnostics (errors only). searchWorkspace pattern '(API_KEY|PASSWORD|PRIVATE_KEY|SECRET|TOKEN)\\s*[:=]' → alert w/ file+line if match."
   },
   "onPullRequest": {
