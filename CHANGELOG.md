@@ -6,6 +6,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.30.0] — 2026-04-14
+
+### Added
+- **`getSymbolHistory`** — composite tool: LSP `goToDefinition` → `git blame --porcelain` on definition site → `git log --follow` on definition file. Answers "who last touched this?" and "why does it exist?" Decodes `file://` URIs; falls back to query-site blame when LSP unavailable. 9 tests.
+- **`findRelatedTests`** — composite tool: finds test files covering a source file via name-pattern search (`*.test.*`, `*.spec.*`) and ripgrep import-reference scan. Optionally cross-references `coverage-summary.json` for per-file coverage %. Returns `memoryGraphHint` for codebase-memory graph traversal. 9 tests.
+- **`screenshotAndAnnotate`** — composite tool: derives dev-server URL from `package.json` scripts (vite→5173, next/react-scripts→3000, or explicit `--port`), fans out diagnostics + `git diff` in parallel, returns `playwrightSteps[]` action plan + `ideState`. Follows query-plan pattern — guides Playwright MCP, doesn't call it directly. 14 tests.
+- **`getArchitectureContext`** — composite tool: structured codebase-memory query plan for architecture aspects (modules, dependencies, ADRs, hotspots, god-objects). Accepts `aspects[]` filter and `maxNodes`.
+- **`review-changes` MCP prompt** — composes `getGitDiff` + `getDiagnostics` + `getGitHotspots` into a one-line review workflow with commit message suggestion.
+- **`explainSymbol` `useMemoryGraph` param** — opt-in flag; adds `memoryGraph` guidance to response for codebase-memory `search_graph` traversal.
+- **4 additional companions** in `install` command: `@modelcontextprotocol/server-postgres`, `@modelcontextprotocol/server-slack`, `@playwright/mcp`, `codebase-memory-mcp`. `--env` flag for env var injection.
+
+### Fixed
+- **Dashboard `extensionConnected` bug** — `GET /dashboard/data` returned `health.extension` (`undefined`); corrected to `health.extensionConnected`.
+- **`runCommand` outputSchema** — added optional truncation fields (`truncated`, `stdoutTruncated`, `stderrTruncated`, `maxBytes`, `note`); previously caused validation failures on truncated output.
+- **`handoffNote` outputSchema** — added optional `message` field; validation failed when `setHandoffNote` returned a message.
+- **`jumpToFirstError` error suppression** — empty catch replaced with `console.warn` so decoration failures are visible in logs.
+- **`openFile` spawn error logging** — `child.on("error")` now logs spawn errors; removed misleading `CLAUDE_IDE_BRIDGE_EDITOR` env hint.
+
+### Stats
+- 137 tools (↑ from 133); ~2282 bridge tests
+
+---
+
 ## [2.12.0] — 2026-04-09
 
 ### Added
