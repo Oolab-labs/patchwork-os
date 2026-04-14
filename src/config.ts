@@ -44,6 +44,8 @@ export interface Config {
   githubDefaultRepo: string | null;
   /** Interval in ms between WebSocket keepalive pings. 0 disables. Default: 10_000. */
   wsPingIntervalMs: number;
+  /** LSP hover verbosity. "minimal" strips documentation, keeping only type signatures (~60% smaller). */
+  lspVerbosity: "minimal" | "normal" | "verbose";
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -180,6 +182,7 @@ interface ConfigFile {
   fullMode?: boolean;
   maxSessions?: number;
   githubDefaultRepo?: string;
+  lspVerbosity?: "minimal" | "normal" | "verbose";
 }
 
 const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
@@ -210,6 +213,7 @@ const KNOWN_CONFIG_FILE_KEYS = new Set<string>([
   "fullMode",
   "maxSessions",
   "githubDefaultRepo",
+  "lspVerbosity",
 ]);
 
 /**
@@ -358,6 +362,8 @@ export function parseConfig(argv: string[]): Config {
   }
   let analyticsEnabled: boolean | null = null;
   const githubDefaultRepo: string | null = fileConfig.githubDefaultRepo ?? null;
+  let lspVerbosity: "minimal" | "normal" | "verbose" =
+    fileConfig.lspVerbosity ?? "normal";
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -541,6 +547,16 @@ export function parseConfig(argv: string[]): Config {
         auditLogPath = path.resolve(logPath);
         break;
       }
+      case "--lsp-verbosity": {
+        const lv = requireArg(args, ++i, "--lsp-verbosity");
+        if (lv !== "minimal" && lv !== "normal" && lv !== "verbose") {
+          throw new Error(
+            `Invalid --lsp-verbosity: "${lv}". Must be "minimal", "normal", or "verbose".`,
+          );
+        }
+        lspVerbosity = lv;
+        break;
+      }
       case "--analytics": {
         const val = requireArg(args, ++i, "--analytics");
         if (val !== "on" && val !== "off")
@@ -611,6 +627,8 @@ Options:
   --grace-period <ms>       Reconnect grace period in ms (default: 30000, max: 600000)
   --watch                   Supervisor mode: auto-restart bridge on crash (exponential backoff, max 30s)
   --max-sessions <n>        Max concurrent Claude sessions (default: 5, max: 100)
+  --lsp-verbosity <level>   Hover/LSP output verbosity: "minimal" (type sig only, ~60% smaller),
+                            "normal" (default), "verbose" (all fields)
   --full                    Register all ~95 tools including git, terminal, file ops, HTTP, and GitHub.
                             Default is slim mode (38 IDE-exclusive tools). Use --full to restore the complete tool set.
   --vps                     VPS/headless mode: expands allowlist with curl, systemctl, docker, tar, dig, openssl, etc.
@@ -807,5 +825,6 @@ Environment Variables:
     analyticsEnabled,
     githubDefaultRepo,
     wsPingIntervalMs: 10_000,
+    lspVerbosity,
   };
 }

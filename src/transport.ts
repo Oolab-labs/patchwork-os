@@ -61,6 +61,8 @@ export interface ToolSchema {
   timeoutMs?: number;
   /** Prompt caching hint passed through to wire schema. */
   cache_control?: { type: "ephemeral" };
+  /** Internal: tool categories for searchTools discovery. Stripped from wire like extensionRequired. */
+  categories?: string[];
 }
 
 export type ProgressFn = (
@@ -461,6 +463,31 @@ export class McpTransport {
     return JSON.stringify(this.wireSchemaCache).length;
   }
 
+  /** Bulk-apply category tags to registered tools. Called after registerAllTools(). */
+  applyToolCategories(map: Record<string, string[]>): void {
+    for (const [name, cats] of Object.entries(map)) {
+      const entry = this.tools.get(name);
+      if (entry) {
+        entry.schema.categories = cats;
+      }
+    }
+    // Invalidate wire cache — categories are stripped but getToolSchemas reads them
+    this.wireSchemaCache = null;
+  }
+
+  /** Returns all registered tool schemas — used by searchTools for keyword/category discovery. */
+  getToolSchemas(): Array<{
+    name: string;
+    description: string;
+    categories?: string[];
+  }> {
+    return Array.from(this.tools.values()).map((t) => ({
+      name: t.schema.name,
+      description: t.schema.description,
+      categories: t.schema.categories,
+    }));
+  }
+
   /** Top-N tools by largest result seen this session (descending by sizeChars). */
   getTopResultSizes(n = 10): Array<{ tool: string; sizeChars: number }> {
     return [...this.resultSizeTracker.entries()]
@@ -744,6 +771,7 @@ export class McpTransport {
                   const {
                     extensionRequired: _ext,
                     timeoutMs: _timeout,
+                    categories: _cat,
                     ...wireSchema
                   } = t.schema;
                   return wireSchema;

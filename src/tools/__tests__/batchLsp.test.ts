@@ -92,6 +92,37 @@ describe("batchGetHover", () => {
     expect(data.results[0].line).toBe(3);
     expect(data.results[0].column).toBe(7);
   });
+
+  it("minimal verbosity strips docs from each hover result", async () => {
+    const client = makeClient({
+      getHover: vi.fn(() =>
+        Promise.resolve({
+          contents: ["function foo(): void", "Calls foo with no args."],
+          range: null,
+        }),
+      ),
+    });
+    const tool = createBatchGetHoverTool(workspace, client as never, "minimal");
+    const result = (await tool.handler({ items: [ITEM] })) as any;
+    const data = JSON.parse(result.content[0].text);
+    expect(data.results[0].result.contents).toHaveLength(1);
+    expect(data.results[0].result.contents[0]).toBe("function foo(): void");
+  });
+
+  it("normal verbosity returns full contents", async () => {
+    const client = makeClient({
+      getHover: vi.fn(() =>
+        Promise.resolve({
+          contents: ["function foo(): void", "Docs here."],
+          range: null,
+        }),
+      ),
+    });
+    const tool = createBatchGetHoverTool(workspace, client as never, "normal");
+    const result = (await tool.handler({ items: [ITEM] })) as any;
+    const data = JSON.parse(result.content[0].text);
+    expect(data.results[0].result.contents).toHaveLength(2);
+  });
 });
 
 // ── batchGoToDefinition ───────────────────────────────────────────────────────

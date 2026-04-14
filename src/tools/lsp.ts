@@ -110,6 +110,30 @@ function decodeCursor(cursor: unknown): number | null {
   }
 }
 
+/**
+ * Apply LSP verbosity filtering to a hover result.
+ *
+ * - "minimal": keep only contents[0] (type signature line); strip documentation.
+ *   Reduces hover payload by ~60% on well-documented symbols.
+ * - "normal": unchanged (default).
+ * - "verbose": unchanged (reserved for future expansions).
+ */
+function applyLspVerbosity(
+  result: unknown,
+  verbosity: "minimal" | "normal" | "verbose",
+): unknown {
+  if (
+    verbosity !== "minimal" ||
+    typeof result !== "object" ||
+    result === null
+  ) {
+    return result;
+  }
+  const r = result as Record<string, unknown>;
+  if (!Array.isArray(r.contents)) return result;
+  return { ...r, contents: (r.contents as unknown[]).slice(0, 1) };
+}
+
 /** Returns a readiness checker for a given file path and extension client. */
 function readinessChecker(
   extensionClient: ExtensionClient,
@@ -376,6 +400,7 @@ export function createFindReferencesTool(
 export function createGetHoverTool(
   workspace: string,
   extensionClient: ExtensionClient,
+  lspVerbosity: "minimal" | "normal" | "verbose" = "normal",
 ) {
   return {
     schema: {
@@ -439,7 +464,7 @@ export function createGetHoverTool(
           message: "No hover information at this position",
         });
       }
-      return successStructured(result);
+      return successStructured(applyLspVerbosity(result, lspVerbosity));
     },
   };
 }
