@@ -84,6 +84,7 @@ import { createGetPRTemplateTool } from "./getPRTemplate.js";
 import { createGetProjectContextTool } from "./getProjectContext.js";
 import { createGetProjectInfoTool } from "./getProjectInfo.js";
 import { createGetSecurityAdvisoriesTool } from "./getSecurityAdvisories.js";
+import { createGetSessionUsageTool } from "./getSessionUsage.js";
 import { createGetSymbolHistoryTool } from "./getSymbolHistory.js";
 import { createGetToolCapabilitiesTool } from "./getToolCapabilities.js";
 import { createGetTypeSignatureTool } from "./getTypeSignature.js";
@@ -265,6 +266,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "getBridgeStatus",
   "getToolCapabilities",
   "bridgeDoctor",
+  "getSessionUsage",
 ]);
 
 /**
@@ -543,6 +545,7 @@ export function registerAllTools(
     createGetGitHotspotsTool(workspace),
     createGetSymbolHistoryTool(workspace, extensionClient),
     createGetProjectContextTool(workspace, extensionClient, probes),
+    createGetSessionUsageTool(transport),
     ...(activityLog !== undefined
       ? [createGetAnalyticsReportTool(activityLog, orchestrator ?? null)]
       : []),

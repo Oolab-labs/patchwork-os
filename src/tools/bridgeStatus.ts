@@ -89,6 +89,7 @@ export function createBridgeStatusTool(
       description:
         "IDE bridge status: ext connection, circuit breaker, uptime, tool availability.",
       annotations: { readOnlyHint: true },
+      cache_control: { type: "ephemeral" as const },
       inputSchema: {
         type: "object" as const,
         properties: {},

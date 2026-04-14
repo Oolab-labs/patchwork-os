@@ -176,3 +176,107 @@ describe("McpTransport — tools/list pagination", () => {
     expect(resp.result.nextCursor).toBeUndefined();
   });
 });
+
+describe("McpTransport — cache_control passthrough in tools/list", () => {
+  it("cache_control is present in tools/list output for annotated tools", async () => {
+    const token = padToken(`cache-ctrl-${++_counter}`);
+    const server = new Server(token, logger);
+    const transport = new McpTransport(logger);
+
+    transport.registerTool(
+      {
+        name: "annotated_tool",
+        description: "has cache_control",
+        inputSchema: { type: "object", properties: {} },
+        cache_control: { type: "ephemeral" },
+      },
+      async () => ({ content: [{ type: "text", text: "ok" }] }),
+    );
+    transport.registerTool(
+      {
+        name: "plain_tool",
+        description: "no cache_control",
+        inputSchema: { type: "object", properties: {} },
+      },
+      async () => ({ content: [{ type: "text", text: "ok" }] }),
+    );
+
+    server.on("connection", (ws: WebSocket) => transport.attach(ws));
+    const port = await server.findAndListen(null);
+    servers.push(server);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": token },
+    });
+    clients.push(ws);
+    await new Promise<void>((resolve, reject) => {
+      ws.on("open", resolve);
+      ws.on("error", reject);
+    });
+
+    send(ws, { jsonrpc: "2.0", id: 0, method: "initialize", params: {} });
+    await waitFor(ws, (m) => m.id === 0);
+    send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const waiter = waitFor(ws, (m) => m.id === 1);
+    send(ws, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const resp = await waiter;
+
+    const tools = resp.result.tools as Array<Record<string, unknown>>;
+    const annotated = tools.find((t) => t.name === "annotated_tool");
+    const plain = tools.find((t) => t.name === "plain_tool");
+
+    expect(annotated).toBeDefined();
+    expect(annotated?.cache_control).toEqual({ type: "ephemeral" });
+
+    expect(plain).toBeDefined();
+    expect(plain?.cache_control).toBeUndefined();
+  });
+
+  it("extensionRequired and timeoutMs are stripped from wire output", async () => {
+    const token = padToken(`strip-fields-${++_counter}`);
+    const server = new Server(token, logger);
+    const transport = new McpTransport(logger);
+
+    transport.registerTool(
+      {
+        name: "internal_fields_tool",
+        description: "has internal fields",
+        inputSchema: { type: "object", properties: {} },
+        extensionRequired: true,
+        timeoutMs: 5000,
+      },
+      async () => ({ content: [{ type: "text", text: "ok" }] }),
+    );
+
+    server.on("connection", (ws: WebSocket) => transport.attach(ws));
+    const port = await server.findAndListen(null);
+    servers.push(server);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`, {
+      headers: { "x-claude-code-ide-authorization": token },
+    });
+    clients.push(ws);
+    await new Promise<void>((resolve, reject) => {
+      ws.on("open", resolve);
+      ws.on("error", reject);
+    });
+
+    send(ws, { jsonrpc: "2.0", id: 0, method: "initialize", params: {} });
+    await waitFor(ws, (m) => m.id === 0);
+    send(ws, { jsonrpc: "2.0", method: "notifications/initialized" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const waiter = waitFor(ws, (m) => m.id === 1);
+    send(ws, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+    const resp = await waiter;
+
+    const tools = resp.result.tools as Array<Record<string, unknown>>;
+    const tool = tools.find((t) => t.name === "internal_fields_tool");
+
+    expect(tool).toBeDefined();
+    expect(tool?.extensionRequired).toBeUndefined();
+    expect(tool?.timeoutMs).toBeUndefined();
+  });
+});

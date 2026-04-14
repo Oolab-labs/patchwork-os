@@ -132,10 +132,57 @@ describe("getDiagnostics — message sanitization", () => {
   });
 });
 
+describe("getDiagnostics — topN param", () => {
+  it("topN:2 with 5 diagnostics returns 2 and truncated:true", async () => {
+    const diags = Array.from({ length: 5 }, (_, i) => ({
+      file: `/ws/file${i}.ts`,
+      line: i + 1,
+      column: 1,
+      severity: i < 2 ? "error" : "warning",
+      message: `Diag ${i}`,
+    }));
+    const mockClient = {
+      isConnected: () => true,
+      getDiagnostics: vi.fn(async () => diags),
+    };
+    const tool = createGetDiagnosticsTool("/ws", probes, mockClient as never);
+    const data = parse(await tool.handler({ topN: 2 }));
+    expect(data.diagnostics).toHaveLength(2);
+    expect(data.truncated).toBe(true);
+  });
+
+  it("topN larger than result count — no truncation", async () => {
+    const diags = [
+      {
+        file: "/ws/a.ts",
+        line: 1,
+        column: 1,
+        severity: "error",
+        message: "E1",
+      },
+      {
+        file: "/ws/b.ts",
+        line: 2,
+        column: 1,
+        severity: "warning",
+        message: "W1",
+      },
+    ];
+    const mockClient = {
+      isConnected: () => true,
+      getDiagnostics: vi.fn(async () => diags),
+    };
+    const tool = createGetDiagnosticsTool("/ws", probes, mockClient as never);
+    const data = parse(await tool.handler({ topN: 10 }));
+    expect(data.diagnostics).toHaveLength(2);
+    expect(data.truncated).toBeUndefined();
+  });
+});
+
 describe("getDiagnostics — extension path relatedInformation sanitization", () => {
   it("caps relatedInformation at 5 entries and truncates messages to 200 chars", async () => {
     const relatedInfo = Array.from({ length: 10 }, (_, i) => ({
-      message: "x".repeat(300) + ` related ${i}`,
+      message: `${"x".repeat(300)} related ${i}`,
       file: "/ws/bar.ts",
       line: i,
       column: 0,

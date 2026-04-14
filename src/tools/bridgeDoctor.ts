@@ -374,6 +374,7 @@ export function createBridgeDoctorTool(
       description:
         "Health check: extension, git, linters, test runners, GitHub CLI. Use when tools misbehave.",
       annotations: { readOnlyHint: true },
+      cache_control: { type: "ephemeral" as const },
       inputSchema: {
         type: "object" as const,
         properties: {},
