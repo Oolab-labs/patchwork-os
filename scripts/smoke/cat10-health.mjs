@@ -103,4 +103,31 @@ await sleep(600);
   ws.close();
 }
 
+// 10.5 GET /dashboard → 200 text/html (unauthenticated)
+{
+  const r = await httpGet(`${BASE}/dashboard`);
+  assertEq(r.status, 200, "10.5 /dashboard → 200");
+  assert(
+    (r.headers?.["content-type"] ?? "").includes("text/html"),
+    "10.5 /dashboard content-type: text/html",
+  );
+  assert(
+    r.body.includes("Claude IDE Bridge"),
+    "10.5 /dashboard body contains title",
+  );
+}
+
+// 10.6 GET /dashboard/data → 200 JSON with version + uptimeMs
+{
+  const r = await httpGet(`${BASE}/dashboard/data`);
+  assertEq(r.status, 200, "10.6 /dashboard/data → 200");
+  try {
+    const d = JSON.parse(r.body);
+    assert(typeof d.version === "string", "10.6 /dashboard/data has version");
+    assert(typeof d.uptimeMs === "number", "10.6 /dashboard/data has uptimeMs");
+  } catch {
+    assert(false, "10.6 /dashboard/data body not valid JSON");
+  }
+}
+
 summary("CAT-10");
