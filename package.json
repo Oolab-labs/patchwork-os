@@ -1,6 +1,6 @@
 {
   "name": "claude-ide-bridge",
-  "version": "2.25.40",
+  "version": "2.25.41",
   "description": "Standalone MCP bridge for Claude Code IDE integration with any editor — 136+ tools for LSP, debugging, terminals, Git, GitHub, and more",
   "type": "module",
   "main": "dist/index.js",
@@ -68,6 +68,7 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
+    "test:smoke": "bash scripts/smoke/run-all.sh",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "biome check .",
