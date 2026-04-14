@@ -1,0 +1,25 @@
+name: Publish Docker
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: |
+            ghcr.io/oolab-labs/claude-ide-bridge:${{ github.ref_name }}
+            ghcr.io/oolab-labs/claude-ide-bridge:latest
