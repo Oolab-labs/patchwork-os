@@ -89,6 +89,17 @@ export interface PromptSource {
   model?: string;
   /** Per-hook effort override. Falls back to policy.defaultEffort ("low"). */
   effort?: "low" | "medium" | "high" | "max";
+  /**
+   * Number of times to re-enqueue on task error. Default: 0 (no retry).
+   * Retries only fire when the task reaches status "error" — cancellations
+   * and timeouts do not trigger a retry.
+   */
+  retryCount?: number;
+  /**
+   * Milliseconds to wait between retries. Default: 30_000.
+   * Enforced minimum: 5_000.
+   */
+  retryDelayMs?: number;
 }
 
 export interface OnDiagnosticsErrorPolicy extends PromptSource {
@@ -1080,6 +1091,8 @@ export class AutomationHooks {
     prompt: string;
     triggerSource: string;
     hookCfg?: PromptSource;
+    /** Internal: current retry attempt (0 = first try). */
+    _retryAttempt?: number;
   }): string {
     const maxPerHour = this.policy.maxTasksPerHour ?? 20;
     if (maxPerHour > 0) {
@@ -1118,7 +1131,64 @@ export class AutomationHooks {
     if (maxPerHour > 0) {
       this.taskTimestamps.push(Date.now());
     }
+
+    // Schedule retry watcher if retryCount > 0.
+    const retryCount = opts.hookCfg?.retryCount ?? 0;
+    const retryAttempt = opts._retryAttempt ?? 0;
+    if (retryCount > 0) {
+      const retryDelayMs = Math.max(
+        5_000,
+        opts.hookCfg?.retryDelayMs ?? 30_000,
+      );
+      this._watchForRetry(taskId, opts, retryAttempt, retryCount, retryDelayMs);
+    }
+
     return taskId;
+  }
+
+  /**
+   * Poll a task until it reaches a terminal state. If the task ends with
+   * status "error" and retries remain, re-enqueue after `retryDelayMs`.
+   */
+  private _watchForRetry(
+    taskId: string,
+    opts: { prompt: string; triggerSource: string; hookCfg?: PromptSource },
+    retryAttempt: number,
+    retryCount: number,
+    retryDelayMs: number,
+  ): void {
+    const interval = setInterval(() => {
+      const task = this.orchestrator.getTask(taskId);
+      if (!task) {
+        clearInterval(interval);
+        return;
+      }
+      if (task.status === "pending" || task.status === "running") return;
+      clearInterval(interval);
+      if (task.status !== "error") return; // cancelled/done → no retry
+      const nextAttempt = retryAttempt + 1;
+      if (nextAttempt > retryCount) {
+        this.log(
+          `[automation] ${opts.triggerSource}: max retries (${retryCount}) reached, dropping`,
+        );
+        return;
+      }
+      this.log(
+        `[automation] ${opts.triggerSource}: retry ${nextAttempt}/${retryCount} in ${retryDelayMs}ms`,
+      );
+      setTimeout(() => {
+        try {
+          this._enqueueAutomationTask({
+            ...opts,
+            _retryAttempt: nextAttempt,
+          });
+        } catch (e) {
+          this.log(
+            `[automation] ${opts.triggerSource}: retry enqueue failed: ${e}`,
+          );
+        }
+      }, retryDelayMs);
+    }, 2_000);
   }
 
   /**

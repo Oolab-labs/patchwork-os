@@ -404,7 +404,23 @@ export class StreamableHttpHandler {
           : "";
         if (bearer) sessionScope = this.resolveScopeFn(bearer);
       }
-      session = this.createSession(sessionScope);
+      // Parse X-Bridge-Deny-Tools header: comma-separated tool names to block for this session.
+      const denyHeader = req.headers["x-bridge-deny-tools"];
+      const denyTools = new Set<string>();
+      if (typeof denyHeader === "string" && denyHeader.trim().length > 0) {
+        const TOOL_NAME_RE = /^[a-zA-Z0-9_]+$/;
+        for (const name of denyHeader.split(",")) {
+          const trimmed = name.trim();
+          if (TOOL_NAME_RE.test(trimmed)) {
+            denyTools.add(trimmed);
+          } else if (trimmed.length > 0) {
+            this.logger.warn(
+              `[http] ignoring invalid X-Bridge-Deny-Tools entry: "${trimmed}"`,
+            );
+          }
+        }
+      }
+      session = this.createSession(sessionScope, denyTools);
       sessionIsNew = true;
       const ccSessionId = req.headers["x-claude-code-session-id"];
       if (typeof ccSessionId === "string" && SESSION_ID_RE.test(ccSessionId)) {
@@ -571,7 +587,10 @@ export class StreamableHttpHandler {
     res.end();
   }
 
-  private createSession(scope: string | null = null): HttpSession {
+  private createSession(
+    scope: string | null = null,
+    denyTools: Set<string> = new Set(),
+  ): HttpSession {
     const id = crypto.randomUUID();
     const session = {
       id,
@@ -611,6 +630,7 @@ export class StreamableHttpHandler {
     if (this.instructions !== null)
       transport.setInstructions(this.instructions);
     if (scope) transport.setSessionScope(scope);
+    if (denyTools.size > 0) transport.setDenyTools(denyTools);
 
     const terminalPrefix = `h${id.slice(0, 8)}-`; // "h" prefix distinguishes HTTP sessions
 
