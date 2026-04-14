@@ -77,6 +77,7 @@ run_cat "CAT-5 (http)"        "$SCRIPT_DIR/cat5-http.mjs"       "$PORT" "$TOKEN"
 run_cat "CAT-7 (plugin)"      "$SCRIPT_DIR/cat7-plugin.mjs"
 run_cat "CAT-8 (ratelimit)"   "$SCRIPT_DIR/cat8-ratelimit.mjs"  "$PORT" "$TOKEN"
 run_cat "CAT-10 (health)"     "$SCRIPT_DIR/cat10-health.mjs"    "$PORT" "$TOKEN"
+run_cat "CAT-11 (shutdown)"   "$SCRIPT_DIR/cat11-shutdown.mjs"
 run_cat "CAT-12 (automation)" "$SCRIPT_DIR/cat12-automation.mjs"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
