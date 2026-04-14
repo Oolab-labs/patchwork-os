@@ -225,6 +225,9 @@ export function createBridgeStatusTool(
         },
         uptimeSeconds: Math.round(uptimeMs / 1000),
         latencyMs: latencyMs ?? null,
+        ...(extensionClient.extensionPackageVersion !== null && {
+          extensionPackageVersion: extensionClient.extensionPackageVersion,
+        }),
         ...(connectionQuality !== undefined && { connectionQuality }),
         ...(orchestrator !== null &&
           orchestrator !== undefined && {

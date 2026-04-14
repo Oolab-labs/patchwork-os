@@ -145,6 +145,9 @@ export class ExtensionClient {
   // Connection quality — round-trip latency pushed by extension via rttUpdate notification.
   public lastRttMs: number | null = null;
 
+  // Extension package version reported in hello (npm package, not protocol version)
+  public extensionPackageVersion: string | null = null;
+
   // Callbacks for forwarding notifications to Claude Code
   public onDiagnosticsChanged:
     | ((file: string, diagnostics: Diagnostic[]) => void)
@@ -447,7 +450,12 @@ export class ExtensionClient {
           typeof p.extensionVersion === "string"
             ? p.extensionVersion
             : "unknown";
-        this.logger.info(`Extension hello: version=${extVer}`);
+        const pkgVer =
+          typeof p.packageVersion === "string" ? p.packageVersion : null;
+        if (pkgVer) this.extensionPackageVersion = pkgVer;
+        this.logger.info(
+          `Extension hello: protocolVersion=${extVer}${pkgVer ? `, packageVersion=${pkgVer}` : ""}`,
+        );
         const extMajor = Number.parseInt(extVer.split(".")[0] ?? "", 10);
         const bridgeMajor = Number.parseInt(
           BRIDGE_PROTOCOL_VERSION.split(".")[0] ?? "",
@@ -455,11 +463,11 @@ export class ExtensionClient {
         );
         if (Number.isNaN(extMajor)) {
           this.logger.debug(
-            `Extension version "${extVer}" is not a recognized semver format, skipping version check`,
+            `Extension protocol version "${extVer}" is not a recognized semver format, skipping version check`,
           );
         } else if (extMajor !== bridgeMajor) {
           this.logger.warn(
-            `Extension major version mismatch: bridge=${BRIDGE_PROTOCOL_VERSION}, extension=${extVer}. Consider updating.`,
+            `Extension protocol major version mismatch: bridge=${BRIDGE_PROTOCOL_VERSION}, extension=${extVer}. Consider updating.`,
           );
         }
         break;

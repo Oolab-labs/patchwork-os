@@ -291,11 +291,15 @@ export class BridgeConnection {
       this.updateStatusBar("connected");
       this.reconnectDelay = RECONNECT_BASE_DELAY;
       this.startHeartbeat();
+      const pkgVersion =
+        vscode.extensions.getExtension("oolab-labs.claude-ide-bridge-extension")
+          ?.packageJSON?.version ?? "unknown";
       this.send({
         jsonrpc: "2.0",
         method: "extension/hello",
         params: {
           extensionVersion: EXTENSION_PROTOCOL_VERSION,
+          packageVersion: pkgVersion,
           vscodeVersion: vscode.version,
         },
       });
