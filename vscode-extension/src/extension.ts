@@ -12,7 +12,7 @@ import { createFileWatcherHandlers } from "./handlers/fileWatcher";
 import { baseHandlers } from "./handlers/index";
 import { createLspHandlers } from "./handlers/lsp";
 import { clearAllTerminalBuffers } from "./handlers/terminal";
-import { readLockFileForWorkspace } from "./lockfiles";
+import { readLockFileForWorkspace, readLockFilesAsync } from "./lockfiles";
 import { createLspReadinessTracker } from "./lspReadiness";
 
 /**
@@ -453,6 +453,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const analyticsProvider = new AnalyticsViewProvider(
     context.extensionUri,
     getAnalyticsReport,
+    () => readLockFilesAsync(lockFileDir || undefined),
+    vscode,
   );
 
   context.subscriptions.push(
