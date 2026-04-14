@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_CO_OCCURRENCE_WINDOW_MS } from "../activityLog.js";
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -185,6 +186,217 @@ describe("ActivityLog", () => {
     const output = log.toPrometheus();
     // Prometheus label values escape " as \"
     expect(output).toContain('tool="tool\\"with\\"quotes"');
+  });
+});
+
+describe("ActivityLog — percentiles", () => {
+  it("returns empty object when no entries", () => {
+    const log = new ActivityLog();
+    expect(log.percentiles()).toEqual({});
+  });
+
+  it("returns null-equivalent (skips) tools with only 1 sample", () => {
+    const log = new ActivityLog();
+    log.record("solo", 100, "success");
+    expect(log.percentiles()["solo"]).toBeUndefined();
+  });
+
+  it("computes p50/p95/p99 correctly for known distribution", () => {
+    const log = new ActivityLog();
+    // 100 samples: 1..100ms
+    for (let i = 1; i <= 100; i++) log.record("t", i, "success");
+    const p = log.percentiles()["t"];
+    expect(p).toBeDefined();
+    // p50 = 50th percentile of [1..100] sorted = 50
+    expect(p!.p50).toBe(50);
+    // p95 = 95th percentile = 95
+    expect(p!.p95).toBe(95);
+    // p99 = 99th percentile = 99
+    expect(p!.p99).toBe(99);
+    expect(p!.sampleCount).toBe(100);
+  });
+
+  it("percentile values within ±2ms for 1000-sample uniform distribution", () => {
+    const log = new ActivityLog();
+    for (let i = 1; i <= 1000; i++) log.record("u", i, "success");
+    const p = log.percentiles()["u"]!;
+    expect(Math.abs(p.p50 - 500)).toBeLessThanOrEqual(2);
+    expect(Math.abs(p.p95 - 950)).toBeLessThanOrEqual(2);
+    expect(Math.abs(p.p99 - 990)).toBeLessThanOrEqual(2);
+  });
+
+  it("evicts oldest samples when buffer exceeds 1200 entries", () => {
+    const log = new ActivityLog();
+    // Push 1201 entries to trigger batch eviction (cap 1000 * 1.2 = 1200)
+    for (let i = 0; i < 1201; i++) log.record("big", i, "success");
+    const p = log.percentiles()["big"]!;
+    // After eviction, sampleCount should be capped at 1000
+    expect(p.sampleCount).toBeLessThanOrEqual(1000);
+  });
+
+  it("tracks multiple tools independently", () => {
+    const log = new ActivityLog();
+    for (let i = 1; i <= 10; i++) log.record("fast", i, "success");
+    for (let i = 100; i <= 109; i++) log.record("slow", i, "success");
+    const p = log.percentiles();
+    expect(p["fast"]!.p50).toBeLessThan(p["slow"]!.p50);
+  });
+});
+
+describe("ActivityLog — co-occurrence", () => {
+  it("returns empty array when no entries", () => {
+    const log = new ActivityLog();
+    expect(log.coOccurrence()).toEqual([]);
+  });
+
+  it("returns empty for single tool (no pairs)", () => {
+    const log = new ActivityLog();
+    const now = Date.now();
+    // Manually inject entries with controlled timestamps
+    (log as any).entries = [
+      {
+        id: 1,
+        timestamp: new Date(now).toISOString(),
+        tool: "a",
+        durationMs: 10,
+        status: "success",
+      },
+      {
+        id: 2,
+        timestamp: new Date(now + 1000).toISOString(),
+        tool: "a",
+        durationMs: 10,
+        status: "success",
+      },
+    ];
+    expect(log.coOccurrence()).toEqual([]);
+  });
+
+  it("counts pairs within window", () => {
+    const log = new ActivityLog();
+    const now = Date.now();
+    (log as any).entries = [
+      {
+        id: 1,
+        timestamp: new Date(now).toISOString(),
+        tool: "getBufferContent",
+        durationMs: 10,
+        status: "success",
+      },
+      {
+        id: 2,
+        timestamp: new Date(now + 100).toISOString(),
+        tool: "editText",
+        durationMs: 10,
+        status: "success",
+      },
+      {
+        id: 3,
+        timestamp: new Date(now + 200).toISOString(),
+        tool: "getBufferContent",
+        durationMs: 10,
+        status: "success",
+      },
+      {
+        id: 4,
+        timestamp: new Date(now + 300).toISOString(),
+        tool: "editText",
+        durationMs: 10,
+        status: "success",
+      },
+    ];
+    const pairs = log.coOccurrence(60_000);
+    const top = pairs[0];
+    expect(top).toBeDefined();
+    expect(top!.pair).toBe("editText|getBufferContent");
+    expect(top!.count).toBeGreaterThanOrEqual(2);
+  });
+
+  it("excludes pairs outside the window", () => {
+    const log = new ActivityLog();
+    const now = Date.now();
+    (log as any).entries = [
+      {
+        id: 1,
+        timestamp: new Date(now).toISOString(),
+        tool: "a",
+        durationMs: 10,
+        status: "success",
+      },
+      // 10 minutes later — outside 5-min default window
+      {
+        id: 2,
+        timestamp: new Date(now + 10 * 60 * 1000 + 1).toISOString(),
+        tool: "b",
+        durationMs: 10,
+        status: "success",
+      },
+    ];
+    expect(log.coOccurrence(DEFAULT_CO_OCCURRENCE_WINDOW_MS)).toEqual([]);
+  });
+
+  it("pair key is alphabetically ordered (a|b not b|a)", () => {
+    const log = new ActivityLog();
+    const now = Date.now();
+    (log as any).entries = [
+      {
+        id: 1,
+        timestamp: new Date(now).toISOString(),
+        tool: "z",
+        durationMs: 10,
+        status: "success",
+      },
+      {
+        id: 2,
+        timestamp: new Date(now + 100).toISOString(),
+        tool: "a",
+        durationMs: 10,
+        status: "success",
+      },
+    ];
+    const pairs = log.coOccurrence(60_000);
+    expect(pairs[0]?.pair).toBe("a|z");
+  });
+
+  it("sorts by count descending", () => {
+    const log = new ActivityLog();
+    const now = Date.now();
+    // a+b appear 3 times together, c+d appear once
+    const entries = [];
+    for (let i = 0; i < 3; i++) {
+      entries.push({
+        id: entries.length + 1,
+        timestamp: new Date(now + entries.length * 100).toISOString(),
+        tool: "a",
+        durationMs: 10,
+        status: "success",
+      });
+      entries.push({
+        id: entries.length + 1,
+        timestamp: new Date(now + entries.length * 100).toISOString(),
+        tool: "b",
+        durationMs: 10,
+        status: "success",
+      });
+    }
+    entries.push({
+      id: entries.length + 1,
+      timestamp: new Date(now + entries.length * 100).toISOString(),
+      tool: "c",
+      durationMs: 10,
+      status: "success",
+    });
+    entries.push({
+      id: entries.length + 1,
+      timestamp: new Date(now + entries.length * 100).toISOString(),
+      tool: "d",
+      durationMs: 10,
+      status: "success",
+    });
+    (log as any).entries = entries;
+    const pairs = log.coOccurrence(60_000);
+    expect(pairs[0]?.pair).toBe("a|b");
+    expect(pairs[0]?.count).toBeGreaterThan(pairs[1]?.count ?? 0);
   });
 });
 

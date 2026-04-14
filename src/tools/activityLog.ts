@@ -1,4 +1,7 @@
-import type { ActivityLog } from "../activityLog.js";
+import {
+  type ActivityLog,
+  DEFAULT_CO_OCCURRENCE_WINDOW_MS,
+} from "../activityLog.js";
 import type { ActivityEntry } from "../activityTypes.js";
 import {
   optionalBool,
@@ -16,7 +19,8 @@ export function createGetActivityLogTool(activityLog: ActivityLog) {
   return {
     schema: {
       name: "getActivityLog",
-      description: "Query recent tool call log: names, timing, status.",
+      description:
+        "Query recent tool call log: names, timing, status, percentiles, co-occurrence.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
@@ -39,6 +43,20 @@ export function createGetActivityLogTool(activityLog: ActivityLog) {
             description:
               "Include per-tool stats (call count, avg duration, error count). Default: false",
           },
+          showPercentiles: {
+            type: "boolean" as const,
+            description:
+              "Include per-tool p50/p95/p99 duration percentiles (requires showStats). Default: false",
+          },
+          showCoOccurrence: {
+            type: "boolean" as const,
+            description:
+              "Include tool-pair co-occurrence within the time window. Default: false",
+          },
+          coOccurrenceWindowMs: {
+            type: "number" as const,
+            description: `Sliding window for co-occurrence in ms (default: ${DEFAULT_CO_OCCURRENCE_WINDOW_MS} = 5 min, max: 3600000)`,
+          },
         },
         additionalProperties: false as const,
       },
@@ -47,7 +65,29 @@ export function createGetActivityLogTool(activityLog: ActivityLog) {
         properties: {
           entries: { type: "array" },
           count: { type: "integer" },
-          stats: { type: "object" },
+          stats: {
+            type: "object",
+            description:
+              "Per-tool stats: count, avgDurationMs, errors, and optional percentiles",
+          },
+          percentiles: {
+            type: "object",
+            description:
+              "Per-tool p50/p95/p99 duration in ms with sample count (only when showStats+showPercentiles)",
+          },
+          coOccurrence: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                pair: { type: "string" },
+                count: { type: "integer" },
+              },
+              required: ["pair", "count"],
+            },
+            description:
+              "Tool pairs called within coOccurrenceWindowMs of each other, sorted by count desc",
+          },
         },
         required: ["entries", "count"],
       },
@@ -57,15 +97,31 @@ export function createGetActivityLogTool(activityLog: ActivityLog) {
       const status = optionalString(args, "status");
       const last = optionalInt(args, "last", 1, 200) ?? 50;
       const showStats = optionalBool(args, "showStats") ?? false;
+      const showPercentiles = optionalBool(args, "showPercentiles") ?? false;
+      const showCoOccurrence = optionalBool(args, "showCoOccurrence") ?? false;
+      const coOccurrenceWindowMs = Math.min(
+        optionalInt(args, "coOccurrenceWindowMs", 1_000, 3_600_000) ??
+          DEFAULT_CO_OCCURRENCE_WINDOW_MS,
+        3_600_000,
+      );
 
       const entries = activityLog.query({ tool, status, last });
       const result: Record<string, unknown> = {
         entries,
         count: entries.length,
       };
+
       if (showStats) {
         result.stats = activityLog.stats();
+        if (showPercentiles) {
+          result.percentiles = activityLog.percentiles();
+        }
       }
+
+      if (showCoOccurrence) {
+        result.coOccurrence = activityLog.coOccurrence(coOccurrenceWindowMs);
+      }
+
       return successStructured(result);
     },
   };

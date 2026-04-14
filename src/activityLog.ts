@@ -21,6 +21,12 @@ function escapeLabelValue(s: string): string {
 const MAX_PERSIST_LINES = 10_000;
 const MAX_PERSIST_BYTES = 1024 * 1024; // 1MB
 
+/** Max duration samples kept per tool for percentile calculation. */
+const MAX_DURATION_SAMPLES = 1_000;
+
+/** Default sliding window for co-occurrence (5 minutes). */
+export const DEFAULT_CO_OCCURRENCE_WINDOW_MS = 5 * 60 * 1_000;
+
 export class ActivityLog {
   private entries: ActivityEntry[] = [];
   private lifecycleEntries: LifecycleEntry[] = [];
@@ -28,6 +34,12 @@ export class ActivityLog {
   private maxEntries: number;
   private persistPath: string | null;
   private readonly listeners = new Set<ActivityListener>();
+
+  /**
+   * Per-tool bounded ring of duration samples used for percentile computation.
+   * Capped at MAX_DURATION_SAMPLES per tool to bound memory.
+   */
+  private readonly durationSamples = new Map<string, number[]>();
 
   constructor(maxEntries = 500) {
     this.maxEntries = maxEntries;
@@ -180,6 +192,19 @@ export class ActivityLog {
     };
     this.entries.push(entry);
     this._appendToDisk("tool", entry);
+
+    // Accumulate duration sample for percentile tracking
+    let samples = this.durationSamples.get(tool);
+    if (!samples) {
+      samples = [];
+      this.durationSamples.set(tool, samples);
+    }
+    samples.push(durationMs);
+    if (samples.length > MAX_DURATION_SAMPLES * 1.2) {
+      // Batch eviction: keep newest MAX_DURATION_SAMPLES to amortise splice cost
+      this.durationSamples.set(tool, samples.slice(-MAX_DURATION_SAMPLES));
+    }
+
     for (const listener of this.listeners) {
       try {
         listener("tool", entry);
@@ -308,5 +333,69 @@ export class ActivityLog {
       };
     }
     return result;
+  }
+
+  /**
+   * Per-tool percentiles (p50/p95/p99) computed from the bounded duration
+   * sample buffer. Returns null for any tool with fewer than 2 samples.
+   */
+  percentiles(): Record<
+    string,
+    { p50: number; p95: number; p99: number; sampleCount: number }
+  > {
+    const result: Record<
+      string,
+      { p50: number; p95: number; p99: number; sampleCount: number }
+    > = {};
+    for (const [tool, raw] of this.durationSamples) {
+      if (raw.length < 2) continue;
+      const sorted = [...raw].sort((a, b) => a - b);
+      const n = sorted.length;
+      result[tool] = {
+        p50: this._percentileValue(sorted, 50),
+        p95: this._percentileValue(sorted, 95),
+        p99: this._percentileValue(sorted, 99),
+        sampleCount: n,
+      };
+    }
+    return result;
+  }
+
+  /** Nearest-rank percentile from a pre-sorted array. */
+  private _percentileValue(sorted: number[], pct: number): number {
+    const idx = Math.ceil((pct / 100) * sorted.length) - 1;
+    return Math.round(sorted[Math.max(0, idx)] ?? 0);
+  }
+
+  /**
+   * Tool-pair co-occurrence within a sliding time window.
+   * Counts how many times tool B was called within `windowMs` after tool A,
+   * across all entries in the in-memory buffer. Pairs are ordered (A < B
+   * alphabetically) to avoid double-counting. Returns sorted by count desc.
+   */
+  coOccurrence(
+    windowMs = DEFAULT_CO_OCCURRENCE_WINDOW_MS,
+  ): { pair: string; count: number }[] {
+    const counts = new Map<string, number>();
+    // entries are chronological; use two-pointer sliding window
+    const n = this.entries.length;
+    for (let i = 0; i < n; i++) {
+      const a = this.entries[i];
+      if (!a) continue;
+      const tA = new Date(a.timestamp).getTime();
+      for (let j = i + 1; j < n; j++) {
+        const b = this.entries[j];
+        if (!b) continue;
+        const tB = new Date(b.timestamp).getTime();
+        if (tB - tA > windowMs) break; // sorted chronologically — safe to break
+        if (a.tool === b.tool) continue; // skip self-pairs
+        const key =
+          a.tool < b.tool ? `${a.tool}|${b.tool}` : `${b.tool}|${a.tool}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .map(([pair, count]) => ({ pair, count }))
+      .sort((a, b) => b.count - a.count);
   }
 }
