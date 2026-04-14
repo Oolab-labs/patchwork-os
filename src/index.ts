@@ -307,6 +307,20 @@ Options:
   process.exit(0);
 }
 
+// Handle install subcommand — install a companion MCP server
+if (process.argv[2] === "install") {
+  const { runInstall } = await import("./commands/install.js");
+  await runInstall(process.argv.slice(3));
+  process.exit(0);
+}
+
+// Handle marketplace subcommand — browse and install community skills
+if (process.argv[2] === "marketplace") {
+  const { runMarketplace } = await import("./commands/marketplace.js");
+  await runMarketplace(process.argv.slice(3));
+  process.exit(0);
+}
+
 // Handle print-token subcommand — print the bridge auth token from a lock file
 if (process.argv[2] === "print-token") {
   const argv = process.argv.slice(3);
@@ -407,8 +421,11 @@ if (process.argv[2] === "notify") {
   const notifyRest = notifyArgv.slice(1);
   const namedArgs: Record<string, string> = {};
   for (let i = 0; i < notifyRest.length - 1; i++) {
-    if (notifyRest[i]!.startsWith("--")) {
-      namedArgs[notifyRest[i]!.slice(2)] = notifyRest[i + 1]!;
+    const arg = notifyRest[i];
+    if (arg?.startsWith("--")) {
+      const key = arg.slice(2);
+      const val = notifyRest[i + 1] ?? "";
+      namedArgs[key] = val;
       i++;
     }
   }

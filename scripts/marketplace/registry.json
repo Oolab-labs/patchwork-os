@@ -1,0 +1,47 @@
+[
+  {
+    "name": "tdd-loop",
+    "description": "Test-driven development automation loop",
+    "npmPackage": "claude-ide-bridge",
+    "type": "skill",
+    "version": "latest",
+    "author": "Oolab Labs",
+    "builtin": true
+  },
+  {
+    "name": "ide-coverage",
+    "description": "Test coverage heatmap from lcov or JSON coverage data",
+    "npmPackage": "claude-ide-bridge",
+    "type": "skill",
+    "version": "latest",
+    "author": "Oolab Labs",
+    "builtin": true
+  },
+  {
+    "name": "ide-diagnostics-board",
+    "description": "Diagnostic dashboard across the workspace",
+    "npmPackage": "claude-ide-bridge",
+    "type": "skill",
+    "version": "latest",
+    "author": "Oolab Labs",
+    "builtin": true
+  },
+  {
+    "name": "ide-explore",
+    "description": "Deep codebase exploration using IDE bridge LSP tools",
+    "npmPackage": "claude-ide-bridge",
+    "type": "skill",
+    "version": "latest",
+    "author": "Oolab Labs",
+    "builtin": true
+  },
+  {
+    "name": "ide-deps",
+    "description": "Dependency graph for a file or symbol as interactive HTML",
+    "npmPackage": "claude-ide-bridge",
+    "type": "skill",
+    "version": "latest",
+    "author": "Oolab Labs",
+    "builtin": true
+  }
+]
