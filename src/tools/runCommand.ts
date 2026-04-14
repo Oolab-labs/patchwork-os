@@ -2,6 +2,7 @@ import type { Config } from "../config.js";
 import { INTERPRETER_COMMANDS } from "../config.js";
 import {
   execSafe,
+  execSafeStreaming,
   optionalInt,
   optionalString,
   requireString,
@@ -228,17 +229,32 @@ export function createRunCommandTool(workspace: string, config: Config) {
 
       const maxBytes = config.maxResultSize * 1024;
 
-      const result = await withHeartbeat(
-        () =>
-          execSafe(command, cmdArgs, {
+      // When caller provides a progressToken, stream each stdout line as a
+      // progress notification so the user sees live output.
+      // Without progressToken fall back to periodic heartbeat (no behavior change).
+      let lineCount = 0;
+      const result = progress
+        ? await execSafeStreaming(command, cmdArgs, {
             cwd,
             timeout,
             maxBuffer: maxBytes,
             signal,
-          }),
-        progress,
-        { message: `running ${command}…`, intervalMs: 5_000 },
-      );
+            onLine: (line) => {
+              lineCount++;
+              progress(lineCount, 0, line);
+            },
+          })
+        : await withHeartbeat(
+            () =>
+              execSafe(command, cmdArgs, {
+                cwd,
+                timeout,
+                maxBuffer: maxBytes,
+                signal,
+              }),
+            progress,
+            { message: `running ${command}…`, intervalMs: 5_000 },
+          );
 
       const stdoutResult = truncateOutput(result.stdout, maxBytes);
       const stderrResult = truncateOutput(result.stderr, maxBytes);

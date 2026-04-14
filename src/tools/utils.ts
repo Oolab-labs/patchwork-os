@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -452,6 +452,114 @@ export async function execSafe(
  * notifications so MCP clients don't time out waiting for a response.
  *
  * Sends a progress ping every `intervalMs` (default 5s) until the operation
+/**
+ * Streaming variant of execSafe — calls `onLine` for each complete stdout line as
+ * the process runs, while still collecting stdout/stderr for the final result.
+ * Falls back to regular execSafe behavior when onLine is undefined.
+ */
+export async function execSafeStreaming(
+  cmd: string,
+  args: string[],
+  opts: {
+    cwd?: string;
+    timeout?: number;
+    maxBuffer?: number;
+    signal?: AbortSignal;
+    env?: NodeJS.ProcessEnv;
+    onLine?: (line: string) => void;
+  } = {},
+): Promise<ExecSafeResult> {
+  const { onLine, ...restOpts } = opts;
+  if (!onLine) return execSafe(cmd, args, restOpts);
+
+  const timeout = opts.timeout ?? 30_000;
+  const maxBuffer = opts.maxBuffer ?? 512 * 1024;
+  const start = Date.now();
+
+  const minimalEnv: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    USER: process.env.USER,
+    LOGNAME: process.env.LOGNAME,
+    LANG: process.env.LANG,
+    LC_ALL: process.env.LC_ALL,
+    TMPDIR: process.env.TMPDIR,
+    TEMP: process.env.TEMP,
+    TMP: process.env.TMP,
+    NVM_DIR: process.env.NVM_DIR,
+    NPM_CONFIG_PREFIX: process.env.NPM_CONFIG_PREFIX,
+    NODE_PATH: process.env.NODE_PATH,
+    CARGO_HOME: process.env.CARGO_HOME,
+    RUSTUP_HOME: process.env.RUSTUP_HOME,
+    GOPATH: process.env.GOPATH,
+    GOROOT: process.env.GOROOT,
+    ...opts.env,
+  };
+  for (const k of Object.keys(minimalEnv)) {
+    if (minimalEnv[k] === undefined) delete minimalEnv[k];
+  }
+
+  return new Promise<ExecSafeResult>((resolve) => {
+    const proc = spawn(cmd, args, {
+      cwd: opts.cwd,
+      env: minimalEnv,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdoutFull = ""; // full collected stdout for result
+    let linePartial = ""; // incomplete line being buffered
+    let stderrBuf = "";
+    let stdoutBytes = 0;
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill();
+    }, timeout);
+
+    const abortHandler = () => {
+      proc.kill();
+    };
+    opts.signal?.addEventListener("abort", abortHandler, { once: true });
+
+    proc.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf-8");
+      stdoutBytes += Buffer.byteLength(text);
+      if (stdoutBytes <= maxBuffer) {
+        stdoutFull += text;
+        linePartial += text;
+        // Split on newlines and call onLine for each complete line
+        const lines = linePartial.split("\n");
+        // Last element may be incomplete — keep it in buffer
+        linePartial = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.length > 0) onLine(line);
+        }
+      }
+    });
+
+    proc.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf-8");
+      if (stderrBuf.length + text.length <= maxBuffer) stderrBuf += text;
+    });
+
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", abortHandler);
+      // Flush any remaining partial stdout line
+      if (linePartial.length > 0) onLine(linePartial);
+      resolve({
+        stdout: stdoutFull,
+        stderr: stderrBuf,
+        exitCode: code ?? 1,
+        timedOut,
+        durationMs: Date.now() - start,
+      });
+    });
+  });
+}
+
+/**
  * resolves. Progress value increments from 1 toward 99 (never reaches 100 —
  * the caller is responsible for sending the final progress(100) on success).
  *
