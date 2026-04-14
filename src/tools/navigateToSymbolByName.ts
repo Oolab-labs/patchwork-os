@@ -18,6 +18,8 @@
  * Defensive shape parsing is still applied — the client methods are typed as
  * `Promise<unknown>` by convention (see project_shape_mismatch_prevention.md).
  */
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { ProgressFn } from "../transport.js";
 import {
@@ -27,13 +29,17 @@ import {
   successStructured,
 } from "./utils.js";
 
+const execFileAsync = promisify(execFile);
+
 export function createNavigateToSymbolByNameTool(
   extensionClient: ExtensionClient,
+  workspace = "",
+  hasRg = false,
 ) {
   return {
     schema: {
       name: "navigateToSymbolByName",
-      extensionRequired: true,
+      extensionFallback: true,
       description:
         "Find symbol by name and jump to definition. Replaces searchSymbols→goToDefinition pattern.",
       annotations: { readOnlyHint: false, idempotentHint: true },
@@ -65,10 +71,18 @@ export function createNavigateToSymbolByNameTool(
       signal?: AbortSignal,
       _progress?: ProgressFn,
     ) {
-      if (!extensionClient.isConnected()) {
-        return extensionRequired("navigateToSymbolByName");
-      }
       const query = requireString(args, "query");
+
+      if (!extensionClient.isConnected()) {
+        // Headless fallback: use rg to find likely symbol locations
+        if (hasRg && workspace) {
+          return navigateWithRg(workspace, query, signal);
+        }
+        return extensionRequired("navigateToSymbolByName", [
+          "Install ripgrep (rg) for a partial headless fallback that returns file locations",
+          "Note: opening the file in the editor requires the VS Code extension",
+        ]);
+      }
 
       // Step 1: search workspace symbols
       const raw = await extensionClient.searchSymbols(query, 5, signal);
@@ -136,4 +150,69 @@ export function createNavigateToSymbolByNameTool(
       });
     },
   };
+}
+
+/**
+ * Headless rg fallback: find likely symbol declaration lines.
+ * Returns file + line coordinates but cannot open file (IDE side-effect).
+ * Note in response that navigation requires VS Code extension.
+ */
+async function navigateWithRg(
+  workspace: string,
+  query: string,
+  signal?: AbortSignal,
+): Promise<ReturnType<typeof successStructured>> {
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Match common declaration patterns: function/class/const/let/var/type/interface/def
+  const pattern = `(function|class|const|let|var|type|interface|def|fn)\\s+${escapedQuery}[\\s(<{:]`;
+  try {
+    const { stdout } = await execFileAsync(
+      "rg",
+      ["--json", "--max-count=10", "--type-not=lock", pattern, workspace],
+      { timeout: 10_000, maxBuffer: 2 * 1024 * 1024, signal },
+    );
+
+    const matches: Array<{ file: string; line: number; text: string }> = [];
+    for (const line of stdout.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const msg = JSON.parse(line) as {
+          type: string;
+          data: {
+            path?: { text?: string };
+            line_number?: number;
+            lines?: { text?: string };
+          };
+        };
+        if (msg.type !== "match") continue;
+        matches.push({
+          file: msg.data.path?.text ?? "",
+          line: msg.data.line_number ?? 0,
+          text: (msg.data.lines?.text ?? "").trim(),
+        });
+      } catch {
+        // skip
+      }
+    }
+
+    if (matches.length === 0) {
+      return successStructured({ found: false });
+    }
+
+    const best = matches[0]!;
+    return successStructured({
+      found: true,
+      symbol: {
+        name: query,
+        file: best.file,
+        line: best.line,
+        text: best.text,
+      },
+      definition: null,
+      alternatives: matches.slice(1),
+      note: "Headless fallback via rg: file location returned. Opening file in editor requires VS Code extension.",
+    });
+  } catch {
+    return successStructured({ found: false });
+  }
 }

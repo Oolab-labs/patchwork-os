@@ -51,6 +51,8 @@ const TOOL_AVAILABILITY_TABLE: Record<
   getCodeLens: { extensionRequired: true },
   // Tools that prefer the extension path but can fall back to a CLI probe.
   formatDocument: { probe: "prettier", extensionFallback: true },
+  searchWorkspaceSymbols: { probe: "universalCtags", extensionFallback: true },
+  navigateToSymbolByName: { probe: "rg", extensionFallback: true },
   // Pure-probe tools (no extension path)
   runTests: { probe: "vitest" },
   getGitStatus: { probe: "git" },
