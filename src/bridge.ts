@@ -695,6 +695,7 @@ export class Bridge {
       const driver = createDriver(
         this.config.claudeDriver,
         this.config.claudeBinary,
+        this.config.antBinary,
         (msg) => this.logger.info(msg),
       );
       if (driver) {

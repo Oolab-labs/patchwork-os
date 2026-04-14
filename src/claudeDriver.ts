@@ -22,6 +22,8 @@ export interface ClaudeTaskInput {
   startupTimeoutMs?: number;
   /** Custom system prompt passed via --system-prompt to the subprocess. */
   systemPrompt?: string;
+  /** If true, spawn the ant binary instead of claude. */
+  useAnt?: boolean;
 }
 
 export interface ClaudeTaskOutput {
@@ -71,6 +73,7 @@ export class SubprocessDriver implements IClaudeDriver {
 
   constructor(
     private readonly binary: string,
+    private readonly antBinary: string,
     private readonly log: (msg: string) => void,
   ) {
     // Use a minimal settings file that disables hooks without using --bare.
@@ -132,6 +135,7 @@ export class SubprocessDriver implements IClaudeDriver {
   }
 
   async run(input: ClaudeTaskInput): Promise<ClaudeTaskOutput> {
+    const effectiveBinary = input.useAnt ? this.antBinary : this.binary;
     // Re-write the settings file before each run — /tmp may be cleared by the OS
     // on long-running servers (e.g. systemd-tmpfiles), causing --settings to point
     // at a missing file and allowing hook loops to fire.
@@ -189,10 +193,10 @@ export class SubprocessDriver implements IClaudeDriver {
     }
 
     this.log(
-      `[SubprocessDriver] spawning: ${this.binary} -p <prompt> (workspace: ${input.workspace})`,
+      `[SubprocessDriver] spawning: ${effectiveBinary} -p <prompt> (workspace: ${input.workspace})`,
     );
 
-    const child = spawn(this.binary, args, {
+    const child = spawn(effectiveBinary, args, {
       cwd: input.workspace,
       env,
       signal: input.signal,
@@ -495,10 +499,12 @@ export class ServerModeDriver implements IClaudeDriver {
 export function createDriver(
   mode: "subprocess" | "api" | "none",
   binary: string,
+  antBinary: string,
   log: (msg: string) => void,
 ): IClaudeDriver | null {
   if (mode === "none") return null;
-  if (mode === "subprocess") return new SubprocessDriver(binary, log);
+  if (mode === "subprocess")
+    return new SubprocessDriver(binary, antBinary, log);
   if (mode === "api") return new ApiDriver(log);
   throw new Error(`Unknown driver mode: ${mode}`);
 }

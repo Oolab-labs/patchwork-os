@@ -66,7 +66,7 @@ describe("SubprocessDriver", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    driver = new SubprocessDriver("claude", log);
+    driver = new SubprocessDriver("claude", "ant", log);
   });
 
   it("assembles stream-json assistant events into result text", async () => {

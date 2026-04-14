@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import WebSocket from "ws";
-
+import type { AnalyticsReport } from "./analyticsPanel"; // eslint-disable-line @typescript-eslint/no-unused-vars
+import { AnalyticsViewProvider } from "./analyticsPanel";
 import { BridgeInstaller } from "./bridgeInstaller";
 import { BridgeProcess } from "./bridgeProcess";
 import { BridgeConnection } from "./connection";
@@ -430,6 +431,43 @@ export function activate(context: vscode.ExtensionContext): void {
       clearAllTerminalBuffers();
     },
   });
+
+  // ── Analytics sidebar ──────────────────────────────────────────────────────
+  /**
+   * getReport returns null — the BridgeConnection is a passive WebSocket client
+   * that responds to bridge requests but does not initiate outbound MCP tool
+   * calls. The panel gracefully shows "Bridge not connected." when null is
+   * returned. Future work: expose an HTTP /analytics endpoint on the bridge and
+   * call it here using a lightweight fetch via the lock file port and token.
+   */
+  async function getAnalyticsReport(): Promise<AnalyticsReport | null> {
+    // Check that at least one bridge is connected
+    const anyConnected = [...connections.values()].some(
+      (b) => b.ws?.readyState === WebSocket.OPEN,
+    );
+    if (!anyConnected) return null;
+    // No outbound MCP call mechanism available — return null for now.
+    return null;
+  }
+
+  const analyticsProvider = new AnalyticsViewProvider(
+    context.extensionUri,
+    getAnalyticsReport,
+  );
+
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      AnalyticsViewProvider.viewType,
+      analyticsProvider,
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("claudeIdeBridge.refreshAnalytics", () => {
+      // The provider handles refresh internally via webview messages.
+      // This command is a no-op entry point for keyboard shortcuts/palette.
+    }),
+  );
 }
 
 export function deactivate(): void {

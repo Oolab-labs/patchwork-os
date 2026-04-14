@@ -58,6 +58,7 @@ import { createFormatDocumentTool } from "./formatDocument.js";
 import { createGenerateAPIDocumentationTool } from "./generateAPIDocumentation.js";
 import { createGenerateTestsTool } from "./generateTests.js";
 import { createGetAICommentsTool } from "./getAIComments.js";
+import { createGetAnalyticsReportTool } from "./getAnalyticsReport.js";
 import { createGetArchitectureContextTool } from "./getArchitectureContext.js";
 import { createGetBufferContentTool } from "./getBufferContent.js";
 import { createGetChangeImpactTool } from "./getChangeImpact.js";
@@ -212,6 +213,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "watchActivityLog",
   "contextBundle",
   "getProjectContext",
+  "getAnalyticsReport",
   // LSP / code intelligence
   "getDiagnostics",
   "watchDiagnostics",
@@ -541,6 +543,9 @@ export function registerAllTools(
     createGetGitHotspotsTool(workspace),
     createGetSymbolHistoryTool(workspace, extensionClient),
     createGetProjectContextTool(workspace, extensionClient, probes),
+    ...(activityLog !== undefined
+      ? [createGetAnalyticsReportTool(activityLog, orchestrator ?? null)]
+      : []),
     createFindRelatedTestsTool(workspace, probes),
     createScreenshotAndAnnotateTool(workspace, extensionClient),
     createGetPRTemplateTool(workspace),

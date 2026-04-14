@@ -5,8 +5,8 @@ import { registerAllTools, SLIM_TOOL_NAMES } from "../index.js";
 // ── SLIM_TOOL_NAMES invariants ─────────────────────────────────────────────
 
 describe("SLIM_TOOL_NAMES", () => {
-  it("contains exactly 57 entries", () => {
-    expect(SLIM_TOOL_NAMES.size).toBe(57);
+  it("contains exactly 58 entries", () => {
+    expect(SLIM_TOOL_NAMES.size).toBe(58);
   });
 
   it("all names match the valid tool name pattern", () => {
@@ -147,6 +147,7 @@ describe("registerAllTools tool set filtering", () => {
 
     const activityLog = {
       query: vi.fn(() => []),
+      queryTimeline: vi.fn(() => []),
       subscribe: vi.fn(() => () => {}),
       stats: vi.fn(() => ({})),
     };

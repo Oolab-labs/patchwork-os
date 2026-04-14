@@ -72,6 +72,24 @@
         }
       }
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeBridgeAnalytics",
+          "title": "Claude Analytics",
+          "icon": "$(pulse)"
+        }
+      ]
+    },
+    "views": {
+      "claudeBridgeAnalytics": [
+        {
+          "type": "webview",
+          "id": "claudeIdeBridge.analyticsView",
+          "name": "Analytics"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "claudeIdeBridge.reconnect",
@@ -92,6 +110,10 @@
       {
         "command": "claudeIdeBridge.installBridge",
         "title": "Claude IDE Bridge: Install / Upgrade Bridge"
+      },
+      {
+        "command": "claudeIdeBridge.refreshAnalytics",
+        "title": "Claude IDE Bridge: Refresh Analytics"
       }
     ]
   },

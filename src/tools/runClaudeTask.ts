@@ -79,6 +79,11 @@ export function createRunClaudeTaskTool(
             maxLength: MAX_SYSTEM_PROMPT_CHARS,
             description: `Custom system prompt passed via --system-prompt to the subprocess. Replaces the default Claude Code system prompt. Max ${MAX_SYSTEM_PROMPT_CHARS} characters. Omit to use the default.`,
           },
+          useAnt: {
+            type: "boolean",
+            description:
+              "Run this task with the ant binary instead of claude. Requires ant on PATH or --ant-binary configured.",
+          },
         },
         required: ["prompt"],
       },
@@ -219,6 +224,8 @@ export function createRunClaudeTaskTool(
         startupTimeoutMs = s;
       }
 
+      const useAnt = args.useAnt === true ? true : undefined;
+
       let systemPrompt: string | undefined;
       if (args.systemPrompt !== undefined) {
         if (
@@ -247,6 +254,7 @@ export function createRunClaudeTaskTool(
             maxBudgetUsd,
             startupTimeoutMs,
             systemPrompt,
+            useAnt,
           });
           return successStructured({ taskId, status: "pending" });
         } catch (e) {
@@ -270,6 +278,7 @@ export function createRunClaudeTaskTool(
           maxBudgetUsd,
           startupTimeoutMs,
           systemPrompt,
+          useAnt,
           onChunk: (chunk: string) => {
             progressFn?.(++chunkIndex, -1, chunk);
           },
