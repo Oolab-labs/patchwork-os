@@ -15,6 +15,7 @@ services:
       #   CLAUDE_IDE_BRIDGE_TOKEN=<uuid> docker compose up -d
       CLAUDE_IDE_BRIDGE_TOKEN: "${CLAUDE_IDE_BRIDGE_TOKEN:?CLAUDE_IDE_BRIDGE_TOKEN is required}"
       PORT: "18765"
+      CLAUDE_CONFIG_DIR: /tmp/claude-cfg
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:18765/ping"]
       interval: 15s
