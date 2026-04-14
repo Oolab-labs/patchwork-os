@@ -25,6 +25,10 @@ import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { getAnalyticsPref, setAnalyticsPref } from "./analyticsPrefs.js";
 import { Bridge } from "./bridge.js";
+import {
+  isBridgeToolsFileValid,
+  repairBridgeToolsRulesIfStale,
+} from "./bridgeToolsRules.js";
 import { findEditor, parseConfig } from "./config.js";
 import { PACKAGE_VERSION } from "./version.js";
 
@@ -32,40 +36,6 @@ const __dirnameTop = path.dirname(fileURLToPath(import.meta.url));
 
 const OPEN_VSX_PUBLISHER = "oolab-labs";
 const OPEN_VSX_NAME = "claude-ide-bridge-extension";
-
-// Minimum byte length a valid bridge-tools.md must exceed. The real template
-// is several hundred bytes; anything shorter is empty, truncated, or a stub.
-const BRIDGE_TOOLS_MIN_BYTES = 200;
-
-/**
- * Returns true if a bridge-tools.md file is present and appears to contain the
- * real template content. Checks size, two required tool names, and the
- * MANDATORY section heading that only the real template contains.
- * Returns false on any read error so the caller can overwrite/repair.
- */
-function isBridgeToolsFileValid(filePath: string): boolean {
-  try {
-    const content = readFileSync(filePath, "utf-8");
-    if (content.length > 512 * 1024) return false; // > 512 KB is not a valid rules file
-    if (content.length < BRIDGE_TOOLS_MIN_BYTES) return false;
-    return (
-      content.includes("getDiagnostics") &&
-      content.includes("MANDATORY") &&
-      content.includes("batchGetHover") && // stale files missing new tools fail here
-      content.includes(`<!-- bridge-tools v${PACKAGE_VERSION} -->`) // version sentinel — forces rewrite on package update
-    );
-  } catch (err) {
-    // ENOENT → file doesn't exist yet; return false so the caller writes it.
-    // Any other error (EACCES, EISDIR, etc.) → log a warning and return true
-    // to skip the write attempt, which would also fail and fail silently.
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-    console.warn(
-      "[bridge] Could not read bridge-tools.md:",
-      (err as Error).message,
-    );
-    return true; // don't attempt overwrite if we can't read
-  }
-}
 
 /**
  * Patches an existing CLAUDE.md that has the bridge section but is missing the
@@ -110,57 +80,6 @@ function patchClaudeMdImport(
     throw err;
   }
   return "patched";
-}
-
-/**
- * Writes rules file content atomically with exclusive-create on the .tmp path,
- * then renames into place. Throws on failure; caller handles the error.
- */
-function writeRulesFileAtomic(rulesFilePath: string, content: string): void {
-  const tmpPath = `${rulesFilePath}.tmp`;
-  writeFileSync(tmpPath, content, { encoding: "utf-8", flag: "wx" });
-  try {
-    renameSync(tmpPath, rulesFilePath);
-  } catch (err) {
-    try {
-      unlinkSync(tmpPath);
-    } catch {
-      /* best-effort cleanup */
-    }
-    throw err;
-  }
-}
-
-/**
- * Handles errors from rules file write operations. EACCES → warning + instructions.
- * ELOOP → hard error (symlink cycle — indicates possible symlink attack).
- * EEXIST → hard error (wx exclusive-create failed — indicates a symlink was placed
- *   at the .tmp path, since we pre-clean stale .tmp files before every wx write).
- * Others → warning. Returns the exit code to use (0 for warnings, 1 for hard errors).
- */
-function handleRulesWriteError(
-  err: unknown,
-  rulesFilePath: string,
-  indent: string,
-): number {
-  const code = (err as NodeJS.ErrnoException).code;
-  if (code === "EACCES") {
-    process.stderr.write(
-      `${indent}[warn] Bridge rules — permission denied writing to ${rulesFilePath}.\n` +
-        `${indent}       Run with elevated permissions or create the file manually.\n\n`,
-    );
-    return 0;
-  }
-  if (code === "ELOOP" || code === "EEXIST") {
-    process.stderr.write(
-      `${indent}[error] Bridge rules — suspicious path condition (${code}): ${rulesFilePath}\n\n`,
-    );
-    return 1;
-  }
-  process.stderr.write(
-    `${indent}[warn] Bridge rules — write failed (${code ?? String(err)})\n\n`,
-  );
-  return 0;
 }
 
 /**
@@ -232,41 +151,51 @@ if (isStartAll) {
   process.exit(result.status ?? 1);
 }
 
-/**
- * Repairs .claude/rules/bridge-tools.md if it exists but is stale (fails
- * isBridgeToolsFileValid). Called before early exits in gen-claude-md --write
- * so existing users always get an up-to-date rules file even when CLAUDE.md
- * already has the @import line and no other changes are needed.
- */
-function repairBridgeToolsRulesIfStale(workspace: string): void {
-  const rulesDir = path.join(workspace, ".claude", "rules");
-  const rulesFilePath = path.join(rulesDir, "bridge-tools.md");
-  const templatePath = path.resolve(
-    __dirnameTop,
-    "..",
-    "templates",
-    "bridge-tools.md",
-  );
-  if (!isBridgeToolsFileValid(rulesFilePath) && existsSync(templatePath)) {
-    const repairing = existsSync(rulesFilePath);
+function writeRulesFileAtomic(rulesFilePath: string, content: string): void {
+  const tmpPath = `${rulesFilePath}.tmp`;
+  writeFileSync(tmpPath, content, { encoding: "utf-8", flag: "wx" });
+  try {
+    renameSync(tmpPath, rulesFilePath);
+  } catch (err) {
     try {
-      mkdirSync(rulesDir, { recursive: true });
-      writeRulesFileAtomic(
-        rulesFilePath,
-        readFileSync(templatePath, "utf-8").replace(
-          "{{VERSION}}",
-          PACKAGE_VERSION,
-        ),
-      );
-      process.stderr.write(
-        repairing
-          ? `✓ Bridge rules repaired at ${rulesFilePath}\n`
-          : `✓ Bridge rules written to ${rulesFilePath}\n`,
-      );
-    } catch (err) {
-      handleRulesWriteError(err, rulesFilePath, "");
+      unlinkSync(tmpPath);
+    } catch {
+      /* best-effort cleanup */
     }
+    throw err;
   }
+}
+
+/**
+ * Handles errors from rules file write operations. EACCES → warning + instructions.
+ * ELOOP → hard error (symlink cycle — indicates possible symlink attack).
+ * EEXIST → hard error (wx exclusive-create failed — indicates a symlink was placed
+ *   at the .tmp path, since we pre-clean stale .tmp files before every wx write).
+ * Others → warning. Returns the exit code to use (0 for warnings, 1 for hard errors).
+ */
+function handleRulesWriteError(
+  err: unknown,
+  rulesFilePath: string,
+  indent: string,
+): number {
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === "EACCES") {
+    process.stderr.write(
+      `${indent}[warn] Bridge rules — permission denied writing to ${rulesFilePath}.\n` +
+        `${indent}       Run with elevated permissions or create the file manually.\n\n`,
+    );
+    return 0;
+  }
+  if (code === "ELOOP" || code === "EEXIST") {
+    process.stderr.write(
+      `${indent}[error] Bridge rules — suspicious path condition (${code}): ${rulesFilePath}\n\n`,
+    );
+    return 1;
+  }
+  process.stderr.write(
+    `${indent}[warn] Bridge rules — write failed (${code ?? String(err)})\n\n`,
+  );
+  return 0;
 }
 
 // Handle gen-claude-md subcommand — generates a CLAUDE.md bridge workflow section
@@ -326,14 +255,18 @@ Options:
     process.stderr.write(
       `Patched existing CLAUDE.md — added missing @import line.\n`,
     );
-    repairBridgeToolsRulesIfStale(workspace);
+    repairBridgeToolsRulesIfStale(workspace, undefined, {
+      writeIfMissing: true,
+    });
     process.exit(0);
   }
   if (patchResult === "already-present") {
     process.stderr.write(
       `CLAUDE.md already contains a '${marker}' section — no changes made.\n`,
     );
-    repairBridgeToolsRulesIfStale(workspace);
+    repairBridgeToolsRulesIfStale(workspace, undefined, {
+      writeIfMissing: true,
+    });
     process.exit(0);
   }
   if (existsSync(targetPath)) {
@@ -369,7 +302,7 @@ Options:
   process.stderr.write(`✓ Bridge workflow section written to ${targetPath}\n`);
 
   // Also write bridge-tools rules file alongside CLAUDE.md
-  repairBridgeToolsRulesIfStale(workspace);
+  repairBridgeToolsRulesIfStale(workspace, undefined, { writeIfMissing: true });
 
   process.exit(0);
 }

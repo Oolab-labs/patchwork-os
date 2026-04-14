@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
@@ -9,6 +8,7 @@ import { getAnalyticsPref } from "./analyticsPrefs.js";
 import { sendAnalytics } from "./analyticsSend.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { loadOrCreateBridgeToken } from "./bridgeToken.js";
+import { repairBridgeToolsRulesIfStale } from "./bridgeToolsRules.js";
 import { createDriver } from "./claudeDriver.js";
 import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import type { Config } from "./config.js";
@@ -621,27 +621,13 @@ export class Bridge {
     // 0. Initialize OpenTelemetry (no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset)
     initTelemetry();
 
-    // 0a. Warn if .claude/rules/bridge-tools.md is stale (present but missing the
-    // current version sentinel). Stale files are written by older package versions and
-    // may lack new tool substitution rules. Running gen-claude-md --write repairs it.
-    try {
-      const rulesPath = path.join(
-        this.config.workspace,
-        ".claude",
-        "rules",
-        "bridge-tools.md",
-      );
-      if (existsSync(rulesPath)) {
-        const content = readFileSync(rulesPath, "utf-8");
-        if (!content.includes(`<!-- bridge-tools v${PACKAGE_VERSION} -->`)) {
-          this.logger.warn(
-            `[bridge-tools] .claude/rules/bridge-tools.md is stale — run: claude-ide-bridge gen-claude-md --write`,
-          );
-        }
-      }
-    } catch {
-      /* non-fatal — best-effort check only */
-    }
+    // 0a. Auto-repair .claude/rules/bridge-tools.md if stale (present but missing the
+    // current version sentinel). Older package versions write stale files that may
+    // lack new tool substitution rules. Repair is silent on success; falls back to
+    // warn-only if the template is missing or the write fails.
+    repairBridgeToolsRulesIfStale(this.config.workspace, (msg) =>
+      this.logger.info(msg),
+    );
 
     // 1. Probe available CLI tools (pass workspace so local node_modules/.bin is checked)
     this.probes = await probeAll(this.config.workspace);
