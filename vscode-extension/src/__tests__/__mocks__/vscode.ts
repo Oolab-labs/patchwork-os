@@ -294,6 +294,7 @@ export const window = {
   onDidChangeVisibleTextEditors: vi.fn(() => ({ dispose: vi.fn() })),
   visibleTextEditors: [] as any[],
   createTextEditorDecorationType: vi.fn(() => ({ dispose: vi.fn() })),
+  registerWebviewViewProvider: vi.fn(() => ({ dispose: vi.fn() })),
 };
 
 export const notebooks = {
