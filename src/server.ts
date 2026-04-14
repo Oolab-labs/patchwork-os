@@ -357,6 +357,10 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       // Unauthenticated liveness probe — safe to expose; contains no sensitive data.
+      // NOTE: Any future unauthenticated UI routes (e.g. /dashboard) must not
+      // expose workspace paths, tool outputs, or session data. For public VPS
+      // deployments (--bind 0.0.0.0) such routes should be restricted at the
+      // nginx/firewall level or disabled via a --no-dashboard flag.
       if (req.url === "/ping" && req.method === "GET") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, v: PACKAGE_VERSION }));
