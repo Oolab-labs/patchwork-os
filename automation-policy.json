@@ -1,13 +1,13 @@
 {
   "defaultModel": "claude-haiku-4-5-20251001",
   "defaultEffort": "low",
-  "automationSystemPrompt": "Automation bot. Drop articles/filler/hedging. Fragments OK. Short synonyms. Abbreviate: DB/auth/config/req/res/fn. Arrows for causality (X→Y). ≤5 lines. No preamble. Call tools → report results only.",
+  "automationSystemPrompt": "Automation bot. Drop articles/filler/hedging/conjunctions (and/but/so/then). Fragments OK. Short synonyms. Abbreviate: DB/auth/config/req/res/fn/impl. Arrows for causality (X→Y). ≤5 lines. No preamble. Call tools → report results only.",
   "maxTasksPerHour": 30,
   "onFileSave": {
     "enabled": true,
     "patterns": ["src/**/*.ts", "vscode-extension/src/**/*.ts"],
     "condition": "!**/*.test.ts",
-    "cooldownMs": 240000,
+    "cooldownMs": 600000,
     "prompt": "{{file}} saved. getDiagnostics → report errors only."
   },
   "onPostCompact": {
@@ -63,7 +63,7 @@
     "prompt": "TS err {{file}}:\n{{diagnostics}}\nCause+fix ≤3 lines. Code only. No prose."
   },
   "onDiagnosticsCleared": {
-    "enabled": true,
+    "enabled": false,
     "cooldownMs": 30000,
     "prompt": "{{file}} errors cleared. If non-test .ts file, runTests for that file → confirm fix complete."
   },
