@@ -29,7 +29,7 @@ export function createListClaudeTasksTool(
           status: {
             type: "string",
             enum: ["pending", "running", "done", "error", "cancelled"],
-            description: "Filter by task status. Omit to list all tasks.",
+            description: "Filter by status. Omit for all tasks.",
           },
         },
       },

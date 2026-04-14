@@ -30,7 +30,7 @@ export function createCloseTabTool(
           filePath: {
             type: "string",
             description:
-              "Path to the file whose tab should be closed (absolute or workspace-relative)",
+              "File whose tab to close (absolute or workspace-relative)",
           },
         },
       },

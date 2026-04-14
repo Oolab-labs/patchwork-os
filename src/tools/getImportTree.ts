@@ -93,8 +93,7 @@ export function createGetImportTreeTool(workspace: string) {
           },
           includeExternal: {
             type: "boolean",
-            description:
-              "Include external package imports in output (default: false)",
+            description: "Include external package imports (default: false)",
           },
         },
         additionalProperties: false as const,

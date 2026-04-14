@@ -31,8 +31,7 @@ export function createSetEditorDecorationsTool(
         properties: {
           id: {
             type: "string" as const,
-            description:
-              "Logical group name for these decorations (alphanumeric + hyphens)",
+            description: "Group name for decorations (alphanumeric + hyphens)",
           },
           file: {
             type: "string" as const,

@@ -29,7 +29,7 @@ export function createGetInlayHintsTool(
         properties: {
           file: {
             type: "string" as const,
-            description: "Absolute path to the file",
+            description: "Absolute or workspace-relative path",
           },
           startLine: {
             type: "integer" as const,

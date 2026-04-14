@@ -90,7 +90,7 @@ export function createGetBufferContentTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           startLine: {
             type: "integer" as const,

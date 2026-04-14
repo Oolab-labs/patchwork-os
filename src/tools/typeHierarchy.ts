@@ -31,7 +31,7 @@ export function createGetTypeHierarchyTool(
         properties: {
           file: {
             type: "string" as const,
-            description: "Absolute path to the file",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
@@ -39,7 +39,7 @@ export function createGetTypeHierarchyTool(
           },
           column: {
             type: "integer" as const,
-            description: "Column number (1-based)",
+            description: "Column (1-based)",
           },
           direction: {
             type: "string" as const,

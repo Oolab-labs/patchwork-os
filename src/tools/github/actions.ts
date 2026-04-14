@@ -31,8 +31,7 @@ export function createGithubListRunsTool(
         properties: {
           branch: {
             type: "string",
-            description:
-              "Filter by branch name. Omit to see runs across all branches.",
+            description: "Filter by branch name. Omit for all branches.",
           },
           workflow: {
             type: "string",
@@ -42,13 +41,11 @@ export function createGithubListRunsTool(
           status: {
             type: "string",
             description:
-              "Filter by run status: queued, in_progress, completed, failure, success, cancelled. " +
-              "Omit to see all statuses.",
+              "Filter by status: queued/in_progress/completed/failure/success/cancelled. Omit for all.",
           },
           limit: {
             type: "integer",
-            description:
-              "Maximum number of runs to return (default: 10, max: 50)",
+            description: "Max runs to return (default: 10, max: 50)",
           },
         },
         additionalProperties: false as const,

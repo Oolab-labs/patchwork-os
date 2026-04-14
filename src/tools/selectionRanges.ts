@@ -24,15 +24,15 @@ export function createSelectionRangesTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           line: {
             type: "integer" as const,
-            description: "1-based line number",
+            description: "Line number (1-based)",
           },
           column: {
             type: "integer" as const,
-            description: "1-based column number",
+            description: "Column (1-based)",
           },
         },
         required: ["filePath", "line", "column"],

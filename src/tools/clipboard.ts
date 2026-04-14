@@ -161,7 +161,7 @@ export function createWriteClipboardTool(extensionClient: ExtensionClient) {
         properties: {
           text: {
             type: "string" as const,
-            description: "Text to write to the clipboard",
+            description: "Text to write to clipboard",
           },
         },
         additionalProperties: false as const,

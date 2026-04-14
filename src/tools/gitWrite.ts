@@ -49,7 +49,7 @@ export function createGitAddTool(workspace: string) {
             type: "array",
             items: { type: "string" },
             description:
-              "File paths to stage (absolute or workspace-relative). If omitted, stages all modified tracked files.",
+              "Paths to stage (absolute or workspace-relative). Omit to stage all modified tracked files.",
           },
           addUntracked: {
             type: "boolean",
@@ -140,7 +140,7 @@ export function createGitCommitTool(
             type: "array",
             items: { type: "string" },
             description:
-              "Files to stage before committing. If omitted, commits whatever is already staged.",
+              "Files to stage before committing. Omit to commit already-staged changes.",
           },
           addAll: {
             type: "boolean",
@@ -292,13 +292,12 @@ export function createGitCheckoutTool(
           },
           create: {
             type: "boolean",
-            description:
-              "Create the branch if it does not exist. Default: false.",
+            description: "Create branch if it doesn't exist. Default: false.",
           },
           base: {
             type: "string",
             description:
-              "Base branch or commit to create from (only used when create: true). Defaults to HEAD.",
+              "Base branch or commit to create from (only when create: true). Defaults to HEAD.",
           },
         },
         required: ["branch"],

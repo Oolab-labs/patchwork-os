@@ -32,12 +32,11 @@ export function createDetectUnusedCodeTool(
           includePatterns: {
             type: "array",
             items: { type: "string" },
-            description:
-              "Reserved for future use — not yet applied to filter results. Pass any value; it is accepted but ignored.",
+            description: "Reserved for future use — accepted but ignored.",
           },
           maxResults: {
             type: "number",
-            description: "Max number of unused symbols to return (default 50)",
+            description: "Max unused symbols to return (default: 50)",
           },
         },
         additionalProperties: false as const,

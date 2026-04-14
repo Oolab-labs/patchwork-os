@@ -57,7 +57,7 @@ export function createOrganizeImportsTool(
           filePath: {
             type: "string",
             description:
-              "Path to the file to organize imports in (relative to workspace or absolute)",
+              "File to organize imports in (relative or absolute path)",
           },
         },
         required: ["filePath"],

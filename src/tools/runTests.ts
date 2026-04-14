@@ -116,13 +116,12 @@ export function createRunTestsTool(
         properties: {
           filter: {
             type: "string",
-            description:
-              "Test name pattern or file path to filter which tests run",
+            description: "Test name pattern or file path to filter tests",
           },
           runner: {
             type: "string",
             description:
-              "Specific runner to use (e.g., 'vitest', 'jest', 'pytest', 'cargo-test', 'go-test'). Default: all detected",
+              "Runner to use (vitest/jest/pytest/cargo-test/go-test). Default: all detected",
           },
           noCache: {
             type: "boolean",
@@ -131,7 +130,7 @@ export function createRunTestsTool(
           timeoutMs: {
             type: "integer",
             description:
-              "Subprocess timeout in milliseconds. Default: 120000 (2 min). Increase for large test suites.",
+              "Subprocess timeout in ms. Default: 120000 (2 min). Increase for large suites.",
           },
         },
         additionalProperties: false as const,

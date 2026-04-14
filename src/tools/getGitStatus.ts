@@ -20,7 +20,7 @@ export function createGetGitStatusTool(workspace: string) {
           filePath: {
             type: "string",
             description:
-              "Optional absolute or workspace-relative file path to filter status for",
+              "Filter status to a single file (absolute or workspace-relative)",
           },
         },
       },

@@ -223,8 +223,7 @@ export function createGetTerminalOutputTool(
           },
           lines: {
             type: "integer" as const,
-            description:
-              "Number of recent lines to retrieve (default 100, max 5000)",
+            description: "Recent lines to retrieve (default 100, max 5000)",
           },
         },
         additionalProperties: false as const,
@@ -294,19 +293,16 @@ export function createCreateTerminalTool(
           },
           cwd: {
             type: "string" as const,
-            description:
-              "Working directory for the terminal (must be within workspace)",
+            description: "Working dir for terminal (must be within workspace)",
           },
           env: {
             type: "object" as const,
-            description:
-              "Additional environment variables (key-value pairs, max 50 entries)",
+            description: "Extra env vars (key-value pairs, max 50 entries)",
             additionalProperties: { type: "string" as const },
           },
           show: {
             type: "boolean" as const,
-            description:
-              "Show the terminal panel after creation (default: true)",
+            description: "Show terminal panel after creation (default: true)",
           },
         },
         additionalProperties: false as const,
@@ -408,23 +404,21 @@ export function createWaitForTerminalOutputTool(
         properties: {
           pattern: {
             type: "string" as const,
-            description:
-              "JavaScript regex pattern to match against terminal output lines",
+            description: "JS regex to match against terminal output lines",
           },
           name: {
             type: "string" as const,
             description:
-              "Terminal name to watch (from listTerminals). Uses active terminal if omitted.",
+              "Terminal name (from listTerminals). Uses active if omitted.",
           },
           index: {
             type: "integer" as const,
             description:
-              "Terminal index (0-based) from listTerminals. Used if name is not specified.",
+              "Terminal index (0-based) from listTerminals. Used if name omitted.",
           },
           timeout: {
             type: "integer" as const,
-            description:
-              "Seconds to wait before giving up (default: 30, max: 300)",
+            description: "Seconds to wait (default: 30, max: 300)",
           },
         },
         additionalProperties: false as const,
@@ -520,28 +514,26 @@ export function createRunInTerminalTool(
         properties: {
           command: {
             type: "string" as const,
-            description:
-              "The shell command to execute (no shell metacharacters or newlines)",
+            description: "Shell command to run (no metacharacters or newlines)",
           },
           name: {
             type: "string" as const,
             description:
-              "Terminal name to run in (from listTerminals). Uses active terminal if omitted.",
+              "Terminal name (from listTerminals). Uses active if omitted.",
           },
           index: {
             type: "integer" as const,
             description:
-              "Terminal index (0-based) from listTerminals. Used if name is not specified.",
+              "Terminal index (0-based) from listTerminals. Used if name omitted.",
           },
           timeout: {
             type: "integer" as const,
             description:
-              "Seconds to wait for command completion (default: 30, max: 300)",
+              "Seconds to wait for completion (default: 30, max: 300)",
           },
           show: {
             type: "boolean" as const,
-            description:
-              "Focus the terminal panel while running (default: true)",
+            description: "Focus terminal panel while running (default: true)",
           },
         },
         additionalProperties: false as const,
@@ -739,7 +731,7 @@ export function createSendTerminalCommandTool(
           isCommand: {
             type: "boolean" as const,
             description:
-              "Set to false when sending a short stdin response to an interactive prompt (e.g. answering a name prompt). Limited to 512 chars and must not contain shell metacharacters. Default: true.",
+              "False for short stdin responses to interactive prompts (max 512 chars, no shell metacharacters). Default: true.",
           },
         },
         additionalProperties: false as const,

@@ -64,8 +64,7 @@ export function createFormatDocumentTool(
         properties: {
           filePath: {
             type: "string",
-            description:
-              "Path to the file to format (relative to workspace or absolute)",
+            description: "File to format (relative or absolute path)",
           },
         },
         required: ["filePath"],

@@ -96,8 +96,7 @@ export function createSendHttpRequestTool(options?: {
           },
           url: {
             type: "string",
-            description:
-              "Full URL including protocol (must be http:// or https://)",
+            description: "Full URL (http:// or https://)",
           },
           headers: {
             type: "object",
@@ -107,13 +106,11 @@ export function createSendHttpRequestTool(options?: {
           body: {
             type: "string",
             description:
-              "Optional request body. For JSON, pass a serialized JSON string and set " +
-              "Content-Type: application/json in headers. Ignored for GET and HEAD.",
+              "Request body. JSON: pass serialized string + Content-Type: application/json. Ignored for GET/HEAD.",
           },
           timeoutMs: {
             type: "integer",
-            description:
-              "Request timeout in milliseconds. Default: 30000, max: 120000.",
+            description: "Timeout in ms (default: 30000, max: 120000)",
           },
           maxResponseBytes: {
             type: "integer",
@@ -121,8 +118,7 @@ export function createSendHttpRequestTool(options?: {
           },
           followRedirects: {
             type: "boolean",
-            description:
-              "Follow HTTP redirects (capped at 10 hops). Default: true.",
+            description: "Follow HTTP redirects (max 10 hops, default: true)",
           },
         },
       },
@@ -235,7 +231,7 @@ export function createSendHttpRequestTool(options?: {
       // because we use the original hostname (before IP substitution).
       // Written as lowercase "host" to match the normalized user headers above.
       if (resolvedIp !== null) {
-        headers["host"] = parsedUrl.hostname;
+        headers.host = parsedUrl.hostname;
       }
 
       const body = optionalString(args, "body", 1024 * 1024);
@@ -336,7 +332,7 @@ export function createSendHttpRequestTool(options?: {
               : redirectIp;
             // Preserve original Host for virtual hosting / SNI
             // Use lowercase "host" to stay consistent with the normalized headers above.
-            headers["host"] = new URL(location, currentUrl).hostname;
+            headers.host = new URL(location, currentUrl).hostname;
           } catch {
             // DNS failed — use un-pinned URL; fetch will fail naturally
           }

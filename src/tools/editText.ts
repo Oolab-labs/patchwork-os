@@ -196,8 +196,7 @@ export function createEditTextTool(
                 },
                 endColumn: {
                   type: "integer" as const,
-                  description:
-                    "End column number (1-based, for delete/replace)",
+                  description: "End column (1-based, for delete/replace)",
                 },
                 text: {
                   type: "string" as const,

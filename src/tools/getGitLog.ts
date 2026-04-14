@@ -20,13 +20,12 @@ export function createGetGitLogTool(workspace: string) {
         properties: {
           maxEntries: {
             type: "integer",
-            description:
-              "Maximum number of log entries to return. Default: 20, max: 100",
+            description: "Max log entries to return (default: 20, max: 100)",
           },
           filePath: {
             type: "string",
             description:
-              "Optional absolute or workspace-relative file path to filter log entries for",
+              "Filter log to a single file (absolute or workspace-relative)",
           },
         },
       },

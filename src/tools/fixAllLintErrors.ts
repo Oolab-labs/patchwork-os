@@ -52,8 +52,7 @@ export function createFixAllLintErrorsTool(
         properties: {
           filePath: {
             type: "string",
-            description:
-              "Path to the file to fix (relative to workspace or absolute)",
+            description: "File to fix (relative or absolute path)",
           },
         },
         required: ["filePath"],

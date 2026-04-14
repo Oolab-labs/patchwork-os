@@ -24,7 +24,7 @@ export function createGetSemanticTokensTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Absolute or workspace-relative path",
           },
           startLine: {
             type: "integer" as const,
@@ -38,8 +38,7 @@ export function createGetSemanticTokensTool(
           },
           maxTokens: {
             type: "integer" as const,
-            description:
-              "Maximum number of tokens to return (default 2000, max 5000)",
+            description: "Max tokens to return (default: 2000, max: 5000)",
             minimum: 1,
             maximum: 5000,
           },

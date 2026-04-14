@@ -31,7 +31,7 @@ export function createCreateFileTool(
           filePath: {
             type: "string" as const,
             description:
-              "Absolute or workspace-relative path for the new file or directory",
+              "Absolute or workspace-relative path for new file or directory",
           },
           content: {
             type: "string" as const,
@@ -48,8 +48,7 @@ export function createCreateFileTool(
           },
           openAfterCreate: {
             type: "boolean" as const,
-            description:
-              "Open the file in editor after creation (default: true)",
+            description: "Open file in editor after creation (default: true)",
           },
         },
         additionalProperties: false as const,
