@@ -8,6 +8,11 @@ Set Padding 16
 Set TypingSpeed 45ms
 Set Framerate 20
 
+# Clean prompt — no personal info
+Type "export PS1='$ '"
+Enter
+Sleep 150ms
+
 # Install
 Type "npm install -g claude-ide-bridge"
 Enter
