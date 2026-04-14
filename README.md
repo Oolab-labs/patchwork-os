@@ -41,6 +41,8 @@ cd /your/project
 claude-ide-bridge init
 ```
 
+> **Updating?** Use `npm install -g claude-ide-bridge@latest` instead of `npm update -g` — `update` may lag behind the registry cache by several minutes after a new release.
+
 `init` does four things:
 1. Installs the companion VS Code/Windsurf/Cursor extension
 2. Appends a `## Claude IDE Bridge` section to your `CLAUDE.md` (creating it if needed)
