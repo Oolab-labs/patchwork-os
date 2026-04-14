@@ -416,4 +416,25 @@ describe("getPrompt", () => {
       }
     }
   });
+
+  it("returns messages for review-changes with file arg", () => {
+    const result = getPrompt("review-changes", { file: "src/tools/foo.ts" });
+    expect(result).not.toBeNull();
+    expect(result!.messages.length).toBeGreaterThan(0);
+    expect(result!.messages[0]!.role).toBe("user");
+    const text = result!.messages[0]!.content.text;
+    expect(text).toContain("src/tools/foo.ts");
+    expect(text).toContain("getGitDiff");
+    expect(text).toContain("getDiagnostics");
+    expect(text).toContain("getGitHotspots");
+  });
+
+  it("review-changes returns null when file arg is missing", () => {
+    expect(getPrompt("review-changes", {})).toBeNull();
+  });
+
+  it("review-changes description contains the file name", () => {
+    const result = getPrompt("review-changes", { file: "src/auth.ts" });
+    expect(result!.description).toContain("src/auth.ts");
+  });
 });

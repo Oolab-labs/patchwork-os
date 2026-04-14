@@ -182,3 +182,95 @@ describe("explainSymbol — optional flags", () => {
     ]);
   });
 });
+
+describe("explainSymbol — useMemoryGraph", () => {
+  it("does not include memoryGraph field by default", async () => {
+    const ext = makeMockClient();
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({ filePath: testFile, line: 1, column: 1 }),
+    );
+    expect(result).not.toHaveProperty("memoryGraph");
+  });
+
+  it("includes memoryGraph field when useMemoryGraph=true", async () => {
+    const ext = makeMockClient();
+    ext.getHover.mockResolvedValue({ contents: ["`myFunction`: () => void"] });
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({
+        filePath: testFile,
+        line: 1,
+        column: 1,
+        useMemoryGraph: true,
+      }),
+    );
+    expect(result).toHaveProperty("memoryGraph");
+  });
+
+  it("memoryGraph contains symbolName when hover has readable contents", async () => {
+    const ext = makeMockClient();
+    ext.getHover.mockResolvedValue({
+      contents: ["`createFoo`: (x: number) => Foo"],
+    });
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({
+        filePath: testFile,
+        line: 1,
+        column: 1,
+        useMemoryGraph: true,
+      }),
+    );
+    expect(result.memoryGraph?.symbolName).toBe("createFoo");
+  });
+
+  it("memoryGraph is null when hover returns null and useMemoryGraph=true", async () => {
+    const ext = makeMockClient();
+    ext.getHover.mockResolvedValue(null);
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({
+        filePath: testFile,
+        line: 1,
+        column: 1,
+        useMemoryGraph: true,
+      }),
+    );
+    // null hover → no symbol name → memoryGraph null
+    expect(result.memoryGraph).toBeNull();
+  });
+
+  it("memoryGraph note contains symbol name for graph query", async () => {
+    const ext = makeMockClient();
+    ext.getHover.mockResolvedValue({ contents: ["`runTests` description"] });
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({
+        filePath: testFile,
+        line: 1,
+        column: 1,
+        useMemoryGraph: true,
+      }),
+    );
+    expect(result.memoryGraph?.note).toContain("runTests");
+    expect(result.memoryGraph?.note).toContain("search_graph");
+  });
+
+  it("other fields still populated when useMemoryGraph=true", async () => {
+    const ext = makeMockClient();
+    const tool = createExplainSymbolTool(workspace, ext);
+    const result = parse(
+      await tool.handler({
+        filePath: testFile,
+        line: 1,
+        column: 1,
+        useMemoryGraph: true,
+      }),
+    );
+    expect(result.hover).not.toBeNull();
+    expect(result.definition).not.toBeNull();
+    expect(result.callHierarchy).not.toBeNull();
+    expect(result.references).not.toBeNull();
+  });
+});
