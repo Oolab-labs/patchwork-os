@@ -368,17 +368,22 @@ describe("runCommand", () => {
 
   describe("progress notifications (streaming)", () => {
     it("emits one progress notification per stdout line when progress provided", async () => {
-      // Write a shell script that prints 3 lines
-      const script = path.join(tmpDir, "multiline.sh");
-      fs.writeFileSync(script, "printf 'line1\\nline2\\nline3\\n'", "utf-8");
-      fs.chmodSync(script, 0o755);
+      // Write a file with 3 real newline-separated lines, then cat it.
+      // This avoids shell interpretation — spawn passes args literally,
+      // so printf "line1\nline2\n" would emit the backslash-n literally.
+      const multilineFile = path.join(tmpDir, "multiline.txt");
+      fs.writeFileSync(multilineFile, "line1\nline2\nline3\n", "utf-8");
 
-      const cfg: Config = { ...config, commandAllowlist: ["printf"] };
+      const cfg: Config = { ...config, commandAllowlist: ["cat"] };
       const tool = createRunCommandTool(tmpDir, cfg);
 
-      const calls: Array<{ value: number; total: number; message?: string }> =
+      const calls: Array<{ value: number; total?: number; message?: string }> =
         [];
-      const progressFn = (value: number, total: number, message?: string) => {
+      const progressFn = (
+        value: number,
+        total: number | undefined,
+        message?: string,
+      ) => {
         calls.push({ value, total, message });
       };
 
@@ -388,11 +393,7 @@ describe("runCommand", () => {
           signal?: AbortSignal,
           progress?: typeof progressFn,
         ) => Promise<typeof result>
-      )(
-        { command: "printf", args: ["line1\\nline2\\nline3\\n"] },
-        undefined,
-        progressFn,
-      );
+      )({ command: "cat", args: [multilineFile] }, undefined, progressFn);
 
       const data = parse(result);
       expect(data.exitCode).toBe(0);
@@ -401,7 +402,9 @@ describe("runCommand", () => {
       expect(messages).toContain("line1");
       expect(messages).toContain("line2");
       expect(messages).toContain("line3");
-      // Values increment per line
+      // total is undefined (unknown count), not 0
+      for (const c of calls) expect(c.total).toBeUndefined();
+      // Values increment monotonically
       const values = calls.map((c) => c.value);
       expect(values).toEqual([...values].sort((a, b) => a - b));
     });

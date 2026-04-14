@@ -518,14 +518,16 @@ export async function execSafeStreaming(
     }, timeout);
 
     const abortHandler = () => {
+      clearTimeout(timer);
       proc.kill();
     };
     opts.signal?.addEventListener("abort", abortHandler, { once: true });
 
     proc.stdout.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf-8");
-      stdoutBytes += Buffer.byteLength(text);
+      // Track raw bytes (not re-encoded string) for accurate maxBuffer comparison
+      stdoutBytes += chunk.length;
       if (stdoutBytes <= maxBuffer) {
+        const text = chunk.toString("utf-8");
         stdoutFull += text;
         linePartial += text;
         // Split on newlines and call onLine for each complete line
@@ -535,18 +537,22 @@ export async function execSafeStreaming(
         for (const line of lines) {
           if (line.length > 0) onLine(line);
         }
+      } else {
+        // Overflow: discard further line buffering to avoid flushing a stale
+        // partial line as a complete line on close
+        linePartial = "";
       }
     });
 
     proc.stderr.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf-8");
-      if (stderrBuf.length + text.length <= maxBuffer) stderrBuf += text;
+      if (stderrBuf.length + chunk.length <= maxBuffer)
+        stderrBuf += chunk.toString("utf-8");
     });
 
     proc.on("close", (code) => {
       clearTimeout(timer);
       opts.signal?.removeEventListener("abort", abortHandler);
-      // Flush any remaining partial stdout line
+      // Flush any remaining partial stdout line (only non-empty, non-overflow)
       if (linePartial.length > 0) onLine(linePartial);
       resolve({
         stdout: stdoutFull,
