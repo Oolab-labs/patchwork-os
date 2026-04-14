@@ -4,15 +4,15 @@
 
 Comply with all docs in `/documents/`. Consult before changes:
 
-- **[documents/platform-docs.md](documents/platform-docs.md)** — Full feature reference (130+ tools). Consult before adding/modifying features.
-- **[documents/ICPs.md](documents/ICPs.md)** — Developer personas. Consider impact on all personas.
+- **[documents/platform-docs.md](documents/platform-docs.md)** — Full feature reference (137 tools). Consult before adding/modifying features.
+- **[documents/prompts-reference.md](documents/prompts-reference.md)** — All 72 MCP prompts reference.
 - **[documents/styleguide.md](documents/styleguide.md)** — Code conventions, UI patterns, output formats. Follow for all new tools, handlers, responses.
 - **[documents/roadmap.md](documents/roadmap.md)** — Development direction. Check before exploratory work.
 - **[documents/data-reference.md](documents/data-reference.md)** — Data flows, state mgmt, protocol details. Consult before modifying connection/auth/state logic.
 - **[documents/plugin-authoring.md](documents/plugin-authoring.md)** — Plugin manifest schema, entrypoint API, distribution.
 - **[docs/adr/](docs/adr/)** — Architecture Decision Records. Read before touching version numbers, lock files, error codes, session mgmt, or reconnect logic.
 
-> **Cowork (computer-use) sessions:** MCP bridge tools NOT available inside Cowork. Run `/mcp__bridge__cowork` in regular Desktop chat first to capture IDE context, then switch to Cowork. Cowork runs in isolated git worktree — output won't appear in `git status` on main until merged. (see [docs/cowork-workflow.md](docs/cowork-workflow.md))
+> **Cowork (computer-use) sessions:** MCP bridge tools NOT available inside Cowork. Run `/mcp__bridge__cowork` in regular Desktop chat first to capture IDE context, then switch to Cowork. Cowork runs in isolated git worktree — output won't appear in `git status` on main until merged. (see [docs/cowork.md](docs/cowork.md))
 
 ### CLI Subcommands
 
@@ -387,7 +387,7 @@ Workflow:
 
 **If bridge tools missing inside Cowork:** wrong context. Exit, run prompt in regular chat, return.
 
-Full details: [docs/cowork-workflow.md](docs/cowork-workflow.md)
+Full details: [docs/cowork.md](docs/cowork.md)
 
 **Cowork uses git worktrees:** Cowork operates in isolated git worktree, not main workspace root. Files land in worktree. Always add "write all files to workspace root, not subdirectory" as first instruction in CLAUDE.md when using Cowork with synced workspace. After Cowork finishes, review and merge worktree branch back to main.
 
