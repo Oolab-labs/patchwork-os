@@ -14,6 +14,7 @@ export function createGetToolCapabilitiesTool(
       description:
         "Available CLI tools, ext connection state, and which features are functional vs stub-only.",
       annotations: { readOnlyHint: true },
+      cache_control: { type: "ephemeral" as const },
       inputSchema: {
         type: "object" as const,
         properties: {},

@@ -163,6 +163,11 @@ export function createGetDiagnosticsTool(
             type: "number",
             description: "Max diagnostics to return (default: 100, max: 2000)",
           },
+          topN: {
+            type: "number",
+            description:
+              "After filtering, keep only the N highest-severity diagnostics. Sets truncated:true if result was reduced.",
+          },
         },
       },
       outputSchema: {
@@ -218,6 +223,10 @@ export function createGetDiagnosticsTool(
         typeof args.maxResults === "number"
           ? Math.min(Math.max(1, Math.floor(args.maxResults)), 2000)
           : 100;
+      const topN =
+        typeof args.topN === "number" && args.topN > 0
+          ? Math.floor(args.topN)
+          : undefined;
 
       const SEVERITY_RANK: Record<string, number> = {
         error: 3,
@@ -225,6 +234,25 @@ export function createGetDiagnosticsTool(
         information: 1,
         hint: 0,
       };
+
+      function applyTopN(diags: unknown[]): {
+        diags: unknown[];
+        topNTruncated: boolean;
+      } {
+        if (topN === undefined || topN >= diags.length) {
+          return { diags, topNTruncated: false };
+        }
+        const sorted = [...diags].sort((a, b) => {
+          const ra =
+            SEVERITY_RANK[(a as Record<string, unknown>).severity as string] ??
+            0;
+          const rb =
+            SEVERITY_RANK[(b as Record<string, unknown>).severity as string] ??
+            0;
+          return rb - ra;
+        });
+        return { diags: sorted.slice(0, topN), topNTruncated: true };
+      }
       const minRank =
         severityFilter !== undefined
           ? (SEVERITY_RANK[severityFilter] ?? 0)
@@ -304,14 +332,17 @@ export function createGetDiagnosticsTool(
               return d;
             });
             const filtered = applyFilters(sanitized);
+            const { diags: topNDiags, topNTruncated } = applyTopN(filtered);
             return successStructuredLarge({
               available: true,
               source: "extension",
               linters: ["vscode-lsp"],
               linterErrors: {},
-              diagnostics: filtered,
+              diagnostics: topNDiags,
               ...(severityFilter ? { severityFilter } : {}),
-              ...(extTruncated || filtered.length < extDiagsArr.length
+              ...(extTruncated ||
+              filtered.length < extDiagsArr.length ||
+              topNTruncated
                 ? {
                     truncated: true,
                     totalBeforeFilter: extDiagsArr.length,
@@ -400,15 +431,18 @@ export function createGetDiagnosticsTool(
         if (err) errors[l.name] = err;
       }
 
+      const { diags: topNDiags, topNTruncated } = applyTopN(
+        filteredDiags as unknown[],
+      );
       return successStructuredLarge({
         available: true,
         source: "cli",
         linters: availableLinters.map((l) => l.name),
         linterErrors: errors,
         summary,
-        diagnostics: filteredDiags,
+        diagnostics: topNDiags,
         ...(severityFilter ? { severityFilter } : {}),
-        ...(filteredDiags.length < totalBeforeFilter
+        ...(filteredDiags.length < totalBeforeFilter || topNTruncated
           ? { truncated: true, totalBeforeFilter }
           : {}),
       });

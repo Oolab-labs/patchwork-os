@@ -59,6 +59,8 @@ export interface ToolSchema {
   extensionRequired?: boolean;
   /** Override the global 60s tool timeout for this specific tool (milliseconds). */
   timeoutMs?: number;
+  /** Prompt caching hint passed through to wire schema. */
+  cache_control?: { type: "ephemeral" };
 }
 
 export type ProgressFn = (
@@ -120,6 +122,8 @@ export class McpTransport {
   private callCount = 0;
   private errorCount = 0;
   private generation = 0; // incremented on each attach; stale handlers check this
+  private readonly sessionStartedAt = Date.now();
+  private readonly resultSizeTracker = new Map<string, number>();
   // Ring buffer for O(1) sliding-window rate limiting — avoids array scan + splice
   private rateLimitBuf = new Float64Array(RATE_LIMIT_MAX); // initialised to 0 (epoch 1970, always outside window)
   private rateLimitHead = 0; // index of oldest entry / next write position
@@ -440,13 +444,29 @@ export class McpTransport {
     errorCount: number;
     activeToolCalls: number;
     inFlightTools: string[];
+    startedAt: number;
   } {
     return {
       callCount: this.callCount,
       errorCount: this.errorCount,
       activeToolCalls: this.activeToolCalls,
       inFlightTools: [...this.inFlightToolNames.values()],
+      startedAt: this.sessionStartedAt,
     };
+  }
+
+  /** Returns the byte length of the wire-schema cache, or null if not yet built. */
+  getWireSchemaCacheSize(): number | null {
+    if (this.wireSchemaCache === null) return null;
+    return JSON.stringify(this.wireSchemaCache).length;
+  }
+
+  /** Top-N tools by largest result seen this session (descending by sizeChars). */
+  getTopResultSizes(n = 10): Array<{ tool: string; sizeChars: number }> {
+    return [...this.resultSizeTracker.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, n)
+      .map(([tool, sizeChars]) => ({ tool, sizeChars }));
   }
 
   attach(ws: WebSocket): void {
@@ -719,7 +739,8 @@ export class McpTransport {
             if (!this.wireSchemaCache) {
               this.wireSchemaCache = Array.from(this.tools.values()).map(
                 (t) => {
-                  // Strip internal-only fields before sending on the wire
+                  // Strip internal-only fields before sending on the wire.
+                  // cache_control is intentionally NOT stripped — it passes through to clients.
                   const {
                     extensionRequired: _ext,
                     timeoutMs: _timeout,
@@ -1115,6 +1136,14 @@ export class McpTransport {
                         0,
                       )
                     : 0;
+                  // Track largest result seen per tool for getSessionUsage reporting.
+                  this.resultSizeTracker.set(
+                    params.name,
+                    Math.max(
+                      this.resultSizeTracker.get(params.name) ?? 0,
+                      totalContentChars,
+                    ),
+                  );
                   const resultWithMeta =
                     totalContentChars > META_SIZE_HINT_THRESHOLD
                       ? {

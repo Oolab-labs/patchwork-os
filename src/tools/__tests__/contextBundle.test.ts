@@ -180,4 +180,85 @@ describe("createContextBundleTool", () => {
     expect(content.diagnostics).toHaveLength(1);
     expect(content.diagnosticsTruncated).toBeUndefined();
   });
+
+  describe("summarize: true", () => {
+    it("includes diagnosticSummary field", async () => {
+      const client = makeExtensionClient({
+        diagnostics: [
+          {
+            severity: "error",
+            message: "Type error",
+            file: "/workspace/src/auth.ts",
+          },
+          {
+            severity: "warning",
+            message: "Unused var",
+            file: "/workspace/src/utils.ts",
+          },
+        ],
+      });
+      const tool = createContextBundleTool("/workspace", client as never);
+      const result = await tool.handler({ summarize: true });
+      const content = JSON.parse(
+        (result.content as Array<{ text: string }>)[0]!.text,
+      );
+      expect(typeof content.diagnosticSummary).toBe("string");
+      expect(content.diagnosticSummary).toContain("auth.ts");
+    });
+
+    it("caps diagnostics to 5", async () => {
+      const manyDiags = Array.from({ length: 10 }, (_, i) => ({
+        severity: i % 2 === 0 ? "error" : "warning",
+        message: `Diag ${i}`,
+        file: `/workspace/src/file${i}.ts`,
+      }));
+      const client = makeExtensionClient({ diagnostics: manyDiags });
+      const tool = createContextBundleTool("/workspace", client as never);
+      const result = await tool.handler({ summarize: true });
+      const content = JSON.parse(
+        (result.content as Array<{ text: string }>)[0]!.text,
+      );
+      expect(content.diagnostics.length).toBeLessThanOrEqual(5);
+    });
+
+    it("caps activeFileContent to 20 lines when there are errors", async () => {
+      const lines = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`);
+      const longContent = lines.join("\n");
+      const client = makeExtensionClient({
+        fileContent: longContent,
+        diagnostics: [
+          {
+            severity: "error",
+            message: "Type error",
+            file: "/workspace/src/app.ts",
+            line: 50,
+          },
+        ],
+      });
+      const tool = createContextBundleTool("/workspace", client as never);
+      const result = await tool.handler({ summarize: true });
+      const content = JSON.parse(
+        (result.content as Array<{ text: string }>)[0]!.text,
+      );
+      const resultLines = (content.activeFileContent as string).split("\n");
+      expect(resultLines.length).toBeLessThanOrEqual(20);
+    });
+
+    it("defaults to false — no behavior change without param", async () => {
+      const client = makeExtensionClient({
+        diagnostics: Array.from({ length: 10 }, (_, i) => ({
+          severity: "error",
+          message: `Err ${i}`,
+          file: "/workspace/src/app.ts",
+        })),
+      });
+      const tool = createContextBundleTool("/workspace", client as never);
+      const result = await tool.handler({});
+      const content = JSON.parse(
+        (result.content as Array<{ text: string }>)[0]!.text,
+      );
+      expect(content.diagnosticSummary).toBeUndefined();
+      expect(content.diagnostics.length).toBe(10);
+    });
+  });
 });

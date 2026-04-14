@@ -1179,12 +1179,13 @@ describe("McpTransport", () => {
 
   it("getStats() returns zero counters on a fresh transport", async () => {
     await setup("stats-zero");
-    expect(transport?.getStats()).toEqual({
+    expect(transport?.getStats()).toMatchObject({
       callCount: 0,
       errorCount: 0,
       activeToolCalls: 0,
       inFlightTools: [],
     });
+    expect(typeof transport?.getStats().startedAt).toBe("number");
   });
 
   it("getStats().callCount increments on a successful tool call", async () => {
@@ -1207,7 +1208,7 @@ describe("McpTransport", () => {
     });
     await waitFor(ws, (m) => m.id === 1);
 
-    expect(transport?.getStats()).toEqual({
+    expect(transport?.getStats()).toMatchObject({
       callCount: 1,
       errorCount: 0,
       activeToolCalls: 0,
@@ -1237,7 +1238,7 @@ describe("McpTransport", () => {
     });
     await waitFor(ws, (m) => m.id === 1);
 
-    expect(transport?.getStats()).toEqual({
+    expect(transport?.getStats()).toMatchObject({
       callCount: 1,
       errorCount: 1,
       activeToolCalls: 0,
@@ -1267,7 +1268,7 @@ describe("McpTransport", () => {
 
     transport?.detach();
     // Counters must NOT be reset by detach()
-    expect(transport?.getStats()).toEqual({
+    expect(transport?.getStats()).toMatchObject({
       callCount: 1,
       errorCount: 0,
       activeToolCalls: 0,

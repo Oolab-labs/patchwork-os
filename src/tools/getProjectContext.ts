@@ -97,6 +97,7 @@ export function createGetProjectContextTool(
       description:
         "Cached session-start brief: active file, errors, recent commits, modules. Skips cold-start re-exploration.",
       annotations: { readOnlyHint: true },
+      cache_control: { type: "ephemeral" as const },
       inputSchema: {
         type: "object" as const,
         additionalProperties: false as const,

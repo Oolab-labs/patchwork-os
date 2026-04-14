@@ -43,7 +43,8 @@ export function createSearchWorkspaceTool(
           },
           maxResults: {
             type: "integer",
-            description: "Max results to return (default: 100, max: 200)",
+            description:
+              "Max results to return (default: 50, max: 200; pass higher value explicitly for broader searches)",
             minimum: 1,
             maximum: 200,
           },
@@ -98,7 +99,7 @@ export function createSearchWorkspaceTool(
       const fileGlob = optionalString(args, "fileGlob", 200);
       const isRegex = optionalBool(args, "isRegex") ?? false;
       const caseSensitive = optionalBool(args, "caseSensitive") ?? true;
-      const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 100;
+      const maxResults = optionalInt(args, "maxResults", 1, 200) ?? 50;
       const contextLines = optionalInt(args, "contextLines", 0, 5) ?? 0;
 
       // Reject patterns with nested quantifiers — these cause catastrophic backtracking (ReDoS)
