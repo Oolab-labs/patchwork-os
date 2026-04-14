@@ -356,6 +356,10 @@ export const env = {
   },
 };
 
+export const extensions = {
+  getExtension: vi.fn((_id: string) => undefined as any),
+};
+
 export const version = "1.85.0";
 
 // ── Test helpers ──────────────────────────────────────────────
