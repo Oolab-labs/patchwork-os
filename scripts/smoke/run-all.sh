@@ -31,8 +31,9 @@ run_cat() {
 cleanup() {
   if [[ -n "${BRIDGE_PID:-}" ]]; then
     kill "$BRIDGE_PID" 2>/dev/null || true
+    sleep 0.3 2>/dev/null || true  # let bridge finish lock-file removal
   fi
-  rm -rf "$TMPWS" "$CLAUDE_CFG"
+  rm -rf "$TMPWS" "$CLAUDE_CFG" 2>/dev/null || true
 }
 trap cleanup EXIT
 
