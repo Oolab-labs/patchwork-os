@@ -28,6 +28,7 @@ jobs:
       - name: Build bridge
         run: npm run build
       - name: Bump extension version
+        if: github.event_name == 'workflow_dispatch'
         working-directory: vscode-extension
         run: |
           git config user.name "github-actions[bot]"
@@ -36,6 +37,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "VERSION=$VERSION" >> $GITHUB_ENV
       - name: Commit and tag extension version bump
+        if: github.event_name == 'workflow_dispatch'
         env:
           HUSKY: "0"
         run: |
@@ -44,6 +46,12 @@ jobs:
           git tag "ext-v${{ env.VERSION }}"
           git push origin main
           git push origin "ext-v${{ env.VERSION }}"
+      - name: Set VERSION from package.json (tag trigger)
+        if: github.event_name == 'push'
+        working-directory: vscode-extension
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
       - name: Install extension deps
         working-directory: vscode-extension
         run: npm ci
