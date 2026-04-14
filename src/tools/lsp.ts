@@ -51,8 +51,15 @@ export async function lspWithRetry<T>(
   }
 
   // Retry attempts with increasing backoff
+  const startedAt = Date.now();
   for (const delayMs of LSP_RETRY_DELAYS_MS) {
     if (signal?.aborted) return "timeout";
+    // Cap sleep to remaining signal deadline so we never wait longer than the caller allows.
+    const elapsed = Date.now() - startedAt;
+    const totalBudgetMs = LSP_RETRY_DELAYS_MS.reduce((a, b) => a + b, 0);
+    const remainingMs = totalBudgetMs - elapsed;
+    const sleepMs = Math.min(delayMs, Math.max(0, remainingMs));
+    if (sleepMs <= 0) return "timeout";
     await new Promise<void>((resolve, reject) => {
       const onAbort = () => {
         clearTimeout(timer);
@@ -61,7 +68,7 @@ export async function lspWithRetry<T>(
       const timer = setTimeout(() => {
         signal?.removeEventListener("abort", onAbort);
         resolve();
-      }, delayMs);
+      }, sleepMs);
       if (signal) {
         signal.addEventListener("abort", onAbort, { once: true });
       }
