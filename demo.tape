@@ -1,4 +1,4 @@
-# claude-ide-bridge demo
+# claude-ide-bridge demo — all output is echoed, no real commands run
 Output demo.gif
 Set FontSize 13
 Set Width 780
@@ -8,51 +8,51 @@ Set Padding 16
 Set TypingSpeed 45ms
 Set Framerate 20
 
-# Clean prompt — no personal info
+# Clean prompt
 Type "export PS1='$ '"
 Enter
-Sleep 150ms
+Sleep 100ms
 
-# Install
+# Step 1: install
 Type "npm install -g claude-ide-bridge"
 Enter
-Sleep 150ms
-Type "# added 1 package in 3s"
+Sleep 100ms
+Type "echo 'added 1 package in 3s'"
 Enter
 Sleep 600ms
 
-# Init
-Type "claude-ide-bridge init"
+# Step 2: init — use : (no-op) so the command name appears but nothing runs
+Type ": claude-ide-bridge init"
 Enter
-Sleep 150ms
-Type "# ✓ Extension installed  ✓ CLAUDE.md updated"
+Sleep 100ms
+Type "echo '✓ Extension installed'"
 Enter
-Sleep 150ms
-Type "# ✓ Registered as global MCP server"
+Sleep 100ms
+Type "echo '✓ CLAUDE.md updated'"
+Enter
+Sleep 100ms
+Type "echo '✓ Registered as global MCP server'"
 Enter
 Sleep 600ms
 
-# Start
-Type "claude-ide-bridge --watch &"
+# Step 3: bridge start — same trick
+Type ": claude-ide-bridge --watch"
 Enter
-Sleep 150ms
-Type "# [bridge] listening on ws://127.0.0.1:47000"
+Sleep 100ms
+Type "echo '[bridge] listening on ws://127.0.0.1:47000'"
 Enter
 Sleep 500ms
 
-# Show tools
-Type "# Claude now has live IDE context:"
+# Step 4: tool calls Claude can now make
+Type "echo 'getDiagnostics  → 0 errors, 2 warnings'"
 Enter
 Sleep 150ms
-Type "# getDiagnostics → 0 errors"
+Type "echo 'goToDefinition  → src/activityLog.ts:44'"
 Enter
 Sleep 150ms
-Type "# goToDefinition → src/activityLog.ts:44"
+Type "echo 'runTests        → 2211 passed in 68s'"
 Enter
 Sleep 150ms
-Type "# runTests → 2211 passed"
-Enter
-Sleep 150ms
-Type "# gitCommit → pushed to main"
+Type "echo 'gitCommit       → feat: add percentiles  [main abc1234]'"
 Enter
 Sleep 1200ms
