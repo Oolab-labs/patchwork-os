@@ -35,12 +35,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Build
+        run: npm run build
+
       - name: Test
         run: npm test -- --reporter=dot
         timeout-minutes: 5
-
-      - name: Build
-        run: npm run build
 
       - name: Bump version
         run: |
