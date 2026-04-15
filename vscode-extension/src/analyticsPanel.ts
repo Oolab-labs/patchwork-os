@@ -23,23 +23,47 @@ export interface AnalyticsReport {
   hint?: string;
 }
 
-const PRESETS: Record<string, string> = {
-  fixErrors:
-    "Fix all errors and warnings shown in the diagnostics panel. Run tests after to confirm.",
-  refactorFile:
-    "Refactor the active file for clarity and maintainability. Keep behaviour identical.",
-  addTests:
-    "Add comprehensive unit tests for the active file. Follow existing test patterns in the project.",
-};
+const PRESETS: Record<string, { label: string; icon: string; prompt: string }> =
+  {
+    fixErrors: {
+      label: "Fix all errors",
+      icon: "🔧",
+      prompt:
+        "Call getDiagnostics to get all current errors and warnings. Fix every error precisely — do not break working code. Run tests after fixing to confirm nothing regressed.",
+    },
+    refactorFile: {
+      label: "Refactor this file",
+      icon: "♻",
+      prompt:
+        "Refactor the active file for clarity, readability, and maintainability. Keep all existing behaviour identical. Use getBufferContent to read the current file before making changes.",
+    },
+    addTests: {
+      label: "Add tests",
+      icon: "✓",
+      prompt:
+        "Write comprehensive unit tests for the functions in the active file. Use getBufferContent to read the file. Match the existing test style and patterns in the project. Cover edge cases.",
+    },
+    explainCode: {
+      label: "Explain this file",
+      icon: "💡",
+      prompt:
+        "Read the active file with getBufferContent and explain what it does: its purpose, key functions, data flow, and any non-obvious patterns. Keep it concise and technical.",
+    },
+    optimizePerf: {
+      label: "Optimize performance",
+      icon: "⚡",
+      prompt:
+        "Analyse the active file for performance issues: unnecessary re-renders, expensive loops, blocking I/O, memory leaks. Use getBufferContent to read it, then propose and apply the most impactful fixes.",
+    },
+  };
 
 export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = "claudeIdeBridge.analyticsView";
-
-  private _view?: vscode.WebviewView;
   private _refreshTimer?: ReturnType<typeof setInterval>;
+  _view?: vscode.WebviewView;
 
   constructor(
-    private readonly extensionUri: vscode.Uri,
+    readonly _extensionUri: vscode.Uri,
     private readonly getReport: () => Promise<AnalyticsReport | null>,
     private readonly _getLockFile: () => Promise<LockFileData | null>,
     private readonly vscodeApi: typeof import("vscode"),
@@ -82,7 +106,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     };
 
     void refresh();
-    this._refreshTimer = setInterval(() => void refresh(), 30_000);
+    this._refreshTimer = setInterval(() => void refresh(), 15_000);
 
     webviewView.onDidDispose(() => {
       if (this._refreshTimer) clearInterval(this._refreshTimer);
@@ -358,23 +382,25 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     const vscode = this.vscodeApi;
 
     const description = await vscode.window.showInputBox({
-      prompt: "What should Claude do?",
-      placeHolder: "Describe the task…",
+      title: "Start Claude Task",
+      prompt: "Describe what you want Claude to work on",
+      placeHolder:
+        "e.g. Fix the auth flow bug, implement the payment feature, add tests for UserService…",
       ignoreFocusOut: true,
     });
 
-    if (!description) return;
+    if (!description?.trim()) return;
 
-    await this._launchWithDescription(description, webviewView);
+    await this._launchWithDescription(description.trim(), webviewView);
   }
 
   private async _handlePreset(
     view: vscode.WebviewView,
     key: string,
   ): Promise<void> {
-    const description = PRESETS[key];
-    if (!description) return;
-    await this._launchWithDescription(description, view);
+    const preset = PRESETS[key];
+    if (!preset) return;
+    await this._launchWithDescription(preset.prompt, view);
   }
 
   private async _handleResumeTask(
@@ -465,113 +491,236 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     handoffPreview: string | null,
   ): string {
     if (!report) {
-      return `<html><body style="font-family:var(--vscode-font-family);padding:8px;color:var(--vscode-foreground)"><p>Bridge not connected.</p></body></html>`;
+      return `<!DOCTYPE html><html><body style="font-family:var(--vscode-font-family);padding:8px;color:var(--vscode-foreground)">
+<p style="color:var(--vscode-descriptionForeground);font-size:12px">Bridge not connected.</p>
+<p style="font-size:11px">Start the bridge with:<br><code>claude-ide-bridge --watch --full</code></p>
+</body></html>`;
     }
 
-    const toolRows = report.topTools
-      .slice(0, 8)
-      .map(
-        (t) =>
-          `<tr><td>${_escHtml(t.tool)}</td><td>${t.calls}</td><td>${t.errors}</td><td>${t.avgMs}ms</td></tr>`,
-      )
-      .join("");
+    // Active tasks (running or pending) shown prominently at top
+    const activeTasks = report.recentAutomationTasks.filter((t) =>
+      ["running", "pending"].includes(t.status),
+    );
+    const activeTasksHtml = activeTasks.length
+      ? activeTasks
+          .map(
+            (t) => `<div class="active-task">
+  <span class="spinner">⟳</span>
+  <span class="active-task-label">${_escHtml(t.triggerSource ?? "manual")} — ${_escHtml(t.status)}</span>
+  <button class="resume-btn" data-task-id="${_escHtml(t.id)}">↩ Resume</button>
+</div>`,
+          )
+          .join("")
+      : "";
 
-    const taskItems = report.recentAutomationTasks
+    // Recent completed tasks (last 5)
+    const recentTasks = report.recentAutomationTasks
+      .filter((t) => !["running", "pending"].includes(t.status))
       .slice(0, 5)
       .map((t) => {
-        const statusClass = ["done", "error", "running", "pending"].includes(
-          t.status,
-        )
-          ? t.status
-          : "pending";
-        const promptPreview = t.prompt
-          ? _escHtml(t.prompt.slice(0, 60)) + (t.prompt.length > 60 ? "…" : "")
-          : "(no prompt)";
+        const statusClass = t.status === "done" ? "done" : "error";
+        const age = _relativeTime(t.createdAt);
+        const dur =
+          t.durationMs !== undefined
+            ? ` · ${Math.round(t.durationMs / 1000)}s`
+            : "";
         return `<div class="task-item">
   <div class="task-meta">
     <span class="task-source">${_escHtml(t.triggerSource ?? "manual")}</span>
     <span class="task-status ${statusClass}">${_escHtml(t.status)}</span>
+    <span class="task-age">${age}${dur}</span>
   </div>
-  <div class="task-prompt">${promptPreview}</div>
-  <button onclick="vscodeApi.postMessage({command:'resumeTask',taskId:'${_escHtml(t.id)}'})">\u21a9 Resume</button>
+  <button class="resume-btn" data-task-id="${_escHtml(t.id)}">↩ Resume</button>
 </div>`;
       })
       .join("");
 
-    const handoffBtnStyle = handoffPreview
-      ? ""
-      : ' style="opacity:0.5;cursor:not-allowed"';
-    const handoffPreviewText = handoffPreview
-      ? _escHtml(handoffPreview.slice(0, 80)) +
-        (handoffPreview.length > 80 ? "…" : "")
-      : "No handoff note available.";
+    // Handoff note — show 2 lines of preview (split on newlines only, not dots)
+    const handoffLines = handoffPreview
+      ? handoffPreview.split(/\n+/).filter(Boolean).slice(0, 2)
+      : [];
+    const handoffPreviewHtml = handoffLines.length
+      ? handoffLines.map((l) => `<div>${_escHtml(l.trim())}</div>`).join("")
+      : `<div style="opacity:0.6">No handoff note — start a session to create one.</div>`;
+    const handoffBtnLabel = handoffPreview
+      ? "⟳ Continue from handoff note"
+      : "↗ Start fresh session";
+    // No handoff: wire to startTask (fresh start) rather than disabling
+    // fresh = no handoff note; button triggers startTask instead of continueHandoff
+    const handoffDataAttr = handoffPreview ? "" : ' data-fresh="1"';
+
+    // Quick task preset buttons — use data-preset-key, not inline JS
+    const presetButtons = Object.entries(PRESETS)
+      .map(
+        ([key, p]) =>
+          `<button class="preset-btn" data-preset-key="${_escHtml(key)}"><span class="preset-icon">${p.icon}</span> ${_escHtml(p.label)}</button>`,
+      )
+      .join("");
+
+    // Top tools table — guard NaN avgMs
+    const toolRows = report.topTools
+      .slice(0, 8)
+      .map((t) => {
+        const avg = Number.isFinite(t.avgMs) ? Math.round(t.avgMs) : 0;
+        return `<tr><td>${_escHtml(t.tool)}</td><td>${t.calls}</td><td>${t.errors}</td><td>${avg}ms</td></tr>`;
+      })
+      .join("");
 
     return `<!DOCTYPE html>
 <html>
 <head>
 <style>
-  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 8px; }
-  h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; margin: 12px 0 4px; color: var(--vscode-descriptionForeground); }
+  * { box-sizing: border-box; }
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 8px; margin: 0; }
+  h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin: 14px 0 5px; color: var(--vscode-descriptionForeground); display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+  h3 .toggle { font-size: 9px; opacity: 0.6; }
   table { width: 100%; border-collapse: collapse; font-size: 11px; }
   td, th { padding: 2px 4px; border-bottom: 1px solid var(--vscode-widget-border, #333); text-align: left; }
-  .stat { font-size: 22px; font-weight: 600; }
-  button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 8px; cursor: pointer; font-size: 11px; margin-top: 4px; margin-right: 4px; }
-  #taskStatus { font-size: 11px; margin-top: 6px; color: var(--vscode-descriptionForeground); min-height: 16px; }
-  .task-item { border-bottom: 1px solid var(--vscode-widget-border, #333); padding: 4px 0; }
-  .task-meta { display: flex; gap: 6px; align-items: center; margin-bottom: 2px; }
-  .task-source { font-size: 10px; color: var(--vscode-descriptionForeground); }
-  .task-status { font-size: 10px; padding: 1px 4px; border-radius: 2px; }
+  th { font-size: 10px; color: var(--vscode-descriptionForeground); }
+  button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 8px; cursor: pointer; font-size: 11px; border-radius: 2px; }
+  button:hover { background: var(--vscode-button-hoverBackground); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .handoff-box { border: 1px solid var(--vscode-widget-border, #444); border-radius: 3px; padding: 6px 8px; margin-bottom: 8px; }
+  .handoff-preview { font-size: 10px; color: var(--vscode-descriptionForeground); margin: 4px 0 6px; line-height: 1.5; }
+  .handoff-actions { display: flex; gap: 4px; }
+  .active-task { display: flex; align-items: center; gap: 6px; background: var(--vscode-terminal-ansiYellow, #e3b34122); border-radius: 3px; padding: 4px 6px; margin-bottom: 4px; font-size: 11px; }
+  .spinner { animation: spin 1.2s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .active-task-label { flex: 1; }
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-bottom: 6px; }
+  .preset-btn { text-align: left; padding: 5px 6px; font-size: 11px; display: flex; align-items: center; gap: 4px; }
+  .preset-icon { font-size: 13px; }
+  .task-item { border-bottom: 1px solid var(--vscode-widget-border, #333); padding: 4px 0; font-size: 11px; }
+  .task-meta { display: flex; gap: 5px; align-items: center; margin-bottom: 3px; flex-wrap: wrap; }
+  .task-source { color: var(--vscode-descriptionForeground); font-size: 10px; }
+  .task-age { color: var(--vscode-descriptionForeground); font-size: 10px; margin-left: auto; }
+  .task-status { font-size: 10px; padding: 1px 5px; border-radius: 10px; font-weight: 600; }
   .task-status.done { background: var(--vscode-testing-iconPassed, #3fb950); color: #000; }
   .task-status.error { background: var(--vscode-testing-iconFailed, #f85149); color: #fff; }
-  .task-status.running, .task-status.pending { background: var(--vscode-terminal-ansiYellow, #e3b341); color: #000; }
-  .task-prompt { font-size: 10px; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .presets { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
-  .presets button { text-align: left; }
+  .bottom-bar { display: flex; gap: 4px; margin-top: 10px; align-items: center; }
+  .bottom-bar .start-btn { flex: 1; padding: 6px; font-size: 12px; font-weight: 600; }
+  .last-updated { font-size: 10px; color: var(--vscode-descriptionForeground); margin-top: 5px; text-align: right; }
+  #taskStatus { font-size: 11px; margin-top: 6px; color: var(--vscode-descriptionForeground); min-height: 16px; }
+  .collapsible { overflow: hidden; transition: max-height 0.2s ease; }
+  .collapsible.collapsed { max-height: 0 !important; }
 </style>
 </head>
 <body>
+${activeTasksHtml ? `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--vscode-descriptionForeground);margin-bottom:4px">⬤ Active tasks</div>${activeTasksHtml}</div>` : ""}
+
 <h3>Session continuity</h3>
-<button id="handoffBtn"${handoffBtnStyle} onclick="vscodeApi.postMessage({command:'continueHandoff'})">\u27f3 Continue from handoff note</button>
-<div id="handoffPreview" style="font-size:10px;color:var(--vscode-descriptionForeground);margin:2px 0 8px;">${handoffPreviewText}</div>
+<div class="handoff-box">
+  <div class="handoff-preview">${handoffPreviewHtml}</div>
+  <div class="handoff-actions">
+    <button class="handoff-continue-btn"${handoffDataAttr}>${handoffBtnLabel}</button>
+  </div>
+</div>
 
 <h3>Quick tasks</h3>
-<div class="presets">
-  <button onclick="vscodeApi.postMessage({command:'preset',key:'fixErrors'})">&#x1F527; Fix all errors</button>
-  <button onclick="vscodeApi.postMessage({command:'preset',key:'refactorFile'})">&#x267B; Refactor this file</button>
-  <button onclick="vscodeApi.postMessage({command:'preset',key:'addTests'})">&#x2713; Add tests</button>
+<div class="presets">${presetButtons}</div>
+
+<h3 onclick="toggleSection('tasks')" title="Click to expand/collapse">Recent tasks <span class="toggle" id="tasks-toggle">▾</span></h3>
+<div class="collapsible" id="tasks-body" style="max-height:500px">
+  ${recentTasks || "<p style='font-size:11px;color:var(--vscode-descriptionForeground)'>No completed tasks yet.</p>"}
 </div>
 
-<h3>Hooks fired (${report.windowHours}h)</h3>
-<div class="stat">${report.hooksLast24h}</div>
-<h3>Top tools</h3>
-<table><tr><th>Tool</th><th>Calls</th><th>Err</th><th>Avg</th></tr>${toolRows || "<tr><td colspan=4>No data</td></tr>"}</table>
-<h3>Recent automation tasks</h3>
-${taskItems || "<p style='font-size:11px'>No tasks yet.</p>"}
-<div style="margin-top:8px">
-  <button onclick="vscodeApi.postMessage({command:'refresh'})">&#8635; Refresh</button>
-  <button onclick="vscodeApi.postMessage({command:'startTask'})">&#9654; Start Task</button>
+<h3 onclick="toggleSection('stats')" title="Click to expand/collapse">Stats <span class="toggle" id="stats-toggle">▸</span></h3>
+<div class="collapsible collapsed" id="stats-body" style="max-height:500px">
+  <div style="font-size:11px;margin-bottom:4px">Hooks fired (${report.windowHours}h): <strong>${report.hooksLast24h}</strong></div>
+  <table><tr><th>Tool</th><th>Calls</th><th>Err</th><th>Avg</th></tr>${toolRows || "<tr><td colspan=4>No data yet</td></tr>"}</table>
 </div>
+
+<div class="bottom-bar">
+  <button id="refreshBtn">⟳</button>
+  <button class="start-btn" id="startTaskBtn">▶ Start Task</button>
+</div>
+<div class="last-updated" id="lastUpdated"></div>
 <div id="taskStatus"></div>
+
 <script>
 const vscodeApi = acquireVsCodeApi();
+const generatedAt = new Date(${JSON.stringify(report.generatedAt)});
+
+function updateAge() {
+  var el = document.getElementById('lastUpdated');
+  if (!el) return;
+  var sec = Math.max(0, Math.round((Date.now() - generatedAt.getTime()) / 1000));
+  el.textContent = 'Updated ' + (sec < 60 ? sec + 's' : Math.round(sec / 60) + 'm') + ' ago';
+}
+updateAge();
+setInterval(updateAge, 5000);
+
+function startTask() {
+  var btn = document.getElementById('startTaskBtn');
+  if (btn) { btn.textContent = '⟳ Gathering context…'; btn.disabled = true; }
+  vscodeApi.postMessage({ command: 'startTask' });
+}
+
+function toggleSection(id) {
+  var body = document.getElementById(id + '-body');
+  var tog = document.getElementById(id + '-toggle');
+  if (!body || !tog) return;
+  var collapsed = body.classList.toggle('collapsed');
+  tog.textContent = collapsed ? '▸' : '▾';
+}
+
+// Delegated click handler — no inline JS, prevents XSS via task IDs or preset keys
+document.addEventListener('click', function(e) {
+  var target = e.target && e.target.closest ? e.target.closest('button') : null;
+  if (!target) return;
+  if (target.id === 'refreshBtn') {
+    vscodeApi.postMessage({ command: 'refresh' });
+  } else if (target.id === 'startTaskBtn') {
+    startTask();
+  } else if (target.classList.contains('resume-btn')) {
+    var taskId = target.getAttribute('data-task-id');
+    if (taskId) vscodeApi.postMessage({ command: 'resumeTask', taskId: taskId });
+  } else if (target.classList.contains('preset-btn')) {
+    var key = target.getAttribute('data-preset-key');
+    if (key) vscodeApi.postMessage({ command: 'preset', key: key });
+  } else if (target.classList.contains('handoff-continue-btn')) {
+    if (target.getAttribute('data-fresh')) {
+      startTask();
+    } else {
+      vscodeApi.postMessage({ command: 'continueHandoff' });
+    }
+  }
+});
+
 window.addEventListener('message', function(event) {
   var msg = event.data;
   var el = document.getElementById('taskStatus');
-  if (!el) return;
+  var btn = document.getElementById('startTaskBtn');
   if (msg.command === 'taskStarting') {
-    el.textContent = msg.message || 'Starting task\u2026';
+    if (el) el.textContent = msg.message || 'Starting task…';
   } else if (msg.command === 'taskStarted') {
-    el.textContent = 'Task started: ' + msg.taskId;
-    setTimeout(function() { if (el.textContent && el.textContent.startsWith('Task started')) el.textContent = ''; }, 5000);
+    if (btn) { btn.textContent = '▶ Start Task'; btn.disabled = false; }
+    if (el) {
+      el.textContent = '✓ Task started (' + msg.taskId.slice(0, 8) + ')';
+      setTimeout(function() { el.textContent = ''; }, 6000);
+    }
   } else if (msg.command === 'taskError') {
-    el.textContent = 'Error: ' + msg.message;
-    setTimeout(function() { if (el.textContent && el.textContent.startsWith('Error')) el.textContent = ''; }, 5000);
+    if (btn) { btn.textContent = '▶ Start Task'; btn.disabled = false; }
+    if (el) {
+      el.textContent = '✗ ' + msg.message;
+      setTimeout(function() { el.textContent = ''; }, 8000);
+    }
   }
 });
 </script>
 </body>
 </html>`;
   }
+}
+
+function _relativeTime(iso: string): string {
+  const sec = Math.max(
+    0,
+    Math.round((Date.now() - new Date(iso).getTime()) / 1000),
+  );
+  if (sec < 60) return `${sec}s ago`;
+  if (sec < 3600) return `${Math.round(sec / 60)}m ago`;
+  return `${Math.round(sec / 3600)}h ago`;
 }
 
 function _escHtml(s: string): string {

@@ -1,3 +1,4 @@
+import * as http from "node:http";
 import * as vscode from "vscode";
 import WebSocket from "ws";
 import type { AnalyticsReport } from "./analyticsPanel"; // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -254,9 +255,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const origOnConnected = bridge.onConnected;
     bridge.onConnected = (lockData) => {
       origOnConnected?.(lockData);
-      (
-        readinessTracker as ReturnType<typeof createLspReadinessTracker>
-      ).resendAll();
+      readinessTracker.resendAll();
     };
 
     bridge.setOnDispose(() => {
@@ -450,28 +449,59 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   // ── Analytics sidebar ──────────────────────────────────────────────────────
-  /**
-   * getReport returns null — the BridgeConnection is a passive WebSocket client
-   * that responds to bridge requests but does not initiate outbound MCP tool
-   * calls. The panel gracefully shows "Bridge not connected." when null is
-   * returned. Future work: expose an HTTP /analytics endpoint on the bridge and
-   * call it here using a lightweight fetch via the lock file port and token.
-   */
+  const ANALYTICS_MAX_BYTES = 512 * 1024; // 512 KB cap — prevents OOM from runaway bridge
+  let analyticsInFlight = false;
+
   async function getAnalyticsReport(): Promise<AnalyticsReport | null> {
-    // Check that at least one bridge is connected
-    const anyConnected = [...connections.values()].some(
-      (b) => b.ws?.readyState === WebSocket.OPEN,
-    );
-    if (!anyConnected) return null;
-    // Return a minimal report so the panel renders (including Start Task button).
-    // Full analytics data requires a bridge HTTP /analytics endpoint (future work).
-    return {
-      generatedAt: new Date().toISOString(),
-      windowHours: 24,
-      topTools: [],
-      hooksLast24h: 0,
-      recentAutomationTasks: [],
-    };
+    // Prevent overlapping fetches when the 15s refresh fires before the previous one completes
+    if (analyticsInFlight) return null;
+    analyticsInFlight = true;
+
+    try {
+      const lock = await readLockFilesAsync(lockFileDir || undefined);
+      if (!lock) return null;
+
+      return await new Promise<AnalyticsReport | null>((resolve) => {
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: lock.port,
+            path: "/analytics",
+            method: "GET",
+            headers: { Authorization: `Bearer ${lock.authToken}` },
+            timeout: 5000,
+          },
+          (res) => {
+            let raw = "";
+            let bytes = 0;
+            res.on("data", (chunk: Buffer) => {
+              bytes += chunk.byteLength;
+              if (bytes > ANALYTICS_MAX_BYTES) {
+                res.destroy();
+                resolve(null);
+                return;
+              }
+              raw += chunk.toString();
+            });
+            res.on("end", () => {
+              try {
+                resolve(JSON.parse(raw) as AnalyticsReport);
+              } catch {
+                resolve(null);
+              }
+            });
+          },
+        );
+        req.on("error", () => resolve(null));
+        req.on("timeout", () => {
+          req.destroy();
+          resolve(null);
+        });
+        req.end();
+      });
+    } finally {
+      analyticsInFlight = false;
+    }
   }
 
   const analyticsProvider = new AnalyticsViewProvider(
