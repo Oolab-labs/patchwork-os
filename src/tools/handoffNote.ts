@@ -9,9 +9,12 @@ function getGlobalNotePath(configDir: string): string {
 }
 
 function workspaceScopedNotePath(workspace: string, configDir: string): string {
+  // Normalize before hashing so trailing slashes and relative paths don't
+  // produce different hashes for the same workspace across restarts.
+  const normalizedWorkspace = path.resolve(workspace);
   const hash = crypto
     .createHash("sha256")
-    .update(workspace)
+    .update(normalizedWorkspace)
     .digest("hex")
     .slice(0, 12);
   return path.join(configDir, "ide", `handoff-note-${hash}.json`);

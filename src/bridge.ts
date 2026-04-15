@@ -572,7 +572,12 @@ export class Bridge {
   }
 
   /** Write an auto-snapshot handoff note when a new first session connects, unless one was recently written. */
+  private _autoSnapshotInFlight = false;
+
   private async maybeAutoSnapshotHandoff(): Promise<void> {
+    // Guard against concurrent calls (e.g. two clients connecting simultaneously)
+    if (this._autoSnapshotInFlight) return;
+    this._autoSnapshotInFlight = true;
     try {
       const existing = await readNote(this.config.workspace);
       if (existing && Date.now() - existing.updatedAt < 5 * 60_000) {
@@ -586,6 +591,8 @@ export class Bridge {
       );
     } catch {
       // best-effort — never let this crash the connection handler
+    } finally {
+      this._autoSnapshotInFlight = false;
     }
   }
 

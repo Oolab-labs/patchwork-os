@@ -1,4 +1,5 @@
 import * as http from "node:http";
+import * as path from "node:path";
 import type * as vscode from "vscode";
 import type { LockFileData } from "./types";
 
@@ -48,6 +49,7 @@ export interface PerformanceReport {
     errorsPerMinute: number;
     errorRatePct: number;
     rateLimitRejectedTotal: number;
+    requestsPerMinute?: number;
   };
   extension: {
     connected: boolean;
@@ -60,44 +62,13 @@ export interface PerformanceReport {
   health: { score: number; signals: string[] };
 }
 
-const PRESETS: Record<string, { label: string; icon: string; prompt: string }> =
-  {
-    fixErrors: {
-      label: "Fix all errors",
-      icon: "⊘",
-      prompt:
-        "Call getDiagnostics to get all current errors and warnings. Fix every error precisely — do not break working code. Run tests after fixing to confirm nothing regressed.",
-    },
-    refactorFile: {
-      label: "Refactor this file",
-      icon: "↺",
-      prompt:
-        "Refactor the active file for clarity, readability, and maintainability. Keep all existing behaviour identical. Use getBufferContent to read the current file before making changes.",
-    },
-    addTests: {
-      label: "Add tests",
-      icon: "✓",
-      prompt:
-        "Write comprehensive unit tests for the functions in the active file. Use getBufferContent to read the file. Match the existing test style and patterns in the project. Cover edge cases.",
-    },
-    explainCode: {
-      label: "Explain this file",
-      icon: "◎",
-      prompt:
-        "Read the active file with getBufferContent and explain what it does: its purpose, key functions, data flow, and any non-obvious patterns. Keep it concise and technical.",
-    },
-    optimizePerf: {
-      label: "Optimize performance",
-      icon: "◆",
-      prompt:
-        "Analyse the active file for performance issues: unnecessary re-renders, expensive loops, blocking I/O, memory leaks. Use getBufferContent to read it, then propose and apply the most impactful fixes.",
-    },
-  };
-
 export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = "claudeIdeBridge.analyticsView";
   private _refreshTimer?: ReturnType<typeof setInterval>;
   private _lastReport: AnalyticsReport | null = null;
+  private _lastPerfReport: PerformanceReport | null = null;
+  private _lastProjectContext: Record<string, unknown> | null = null;
+  private _lastDiagnostics: unknown | null = null;
   _view?: vscode.WebviewView;
 
   constructor(
@@ -105,15 +76,181 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     private readonly getReport: () => Promise<AnalyticsReport | null>,
     private readonly _getLockFile: () => Promise<LockFileData | null>,
     private readonly vscodeApi: typeof import("vscode"),
+    private readonly _context: import("vscode").ExtensionContext,
   ) {}
+
+  /** Build context-aware presets. */
+  private _buildPresets(
+    ctx: Record<string, unknown> | null,
+    diag: unknown | null,
+    report: AnalyticsReport | null,
+    perfReport: PerformanceReport | null,
+  ): Array<{
+    id: string;
+    icon: string;
+    label: string;
+    prompt: string;
+    taskId?: string;
+  }> {
+    const activeFile =
+      (ctx?.activeFile as string | undefined) ??
+      ((ctx?.brief as Record<string, unknown> | undefined)?.activeFile as
+        | string
+        | undefined);
+    const baseName = activeFile ? path.basename(activeFile) : "";
+
+    // 1. fixErrors
+    const diagErrors = Array.isArray(
+      (diag as Record<string, unknown> | null)?.errors,
+    )
+      ? ((diag as Record<string, unknown>).errors as Array<{
+          message: string;
+          file?: string;
+        }>)
+      : [];
+    const errorCount = diagErrors.length;
+    const topErrorFile = diagErrors[0]?.file
+      ? path.basename(diagErrors[0].file)
+      : "";
+    const fixErrors =
+      errorCount > 0
+        ? {
+            id: "fixErrors",
+            icon: "⊘",
+            label: `Fix ${errorCount} error${errorCount === 1 ? "" : "s"}${topErrorFile ? ` in ${topErrorFile}` : ""}`,
+            prompt: `Call getDiagnostics to get all current errors and warnings${topErrorFile ? ` (start with ${topErrorFile})` : ""}. Fix every error precisely — do not break working code. Run tests after fixing to confirm nothing regressed.`,
+          }
+        : {
+            id: "fixErrors",
+            icon: "⊘",
+            label: "Fix all errors",
+            prompt:
+              "Call getDiagnostics to get all current errors and warnings. Fix every error precisely — do not break working code. Run tests after fixing to confirm nothing regressed.",
+          };
+
+    // 2. refactorFile
+    const refactorFile = baseName
+      ? {
+          id: "refactorFile",
+          icon: "↺",
+          label: `Refactor ${baseName}`,
+          prompt: `Refactor ${activeFile ?? "the active file"} for clarity, readability, and maintainability. Keep all existing behaviour identical. Use getBufferContent to read the current file before making changes.`,
+        }
+      : {
+          id: "refactorFile",
+          icon: "↺",
+          label: "Refactor this file",
+          prompt:
+            "Refactor the active file for clarity, readability, and maintainability. Keep all existing behaviour identical. Use getBufferContent to read the current file before making changes.",
+        };
+
+    // 3. addTests — check if recent tasks show a failed test run
+    const failedTestTask = report?.recentAutomationTasks.find(
+      (t) =>
+        t.status === "error" &&
+        (t.triggerSource ?? "").toLowerCase().includes("test"),
+    );
+    const addTests = failedTestTask
+      ? {
+          id: "addTests",
+          icon: "✓",
+          label: "Add tests for failing flow",
+          prompt:
+            "A recent test run failed. Use getDiagnostics and getBufferContent to identify the failing logic, then write targeted tests that cover the failing flow and edge cases.",
+        }
+      : {
+          id: "addTests",
+          icon: "✓",
+          label: `Add tests for ${baseName || "this file"}`,
+          prompt:
+            "Write comprehensive unit tests for the functions in the active file. Use getBufferContent to read the file. Match the existing test style and patterns in the project. Cover edge cases.",
+        };
+
+    // 4. explainCode — if recent commits available
+    const recentCommits = (ctx?.recentCommits ??
+      (ctx?.brief as Record<string, unknown> | undefined)?.recentCommits) as
+      | Array<{ message: string }>
+      | undefined;
+    const lastCommit = recentCommits?.[0];
+    const explainCode = lastCommit
+      ? {
+          id: "explainCode",
+          icon: "◎",
+          label: "Explain changes from last commit",
+          prompt: `Use getGitDiff or getGitLog to get the last commit diff, then explain what changed, why the changes were made, and any non-obvious patterns. Last commit: ${lastCommit.message}`,
+        }
+      : {
+          id: "explainCode",
+          icon: "◎",
+          label: `Explain ${baseName || "this file"}`,
+          prompt:
+            "Read the active file with getBufferContent and explain what it does: its purpose, key functions, data flow, and any non-obvious patterns. Keep it concise and technical.",
+        };
+
+    // 5. optimizePerf — find slowest tool from perTool p99
+    let slowestTool: string | null = null;
+    if (perfReport?.latency?.perTool) {
+      let maxP99 = -1;
+      for (const [tool, v] of Object.entries(perfReport.latency.perTool)) {
+        if (v.p99 > maxP99) {
+          maxP99 = v.p99;
+          slowestTool = tool;
+        }
+      }
+    }
+    const optimizePerf = slowestTool
+      ? {
+          id: "optimizePerf",
+          icon: "◆",
+          label: `Optimize slowest fn (${slowestTool})`,
+          prompt: `Use getPerformanceReport to find the bottleneck and optimize ${slowestTool}. Identify the root cause of the latency, propose fixes, and apply the most impactful improvements.`,
+        }
+      : {
+          id: "optimizePerf",
+          icon: "◆",
+          label: "Optimize performance",
+          prompt:
+            "Analyse the active file for performance issues: unnecessary re-renders, expensive loops, blocking I/O, memory leaks. Use getBufferContent to read it, then propose and apply the most impactful fixes.",
+        };
+
+    const presets = [
+      fixErrors,
+      refactorFile,
+      addTests,
+      explainCode,
+      optimizePerf,
+    ];
+
+    // 6. resumeLastCancelled — only if cancelled task exists
+    const cancelledTask = report?.recentAutomationTasks.find(
+      (t) => t.status === "cancelled" || t.status === "interrupted",
+    );
+    if (cancelledTask) {
+      presets.push({
+        id: "resumeLastCancelled",
+        icon: "↩",
+        label: "Resume last cancelled task",
+        prompt: "",
+        taskId: cancelledTask.id,
+      });
+    }
+
+    // 7. runTests — always shown
+    presets.push({
+      id: "runTests",
+      icon: "▷",
+      label: "Run full test suite",
+      prompt:
+        "Run the full test suite using the appropriate test runner. Report all failures with file and line numbers.",
+    });
+
+    return presets;
+  }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this._view = webviewView;
     webviewView.webview.options = { enableScripts: true };
 
-    // Clear any stale timer from a previous resolveWebviewView call.
-    // Windsurf and some VS Code forks call resolveWebviewView each time the
-    // panel is shown without firing onDidDispose on the previous webview first.
     if (this._refreshTimer) {
       clearInterval(this._refreshTimer);
       this._refreshTimer = undefined;
@@ -156,11 +293,26 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
                   | { generatedAt?: string };
                 if ("latency" in parsed && "health" in parsed) {
                   perfReport = parsed as PerformanceReport;
+                  this._lastPerfReport = perfReport;
                 }
               }
             } catch {
               // non-fatal
             }
+            // Fetch project context + diagnostics for dynamic presets
+            const [ctxResult, diagResult] = await Promise.all([
+              this._callBridgeTool(lock, "getProjectContext", {}).catch(
+                () => null,
+              ),
+              this._callBridgeTool(lock, "getDiagnostics", {}).catch(
+                () => null,
+              ),
+            ]);
+            this._lastProjectContext = ctxResult as Record<
+              string,
+              unknown
+            > | null;
+            this._lastDiagnostics = diagResult;
           }
         } catch {
           // non-fatal
@@ -178,8 +330,6 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     void refresh();
     this._refreshTimer = setInterval(() => void refresh(), 15_000);
 
-    // Refresh immediately when the panel regains visibility (e.g. switching
-    // tabs in Windsurf or collapsing/expanding the sidebar panel).
     webviewView.onDidChangeVisibility(() => {
       if (webviewView.visible) void refresh();
     });
@@ -201,6 +351,10 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
           void this._handlePreset(webviewView, msg.key);
         if (msg.command === "continueHandoff")
           void this._handleContinueHandoff(webviewView);
+        if (msg.command === "pinNote")
+          void this._handlePinNote(webviewView, refresh);
+        if (msg.command === "exportNote")
+          void this._handleExportNote(webviewView);
       },
     );
   }
@@ -281,62 +435,61 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     });
 
     // Step 3: call the tool, then DELETE the session to free the slot
-    const result = await new Promise<unknown>((resolve, reject) => {
-      const callBody = JSON.stringify({
-        jsonrpc: "2.0",
-        id: 2,
-        method: "tools/call",
-        params: { name: toolName, arguments: toolArgs },
-      });
-      let raw = "";
-      const req = http.request(
-        {
-          hostname: "127.0.0.1",
-          port: lock.port,
-          path: "/mcp",
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${lock.authToken}`,
-            "mcp-session-id": sessionId,
-            "Content-Length": Buffer.byteLength(callBody),
-          },
-        },
-        (res) => {
-          res.on("data", (chunk: Buffer) => {
-            raw += chunk.toString();
-          });
-          res.on("end", () => {
-            try {
-              // Response may be SSE (multiple data: lines) or plain JSON.
-              // Use the LAST data: line to skip progress notifications and
-              // get the final tools/call result.
-              const lines = raw.split("\n");
-              const dataLines = lines.filter((l) => l.startsWith("data:"));
-              const jsonLine =
-                dataLines.length > 0
-                  ? dataLines[dataLines.length - 1]
-                  : lines.find((l) => l.startsWith("{"));
-              const jsonStr = jsonLine?.startsWith("data:")
-                ? jsonLine.slice(5).trim()
-                : raw.trim();
-              const parsed = JSON.parse(jsonStr) as {
-                result?: { content?: unknown[] };
-              };
-              resolve(parsed.result);
-            } catch {
-              resolve(null);
-            }
-          });
-        },
-      );
-      req.on("error", reject);
-      req.write(callBody);
-      req.end();
-    });
-
-    // Step 4: DELETE session to release the slot (fire-and-forget, non-fatal)
+    // Steps 3+4: tools/call, then always DELETE in finally to prevent slot leak
+    let result: unknown = null;
     try {
+      result = await new Promise<unknown>((resolve, reject) => {
+        const callBody = JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: toolName, arguments: toolArgs },
+        });
+        let raw = "";
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: lock.port,
+            path: "/mcp",
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${lock.authToken}`,
+              "mcp-session-id": sessionId,
+              "Content-Length": Buffer.byteLength(callBody),
+            },
+          },
+          (res) => {
+            res.on("data", (chunk: Buffer) => {
+              raw += chunk.toString();
+            });
+            res.on("end", () => {
+              try {
+                const lines = raw.split("\n");
+                const dataLines = lines.filter((l) => l.startsWith("data:"));
+                const jsonLine =
+                  dataLines.length > 0
+                    ? dataLines[dataLines.length - 1]
+                    : lines.find((l) => l.startsWith("{"));
+                const jsonStr = jsonLine?.startsWith("data:")
+                  ? jsonLine.slice(5).trim()
+                  : raw.trim();
+                const parsed = JSON.parse(jsonStr) as {
+                  result?: { content?: unknown[] };
+                };
+                resolve(parsed.result);
+              } catch {
+                resolve(null);
+              }
+            });
+          },
+        );
+        req.on("error", reject);
+        req.write(callBody);
+        req.end();
+      });
+    } finally {
+      // Step 4: DELETE session — always runs even if Step 3 threw, preventing slot leak
       await new Promise<void>((resolve) => {
         const req = http.request(
           {
@@ -357,8 +510,6 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
         req.on("error", () => resolve());
         req.end();
       });
-    } catch {
-      // non-fatal — session will expire via idle TTL
     }
 
     return result;
@@ -509,8 +660,19 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     view: vscode.WebviewView,
     key: string,
   ): Promise<void> {
-    const preset = PRESETS[key];
+    const presets = this._buildPresets(
+      this._lastProjectContext,
+      this._lastDiagnostics,
+      this._lastReport,
+      this._lastPerfReport,
+    );
+    const preset = presets.find((p) => p.id === key);
     if (!preset) return;
+    // resumeLastCancelled uses resume flow
+    if (key === "resumeLastCancelled" && preset.taskId) {
+      await this._handleResumeTask(view, preset.taskId);
+      return;
+    }
     await this._launchWithDescription(preset.prompt, view);
   }
 
@@ -549,9 +711,6 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   }
 
   private _handleViewOutput(view: vscode.WebviewView, taskId: string): void {
-    // Task output comes from the analytics report (no session-scoping),
-    // not getClaudeTaskStatus (which is scoped to the session that created
-    // the task and would return task_not_found for automation tasks).
     const task = this._lastReport?.recentAutomationTasks.find(
       (t) => t.id === taskId,
     );
@@ -563,8 +722,6 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     const raw = task.output ?? task.errorMessage;
-    // Check status FIRST, then output presence — avoids misclassifying
-    // completed tasks with no output as "never started".
     const fallback =
       task.status === "running" || task.status === "pending"
         ? "(task is still running — output available when complete)"
@@ -607,7 +764,12 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
         }
       }
       if (!note?.trim()) throw new Error("No handoff note found");
-      const prompt = `Continue from where we left off.\n\nHandoff note:\n${note}\n\nPick up the next action and proceed.`;
+      // If the note is an auto-snapshot (no manual context), start fresh rather
+      // than injecting bridge metadata as if it were user intent.
+      const isAutoSnap = note.trimStart().startsWith("[auto-snapshot");
+      const prompt = isAutoSnap
+        ? "Start a new session. Check the current workspace state with getProjectContext, review any open diagnostics, and let me know what you see."
+        : `Continue from where we left off.\n\nHandoff note:\n${note}\n\nPick up the next action and proceed.`;
       const taskResult = (await this._callBridgeTool(lock, "runClaudeTask", {
         prompt,
         runInBackground: true,
@@ -624,6 +786,97 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
         }
       }
       view.webview.postMessage({ command: "taskStarted", taskId });
+    } catch (err) {
+      view.webview.postMessage({
+        command: "taskError",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private async _handlePinNote(
+    _view: vscode.WebviewView,
+    refresh: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      const lock = await this._getLockFile();
+      if (!lock) return;
+      const noteResult = (await this._callBridgeTool(
+        lock,
+        "getHandoffNote",
+        {},
+      )) as {
+        content?: Array<{ text?: string }>;
+      } | null;
+      let noteText: string | null = null;
+      if (noteResult?.content?.[0]?.text) {
+        try {
+          const parsed = JSON.parse(noteResult.content[0].text) as {
+            note?: string;
+          };
+          noteText = parsed.note ?? noteResult.content[0].text;
+        } catch {
+          noteText = noteResult.content[0].text;
+        }
+      }
+      if (!noteText?.trim()) return;
+      // Don't pin auto-snapshots — they're bridge metadata, not user context
+      if (noteText.trimStart().startsWith("[auto-snapshot")) {
+        view.webview.postMessage({
+          command: "showInfo",
+          text: "Auto-snapshots can't be pinned. Set a manual handoff note first.",
+        });
+        return;
+      }
+      const pins: string[] = this._context.workspaceState.get(
+        "pinnedNotes",
+        [],
+      );
+      pins.unshift(noteText);
+      const trimmed = pins.slice(0, 5);
+      await this._context.workspaceState.update("pinnedNotes", trimmed);
+      await refresh();
+    } catch {
+      // non-fatal
+    }
+  }
+
+  private async _handleExportNote(view: vscode.WebviewView): Promise<void> {
+    try {
+      const lock = await this._getLockFile();
+      if (!lock) throw new Error("Bridge not running");
+      const noteResult = (await this._callBridgeTool(
+        lock,
+        "getHandoffNote",
+        {},
+      )) as {
+        content?: Array<{ text?: string }>;
+      } | null;
+      let content: string | null = null;
+      if (noteResult?.content?.[0]?.text) {
+        try {
+          const parsed = JSON.parse(noteResult.content[0].text) as {
+            note?: string;
+          };
+          content = parsed.note ?? noteResult.content[0].text;
+        } catch {
+          content = noteResult.content[0].text;
+        }
+      }
+      if (!content?.trim()) throw new Error("No handoff note to export");
+      // Include HH-MM to avoid same-day overwrites
+      const ts = new Date().toISOString().replace(/:/g, "-").slice(0, 16);
+      const filename = `session-${ts}.md`;
+      const folderUri = this.vscodeApi.workspace.workspaceFolders?.[0]?.uri;
+      if (!folderUri) throw new Error("No workspace folder open");
+      const fileUri = this.vscodeApi.Uri.joinPath(folderUri, filename);
+      await this.vscodeApi.workspace.fs.writeFile(
+        fileUri,
+        Buffer.from(content),
+      );
+      void this.vscodeApi.window.showInformationMessage(
+        `Handoff note exported to ${filename}`,
+      );
     } catch (err) {
       view.webview.postMessage({
         command: "taskError",
@@ -694,30 +947,51 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       .join("");
 
     // Handoff note — auto-snapshots are bridge metadata, not user context.
-    // Detect by the [auto-snapshot ...] sentinel on the first non-empty line.
     const isAutoSnapshot =
       handoffPreview?.trimStart().startsWith("[auto-snapshot") ?? false;
     const handoffPreviewHtml = isAutoSnapshot
       ? `<div style="opacity:0.6">Auto-snapshot saved — no manual context yet.</div>`
-      : handoffPreview != null
+      : handoffPreview?.trim()
         ? handoffPreview
             .split(/\n+/)
             .slice(0, 2)
             .map((l) => `<div>${_escHtml(l.trim())}</div>`)
             .join("")
         : `<div style="opacity:0.6">No handoff note — start a session to create one.</div>`;
-    // Auto-snapshots have no user context — treat like no handoff note.
     const hasManualNote = handoffPreview && !isAutoSnapshot;
     const handoffBtnLabel = hasManualNote
       ? "↺ Continue from handoff note"
       : "▶ Start fresh session";
     const handoffDataAttr = hasManualNote ? "" : ' data-fresh="1"';
 
-    // Quick task preset buttons — use data-preset-key, not inline JS
-    const presetButtons = Object.entries(PRESETS)
+    // Pinned notes
+    const pinnedNotes: string[] = this._context.workspaceState.get(
+      "pinnedNotes",
+      [],
+    );
+    const pinnedNotesHtml = pinnedNotes.length
+      ? `<details style="margin-bottom:6px;font-size:11px">
+  <summary style="cursor:pointer;color:var(--vscode-descriptionForeground);font-size:10px;text-transform:uppercase;letter-spacing:0.06em">Pinned notes (${pinnedNotes.length})</summary>
+  ${pinnedNotes
+    .map(
+      (n) =>
+        `<div style="border-left:2px solid var(--vscode-focusBorder,#1f6feb);padding:4px 6px;margin-top:4px;font-size:10px;color:var(--vscode-descriptionForeground)">${_escHtml(n.slice(0, 120))}${n.length > 120 ? "…" : ""}</div>`,
+    )
+    .join("")}
+</details>`
+      : "";
+
+    // Dynamic quick task preset buttons
+    const presets = this._buildPresets(
+      this._lastProjectContext,
+      this._lastDiagnostics,
+      report,
+      perfReport ?? null,
+    );
+    const presetButtons = presets
       .map(
-        ([key, p]) =>
-          `<button class="preset-btn" data-preset-key="${_escHtml(key)}"><span class="preset-icon">${p.icon}</span> ${_escHtml(p.label)}</button>`,
+        (p) =>
+          `<button class="preset-btn" data-preset-key="${_escHtml(p.id)}"><span class="preset-icon">${_escHtml(p.icon)}</span> ${_escHtml(p.label)}</button>`,
       )
       .join("");
 
@@ -730,16 +1004,24 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       })
       .join("");
 
-    // Health badge from performance report
+    // Health badge from performance report — updated thresholds
     const healthScore = perfReport?.health?.score;
     const healthBadgeClass =
       healthScore === undefined
         ? ""
-        : healthScore >= 80
+        : healthScore >= 90
           ? "health-green"
-          : healthScore >= 50
+          : healthScore >= 70
             ? "health-yellow"
             : "health-red";
+    const healthLabel =
+      healthScore === undefined
+        ? "—"
+        : healthScore >= 90
+          ? "excellent"
+          : healthScore >= 70
+            ? "good"
+            : "degraded";
     const healthBadgeHtml =
       healthScore !== undefined
         ? `<span class="health-badge ${_escHtml(healthBadgeClass)}">${healthScore}</span>`
@@ -759,6 +1041,13 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       )
       .join("");
 
+    const currentP95 = perfReport?.latency?.overallP95Ms ?? null;
+    const currentHealthScore = perfReport?.health?.score ?? null;
+    const throughputPerMin =
+      perfReport?.throughput?.requestsPerMinute ??
+      perfReport?.throughput?.callsPerMinute ??
+      null;
+
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -775,13 +1064,13 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   button:disabled { opacity: 0.45; cursor: not-allowed; }
   .handoff-box { border: 1px solid var(--vscode-widget-border, #444); border-radius: 3px; padding: 6px 8px; margin-bottom: 8px; }
   .handoff-preview { font-size: 10px; color: var(--vscode-descriptionForeground); margin: 4px 0 6px; line-height: 1.5; }
-  .handoff-actions { display: flex; gap: 4px; }
+  .handoff-actions { display: flex; gap: 4px; flex-wrap: wrap; }
   .active-task { display: flex; align-items: center; gap: 6px; background: var(--vscode-terminal-ansiBlue, #1f6feb22); border: 1px solid var(--vscode-focusBorder, #1f6feb55); border-radius: 3px; padding: 4px 6px; margin-bottom: 4px; font-size: 11px; }
   .active-task-actions { display: flex; gap: 4px; flex-shrink: 0; }
   .spinner { animation: spin 1.2s linear infinite; display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .active-task-label { flex: 1; }
-  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-bottom: 6px; }
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 6px; }
   .preset-btn { text-align: left; padding: 5px 6px; font-size: 11px; display: flex; align-items: center; gap: 4px; }
   .preset-icon { font-size: 13px; }
   .task-item { border-bottom: 1px solid var(--vscode-widget-border, #333); padding: 4px 0; font-size: 11px; }
@@ -802,29 +1091,60 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   .health-green { background: var(--vscode-testing-iconPassed, #3fb950); color: #000; }
   .health-yellow { background: var(--vscode-editorWarning-foreground, #cca700); color: #000; }
   .health-red { background: var(--vscode-testing-iconFailed, #f85149); color: #fff; }
+  .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+  .panel-title { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--vscode-foreground); }
+  .hr-divider { border: none; border-top: 1px solid var(--vscode-widget-border, #333); margin: 8px 0; }
 </style>
 </head>
 <body>
+
+<div class="panel-header">
+  <span class="panel-title">Claude IDE Bridge</span>
+  <button id="refreshBtn" title="Refresh" style="padding:2px 6px;font-size:12px">⟳</button>
+</div>
+
 ${activeTasksHtml ? `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--vscode-descriptionForeground);margin-bottom:4px">▸ Active tasks</div>${activeTasksHtml}</div>` : ""}
 
-<h3>Session continuity</h3>
-<div class="handoff-box">
-  <div class="handoff-preview">${handoffPreviewHtml}</div>
-  <div class="handoff-actions">
-    <button class="handoff-continue-btn"${handoffDataAttr}>${handoffBtnLabel}</button>
+<hr class="hr-divider">
+
+<h3 onclick="toggleSection('handoff')" title="Click to expand/collapse">Session continuity <span class="toggle" id="handoff-toggle">▾</span></h3>
+<div class="collapsible" id="handoff-body" style="max-height:500px;display:block">
+  ${pinnedNotesHtml}
+  <div class="handoff-box">
+    <div class="handoff-preview">${handoffPreviewHtml}</div>
+    <div class="handoff-actions">
+      <button class="handoff-continue-btn"${handoffDataAttr}>${handoffBtnLabel}</button>
+      <button id="pinNoteBtn" title="Pin current note">&#128204;</button>
+      <button id="exportNoteBtn" title="Export note to file">&#8595;</button>
+    </div>
   </div>
 </div>
 
+<hr class="hr-divider">
+
 <h3>Quick tasks</h3>
 <div class="presets">${presetButtons}</div>
+
+<hr class="hr-divider">
 
 <h3 onclick="toggleSection('tasks')" title="Click to expand/collapse">Recent tasks <span class="toggle" id="tasks-toggle">▾</span></h3>
 <div class="collapsible" id="tasks-body" style="max-height:500px">
   ${recentTasks || "<p style='font-size:11px;color:var(--vscode-descriptionForeground)'>No completed tasks yet.</p>"}
 </div>
 
+<hr class="hr-divider">
+
 <h3 onclick="toggleSection('stats')" title="Click to expand/collapse">Stats ${healthBadgeHtml} <span class="toggle" id="stats-toggle">▸</span></h3>
 <div class="collapsible collapsed" id="stats-body" style="max-height:500px">
+  ${
+    healthScore !== undefined
+      ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    <span style="font-size:11px;color:var(--vscode-descriptionForeground)">Health</span>
+    <span class="health-badge ${_escHtml(healthBadgeClass)}" style="font-size:15px;font-weight:bold;padding:2px 12px">${healthScore}</span>
+    <span style="font-size:10px;color:var(--vscode-descriptionForeground)">${healthLabel}</span>
+  </div>`
+      : ""
+  }
   <div style="font-size:11px;margin-bottom:4px">Hooks fired (${report.windowHours}h): <strong>${report.hooksLast24h}</strong></div>
   <table><tr><th>Tool</th><th>Calls</th><th>Err</th><th>Avg</th></tr>${toolRows || "<tr><td colspan=4>No data yet</td></tr>"}</table>
 </div>
@@ -833,13 +1153,14 @@ ${
   latencyRows
     ? `<h3 onclick="toggleSection('latency')" title="Click to expand/collapse">Latency <span class="toggle" id="latency-toggle">▸</span></h3>
 <div class="collapsible collapsed" id="latency-body" style="max-height:500px">
+  <canvas id="sparklineCanvas" width="200" height="36" style="width:100%;height:36px;display:block;margin-bottom:4px"></canvas>
+  <div id="sparkStats" style="font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:6px"></div>
   <table><tr><th>Tool</th><th>Calls</th><th>Err%</th><th>p50</th><th>p95</th></tr>${latencyRows}</table>
 </div>`
     : ""
 }
 
 <div class="bottom-bar">
-  <button id="refreshBtn">⟳</button>
   <button class="start-btn" id="startTaskBtn">▶ Start Task</button>
 </div>
 <div class="last-updated" id="lastUpdated"></div>
@@ -848,12 +1169,16 @@ ${
 <script>
 const vscodeApi = acquireVsCodeApi();
 const generatedAt = new Date(${JSON.stringify(report.generatedAt)});
+const currentP95 = ${JSON.stringify(currentP95)};
+const currentHealthScore = ${JSON.stringify(currentHealthScore)};
+const throughputPerMin = ${JSON.stringify(throughputPerMin)};
 
 function updateAge() {
   var el = document.getElementById('lastUpdated');
   if (!el) return;
   var sec = Math.max(0, Math.round((Date.now() - generatedAt.getTime()) / 1000));
   el.textContent = 'Updated ' + (sec < 60 ? sec + 's' : Math.round(sec / 60) + 'm') + ' ago';
+  el.style.color = sec < 30 ? 'var(--vscode-testing-iconPassed,#3fb950)' : 'var(--vscode-descriptionForeground)';
 }
 updateAge();
 setInterval(updateAge, 5000);
@@ -872,6 +1197,37 @@ function toggleSection(id) {
   tog.textContent = collapsed ? '▸' : '▾';
 }
 
+// Sparkline
+(function() {
+  var canvas = document.getElementById('sparklineCanvas');
+  if (!canvas || currentP95 === null) return;
+  var state = vscodeApi.getState() || {};
+  var history = state.p95History || [];
+  history.push(currentP95);
+  if (history.length > 30) history = history.slice(history.length - 30);
+  vscodeApi.setState(Object.assign({}, state, { p95History: history }));
+  var statsEl = document.getElementById('sparkStats');
+  if (statsEl && currentP95 !== null) {
+    statsEl.textContent = 'p95: ' + currentP95 + 'ms' + (throughputPerMin !== null ? ' \u2022 throughput: ' + throughputPerMin + ' req/min' : '');
+  }
+  var ctx = canvas.getContext('2d');
+  if (!ctx || history.length < 2) return;
+  var W = canvas.width, H = canvas.height;
+  var min = Math.min.apply(null, history), max = Math.max.apply(null, history);
+  if (max === min) max = min + 1;
+  var score = currentHealthScore;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = score !== null && score >= 90 ? '#3fb950' : score !== null && score >= 70 ? '#d29922' : '#f85149';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  history.forEach(function(v, i) {
+    var x = (i / (history.length - 1)) * W;
+    var y = H - ((v - min) / (max - min)) * (H - 4) - 2;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+})();
+
 // Delegated click handler — no inline JS, prevents XSS via task IDs or preset keys
 document.addEventListener('click', function(e) {
   var target = e.target && e.target.closest ? e.target.closest('button') : null;
@@ -880,6 +1236,10 @@ document.addEventListener('click', function(e) {
     vscodeApi.postMessage({ command: 'refresh' });
   } else if (target.id === 'startTaskBtn') {
     startTask();
+  } else if (target.id === 'pinNoteBtn') {
+    vscodeApi.postMessage({ command: 'pinNote' });
+  } else if (target.id === 'exportNoteBtn') {
+    vscodeApi.postMessage({ command: 'exportNote' });
   } else if (target.classList.contains('view-output-btn')) {
     var taskId = target.getAttribute('data-task-id');
     if (taskId) vscodeApi.postMessage({ command: 'viewOutput', taskId: taskId });
