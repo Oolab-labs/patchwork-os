@@ -6,7 +6,8 @@
     "type": "skill",
     "version": "latest",
     "author": "Oolab Labs",
-    "builtin": true
+    "builtin": true,
+    "stars": 0
   },
   {
     "name": "ide-coverage",
@@ -15,7 +16,8 @@
     "type": "skill",
     "version": "latest",
     "author": "Oolab Labs",
-    "builtin": true
+    "builtin": true,
+    "stars": 0
   },
   {
     "name": "ide-diagnostics-board",
@@ -24,7 +26,8 @@
     "type": "skill",
     "version": "latest",
     "author": "Oolab Labs",
-    "builtin": true
+    "builtin": true,
+    "stars": 0
   },
   {
     "name": "ide-explore",
@@ -33,7 +36,8 @@
     "type": "skill",
     "version": "latest",
     "author": "Oolab Labs",
-    "builtin": true
+    "builtin": true,
+    "stars": 0
   },
   {
     "name": "ide-deps",
@@ -42,6 +46,7 @@
     "type": "skill",
     "version": "latest",
     "author": "Oolab Labs",
-    "builtin": true
+    "builtin": true,
+    "stars": 0
   }
 ]

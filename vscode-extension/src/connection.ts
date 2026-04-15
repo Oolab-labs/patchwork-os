@@ -97,6 +97,12 @@ export class BridgeConnection {
   onLockFileRead: ((lockData: LockFileData) => void) | null = null;
 
   private handlers: Record<string, RequestHandler> = {};
+
+  // Live state pushed from bridge for status-bar display
+  private liveCachedAt: string | null = null;
+  private livePreCompactArmed = false;
+  private liveDebugSessionActive = false;
+  private debugFlashTimer: ReturnType<typeof setTimeout> | null = null;
   private onDispose: (() => void) | null = null;
   private pendingNotifications: Array<{
     method: string;
@@ -160,15 +166,7 @@ export class BridgeConnection {
     if (!this.statusBar) return;
     switch (state) {
       case "connected":
-        if (this.claudeConnected) {
-          this.statusBar.text = "$(check) Claude Bridge";
-          this.statusBar.tooltip =
-            "Claude IDE Bridge: Connected — Claude Code active";
-        } else {
-          this.statusBar.text = "$(plug) Claude Bridge";
-          this.statusBar.tooltip =
-            "Claude IDE Bridge: Connected — waiting for Claude Code";
-        }
+        this.updateStatusBarLive();
         break;
       case "disconnected":
         this.claudeConnected = false;
@@ -180,6 +178,58 @@ export class BridgeConnection {
         this.statusBar.text = "$(sync~spin) Claude Bridge";
         this.statusBar.tooltip = "Claude IDE Bridge: Reconnecting...";
         break;
+    }
+  }
+
+  private updateStatusBarLive(): void {
+    // Notify extension.ts to re-render the status bar with live state from this connection
+    this.onStateChange?.();
+  }
+
+  /**
+   * Returns the live status bar text for this connection (used by extension.ts
+   * updateStatusBar to incorporate bridge-pushed state).
+   */
+  getLiveStatusText(): { text: string; tooltip: string } | null {
+    if (this.ws?.readyState !== WebSocket.OPEN) return null;
+    if (this.livePreCompactArmed) {
+      return {
+        text: "$(shield) Bridge · PreCompact armed",
+        tooltip:
+          "Claude IDE Bridge: PreCompact hook armed — fires before next compaction",
+      };
+    }
+    if (this.debugFlashTimer !== null) {
+      return {
+        text: "$(bug) Bridge · debug started",
+        tooltip: "Claude IDE Bridge: Debug session started",
+      };
+    }
+    if (this.liveDebugSessionActive) {
+      return {
+        text: "$(check) Bridge · debug active",
+        tooltip: "Claude IDE Bridge: Debug session is active",
+      };
+    }
+    if (this.liveCachedAt) {
+      const ageMin = Math.round(
+        (Date.now() - new Date(this.liveCachedAt).getTime()) / 60_000,
+      );
+      const base = this.claudeConnected
+        ? "$(check) Claude Bridge"
+        : "$(plug) Claude Bridge";
+      return {
+        text: `${base} · context ${ageMin} min ago`,
+        tooltip: "Claude IDE Bridge: Connected",
+      };
+    }
+    return null;
+  }
+
+  /** Called by the 60s interval in extension.ts to refresh the "X min ago" age display. */
+  refreshContextAge(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.onStateChange?.();
     }
   }
 
@@ -743,6 +793,32 @@ export class BridgeConnection {
             );
           } else if (chunk) {
             this.output?.append(chunk);
+          }
+          return;
+        }
+        if (msg.method === "extension/bridgeLiveState") {
+          const p = msg.params as {
+            contextCachedAt?: string | null;
+            preCompactArmed?: boolean;
+            debugSessionActive?: boolean;
+          };
+          const wasDebugActive = this.liveDebugSessionActive;
+          this.liveCachedAt = p.contextCachedAt ?? null;
+          this.livePreCompactArmed = p.preCompactArmed ?? false;
+          this.liveDebugSessionActive = p.debugSessionActive ?? false;
+          if (!wasDebugActive && this.liveDebugSessionActive) {
+            if (this.statusBar) {
+              this.statusBar.text = "$(bug) Bridge · debug started";
+              this.statusBar.tooltip =
+                "Claude IDE Bridge: Debug session started";
+            }
+            if (this.debugFlashTimer) clearTimeout(this.debugFlashTimer);
+            this.debugFlashTimer = setTimeout(() => {
+              this.debugFlashTimer = null;
+              this.updateStatusBarLive();
+            }, 4000);
+          } else {
+            this.updateStatusBarLive();
           }
           return;
         }

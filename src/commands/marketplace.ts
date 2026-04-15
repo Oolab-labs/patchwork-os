@@ -25,6 +25,7 @@ export interface SkillEntry {
   version: string;
   author: string;
   builtin?: boolean;
+  stars?: number;
 }
 
 async function fetchRegistry(): Promise<SkillEntry[]> {
@@ -57,15 +58,20 @@ function printTable(skills: SkillEntry[]): void {
   }
   const maxName = Math.max(...skills.map((s) => s.name.length), 4);
   const maxDesc = Math.max(...skills.map((s) => s.description.length), 11);
-  const header = `${"Name".padEnd(maxName)}  ${"Description".padEnd(maxDesc)}  Author`;
+  const starsTexts = skills.map((s) =>
+    s.stars !== undefined ? `⭐ ${s.stars}` : "—",
+  );
+  const maxStars = Math.max(...starsTexts.map((t) => t.length), "Stars".length);
+  const header = `${"Name".padEnd(maxName)}  ${"Description".padEnd(maxDesc)}  ${"Stars".padEnd(maxStars)}  Author`;
   console.log(header);
   console.log("-".repeat(header.length));
-  for (const s of skills) {
+  skills.forEach((s, i) => {
     const builtin = s.builtin ? " (builtin)" : "";
     console.log(
-      `${s.name.padEnd(maxName)}  ${s.description.padEnd(maxDesc)}  ${s.author}${builtin}`,
+      // biome-ignore lint/style/noNonNullAssertion: starsTexts is same length as skills (built via map)
+      `${s.name.padEnd(maxName)}  ${s.description.padEnd(maxDesc)}  ${starsTexts[i]!.padEnd(maxStars)}  ${s.author}${builtin}`,
     );
-  }
+  });
 }
 
 export async function runMarketplace(argv: string[]): Promise<void> {

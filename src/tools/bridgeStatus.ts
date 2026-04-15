@@ -82,6 +82,7 @@ export function createBridgeStatusTool(
   orchestrator?: ClaudeOrchestrator | null,
   automationHooks?: AutomationHooks | null,
   getDisconnectInfo?: () => DisconnectInfo,
+  automationPolicyPath?: string,
 ) {
   return {
     schema: {
@@ -251,7 +252,17 @@ export function createBridgeStatusTool(
               maxTokenBudget: ClaudeOrchestrator.MAX_TOKEN_BUDGET,
             },
           }),
-        ...(automationStatus !== null && { automation: automationStatus }),
+        ...(automationStatus !== null && {
+          automation: {
+            ...automationStatus,
+            ...(automationPolicyPath !== undefined && {
+              policyPath: automationPolicyPath,
+            }),
+            ...(automationHooks && {
+              ...automationHooks.getStats(),
+            }),
+          },
+        }),
         tier: extensionConnected ? "full" : "basic",
         tierDescription: extensionConnected
           ? "All tools available including LSP, debugger, and terminal integration"

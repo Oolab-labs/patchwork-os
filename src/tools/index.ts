@@ -308,6 +308,7 @@ export function registerAllTools(
   pluginTools: LoadedPluginTool[] = [],
   automationHooks: AutomationHooks | null = null,
   getDisconnectInfo?: () => DisconnectInfo,
+  onContextCacheUpdated?: (generatedAt: string) => void,
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -451,6 +452,7 @@ export function registerAllTools(
       orchestrator,
       automationHooks,
       getDisconnectInfo,
+      config.automationPolicyPath ?? undefined,
     ),
     createWatchFilesTool(extensionClient),
     createUnwatchFilesTool(extensionClient),
@@ -546,7 +548,9 @@ export function registerAllTools(
     createRefactorExtractFunctionTool(workspace, extensionClient),
     createGetGitHotspotsTool(workspace),
     createGetSymbolHistoryTool(workspace, extensionClient),
-    createGetProjectContextTool(workspace, extensionClient, probes),
+    createGetProjectContextTool(workspace, extensionClient, probes, {
+      onCacheUpdated: onContextCacheUpdated,
+    }),
     createGetSessionUsageTool(transport),
     createSearchToolsTool(transport),
     ...(activityLog !== undefined

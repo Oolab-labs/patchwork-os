@@ -81,7 +81,7 @@ export function createGetBufferContentTool(
     schema: {
       name: "getBufferContent",
       description:
-        "Read file from VS Code buffer including unsaved changes. Use before editText. Returns isDirty flag.",
+        "Read workspace file from VS Code buffer including unsaved changes. Use before editText. Returns isDirty flag. Workspace files only.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,

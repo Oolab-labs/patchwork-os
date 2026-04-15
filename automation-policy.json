@@ -22,7 +22,7 @@
   "onInstructionsLoaded": {
     "enabled": true,
     "cooldownMs": 60000,
-    "prompt": "Session start. contextBundle(summarize:true) + getHandoffNote → branch, error count, uncommitted changes, prior context. ≤5 lines. Fragments OK. Abbreviate. Stay terse all session."
+    "prompt": "Session start. Call only: contextBundle(summarize:true) + getHandoffNote → branch, error count, uncommitted changes, prior context. Do NOT read files outside the workspace. ≤5 lines. Fragments OK. Abbreviate."
   },
   "onBranchCheckout": {
     "enabled": true,
@@ -56,7 +56,7 @@
     "enabled": true,
     "cooldownMs": 10000,
     "onFailureOnly": true,
-    "prompt": "{{failed}}/{{total}} fail.\n{{failures}}\nFor each failure: getBufferContent on failing file ±10 lines of failure line → 1-line cause + fix snippet. No prose."
+    "prompt": "{{failed}}/{{total}} fail.\n{{failures}}\nFor each failure: getBufferContent on failing file (workspace path only) ±10 lines of failure line → 1-line cause + fix snippet. No prose."
   },
   "onDiagnosticsError": {
     "enabled": true,

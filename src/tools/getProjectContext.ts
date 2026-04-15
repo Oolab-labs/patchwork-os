@@ -21,6 +21,8 @@ interface CachedBrief {
   generatedAt: string;
   workspace: string;
   brief: ProjectBrief;
+  topModulesSource?: TopModulesSource;
+  ctagsStatus?: CtagsStatus;
 }
 
 interface ProjectBrief {
@@ -31,6 +33,9 @@ interface ProjectBrief {
   openFiles: string[];
   diagnosticSummary: string;
 }
+
+type TopModulesSource = "ctags" | "filesystem";
+type CtagsStatus = "success" | "not_available" | "failed";
 
 function cacheKey(workspace: string): string {
   return crypto
@@ -63,7 +68,12 @@ function readCache(workspace: string, maxAgeMs: number): CachedBrief | null {
   }
 }
 
-function writeCache(workspace: string, brief: ProjectBrief): void {
+function writeCache(
+  workspace: string,
+  brief: ProjectBrief,
+  topModulesSource?: TopModulesSource,
+  ctagsStatus?: CtagsStatus,
+): void {
   try {
     const p = cacheFilePath(workspace);
     fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -71,6 +81,8 @@ function writeCache(workspace: string, brief: ProjectBrief): void {
       generatedAt: new Date().toISOString(),
       workspace,
       brief,
+      topModulesSource,
+      ctagsStatus,
     };
     fs.writeFileSync(p, JSON.stringify(entry, null, 2), "utf-8");
   } catch {
@@ -90,6 +102,7 @@ export function createGetProjectContextTool(
   workspace: string,
   extensionClient: ExtensionClient,
   probes: ProbeResults,
+  opts?: { onCacheUpdated?: (generatedAt: string) => void },
 ) {
   return {
     schema: {
@@ -151,6 +164,11 @@ export function createGetProjectContextTool(
           memoryGraphQueries: { type: "array" },
           suggestedPrompt: { type: "string" },
           hint: { type: "string" },
+          topModulesSource: { type: "string", enum: ["ctags", "filesystem"] },
+          ctagsStatus: {
+            type: "string",
+            enum: ["success", "not_available", "failed"],
+          },
         },
         required: ["workspace", "generatedAt", "fromCache", "brief", "hint"],
       },
@@ -183,12 +201,19 @@ export function createGetProjectContextTool(
             fromCache: true,
             brief: cached.brief,
             suggestedPrompt: buildSuggestedPrompt(cached.brief),
-            hint: buildHint(),
+            hint: buildHint(cached.ctagsStatus ?? "not_available"),
+            topModulesSource: cached.topModulesSource ?? "filesystem",
+            ctagsStatus: cached.ctagsStatus ?? "not_available",
           });
         }
       }
 
       // Slow path: build fresh brief
+      let topModulesSource: TopModulesSource = "filesystem";
+      let ctagsStatus: CtagsStatus = probes.universalCtags
+        ? "failed"
+        : "not_available";
+
       const brief: ProjectBrief = {
         activeFile: null,
         recentErrors: [],
@@ -318,6 +343,10 @@ export function createGetProjectContextTool(
           }
         }
         brief.topModules = Array.from(moduleSet).slice(0, MAX_MODULES);
+        if (brief.topModules.length > 0) {
+          topModulesSource = "ctags";
+          ctagsStatus = "success";
+        }
       }
 
       // Fallback module discovery from filesystem top-level dirs
@@ -358,16 +387,20 @@ export function createGetProjectContextTool(
         },
       ];
 
-      writeCache(workspace, brief);
+      const generatedAt = new Date().toISOString();
+      writeCache(workspace, brief, topModulesSource, ctagsStatus);
+      opts?.onCacheUpdated?.(generatedAt);
 
       return successStructured({
         workspace,
-        generatedAt: new Date().toISOString(),
+        generatedAt,
         fromCache: false,
         brief,
         memoryGraphQueries,
         suggestedPrompt: buildSuggestedPrompt(brief),
-        hint: buildHint(),
+        hint: buildHint(ctagsStatus),
+        topModulesSource,
+        ctagsStatus,
       });
     },
   };
@@ -396,11 +429,16 @@ function buildSuggestedPrompt(brief: ProjectBrief): string {
   return parts.join(" ");
 }
 
-function buildHint(): string {
+function buildHint(ctagsStatus: CtagsStatus): string {
+  const ctagsHint =
+    ctagsStatus !== "success"
+      ? " Install ctags for better module discovery: brew install universal-ctags."
+      : "";
   return (
     "Inject this brief at session start to skip codebase exploration. " +
     "Use suggestedPrompt as a ready-made context sentence. " +
     "Call with force=true to invalidate after major refactors. " +
-    "If codebase-memory MCP is connected, run memoryGraphQueries for deeper architectural context."
+    "If codebase-memory MCP is connected, run memoryGraphQueries for deeper architectural context." +
+    ctagsHint
   );
 }
