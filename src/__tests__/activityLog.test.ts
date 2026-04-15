@@ -437,14 +437,19 @@ describe("ActivityLog — disk persistence", () => {
     (mockFs.promises as unknown as Record<string, unknown>).stat = vi.fn(() =>
       Promise.resolve({ size: 1024 * 1024 + 1 }),
     );
-    mockFs.readFileSync = vi.fn(
+    (mockFs.promises as unknown as Record<string, unknown>).readFile = vi.fn(
       () =>
-        '{"kind":"tool","id":1,"timestamp":"t","tool":"x","durationMs":1,"status":"success"}\n',
+        Promise.resolve(
+          '{"kind":"tool","id":1,"timestamp":"t","tool":"x","durationMs":1,"status":"success"}\n',
+        ),
     );
+    const writeMock = vi.fn(() => Promise.resolve());
+    (mockFs.promises as unknown as Record<string, unknown>).writeFile =
+      writeMock;
     const log = new ActivityLog();
     log.setPersistPath("/tmp/big.jsonl");
     log.record("y", 5, "success");
-    await vi.waitFor(() => expect(mockFs.writeFileSync).toHaveBeenCalled());
+    await vi.waitFor(() => expect(writeMock).toHaveBeenCalled());
   });
 
   it("loads existing tool entries from disk on setPersistPath", () => {

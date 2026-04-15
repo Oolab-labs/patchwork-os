@@ -837,30 +837,6 @@ export class ExtensionClient {
   }
 
   /**
-   * Typed shorthand for requestOrNull — returns T | null without an intermediate variable.
-   *
-   * WARNING: proxy<T> does a BLIND TypeScript cast with no runtime validation.
-   * If the extension handler can return a shape that does not match T (including
-   * error-object responses like { error: "..." }), use `tryRequest<T>` instead,
-   * which detects error-object responses and returns null.
-   *
-   * This is the root cause of seven latent shape-mismatch bugs fixed in
-   * v2.25.18–v2.25.21. Prefer tryRequest for new client methods.
-   */
-  private async proxy<T>(
-    method: string,
-    params?: unknown,
-    timeout?: number,
-    signal?: AbortSignal,
-  ): Promise<T | null> {
-    return this.requestOrNull(
-      method,
-      params,
-      timeout,
-      signal,
-    ) as Promise<T | null>;
-  }
-
   /**
    * Detect an extension error-object response. Extension handlers by convention
    * return `{ error: string }` (sometimes with `success: false`) on failure
@@ -919,7 +895,7 @@ export class ExtensionClient {
   }
 
   async getDiagnostics(file?: string): Promise<Diagnostic[] | null> {
-    return this.proxy<Diagnostic[]>("extension/getDiagnostics", { file });
+    return this.tryRequest<Diagnostic[]>("extension/getDiagnostics", { file });
   }
 
   async getSelection(): Promise<SelectionState | null> {
@@ -928,11 +904,11 @@ export class ExtensionClient {
   }
 
   async getOpenFiles(): Promise<TabInfo[] | null> {
-    return this.proxy<TabInfo[]>("extension/getOpenFiles");
+    return this.tryRequest<TabInfo[]>("extension/getOpenFiles");
   }
 
   async isDirty(file: string): Promise<boolean | null> {
-    return this.proxy<boolean>("extension/isDirty", { file });
+    return this.tryRequest<boolean>("extension/isDirty", { file });
   }
 
   async getFileContent(file: string): Promise<unknown> {
@@ -987,7 +963,7 @@ export class ExtensionClient {
   }
 
   async getAIComments(): Promise<AIComment[] | null> {
-    return this.proxy<AIComment[]>("extension/getAIComments");
+    return this.tryRequest<AIComment[]>("extension/getAIComments");
   }
 
   // --- LSP Semantic Features ---
@@ -1232,8 +1208,15 @@ export class ExtensionClient {
     base64: string;
     mimeType: string;
   } | null> {
-    return this.proxy<{ base64: string; mimeType: string }>(
+    return this.validatedRequest<{ base64: string; mimeType: string }>(
       "extension/captureScreenshot",
+      {},
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.base64 === "string" && typeof o.mimeType === "string"
+          ? (r as { base64: string; mimeType: string })
+          : null;
+      },
     );
   }
 
@@ -1435,7 +1418,14 @@ export class ExtensionClient {
   // --- Debug ---
 
   async getDebugState(): Promise<DebugState | null> {
-    return this.proxy<DebugState>("extension/getDebugState");
+    return this.validatedRequest<DebugState>(
+      "extension/getDebugState",
+      {},
+      (r) =>
+        typeof (r as Record<string, unknown>).hasActiveSession === "boolean"
+          ? (r as DebugState)
+          : null,
+    );
   }
 
   async evaluateInDebugger(
@@ -1516,8 +1506,19 @@ export class ExtensionClient {
     });
   }
 
-  async listVSCodeCommands(filter?: string): Promise<string[] | null> {
-    return this.proxy<string[]>("extension/listVSCodeCommands", { filter });
+  async listVSCodeCommands(
+    filter?: string,
+  ): Promise<{ commands: string[]; total: number; capped: boolean } | null> {
+    return this.validatedRequest<{
+      commands: string[];
+      total: number;
+      capped: boolean;
+    }>("extension/listVSCodeCommands", { filter }, (r) => {
+      const o = r as Record<string, unknown>;
+      return Array.isArray(o.commands)
+        ? (r as { commands: string[]; total: number; capped: boolean })
+        : null;
+    });
   }
 
   // --- Workspace Settings ---

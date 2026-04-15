@@ -125,7 +125,7 @@ export class ActivityLog {
         try {
           const stat = await fs.promises.stat(persistPath);
           if (stat.size > MAX_PERSIST_BYTES) {
-            this._rotateDisk();
+            await this._rotateDisk();
           }
         } catch (err) {
           const code = (err as NodeJS.ErrnoException).code;
@@ -151,10 +151,10 @@ export class ActivityLog {
     })();
   }
 
-  private _rotateDisk(): void {
+  private async _rotateDisk(): Promise<void> {
     if (!this.persistPath) return;
     try {
-      const raw = fs.readFileSync(this.persistPath, "utf8");
+      const raw = await fs.promises.readFile(this.persistPath, "utf8");
       let lines = raw.split("\n").filter((l) => l.trim());
       // Step 1: trim by line count
       if (lines.length > MAX_PERSIST_LINES) {
@@ -169,7 +169,9 @@ export class ActivityLog {
       ) {
         lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
       }
-      fs.writeFileSync(this.persistPath, `${lines.join("\n")}\n`);
+      await fs.promises.writeFile(this.persistPath, `${lines.join("\n")}\n`, {
+        mode: 0o600,
+      });
     } catch (err) {
       process.stderr.write(
         `[activityLog] Rotation failed: ${err instanceof Error ? err.message : String(err)}\n`,
@@ -482,7 +484,10 @@ export class ActivityLog {
     windowMs = DEFAULT_CO_OCCURRENCE_WINDOW_MS,
   ): { pair: string; count: number }[] {
     const counts = new Map<string, number>();
-    // entries are chronological; use two-pointer sliding window
+    // Entries are chronological. The inner loop breaks as soon as tB - tA
+    // exceeds windowMs, so effective complexity is O(n × k) where k is the
+    // average number of entries within the window — bounded by the ring buffer
+    // capacity (1 000). Not a true O(n²) scan.
     const n = this.entries.length;
     for (let i = 0; i < n; i++) {
       const a = this.entries[i];
