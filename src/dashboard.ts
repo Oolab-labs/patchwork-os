@@ -50,6 +50,15 @@ export function renderDashboardHtml(version: string): string {
   <div class="card"><div class="card-label">Uptime</div><div class="card-value" id="uptime">&mdash;</div></div>
   <div class="card"><div class="card-label">Sessions</div><div class="card-value" id="sessions">&mdash;</div></div>
   <div class="card"><div class="card-label">Extension</div><div class="card-value" id="ext">&mdash;</div></div>
+  <div class="card"><div class="card-label">Health Score</div><div class="card-value" id="health-score">&mdash;</div></div>
+  <div class="card"><div class="card-label">Top Tool p95</div><div class="card-value" id="top-p95">&mdash;</div></div>
+</div>
+<div class="events" id="latency-section" style="display:none;margin-bottom:16px">
+  <h2>Latency (top tools by p95)</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="color:var(--muted)"><th style="text-align:left;padding:4px 6px">Tool</th><th style="text-align:right;padding:4px 6px">p50</th><th style="text-align:right;padding:4px 6px">p95</th><th style="text-align:right;padding:4px 6px">p99</th><th style="text-align:right;padding:4px 6px">Calls/m</th></tr></thead>
+    <tbody id="latency-rows"></tbody>
+  </table>
 </div>
 <div class="events">
   <h2>Recent Events</h2>
@@ -82,6 +91,37 @@ async function refresh() {
     document.getElementById('uptime').textContent = fmt(d.uptimeMs);
     document.getElementById('sessions').textContent = d.sessions;
     document.getElementById('ext').innerHTML = badge(d.extensionConnected);
+
+    // Health card
+    if (d.perf) {
+      var score = d.perf.health && d.perf.health.score !== undefined ? d.perf.health.score : null;
+      var scoreEl = document.getElementById('health-score');
+      if (score !== null) {
+        var cls = score >= 80 ? 'badge-green' : score >= 50 ? 'badge-orange' : 'badge-red';
+        scoreEl.innerHTML = '<span class="badge ' + cls + '">' + score + '</span>';
+      }
+      // Top tool p95
+      var p95El = document.getElementById('top-p95');
+      if (d.perf.latency && d.perf.latency.overallP95Ms !== undefined) {
+        p95El.textContent = d.perf.latency.overallP95Ms + 'ms';
+      }
+      // Latency table
+      var perTool = d.perf.latency && d.perf.latency.perTool ? d.perf.latency.perTool : {};
+      var tools = Object.entries(perTool).sort(function(a, b) { return b[1].p95 - a[1].p95; }).slice(0, 8);
+      if (tools.length > 0) {
+        document.getElementById('latency-section').style.display = '';
+        document.getElementById('latency-rows').innerHTML = tools.map(function(e) {
+          var t = e[0]; var v = e[1];
+          return '<tr style="border-top:1px solid var(--border)">' +
+            '<td style="padding:3px 6px">' + t.replace(/</g,'&lt;') + '</td>' +
+            '<td style="text-align:right;padding:3px 6px">' + (v.p50 || 0) + 'ms</td>' +
+            '<td style="text-align:right;padding:3px 6px">' + (v.p95 || 0) + 'ms</td>' +
+            '<td style="text-align:right;padding:3px 6px">' + (v.p99 || 0) + 'ms</td>' +
+            '<td style="text-align:right;padding:3px 6px">' + (v.calls || 0) + '</td>' +
+            '</tr>';
+        }).join('');
+      }
+    }
 
     const evEl = document.getElementById('events');
     if (d.events && d.events.length > 0) {
