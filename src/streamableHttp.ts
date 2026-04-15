@@ -582,6 +582,12 @@ export class StreamableHttpHandler {
       res.end("Session not found");
       return;
     }
+    const session = this.sessions.get(sessionId);
+    if (session && session.inFlight > 0) {
+      res.writeHead(409, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "request in progress" }));
+      return;
+    }
     this.destroySession(sessionId);
     res.writeHead(204);
     res.end();

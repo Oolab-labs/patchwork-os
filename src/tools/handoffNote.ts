@@ -66,15 +66,26 @@ function readNoteFromPath(notePath: string): HandoffNote | null {
   const cached = getCachedNote(notePath);
   if (cached !== undefined) return cached;
 
-  let result: HandoffNote | null;
   try {
     const raw = fs.readFileSync(notePath, "utf-8");
-    result = JSON.parse(raw) as HandoffNote;
-  } catch {
-    result = null;
+    const result = JSON.parse(raw) as HandoffNote;
+    setCachedNote(notePath, result);
+    return result;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      // File genuinely missing — cache null so we don't hammer the FS.
+      setCachedNote(notePath, null);
+    } else {
+      // Parse error, permission error, etc. — log and do NOT cache so the
+      // next call retries from disk (avoids silently returning "no note" for
+      // a temporarily corrupt file).
+      console.error(
+        `[readNoteFromPath] Failed to read/parse handoff note at ${notePath}:`,
+        err,
+      );
+    }
+    return null;
   }
-  setCachedNote(notePath, result);
-  return result;
 }
 
 export async function readNote(

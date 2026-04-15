@@ -91,12 +91,12 @@ describe("McpTransport — tool call rate limiter", () => {
     }
 
     const responses = await Promise.all(waiters);
-    expect(responses.every((r) => (r.error as any)?.code !== -32029)).toBe(
+    expect(responses.every((r) => (r.error as any)?.code !== -32004)).toBe(
       true,
     );
   });
 
-  it("rejects the (LIMIT+1)th call with error code -32029", async () => {
+  it("rejects the (LIMIT+1)th call with RATE_LIMIT_EXCEEDED (-32004)", async () => {
     const LIMIT = 3;
     const { ws } = await setup(LIMIT);
     const N = LIMIT + 1;
@@ -116,7 +116,7 @@ describe("McpTransport — tool call rate limiter", () => {
 
     const responses = await Promise.all(waiters);
     const rateLimitHit = responses.some(
-      (r) => (r.error as any)?.code === -32029,
+      (r) => (r.error as any)?.code === -32004,
     );
     expect(rateLimitHit).toBe(true);
   });
@@ -139,14 +139,14 @@ describe("McpTransport — tool call rate limiter", () => {
     }
 
     const responses = await Promise.all(waiters);
-    expect(responses.every((r) => (r.error as any)?.code !== -32029)).toBe(
+    expect(responses.every((r) => (r.error as any)?.code !== -32004)).toBe(
       true,
     );
   });
 
   it("AJV validation failure does not consume a rate limit token", async () => {
     // With LIMIT=1: if AJV failures consumed tokens, the valid call that follows
-    // would be rate-limited (-32029). It must succeed instead.
+    // would be rate-limited (-32004, RATE_LIMIT_EXCEEDED). It must succeed instead.
     const LIMIT = 1;
     const { ws, transport } = await setup(LIMIT);
 
@@ -185,7 +185,7 @@ describe("McpTransport — tool call rate limiter", () => {
       params: { name: "strict_tool", arguments: { label: "hello" } },
     });
     const validResp = await validWaiter;
-    expect((validResp.error as any)?.code).not.toBe(-32029);
+    expect((validResp.error as any)?.code).not.toBe(-32004);
     expect(validResp.result).toBeDefined();
   });
 
@@ -214,7 +214,7 @@ describe("McpTransport — tool call rate limiter", () => {
       });
     }
     const r1 = await Promise.all(w1);
-    expect(r1.every((r) => (r.error as any)?.code !== -32029)).toBe(true);
+    expect(r1.every((r) => (r.error as any)?.code !== -32004)).toBe(true);
 
     // Session 2 must now be rate-limited because the shared bucket is empty
     const w2 = waitFor(ws2, (m) => m.id === 300);
@@ -225,6 +225,6 @@ describe("McpTransport — tool call rate limiter", () => {
       params: { name: "ping_tool", arguments: {} },
     });
     const r2 = await w2;
-    expect((r2.error as any)?.code).toBe(-32029);
+    expect((r2.error as any)?.code).toBe(-32004);
   });
 });

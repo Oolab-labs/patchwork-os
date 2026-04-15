@@ -846,7 +846,10 @@ export class McpTransport {
               response = {
                 jsonrpc: "2.0",
                 id: msg.id,
-                error: { code: -32029, message: "Tool rate limit exceeded" },
+                error: {
+                  code: ErrorCodes.RATE_LIMIT_EXCEEDED,
+                  message: "Tool rate limit exceeded",
+                },
               };
               break;
             }

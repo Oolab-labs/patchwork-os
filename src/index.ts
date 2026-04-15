@@ -50,7 +50,7 @@ const BRIDGE_BLOCK_END = "<!-- claude-ide-bridge:end -->";
 
 /** Regex that matches ANY versioned bridge block (any version). */
 const BRIDGE_BLOCK_RE =
-  /<!-- claude-ide-bridge:start:[^\s>]+ -->[\s\S]*?<!-- claude-ide-bridge:end -->/;
+  /<!-- claude-ide-bridge:start:[^\s>]+ -->[\s\S]*?<!-- claude-ide-bridge:end -->/g;
 
 /** Regex that matches a versioned bridge block with a specific version captured. */
 const BRIDGE_BLOCK_VERSION_RE =
@@ -112,6 +112,13 @@ export function patchClaudeMdImport(
     const newBlock = buildVersionedBlock(marker, importLine, version);
     const patched = existing.replace(BRIDGE_BLOCK_RE, newBlock);
     if (patched === existing) return "no-section"; // safety guard
+    const remaining = (patched.match(/<!-- claude-ide-bridge:start:/g) ?? [])
+      .length;
+    if (remaining > 1) {
+      console.warn(
+        `[patchClaudeMdImport] ${remaining} bridge start sentinels remain after replace — manual cleanup may be needed in ${targetPath}`,
+      );
+    }
     writePatchedClaudeMd(targetPath, patched);
     return "updated";
   }
@@ -137,15 +144,17 @@ export function patchClaudeMdImport(
       writePatchedClaudeMd(targetPath, patched);
       return "patched";
     }
-    // marker present, import missing — insert versioned sentinel + import line
-    // immediately after the marker line, preserving any user content that follows.
+    // marker present, import missing — replace the marker line with the full
+    // versioned block (marker included inside sentinels) so that BRIDGE_BLOCK_RE
+    // can match it on future passes. Preserves any content that follows.
     const normalised = existing.endsWith("\n") ? existing : `${existing}\n`;
-    const markerLineEnd = normalised.indexOf("\n", normalised.indexOf(marker));
+    const markerIdx = normalised.indexOf(marker);
+    const markerLineEnd = normalised.indexOf("\n", markerIdx);
     if (markerLineEnd === -1) return "no-section";
-    const versionedImportLine = `${bridgeBlockStartMarker(version)}\n${importLine}\n${BRIDGE_BLOCK_END}`;
+    const versionedBlock = buildVersionedBlock(marker, importLine, version);
     const patched =
-      normalised.slice(0, markerLineEnd + 1) +
-      versionedImportLine +
+      normalised.slice(0, markerIdx) +
+      versionedBlock +
       "\n" +
       normalised.slice(markerLineEnd + 1);
     writePatchedClaudeMd(targetPath, patched);
@@ -174,10 +183,30 @@ function writePatchedClaudeMd(targetPath: string, patched: string): void {
     throw err;
   }
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = `${targetPath}.${ts}.bak`;
   try {
-    renameSync(targetPath, `${targetPath}.${ts}.bak`);
-    renameSync(tmpPath, targetPath);
+    renameSync(targetPath, backupPath);
+    try {
+      renameSync(tmpPath, targetPath);
+    } catch (err) {
+      // step-2 failed — restore original from backup before re-throwing
+      try {
+        unlinkSync(tmpPath);
+      } catch {
+        /* best-effort tmp cleanup */
+      }
+      try {
+        renameSync(backupPath, targetPath);
+      } catch (restoreErr) {
+        console.error(
+          `[writePatchedClaudeMd] Failed to restore backup ${backupPath} → ${targetPath}:`,
+          restoreErr,
+        );
+      }
+      throw err;
+    }
   } catch (err) {
+    // step-1 failed (backup rename) — just clean up tmp
     try {
       unlinkSync(tmpPath);
     } catch {

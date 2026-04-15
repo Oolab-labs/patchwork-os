@@ -190,14 +190,16 @@ describe("runToolsCommand --json flag positioning (Bug 3)", () => {
         return true;
       });
 
-    await runToolsCommand(["--json", "list"]);
-    spy.mockRestore();
-
-    const output = written.join("");
-    const parsed = JSON.parse(output);
-    // Should be an object keyed by category
-    expect(typeof parsed).toBe("object");
-    expect(Object.keys(parsed).length).toBeGreaterThan(0);
+    try {
+      await runToolsCommand(["--json", "list"]);
+      const output = written.join("");
+      const parsed = JSON.parse(output);
+      // Should be an object keyed by category
+      expect(typeof parsed).toBe("object");
+      expect(Object.keys(parsed).length).toBeGreaterThan(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("runToolsCommand(['--json', 'search', 'git']) works like ['search', 'git', '--json']", async () => {
@@ -209,19 +211,21 @@ describe("runToolsCommand --json flag positioning (Bug 3)", () => {
         return true;
       });
 
-    await runToolsCommand(["--json", "search", "git"]);
-    spy.mockRestore();
-
-    const output = written.join("");
-    const parsed = JSON.parse(output);
-    expect(Array.isArray(parsed)).toBe(true);
-    expect(parsed.length).toBeGreaterThan(0);
-    // All results must relate to git
-    for (const t of parsed as ToolEntry[]) {
-      const haystack = [t.name, t.description, ...t.categories]
-        .join(" ")
-        .toLowerCase();
-      expect(haystack).toContain("git");
+    try {
+      await runToolsCommand(["--json", "search", "git"]);
+      const output = written.join("");
+      const parsed = JSON.parse(output);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed.length).toBeGreaterThan(0);
+      // All results must relate to git
+      for (const t of parsed as ToolEntry[]) {
+        const haystack = [t.name, t.description, ...t.categories]
+          .join(" ")
+          .toLowerCase();
+        expect(haystack).toContain("git");
+      }
+    } finally {
+      spy.mockRestore();
     }
   });
 });

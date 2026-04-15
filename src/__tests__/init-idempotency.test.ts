@@ -187,7 +187,13 @@ describe("patchClaudeMdImport", () => {
       claudeMd,
       `${before}${makeVersionedBlock(OLD_VERSION)}${after}`,
     );
-    patchClaudeMdImport(claudeMd, MARKER, IMPORT_LINE, CURRENT_VERSION);
+    const result = patchClaudeMdImport(
+      claudeMd,
+      MARKER,
+      IMPORT_LINE,
+      CURRENT_VERSION,
+    );
+    expect(result).toBe("updated");
     const content = fs.readFileSync(claudeMd, "utf-8");
     expect(content).toContain("Some intro text.");
     expect(content).toContain("## Other section");
