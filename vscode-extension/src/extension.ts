@@ -509,6 +509,7 @@ export function activate(context: vscode.ExtensionContext): void {
     getAnalyticsReport,
     () => readLockFilesAsync(lockFileDir || undefined),
     vscode,
+    context,
   );
 
   context.subscriptions.push(
