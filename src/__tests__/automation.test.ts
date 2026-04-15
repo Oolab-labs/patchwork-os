@@ -5364,3 +5364,45 @@ describe("_resolveNamedPrompt: output capped at 32KB", () => {
     }
   });
 });
+
+// ── destroy() clears pending retry setTimeout handles ─────────────────────────
+
+describe("AutomationHooks.destroy() clears retry setTimeout handles", () => {
+  it("destroy() prevents retry setTimeout from enqueuing tasks after teardown", async () => {
+    // Driver always errors so the retry path is taken.
+    const driver: IClaudeDriver = {
+      name: "error",
+      async run() {
+        return { text: "", exitCode: 1, durationMs: 1 };
+      },
+    };
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Fix {{file}}",
+          cooldownMs: 0,
+          retryCount: 2,
+          retryDelayMs: 100, // short so the timeout fires quickly in tests
+        },
+      },
+      orch,
+      () => {},
+    );
+
+    hooks.handleFileSaved("change", "change", "/workspace/src/foo.ts");
+    // Wait for the initial task to be enqueued + error, and the retry interval
+    // to detect it (interval fires every 2s — use a mock-friendly approach by
+    // giving the interval one tick).
+    await new Promise((r) => setTimeout(r, 2_100));
+
+    // At this point the retry setTimeout (100ms) may be pending.
+    const countBefore = orch.list().length;
+    hooks.destroy(); // must cancel the setTimeout
+    await new Promise((r) => setTimeout(r, 300)); // past the 100ms delay
+    // No new task should have been enqueued after destroy().
+    expect(orch.list().length).toBe(countBefore);
+  });
+});

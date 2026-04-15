@@ -245,6 +245,8 @@ describe("watchDiagnostics: schema", () => {
 
 describe("watchDiagnostics: diagHistory FIFO cap at 5 000 entries", () => {
   it("tool remains functional after diagHistory cap is exceeded", async () => {
+    // Note: 5 100 enrichment entries can take 10–14 s under full-suite load.
+    // Timeout raised to 30 s to avoid flaky CI failures.
     // Build a client whose getCachedDiagnostics returns many unique diagnostics
     // (unique file+line combos) to drive enrichOneDiagnostic toward the cap.
     const uniqueDiags = Array.from({ length: 5_100 }, (_, i) => ({
@@ -279,5 +281,5 @@ describe("watchDiagnostics: diagHistory FIFO cap at 5 000 entries", () => {
     expect(result.isError).toBeFalsy();
     const data = JSON.parse((result.content[0] as { text: string }).text);
     expect(data.changed).toBe(true);
-  });
+  }, 30_000);
 });

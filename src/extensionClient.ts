@@ -1796,11 +1796,11 @@ export class ExtensionClient {
    */
   sendPush(method: string, params: Record<string, unknown>): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    try {
-      this.ws.send(JSON.stringify({ jsonrpc: "2.0", method, params }));
-    } catch {
-      // Non-fatal — extension may have just disconnected
-    }
+    void safeSend(
+      this.ws,
+      JSON.stringify({ jsonrpc: "2.0", method, params }),
+      this.logger,
+    );
   }
 
   disconnect(): void {
