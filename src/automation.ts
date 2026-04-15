@@ -1489,17 +1489,18 @@ export class AutomationHooks {
     ).length;
     const prevErrorCount = this.prevDiagnosticErrors.get(normalizedFile) ?? 0;
     this.prevDiagnosticErrors.set(normalizedFile, currentErrorCount);
-    // Evict oldest entry when per-file tracking maps exceed 5 000 paths to
-    // prevent unbounded growth in repos with many files.
-    if (this.prevDiagnosticErrors.size > 5_000) {
-      const oldest = this.prevDiagnosticErrors.keys().next().value;
-      if (oldest !== undefined) this.prevDiagnosticErrors.delete(oldest);
-    }
     // Keep latest diagnostics for _evaluateWhen() condition checks
     this.latestDiagnosticsByFile.set(normalizedFile, diagnostics);
-    if (this.latestDiagnosticsByFile.size > 5_000) {
-      const oldest = this.latestDiagnosticsByFile.keys().next().value;
-      if (oldest !== undefined) this.latestDiagnosticsByFile.delete(oldest);
+    // Evict the same oldest key from both maps together to keep them in sync.
+    // Using separate evictions could cause one map to drop file A while the other
+    // retains it, making _evaluateWhen() read stale diagnostics against a reset
+    // error-count baseline and triggering spurious onDiagnosticsCleared hooks.
+    if (this.prevDiagnosticErrors.size > 5_000) {
+      const oldest = this.prevDiagnosticErrors.keys().next().value;
+      if (oldest !== undefined) {
+        this.prevDiagnosticErrors.delete(oldest);
+        this.latestDiagnosticsByFile.delete(oldest);
+      }
     }
 
     // Fire onDiagnosticsCleared if transitioning from non-zero → zero

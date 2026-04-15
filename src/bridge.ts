@@ -1347,6 +1347,7 @@ export class Bridge {
     this.stopped = true;
     this.logger.info("Shutting down...");
     this._stopPeriodicSnapshots();
+    this.automationHooks?.destroy();
     this.pluginWatcher?.stop();
     this.pluginWatcher = null;
     this.httpMcpHandler?.close();

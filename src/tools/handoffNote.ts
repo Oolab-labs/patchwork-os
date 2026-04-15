@@ -51,7 +51,17 @@ function getCachedNote(notePath: string): HandoffNote | null | undefined {
   return entry.value; // cache hit (may be null for "file not found")
 }
 
+const NOTE_READ_CACHE_MAX_SIZE = 50;
+
 function setCachedNote(notePath: string, value: HandoffNote | null): void {
+  // Evict oldest entry when cache is at capacity (handles multi-workspace scenarios).
+  if (
+    !noteReadCache.has(notePath) &&
+    noteReadCache.size >= NOTE_READ_CACHE_MAX_SIZE
+  ) {
+    const oldest = noteReadCache.keys().next().value;
+    if (oldest !== undefined) noteReadCache.delete(oldest);
+  }
   noteReadCache.set(notePath, {
     value,
     expiresAt: Date.now() + READ_CACHE_TTL_MS,
@@ -78,7 +88,10 @@ function readNoteFromPath(notePath: string): HandoffNote | null {
       typeof result.note === "string" &&
       result.note.length > MAX_NOTE_READ_CHARS
     ) {
-      result.note = result.note.slice(0, MAX_NOTE_READ_CHARS) + "\n[truncated]";
+      // Spread to codepoints before slicing so multibyte chars aren't split mid-sequence.
+      result.note =
+        [...result.note].slice(0, MAX_NOTE_READ_CHARS).join("") +
+        "\n[truncated]";
     }
     setCachedNote(notePath, result);
     return result;
