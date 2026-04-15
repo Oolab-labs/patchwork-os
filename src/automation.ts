@@ -1176,6 +1176,8 @@ export function checkCcHookWiring(): Record<string, boolean> {
 export class AutomationHooks {
   /** Active retry-poll intervals — tracked so they can be cleared on destroy(). */
   private _retryIntervals = new Set<ReturnType<typeof setInterval>>();
+  /** Pending retry delay timeouts — tracked so destroy() can cancel them. */
+  private _retryTimeouts = new Set<ReturnType<typeof setTimeout>>();
   /** Last trigger time per "trigger key" (e.g. "diagnostics:/path/to/file"). */
   private lastTrigger = new Map<string, number>();
   /**
@@ -1349,7 +1351,8 @@ export class AutomationHooks {
       this.log(
         `[automation] ${opts.triggerSource}: retry ${nextAttempt}/${retryCount} in ${retryDelayMs}ms`,
       );
-      setTimeout(() => {
+      const retryTimeout = setTimeout(() => {
+        this._retryTimeouts.delete(retryTimeout);
         try {
           this._enqueueAutomationTask({
             ...opts,
@@ -1361,6 +1364,7 @@ export class AutomationHooks {
           );
         }
       }, retryDelayMs);
+      this._retryTimeouts.add(retryTimeout);
     }, 2_000);
     this._retryIntervals.add(interval);
   }
@@ -1369,6 +1373,8 @@ export class AutomationHooks {
   destroy(): void {
     for (const iv of this._retryIntervals) clearInterval(iv);
     this._retryIntervals.clear();
+    for (const t of this._retryTimeouts) clearTimeout(t);
+    this._retryTimeouts.clear();
   }
 
   /**

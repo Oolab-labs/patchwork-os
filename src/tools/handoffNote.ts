@@ -21,7 +21,13 @@ function workspaceScopedNotePath(workspace: string, configDir: string): string {
 }
 
 function resolveConfigDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  const envVal = process.env.CLAUDE_CONFIG_DIR;
+  if (envVal) {
+    // path.resolve() canonicalizes the value, neutralizing any `../..` traversal
+    // sequences that could appear in untrusted env (e.g. Docker EnvironmentFile).
+    return path.resolve(envVal);
+  }
+  return path.join(os.homedir(), ".claude");
 }
 
 interface HandoffNote {

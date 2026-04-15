@@ -700,3 +700,51 @@ describe("_buildTasksPayload: triggerSource is included", () => {
     expect(task?.triggerSource).toBeUndefined();
   });
 });
+
+// ── _drain infinite loop guard ────────────────────────────────────────────────
+
+describe("ClaudeOrchestrator._drain does not loop forever when all tasks exceed token budget", () => {
+  it("leaves oversized tasks pending while a slot is occupied, without spinning", async () => {
+    // estimateTokens = ceil(length/4); MAX_TOKEN_BUDGET = 500_000.
+    // A prompt of 2_000_001 chars estimates to 500_001 tokens — just over budget.
+    // We use a shorter 2MB string and accept the memory cost for correctness.
+    const BUDGET = ClaudeOrchestrator.MAX_TOKEN_BUDGET; // 500_000 tokens
+    // Craft a prompt whose estimate exceeds the budget by 1 token.
+    const hugePrompt = "x".repeat(BUDGET * 4 + 4); // ceil((BUDGET*4+4)/4) = BUDGET+1
+
+    let releaseBlocker: (() => void) | undefined;
+    const driver: IClaudeDriver = {
+      name: "blocker",
+      run: () =>
+        new Promise<{ text: string; exitCode: number; durationMs: number }>(
+          (resolve) => {
+            releaseBlocker = () =>
+              resolve({ text: "", exitCode: 0, durationMs: 1 });
+          },
+        ),
+    };
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+
+    // Occupy one slot with a small task (tokenEstimate well under budget).
+    orch.enqueue({ prompt: "seed" });
+    await new Promise((r) => setTimeout(r, 50)); // let seed start → running.size=1
+
+    // Enqueue tasks whose prompts each exceed MAX_TOKEN_BUDGET tokens.
+    // _drain is called synchronously inside enqueue — if the infinite-loop bug
+    // is present the process hangs on the enqueue calls below.
+    const before = Date.now();
+    orch.enqueue({ prompt: hugePrompt + "1" });
+    orch.enqueue({ prompt: hugePrompt + "2" });
+    orch.enqueue({ prompt: hugePrompt + "3" });
+    // If we reach here quickly, the loop guard worked.
+    expect(Date.now() - before).toBeLessThan(500);
+
+    // All three oversized tasks must still be pending (not started).
+    const pending = orch.list().filter((t) => t.status === "pending");
+    expect(pending.length).toBe(3);
+
+    // Cleanup
+    releaseBlocker?.();
+    await new Promise((r) => setTimeout(r, 50));
+  });
+});

@@ -186,9 +186,17 @@ export function createTestTraceToSourceTool(workspace: string) {
       const minCoverage =
         typeof minCoverageRaw === "number" ? minCoverageRaw : 0;
 
-      const coverageDir = path.isAbsolute(coverageDirRaw)
-        ? coverageDirRaw
-        : path.join(workspace, coverageDirRaw);
+      const resolvedWorkspace = path.resolve(workspace);
+      const coverageDir = path.resolve(resolvedWorkspace, coverageDirRaw);
+      // Reject paths that escape the workspace root (path traversal guard).
+      if (
+        coverageDir !== resolvedWorkspace &&
+        !coverageDir.startsWith(resolvedWorkspace + path.sep)
+      ) {
+        return error(
+          `coverageDir must be within the workspace: ${coverageDirRaw}`,
+        );
+      }
 
       if (!existsSync(coverageDir)) {
         return error(

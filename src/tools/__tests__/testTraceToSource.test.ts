@@ -178,3 +178,38 @@ describe("testTraceToSource", () => {
     }
   });
 });
+
+// ── Path traversal guard ───────────────────────────────────────────────────────
+
+describe("testTraceToSource: coverageDir path traversal guard", () => {
+  it("rejects coverageDir that escapes the workspace via ../", async () => {
+    const tool = createTestTraceToSourceTool(WORKSPACE);
+    const result = await tool.handler({
+      testPattern: "auth",
+      coverageDir: "../../etc",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/must be within the workspace/i);
+  });
+
+  it("rejects absolute coverageDir outside workspace", async () => {
+    const tool = createTestTraceToSourceTool(WORKSPACE);
+    const result = await tool.handler({
+      testPattern: "auth",
+      coverageDir: "/etc",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/must be within the workspace/i);
+  });
+
+  it("accepts relative coverageDir inside workspace", async () => {
+    const tool = createTestTraceToSourceTool(WORKSPACE);
+    // Non-existent dir → "coverage directory not found" error, NOT a traversal error.
+    const result = await tool.handler({
+      testPattern: "auth",
+      coverageDir: "coverage/sub",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).not.toMatch(/must be within the workspace/i);
+  });
+});

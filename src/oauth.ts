@@ -860,34 +860,15 @@ export class OAuthServerImpl implements OAuthServer {
       const timeout = setTimeout(() => controller.abort(), 5_000);
       let body: string;
       try {
-        // Manual redirect loop — max 5 hops; re-validate each Location hostname
-        // with isPrivateCimdHost() to prevent SSRF via open-redirect on the CIMD server.
-        const MAX_CIMD_REDIRECTS = 5;
-        let currentUrl = clientIdUrl;
-        let redirectCount = 0;
-        let resp: Response;
-        while (true) {
-          resp = await fetch(currentUrl, {
-            signal: controller.signal,
-            headers: { Accept: "application/json" },
-            redirect: "manual",
-          });
-          const isRedirect = resp.status >= 300 && resp.status < 400;
-          if (!isRedirect) break;
-          const location = resp.headers.get("location");
-          if (!location) break;
-          if (redirectCount >= MAX_CIMD_REDIRECTS) return null;
-          let nextUrl: URL;
-          try {
-            nextUrl = new URL(location, currentUrl);
-          } catch {
-            return null;
-          }
-          if (nextUrl.protocol !== "https:") return null;
-          if (isPrivateCimdHost(nextUrl.hostname)) return null;
-          currentUrl = nextUrl.toString();
-          redirectCount++;
-        }
+        // No redirects — CIMD metadata documents must be served directly at
+        // the registered client_id URL. Following Location headers from an
+        // attacker-controlled server could bypass the isPrivateCimdHost() guard
+        // regardless of per-hop re-validation.
+        const resp = await fetch(clientIdUrl, {
+          signal: controller.signal,
+          headers: { Accept: "application/json" },
+          redirect: "error",
+        });
         if (!resp.ok) return null;
         // Stream with size cap to prevent OOM
         const reader = resp.body?.getReader();

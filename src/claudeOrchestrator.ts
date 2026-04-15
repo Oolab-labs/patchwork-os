@@ -284,6 +284,9 @@ export class ClaudeOrchestrator {
   }
 
   private _drain(): void {
+    // Guard against infinite loop: if we cycle through the entire queue without
+    // starting any task (all tasks exceed token budget), stop rather than spinning.
+    let skipped = 0;
     while (
       this.running.size < ClaudeOrchestrator.MAX_CONCURRENT &&
       this.queue.length > 0
@@ -293,6 +296,7 @@ export class ClaudeOrchestrator {
       const task = this.tasks.get(id);
       if (!task || task.status !== "pending") {
         this.queue.shift();
+        skipped = 0; // stale entry removed — reset cycle counter
         continue;
       }
       // Token-budget check: if adding this task would exceed the budget, skip it
@@ -307,9 +311,13 @@ export class ClaudeOrchestrator {
         // Concurrency slots available — skip this oversized task and try the next one.
         this.queue.shift();
         this.queue.push(id); // move to back of queue
+        skipped++;
+        // Full cycle with no starts — all remaining tasks exceed budget; stop draining.
+        if (skipped >= this.queue.length) break;
         continue;
       }
       this.queue.shift();
+      skipped = 0;
       this._runTask(id);
     }
   }
