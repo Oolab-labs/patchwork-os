@@ -687,6 +687,41 @@ if (process.argv[2] === "notify") {
   process.exit(0);
 }
 
+// Handle token-efficiency subcommand — show config/session usage or run benchmark
+if (process.argv[2] === "token-efficiency") {
+  const teArgv = process.argv.slice(3);
+  const teSubCommand = teArgv[0] ?? "status";
+
+  if (teSubCommand === "--help" || teArgv.includes("--help")) {
+    console.log(`claude-ide-bridge token-efficiency — Token usage tools
+
+Usage: claude-ide-bridge token-efficiency [status|benchmark] [options]
+
+Subcommands:
+  status                  Show current config + live session usage (default)
+  benchmark [args...]     Run benchmark against a running bridge
+                            --iterations N   Number of iterations (default: 50)
+                            --json           Emit JSON output
+                            --threshold <ms> Fail if p99 RTT exceeds threshold
+
+Options:
+  --help  Show this help`);
+    process.exit(0);
+  }
+
+  const { tokenEfficiencyStatus, tokenEfficiencyBenchmark } = await import(
+    "./commands/tokenEfficiency.js"
+  );
+
+  if (teSubCommand === "benchmark") {
+    await tokenEfficiencyBenchmark(teArgv.slice(1));
+  } else {
+    // status (default)
+    await tokenEfficiencyStatus();
+  }
+  process.exit(0);
+}
+
 // Handle gen-plugin-stub subcommand — scaffolds a new plugin directory
 if (process.argv[2] === "gen-plugin-stub") {
   const argv = process.argv.slice(3);
