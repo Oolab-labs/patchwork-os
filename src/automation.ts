@@ -1405,10 +1405,15 @@ export class AutomationHooks {
       );
       return null;
     }
-    return result.messages
+    const text = result.messages
       .filter((m) => m.role === "user")
       .map((m) => m.content.text)
       .join("\n\n");
+    // Cap named-prompt output to the same 32KB limit used for inline prompts.
+    // A prompt chain (e.g. onPostCompact → project-status → contextBundle) can
+    // return 100KB+ which then gets injected into the automation task prompt and
+    // counts against Claude's context window on every hook firing.
+    return truncatePrompt(text);
   }
 
   /**

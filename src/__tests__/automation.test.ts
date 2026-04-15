@@ -5286,3 +5286,81 @@ describe("AutomationHooks per-file diagnostic maps stay in sync", () => {
     expect([...errMap.keys()].sort()).toEqual([...diagMap.keys()].sort());
   });
 });
+
+// ── Named-prompt output cap (token-leak fix) ──────────────────────────────────
+
+describe("_resolveNamedPrompt: output capped at 32KB", () => {
+  it("truncates named-prompt output exceeding 32 768 chars before injecting into task", async () => {
+    // Patch getPrompt to return a giant response so we can verify the cap
+    // without depending on a real template being that large.
+    const { vi } = await import("vitest");
+    const promptsMod = await import("../prompts.js");
+    const spy = vi.spyOn(promptsMod, "getPrompt").mockReturnValue({
+      messages: [
+        {
+          role: "user",
+          content: { type: "text", text: "x".repeat(100_000) },
+        },
+      ],
+    });
+
+    try {
+      const orch = makeInstantOrchestrator();
+      const hooks = new AutomationHooks(
+        {
+          onPostCompact: {
+            enabled: true,
+            promptName: "any-prompt",
+            promptArgs: {},
+            cooldownMs: 0,
+          },
+        },
+        orch,
+        () => {},
+      );
+      hooks.handlePostCompact();
+
+      const tasks = orch.list();
+      expect(tasks.length).toBe(1);
+      const prompt = tasks[0]!.prompt;
+      // Prompt must be capped — 32 768 chars + truncation suffix, not 100 000
+      expect(prompt.length).toBeLessThan(33_000);
+      expect(prompt).toContain("[... truncated");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not truncate named-prompt output under 32 768 chars", async () => {
+    const { vi } = await import("vitest");
+    const promptsMod = await import("../prompts.js");
+    const smallText = "review the workspace";
+    const spy = vi.spyOn(promptsMod, "getPrompt").mockReturnValue({
+      messages: [{ role: "user", content: { type: "text", text: smallText } }],
+    });
+
+    try {
+      const orch = makeInstantOrchestrator();
+      const hooks = new AutomationHooks(
+        {
+          onPostCompact: {
+            enabled: true,
+            promptName: "any-prompt",
+            promptArgs: {},
+            cooldownMs: 0,
+          },
+        },
+        orch,
+        () => {},
+      );
+      hooks.handlePostCompact();
+
+      const tasks = orch.list();
+      expect(tasks.length).toBe(1);
+      expect(tasks[0]!.prompt).toContain(smallText);
+      expect(tasks[0]!.prompt).not.toContain("[... truncated");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
