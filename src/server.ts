@@ -120,6 +120,10 @@ export class Server extends EventEmitter<ServerEvents> {
   public streamFn: ((listener: ActivityListener) => () => void) | null = null;
   /** Set to true via --no-dashboard to disable the /dashboard route. */
   public noDashboard = false;
+  /** Set by bridge to provide analytics report data (top tools, hooks, tasks) */
+  public analyticsFn:
+    | ((windowHours?: number) => Promise<Record<string, unknown>>)
+    | null = null;
   /** Set by bridge to handle CC hook notify events via POST /notify */
   public notifyFn:
     | ((
@@ -175,7 +179,7 @@ export class Server extends EventEmitter<ServerEvents> {
         `authToken is only ${authToken.length} chars — production tokens should be ≥ 32 chars (crypto.randomBytes(32).toString('hex'))`,
       );
     }
-    this.httpServer = http.createServer((req, res) => {
+    this.httpServer = http.createServer(async (req, res) => {
       // Security headers on all responses
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Cache-Control", "no-store");
@@ -461,6 +465,33 @@ export class Server extends EventEmitter<ServerEvents> {
             connections: this.wss.clients.size,
             ...(this.healthDataFn?.() ?? {}),
           };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      if (parsedUrl.pathname === "/analytics" && req.method === "GET") {
+        try {
+          const wh = parsedUrl.searchParams.get("windowHours");
+          const windowHours =
+            wh !== null && /^\d+$/.test(wh) ? Number(wh) : undefined;
+          const data = await (this.analyticsFn
+            ? this.analyticsFn(windowHours)
+            : Promise.resolve({
+                generatedAt: new Date().toISOString(),
+                windowHours: windowHours ?? 24,
+                topTools: [],
+                hooksLast24h: 0,
+                recentAutomationTasks: [],
+                hint: "Analytics not available — bridge driver not configured.",
+              }));
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {

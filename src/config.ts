@@ -258,6 +258,20 @@ export function loadConfigFile(configPath?: string): Partial<ConfigFile> {
           );
         }
       }
+      // Coerce numeric fields (JSON stringifies may convert to strings)
+      for (const numKey of [
+        "port",
+        "commandTimeout",
+        "maxResultSize",
+        "gracePeriodMs",
+        "maxSessions",
+        "oauthTokenTtlDays",
+      ]) {
+        if (numKey in obj && typeof obj[numKey] === "string") {
+          const parsed = Number.parseInt(obj[numKey] as string, 10);
+          if (Number.isInteger(parsed)) obj[numKey] = parsed;
+        }
+      }
       return obj as Partial<ConfigFile>;
     } catch (err) {
       console.warn(

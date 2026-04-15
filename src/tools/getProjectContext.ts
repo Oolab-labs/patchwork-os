@@ -374,7 +374,7 @@ export function createGetProjectContextTool(
         {
           tool: "mcp__codebase-memory__get_architecture",
           params: { projectId },
-          description: "Module boundaries and service topology",
+          hint: "Module boundaries and service topology",
         },
         {
           tool: "mcp__codebase-memory__query_graph",
@@ -383,7 +383,7 @@ export function createGetProjectContextTool(
             query:
               "MATCH (f:File)-[r:FILE_CHANGES_WITH]->(g:File) RETURN f,r,g ORDER BY r.count DESC LIMIT 10",
           },
-          description: "Files that change together (hotspots)",
+          hint: "Files that change together (hotspots)",
         },
       ];
 

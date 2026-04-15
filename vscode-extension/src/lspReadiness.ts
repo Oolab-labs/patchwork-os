@@ -14,7 +14,7 @@ const LSP_READINESS_TIMEOUT_MS = 30_000;
 export function createLspReadinessTracker(
   getBridge: () => BridgeConnection,
   output: vscode.OutputChannel,
-): vscode.Disposable {
+): vscode.Disposable & { resendAll(): void; startFallbackTimer(): void } {
   const readyLanguages = new Set<string>();
   let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
   const disposables: vscode.Disposable[] = [];

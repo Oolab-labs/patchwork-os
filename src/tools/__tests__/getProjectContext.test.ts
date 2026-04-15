@@ -151,6 +151,6 @@ describe("createGetProjectContextTool", () => {
     expect(result.memoryGraphQueries.length).toBeGreaterThan(0);
     const q = result.memoryGraphQueries[0];
     expect(typeof q.tool).toBe("string");
-    expect(typeof q.description).toBe("string");
+    expect(typeof q.hint).toBe("string");
   });
 });

@@ -234,6 +234,7 @@ export class Bridge {
 
       if (this.sessions.size === 0) {
         void this.maybeAutoSnapshotHandoff();
+        this._startPeriodicSnapshots();
       }
 
       const sessionId = randomUUID();
@@ -527,6 +528,45 @@ export class Bridge {
     });
   }
 
+  /** Build a rich auto-snapshot string from live bridge state. */
+  private _buildSnapshotSummary(): string {
+    const ts = new Date().toISOString();
+    const extConnected = this.extensionClient.isConnected();
+    const lines: string[] = [`[auto-snapshot ${ts}]`];
+    lines.push(`Workspace: ${this.config.workspace}`);
+    lines.push(`Extension: ${extConnected ? "connected" : "disconnected"}`);
+    lines.push(`Active sessions: ${this.sessions.size}`);
+
+    // Diagnostics summary from the extension client's live cache
+    if (extConnected) {
+      let errors = 0;
+      let warnings = 0;
+      const errorFiles: string[] = [];
+      for (const [file, diags] of this.extensionClient.latestDiagnostics) {
+        const e = diags.filter((d) => d.severity === "error").length;
+        const w = diags.filter((d) => d.severity === "warning").length;
+        errors += e;
+        warnings += w;
+        if (e > 0) errorFiles.push(file.split("/").pop() ?? file);
+      }
+      lines.push(`Diagnostics: ${errors} errors, ${warnings} warnings`);
+      if (errorFiles.length > 0) {
+        lines.push(`Error files: ${errorFiles.slice(0, 5).join(", ")}`);
+      }
+    }
+
+    // Top 3 most-called tools from activity log
+    const statsMap = this.activityLog.stats();
+    const topTools = Object.entries(statsMap)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 3)
+      .map(([name, s]) => `${name}(${s.count})`)
+      .join(", ");
+    if (topTools) lines.push(`Top tools: ${topTools}`);
+
+    return lines.join("\n");
+  }
+
   /** Write an auto-snapshot handoff note when a new first session connects, unless one was recently written. */
   private async maybeAutoSnapshotHandoff(): Promise<void> {
     try {
@@ -534,10 +574,43 @@ export class Bridge {
       if (existing && Date.now() - existing.updatedAt < 5 * 60_000) {
         return;
       }
-      const summary = `[auto-snapshot ${new Date().toISOString()}] Workspace: ${this.config.workspace}. Active bridge sessions: ${this.sessions.size}. Use getOpenEditors and getDiagnostics to inspect current state.`;
-      await writeNote(summary, this.config.workspace, undefined, true);
+      await writeNote(
+        this._buildSnapshotSummary(),
+        this.config.workspace,
+        undefined,
+        true,
+      );
     } catch {
       // best-effort — never let this crash the connection handler
+    }
+  }
+
+  /** Write a periodic auto-snapshot while sessions are active (every 5 minutes). */
+  private _periodicSnapshotTimer: ReturnType<typeof setInterval> | null = null;
+
+  private _startPeriodicSnapshots(): void {
+    if (this._periodicSnapshotTimer) return;
+    this._periodicSnapshotTimer = setInterval(
+      () => {
+        if (this.sessions.size === 0) return; // no active sessions — skip
+        void writeNote(
+          this._buildSnapshotSummary(),
+          this.config.workspace,
+          undefined,
+          true,
+        ).catch(() => {
+          /* best-effort */
+        });
+      },
+      5 * 60_000, // every 5 minutes
+    );
+    this._periodicSnapshotTimer.unref(); // don't prevent Node exit
+  }
+
+  private _stopPeriodicSnapshots(): void {
+    if (this._periodicSnapshotTimer) {
+      clearInterval(this._periodicSnapshotTimer);
+      this._periodicSnapshotTimer = null;
     }
   }
 
@@ -797,6 +870,54 @@ export class Bridge {
       };
     };
     this.server.metricsFn = () => this.activityLog.toPrometheus();
+    this.server.analyticsFn = async (windowHours?: number) => {
+      const wh =
+        typeof windowHours === "number" && windowHours >= 1 ? windowHours : 24;
+      const cutoff = Date.now() - wh * 3_600 * 1_000;
+      const statsMap = this.activityLog.stats();
+      const topTools = Object.entries(statsMap)
+        .map(([tool, s]) => ({
+          tool,
+          calls: s.count,
+          errors: s.errors,
+          avgMs: s.avgDurationMs,
+        }))
+        .sort((a, b) => b.calls - a.calls)
+        .slice(0, 10);
+      // Count automation tasks (isAutomationTask) created within the window.
+      // These originate from automation hooks (onFileSave, onGitCommit, etc.)
+      // and accurately represent "hooks fired" rather than session lifecycle events.
+      const hooksLast24h = this.orchestrator
+        ? this.orchestrator
+            .list()
+            .filter((t) => t.isAutomationTask && t.createdAt > cutoff).length
+        : 0;
+      const recentAutomationTasks = this.orchestrator
+        ? this.orchestrator
+            .list()
+            .sort((a, b) => b.createdAt - a.createdAt)
+            .slice(0, 20)
+            .map((t) => ({
+              id: t.id,
+              status: t.status,
+              ...(t.triggerSource !== undefined && {
+                triggerSource: t.triggerSource,
+              }),
+              ...(t.startedAt !== undefined &&
+                t.doneAt !== undefined && {
+                  durationMs: t.doneAt - t.startedAt,
+                }),
+              createdAt: new Date(t.createdAt).toISOString(),
+            }))
+        : [];
+      return {
+        generatedAt: new Date().toISOString(),
+        windowHours: wh,
+        topTools,
+        hooksLast24h,
+        recentAutomationTasks,
+      };
+    };
     this.server.streamFn = (listener) => this.activityLog.subscribe(listener);
     this.server.tasksFn = () => ({
       tasks: (this.orchestrator?.list() ?? []).map((t) => ({
@@ -1142,6 +1263,7 @@ export class Bridge {
     if (this.stopped) return;
     this.stopped = true;
     this.logger.info("Shutting down...");
+    this._stopPeriodicSnapshots();
     this.pluginWatcher?.stop();
     this.pluginWatcher = null;
     this.httpMcpHandler?.close();
