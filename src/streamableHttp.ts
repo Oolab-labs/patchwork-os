@@ -32,7 +32,7 @@ import { McpTransport } from "./transport.js";
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hour idle TTL — reduced from 24h to limit captured-session-ID reuse window
 const SESSION_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MAX_HTTP_SESSIONS = 10;
+const MAX_HTTP_SESSIONS = 5;
 const BODY_SIZE_LIMIT = 1_048_576; // 1 MB
 const MAX_PENDING_SENDS = 100; // per-session response queue cap
 const SSE_HEARTBEAT_MS = 20_000; // keep SSE streams alive through proxies/firewalls
