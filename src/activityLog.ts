@@ -501,6 +501,7 @@ export class ActivityLog {
     }
     return [...counts.entries()]
       .map(([pair, count]) => ({ pair, count }))
-      .sort((a, b) => b.count - a.count);
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 50);
   }
 }

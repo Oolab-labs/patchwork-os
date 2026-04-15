@@ -94,6 +94,8 @@ export function createWatchDiagnosticsTool(
   }
 
   // Per-instance diagnostic history: "file:line:message_prefix" → { firstSeenAt, recurrenceCount }
+  // Capped to prevent unbounded growth in long-running sessions.
+  const DIAG_HISTORY_MAX_SIZE = 5_000;
   const diagHistory = new Map<string, DiagnosticHistory>();
 
   async function enrichOneDiagnostic(
@@ -120,6 +122,11 @@ export function createWatchDiagnosticsTool(
     if (existing) {
       existing.recurrenceCount += 1;
     } else {
+      // Evict oldest entry before inserting when at cap
+      if (diagHistory.size >= DIAG_HISTORY_MAX_SIZE) {
+        const oldest = diagHistory.keys().next().value;
+        if (oldest !== undefined) diagHistory.delete(oldest);
+      }
       diagHistory.set(key, { firstSeenAt: now, recurrenceCount: 1 });
     }
     const entry = diagHistory.get(key) ?? {

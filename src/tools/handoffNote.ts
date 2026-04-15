@@ -62,6 +62,9 @@ function invalidateCachedNote(notePath: string): void {
   noteReadCache.delete(notePath);
 }
 
+/** Maximum handoff note size enforced at read time (matches write-time cap). */
+const MAX_NOTE_READ_CHARS = 10_000;
+
 function readNoteFromPath(notePath: string): HandoffNote | null {
   const cached = getCachedNote(notePath);
   if (cached !== undefined) return cached;
@@ -69,6 +72,14 @@ function readNoteFromPath(notePath: string): HandoffNote | null {
   try {
     const raw = fs.readFileSync(notePath, "utf-8");
     const result = JSON.parse(raw) as HandoffNote;
+    // Enforce read-time cap: a manually edited or oversized file must not inject
+    // unbounded content into Claude's context via contextBundle or getHandoffNote.
+    if (
+      typeof result.note === "string" &&
+      result.note.length > MAX_NOTE_READ_CHARS
+    ) {
+      result.note = result.note.slice(0, MAX_NOTE_READ_CHARS) + "\n[truncated]";
+    }
     setCachedNote(notePath, result);
     return result;
   } catch (err) {

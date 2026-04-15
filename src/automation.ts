@@ -58,6 +58,8 @@ function truncatePrompt(prompt: string): string {
 }
 /** Prune lastTrigger entries older than this to prevent unbounded Map growth */
 const LAST_TRIGGER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
+/** Hard size cap on lastTrigger to bound memory in very large repos */
+const LAST_TRIGGER_MAX_SIZE = 10_000;
 
 /** Default system prompt for automation subprocesses when none is set in policy. */
 const DEFAULT_AUTOMATION_SYSTEM_PROMPT =
@@ -1172,6 +1174,8 @@ export function checkCcHookWiring(): Record<string, boolean> {
 // ── AutomationHooks ───────────────────────────────────────────────────────────
 
 export class AutomationHooks {
+  /** Active retry-poll intervals — tracked so they can be cleared on destroy(). */
+  private _retryIntervals = new Set<ReturnType<typeof setInterval>>();
   /** Last trigger time per "trigger key" (e.g. "diagnostics:/path/to/file"). */
   private lastTrigger = new Map<string, number>();
   /**
@@ -1328,10 +1332,12 @@ export class AutomationHooks {
       const task = this.orchestrator.getTask(taskId);
       if (!task) {
         clearInterval(interval);
+        this._retryIntervals.delete(interval);
         return;
       }
       if (task.status === "pending" || task.status === "running") return;
       clearInterval(interval);
+      this._retryIntervals.delete(interval);
       if (task.status !== "error") return; // cancelled/done → no retry
       const nextAttempt = retryAttempt + 1;
       if (nextAttempt > retryCount) {
@@ -1356,6 +1362,13 @@ export class AutomationHooks {
         }
       }, retryDelayMs);
     }, 2_000);
+    this._retryIntervals.add(interval);
+  }
+
+  /** Clear all pending retry-poll intervals. Call when tearing down the instance. */
+  destroy(): void {
+    for (const iv of this._retryIntervals) clearInterval(iv);
+    this._retryIntervals.clear();
   }
 
   /**
@@ -1476,8 +1489,18 @@ export class AutomationHooks {
     ).length;
     const prevErrorCount = this.prevDiagnosticErrors.get(normalizedFile) ?? 0;
     this.prevDiagnosticErrors.set(normalizedFile, currentErrorCount);
+    // Evict oldest entry when per-file tracking maps exceed 5 000 paths to
+    // prevent unbounded growth in repos with many files.
+    if (this.prevDiagnosticErrors.size > 5_000) {
+      const oldest = this.prevDiagnosticErrors.keys().next().value;
+      if (oldest !== undefined) this.prevDiagnosticErrors.delete(oldest);
+    }
     // Keep latest diagnostics for _evaluateWhen() condition checks
     this.latestDiagnosticsByFile.set(normalizedFile, diagnostics);
+    if (this.latestDiagnosticsByFile.size > 5_000) {
+      const oldest = this.latestDiagnosticsByFile.keys().next().value;
+      if (oldest !== undefined) this.latestDiagnosticsByFile.delete(oldest);
+    }
 
     // Fire onDiagnosticsCleared if transitioning from non-zero → zero
     if (prevErrorCount > 0 && currentErrorCount === 0) {
@@ -1627,10 +1650,19 @@ export class AutomationHooks {
     }
   }
 
-  /** Prune lastTrigger entries older than LAST_TRIGGER_MAX_AGE_MS to prevent unbounded growth. */
+  /** Prune lastTrigger entries older than LAST_TRIGGER_MAX_AGE_MS to prevent unbounded growth.
+   *  Also enforces LAST_TRIGGER_MAX_SIZE hard cap by evicting oldest entries first. */
   private _pruneLastTrigger(now: number): void {
     for (const [k, t] of this.lastTrigger) {
       if (now - t > LAST_TRIGGER_MAX_AGE_MS) this.lastTrigger.delete(k);
+    }
+    // Hard size cap: evict oldest entries (insertion order) if still over limit
+    if (this.lastTrigger.size > LAST_TRIGGER_MAX_SIZE) {
+      let excess = this.lastTrigger.size - LAST_TRIGGER_MAX_SIZE;
+      for (const k of this.lastTrigger.keys()) {
+        this.lastTrigger.delete(k);
+        if (--excess <= 0) break;
+      }
     }
   }
 

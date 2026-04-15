@@ -221,7 +221,7 @@ export function createGetDiagnosticsTool(
         | undefined;
       const maxResults =
         typeof args.maxResults === "number"
-          ? Math.min(Math.max(1, Math.floor(args.maxResults)), 2000)
+          ? Math.min(Math.max(1, Math.floor(args.maxResults)), 500)
           : 100;
       const topN =
         typeof args.topN === "number" && args.topN > 0

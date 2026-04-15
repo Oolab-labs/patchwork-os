@@ -318,9 +318,16 @@ export function createRunTestsTool(
         if (err) errors[r.name] = err;
       }
 
-      const failures = results.filter(
+      // Cap failures to prevent large test suites from flooding Claude's context.
+      // summary.failed remains accurate; failures array is a best-effort subset.
+      const RUN_TESTS_MAX_FAILURES = 100;
+      const allFailures = results.filter(
         (r) => r.status === "failed" || r.status === "errored",
       );
+      const failuresTruncated = allFailures.length > RUN_TESTS_MAX_FAILURES;
+      const failures = failuresTruncated
+        ? allFailures.slice(0, RUN_TESTS_MAX_FAILURES)
+        : allFailures;
 
       // Fire automation hook (best-effort — errors must not propagate to caller)
       if (onTestRun) {
@@ -356,6 +363,10 @@ export function createRunTestsTool(
         ...(resultsTruncated && {
           resultsTruncated: true,
           resultsTotalCount: results.length,
+        }),
+        ...(failuresTruncated && {
+          failuresTruncated: true,
+          failuresTotalCount: allFailures.length,
         }),
         ...(Object.keys(errors).length > 0 && { runnerErrors: errors }),
       });
