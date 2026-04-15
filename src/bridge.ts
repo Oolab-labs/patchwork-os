@@ -112,6 +112,8 @@ export class Bridge {
   private extensionConnectionGeneration = 0;
   /** Tracks whether a debug session was active — detects true→false transition for onDebugSessionEnd. */
   private _lastDebugSessionActive = false;
+  /** ISO timestamp of last getProjectContext cache write — drives status-bar "context X min ago". */
+  private _lastContextCachedAt: string | null = null;
   private wsHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(private config: Config) {
@@ -329,6 +331,10 @@ export class Bridge {
           code: this.lastDisconnectCode,
           reason: this.lastDisconnectReason,
         }),
+        (generatedAt: string) => {
+          this._lastContextCachedAt = generatedAt;
+          this._emitLiveState();
+        },
       );
 
       transport.attach(ws);
@@ -398,6 +404,8 @@ export class Bridge {
       this.activityLog.recordEvent("extension_connected");
       this.logger.event("extension_connected");
       this.extensionClient.handleExtensionConnection(ws);
+      // Push current live state to newly connected extension
+      this._emitLiveState();
 
       // Immediate list_changed — tell Claude Code that extension tools are now available
       for (const session of this.sessions.values()) {
@@ -504,7 +512,19 @@ export class Bridge {
         });
       }
       this._lastDebugSessionActive = state.hasActiveSession;
+      this._emitLiveState();
     };
+  }
+
+  /** Push live bridge state to the extension for status-bar display. */
+  private _emitLiveState(): void {
+    const preCompactArmed =
+      this.automationHooks?.isPreCompactEnabled() ?? false;
+    this.extensionClient.sendPush("extension/bridgeLiveState", {
+      contextCachedAt: this._lastContextCachedAt,
+      preCompactArmed,
+      debugSessionActive: this._lastDebugSessionActive,
+    });
   }
 
   /** Write an auto-snapshot handoff note when a new first session connects, unless one was recently written. */

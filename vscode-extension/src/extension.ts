@@ -106,6 +106,14 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBar.show();
   context.subscriptions.push(statusBar);
 
+  // 60s interval to refresh "context X min ago" age suffix in the status bar
+  const liveRefreshTimer = setInterval(() => {
+    for (const b of getBridges()) b.refreshContextAge();
+  }, 60_000);
+  context.subscriptions.push({
+    dispose: () => clearInterval(liveRefreshTimer),
+  });
+
   // Read user settings
   const config = vscode.workspace.getConfiguration("claudeIdeBridge");
   const logLevel = config.get<string>("logLevel", "info");
@@ -144,6 +152,15 @@ export function activate(context: vscode.ExtensionContext): void {
       statusBar.text = `$(sync~spin) Claude Bridge ${connected}/${total}`;
       statusBar.tooltip = `Claude IDE Bridge: ${connected}/${total} bridges connected`;
     } else {
+      // Single bridge — try live state text first
+      if (total === 1 && all[0]) {
+        const live = all[0].getLiveStatusText();
+        if (live) {
+          statusBar.text = live.text;
+          statusBar.tooltip = live.tooltip;
+          return;
+        }
+      }
       const anyClaudeActive = all.some((b) => b.claudeConnected);
       statusBar.text = anyClaudeActive
         ? "$(check) Claude Bridge"
@@ -446,8 +463,15 @@ export function activate(context: vscode.ExtensionContext): void {
       (b) => b.ws?.readyState === WebSocket.OPEN,
     );
     if (!anyConnected) return null;
-    // No outbound MCP call mechanism available — return null for now.
-    return null;
+    // Return a minimal report so the panel renders (including Start Task button).
+    // Full analytics data requires a bridge HTTP /analytics endpoint (future work).
+    return {
+      generatedAt: new Date().toISOString(),
+      windowHours: 24,
+      topTools: [],
+      hooksLast24h: 0,
+      recentAutomationTasks: [],
+    };
   }
 
   const analyticsProvider = new AnalyticsViewProvider(

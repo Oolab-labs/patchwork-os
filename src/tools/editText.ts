@@ -160,7 +160,7 @@ export function createEditTextTool(
     schema: {
       name: "editText",
       description:
-        "Insert/delete/replace text at 1-based line/col. Atomic multi-edit. Uses VS Code or native fs.",
+        "Insert/delete/replace text at 1-based line/col. Atomic multi-edit. Uses VS Code or native fs. Workspace files only.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

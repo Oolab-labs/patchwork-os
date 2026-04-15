@@ -1009,44 +1009,12 @@ Steps performed:
     process.stderr.write("  ✓ Shim — claude-ide-bridge found on PATH\n\n");
   }
 
-  // Step 5: Env var check + next steps
-  const envSet = process.env.CLAUDE_CODE_IDE_SKIP_VALID_CHECK === "true";
-  let step = 1;
-  process.stdout.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-  process.stdout.write("Setup complete. Next:\n\n");
-  if (!envSet) {
-    process.stdout.write(
-      `  ${step++}. Add to your shell profile (~/.zshrc or ~/.bashrc):\n\n       export CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true\n\n     Then reload: source ~/.zshrc\n\n`,
-    );
-  }
+  // Step 5: Success message
   process.stdout.write(
-    `  ${step++}. Start the bridge (run in your project directory):\n\n       claude-ide-bridge --watch\n\n`,
+    "✅ Added onDebugSessionStart + onPreCompact + getProjectContext. " +
+      "Cold starts are now ~3× faster. " +
+      "Run claude-ide-bridge status to see everything live.\n\n",
   );
-  process.stdout.write(
-    `  ${step++}. Open Claude Code:\n\n       claude --ide\n\n`,
-  );
-  process.stdout.write(
-    `  ${step++}. Confirm the connection — type inside Claude:\n\n       /mcp          (shows server status — claude-ide-bridge should be green)\n       /ide          (shows open files, diagnostics, editor state)\n\n`,
-  );
-  const scheduledTasksDir = path.resolve(
-    __dirnameTop,
-    "..",
-    "templates",
-    "scheduled-tasks",
-  );
-  if (existsSync(scheduledTasksDir)) {
-    process.stdout.write(
-      `  ${step++}. Optional: activate scheduled task templates (nightly-review, health-check, dependency-audit):\n\n` +
-        `       cp -r $(npm root -g)/claude-ide-bridge/templates/scheduled-tasks/* ~/.claude/scheduled-tasks/\n\n`,
-    );
-  }
-  process.stdout.write(
-    "  Troubleshooting: https://github.com/Oolab-labs/claude-ide-bridge/blob/main/docs/troubleshooting.md\n",
-  );
-  process.stdout.write(
-    "  Tools not showing up? Run /mcp in Claude to see the connection state.\n",
-  );
-  process.stdout.write("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
   // Step 6: Verify setup
   process.stdout.write("\n📋 Setup verification:\n");
@@ -1105,6 +1073,26 @@ Steps performed:
       ? "  ✓ CC hooks wired in ~/.claude/settings.json\n"
       : "  ✗ CC hooks not wired — re-run init to add them\n",
   );
+
+  // Auto-open automation docs when --workspace was provided
+  if (workspaceIdx !== -1 && workspace) {
+    const docsPath = path.join(workspace, "docs", "automation.md");
+    const fallbackDocs = path.resolve(
+      __dirnameTop,
+      "..",
+      "docs",
+      "automation.md",
+    );
+    const target = existsSync(docsPath)
+      ? docsPath
+      : existsSync(fallbackDocs)
+        ? fallbackDocs
+        : null;
+    if (target) {
+      const { exec } = await import("node:child_process");
+      exec(`code "${target}"`, { timeout: 3000 }, () => {});
+    }
+  }
 
   // Analytics opt-in prompt — only ask once; skip if preference already set
   const existingPref = getAnalyticsPref();
@@ -1459,6 +1447,56 @@ Options:
   process.exit(0);
 }
 
+// F6: "Did you mean?" for unknown CLI subcommands
+{
+  const KNOWN_COMMANDS = [
+    "init",
+    "start-all",
+    "install-extension",
+    "gen-claude-md",
+    "print-token",
+    "gen-plugin-stub",
+    "notify",
+    "install",
+    "marketplace",
+    "status",
+    "shim",
+  ];
+  const unknownSub = process.argv[2];
+  if (
+    unknownSub &&
+    !unknownSub.startsWith("-") &&
+    !KNOWN_COMMANDS.includes(unknownSub)
+  ) {
+    const lev = (a: string, b: string): number => {
+      const dp: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+        Array.from({ length: b.length + 1 }, (_, j) =>
+          i === 0 ? j : j === 0 ? i : 0,
+        ),
+      );
+      for (let i = 1; i <= a.length; i++)
+        for (let j = 1; j <= b.length; j++)
+          // biome-ignore lint/style/noNonNullAssertion: dp is fully pre-allocated
+          dp[i]![j] =
+            a[i - 1] === b[j - 1]
+              ? // biome-ignore lint/style/noNonNullAssertion: dp is fully pre-allocated
+                dp[i - 1]![j - 1]!
+              : 1 +
+                // biome-ignore lint/style/noNonNullAssertion: dp is fully pre-allocated
+                Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!, dp[i - 1]![j - 1]!);
+      // biome-ignore lint/style/noNonNullAssertion: dp is fully pre-allocated
+      return dp[a.length]![b.length]!;
+    };
+    const closest = [...KNOWN_COMMANDS].sort(
+      (a, b) => lev(unknownSub, a) - lev(unknownSub, b),
+    )[0];
+    console.error(
+      `Unknown command: '${unknownSub}'. Did you mean: ${closest}?`,
+    );
+    process.exit(1);
+  }
+}
+
 const config = parseConfig(process.argv);
 
 // If --analytics flag was passed, persist the preference immediately
@@ -1567,4 +1605,23 @@ if (config.watch) {
     process.stderr.write(`Error: ${message}\n`);
     process.exit(1);
   });
+
+  // F5: Silent self-update nudge (fire-and-forget)
+  import("node:child_process")
+    .then(({ exec }) => {
+      exec(
+        "npm view claude-ide-bridge version",
+        { timeout: 5000 },
+        (err, stdout) => {
+          if (err || !stdout) return;
+          const latest = stdout.trim();
+          if (latest && latest !== PACKAGE_VERSION) {
+            console.log(
+              `\n  Bridge v${latest} available — run: npm update -g claude-ide-bridge\n`,
+            );
+          }
+        },
+      );
+    })
+    .catch(() => {});
 }

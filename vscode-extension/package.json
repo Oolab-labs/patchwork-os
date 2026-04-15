@@ -30,6 +30,56 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "walkthroughs": [
+      {
+        "id": "claudeIdeBridge.getStarted",
+        "title": "Get Started with Claude IDE Bridge",
+        "description": "Connect Claude AI to your VS Code workspace",
+        "steps": [
+          {
+            "id": "checkConnection",
+            "title": "Verify bridge is running",
+            "description": "Run `claude-ide-bridge start` in your terminal, then click Reconnect.\n\n[Reconnect](command:claudeIdeBridge.reconnect)",
+            "completionEvents": [
+              "onCommand:claudeIdeBridge.reconnect"
+            ],
+            "media": {
+              "markdown": "docs/walkthrough-hooks.md"
+            }
+          },
+          {
+            "id": "openPanel",
+            "title": "Open the Analytics Panel",
+            "description": "View live session stats and connection health.\n\n[Open Panel](command:claudeIdeBridge.openPanel)",
+            "completionEvents": [
+              "onView:claudeIdeBridgeAnalytics"
+            ],
+            "media": {
+              "markdown": "docs/walkthrough-hooks.md"
+            }
+          },
+          {
+            "id": "firstTask",
+            "title": "Run your first Claude task",
+            "description": "Ask Claude to explain your codebase using the `getProjectContext` tool.",
+            "completionEvents": [
+              "onCommand:claudeIdeBridge.startTask"
+            ],
+            "media": {
+              "markdown": "docs/walkthrough-hooks.md"
+            }
+          },
+          {
+            "id": "configureHook",
+            "title": "Configure an automation hook",
+            "description": "Auto-fix lint errors on save with `onDiagnosticsError`.",
+            "media": {
+              "markdown": "docs/walkthrough-hooks.md"
+            }
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "Claude IDE Bridge",
       "properties": {

@@ -90,7 +90,7 @@ export interface AutomationCondition {
   /** Only fire if the active file has a diagnostic of at least this severity. */
   diagnosticsMinSeverity?: "error" | "warning";
   /** Only fire if the last test run for any runner had this outcome. */
-  testRunnerLastStatus?: "passed" | "failed";
+  testRunnerLastStatus?: "passed" | "failed" | "any";
 }
 
 export interface PromptSource {
@@ -595,6 +595,15 @@ export function loadPolicy(filePath: string): AutomationPolicy {
 
   const policy = parsed as AutomationPolicy;
 
+  // Helper: throw with actual value in message for easier debugging
+  function expectType(value: unknown, type: string, field: string): void {
+    if (typeof value !== type) {
+      throw new Error(
+        `"${field}" must be ${type} (got ${typeof value}: ${JSON.stringify(value)})`,
+      );
+    }
+  }
+
   // Validate top-level fields
   if (
     policy.defaultModel !== undefined &&
@@ -642,8 +651,11 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       );
     }
     validatePromptSource("onDiagnosticsError", d);
-    if (typeof d.cooldownMs !== "number" || !Number.isFinite(d.cooldownMs)) {
-      throw new Error(`"onDiagnosticsError.cooldownMs" must be a number`);
+    expectType(d.cooldownMs, "number", "onDiagnosticsError.cooldownMs");
+    if (!Number.isFinite(d.cooldownMs as number)) {
+      throw new Error(
+        `"onDiagnosticsError.cooldownMs" must be a finite number`,
+      );
     }
     if (d.cooldownMs < MIN_COOLDOWN_MS) {
       d.cooldownMs = MIN_COOLDOWN_MS;
@@ -699,8 +711,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       );
     }
     validatePromptSource("onFileSave", s);
-    if (typeof s.cooldownMs !== "number" || !Number.isFinite(s.cooldownMs)) {
-      throw new Error(`"onFileSave.cooldownMs" must be a number`);
+    expectType(s.cooldownMs, "number", "onFileSave.cooldownMs");
+    if (!Number.isFinite(s.cooldownMs as number)) {
+      throw new Error(`"onFileSave.cooldownMs" must be a finite number`);
     }
     if (s.cooldownMs < MIN_COOLDOWN_MS) {
       s.cooldownMs = MIN_COOLDOWN_MS;
@@ -726,8 +739,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       );
     }
     validatePromptSource("onFileChanged", fc);
-    if (typeof fc.cooldownMs !== "number" || !Number.isFinite(fc.cooldownMs)) {
-      throw new Error(`"onFileChanged.cooldownMs" must be a number`);
+    expectType(fc.cooldownMs, "number", "onFileChanged.cooldownMs");
+    if (!Number.isFinite(fc.cooldownMs as number)) {
+      throw new Error(`"onFileChanged.cooldownMs" must be a finite number`);
     }
     if (fc.cooldownMs < MIN_COOLDOWN_MS) {
       fc.cooldownMs = MIN_COOLDOWN_MS;
@@ -744,8 +758,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onCwdChanged.enabled" must be a boolean`);
     }
     validatePromptSource("onCwdChanged", cw);
-    if (typeof cw.cooldownMs !== "number" || !Number.isFinite(cw.cooldownMs)) {
-      throw new Error(`"onCwdChanged.cooldownMs" must be a number`);
+    expectType(cw.cooldownMs, "number", "onCwdChanged.cooldownMs");
+    if (!Number.isFinite(cw.cooldownMs as number)) {
+      throw new Error(`"onCwdChanged.cooldownMs" must be a finite number`);
     }
     if (cw.cooldownMs < MIN_COOLDOWN_MS) {
       cw.cooldownMs = MIN_COOLDOWN_MS;
@@ -762,8 +777,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onPreCompact.enabled" must be a boolean`);
     }
     validatePromptSource("onPreCompact", p);
-    if (typeof p.cooldownMs !== "number" || !Number.isFinite(p.cooldownMs)) {
-      throw new Error(`"onPreCompact.cooldownMs" must be a number`);
+    expectType(p.cooldownMs, "number", "onPreCompact.cooldownMs");
+    if (!Number.isFinite(p.cooldownMs as number)) {
+      throw new Error(`"onPreCompact.cooldownMs" must be a finite number`);
     }
     if (p.cooldownMs < MIN_COOLDOWN_MS) {
       p.cooldownMs = MIN_COOLDOWN_MS;
@@ -780,8 +796,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onPostCompact.enabled" must be a boolean`);
     }
     validatePromptSource("onPostCompact", p);
-    if (typeof p.cooldownMs !== "number" || !Number.isFinite(p.cooldownMs)) {
-      throw new Error(`"onPostCompact.cooldownMs" must be a number`);
+    expectType(p.cooldownMs, "number", "onPostCompact.cooldownMs");
+    if (!Number.isFinite(p.cooldownMs as number)) {
+      throw new Error(`"onPostCompact.cooldownMs" must be a finite number`);
     }
     if (p.cooldownMs < MIN_COOLDOWN_MS) {
       p.cooldownMs = MIN_COOLDOWN_MS;
@@ -820,8 +837,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onTestRun.onFailureOnly" must be a boolean`);
     }
     validatePromptSource("onTestRun", tr);
-    if (typeof tr.cooldownMs !== "number" || !Number.isFinite(tr.cooldownMs)) {
-      throw new Error(`"onTestRun.cooldownMs" must be a number`);
+    expectType(tr.cooldownMs, "number", "onTestRun.cooldownMs");
+    if (!Number.isFinite(tr.cooldownMs as number)) {
+      throw new Error(`"onTestRun.cooldownMs" must be a finite number`);
     }
     if (tr.cooldownMs < MIN_COOLDOWN_MS) {
       tr.cooldownMs = MIN_COOLDOWN_MS;
@@ -849,11 +867,11 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onTestPassAfterFailure.enabled" must be a boolean`);
     }
     validatePromptSource("onTestPassAfterFailure", tpaf);
-    if (
-      typeof tpaf.cooldownMs !== "number" ||
-      !Number.isFinite(tpaf.cooldownMs)
-    ) {
-      throw new Error(`"onTestPassAfterFailure.cooldownMs" must be a number`);
+    expectType(tpaf.cooldownMs, "number", "onTestPassAfterFailure.cooldownMs");
+    if (!Number.isFinite(tpaf.cooldownMs as number)) {
+      throw new Error(
+        `"onTestPassAfterFailure.cooldownMs" must be a finite number`,
+      );
     }
     if (tpaf.cooldownMs < MIN_COOLDOWN_MS) {
       tpaf.cooldownMs = MIN_COOLDOWN_MS;
@@ -870,8 +888,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onGitCommit.enabled" must be a boolean`);
     }
     validatePromptSource("onGitCommit", gc);
-    if (typeof gc.cooldownMs !== "number" || !Number.isFinite(gc.cooldownMs)) {
-      throw new Error(`"onGitCommit.cooldownMs" must be a number`);
+    expectType(gc.cooldownMs, "number", "onGitCommit.cooldownMs");
+    if (!Number.isFinite(gc.cooldownMs as number)) {
+      throw new Error(`"onGitCommit.cooldownMs" must be a finite number`);
     }
     if (gc.cooldownMs < MIN_COOLDOWN_MS) {
       gc.cooldownMs = MIN_COOLDOWN_MS;
@@ -888,8 +907,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onGitPush.enabled" must be a boolean`);
     }
     validatePromptSource("onGitPush", gp);
-    if (typeof gp.cooldownMs !== "number" || !Number.isFinite(gp.cooldownMs)) {
-      throw new Error(`"onGitPush.cooldownMs" must be a number`);
+    expectType(gp.cooldownMs, "number", "onGitPush.cooldownMs");
+    if (!Number.isFinite(gp.cooldownMs as number)) {
+      throw new Error(`"onGitPush.cooldownMs" must be a finite number`);
     }
     if (gp.cooldownMs < MIN_COOLDOWN_MS) {
       gp.cooldownMs = MIN_COOLDOWN_MS;
@@ -906,11 +926,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onGitPull.enabled" must be a boolean`);
     }
     validatePromptSource("onGitPull", gpl);
-    if (
-      typeof gpl.cooldownMs !== "number" ||
-      !Number.isFinite(gpl.cooldownMs)
-    ) {
-      throw new Error(`"onGitPull.cooldownMs" must be a number`);
+    expectType(gpl.cooldownMs, "number", "onGitPull.cooldownMs");
+    if (!Number.isFinite(gpl.cooldownMs as number)) {
+      throw new Error(`"onGitPull.cooldownMs" must be a finite number`);
     }
     if (gpl.cooldownMs < MIN_COOLDOWN_MS) {
       gpl.cooldownMs = MIN_COOLDOWN_MS;
@@ -927,8 +945,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onBranchCheckout.enabled" must be a boolean`);
     }
     validatePromptSource("onBranchCheckout", bc);
-    if (typeof bc.cooldownMs !== "number" || !Number.isFinite(bc.cooldownMs)) {
-      throw new Error(`"onBranchCheckout.cooldownMs" must be a number`);
+    expectType(bc.cooldownMs, "number", "onBranchCheckout.cooldownMs");
+    if (!Number.isFinite(bc.cooldownMs as number)) {
+      throw new Error(`"onBranchCheckout.cooldownMs" must be a finite number`);
     }
     if (bc.cooldownMs < MIN_COOLDOWN_MS) {
       bc.cooldownMs = MIN_COOLDOWN_MS;
@@ -945,8 +964,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onPullRequest.enabled" must be a boolean`);
     }
     validatePromptSource("onPullRequest", pr);
-    if (typeof pr.cooldownMs !== "number" || !Number.isFinite(pr.cooldownMs)) {
-      throw new Error(`"onPullRequest.cooldownMs" must be a number`);
+    expectType(pr.cooldownMs, "number", "onPullRequest.cooldownMs");
+    if (!Number.isFinite(pr.cooldownMs as number)) {
+      throw new Error(`"onPullRequest.cooldownMs" must be a finite number`);
     }
     if (pr.cooldownMs < MIN_COOLDOWN_MS) {
       pr.cooldownMs = MIN_COOLDOWN_MS;
@@ -963,8 +983,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onTaskCreated.enabled" must be a boolean`);
     }
     validatePromptSource("onTaskCreated", tc);
-    if (typeof tc.cooldownMs !== "number" || !Number.isFinite(tc.cooldownMs)) {
-      throw new Error(`"onTaskCreated.cooldownMs" must be a number`);
+    expectType(tc.cooldownMs, "number", "onTaskCreated.cooldownMs");
+    if (!Number.isFinite(tc.cooldownMs as number)) {
+      throw new Error(`"onTaskCreated.cooldownMs" must be a finite number`);
     }
     if (tc.cooldownMs < MIN_COOLDOWN_MS) {
       tc.cooldownMs = MIN_COOLDOWN_MS;
@@ -981,8 +1002,11 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onPermissionDenied.enabled" must be a boolean`);
     }
     validatePromptSource("onPermissionDenied", pd);
-    if (typeof pd.cooldownMs !== "number" || !Number.isFinite(pd.cooldownMs)) {
-      throw new Error(`"onPermissionDenied.cooldownMs" must be a number`);
+    expectType(pd.cooldownMs, "number", "onPermissionDenied.cooldownMs");
+    if (!Number.isFinite(pd.cooldownMs as number)) {
+      throw new Error(
+        `"onPermissionDenied.cooldownMs" must be a finite number`,
+      );
     }
     if (pd.cooldownMs < MIN_COOLDOWN_MS) {
       pd.cooldownMs = MIN_COOLDOWN_MS;
@@ -999,8 +1023,11 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onDiagnosticsCleared.enabled" must be a boolean`);
     }
     validatePromptSource("onDiagnosticsCleared", dc);
-    if (typeof dc.cooldownMs !== "number" || !Number.isFinite(dc.cooldownMs)) {
-      throw new Error(`"onDiagnosticsCleared.cooldownMs" must be a number`);
+    expectType(dc.cooldownMs, "number", "onDiagnosticsCleared.cooldownMs");
+    if (!Number.isFinite(dc.cooldownMs as number)) {
+      throw new Error(
+        `"onDiagnosticsCleared.cooldownMs" must be a finite number`,
+      );
     }
     if (dc.cooldownMs < MIN_COOLDOWN_MS) {
       dc.cooldownMs = MIN_COOLDOWN_MS;
@@ -1017,8 +1044,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onTaskSuccess.enabled" must be a boolean`);
     }
     validatePromptSource("onTaskSuccess", ts);
-    if (typeof ts.cooldownMs !== "number" || !Number.isFinite(ts.cooldownMs)) {
-      throw new Error(`"onTaskSuccess.cooldownMs" must be a number`);
+    expectType(ts.cooldownMs, "number", "onTaskSuccess.cooldownMs");
+    if (!Number.isFinite(ts.cooldownMs as number)) {
+      throw new Error(`"onTaskSuccess.cooldownMs" must be a finite number`);
     }
     if (ts.cooldownMs < MIN_COOLDOWN_MS) {
       ts.cooldownMs = MIN_COOLDOWN_MS;
@@ -1035,11 +1063,11 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onDebugSessionStart.enabled" must be a boolean`);
     }
     validatePromptSource("onDebugSessionStart", dss);
-    if (
-      typeof dss.cooldownMs !== "number" ||
-      !Number.isFinite(dss.cooldownMs)
-    ) {
-      throw new Error(`"onDebugSessionStart.cooldownMs" must be a number`);
+    expectType(dss.cooldownMs, "number", "onDebugSessionStart.cooldownMs");
+    if (!Number.isFinite(dss.cooldownMs as number)) {
+      throw new Error(
+        `"onDebugSessionStart.cooldownMs" must be a finite number`,
+      );
     }
     if (dss.cooldownMs < MIN_COOLDOWN_MS) {
       dss.cooldownMs = MIN_COOLDOWN_MS;
@@ -1056,11 +1084,9 @@ export function loadPolicy(filePath: string): AutomationPolicy {
       throw new Error(`"onDebugSessionEnd.enabled" must be a boolean`);
     }
     validatePromptSource("onDebugSessionEnd", dse);
-    if (
-      typeof dse.cooldownMs !== "number" ||
-      !Number.isFinite(dse.cooldownMs)
-    ) {
-      throw new Error(`"onDebugSessionEnd.cooldownMs" must be a number`);
+    expectType(dse.cooldownMs, "number", "onDebugSessionEnd.cooldownMs");
+    if (!Number.isFinite(dse.cooldownMs as number)) {
+      throw new Error(`"onDebugSessionEnd.cooldownMs" must be a finite number`);
     }
     if (dse.cooldownMs < MIN_COOLDOWN_MS) {
       dse.cooldownMs = MIN_COOLDOWN_MS;
@@ -1208,6 +1234,7 @@ export class AutomationHooks {
    * Entries older than 60 minutes are pruned on each enqueue.
    */
   private taskTimestamps: number[] = [];
+  private _lastFiredAt: string | null = null;
 
   constructor(
     private readonly policy: AutomationPolicy,
@@ -1270,6 +1297,7 @@ export class AutomationHooks {
     if (maxPerHour > 0) {
       this.taskTimestamps.push(Date.now());
     }
+    this._lastFiredAt = new Date().toISOString();
 
     // Schedule retry watcher if retryCount > 0.
     const retryCount = opts.hookCfg?.retryCount ?? 0;
@@ -1411,8 +1439,11 @@ export class AutomationHooks {
       // Check any runner's last status (wildcard: first match wins)
       const statuses = Array.from(this.lastTestRunnerStatusByRunner.values());
       if (statuses.length === 0) return false;
-      const hasMatch = statuses.some((s) => s === when.testRunnerLastStatus);
-      if (!hasMatch) return false;
+      if (when.testRunnerLastStatus !== "any") {
+        const hasMatch = statuses.some((s) => s === when.testRunnerLastStatus);
+        if (!hasMatch) return false;
+      }
+      // "any" passes as long as at least one runner has reported a status
     }
 
     return true;
@@ -3461,5 +3492,39 @@ export class AutomationHooks {
         p.automationSystemPrompt ?? DEFAULT_AUTOMATION_SYSTEM_PROMPT
       ).slice(0, 80),
     };
+  }
+
+  isPreCompactEnabled(): boolean {
+    return this.policy.onPreCompact?.enabled === true;
+  }
+
+  getStats(): { hooksEnabled: number; lastFiredAt: string | null } {
+    const hookKeys = [
+      "onFileSave",
+      "onFileChanged",
+      "onDiagnosticsError",
+      "onDiagnosticsCleared",
+      "onPreCompact",
+      "onPostCompact",
+      "onInstructionsLoaded",
+      "onBranchCheckout",
+      "onGitCommit",
+      "onGitPull",
+      "onGitPush",
+      "onPullRequest",
+      "onTestRun",
+      "onTestPassAfterFailure",
+      "onPermissionDenied",
+      "onCwdChanged",
+      "onTaskCreated",
+      "onTaskSuccess",
+      "onDebugSessionStart",
+      "onDebugSessionEnd",
+    ] as const;
+    const hooksEnabled = hookKeys.filter((k) => {
+      const hook = this.policy[k] as { enabled?: boolean } | undefined;
+      return hook !== undefined && hook.enabled !== false;
+    }).length;
+    return { hooksEnabled, lastFiredAt: this._lastFiredAt };
   }
 }

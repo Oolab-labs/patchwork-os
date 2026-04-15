@@ -22,7 +22,7 @@ export function createReplaceBlockTool(
     schema: {
       name: "replaceBlock",
       description:
-        "Replace exact text block by content match, no line numbers. Fails clearly if not found or ambiguous.",
+        "Replace exact text block in a workspace file by content match, no line numbers. Fails clearly if not found or ambiguous.",
       annotations: { destructiveHint: true },
       inputSchema: {
         type: "object" as const,

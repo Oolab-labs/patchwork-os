@@ -12,7 +12,7 @@ export function createSaveDocumentTool(
     schema: {
       name: "saveDocument",
       description:
-        "Save document via VS Code buffer when ext connected. No-op otherwise (editText writes to disk).",
+        "Save workspace document via VS Code buffer when ext connected. No-op otherwise (editText writes to disk).",
       annotations: { destructiveHint: true },
       inputSchema: {
         $schema: "http://json-schema.org/draft-07/schema#",

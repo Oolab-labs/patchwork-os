@@ -332,6 +332,7 @@ export function createAuditDependenciesTool(
       }
 
       try {
+        progress?.(0, 100, `Running ${detected} outdated check…`);
         let packages: OutdatedPackage[];
         switch (detected) {
           case "npm":
@@ -383,6 +384,7 @@ export function createAuditDependenciesTool(
           total: packages.length,
           packages,
         };
+        progress?.(100, 100, `Found ${packages.length} outdated package(s)`);
         cache.set(cacheKey, { data: result, timestamp: Date.now() });
         return successStructured(result);
       } catch (err: unknown) {

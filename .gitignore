@@ -53,3 +53,6 @@ demo-project/
 diagnostics-*.html
 coverage-*.html
 deps-*.html
+
+# Playwright MCP session artifacts
+.playwright-mcp/
