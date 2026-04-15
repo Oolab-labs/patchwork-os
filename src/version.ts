@@ -13,6 +13,21 @@ export const PACKAGE_VERSION: string = _rootPkg.version;
 /** License identifier from package.json (e.g. "MIT"). */
 export const PACKAGE_LICENSE: string = _rootPkg.license ?? "MIT";
 
+/** Returns true if `a` is strictly greater than `b` using semver precedence. */
+export function semverGt(a: string, b: string): boolean {
+  const parse = (v: string): [number, number, number] => {
+    const parts = v.split(".").map(Number);
+    return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+  };
+  const [aMaj, aMin, aPat] = parse(a);
+  const [bMaj, bMin, bPat] = parse(b);
+  return aMaj !== bMaj
+    ? aMaj > bMaj
+    : aMin !== bMin
+      ? aMin > bMin
+      : aPat > bPat;
+}
+
 /** Shared protocol version between the bridge server and the VS Code extension.
  *  NOTE: This is the *protocol* version (the MCP handshake negotiation value),
  *  intentionally separate from the npm package version in package.json.
