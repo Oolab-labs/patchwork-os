@@ -131,7 +131,7 @@ export function createRunTestsTool(
           timeoutMs: {
             type: "integer",
             description:
-              "Subprocess timeout in ms. Default: 120000 (2 min). Increase for large suites.",
+              "Subprocess timeout in ms. Default: 300000 (5 min). Increase to 600000 for full project runs (>1000 tests).",
           },
         },
         additionalProperties: false as const,

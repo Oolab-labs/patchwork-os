@@ -50,7 +50,7 @@ export function createSearchAndReplaceTool(workspace: string) {
           dryRun: {
             type: "boolean",
             description:
-              "If true, returns what would change without writing any files. Useful for previewing impact. Default: false.",
+              "Preview changes without writing files. Default: false.",
           },
           includeIgnored: {
             type: "boolean",

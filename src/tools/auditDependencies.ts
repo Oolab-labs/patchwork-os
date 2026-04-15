@@ -273,7 +273,7 @@ export function createAuditDependenciesTool(
           maxAge: {
             type: "number",
             description:
-              "Only report packages where versions differ by major (1) or minor (2) increments — reserved for future use.",
+              "Filter by version increment: 1=major only, 2=major+minor. Reserved.",
           },
         },
         additionalProperties: false as const,
