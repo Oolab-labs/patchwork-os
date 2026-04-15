@@ -26,6 +26,18 @@ const ctx = await esbuild.context({
   },
 });
 
+import * as fs from "node:fs";
+
+// Copy codicons dist (CSS + TTF font) so the webview can load them via asWebviewUri
+const codiconsSrc = path.join(__dirname, "node_modules/@vscode/codicons/dist");
+const codiconsDst = path.join(__dirname, "out/codicons");
+if (fs.existsSync(codiconsSrc)) {
+  fs.mkdirSync(codiconsDst, { recursive: true });
+  for (const f of ["codicon.css", "codicon.ttf"]) {
+    fs.copyFileSync(path.join(codiconsSrc, f), path.join(codiconsDst, f));
+  }
+}
+
 if (watch) {
   await ctx.watch();
   console.log("Watching for changes...");

@@ -2,7 +2,7 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "Companion extension for claude-ide-bridge — provides real-time editor state to Claude Code",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "extensionKind": [
     "workspace"
   ],
@@ -126,8 +126,8 @@
       "activitybar": [
         {
           "id": "claudeBridgeAnalytics",
-          "title": "Claude Analytics",
-          "icon": "$(pulse)"
+          "title": "Claude Bridge",
+          "icon": "$(plug)"
         }
       ]
     },
@@ -136,7 +136,7 @@
         {
           "type": "webview",
           "id": "claudeIdeBridge.analyticsView",
-          "name": "Analytics"
+          "name": "Claude Bridge"
         }
       ]
     },
@@ -180,6 +180,7 @@
   "devDependencies": {
     "@types/vscode": "^1.93.0",
     "@types/ws": "^8.5.10",
+    "@vscode/codicons": "^0.0.45",
     "esbuild": "^0.27.4",
     "vitest": "^3.0.0"
   }
