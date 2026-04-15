@@ -548,7 +548,7 @@ export function createGithubPostPRReviewTool(workspace: string) {
             type: "string",
             enum: ["COMMENT", "REQUEST_CHANGES"],
             description:
-              "Review event. COMMENT (default) leaves a non-blocking review. REQUEST_CHANGES blocks merging until resolved.",
+              "COMMENT (non-blocking) or REQUEST_CHANGES (blocks merge until resolved).",
           },
           repo: {
             type: "string",

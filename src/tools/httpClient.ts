@@ -114,7 +114,7 @@ export function createSendHttpRequestTool(options?: {
           },
           maxResponseBytes: {
             type: "integer",
-            description: `Maximum bytes to read from response body. Default: ${DEFAULT_RESPONSE_BYTES}, max: ${MAX_RESPONSE_BYTES}.`,
+            description: `Body cap in bytes (default: ${DEFAULT_RESPONSE_BYTES}, max: ${MAX_RESPONSE_BYTES}).`,
           },
           followRedirects: {
             type: "boolean",

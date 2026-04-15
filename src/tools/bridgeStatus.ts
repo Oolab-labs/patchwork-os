@@ -189,7 +189,7 @@ export function createBridgeStatusTool(
       // requiring the caller to try the tool first and parse the error.
       const toolAvailability: Record<
         string,
-        { available: boolean; reason?: string }
+        { available: false; reason: string }
       > = {};
       for (const [name, spec] of Object.entries(TOOL_AVAILABILITY_TABLE)) {
         if (spec.extensionRequired && !extensionConnected) {
@@ -205,9 +205,9 @@ export function createBridgeStatusTool(
         } else if (spec.extensionFallback) {
           // Available if extension is connected (extension path) OR probe is present (CLI fallback).
           if (extensionConnected && !circuitBreaker.suspended) {
-            toolAvailability[name] = { available: true };
+            // available — omit
           } else if (spec.probe && probes[spec.probe]) {
-            toolAvailability[name] = { available: true };
+            // available via probe fallback — omit
           } else {
             toolAvailability[name] = {
               available: false,
@@ -221,9 +221,8 @@ export function createBridgeStatusTool(
             available: false,
             reason: `missing_probe:${spec.probe}`,
           };
-        } else {
-          toolAvailability[name] = { available: true };
         }
+        // else: available — omit from output
       }
 
       return successStructured({

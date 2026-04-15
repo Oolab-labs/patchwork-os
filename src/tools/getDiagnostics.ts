@@ -151,7 +151,7 @@ export function createGetDiagnosticsTool(
           uri: {
             type: "string",
             description:
-              "File filter: absolute path, workspace-relative path, or file:// URI. Returns diagnostics for that file only.",
+              "Filter by file: absolute path, workspace-relative, or file:// URI.",
           },
           severity: {
             type: "string",
@@ -166,7 +166,7 @@ export function createGetDiagnosticsTool(
           topN: {
             type: "number",
             description:
-              "After filtering, keep only the N highest-severity diagnostics. Sets truncated:true if result was reduced.",
+              "Keep only top-N diagnostics by severity. Sets truncated:true if reduced.",
           },
         },
       },

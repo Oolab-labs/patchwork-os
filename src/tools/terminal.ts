@@ -731,7 +731,7 @@ export function createSendTerminalCommandTool(
           isCommand: {
             type: "boolean" as const,
             description:
-              "False for short stdin responses to interactive prompts (max 512 chars, no shell metacharacters). Default: true.",
+              "False for short stdin responses to prompts (max 512 chars, no shell metacharacters).",
           },
         },
         additionalProperties: false as const,

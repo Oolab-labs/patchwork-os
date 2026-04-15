@@ -47,12 +47,12 @@ export function createOpenFileTool(
             type: "integer",
             minimum: 1,
             description:
-              "Line number to scroll to (1-based). If both startLine and startText are provided, startLine takes precedence.",
+              "Line to scroll to (1-based). Takes precedence over startText.",
           },
           startText: {
             type: "string",
             description:
-              "Text pattern to find and scroll to. If both startLine and startText are provided, startLine takes precedence.",
+              "Text pattern to find and scroll to. Ignored if startLine is set.",
           },
         },
       },

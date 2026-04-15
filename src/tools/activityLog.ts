@@ -55,7 +55,7 @@ export function createGetActivityLogTool(activityLog: ActivityLog) {
           },
           coOccurrenceWindowMs: {
             type: "number" as const,
-            description: `Sliding window for co-occurrence in ms (default: ${DEFAULT_CO_OCCURRENCE_WINDOW_MS} = 5 min, max: 3600000)`,
+            description: `Co-occurrence window ms (default: ${DEFAULT_CO_OCCURRENCE_WINDOW_MS}, max: 3600000)`,
           },
         },
         additionalProperties: false as const,
@@ -148,7 +148,7 @@ export function createWatchActivityLogTool(activityLog: ActivityLog) {
           },
           timeoutMs: {
             type: "number" as const,
-            description: `Max wait in milliseconds (default: ${WATCH_ACTIVITY_DEFAULT_INTERVAL_MS}, min: ${WATCH_ACTIVITY_MIN_INTERVAL_MS}, max: ${WATCH_ACTIVITY_MAX_INTERVAL_MS})`,
+            description: `Long-poll ms (default: ${WATCH_ACTIVITY_DEFAULT_INTERVAL_MS}, range: ${WATCH_ACTIVITY_MIN_INTERVAL_MS}–${WATCH_ACTIVITY_MAX_INTERVAL_MS})`,
           },
         },
         additionalProperties: false as const,

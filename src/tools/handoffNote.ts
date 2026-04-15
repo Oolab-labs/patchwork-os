@@ -150,7 +150,7 @@ export function createSetHandoffNoteTool(
             type: "string",
             maxLength: 10_000,
             description:
-              "Free-text context summary. Keep it concise — one to a few sentences describing what you were working on, key findings, and the next step.",
+              "Context summary: what you worked on, key findings, and next step.",
           },
         },
         required: ["note"],

@@ -171,24 +171,12 @@ describe("createBridgeStatusTool", () => {
 
   // ── v2.25.25: toolAvailability field ─────────────────────────────────────
 
-  it("toolAvailability: every entry is { available: true } when all probes true and extension connected", async () => {
+  it("toolAvailability: empty map when all probes true and extension connected", async () => {
     const tool = createBridgeStatusTool(makeClient(true), makeProbes());
     const data = parse(await tool.handler());
     expect(data.toolAvailability).toBeDefined();
-    // Spot-check: a few known entries
-    expect(data.toolAvailability.formatDocument).toEqual({ available: true });
-    expect(data.toolAvailability.findImplementations).toEqual({
-      available: true,
-    });
-    expect(data.toolAvailability.runTests).toEqual({ available: true });
-    // No entry should have a reason
-    for (const [, avail] of Object.entries(data.toolAvailability) as [
-      string,
-      { available: boolean; reason?: string },
-    ][]) {
-      expect(avail.available).toBe(true);
-      expect(avail.reason).toBeUndefined();
-    }
+    // Happy path: no unavailable tools — map is empty
+    expect(Object.keys(data.toolAvailability)).toHaveLength(0);
   });
 
   it("toolAvailability: extensionRequired tools report 'extension_disconnected' when disconnected", async () => {
@@ -202,8 +190,8 @@ describe("createBridgeStatusTool", () => {
       available: false,
       reason: "extension_disconnected",
     });
-    // Probe-gated tools without extensionRequired are still available
-    expect(data.toolAvailability.formatDocument).toEqual({ available: true });
+    // Probe-gated tools without extensionRequired are still available (absent from map)
+    expect(data.toolAvailability.formatDocument).toBeUndefined();
   });
 
   it("toolAvailability: extensionRequired tools report 'circuit_breaker_open' when breaker is tripped", async () => {
@@ -248,7 +236,8 @@ describe("createBridgeStatusTool", () => {
       makeProbes({ prettier: false }),
     );
     const data = parse(await tool.handler());
-    expect(data.toolAvailability.formatDocument).toEqual({ available: true });
+    // available via extension — absent from map
+    expect(data.toolAvailability.formatDocument).toBeUndefined();
   });
 
   it("toolAvailability: extensionFallback tools are available via probe when extension is disconnected", async () => {
@@ -257,7 +246,8 @@ describe("createBridgeStatusTool", () => {
       makeProbes({ prettier: true }),
     );
     const data = parse(await tool.handler());
-    expect(data.toolAvailability.formatDocument).toEqual({ available: true });
+    // available via probe fallback — absent from map
+    expect(data.toolAvailability.formatDocument).toBeUndefined();
   });
 
   it("toolAvailability: extensionFallback tools report unavailable when BOTH extension disconnected AND probe missing", async () => {

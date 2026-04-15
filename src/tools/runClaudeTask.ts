@@ -46,38 +46,33 @@ export function createRunClaudeTaskTool(
           stream: {
             type: "boolean",
             description:
-              "If true, block and stream output via progress notifications. If false (default), return immediately with taskId.",
+              "Block + stream via progress. Default: false (return taskId).",
           },
           model: {
             type: "string",
-            description:
-              'Optional model override for this task, e.g. "claude-haiku-4-5-20251001". Defaults to the Claude CLI default.',
+            description: 'Model override, e.g. "claude-haiku-4-5-20251001".',
           },
           effort: {
             type: "string",
             enum: ["low", "medium", "high", "max"],
-            description:
-              "Effort level for the task. Controls thinking budget: low=minimal, medium=default, high=extended, max=maximum. Omit to use the Claude CLI default.",
+            description: "Thinking budget: low/medium/high/max.",
           },
           fallbackModel: {
             type: "string",
-            description:
-              'Fallback model to use when the primary model is overloaded or unavailable. E.g. "claude-haiku-4-5-20251001".',
+            description: "Fallback model if primary overloaded/unavailable.",
           },
           maxBudgetUsd: {
             type: "number",
-            description:
-              "Maximum spend cap in USD for this task. Passed as --max-budget-usd to the subprocess. Omit for no cap.",
+            description: "Spend cap in USD. Omit for no cap.",
           },
           startupTimeoutMs: {
             type: "integer",
-            description:
-              "Abort the task if no assistant output arrives within this many ms of spawn. Useful for detecting hung subprocesses early. Omit to disable.",
+            description: "Abort if no output within this ms of spawn.",
           },
           systemPrompt: {
             type: "string",
             maxLength: MAX_SYSTEM_PROMPT_CHARS,
-            description: `Custom system prompt passed via --system-prompt to the subprocess. Replaces the default Claude Code system prompt. Max ${MAX_SYSTEM_PROMPT_CHARS} characters. Omit to use the default.`,
+            description: `System prompt override. Max ${MAX_SYSTEM_PROMPT_CHARS} chars.`,
           },
           useAnt: {
             type: "boolean",

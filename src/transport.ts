@@ -773,6 +773,7 @@ export class McpTransport {
                     extensionRequired: _ext,
                     timeoutMs: _timeout,
                     categories: _cat,
+                    outputSchema: _outputSchema,
                     ...wireSchema
                   } = t.schema;
                   return wireSchema;
