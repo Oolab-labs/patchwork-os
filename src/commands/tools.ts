@@ -353,7 +353,7 @@ Subcommands:
 Options:
   --json          Machine-readable JSON output
 `);
-    process.exit(0);
+    process.exit(!sub ? 1 : 0);
   }
 
   const catalog = buildToolCatalog();
