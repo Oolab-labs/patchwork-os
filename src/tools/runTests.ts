@@ -14,6 +14,10 @@ import {
 } from "./utils.js";
 
 const MAX_CACHE_ENTRIES = 50;
+/** Max result rows returned to Claude — keeps context bounded; summary counts stay accurate. */
+const RUN_TESTS_MAX_RESULTS = 200;
+/** Max failure objects returned — prevents large suites from flooding context. */
+const RUN_TESTS_MAX_FAILURES = 100;
 
 const ALL_RUNNERS: TestRunner[] = [
   vitestRunner,
@@ -320,7 +324,6 @@ export function createRunTestsTool(
 
       // Cap failures to prevent large test suites from flooding Claude's context.
       // summary.failed remains accurate; failures array is a best-effort subset.
-      const RUN_TESTS_MAX_FAILURES = 100;
       const allFailures = results.filter(
         (r) => r.status === "failed" || r.status === "errored",
       );
@@ -347,7 +350,6 @@ export function createRunTestsTool(
       }
 
       // Cap results array to avoid overwhelming context; summary counts remain accurate
-      const RUN_TESTS_MAX_RESULTS = 200;
       const resultsTruncated = results.length > RUN_TESTS_MAX_RESULTS;
       const displayResults = resultsTruncated
         ? results.slice(0, RUN_TESTS_MAX_RESULTS)
