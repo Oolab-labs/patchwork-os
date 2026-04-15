@@ -154,6 +154,7 @@ import { createOpenDiffTool } from "./openDiff.js";
 import { createOpenFileTool } from "./openFile.js";
 import { createOpenInBrowserTool } from "./openInBrowser.js";
 import { createOrganizeImportsTool } from "./organizeImports.js";
+import { createGetPerformanceReportTool } from "./performanceReport.js";
 import { createPlanTools } from "./planPersistence.js";
 import { createRefactorAnalyzeTool } from "./refactorAnalyze.js";
 import { createRefactorExtractFunctionTool } from "./refactorExtractFunction.js";
@@ -216,6 +217,7 @@ export const SLIM_TOOL_NAMES = new Set<string>([
   "contextBundle",
   "getProjectContext",
   "getAnalyticsReport",
+  "getPerformanceReport",
   // LSP / code intelligence
   "getDiagnostics",
   "watchDiagnostics",
@@ -309,6 +311,7 @@ export function registerAllTools(
   automationHooks: AutomationHooks | null = null,
   getDisconnectInfo?: () => DisconnectInfo,
   onContextCacheUpdated?: (generatedAt: string) => void,
+  getExtensionDisconnectCount?: () => number,
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -554,7 +557,27 @@ export function registerAllTools(
     createGetSessionUsageTool(transport),
     createSearchToolsTool(transport),
     ...(activityLog !== undefined
-      ? [createGetAnalyticsReportTool(activityLog, orchestrator ?? null)]
+      ? [
+          createGetAnalyticsReportTool(activityLog, orchestrator ?? null),
+          createGetPerformanceReportTool({
+            activityLog,
+            extensionClient,
+            getSessions: () => {
+              let inGrace = 0;
+              if (sessions) {
+                for (const s of (
+                  sessions as Map<string, { graceTimer: unknown }>
+                ).values()) {
+                  if (s.graceTimer) inGrace++;
+                }
+              }
+              return { active: sessions?.size ?? 0, inGrace };
+            },
+            getRateLimitRejected: () => activityLog.getRateLimitRejections(),
+            getExtensionDisconnectCount:
+              getExtensionDisconnectCount ?? (() => 0),
+          }),
+        ]
       : []),
     createFindRelatedTestsTool(workspace, probes),
     createScreenshotAndAnnotateTool(workspace, extensionClient),

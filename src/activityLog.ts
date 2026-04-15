@@ -34,6 +34,7 @@ export class ActivityLog {
   private maxEntries: number;
   private persistPath: string | null;
   private readonly listeners = new Set<ActivityListener>();
+  private rateLimitRejections = 0;
 
   /**
    * Per-tool bounded ring of duration samples used for percentile computation.
@@ -274,8 +275,13 @@ export class ActivityLog {
     return result.slice(-last);
   }
 
-  toPrometheus(): string {
+  toPrometheus(extras?: {
+    activeToolCalls?: number;
+    rateLimitRejected?: number;
+    extensionDisconnects?: number;
+  }): string {
     const s = this.stats();
+    const p = this.percentiles();
     const lines: string[] = [];
     lines.push(
       "# HELP bridge_tool_calls_total Total tool calls by tool name and status",
@@ -300,9 +306,61 @@ export class ActivityLog {
         `bridge_tool_duration_ms_avg{tool="${t}"} ${data.avgDurationMs}`,
       );
     }
+    // Per-tool latency percentiles
+    if (Object.keys(p).length > 0) {
+      lines.push(
+        "# HELP bridge_tool_duration_p50_ms p50 latency per tool (ms)",
+      );
+      lines.push("# TYPE bridge_tool_duration_p50_ms gauge");
+      for (const [tool, data] of Object.entries(p)) {
+        const t = escapeLabelValue(tool);
+        lines.push(`bridge_tool_duration_p50_ms{tool="${t}"} ${data.p50}`);
+      }
+      lines.push(
+        "# HELP bridge_tool_duration_p95_ms p95 latency per tool (ms)",
+      );
+      lines.push("# TYPE bridge_tool_duration_p95_ms gauge");
+      for (const [tool, data] of Object.entries(p)) {
+        const t = escapeLabelValue(tool);
+        lines.push(`bridge_tool_duration_p95_ms{tool="${t}"} ${data.p95}`);
+      }
+      lines.push(
+        "# HELP bridge_tool_duration_p99_ms p99 latency per tool (ms)",
+      );
+      lines.push("# TYPE bridge_tool_duration_p99_ms gauge");
+      for (const [tool, data] of Object.entries(p)) {
+        const t = escapeLabelValue(tool);
+        lines.push(`bridge_tool_duration_p99_ms{tool="${t}"} ${data.p99}`);
+      }
+    }
     lines.push("# HELP bridge_uptime_seconds Process uptime in seconds");
     lines.push("# TYPE bridge_uptime_seconds gauge");
     lines.push(`bridge_uptime_seconds ${Math.floor(process.uptime())}`);
+    if (extras?.activeToolCalls !== undefined) {
+      lines.push(
+        "# HELP bridge_active_tool_calls Currently executing tool calls",
+      );
+      lines.push("# TYPE bridge_active_tool_calls gauge");
+      lines.push(`bridge_active_tool_calls ${extras.activeToolCalls}`);
+    }
+    if (extras?.rateLimitRejected !== undefined) {
+      lines.push(
+        "# HELP bridge_rate_limit_rejected_total Total rate-limit rejections",
+      );
+      lines.push("# TYPE bridge_rate_limit_rejected_total counter");
+      lines.push(
+        `bridge_rate_limit_rejected_total ${extras.rateLimitRejected}`,
+      );
+    }
+    if (extras?.extensionDisconnects !== undefined) {
+      lines.push(
+        "# HELP bridge_extension_disconnects_total Total extension disconnects",
+      );
+      lines.push("# TYPE bridge_extension_disconnects_total counter");
+      lines.push(
+        `bridge_extension_disconnects_total ${extras.extensionDisconnects}`,
+      );
+    }
     return `${lines.join("\n")}\n`;
   }
 
@@ -365,6 +423,53 @@ export class ActivityLog {
   private _percentileValue(sorted: number[], pct: number): number {
     const idx = Math.ceil((pct / 100) * sorted.length) - 1;
     return Math.round(sorted[Math.max(0, idx)] ?? 0);
+  }
+
+  /** Increment the rate-limit rejection counter. */
+  recordRateLimitRejection(): void {
+    this.rateLimitRejections++;
+  }
+
+  /** Return total rate-limit rejections recorded since startup. */
+  getRateLimitRejections(): number {
+    return this.rateLimitRejections;
+  }
+
+  /**
+   * Per-tool stats within a sliding time window (reverse scan stops outside cutoff).
+   * Returns Record<tool, {count, errors, avgDurationMs}>.
+   */
+  windowedStats(
+    windowMs: number,
+  ): Record<string, { count: number; errors: number; avgDurationMs: number }> {
+    const cutoff = Date.now() - windowMs;
+    const map = new Map<
+      string,
+      { count: number; totalMs: number; errors: number }
+    >();
+    // entries are chronological — scan in reverse, stop when outside window
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      const e = this.entries[i];
+      if (!e) continue;
+      if (new Date(e.timestamp).getTime() < cutoff) break;
+      const s = map.get(e.tool) ?? { count: 0, totalMs: 0, errors: 0 };
+      s.count++;
+      s.totalMs += e.durationMs;
+      if (e.status === "error") s.errors++;
+      map.set(e.tool, s);
+    }
+    const result: Record<
+      string,
+      { count: number; errors: number; avgDurationMs: number }
+    > = {};
+    for (const [tool, s] of map) {
+      result[tool] = {
+        count: s.count,
+        errors: s.errors,
+        avgDurationMs: s.count > 0 ? Math.round(s.totalMs / s.count) : 0,
+      };
+    }
+    return result;
   }
 
   /**

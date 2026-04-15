@@ -263,6 +263,7 @@ export class ClaudeOrchestrator {
       task.status = "cancelled";
       task.cancelReason = reason;
       task.doneAt = Date.now();
+      task.output = ""; // never ran — ensure output field always exists
       this.queue = this.queue.filter((qid) => qid !== id);
       this._fireCompletion(id);
       this.log(
@@ -369,8 +370,8 @@ export class ClaudeOrchestrator {
           : timedOut
             ? "timeout"
             : (this.cancelReasons.get(id) ?? "user");
-        // Preserve any partial stdout that made it through before abort.
-        if (result.text) task.output = result.text;
+        // Always set output (even empty) so analytics report includes the field.
+        task.output = result.text;
       } else {
         task.output = result.text;
         task.stderrTail = result.stderrTail;

@@ -685,6 +685,7 @@ export class McpTransport {
           this.logger.warn(
             `Rate limit exceeded: ${RATE_LIMIT_MAX} requests in ${RATE_LIMIT_WINDOW_MS}ms`,
           );
+          this.activityLog?.recordRateLimitRejection();
           await safeSend(
             ws,
             JSON.stringify({

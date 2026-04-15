@@ -7,16 +7,22 @@ vi.mock("node:fs", async (importOriginal) => {
     ...actual,
     default: {
       ...actual,
-      existsSync: vi.fn(() => true),
-      mkdirSync: vi.fn(),
-      appendFileSync: vi.fn(),
-      writeFileSync: vi.fn(),
-      readFileSync: vi.fn(() => ""),
-      statSync: vi.fn(() => ({ size: 0 })),
+      existsSync: vi.fn(
+        (_path: any) => true,
+      ) as any as typeof import("node:fs").existsSync,
+      mkdirSync: vi.fn() as any,
+      appendFileSync: vi.fn() as any,
+      writeFileSync: vi.fn() as any,
+      readFileSync: vi.fn(
+        (_path: any) => "",
+      ) as any as typeof import("node:fs").readFileSync,
+      statSync: vi.fn((_path: any) => ({
+        size: 0,
+      })) as any as typeof import("node:fs").statSync,
       promises: {
         ...actual.promises,
-        appendFile: vi.fn(() => Promise.resolve()),
-        stat: vi.fn(() => Promise.resolve({ size: 0 })),
+        appendFile: vi.fn(() => Promise.resolve()) as any,
+        stat: vi.fn(() => Promise.resolve({ size: 0 })) as any,
       },
     },
   };
@@ -29,12 +35,15 @@ const mockFs = vi.mocked(fs);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFs.existsSync = vi.fn(() => true);
-  mockFs.mkdirSync = vi.fn();
-  mockFs.appendFileSync = vi.fn();
-  mockFs.writeFileSync = vi.fn();
-  mockFs.readFileSync = vi.fn(() => "");
-  mockFs.statSync = vi.fn(() => ({ size: 0 }) as any);
+  (mockFs.existsSync as any) = vi.fn((_path: any) => true) as any;
+  (mockFs.mkdirSync as any) = vi.fn();
+  (mockFs.appendFileSync as any) = vi.fn();
+  (mockFs.writeFileSync as any) = vi.fn();
+  (mockFs.readFileSync as any) = vi.fn((_path: any) => "") as any;
+  Object.defineProperty(mockFs, "statSync", {
+    value: vi.fn((_path: any) => ({ size: 0 })) as any,
+    writable: true,
+  });
   (mockFs.promises as unknown as Record<string, unknown>).appendFile = vi.fn(
     () => Promise.resolve(),
   );
@@ -198,14 +207,14 @@ describe("ActivityLog — percentiles", () => {
   it("returns null-equivalent (skips) tools with only 1 sample", () => {
     const log = new ActivityLog();
     log.record("solo", 100, "success");
-    expect(log.percentiles()["solo"]).toBeUndefined();
+    expect(log.percentiles().solo).toBeUndefined();
   });
 
   it("computes p50/p95/p99 correctly for known distribution", () => {
     const log = new ActivityLog();
     // 100 samples: 1..100ms
     for (let i = 1; i <= 100; i++) log.record("t", i, "success");
-    const p = log.percentiles()["t"];
+    const p = log.percentiles().t;
     expect(p).toBeDefined();
     // p50 = 50th percentile of [1..100] sorted = 50
     expect(p!.p50).toBe(50);
@@ -219,7 +228,7 @@ describe("ActivityLog — percentiles", () => {
   it("percentile values within ±2ms for 1000-sample uniform distribution", () => {
     const log = new ActivityLog();
     for (let i = 1; i <= 1000; i++) log.record("u", i, "success");
-    const p = log.percentiles()["u"]!;
+    const p = log.percentiles().u!;
     expect(Math.abs(p.p50 - 500)).toBeLessThanOrEqual(2);
     expect(Math.abs(p.p95 - 950)).toBeLessThanOrEqual(2);
     expect(Math.abs(p.p99 - 990)).toBeLessThanOrEqual(2);
@@ -229,7 +238,7 @@ describe("ActivityLog — percentiles", () => {
     const log = new ActivityLog();
     // Push 1201 entries to trigger batch eviction (cap 1000 * 1.2 = 1200)
     for (let i = 0; i < 1201; i++) log.record("big", i, "success");
-    const p = log.percentiles()["big"]!;
+    const p = log.percentiles().big!;
     // After eviction, sampleCount should be capped at 1000
     expect(p.sampleCount).toBeLessThanOrEqual(1000);
   });
@@ -239,7 +248,7 @@ describe("ActivityLog — percentiles", () => {
     for (let i = 1; i <= 10; i++) log.record("fast", i, "success");
     for (let i = 100; i <= 109; i++) log.record("slow", i, "success");
     const p = log.percentiles();
-    expect(p["fast"]!.p50).toBeLessThan(p["slow"]!.p50);
+    expect(p.fast!.p50).toBeLessThan(p.slow!.p50);
   });
 });
 
@@ -511,5 +520,42 @@ describe("ActivityLog — disk persistence", () => {
     ).mock.calls.at(-1)?.[1] as string;
     expect(written).toContain('"kind":"lifecycle"');
     expect(written).toContain('"event":"started"');
+  });
+});
+
+describe("ActivityLog.windowedStats", () => {
+  it("returns stats only for entries within the window", () => {
+    vi.useFakeTimers();
+    const log = new ActivityLog();
+    const now = Date.now();
+    vi.setSystemTime(now - 120_000); // 2 minutes ago — outside 1-minute window
+    log.record("oldTool", 50, "success");
+    vi.setSystemTime(now - 30_000); // 30s ago — inside
+    log.record("newTool", 100, "success");
+    log.record("newTool", 200, "error", "fail");
+    vi.setSystemTime(now);
+    const stats = log.windowedStats(60_000); // 1-minute window
+    expect(stats.oldTool).toBeUndefined();
+    expect(stats.newTool).toBeDefined();
+    expect(stats.newTool!.count).toBe(2);
+    expect(stats.newTool!.errors).toBe(1);
+    expect(stats.newTool!.avgDurationMs).toBe(150);
+    vi.useRealTimers();
+  });
+
+  it("returns empty object when no entries in window", () => {
+    const log = new ActivityLog();
+    const stats = log.windowedStats(60_000);
+    expect(Object.keys(stats)).toHaveLength(0);
+  });
+});
+
+describe("ActivityLog.recordRateLimitRejection", () => {
+  it("starts at 0 and increments", () => {
+    const log = new ActivityLog();
+    expect(log.getRateLimitRejections()).toBe(0);
+    log.recordRateLimitRejection();
+    log.recordRateLimitRejection();
+    expect(log.getRateLimitRejections()).toBe(2);
   });
 });

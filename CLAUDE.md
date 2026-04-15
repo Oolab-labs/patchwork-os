@@ -46,6 +46,8 @@ npm run package        # create .vsix
 # Always rebuild bridge + extension + VSIX before testing changes
 ```
 
+**Extension versioning rule:** Windsurf caches `.vsix` files by version number and will silently reuse the old bundle if the version hasn't changed. **Always bump `vscode-extension/package.json` version before packaging** when the user will install the `.vsix` in Windsurf (or any VS Code fork). Patch bump (`1.4.2` → `1.4.3`) is sufficient. Never repackage without bumping — the user will install it and see no change.
+
 Before staging, run `npx biome check --write <files>` on changed files. Fix before stage — don't wait for hook to fail.
 
 ## LSP Workflows

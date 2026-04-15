@@ -31,6 +31,8 @@ function makeOrchestrator(
     triggerSource?: string;
     startedAt?: number;
     doneAt?: number;
+    output?: string;
+    errorMessage?: string;
   }>,
 ): ClaudeOrchestrator {
   return {
@@ -170,6 +172,27 @@ describe("getAnalyticsReport", () => {
     expect(t2.triggerSource).toBe("onFileSave");
     expect(t2.durationMs).toBe(400);
     expect(t2.createdAt).toMatch(/^\d{4}-/); // ISO string
+  });
+
+  it("recentAutomationTasks includes task with empty-string output", async () => {
+    const now = Date.now();
+    const orch = makeOrchestrator([
+      {
+        id: "task-empty-output",
+        status: "done",
+        createdAt: now - 1000,
+        output: "",
+      },
+    ]);
+
+    const tool = createGetAnalyticsReportTool(log, orch);
+    const result = await tool.handler({});
+    const data = JSON.parse(result.content[0].text);
+    expect(data.recentAutomationTasks.length).toBe(1);
+    const t = data.recentAutomationTasks[0];
+    // empty-string output must NOT be omitted — "" is a valid output value
+    expect(t).toHaveProperty("output");
+    expect(t.output).toBe("");
   });
 
   it("recentAutomationTasks capped at 20", async () => {

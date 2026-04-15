@@ -106,6 +106,8 @@ export class Server extends EventEmitter<ServerEvents> {
   public metricsFn: (() => string) | null = null;
   /** Set by bridge to provide rich status data */
   public statusFn: (() => Record<string, unknown>) | null = null;
+  /** Set by bridge to provide performance report data for /dashboard/data */
+  public perfDataFn: (() => Record<string, unknown>) | null = null;
   /** Set by bridge to provide readiness data (MCP handshake complete, tool count, extension) */
   public readyFn:
     | (() => { ready: boolean; toolCount: number; extensionConnected: boolean })
@@ -394,6 +396,7 @@ export class Server extends EventEmitter<ServerEvents> {
           extensionVersion: (health as { extensionVersion?: string })
             .extensionVersion,
           events: (status as { events?: unknown[] }).events ?? [],
+          perf: this.perfDataFn?.() ?? null,
         };
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(data));

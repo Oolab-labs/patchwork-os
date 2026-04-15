@@ -112,6 +112,8 @@ export class Bridge {
   private extensionConnectionGeneration = 0;
   /** Tracks whether a debug session was active — detects true→false transition for onDebugSessionEnd. */
   private _lastDebugSessionActive = false;
+  /** Total number of VS Code extension disconnects since bridge start. */
+  private extensionDisconnectCount = 0;
   /** ISO timestamp of last getProjectContext cache write — drives status-bar "context X min ago". */
   private _lastContextCachedAt: string | null = null;
   private wsHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -336,6 +338,7 @@ export class Bridge {
           this._lastContextCachedAt = generatedAt;
           this._emitLiveState();
         },
+        () => this.extensionDisconnectCount,
       );
 
       transport.attach(ws);
@@ -465,6 +468,7 @@ export class Bridge {
       this.logger.info(
         "VS Code extension disconnected — falling back to file-system tools only",
       );
+      this.extensionDisconnectCount++;
       this.activityLog.recordEvent("extension_disconnected");
       this.logger.event("extension_disconnected_notify");
       this.sendListChanged();
@@ -866,10 +870,76 @@ export class Bridge {
         lastDisconnectReason: this.lastDisconnectReason,
         extensionConnected: this.extensionClient.isConnected(),
         extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
+        extensionDisconnectCount: this.extensionDisconnectCount,
         recentActivity: this.activityLog.query({ last: 10 }),
       };
     };
-    this.server.metricsFn = () => this.activityLog.toPrometheus();
+    this.server.metricsFn = () =>
+      this.activityLog.toPrometheus({
+        rateLimitRejected: this.activityLog.getRateLimitRejections(),
+        extensionDisconnects: this.extensionDisconnectCount,
+      });
+    this.server.perfDataFn = () => {
+      const windowMs = 60 * 60_000; // 1h window for dashboard
+      const windowedS = this.activityLog.windowedStats(windowMs);
+      const allPercentiles = this.activityLog.percentiles();
+      let totalCalls = 0;
+      let totalErrors = 0;
+      for (const s of Object.values(windowedS)) {
+        totalCalls += s.count;
+        totalErrors += s.errors;
+      }
+      const p95Values = Object.values(allPercentiles).map((p) => p.p95);
+      const overallP95Ms = p95Values.length > 0 ? Math.max(...p95Values) : 0;
+      const perTool: Record<string, unknown> = {};
+      for (const [tool, pct] of Object.entries(allPercentiles)) {
+        const ws = windowedS[tool];
+        perTool[tool] = {
+          p50: pct.p50,
+          p95: pct.p95,
+          p99: pct.p99,
+          sampleCount: pct.sampleCount,
+          calls: ws?.count ?? 0,
+        };
+      }
+      const cb = this.extensionClient.getCircuitBreakerState();
+      const errorRatePct =
+        totalCalls > 0
+          ? Math.round((totalErrors / totalCalls) * 10000) / 100
+          : 0;
+      let score = 100;
+      const signals: string[] = [];
+      if (cb.suspended) {
+        score -= 20;
+        signals.push("Circuit breaker suspended");
+      }
+      if (errorRatePct > 5) {
+        score -= 15;
+        signals.push(`Error rate critical (${errorRatePct}%)`);
+      } else if (errorRatePct > 1) {
+        score -= 10;
+        signals.push(`Error rate elevated (${errorRatePct}%)`);
+      }
+      if (overallP95Ms > 2000) {
+        score -= 10;
+        signals.push(`p95 latency critical (${overallP95Ms}ms)`);
+      } else if (overallP95Ms > 500) {
+        score -= 5;
+        signals.push(`p95 latency elevated (${overallP95Ms}ms)`);
+      }
+      const rl = this.activityLog.getRateLimitRejections();
+      if (rl > 0) {
+        score -= 10;
+        signals.push(`${rl} rate-limit rejection(s)`);
+      }
+      if (!this.extensionClient.isConnected())
+        signals.push("Extension disconnected");
+      score = Math.max(0, Math.min(100, score));
+      return {
+        latency: { perTool, overallP95Ms },
+        health: { score, signals },
+      };
+    };
     this.server.analyticsFn = async (windowHours?: number) => {
       const wh =
         typeof windowHours === "number" && windowHours >= 1 ? windowHours : 24;
@@ -908,6 +978,12 @@ export class Bridge {
                   durationMs: t.doneAt - t.startedAt,
                 }),
               createdAt: new Date(t.createdAt).toISOString(),
+              ...(t.output !== undefined && {
+                output: t.output.slice(0, 2000),
+              }),
+              ...(t.errorMessage !== undefined && {
+                errorMessage: t.errorMessage,
+              }),
             }))
         : [];
       return {
@@ -929,7 +1005,7 @@ export class Bridge {
         startedAt: t.startedAt,
         doneAt: t.doneAt,
         // Omit prompt (may contain sensitive content) and cap output
-        output: t.output ? t.output.slice(0, 200) : undefined,
+        output: t.output !== undefined ? t.output.slice(0, 2000) : undefined,
         // Cap stderrTail at 500 chars — subprocess stderr may contain paths,
         // env fragments, or user-code errors; match existing redaction policy.
         stderrTail: t.stderrTail ? t.stderrTail.slice(-500) : undefined,

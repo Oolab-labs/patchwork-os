@@ -19,8 +19,45 @@ export interface AnalyticsReport {
     prompt?: string;
     durationMs?: number;
     createdAt: string;
+    output?: string;
+    errorMessage?: string;
   }>;
   hint?: string;
+}
+
+export interface PerformanceReport {
+  generatedAt: string;
+  windowMinutes: number;
+  latency: {
+    perTool: Record<
+      string,
+      {
+        p50: number;
+        p95: number;
+        p99: number;
+        sampleCount: number;
+        avgMs: number;
+        calls: number;
+        errorRate: number;
+      }
+    >;
+    overallP95Ms: number;
+  };
+  throughput: {
+    callsPerMinute: number;
+    errorsPerMinute: number;
+    errorRatePct: number;
+    rateLimitRejectedTotal: number;
+  };
+  extension: {
+    connected: boolean;
+    rttMs: number | null;
+    circuitBreakerSuspended: boolean;
+    disconnectCount: number;
+    connectionQuality: "healthy" | "degraded" | "poor" | "disconnected";
+  };
+  sessions: { active: number; inGrace: number };
+  health: { score: number; signals: string[] };
 }
 
 const PRESETS: Record<string, { label: string; icon: string; prompt: string }> =
@@ -60,6 +97,7 @@ const PRESETS: Record<string, { label: string; icon: string; prompt: string }> =
 export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = "claudeIdeBridge.analyticsView";
   private _refreshTimer?: ReturnType<typeof setInterval>;
+  private _lastReport: AnalyticsReport | null = null;
   _view?: vscode.WebviewView;
 
   constructor(
@@ -73,10 +111,20 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     this._view = webviewView;
     webviewView.webview.options = { enableScripts: true };
 
+    // Clear any stale timer from a previous resolveWebviewView call.
+    // Windsurf and some VS Code forks call resolveWebviewView each time the
+    // panel is shown without firing onDidDispose on the previous webview first.
+    if (this._refreshTimer) {
+      clearInterval(this._refreshTimer);
+      this._refreshTimer = undefined;
+    }
+
     const refresh = async () => {
       try {
         const report = await this.getReport();
+        if (report) this._lastReport = report;
         let handoffPreview: string | null = null;
+        let perfReport: PerformanceReport | null = null;
         try {
           const lock = await this._getLockFile();
           if (lock) {
@@ -95,11 +143,33 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
                 handoffPreview = noteResult.content[0].text ?? null;
               }
             }
+            // Fetch performance report
+            try {
+              const perfResult = (await this._callBridgeTool(
+                lock,
+                "getPerformanceReport",
+                {},
+              )) as { content?: Array<{ text?: string }> } | null;
+              if (perfResult?.content?.[0]?.text) {
+                const parsed = JSON.parse(perfResult.content[0].text) as
+                  | PerformanceReport
+                  | { generatedAt?: string };
+                if ("latency" in parsed && "health" in parsed) {
+                  perfReport = parsed as PerformanceReport;
+                }
+              }
+            } catch {
+              // non-fatal
+            }
           }
         } catch {
           // non-fatal
         }
-        webviewView.webview.html = this._buildHtml(report, handoffPreview);
+        webviewView.webview.html = this._buildHtml(
+          report,
+          handoffPreview,
+          perfReport,
+        );
       } catch {
         webviewView.webview.html = this._buildHtml(null, null);
       }
@@ -107,6 +177,12 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
 
     void refresh();
     this._refreshTimer = setInterval(() => void refresh(), 15_000);
+
+    // Refresh immediately when the panel regains visibility (e.g. switching
+    // tabs in Windsurf or collapsing/expanding the sidebar panel).
+    webviewView.onDidChangeVisibility(() => {
+      if (webviewView.visible) void refresh();
+    });
 
     webviewView.onDidDispose(() => {
       if (this._refreshTimer) clearInterval(this._refreshTimer);
@@ -119,6 +195,8 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
           void this._handleStartTask(webviewView);
         if (msg.command === "resumeTask" && msg.taskId)
           void this._handleResumeTask(webviewView, msg.taskId);
+        if (msg.command === "viewOutput" && msg.taskId)
+          this._handleViewOutput(webviewView, msg.taskId);
         if (msg.command === "preset" && msg.key)
           void this._handlePreset(webviewView, msg.key);
         if (msg.command === "continueHandoff")
@@ -202,8 +280,8 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       req.end();
     });
 
-    // Step 3: call the tool
-    return new Promise<unknown>((resolve, reject) => {
+    // Step 3: call the tool, then DELETE the session to free the slot
+    const result = await new Promise<unknown>((resolve, reject) => {
       const callBody = JSON.stringify({
         jsonrpc: "2.0",
         id: 2,
@@ -230,10 +308,15 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
           });
           res.on("end", () => {
             try {
-              // Response may be SSE or plain JSON
-              const jsonLine = raw
-                .split("\n")
-                .find((l) => l.startsWith("data:") || l.startsWith("{"));
+              // Response may be SSE (multiple data: lines) or plain JSON.
+              // Use the LAST data: line to skip progress notifications and
+              // get the final tools/call result.
+              const lines = raw.split("\n");
+              const dataLines = lines.filter((l) => l.startsWith("data:"));
+              const jsonLine =
+                dataLines.length > 0
+                  ? dataLines[dataLines.length - 1]
+                  : lines.find((l) => l.startsWith("{"));
               const jsonStr = jsonLine?.startsWith("data:")
                 ? jsonLine.slice(5).trim()
                 : raw.trim();
@@ -251,6 +334,34 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       req.write(callBody);
       req.end();
     });
+
+    // Step 4: DELETE session to release the slot (fire-and-forget, non-fatal)
+    try {
+      await new Promise<void>((resolve) => {
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: lock.port,
+            path: "/mcp",
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${lock.authToken}`,
+              "mcp-session-id": sessionId,
+            },
+          },
+          (res) => {
+            res.resume();
+            resolve();
+          },
+        );
+        req.on("error", () => resolve());
+        req.end();
+      });
+    } catch {
+      // non-fatal — session will expire via idle TTL
+    }
+
+    return result;
   }
 
   private _buildTaskPrompt(
@@ -437,6 +548,41 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private _handleViewOutput(view: vscode.WebviewView, taskId: string): void {
+    // Task output comes from the analytics report (no session-scoping),
+    // not getClaudeTaskStatus (which is scoped to the session that created
+    // the task and would return task_not_found for automation tasks).
+    const task = this._lastReport?.recentAutomationTasks.find(
+      (t) => t.id === taskId,
+    );
+    if (!task) {
+      view.webview.postMessage({
+        command: "taskError",
+        message: "Task not found — try refreshing.",
+      });
+      return;
+    }
+    const raw = task.output ?? task.errorMessage;
+    // Check status FIRST, then output presence — avoids misclassifying
+    // completed tasks with no output as "never started".
+    const fallback =
+      task.status === "running" || task.status === "pending"
+        ? "(task is still running — output available when complete)"
+        : task.status === "cancelled"
+          ? "(task was cancelled before producing output)"
+          : task.status === "done" || task.status === "error"
+            ? "(task completed but produced no output)"
+            : "(task was queued but never started)";
+    const lines = (raw ?? "").split("\n").filter(Boolean);
+    const tail = lines.length > 0 ? lines.slice(-20).join("\n") : fallback;
+    view.webview.postMessage({
+      command: "taskOutput",
+      taskId,
+      status: task.status,
+      tail,
+    });
+  }
+
   private async _handleContinueHandoff(
     view: vscode.WebviewView,
   ): Promise<void> {
@@ -489,6 +635,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   private _buildHtml(
     report: AnalyticsReport | null,
     handoffPreview: string | null,
+    perfReport?: PerformanceReport | null,
   ): string {
     if (!report) {
       return `<!DOCTYPE html><html><body style="font-family:var(--vscode-font-family);padding:8px;color:var(--vscode-foreground)">
@@ -507,7 +654,10 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
             (t) => `<div class="active-task">
   <span class="spinner">⟳</span>
   <span class="active-task-label">${_escHtml(t.triggerSource ?? "manual")} — ${_escHtml(t.status)}</span>
-  <button class="resume-btn" data-task-id="${_escHtml(t.id)}">↩ Resume</button>
+  <div class="active-task-actions">
+    <button class="view-output-btn" data-task-id="${_escHtml(t.id)}" title="Stream latest output">⊡ Output</button>
+    <button class="resume-btn" data-task-id="${_escHtml(t.id)}">↩ Resume</button>
+  </div>
 </div>`,
           )
           .join("")
@@ -518,7 +668,12 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       .filter((t) => !["running", "pending"].includes(t.status))
       .slice(0, 5)
       .map((t) => {
-        const statusClass = t.status === "done" ? "done" : "error";
+        const statusClass =
+          t.status === "done"
+            ? "done"
+            : t.status === "cancelled" || t.status === "interrupted"
+              ? "cancelled"
+              : "error";
         const age = _relativeTime(t.createdAt);
         const dur =
           t.durationMs !== undefined
@@ -530,24 +685,33 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     <span class="task-status ${statusClass}">${_escHtml(t.status)}</span>
     <span class="task-age">${age}${dur}</span>
   </div>
-  <button class="resume-btn" data-task-id="${_escHtml(t.id)}">↩ Resume</button>
+  <div style="display:flex;gap:4px">
+    <button class="view-output-btn" data-task-id="${_escHtml(t.id)}" title="View task output">⊡ Output</button>
+    <button class="resume-btn" data-task-id="${_escHtml(t.id)}">↩ Resume</button>
+  </div>
 </div>`;
       })
       .join("");
 
-    // Handoff note — show 2 lines of preview (split on newlines only, not dots)
-    const handoffLines = handoffPreview
-      ? handoffPreview.split(/\n+/).filter(Boolean).slice(0, 2)
-      : [];
-    const handoffPreviewHtml = handoffLines.length
-      ? handoffLines.map((l) => `<div>${_escHtml(l.trim())}</div>`).join("")
-      : `<div style="opacity:0.6">No handoff note — start a session to create one.</div>`;
-    const handoffBtnLabel = handoffPreview
+    // Handoff note — auto-snapshots are bridge metadata, not user context.
+    // Detect by the [auto-snapshot ...] sentinel on the first non-empty line.
+    const isAutoSnapshot =
+      handoffPreview?.trimStart().startsWith("[auto-snapshot") ?? false;
+    const handoffPreviewHtml = isAutoSnapshot
+      ? `<div style="opacity:0.6">Auto-snapshot saved — no manual context yet.</div>`
+      : handoffPreview != null
+        ? handoffPreview
+            .split(/\n+/)
+            .slice(0, 2)
+            .map((l) => `<div>${_escHtml(l.trim())}</div>`)
+            .join("")
+        : `<div style="opacity:0.6">No handoff note — start a session to create one.</div>`;
+    // Auto-snapshots have no user context — treat like no handoff note.
+    const hasManualNote = handoffPreview && !isAutoSnapshot;
+    const handoffBtnLabel = hasManualNote
       ? "↺ Continue from handoff note"
       : "▶ Start fresh session";
-    // No handoff: wire to startTask (fresh start) rather than disabling
-    // fresh = no handoff note; button triggers startTask instead of continueHandoff
-    const handoffDataAttr = handoffPreview ? "" : ' data-fresh="1"';
+    const handoffDataAttr = hasManualNote ? "" : ' data-fresh="1"';
 
     // Quick task preset buttons — use data-preset-key, not inline JS
     const presetButtons = Object.entries(PRESETS)
@@ -564,6 +728,35 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
         const avg = Number.isFinite(t.avgMs) ? Math.round(t.avgMs) : 0;
         return `<tr><td>${_escHtml(t.tool)}</td><td>${t.calls}</td><td>${t.errors}</td><td>${avg}ms</td></tr>`;
       })
+      .join("");
+
+    // Health badge from performance report
+    const healthScore = perfReport?.health?.score;
+    const healthBadgeClass =
+      healthScore === undefined
+        ? ""
+        : healthScore >= 80
+          ? "health-green"
+          : healthScore >= 50
+            ? "health-yellow"
+            : "health-red";
+    const healthBadgeHtml =
+      healthScore !== undefined
+        ? `<span class="health-badge ${_escHtml(healthBadgeClass)}">${healthScore}</span>`
+        : "";
+
+    // Latency table from performance report
+    const perfTools = perfReport?.latency?.perTool
+      ? Object.entries(perfReport.latency.perTool)
+          .filter(([, v]) => v.sampleCount >= 2)
+          .sort(([, a], [, b]) => b.p95 - a.p95)
+          .slice(0, 8)
+      : [];
+    const latencyRows = perfTools
+      .map(
+        ([tool, v]) =>
+          `<tr><td>${_escHtml(tool)}</td><td>${v.calls}</td><td>${Number.isFinite(v.errorRate) ? v.errorRate.toFixed(1) : "0"}%</td><td>${v.p50}ms</td><td>${v.p95}ms</td></tr>`,
+      )
       .join("");
 
     return `<!DOCTYPE html>
@@ -583,7 +776,8 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   .handoff-box { border: 1px solid var(--vscode-widget-border, #444); border-radius: 3px; padding: 6px 8px; margin-bottom: 8px; }
   .handoff-preview { font-size: 10px; color: var(--vscode-descriptionForeground); margin: 4px 0 6px; line-height: 1.5; }
   .handoff-actions { display: flex; gap: 4px; }
-  .active-task { display: flex; align-items: center; gap: 6px; background: var(--vscode-terminal-ansiYellow, #e3b34122); border-radius: 3px; padding: 4px 6px; margin-bottom: 4px; font-size: 11px; }
+  .active-task { display: flex; align-items: center; gap: 6px; background: var(--vscode-terminal-ansiBlue, #1f6feb22); border: 1px solid var(--vscode-focusBorder, #1f6feb55); border-radius: 3px; padding: 4px 6px; margin-bottom: 4px; font-size: 11px; }
+  .active-task-actions { display: flex; gap: 4px; flex-shrink: 0; }
   .spinner { animation: spin 1.2s linear infinite; display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .active-task-label { flex: 1; }
@@ -597,12 +791,17 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   .task-status { font-size: 10px; padding: 1px 5px; border-radius: 10px; font-weight: 600; }
   .task-status.done { background: var(--vscode-testing-iconPassed, #3fb950); color: #000; }
   .task-status.error { background: var(--vscode-testing-iconFailed, #f85149); color: #fff; }
+  .task-status.cancelled { background: var(--vscode-badge-background, #4d4d4d); color: var(--vscode-badge-foreground, #ccc); }
   .bottom-bar { display: flex; gap: 4px; margin-top: 10px; align-items: center; }
   .bottom-bar .start-btn { flex: 1; padding: 6px; font-size: 12px; font-weight: 600; }
   .last-updated { font-size: 10px; color: var(--vscode-descriptionForeground); margin-top: 5px; text-align: right; }
   #taskStatus { font-size: 11px; margin-top: 6px; color: var(--vscode-descriptionForeground); min-height: 16px; }
   .collapsible { overflow: hidden; transition: max-height 0.2s ease; }
   .collapsible.collapsed { max-height: 0 !important; }
+  .health-badge { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 10px; }
+  .health-green { background: var(--vscode-testing-iconPassed, #3fb950); color: #000; }
+  .health-yellow { background: var(--vscode-editorWarning-foreground, #cca700); color: #000; }
+  .health-red { background: var(--vscode-testing-iconFailed, #f85149); color: #fff; }
 </style>
 </head>
 <body>
@@ -624,11 +823,20 @@ ${activeTasksHtml ? `<div style="margin-bottom:8px"><div style="font-size:10px;t
   ${recentTasks || "<p style='font-size:11px;color:var(--vscode-descriptionForeground)'>No completed tasks yet.</p>"}
 </div>
 
-<h3 onclick="toggleSection('stats')" title="Click to expand/collapse">Stats <span class="toggle" id="stats-toggle">▸</span></h3>
+<h3 onclick="toggleSection('stats')" title="Click to expand/collapse">Stats ${healthBadgeHtml} <span class="toggle" id="stats-toggle">▸</span></h3>
 <div class="collapsible collapsed" id="stats-body" style="max-height:500px">
   <div style="font-size:11px;margin-bottom:4px">Hooks fired (${report.windowHours}h): <strong>${report.hooksLast24h}</strong></div>
   <table><tr><th>Tool</th><th>Calls</th><th>Err</th><th>Avg</th></tr>${toolRows || "<tr><td colspan=4>No data yet</td></tr>"}</table>
 </div>
+
+${
+  latencyRows
+    ? `<h3 onclick="toggleSection('latency')" title="Click to expand/collapse">Latency <span class="toggle" id="latency-toggle">▸</span></h3>
+<div class="collapsible collapsed" id="latency-body" style="max-height:500px">
+  <table><tr><th>Tool</th><th>Calls</th><th>Err%</th><th>p50</th><th>p95</th></tr>${latencyRows}</table>
+</div>`
+    : ""
+}
 
 <div class="bottom-bar">
   <button id="refreshBtn">⟳</button>
@@ -672,6 +880,9 @@ document.addEventListener('click', function(e) {
     vscodeApi.postMessage({ command: 'refresh' });
   } else if (target.id === 'startTaskBtn') {
     startTask();
+  } else if (target.classList.contains('view-output-btn')) {
+    var taskId = target.getAttribute('data-task-id');
+    if (taskId) vscodeApi.postMessage({ command: 'viewOutput', taskId: taskId });
   } else if (target.classList.contains('resume-btn')) {
     var taskId = target.getAttribute('data-task-id');
     if (taskId) vscodeApi.postMessage({ command: 'resumeTask', taskId: taskId });
@@ -705,6 +916,16 @@ window.addEventListener('message', function(event) {
       el.textContent = '✗ ' + msg.message;
       setTimeout(function() { el.textContent = ''; }, 8000);
     }
+  } else if (msg.command === 'taskOutput') {
+    var overlay = document.getElementById('outputOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'outputOverlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:var(--vscode-editor-background);z-index:100;display:flex;flex-direction:column;padding:8px;overflow:hidden;';
+      document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--vscode-descriptionForeground)">Task output — ' + msg.status + '</span><button id="closeOverlay" style="font-size:11px">✕ Close</button></div><pre style="flex:1;overflow:auto;font-size:10px;margin:0;white-space:pre-wrap;word-break:break-all;color:var(--vscode-foreground)">' + msg.tail.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre>';
+    document.getElementById('closeOverlay')?.addEventListener('click', function() { overlay?.remove(); });
   }
 });
 </script>

@@ -129,6 +129,14 @@ export function createGetAnalyticsReportTool(
                     durationMs: t.doneAt - t.startedAt,
                   }),
                 createdAt: new Date(t.createdAt).toISOString(),
+                // Include truncated output so sidebar can show it without
+                // hitting the session-scoped getClaudeTaskStatus tool.
+                ...(t.output !== undefined && {
+                  output: t.output.slice(0, 2000),
+                }),
+                ...(t.errorMessage !== undefined && {
+                  errorMessage: t.errorMessage,
+                }),
               }))
           : [];
 
