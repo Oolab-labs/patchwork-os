@@ -38,35 +38,141 @@ const OPEN_VSX_PUBLISHER = "oolab-labs";
 const OPEN_VSX_NAME = "claude-ide-bridge-extension";
 
 /**
- * Patches an existing CLAUDE.md that has the bridge section but is missing the
- * @import line. Writes atomically via a .tmp file with exclusive-create, then
- * renames. Returns "patched", "already-present", or "no-section".
+ * Returns the sentinel comment that opens a versioned bridge block in CLAUDE.md.
+ * Format: <!-- claude-ide-bridge:start:VERSION -->
  */
-function patchClaudeMdImport(
+function bridgeBlockStartMarker(version: string): string {
+  return `<!-- claude-ide-bridge:start:${version} -->`;
+}
+
+/** Sentinel comment that closes a versioned bridge block in CLAUDE.md. */
+const BRIDGE_BLOCK_END = "<!-- claude-ide-bridge:end -->";
+
+/** Regex that matches ANY versioned bridge block (any version). */
+const BRIDGE_BLOCK_RE =
+  /<!-- claude-ide-bridge:start:[^\s>]+ -->[\s\S]*?<!-- claude-ide-bridge:end -->/;
+
+/** Regex that matches a versioned bridge block with a specific version captured. */
+const BRIDGE_BLOCK_VERSION_RE =
+  /<!-- claude-ide-bridge:start:([^\s>]+) -->[\s\S]*?<!-- claude-ide-bridge:end -->/;
+
+/**
+ * Returns the version embedded in an existing versioned bridge block in
+ * CLAUDE.md content, or null if no block is present.
+ */
+export function extractClaudeMdBlockVersion(content: string): string | null {
+  const m = BRIDGE_BLOCK_VERSION_RE.exec(content);
+  return m?.[1] ?? null;
+}
+
+/**
+ * Wraps the bridge section (marker line + import line) in versioned sentinels.
+ */
+function buildVersionedBlock(
+  marker: string,
+  importLine: string,
+  version: string,
+): string {
+  return `${bridgeBlockStartMarker(version)}\n${marker}\n${importLine}\n${BRIDGE_BLOCK_END}`;
+}
+
+/**
+ * Patches CLAUDE.md with a versioned bridge block that init can detect and
+ * update on re-run.
+ *
+ * Logic:
+ *   - If a versioned block with the current version exists → "already-current"
+ *   - If a versioned block with a different version exists → replace it → "updated"
+ *   - If the unversioned marker exists but no versioned block → wrap it → "patched"
+ *   - If the import line exists standalone (no marker block) → "already-present"
+ *   - Otherwise → "no-section"
+ *
+ * All writes are atomic (write to .tmp with exclusive-create, backup original,
+ * rename into place).
+ */
+export function patchClaudeMdImport(
   targetPath: string,
   marker: string,
   importLine: string,
-): "patched" | "already-present" | "no-section" {
+  version: string = PACKAGE_VERSION,
+):
+  | "patched"
+  | "already-present"
+  | "already-current"
+  | "updated"
+  | "no-section" {
   if (!existsSync(targetPath)) return "no-section";
   const existing = readFileSync(targetPath, "utf-8");
-  if (!existing.includes(marker)) return "no-section";
-  if (existing.includes(importLine)) return "already-present";
-  // Normalise: ensure marker is followed by a newline so the replace has a target.
-  // If marker is at EOF with no trailing newline, append one before patching.
-  const normalised = existing.endsWith("\n") ? existing : `${existing}\n`;
-  const patched = normalised.replace(
-    `${marker}\n`,
-    `${marker}\n\n${importLine}\n`,
-  );
-  if (patched === normalised) return "no-section"; // replace had no effect — safety guard
-  const tmpPath = `${targetPath}.tmp`;
-  // Clean up a stale .tmp from a previous crash before exclusive-create.
-  try {
-    unlinkSync(tmpPath);
-  } catch {
-    /* not present — expected */
+
+  // Case 1: versioned block present — check if current
+  const existingVersion = extractClaudeMdBlockVersion(existing);
+  if (existingVersion !== null) {
+    if (existingVersion === version) return "already-current";
+    // Stale versioned block → replace
+    const newBlock = buildVersionedBlock(marker, importLine, version);
+    const patched = existing.replace(BRIDGE_BLOCK_RE, newBlock);
+    if (patched === existing) return "no-section"; // safety guard
+    writePatchedClaudeMd(targetPath, patched);
+    return "updated";
   }
-  writeFileSync(tmpPath, patched, { encoding: "utf-8", flag: "wx" });
+
+  // Case 2: unversioned marker present — wrap it
+  if (existing.includes(marker)) {
+    if (existing.includes(importLine)) {
+      // marker + import present but not versioned — wrap the whole block
+      const normalised = existing.endsWith("\n") ? existing : `${existing}\n`;
+      // Replace the old "marker\n\nimportLine\n" pattern with versioned block
+      const oldBlock1 = `${marker}\n\n${importLine}\n`;
+      const oldBlock2 = `${marker}\n${importLine}\n`;
+      const newBlock = `${buildVersionedBlock(marker, importLine, version)}\n`;
+      const patched = normalised.includes(oldBlock1)
+        ? normalised.replace(oldBlock1, newBlock)
+        : normalised.includes(oldBlock2)
+          ? normalised.replace(oldBlock2, newBlock)
+          : null;
+      if (patched === null || patched === normalised) {
+        // Can't safely restructure — just mark as already-present
+        return "already-present";
+      }
+      writePatchedClaudeMd(targetPath, patched);
+      return "patched";
+    }
+    // marker present, import missing — insert versioned sentinel + import line
+    // immediately after the marker line, preserving any user content that follows.
+    const normalised = existing.endsWith("\n") ? existing : `${existing}\n`;
+    const markerLineEnd = normalised.indexOf("\n", normalised.indexOf(marker));
+    if (markerLineEnd === -1) return "no-section";
+    const versionedImportLine = `${bridgeBlockStartMarker(version)}\n${importLine}\n${BRIDGE_BLOCK_END}`;
+    const patched =
+      normalised.slice(0, markerLineEnd + 1) +
+      versionedImportLine +
+      "\n" +
+      normalised.slice(markerLineEnd + 1);
+    writePatchedClaudeMd(targetPath, patched);
+    return "patched";
+  }
+
+  // Case 3: import line present with no marker section at all
+  if (existing.includes(importLine)) return "already-present";
+
+  return "no-section";
+}
+
+/** Atomically write patched CLAUDE.md content, backing up the original. */
+function writePatchedClaudeMd(targetPath: string, patched: string): void {
+  // Use a unique tmp path to avoid EEXIST from a concurrent init run.
+  // Do NOT pre-unlink — let `wx` (exclusive create) handle collision on its own.
+  const tmpPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmpPath, patched, { encoding: "utf-8", flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(
+        `Concurrent init detected: tmp file ${tmpPath} already exists. Retry once the other process finishes.`,
+      );
+    }
+    throw err;
+  }
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   try {
     renameSync(targetPath, `${targetPath}.${ts}.bak`);
@@ -79,7 +185,6 @@ function patchClaudeMdImport(
     }
     throw err;
   }
-  return "patched";
 }
 
 /**
@@ -251,9 +356,27 @@ Options:
 
   // Idempotent: skip if the section already exists (with @import line)
   const patchResult = patchClaudeMdImport(targetPath, marker, IMPORT_LINE);
+  if (patchResult === "already-current") {
+    process.stderr.write(
+      `CLAUDE.md bridge block already up to date (v${PACKAGE_VERSION}) — no changes made.\n`,
+    );
+    repairBridgeToolsRulesIfStale(workspace, undefined, {
+      writeIfMissing: true,
+    });
+    process.exit(0);
+  }
+  if (patchResult === "updated") {
+    process.stderr.write(
+      `Updated CLAUDE.md bridge block to v${PACKAGE_VERSION}.\n`,
+    );
+    repairBridgeToolsRulesIfStale(workspace, undefined, {
+      writeIfMissing: true,
+    });
+    process.exit(0);
+  }
   if (patchResult === "patched") {
     process.stderr.write(
-      `Patched existing CLAUDE.md — added missing @import line.\n`,
+      `Patched existing CLAUDE.md — added missing @import line (v${PACKAGE_VERSION}).\n`,
     );
     repairBridgeToolsRulesIfStale(workspace, undefined, {
       writeIfMissing: true,
@@ -269,10 +392,19 @@ Options:
     });
     process.exit(0);
   }
+  // Wrap the template content in a versioned block so future re-runs can detect the version stamp.
+  const versionedGenContent = content
+    .trimEnd()
+    .replace(
+      marker,
+      `<!-- claude-ide-bridge:start:${PACKAGE_VERSION} -->\n${marker}`,
+    )
+    .concat(`\n<!-- claude-ide-bridge:end -->`);
+
   if (existsSync(targetPath)) {
     const existing = readFileSync(targetPath, "utf-8");
     // Write tmp first with exclusive-create — if the write fails, the original is intact
-    const updated = `${existing.trimEnd()}\n\n${content.trimEnd()}\n`;
+    const updated = `${existing.trimEnd()}\n\n${versionedGenContent}\n`;
     const tmpPath = `${targetPath}.tmp`;
     writeFileSync(tmpPath, updated, { encoding: "utf-8", flag: "wx" });
     // Backup existing file before replacing
@@ -292,14 +424,16 @@ Options:
     process.stderr.write(`Backed up existing CLAUDE.md to ${backupPath}\n`);
   } else {
     mkdirSync(workspace, { recursive: true });
-    writeFileSync(`${targetPath}.tmp`, content, {
+    writeFileSync(`${targetPath}.tmp`, `${versionedGenContent}\n`, {
       encoding: "utf-8",
       flag: "wx",
     });
     renameSync(`${targetPath}.tmp`, targetPath);
   }
 
-  process.stderr.write(`✓ Bridge workflow section written to ${targetPath}\n`);
+  process.stderr.write(
+    `✓ Bridge workflow section written to ${targetPath} (v${PACKAGE_VERSION})\n`,
+  );
 
   // Also write bridge-tools rules file alongside CLAUDE.md
   repairBridgeToolsRulesIfStale(workspace, undefined, { writeIfMissing: true });
@@ -318,6 +452,13 @@ if (process.argv[2] === "install") {
 if (process.argv[2] === "marketplace") {
   const { runMarketplace } = await import("./commands/marketplace.js");
   await runMarketplace(process.argv.slice(3));
+  process.exit(0);
+}
+
+// Handle tools subcommand — search/list tools without a bridge connection
+if (process.argv[2] === "tools") {
+  const { runToolsCommand } = await import("./commands/tools.js");
+  await runToolsCommand(process.argv.slice(3));
   process.exit(0);
 }
 
@@ -783,25 +924,45 @@ Steps performed:
     const targetPath = path.join(workspace, "CLAUDE.md");
     const marker = "## Claude IDE Bridge";
     const importLine = "@import .claude/rules/bridge-tools.md";
+    // Capture old version before patching so we can show "v1.2 → v1.3" in the message.
+    const prevBlockVersion = existsSync(targetPath)
+      ? extractClaudeMdBlockVersion(readFileSync(targetPath, "utf-8"))
+      : null;
     const initPatchResult = patchClaudeMdImport(targetPath, marker, importLine);
-    if (initPatchResult === "patched") {
+    if (initPatchResult === "already-current") {
       process.stderr.write(
-        "  ✓ CLAUDE.md — patched with missing @import line\n\n",
+        `  ✓ CLAUDE.md — bridge block already up to date (v${PACKAGE_VERSION})\n\n`,
+      );
+    } else if (initPatchResult === "updated") {
+      process.stderr.write(
+        `  ✓ CLAUDE.md — bridge block updated${prevBlockVersion ? ` v${prevBlockVersion} →` : ""} v${PACKAGE_VERSION}\n\n`,
+      );
+    } else if (initPatchResult === "patched") {
+      process.stderr.write(
+        `  ✓ CLAUDE.md — bridge section patched and stamped v${PACKAGE_VERSION}\n\n`,
       );
     } else if (initPatchResult === "already-present") {
       process.stderr.write(
         "  ✓ CLAUDE.md — bridge section already present\n\n",
       );
     } else {
-      // no-section: append or create
+      // no-section: append or create with versioned block
       mkdirSync(workspace, { recursive: true });
       const existing = existsSync(targetPath)
         ? readFileSync(targetPath, "utf-8")
         : null;
+      // Wrap the template content in a versioned block before inserting
+      const versionedContent = content
+        .trimEnd()
+        .replace(
+          marker,
+          `<!-- claude-ide-bridge:start:${PACKAGE_VERSION} -->\n${marker}`,
+        )
+        .concat(`\n<!-- claude-ide-bridge:end -->`);
       const updated =
         existing !== null
-          ? `${existing.trimEnd()}\n\n${content.trimEnd()}\n`
-          : content;
+          ? `${existing.trimEnd()}\n\n${versionedContent}\n`
+          : `${versionedContent}\n`;
       const tmpPath = `${targetPath}.tmp`;
       writeFileSync(tmpPath, updated, { encoding: "utf-8", flag: "wx" });
       if (existing !== null) {
@@ -821,7 +982,7 @@ Steps performed:
         renameSync(tmpPath, targetPath);
       }
       process.stderr.write(
-        `  ✓ CLAUDE.md — bridge section written to ${targetPath}\n\n`,
+        `  ✓ CLAUDE.md — bridge section written to ${targetPath} (v${PACKAGE_VERSION})\n\n`,
       );
     }
   }
@@ -837,7 +998,7 @@ Steps performed:
   );
   if (isBridgeToolsFileValid(rulesFilePath)) {
     process.stderr.write(
-      `  ✓ Bridge rules — already present at ${rulesFilePath}\n\n`,
+      `  ✓ Bridge rules — already up to date (v${PACKAGE_VERSION}) at ${rulesFilePath}\n\n`,
     );
   } else if (existsSync(bridgeToolsTemplatePath)) {
     const repairing = existsSync(rulesFilePath);
@@ -852,8 +1013,8 @@ Steps performed:
       );
       process.stderr.write(
         repairing
-          ? `  ✓ Bridge rules — repaired at ${rulesFilePath}\n\n`
-          : `  ✓ Bridge rules — written to ${rulesFilePath}\n\n`,
+          ? `  ✓ Bridge rules — updated to v${PACKAGE_VERSION} at ${rulesFilePath}\n\n`
+          : `  ✓ Bridge rules — written (v${PACKAGE_VERSION}) to ${rulesFilePath}\n\n`,
       );
     } catch (err) {
       const exitCode = handleRulesWriteError(err, rulesFilePath, "  ");

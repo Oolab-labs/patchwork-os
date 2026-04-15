@@ -246,7 +246,7 @@ Event-driven hooks that trigger Claude tasks automatically.
 
 - **Lock file**: `~/.claude/ide/<port>.lock` — `{pid, workspace, authToken, isBridge: true, ...}`. Created with `O_EXCL` (prevents symlink attacks), permissions `0o600`. `isBridge: true` distinguishes bridge locks from IDE-owned locks. See [ADR-0003](docs/adr/0003-isbridge-lock-file-flag.md).
 - **Auth**: token from lock file, validated with `crypto.timingSafeEqual`. Host header DNS rebinding defense rejects non-loopback hosts.
-- **HTTP sessions**: max 5 concurrent, 10-min idle TTL, oldest idle (>60s) evicted on capacity. See [ADR-0005](docs/adr/0005-http-session-eviction.md).
+- **HTTP sessions**: max 5 concurrent, 2hr idle TTL, oldest idle (>60s) evicted on capacity. See [ADR-0005](docs/adr/0005-http-session-eviction.md).
 - **Grace period**: `--grace-period <ms>` (default 120s) preserves session state across brief disconnects. Reconnecting client sending `X-Claude-Code-Session-Id` matching in-grace session is reattached (no new session, no re-initialization). stdio shim sends stable per-process UUID automatically.
 - **Version numbers**: `BRIDGE_PROTOCOL_VERSION` (wire format, bump rarely) vs `PACKAGE_VERSION` (npm, every release). See [ADR-0001](docs/adr/0001-dual-version-numbers.md). Same dual-version applies to extension: `EXTENSION_PROTOCOL_VERSION` (wire compat, `"1.1.0"`) vs npm package version (`1.3.x`). `extension/hello` reports both — `protocolVersion` and `packageVersion`. Check both in bridge logs; `version=1.1.0` in logs is the wire version, not stale extension.
 - **Generation guards**: every WebSocket callback checks `gen !== this.generation` to prevent stale callbacks corrupting new connection state. See [ADR-0002](docs/adr/0002-generation-guards-on-reconnect.md).
