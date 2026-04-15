@@ -449,6 +449,46 @@ export const PROMPTS: McpPrompt[] = [
       "Workspace diagnostics grouped by severity/file, rendered as a sortable HTML table in the browser.",
     arguments: [],
   },
+
+  // ── Edit workflow prompts ─────────────────────────────────────────────────
+  {
+    name: "safe-refactor",
+    description:
+      "Multi-file refactor with preview-before-apply: shows unified diff per file, asks for confirmation, then applies atomically via transaction.",
+    arguments: [
+      {
+        name: "description",
+        description:
+          "What to refactor (e.g. 'rename UserService to AccountService').",
+        required: true,
+      },
+      {
+        name: "files",
+        description:
+          "Comma-separated list of files to consider (optional, scopes the refactor).",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "diagnose-and-fix",
+    description:
+      "Explain the first diagnostic error, propose and preview a fix, apply it, then re-check diagnostics.",
+    arguments: [
+      {
+        name: "filePath",
+        description:
+          "File to scope diagnostics to (optional; omit for workspace-wide first error).",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "session-delta",
+    description:
+      "Orient at session start: diff + diagnostic changes since last handoff note, with suggested next action.",
+    arguments: [],
+  },
 ];
 
 // ── Orient-project prompt text builder ────────────────────────────────────────
@@ -1771,6 +1811,99 @@ const TEMPLATES: Record<
             "   - Add a text filter input that filters rows by file or message",
             "4. Write HTML to /tmp/diagnostics-board.html",
             "5. Call `openInBrowser` with that path.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "safe-refactor": ({ description, files }) => ({
+    description: `Safe refactor: ${description}`,
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            `Perform the following refactor safely: **${description}**`,
+            files ? `Files to consider: ${files}` : "",
+            "",
+            "## Step 1 — Preview all edits",
+            "For each file that needs to change:",
+            "1. Call `previewEdit` with the proposed change",
+            "2. Display the unified diff",
+            "",
+            "## Step 2 — Confirm with user",
+            "Show a summary of all diffs and ask: 'Apply these changes? (yes / no)'",
+            "Wait for the user's response before proceeding.",
+            "",
+            "## Step 3a — Apply (if confirmed)",
+            "1. Call `beginTransaction` to open a transaction",
+            "2. Call `stageEdit` for each file change",
+            "3. Call `commitTransaction` to atomically write all edits",
+            "4. Call `getDiagnostics` to confirm no new errors were introduced",
+            "",
+            "## Step 3b — Abort (if rejected)",
+            "Call `rollbackTransaction` if a transaction was started, then explain what was skipped.",
+          ]
+            .filter((l) => l !== undefined)
+            .join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "diagnose-and-fix": ({ filePath }) => ({
+    description: filePath
+      ? `Diagnose and fix errors in ${filePath}`
+      : "Diagnose and fix first workspace error",
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            filePath
+              ? `Diagnose and fix the first error in \`${filePath}\`.`
+              : "Diagnose and fix the first error in the workspace.",
+            "",
+            "## Steps",
+            `1. Call \`getDiagnostics\`${filePath ? ` with uri: "${filePath}"` : " (no uri — workspace-wide)"} to get current errors`,
+            "2. Take the first error location (file, line, column)",
+            "3. Call `explainDiagnostic` on that location — understand root cause",
+            "4. Propose a fix based on the explanation",
+            "5. Call `previewEdit` to show the unified diff before applying",
+            "6. If the fix looks correct: apply with `editText`",
+            "   If multiple files need changes: `beginTransaction` → `stageEdit` each → `commitTransaction`",
+            "7. Call `getDiagnostics` again to confirm the error is resolved",
+            "8. Report: original error, fix applied, and whether diagnostics are now clean",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+
+  "session-delta": (_args) => ({
+    description: "Session start orientation — changes since last handoff",
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: [
+            "Orient me at the start of this session.",
+            "",
+            "## Steps",
+            "1. Call `getDiffFromHandoff` to get git diff + diagnostic delta since the last handoff note",
+            "2. Summarise:",
+            "   - Files changed (list each with +/- line counts)",
+            "   - New errors introduced (if any)",
+            "   - Errors resolved since last handoff (if any)",
+            "   - Net diagnostic change (+N errors / -N errors / no change)",
+            "3. Suggest a concrete next action based on the delta",
+            "   (e.g. 'Fix 2 new TypeScript errors in auth.ts' or 'No issues — ready to continue feature X')",
+            "",
+            "Keep the summary under 20 lines.",
           ].join("\n"),
         },
       },

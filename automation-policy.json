@@ -14,6 +14,11 @@
     "cooldownMs": 600000,
     "prompt": "{{file}} saved. getDiagnostics → report errors only."
   },
+  "onPreCompact": {
+    "enabled": true,
+    "cooldownMs": 30000,
+    "prompt": "Pre-compact snapshot. Call in order: (1) getDiagnostics → collect all errors+warnings; (2) getGitStatus → get branch + uncommitted files; (3) getOpenEditors → list open files. Then call setHandoffNote with content as JSON: {\"snapshotAt\":\"<ISO timestamp>\",\"branch\":\"<branch>\",\"uncommittedFiles\":[<files array>],\"diagnosticCount\":<total count>,\"errors\":[<array of {file,line,message,severity}>],\"openFiles\":[<array of file paths>],\"inProgressSummary\":\"<1-2 sentence description of what was being worked on>\"}. No prose outside the tool call."
+  },
   "onPostCompact": {
     "enabled": true,
     "cooldownMs": 30000,
@@ -22,7 +27,7 @@
   "onInstructionsLoaded": {
     "enabled": true,
     "cooldownMs": 60000,
-    "prompt": "Session start. Call only: contextBundle(summarize:true) + getHandoffNote → branch, error count, uncommitted changes, prior context. Do NOT read files outside the workspace. ≤5 lines. Fragments OK. Abbreviate."
+    "promptName": "session-delta"
   },
   "onBranchCheckout": {
     "enabled": true,
@@ -65,7 +70,8 @@
     "dedupeContentCooldownMs": 900000,
     "minSeverity": "error",
     "diagnosticTypes": ["ts"],
-    "prompt": "TS err {{file}}:\n{{diagnostics}}\nCause+fix ≤3 lines. Code only. No prose."
+    "promptName": "diagnose-and-fix",
+    "promptArgs": { "filePath": "{{file}}" }
   },
   "onDiagnosticsCleared": {
     "enabled": false,
