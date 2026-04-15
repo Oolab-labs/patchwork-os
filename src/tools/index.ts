@@ -42,6 +42,7 @@ import {
 import { createDetectUnusedCodeTool } from "./detectUnusedCode.js";
 import { createGetDocumentLinksTool } from "./documentLinks.js";
 import { createEditTextTool } from "./editText.js";
+import { createExplainDiagnosticTool } from "./explainDiagnostic.js";
 import { createExplainSymbolTool } from "./explainSymbol.js";
 import {
   createCreateFileTool,
@@ -71,6 +72,7 @@ import {
 import { createGetDebugStateTool } from "./getDebugState.js";
 import { createGetDependencyTreeTool } from "./getDependencyTree.js";
 import { createGetDiagnosticsTool } from "./getDiagnostics.js";
+import { createGetDiffFromHandoffTool } from "./getDiffFromHandoff.js";
 import { createGetDocumentSymbolsTool } from "./getDocumentSymbols.js";
 import { createGetFileTreeTool } from "./getFileTree.js";
 import { createGetGitDiffTool } from "./getGitDiff.js";
@@ -156,6 +158,7 @@ import { createOpenInBrowserTool } from "./openInBrowser.js";
 import { createOrganizeImportsTool } from "./organizeImports.js";
 import { createGetPerformanceReportTool } from "./performanceReport.js";
 import { createPlanTools } from "./planPersistence.js";
+import { createPreviewEditTool } from "./previewEdit.js";
 import { createRefactorAnalyzeTool } from "./refactorAnalyze.js";
 import { createRefactorExtractFunctionTool } from "./refactorExtractFunction.js";
 import { createRefactorPreviewTool } from "./refactorPreview.js";
@@ -182,6 +185,8 @@ import {
   createSendTerminalCommandTool,
   createWaitForTerminalOutputTool,
 } from "./terminal.js";
+import { createTestTraceToSourceTool } from "./testTraceToSource.js";
+import { createTransactionTools } from "./transaction.js";
 import { createGetTypeHierarchyTool } from "./typeHierarchy.js";
 import {
   createExecuteVSCodeCommandTool,
@@ -579,7 +584,20 @@ export function registerAllTools(
           }),
         ]
       : []),
+    createPreviewEditTool(workspace),
+    ...(() => {
+      const tx = createTransactionTools(workspace);
+      return [
+        tx.beginTransaction,
+        tx.stageEdit,
+        tx.commitTransaction,
+        tx.rollbackTransaction,
+      ];
+    })(),
+    createGetDiffFromHandoffTool(workspace, extensionClient),
+    createExplainDiagnosticTool(workspace, extensionClient),
     createFindRelatedTestsTool(workspace, probes),
+    createTestTraceToSourceTool(workspace),
     createScreenshotAndAnnotateTool(workspace, extensionClient),
     createGetPRTemplateTool(workspace),
     createGetCodeCoverageTool(workspace),

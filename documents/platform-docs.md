@@ -172,6 +172,19 @@ The fallback activates only when the probe for the required CLI tool succeeded a
 | `getHoverAtCursor` | S | Hover info at the current cursor position (no coordinates needed) | extensionRequired |
 | `getTypeSignature` | S | TypeScript/language type signature at a file position. Returns the first fenced code block from hover markdown | extensionFallback via typescript-language-server |
 | `formatRange` | S | Format a specific line range via VS Code formatter | extensionRequired |
+| `explainDiagnostic` | S | Compound: code context + go-to-definition + call hierarchy for an error location. Returns plain-English explanation of a diagnostic | extensionRequired |
+
+---
+
+### Edit Transactions
+
+| Tool | Mode | Description | Notes |
+|------|------|-------------|-------|
+| `previewEdit` | S | Show unified diff of a pending edit (lineRange or searchReplace) without writing to disk | |
+| `beginTransaction` | S | Start an in-memory multi-file edit transaction. Returns `transactionId` | |
+| `stageEdit` | S | Queue a lineRange or searchReplace edit into an open transaction | |
+| `commitTransaction` | S | Atomically write all staged edits in a transaction to disk | |
+| `rollbackTransaction` | S | Discard all staged edits in a transaction without writing | |
 
 ---
 
@@ -313,6 +326,7 @@ All tools in this category are full-only.
 | `organizeImports` | F | Organize imports via VS Code | extensionRequired |
 | `detectUnusedCode` | F | Scan for unused exports, functions, and variables combining LSP references with static analysis | |
 | `getCodeCoverage` | F | Parse coverage reports (lcov, coverage-summary.json, clover.xml). Auto-detects report in workspace. Supports `minCoverage` filter | |
+| `testTraceToSource` | S | Parse existing lcov.info or coverage-summary.json to find source lines exercised by a test pattern. No instrumentation required; note: without per-test coverage returns whole-suite data filtered by filename | |
 | `auditDependencies` | F | Detect outdated packages and report current vs latest versions. Auto-detects package manager from lock files | |
 | `getSecurityAdvisories` | F | Run security audit returning vulnerabilities with severity, CVE IDs, and remediation steps. Supports npm, yarn, pnpm, cargo audit, pip-audit | |
 | `getDependencyTree` | F | Unified dependency graph across npm, pip, cargo, and go mod | |
@@ -365,6 +379,7 @@ All plan tools are full-only.
 |------|------|-------------|
 | `setHandoffNote` | F | Persist a context summary to `~/.claude/ide/handoff-note.json`. Shared across all MCP sessions. Content capped at 10 000 chars |
 | `getHandoffNote` | F | Read handoff note from a previous session. Returns `note`, `updatedAt`, `updatedBy`, and human-readable `age` |
+| `getDiffFromHandoff` | S | Git diff + diagnostic delta since the last handoff note was written. Useful for session-start orientation | |
 
 ---
 
@@ -492,6 +507,16 @@ Multi-step LSP workflows composed from bridge primitives.
 | `deprecations` | — | Find `@deprecated` APIs and count callers. Wraps `searchWorkspace` + `findReferences` |
 | `coverage-gap` | `file` (required) | Untested functions by correlating coverage with document symbols. Wraps `getCodeCoverage` + `getDocumentSymbols` |
 | `explore-type` | `file`, `line`, `column` (required) | Type declaration, definition, and all implementations. Wraps `getHover` + `goToDeclaration` + `goToTypeDefinition` + `findImplementations` |
+
+### Edit Workflow Prompts
+
+Multi-step workflows using `previewEdit`, transaction tools, `explainDiagnostic`, and `getDiffFromHandoff`.
+
+| Prompt | Arguments | Description |
+|--------|-----------|-------------|
+| `safe-refactor` | `description` (required), `files` (optional, comma-sep) | Preview all edits as unified diffs, ask for confirmation, then apply atomically via `beginTransaction` → `stageEdit` → `commitTransaction` |
+| `diagnose-and-fix` | `filePath` (optional) | Explain first error via `explainDiagnostic`, preview fix with `previewEdit`, apply, then re-check `getDiagnostics` |
+| `session-delta` | — | Call `getDiffFromHandoff`, summarise files changed and diagnostic delta, suggest next action |
 
 ### Agent Teams and Scheduled Tasks
 
