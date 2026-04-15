@@ -123,7 +123,7 @@ export function createTestTraceToSourceTool(workspace: string) {
     schema: {
       name: "testTraceToSource",
       description:
-        "Parse existing coverage data (lcov.info or coverage-summary.json) to find source lines exercised by a test pattern. No instrumentation needed. Note: without per-test coverage (jest --coverage-provider=v8 --testNamePattern or Istanbul json reporter), returns whole-suite coverage filtered by filename pattern.",
+        "Map a test pattern to covered source lines from lcov.info or coverage-summary.json — no instrumentation needed. Without per-test coverage, returns whole-suite coverage filtered by filename pattern.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         type: "object" as const,
