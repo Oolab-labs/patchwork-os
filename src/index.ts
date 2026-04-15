@@ -30,7 +30,7 @@ import {
   repairBridgeToolsRulesIfStale,
 } from "./bridgeToolsRules.js";
 import { findEditor, parseConfig } from "./config.js";
-import { PACKAGE_VERSION } from "./version.js";
+import { PACKAGE_VERSION, semverGt } from "./version.js";
 
 const __dirnameTop = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1615,7 +1615,7 @@ if (config.watch) {
         (err, stdout) => {
           if (err || !stdout) return;
           const latest = stdout.trim();
-          if (latest && latest !== PACKAGE_VERSION) {
+          if (latest && semverGt(latest, PACKAGE_VERSION)) {
             console.log(
               `\n  Bridge v${latest} available — run: npm update -g claude-ide-bridge\n`,
             );
