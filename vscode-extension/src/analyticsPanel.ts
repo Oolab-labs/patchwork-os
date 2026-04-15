@@ -116,13 +116,13 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       errorCount > 0
         ? {
             id: "fixErrors",
-            icon: "⊘",
+            icon: '<i class="codicon codicon-error"></i>',
             label: `Fix ${errorCount} error${errorCount === 1 ? "" : "s"}${topErrorFile ? ` in ${topErrorFile}` : ""}`,
             prompt: `Call getDiagnostics to get all current errors and warnings${topErrorFile ? ` (start with ${topErrorFile})` : ""}. Fix every error precisely — do not break working code. Run tests after fixing to confirm nothing regressed.`,
           }
         : {
             id: "fixErrors",
-            icon: "⊘",
+            icon: '<i class="codicon codicon-error"></i>',
             label: "Fix all errors",
             prompt:
               "Call getDiagnostics to get all current errors and warnings. Fix every error precisely — do not break working code. Run tests after fixing to confirm nothing regressed.",
@@ -132,13 +132,13 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     const refactorFile = baseName
       ? {
           id: "refactorFile",
-          icon: "↺",
+          icon: '<i class="codicon codicon-symbol-misc"></i>',
           label: `Refactor ${baseName}`,
           prompt: `Refactor ${activeFile ?? "the active file"} for clarity, readability, and maintainability. Keep all existing behaviour identical. Use getBufferContent to read the current file before making changes.`,
         }
       : {
           id: "refactorFile",
-          icon: "↺",
+          icon: '<i class="codicon codicon-symbol-misc"></i>',
           label: "Refactor this file",
           prompt:
             "Refactor the active file for clarity, readability, and maintainability. Keep all existing behaviour identical. Use getBufferContent to read the current file before making changes.",
@@ -153,14 +153,14 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     const addTests = failedTestTask
       ? {
           id: "addTests",
-          icon: "✓",
+          icon: '<i class="codicon codicon-beaker"></i>',
           label: "Add tests for failing flow",
           prompt:
             "A recent test run failed. Use getDiagnostics and getBufferContent to identify the failing logic, then write targeted tests that cover the failing flow and edge cases.",
         }
       : {
           id: "addTests",
-          icon: "✓",
+          icon: '<i class="codicon codicon-beaker"></i>',
           label: `Add tests for ${baseName || "this file"}`,
           prompt:
             "Write comprehensive unit tests for the functions in the active file. Use getBufferContent to read the file. Match the existing test style and patterns in the project. Cover edge cases.",
@@ -175,13 +175,13 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     const explainCode = lastCommit
       ? {
           id: "explainCode",
-          icon: "◎",
+          icon: '<i class="codicon codicon-book"></i>',
           label: "Explain changes from last commit",
           prompt: `Use getGitDiff or getGitLog to get the last commit diff, then explain what changed, why the changes were made, and any non-obvious patterns. Last commit: ${lastCommit.message}`,
         }
       : {
           id: "explainCode",
-          icon: "◎",
+          icon: '<i class="codicon codicon-book"></i>',
           label: `Explain ${baseName || "this file"}`,
           prompt:
             "Read the active file with getBufferContent and explain what it does: its purpose, key functions, data flow, and any non-obvious patterns. Keep it concise and technical.",
@@ -201,13 +201,13 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     const optimizePerf = slowestTool
       ? {
           id: "optimizePerf",
-          icon: "◆",
+          icon: '<i class="codicon codicon-dashboard"></i>',
           label: `Optimize slowest fn (${slowestTool})`,
           prompt: `Use getPerformanceReport to find the bottleneck and optimize ${slowestTool}. Identify the root cause of the latency, propose fixes, and apply the most impactful improvements.`,
         }
       : {
           id: "optimizePerf",
-          icon: "◆",
+          icon: '<i class="codicon codicon-dashboard"></i>',
           label: "Optimize performance",
           prompt:
             "Analyse the active file for performance issues: unnecessary re-renders, expensive loops, blocking I/O, memory leaks. Use getBufferContent to read it, then propose and apply the most impactful fixes.",
@@ -228,7 +228,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     if (cancelledTask) {
       presets.push({
         id: "resumeLastCancelled",
-        icon: "↩",
+        icon: '<i class="codicon codicon-debug-continue"></i>',
         label: "Resume last cancelled task",
         prompt: "",
         taskId: cancelledTask.id,
@@ -238,7 +238,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     // 7. runTests — always shown
     presets.push({
       id: "runTests",
-      icon: "▷",
+      icon: '<i class="codicon codicon-play"></i>',
       label: "Run full test suite",
       prompt:
         "Run the full test suite using the appropriate test runner. Report all failures with file and line numbers.",
@@ -249,7 +249,20 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this._view = webviewView;
-    webviewView.webview.options = { enableScripts: true };
+    const codiconsUri = webviewView.webview.asWebviewUri(
+      this.vscodeApi.Uri.joinPath(
+        this._extensionUri,
+        "out",
+        "codicons",
+        "codicon.css",
+      ),
+    );
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        this.vscodeApi.Uri.joinPath(this._extensionUri, "out"),
+      ],
+    };
 
     if (this._refreshTimer) {
       clearInterval(this._refreshTimer);
@@ -321,6 +334,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
           report,
           handoffPreview,
           perfReport,
+          codiconsUri,
         );
       } catch {
         webviewView.webview.html = this._buildHtml(null, null);
@@ -889,6 +903,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     report: AnalyticsReport | null,
     handoffPreview: string | null,
     perfReport?: PerformanceReport | null,
+    codiconsUri?: vscode.Uri,
   ): string {
     if (!report) {
       return `<!DOCTYPE html><html><body style="font-family:var(--vscode-font-family);padding:8px;color:var(--vscode-foreground)">
@@ -991,7 +1006,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     const presetButtons = presets
       .map(
         (p) =>
-          `<button class="preset-btn" data-preset-key="${_escHtml(p.id)}"><span class="preset-icon">${_escHtml(p.icon)}</span> ${_escHtml(p.label)}</button>`,
+          `<button class="preset-btn" data-preset-key="${_escHtml(p.id)}"><span class="preset-icon">${p.icon}</span>${_escHtml(p.label)}</button>`,
       )
       .join("");
 
@@ -1051,6 +1066,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     return `<!DOCTYPE html>
 <html>
 <head>
+${codiconsUri ? `<link rel="stylesheet" href="${codiconsUri}">` : ""}
 <style>
   * { box-sizing: border-box; }
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 8px; margin: 0; }
@@ -1071,8 +1087,9 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
   @keyframes spin { to { transform: rotate(360deg); } }
   .active-task-label { flex: 1; }
   .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 6px; }
-  .preset-btn { text-align: left; padding: 5px 6px; font-size: 11px; display: flex; align-items: center; gap: 4px; }
-  .preset-icon { font-size: 13px; }
+  .preset-btn { text-align: left; padding: 5px 6px; font-size: 11px; display: flex; align-items: center; gap: 5px; }
+  .preset-icon { font-size: 14px; line-height: 1; display: flex; align-items: center; }
+  .preset-icon .codicon { font-size: 14px; }
   .task-item { border-bottom: 1px solid var(--vscode-widget-border, #333); padding: 4px 0; font-size: 11px; }
   .task-meta { display: flex; gap: 5px; align-items: center; margin-bottom: 3px; flex-wrap: wrap; }
   .task-source { color: var(--vscode-descriptionForeground); font-size: 10px; }
