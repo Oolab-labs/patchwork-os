@@ -99,6 +99,44 @@ describe("tokenEfficiencyStatus", () => {
     expect(output).toContain("Could not read bridge lock file");
   });
 
+  it("prints bridge stats when bridge is running and /health responds", async () => {
+    const mockDirent = "12345.lock" as unknown as import("node:fs").Dirent;
+    vi.mocked(fs.readdirSync).mockReturnValue([mockDirent]);
+    vi.mocked(fs.statSync).mockReturnValue({
+      mtimeMs: Date.now(),
+    } as ReturnType<typeof fs.statSync>);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({ authToken: "tok123" }),
+    );
+
+    // Mock fetch: /health → stats, /mcp initialize → no session-id → schema skipped
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) => {
+        const url = typeof input === "string" ? input : (input as Request).url;
+        if (url.includes("/health")) {
+          return new Response(
+            JSON.stringify({
+              uptimeMs: 90_000,
+              activeSessions: 2,
+              extensionConnected: true,
+            }),
+            { status: 200 },
+          );
+        }
+        // MCP init — no session-id → schema estimate skipped gracefully
+        return new Response("{}", { status: 200, headers: {} });
+      });
+
+    await tokenEfficiencyStatus();
+
+    const output = consoleSpy.mock.calls.flat().join("\n");
+    expect(output).toContain("1m 30s");
+    expect(output).toContain("2");
+    expect(output).toContain("connected");
+    fetchSpy.mockRestore();
+  });
+
   it("prints 'missing authToken' when lock file has no token", async () => {
     const mockDirent = "12345.lock" as unknown as import("node:fs").Dirent;
     vi.mocked(fs.readdirSync).mockReturnValue([mockDirent]);

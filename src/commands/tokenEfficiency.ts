@@ -67,146 +67,109 @@ function findActiveLockFile(
   return { lockFile, port };
 }
 
-// ── getSessionUsage via HTTP MCP JSON-RPC ─────────────────────────────────────
+// ── bridge health + schema stats via HTTP ─────────────────────────────────────
 
-interface SessionUsageResult {
-  callCount: number;
-  errorCount: number;
-  schemaTokenEstimate: number | null;
-  cacheWarmed: boolean;
-  largestResults: Array<{ tool: string; sizeChars: number }>;
-  sessionDurationMs: number;
+interface BridgeStats {
+  uptimeMs: number;
+  activeSessions: number;
+  extensionConnected: boolean;
+  /** Estimated token cost of the tools/list schema payload. */
+  schemaTokenEstimate: number;
 }
 
-async function fetchSessionUsage(
+async function fetchBridgeStats(
   port: number,
   token: string,
-): Promise<SessionUsageResult | null> {
-  let sessionId: string | null = null;
-  const baseHeaders = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-    Accept: "application/json, text/event-stream",
-  };
-
+): Promise<BridgeStats | null> {
+  const auth = { Authorization: `Bearer ${token}` };
   try {
-    // Initiate HTTP MCP session
-    const initResp = await fetch(`http://127.0.0.1:${port}/mcp`, {
-      method: "POST",
-      headers: baseHeaders,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2024-11-05",
-          capabilities: {},
-          clientInfo: { name: "token-efficiency-cli", version: "1.0.0" },
+    // /health — server-level stats (unauthenticated on some deploys, auth required here)
+    const [healthResp, toolsResp] = await Promise.all([
+      fetch(`http://127.0.0.1:${port}/health`, {
+        headers: auth,
+        signal: AbortSignal.timeout(5_000),
+      }),
+      // tools/list — use its wire size as the schema token estimate
+      fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: "POST",
+        headers: {
+          ...auth,
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
         },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2024-11-05",
+            capabilities: {},
+            clientInfo: { name: "token-efficiency-cli", version: "1.0.0" },
+          },
+        }),
+        signal: AbortSignal.timeout(5_000),
       }),
-      signal: AbortSignal.timeout(5_000),
-    });
+    ]);
 
-    if (!initResp.ok) return null;
+    if (!healthResp.ok) return null;
+    const health = (await healthResp.json()) as Record<string, unknown>;
 
-    sessionId = initResp.headers.get("mcp-session-id");
-    if (!sessionId) return null;
-
-    const sessionHeaders: Record<string, string> = {
-      ...baseHeaders,
-      "mcp-session-id": sessionId,
-    };
-
-    // Send initialized notification
-    await fetch(`http://127.0.0.1:${port}/mcp`, {
-      method: "POST",
-      headers: sessionHeaders,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "notifications/initialized",
-        params: {},
-      }),
-      signal: AbortSignal.timeout(5_000),
-    });
-
-    // Call getSessionUsage tool
-    const toolResp = await fetch(`http://127.0.0.1:${port}/mcp`, {
-      method: "POST",
-      headers: sessionHeaders,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 2,
-        method: "tools/call",
-        params: { name: "getSessionUsage", arguments: {} },
-      }),
-      signal: AbortSignal.timeout(5_000),
-    });
-
-    if (!toolResp.ok) return null;
-
-    // Handle SSE or JSON response
-    const contentType = toolResp.headers.get("content-type") ?? "";
-    let rpcResult: unknown;
-
-    if (contentType.includes("text/event-stream")) {
-      const text = await toolResp.text();
-      // Parse SSE lines — skip notification frames (no `result` key), take first response
-      for (const line of text.split("\n")) {
-        if (line.startsWith("data: ")) {
-          try {
-            const parsed = JSON.parse(line.slice(6)) as Record<string, unknown>;
-            if ("result" in parsed) {
-              rpcResult = parsed;
-              break;
-            }
-          } catch {
-            // skip malformed lines
-          }
+    // Derive schema token estimate from tools/list wire size
+    let schemaTokenEstimate = 0;
+    if (toolsResp.ok) {
+      const sessionId = toolsResp.headers.get("mcp-session-id");
+      if (sessionId) {
+        const sessionHeaders = {
+          ...auth,
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          "mcp-session-id": sessionId,
+        };
+        // Send initialized notification
+        await fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: "POST",
+          headers: sessionHeaders,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "notifications/initialized",
+            params: {},
+          }),
+          signal: AbortSignal.timeout(3_000),
+        });
+        // Fetch tools/list and measure payload size
+        const listResp = await fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: "POST",
+          headers: sessionHeaders,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 2,
+            method: "tools/list",
+            params: {},
+          }),
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (listResp.ok) {
+          const raw = await listResp.text();
+          schemaTokenEstimate = Math.round(raw.length / 4);
         }
-      }
-    } else {
-      rpcResult = await toolResp.json();
-    }
-
-    if (!rpcResult || typeof rpcResult !== "object") return null;
-
-    const result = rpcResult as {
-      result?: { content?: Array<{ type: string; text?: string }> };
-    };
-
-    const content = result.result?.content;
-    if (!Array.isArray(content)) return null;
-
-    for (const block of content) {
-      if (block.type === "text" && block.text) {
-        try {
-          const parsed = JSON.parse(block.text) as Record<string, unknown>;
-          // Guard against isError blocks or missing required field
-          if (typeof parsed.callCount !== "number") continue;
-          return parsed as unknown as SessionUsageResult;
-        } catch {
-          // skip
-        }
+        // Close session
+        fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: "DELETE",
+          headers: { ...auth, "mcp-session-id": sessionId },
+          signal: AbortSignal.timeout(2_000),
+        }).catch(() => {});
       }
     }
 
-    return null;
+    return {
+      uptimeMs: typeof health.uptimeMs === "number" ? health.uptimeMs : 0,
+      activeSessions:
+        typeof health.activeSessions === "number" ? health.activeSessions : 0,
+      extensionConnected: health.extensionConnected === true,
+      schemaTokenEstimate,
+    };
   } catch {
     return null;
-  } finally {
-    // Always close the MCP session to avoid leaking a session slot
-    if (sessionId) {
-      fetch(`http://127.0.0.1:${port}/mcp`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "mcp-session-id": sessionId,
-        },
-        signal: AbortSignal.timeout(2_000),
-      }).catch(() => {
-        // best-effort cleanup — ignore errors
-      });
-    }
   }
 }
 
@@ -253,38 +216,30 @@ export async function tokenEfficiencyStatus(
     return;
   }
 
-  const usage = await fetchSessionUsage(found.port, token);
+  const stats = await fetchBridgeStats(found.port, token);
 
-  if (!usage) {
+  if (!stats) {
     console.log(
-      `\n  Bridge running on port ${found.port} but could not fetch session usage\n`,
+      `\n  Bridge running on port ${found.port} but could not fetch stats\n`,
     );
     return;
   }
 
-  console.log("\nSession Usage (live)");
+  console.log("\nBridge Status (live)");
   console.log(HR);
-  console.log(row("Call Count", String(usage.callCount)));
-  console.log(row("Error Count", String(usage.errorCount)));
+  console.log(row("Uptime", formatDuration(stats.uptimeMs)));
+  console.log(row("Active Sessions", String(stats.activeSessions)));
+  console.log(
+    row("Extension", stats.extensionConnected ? "connected" : "disconnected"),
+  );
   console.log(
     row(
       "Schema Est.",
-      usage.schemaTokenEstimate !== null
-        ? `~${usage.schemaTokenEstimate.toLocaleString()} tokens`
+      stats.schemaTokenEstimate > 0
+        ? `~${stats.schemaTokenEstimate.toLocaleString()} tokens`
         : "unknown",
     ),
   );
-  console.log(row("Cache Warm", usage.cacheWarmed ? "yes" : "no"));
-  console.log(row("Session Duration", formatDuration(usage.sessionDurationMs)));
-
-  if (usage.largestResults.length > 0) {
-    console.log("\n  Top tool results by size:");
-    for (const r of usage.largestResults.slice(0, 5)) {
-      console.log(
-        `    ${r.tool.padEnd(22)} ${r.sizeChars.toLocaleString()} chars`,
-      );
-    }
-  }
 
   console.log();
 }
