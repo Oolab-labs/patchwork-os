@@ -27,13 +27,13 @@ const PRESETS: Record<string, { label: string; icon: string; prompt: string }> =
   {
     fixErrors: {
       label: "Fix all errors",
-      icon: "🔧",
+      icon: "⊘",
       prompt:
         "Call getDiagnostics to get all current errors and warnings. Fix every error precisely — do not break working code. Run tests after fixing to confirm nothing regressed.",
     },
     refactorFile: {
       label: "Refactor this file",
-      icon: "♻",
+      icon: "↺",
       prompt:
         "Refactor the active file for clarity, readability, and maintainability. Keep all existing behaviour identical. Use getBufferContent to read the current file before making changes.",
     },
@@ -45,13 +45,13 @@ const PRESETS: Record<string, { label: string; icon: string; prompt: string }> =
     },
     explainCode: {
       label: "Explain this file",
-      icon: "💡",
+      icon: "◎",
       prompt:
         "Read the active file with getBufferContent and explain what it does: its purpose, key functions, data flow, and any non-obvious patterns. Keep it concise and technical.",
     },
     optimizePerf: {
       label: "Optimize performance",
-      icon: "⚡",
+      icon: "◆",
       prompt:
         "Analyse the active file for performance issues: unnecessary re-renders, expensive loops, blocking I/O, memory leaks. Use getBufferContent to read it, then propose and apply the most impactful fixes.",
     },
@@ -543,8 +543,8 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
       ? handoffLines.map((l) => `<div>${_escHtml(l.trim())}</div>`).join("")
       : `<div style="opacity:0.6">No handoff note — start a session to create one.</div>`;
     const handoffBtnLabel = handoffPreview
-      ? "⟳ Continue from handoff note"
-      : "↗ Start fresh session";
+      ? "↺ Continue from handoff note"
+      : "▶ Start fresh session";
     // No handoff: wire to startTask (fresh start) rather than disabling
     // fresh = no handoff note; button triggers startTask instead of continueHandoff
     const handoffDataAttr = handoffPreview ? "" : ' data-fresh="1"';
@@ -606,7 +606,7 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
 </style>
 </head>
 <body>
-${activeTasksHtml ? `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--vscode-descriptionForeground);margin-bottom:4px">⬤ Active tasks</div>${activeTasksHtml}</div>` : ""}
+${activeTasksHtml ? `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--vscode-descriptionForeground);margin-bottom:4px">▸ Active tasks</div>${activeTasksHtml}</div>` : ""}
 
 <h3>Session continuity</h3>
 <div class="handoff-box">
@@ -652,7 +652,7 @@ setInterval(updateAge, 5000);
 
 function startTask() {
   var btn = document.getElementById('startTaskBtn');
-  if (btn) { btn.textContent = '⟳ Gathering context…'; btn.disabled = true; }
+  if (btn) { btn.textContent = '↺ Gathering context…'; btn.disabled = true; }
   vscodeApi.postMessage({ command: 'startTask' });
 }
 
