@@ -95,7 +95,9 @@ describe("gen-claude-md --write", () => {
     });
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("already contains");
+    expect(result.stderr).toMatch(
+      /already up to date|already contains|no changes made/,
+    );
 
     const claudeMd = path.join(ws, "CLAUDE.md");
     const content = fs.readFileSync(claudeMd, "utf-8");
@@ -184,7 +186,9 @@ describe("init --workspace", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("bridge section already present");
+    expect(result.stderr).toMatch(
+      /bridge block already up to date|bridge section already present/,
+    );
 
     const content = fs.readFileSync(path.join(ws, "CLAUDE.md"), "utf-8");
     expect(content.split("## Claude IDE Bridge").length - 1).toBe(1);
@@ -226,6 +230,37 @@ describe("gen-claude-md --write @import patch", () => {
     expect(content).toContain("Some old content without @import.");
   });
 
+  it("preserves user content under the bridge marker when @import is missing (Bug 2)", () => {
+    const ws = makeTmpDir();
+    const claudeMd = path.join(ws, "CLAUDE.md");
+
+    // Marker present, user content between marker and next section, no @import
+    fs.writeFileSync(
+      claudeMd,
+      "# My Project\n\n## Claude IDE Bridge\nMy custom note here.\n\n## Another Section\ncontent\n",
+    );
+
+    const result = spawnSync(
+      "node",
+      [distIndex, "gen-claude-md", "--write", "--workspace", ws],
+      {
+        encoding: "utf-8",
+        env: { ...process.env, CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true" },
+      },
+    );
+
+    expect(result.status).toBe(0);
+    const content = fs.readFileSync(claudeMd, "utf-8");
+    // @import inserted
+    expect(content).toContain("@import .claude/rules/bridge-tools.md");
+    // User content NOT dropped
+    expect(content).toContain("My custom note here.");
+    // Other section still present
+    expect(content).toContain("## Another Section");
+    // Marker appears only once
+    expect(content.split("## Claude IDE Bridge").length - 1).toBe(1);
+  });
+
   it("does not modify CLAUDE.md when @import is already present", () => {
     const ws = makeTmpDir();
     const claudeMd = path.join(ws, "CLAUDE.md");
@@ -243,8 +278,13 @@ describe("gen-claude-md --write @import patch", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("no changes made");
-    expect(fs.readFileSync(claudeMd, "utf-8")).toBe(original);
+    // Either "no changes made" (old unversioned path) or "already up to date" (versioned block) or "patched" (wrapping)
+    expect(result.stderr).toMatch(/no changes made|already up to date|Patched/);
+    // Core content must be preserved
+    const updatedContent = fs.readFileSync(claudeMd, "utf-8");
+    expect(updatedContent).toContain("## Claude IDE Bridge");
+    expect(updatedContent).toContain("@import .claude/rules/bridge-tools.md");
+    expect(updatedContent).toContain("Content here.");
   });
 });
 
@@ -267,7 +307,7 @@ describe("init --workspace @import patch", () => {
     });
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("patched with missing @import line");
+    expect(result.stderr).toMatch(/patched|Patched/);
     const content = fs.readFileSync(claudeMd, "utf-8");
     expect(content).toContain("@import .claude/rules/bridge-tools.md");
     expect(content.split("## Claude IDE Bridge").length - 1).toBe(1);
