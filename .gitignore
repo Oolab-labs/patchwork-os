@@ -56,3 +56,4 @@ deps-*.html
 
 # Playwright MCP session artifacts
 .playwright-mcp/
+session-*.md

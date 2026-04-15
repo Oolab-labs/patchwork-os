@@ -31,13 +31,50 @@ interface HandoffNote {
   auto?: boolean;
 }
 
+// In-memory read cache: path → { value, expiresAt }
+// Eliminates redundant disk reads when getHandoffNote is called repeatedly
+// within a short window (e.g. automation hooks, session start sequences).
+const READ_CACHE_TTL_MS = 30_000; // 30 seconds
+interface CacheEntry {
+  value: HandoffNote | null;
+  expiresAt: number;
+}
+const noteReadCache = new Map<string, CacheEntry>();
+
+function getCachedNote(notePath: string): HandoffNote | null | undefined {
+  const entry = noteReadCache.get(notePath);
+  if (!entry) return undefined; // cache miss
+  if (Date.now() > entry.expiresAt) {
+    noteReadCache.delete(notePath);
+    return undefined; // expired
+  }
+  return entry.value; // cache hit (may be null for "file not found")
+}
+
+function setCachedNote(notePath: string, value: HandoffNote | null): void {
+  noteReadCache.set(notePath, {
+    value,
+    expiresAt: Date.now() + READ_CACHE_TTL_MS,
+  });
+}
+
+function invalidateCachedNote(notePath: string): void {
+  noteReadCache.delete(notePath);
+}
+
 function readNoteFromPath(notePath: string): HandoffNote | null {
+  const cached = getCachedNote(notePath);
+  if (cached !== undefined) return cached;
+
+  let result: HandoffNote | null;
   try {
     const raw = fs.readFileSync(notePath, "utf-8");
-    return JSON.parse(raw) as HandoffNote;
+    result = JSON.parse(raw) as HandoffNote;
   } catch {
-    return null;
+    result = null;
   }
+  setCachedNote(notePath, result);
+  return result;
 }
 
 export async function readNote(
@@ -74,6 +111,11 @@ export async function writeNote(
 
   fs.mkdirSync(path.dirname(primaryPath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(primaryPath, contentJson, { mode: 0o600 });
+
+  // Invalidate cache so next read reflects the new value immediately.
+  invalidateCachedNote(primaryPath);
+  // Also update cache with the freshly written value to avoid a disk read.
+  setCachedNote(primaryPath, content);
 
   // Do NOT dual-write to global path when a workspace is provided — this
   // would allow workspace A's note to leak into workspace B via the global
@@ -137,6 +179,14 @@ export function createSetHandoffNoteTool(
 export function createGetHandoffNoteTool(
   deps: { workspace?: string; configDir?: string } = {},
 ) {
+  // Pre-compute note paths once at factory time — avoids repeated sha256 hash,
+  // path.resolve, and env-var lookups on every handler invocation.
+  const configDir = deps.configDir ?? resolveConfigDir();
+  const scopedNotePath = deps.workspace
+    ? workspaceScopedNotePath(deps.workspace, configDir)
+    : null;
+  const globalNotePath = getGlobalNotePath(configDir);
+
   return {
     schema: {
       name: "getHandoffNote",
@@ -161,7 +211,15 @@ export function createGetHandoffNoteTool(
       },
     },
     handler: async (_args: Record<string, unknown>) => {
-      const note = await readNote(deps.workspace, deps.configDir);
+      // Use pre-computed paths; cache handles repeated reads without disk I/O.
+      let note: HandoffNote | null = null;
+      if (scopedNotePath !== null) {
+        note = readNoteFromPath(scopedNotePath);
+      }
+      if (note === null) {
+        note = readNoteFromPath(globalNotePath);
+      }
+
       if (!note) {
         return successStructured({
           note: null,
