@@ -255,3 +255,84 @@ describe("handoffNote tools", () => {
     });
   });
 });
+
+// ── Read-time caps (memory/token leak fixes) ──────────────────────────────────
+
+describe("handoffNote read-time size cap", () => {
+  let tmpDir: string;
+  let origEnv: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "handoff-cap-"));
+    origEnv = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = tmpDir;
+    fs.mkdirSync(path.join(tmpDir, "ide"), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (origEnv === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = origEnv;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("truncates an oversized on-disk note to 10 000 codepoints on read", async () => {
+    // Bypass write-time cap by writing directly to disk
+    const oversized = "a".repeat(20_000);
+    const notePath = path.join(tmpDir, "ide", "handoff-note.json");
+    fs.writeFileSync(
+      notePath,
+      JSON.stringify({
+        note: oversized,
+        updatedAt: Date.now(),
+        updatedBy: "test",
+      }),
+      { mode: 0o600 },
+    );
+
+    const getter = createGetHandoffNoteTool();
+    const result = await getter.handler({});
+    const content = JSON.parse((result.content[0] as { text: string }).text);
+    expect(content.note.length).toBeLessThanOrEqual(
+      10_000 + "\n[truncated]".length,
+    );
+    expect(content.note).toMatch(/\[truncated\]$/);
+  });
+
+  it("does not truncate a note at exactly 10 000 codepoints", async () => {
+    const exact = "b".repeat(10_000);
+    const notePath = path.join(tmpDir, "ide", "handoff-note.json");
+    fs.writeFileSync(
+      notePath,
+      JSON.stringify({ note: exact, updatedAt: Date.now(), updatedBy: "test" }),
+      { mode: 0o600 },
+    );
+
+    const getter = createGetHandoffNoteTool();
+    const result = await getter.handler({});
+    const content = JSON.parse((result.content[0] as { text: string }).text);
+    expect(content.note).toBe(exact);
+    expect(content.note).not.toMatch(/\[truncated\]/);
+  });
+
+  it("truncates at codepoint boundary — multibyte chars not split", async () => {
+    // Each '🔥' is 2 JS chars (surrogate pair) but 1 codepoint.
+    // 10 001 fire emojis = 20 002 JS chars — should truncate to 10 000 codepoints.
+    const emoji = "🔥".repeat(10_001);
+    const notePath = path.join(tmpDir, "ide", "handoff-note.json");
+    fs.writeFileSync(
+      notePath,
+      JSON.stringify({ note: emoji, updatedAt: Date.now(), updatedBy: "test" }),
+      { mode: 0o600 },
+    );
+
+    const getter = createGetHandoffNoteTool();
+    const result = await getter.handler({});
+    const content = JSON.parse((result.content[0] as { text: string }).text);
+    // Result must not contain a broken surrogate (no replacement chars '?')
+    expect(content.note).not.toMatch(/\?/);
+    expect(content.note).toMatch(/\[truncated\]$/);
+    // Codepoint count before "[truncated]" must be exactly 10 000
+    const body = content.note.replace(/\n\[truncated\]$/, "");
+    expect([...body].length).toBe(10_000);
+  });
+});

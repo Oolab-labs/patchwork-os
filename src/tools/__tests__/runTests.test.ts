@@ -339,3 +339,56 @@ describe("createRunTestsTool", () => {
     });
   });
 });
+
+// ── failures array cap (token-leak fix) ───────────────────────────────────────
+
+describe("createRunTestsTool: failures array cap", () => {
+  it("caps failures at 100 and reports failuresTruncated + failuresTotalCount", async () => {
+    // Override vitest runner to return 150 failing tests
+    const { vitestRunner: vr } = await import("../testRunners/vitestJest.js");
+    vi.mocked(vr.run).mockResolvedValueOnce(
+      Array.from({ length: 150 }, (_, i) => ({
+        name: `test ${i}`,
+        status: "failed" as const,
+        source: "vitest",
+        file: `f${i}.test.ts`,
+        line: i + 1,
+        durationMs: 1,
+        message: `failure ${i}`,
+      })),
+    );
+
+    const tool = createRunTestsTool(ws, probes);
+    const result = await tool.handler({});
+    const data = JSON.parse(result.content[0]?.text ?? "{}");
+
+    expect(data.failures).toHaveLength(100);
+    expect(data.failuresTruncated).toBe(true);
+    expect(data.failuresTotalCount).toBe(150);
+    // summary must still reflect the true total
+    expect(data.summary.failed).toBe(150);
+  });
+
+  it("does not set failuresTruncated when failures <= 100", async () => {
+    const { vitestRunner: vr } = await import("../testRunners/vitestJest.js");
+    vi.mocked(vr.run).mockResolvedValueOnce(
+      Array.from({ length: 3 }, (_, i) => ({
+        name: `fail ${i}`,
+        status: "failed" as const,
+        source: "vitest",
+        file: `f${i}.test.ts`,
+        line: i + 1,
+        durationMs: 1,
+        message: `msg ${i}`,
+      })),
+    );
+
+    const tool = createRunTestsTool(ws, probes);
+    const result = await tool.handler({});
+    const data = JSON.parse(result.content[0]?.text ?? "{}");
+
+    expect(data.failures).toHaveLength(3);
+    expect(data.failuresTruncated).toBeUndefined();
+    expect(data.failuresTotalCount).toBeUndefined();
+  });
+});

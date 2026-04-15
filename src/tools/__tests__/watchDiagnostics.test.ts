@@ -240,3 +240,44 @@ describe("watchDiagnostics: schema", () => {
     ).toBeUndefined();
   });
 });
+
+// ── diagHistory FIFO size cap ─────────────────────────────────────────────────
+
+describe("watchDiagnostics: diagHistory FIFO cap at 5 000 entries", () => {
+  it("tool remains functional after diagHistory cap is exceeded", async () => {
+    // Build a client whose getCachedDiagnostics returns many unique diagnostics
+    // (unique file+line combos) to drive enrichOneDiagnostic toward the cap.
+    const uniqueDiags = Array.from({ length: 5_100 }, (_, i) => ({
+      file: `${WORKSPACE}/f${i}.ts`,
+      line: i + 1,
+      message: `err${i}`,
+      severity: "error",
+      source: "ts",
+      code: String(i),
+      range: {
+        start: { line: i, character: 0 },
+        end: { line: i, character: 1 },
+      },
+    }));
+
+    const client = mockConnectedClient({
+      lastDiagnosticsUpdate: Date.now() - 1,
+      cachedDiagnostics: uniqueDiags,
+    });
+
+    const tool = createWatchDiagnosticsTool(WORKSPACE, client as any);
+
+    // sinceTimestamp=0 causes immediate return with cached diagnostics,
+    // which drives enrichOneDiagnostic for all 5 100 entries.
+    const result = await tool.handler(
+      { timeoutMs: 1000, sinceTimestamp: 0 },
+      undefined,
+      new AbortController().signal,
+    );
+
+    // Tool must not crash and must return valid structured output
+    expect(result.isError).toBeFalsy();
+    const data = JSON.parse((result.content[0] as { text: string }).text);
+    expect(data.changed).toBe(true);
+  });
+});

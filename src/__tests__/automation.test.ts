@@ -5183,3 +5183,106 @@ describe("conditional when logic (_evaluateWhen)", () => {
     expect(orch.list().length).toBe(1);
   });
 });
+
+// ── Memory-leak fixes: size caps & destroy() ──────────────────────────────────
+
+describe("AutomationHooks.destroy() clears retry intervals", () => {
+  it("destroy() stops all pending retry-poll intervals", async () => {
+    // Use an orchestrator whose tasks immediately error so retry watcher fires
+    const driver: IClaudeDriver = {
+      name: "error",
+      async run() {
+        return { text: "", exitCode: 1, durationMs: 1 };
+      },
+    };
+    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Fix {{file}}",
+          cooldownMs: 0,
+          retryCount: 3,
+          retryDelayMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+
+    hooks.handleFileSaved("change", "change", "/workspace/src/foo.ts");
+    await new Promise((r) => setTimeout(r, 50)); // let interval register
+
+    // _retryIntervals is private; verify destroy() doesn't throw and
+    // subsequent interval ticks don't re-enqueue tasks (interval cleared).
+    hooks.destroy();
+    const countBefore = orch.list().length;
+    await new Promise((r) => setTimeout(r, 2_100)); // past 2s poll interval
+    expect(orch.list().length).toBe(countBefore); // no new tasks after destroy
+  });
+});
+
+describe("AutomationHooks lastTrigger hard size cap", () => {
+  it("lastTrigger does not grow beyond 10 000 entries", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*"],
+          prompt: "Fix {{file}}",
+          cooldownMs: 0,
+        },
+      },
+      orch,
+      () => {},
+    );
+
+    // Trigger with 10 100 unique file paths — each gets a lastTrigger entry
+    for (let i = 0; i < 10_100; i++) {
+      hooks.handleFileSaved("change", "change", `/ws/file${i}.ts`);
+    }
+
+    // Access private map via cast to verify cap is enforced
+    const map = (hooks as unknown as { lastTrigger: Map<string, number> })
+      .lastTrigger;
+    expect(map.size).toBeLessThanOrEqual(10_000);
+  });
+});
+
+describe("AutomationHooks per-file diagnostic maps stay in sync", () => {
+  it("prevDiagnosticErrors and latestDiagnosticsByFile evict the same key", () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onDiagnosticsError: {
+          enabled: true,
+          prompt: "Fix {{file}}: {{diagnostics}}",
+          cooldownMs: 0,
+        },
+      },
+      orch,
+      () => {},
+    );
+
+    // Flood with 5 100 unique files to trigger eviction
+    for (let i = 0; i < 5_100; i++) {
+      hooks.handleDiagnosticsChanged(`/ws/file${i}.ts`, [
+        { severity: "error", message: `err${i}`, source: "ts", code: `${i}` },
+      ]);
+    }
+
+    const errMap = (
+      hooks as unknown as { prevDiagnosticErrors: Map<string, number> }
+    ).prevDiagnosticErrors;
+    const diagMap = (
+      hooks as unknown as { latestDiagnosticsByFile: Map<string, unknown[]> }
+    ).latestDiagnosticsByFile;
+
+    // Both maps must be at or under 5 000 AND have the same set of keys
+    expect(errMap.size).toBeLessThanOrEqual(5_000);
+    expect(diagMap.size).toBeLessThanOrEqual(5_000);
+    expect([...errMap.keys()].sort()).toEqual([...diagMap.keys()].sort());
+  });
+});
