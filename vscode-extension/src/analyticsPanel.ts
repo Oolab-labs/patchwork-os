@@ -1,6 +1,10 @@
 import * as http from "node:http";
-import * as path from "node:path";
 import type * as vscode from "vscode";
+import {
+  buildQuickTaskPresets,
+  type PresetContext,
+  type QuickTaskPreset,
+} from "./quickTaskPresets";
 import type { LockFileData } from "./types";
 
 export interface AnalyticsReport {
@@ -79,172 +83,24 @@ export class AnalyticsViewProvider implements vscode.WebviewViewProvider {
     private readonly _context: import("vscode").ExtensionContext,
   ) {}
 
-  /** Build context-aware presets. */
+  /** Build context-aware presets. Delegates to shared module. */
   private _buildPresets(
     ctx: Record<string, unknown> | null,
     diag: unknown | null,
     report: AnalyticsReport | null,
     perfReport: PerformanceReport | null,
-  ): Array<{
-    id: string;
-    icon: string;
-    label: string;
-    prompt: string;
-    taskId?: string;
-  }> {
-    const activeFile =
-      (ctx?.activeFile as string | undefined) ??
-      ((ctx?.brief as Record<string, unknown> | undefined)?.activeFile as
-        | string
-        | undefined);
-    const baseName = activeFile ? path.basename(activeFile) : "";
-
-    // 1. fixErrors
-    const diagErrors = Array.isArray(
-      (diag as Record<string, unknown> | null)?.errors,
-    )
-      ? ((diag as Record<string, unknown>).errors as Array<{
-          message: string;
-          file?: string;
-        }>)
-      : [];
-    const errorCount = diagErrors.length;
-    const topErrorFile = diagErrors[0]?.file
-      ? path.basename(diagErrors[0].file)
-      : "";
-    const fixErrors =
-      errorCount > 0
-        ? {
-            id: "fixErrors",
-            icon: '<i class="codicon codicon-error"></i>',
-            label: `Fix ${errorCount} error${errorCount === 1 ? "" : "s"}${topErrorFile ? ` in ${topErrorFile}` : ""}`,
-            prompt: `Call getDiagnostics to get all current errors and warnings${topErrorFile ? ` (start with ${topErrorFile})` : ""}. Fix every error precisely — do not break working code. Run tests after fixing to confirm nothing regressed.`,
-          }
-        : {
-            id: "fixErrors",
-            icon: '<i class="codicon codicon-error"></i>',
-            label: "Fix all errors",
-            prompt:
-              "Call getDiagnostics to get all current errors and warnings. Fix every error precisely — do not break working code. Run tests after fixing to confirm nothing regressed.",
-          };
-
-    // 2. refactorFile
-    const refactorFile = baseName
-      ? {
-          id: "refactorFile",
-          icon: '<i class="codicon codicon-symbol-misc"></i>',
-          label: `Refactor ${baseName}`,
-          prompt: `Refactor ${activeFile ?? "the active file"} for clarity, readability, and maintainability. Keep all existing behaviour identical. Use getBufferContent to read the current file before making changes.`,
-        }
-      : {
-          id: "refactorFile",
-          icon: '<i class="codicon codicon-symbol-misc"></i>',
-          label: "Refactor this file",
-          prompt:
-            "Refactor the active file for clarity, readability, and maintainability. Keep all existing behaviour identical. Use getBufferContent to read the current file before making changes.",
-        };
-
-    // 3. addTests — check if recent tasks show a failed test run
-    const failedTestTask = report?.recentAutomationTasks.find(
-      (t) =>
-        t.status === "error" &&
-        (t.triggerSource ?? "").toLowerCase().includes("test"),
-    );
-    const addTests = failedTestTask
-      ? {
-          id: "addTests",
-          icon: '<i class="codicon codicon-beaker"></i>',
-          label: "Add tests for failing flow",
-          prompt:
-            "A recent test run failed. Use getDiagnostics and getBufferContent to identify the failing logic, then write targeted tests that cover the failing flow and edge cases.",
-        }
-      : {
-          id: "addTests",
-          icon: '<i class="codicon codicon-beaker"></i>',
-          label: `Add tests for ${baseName || "this file"}`,
-          prompt:
-            "Write comprehensive unit tests for the functions in the active file. Use getBufferContent to read the file. Match the existing test style and patterns in the project. Cover edge cases.",
-        };
-
-    // 4. explainCode — if recent commits available
-    const recentCommits = (ctx?.recentCommits ??
-      (ctx?.brief as Record<string, unknown> | undefined)?.recentCommits) as
-      | Array<{ message: string }>
-      | undefined;
-    const lastCommit = recentCommits?.[0];
-    const explainCode = lastCommit
-      ? {
-          id: "explainCode",
-          icon: '<i class="codicon codicon-book"></i>',
-          label: "Explain changes from last commit",
-          prompt: `Use getGitDiff or getGitLog to get the last commit diff, then explain what changed, why the changes were made, and any non-obvious patterns. Last commit: ${lastCommit.message}`,
-        }
-      : {
-          id: "explainCode",
-          icon: '<i class="codicon codicon-book"></i>',
-          label: `Explain ${baseName || "this file"}`,
-          prompt:
-            "Read the active file with getBufferContent and explain what it does: its purpose, key functions, data flow, and any non-obvious patterns. Keep it concise and technical.",
-        };
-
-    // 5. optimizePerf — find slowest tool from perTool p99
-    let slowestTool: string | null = null;
-    if (perfReport?.latency?.perTool) {
-      let maxP99 = -1;
-      for (const [tool, v] of Object.entries(perfReport.latency.perTool)) {
-        if (v.p99 > maxP99) {
-          maxP99 = v.p99;
-          slowestTool = tool;
-        }
-      }
-    }
-    const optimizePerf = slowestTool
-      ? {
-          id: "optimizePerf",
-          icon: '<i class="codicon codicon-dashboard"></i>',
-          label: `Optimize slowest fn (${slowestTool})`,
-          prompt: `Use getPerformanceReport to find the bottleneck and optimize ${slowestTool}. Identify the root cause of the latency, propose fixes, and apply the most impactful improvements.`,
-        }
-      : {
-          id: "optimizePerf",
-          icon: '<i class="codicon codicon-dashboard"></i>',
-          label: "Optimize performance",
-          prompt:
-            "Analyse the active file for performance issues: unnecessary re-renders, expensive loops, blocking I/O, memory leaks. Use getBufferContent to read it, then propose and apply the most impactful fixes.",
-        };
-
-    const presets = [
-      fixErrors,
-      refactorFile,
-      addTests,
-      explainCode,
-      optimizePerf,
-    ];
-
-    // 6. resumeLastCancelled — only if cancelled task exists
-    const cancelledTask = report?.recentAutomationTasks.find(
-      (t) => t.status === "cancelled" || t.status === "interrupted",
-    );
-    if (cancelledTask) {
-      presets.push({
-        id: "resumeLastCancelled",
-        icon: '<i class="codicon codicon-debug-continue"></i>',
-        label: "Resume last cancelled task",
-        prompt: "",
-        taskId: cancelledTask.id,
-      });
-    }
-
-    // 7. runTests — always shown
-    presets.push({
-      id: "runTests",
-      icon: '<i class="codicon codicon-play"></i>',
-      label: "Run full test suite",
-      prompt:
-        "Run the full test suite using the appropriate test runner. Report all failures with file and line numbers.",
-    });
-
-    return presets;
+  ): QuickTaskPreset[] {
+    const presetCtx: PresetContext = {
+      activeFile: ctx?.activeFile as string | undefined,
+      brief: ctx?.brief as PresetContext["brief"],
+      recentCommits: ctx?.recentCommits as
+        | Array<{ message: string }>
+        | undefined,
+      diagnostics: diag as PresetContext["diagnostics"],
+      report: report as PresetContext["report"],
+      perfReport: perfReport as PresetContext["perfReport"],
+    };
+    return buildQuickTaskPresets(presetCtx);
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {

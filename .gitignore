@@ -5,6 +5,7 @@ vscode-extension/out/
 vscode-extension/*.vsix
 *.vsix
 vscode-extension/node_modules/
+vscode-extension/src/quickTaskPresets.ts
 .env
 *.env
 
