@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SpawnFn } from "../spawnWorkspace.js";
+import type { HealthFetcher, SpawnFn } from "../spawnWorkspace.js";
 import { createSpawnWorkspaceTool } from "../spawnWorkspace.js";
 
 // ---- helpers ---------------------------------------------------------------
@@ -163,6 +163,115 @@ describe("spawnWorkspace handler", () => {
     expect(capturedArgs).toContain("my-token");
     expect(capturedArgs).toContain("--workspace");
     expect(capturedArgs).toContain(tmpDir);
+  });
+
+  it("waitForExtension: returns extensionConnected:true when /health reports connected", async () => {
+    const pid = 88888;
+    const child = makeChild(pid);
+    const spawnFn: SpawnFn = () => child;
+
+    const lockContents = {
+      pid,
+      workspace: tmpDir,
+      authToken: "tok-ext-ok",
+      isBridge: true,
+      port: 5050,
+    };
+    const lockPath = path.join(lockDir, `${pid}.lock`);
+    setTimeout(() => {
+      fs.writeFile(lockPath, JSON.stringify(lockContents)).catch(() => {});
+    }, 100);
+
+    const healthCalls: Array<{ url: string; token: string }> = [];
+    let callCount = 0;
+    const healthFetcher: HealthFetcher = async (url, token) => {
+      healthCalls.push({ url, token });
+      callCount += 1;
+      // First poll: not yet connected. Second: connected.
+      return { extensionConnected: callCount >= 2 };
+    };
+
+    const { handler } = createSpawnWorkspaceTool(spawnFn, healthFetcher);
+    const result = await handler({
+      path: tmpDir,
+      timeoutMs: 3000,
+      waitForExtension: true,
+    });
+
+    expect(result).not.toMatchObject({ isError: true });
+    const data = parseText(result);
+    expect(data).toMatchObject({
+      pid,
+      port: 5050,
+      authToken: "tok-ext-ok",
+      extensionConnected: true,
+    });
+    expect(healthCalls[0]?.url).toBe("http://127.0.0.1:5050/health");
+    expect(healthCalls[0]?.token).toBe("tok-ext-ok");
+    expect(callCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("waitForExtension: times out and kills child when extension never connects", async () => {
+    const pid = 88889;
+    const child = makeChild(pid);
+    const spawnFn: SpawnFn = () => child;
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    const lockContents = {
+      pid,
+      workspace: tmpDir,
+      authToken: "tok-ext-fail",
+      isBridge: true,
+      port: 5151,
+    };
+    const lockPath = path.join(lockDir, `${pid}.lock`);
+    await fs.writeFile(lockPath, JSON.stringify(lockContents));
+
+    const healthFetcher: HealthFetcher = async () => ({
+      extensionConnected: false,
+    });
+
+    const { handler } = createSpawnWorkspaceTool(spawnFn, healthFetcher);
+    const result = await handler({
+      path: tmpDir,
+      timeoutMs: 800,
+      waitForExtension: true,
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    const parsed = parseText(result);
+    expect(parsed.code).toBe("timeout");
+    expect(parsed.error).toMatch(/extension did not connect/);
+    expect(killSpy).toHaveBeenCalledWith(pid, "SIGTERM");
+  });
+
+  it("waitForExtension unset: returns without extensionConnected field (back-compat)", async () => {
+    const pid = 88890;
+    const child = makeChild(pid);
+    const spawnFn: SpawnFn = () => child;
+
+    const lockContents = {
+      pid,
+      workspace: tmpDir,
+      authToken: "tok-bc",
+      isBridge: true,
+      port: 5252,
+    };
+    const lockPath = path.join(lockDir, `${pid}.lock`);
+    await fs.writeFile(lockPath, JSON.stringify(lockContents));
+
+    const healthFetcher: HealthFetcher = vi.fn(async () => ({
+      extensionConnected: true,
+    }));
+
+    const { handler } = createSpawnWorkspaceTool(spawnFn, healthFetcher);
+    const result = await handler({ path: tmpDir, timeoutMs: 3000 });
+
+    expect(result).not.toMatchObject({ isError: true });
+    const data = parseText(result);
+    expect(data.extensionConnected).toBeUndefined();
+    // Health endpoint must NOT be polled when waitForExtension is false/unset.
+    expect(healthFetcher).not.toHaveBeenCalled();
   });
 
   it("skips non-bridge lock files (isBridge: false)", async () => {
