@@ -64,7 +64,7 @@ export function createLaunchQuickTaskTool(deps: LaunchQuickTaskDeps) {
     schema: {
       name: "launchQuickTask",
       description:
-        "Launch a context-aware Claude task from a named preset (fixErrors, refactorFile, addTests, explainCode, optimizePerf, runTests, resumeLastCancelled). Gathers project/diagnostics/perf context, builds the prompt via the shared preset module, and enqueues via runClaudeTask. Same logic path as the VS Code sidebar and CLI.",
+        "Launch context-aware Claude task from named preset. Same dispatch path as sidebar + CLI. 5s cooldown per preset.",
       annotations: {
         title: "Launch Quick Task",
         readOnlyHint: false,
