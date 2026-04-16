@@ -304,7 +304,7 @@ export class SubprocessDriver implements IClaudeDriver {
 
     const start = Date.now();
     const stderrTailOf = (s: string): string | undefined =>
-      s.length > 0 ? s.slice(-2048) : undefined;
+      s.length > 0 ? scrubSecrets(s.slice(-2048)) : undefined;
     const startupMsOf = (): number | undefined =>
       firstAssistantAt !== undefined ? firstAssistantAt - start : undefined;
 
@@ -493,6 +493,22 @@ export class ServerModeDriver implements IClaudeDriver {
   run(_input: ClaudeTaskInput): Promise<ClaudeTaskOutput> {
     throw new Error("ServerModeDriver not implemented");
   }
+}
+
+/**
+ * Scrub secrets from a string before storing or surfacing it.
+ * Exported for testability.
+ */
+export function scrubSecrets(text: string): string {
+  return (
+    text
+      // Anthropic API keys
+      .replace(/sk-ant-[A-Za-z0-9_-]{20,}/g, "[REDACTED_API_KEY]")
+      // Bearer tokens
+      .replace(/Bearer\s+[A-Za-z0-9._-]{16,}/gi, "Bearer [REDACTED]")
+      // Generic token patterns
+      .replace(/\btoken[=:]\s*[A-Za-z0-9._-]{16,}/gi, "token=[REDACTED]")
+  );
 }
 
 /** Factory: creates the appropriate driver from a config mode string. */

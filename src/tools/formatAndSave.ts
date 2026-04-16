@@ -14,10 +14,11 @@
  *   formatDocument + saveDocument tool instances so their handlers (and
  *   therefore their fallback logic) are reused as-is, not duplicated.
  */
+import { err, okS, toCallToolResult } from "../fp/result.js";
 import type { ProgressFn } from "../transport.js";
 import type { createFormatDocumentTool } from "./formatDocument.js";
 import type { createSaveDocumentTool } from "./saveDocument.js";
-import { error, requireString, successStructured } from "./utils.js";
+import { requireString } from "./utils.js";
 
 type FormatDocumentTool = ReturnType<typeof createFormatDocumentTool>;
 type SaveDocumentTool = ReturnType<typeof createSaveDocumentTool>;
@@ -74,8 +75,11 @@ export function createFormatAndSaveTool(deps: {
       const fmtData = (fmt as { structuredContent?: Record<string, unknown> })
         .structuredContent;
       if (!fmtData || typeof fmtData !== "object") {
-        return error(
-          "formatDocument returned unexpected shape (no structuredContent)",
+        return toCallToolResult(
+          err(
+            "unknown",
+            "formatDocument returned unexpected shape (no structuredContent)",
+          ),
         );
       }
 
@@ -86,26 +90,31 @@ export function createFormatAndSaveTool(deps: {
       const saveData = (save as { structuredContent?: Record<string, unknown> })
         .structuredContent;
       if (!saveData || typeof saveData !== "object") {
-        return error(
-          "saveDocument returned unexpected shape (no structuredContent)",
+        return toCallToolResult(
+          err(
+            "unknown",
+            "saveDocument returned unexpected shape (no structuredContent)",
+          ),
         );
       }
 
-      return successStructured({
-        formatted: fmtData.formatted ?? false,
-        changes: fmtData.changes ?? "unknown",
-        saved: saveData.saved ?? false,
-        source: saveData.source ?? fmtData.source ?? "unknown",
-        ...(typeof fmtData.linesBeforeCount === "number" && {
-          linesBeforeCount: fmtData.linesBeforeCount,
+      return toCallToolResult(
+        okS({
+          formatted: fmtData.formatted ?? false,
+          changes: fmtData.changes ?? "unknown",
+          saved: saveData.saved ?? false,
+          source: saveData.source ?? fmtData.source ?? "unknown",
+          ...(typeof fmtData.linesBeforeCount === "number" && {
+            linesBeforeCount: fmtData.linesBeforeCount,
+          }),
+          ...(typeof fmtData.linesAfterCount === "number" && {
+            linesAfterCount: fmtData.linesAfterCount,
+          }),
+          ...(typeof saveData.message === "string" && {
+            message: saveData.message,
+          }),
         }),
-        ...(typeof fmtData.linesAfterCount === "number" && {
-          linesAfterCount: fmtData.linesAfterCount,
-        }),
-        ...(typeof saveData.message === "string" && {
-          message: saveData.message,
-        }),
-      });
+      );
     },
   };
 }

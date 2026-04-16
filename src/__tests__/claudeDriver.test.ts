@@ -79,26 +79,26 @@ describe("SubprocessDriver", () => {
     // Emit two partial assistant events and a result event as JSONL
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({
+      `${JSON.stringify({
         type: "assistant",
         message: { content: [{ type: "text", text: "Hello " }] },
-      }) + "\n",
+      })}\n`,
     );
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({
+      `${JSON.stringify({
         type: "assistant",
         message: { content: [{ type: "text", text: "world" }] },
-      }) + "\n",
+      })}\n`,
     );
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({
+      `${JSON.stringify({
         type: "result",
         subtype: "success",
         result: "Hello world",
         is_error: false,
-      }) + "\n",
+      })}\n`,
     );
     mockChild.emit("close", 0);
 
@@ -112,12 +112,12 @@ describe("SubprocessDriver", () => {
     const runPromise = driver.run(makeInput());
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({
+      `${JSON.stringify({
         type: "result",
         subtype: "success",
         result: "ok",
         is_error: false,
-      }) + "\n",
+      })}\n`,
     );
     mockChild.emit("close", 0);
     await runPromise;
@@ -134,12 +134,12 @@ describe("SubprocessDriver", () => {
     await new Promise<void>((r) => setTimeout(r, 0));
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({
+      `${JSON.stringify({
         type: "result",
         subtype: "error_max_turns",
         result: "Max turns exceeded",
         is_error: true,
-      }) + "\n",
+      })}\n`,
     );
     mockChild.emit("close", 0);
 
@@ -180,20 +180,20 @@ describe("SubprocessDriver", () => {
     for (let i = 0; i < 55; i++) {
       mockChild.stdout.emit(
         "data",
-        JSON.stringify({
+        `${JSON.stringify({
           type: "assistant",
           message: { content: [{ type: "text", text: chunkText }] },
-        }) + "\n",
+        })}\n`,
       );
     }
     // result.result is 60KB — driver must cap the returned text at 50KB
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({
+      `${JSON.stringify({
         type: "result",
         is_error: false,
         result: "y".repeat(60 * 1024),
-      }) + "\n",
+      })}\n`,
     );
     mockChild.emit("close", 0);
 
@@ -283,14 +283,14 @@ describe("SubprocessDriver", () => {
     // Emit assistant event before the startup timer fires
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({
+      `${JSON.stringify({
         type: "assistant",
         message: { content: [{ type: "text", text: "hi" }] },
-      }) + "\n",
+      })}\n`,
     );
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({ type: "result", is_error: false, result: "hi" }) + "\n",
+      `${JSON.stringify({ type: "result", is_error: false, result: "hi" })}\n`,
     );
     mockChild.emit("close", 0);
 
@@ -395,7 +395,7 @@ describe("SubprocessDriver", () => {
       message: { content: [{ type: "text", text: "split" }] },
     });
     mockChild.stdout.emit("data", line.slice(0, 20));
-    mockChild.stdout.emit("data", line.slice(20) + "\n");
+    mockChild.stdout.emit("data", `${line.slice(20)}\n`);
     mockChild.stdout.emit(
       "data",
       JSON.stringify({ type: "result", is_error: false, result: "split" }) +
@@ -447,14 +447,14 @@ describe("SubprocessDriver", () => {
     await new Promise<void>((r) => setTimeout(r, 0));
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({
+      `${JSON.stringify({
         type: "assistant",
         message: { content: [{ type: "text", text: "hi" }] },
-      }) + "\n",
+      })}\n`,
     );
     mockChild.stdout.emit(
       "data",
-      JSON.stringify({ type: "result", is_error: false, result: "hi" }) + "\n",
+      `${JSON.stringify({ type: "result", is_error: false, result: "hi" })}\n`,
     );
     mockChild.emit("close", 0);
 
@@ -567,5 +567,57 @@ describe("ApiDriver", () => {
     const result = await driver.run(makeInput());
     expect(result.text).toBe("result text");
     expect(result.exitCode).toBe(0);
+  });
+});
+
+// ── scrubSecrets ──────────────────────────────────────────────────────────────
+
+import { scrubSecrets } from "../claudeDriver.js";
+
+describe("scrubSecrets", () => {
+  it("redacts Anthropic API keys", () => {
+    const input =
+      "Error: invalid key sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890abcdef";
+    const result = scrubSecrets(input);
+    expect(result).not.toContain("sk-ant-");
+    expect(result).toContain("[REDACTED_API_KEY]");
+  });
+
+  it("redacts Bearer tokens", () => {
+    const input =
+      "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.payload";
+    const result = scrubSecrets(input);
+    expect(result).not.toContain("eyJhbGciOi");
+    expect(result).toContain("Bearer [REDACTED]");
+  });
+
+  it("redacts generic token= patterns", () => {
+    const input = "Connecting with token=abcdefghijklmnopqrstuvwxyz12345";
+    const result = scrubSecrets(input);
+    expect(result).toContain("token=[REDACTED]");
+    expect(result).not.toContain("abcdefghijklmnopqrstuvwxyz12345");
+  });
+
+  it("redacts token: patterns", () => {
+    const input = "auth token: abcdefghijklmnopqrstuvwxyz12345";
+    const result = scrubSecrets(input);
+    expect(result).toContain("token=[REDACTED]");
+  });
+
+  it("does not alter clean text", () => {
+    const input = "Subprocess exited with code 0. No errors.";
+    expect(scrubSecrets(input)).toBe(input);
+  });
+
+  it("handles empty string", () => {
+    expect(scrubSecrets("")).toBe("");
+  });
+
+  it("redacts multiple secrets in one string", () => {
+    const input =
+      "key=sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAA and Bearer BBBBBBBBBBBBBBBBBBBB";
+    const result = scrubSecrets(input);
+    expect(result).toContain("[REDACTED_API_KEY]");
+    expect(result).toContain("Bearer [REDACTED]");
   });
 });

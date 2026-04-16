@@ -659,9 +659,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         `"onDiagnosticsError.cooldownMs" must be a finite number`,
       );
     }
-    if (d.cooldownMs < MIN_COOLDOWN_MS) {
-      d.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    d.cooldownMs = Math.max(d.cooldownMs, MIN_COOLDOWN_MS);
     if (d.diagnosticTypes !== undefined) {
       if (
         !Array.isArray(d.diagnosticTypes) ||
@@ -688,9 +686,10 @@ export function loadPolicy(filePath: string): AutomationPolicy {
           `"onDiagnosticsError.dedupeContentCooldownMs" must be a number`,
         );
       }
-      if (d.dedupeContentCooldownMs < MIN_COOLDOWN_MS) {
-        d.dedupeContentCooldownMs = MIN_COOLDOWN_MS;
-      }
+      d.dedupeContentCooldownMs = Math.max(
+        d.dedupeContentCooldownMs,
+        MIN_COOLDOWN_MS,
+      );
     }
   }
 
@@ -717,9 +716,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(s.cooldownMs as number)) {
       throw new Error(`"onFileSave.cooldownMs" must be a finite number`);
     }
-    if (s.cooldownMs < MIN_COOLDOWN_MS) {
-      s.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    s.cooldownMs = Math.max(s.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onFileChanged
@@ -745,9 +742,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(fc.cooldownMs as number)) {
       throw new Error(`"onFileChanged.cooldownMs" must be a finite number`);
     }
-    if (fc.cooldownMs < MIN_COOLDOWN_MS) {
-      fc.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    fc.cooldownMs = Math.max(fc.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onCwdChanged
@@ -764,9 +759,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(cw.cooldownMs as number)) {
       throw new Error(`"onCwdChanged.cooldownMs" must be a finite number`);
     }
-    if (cw.cooldownMs < MIN_COOLDOWN_MS) {
-      cw.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    cw.cooldownMs = Math.max(cw.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onPreCompact
@@ -783,9 +776,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(p.cooldownMs as number)) {
       throw new Error(`"onPreCompact.cooldownMs" must be a finite number`);
     }
-    if (p.cooldownMs < MIN_COOLDOWN_MS) {
-      p.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    p.cooldownMs = Math.max(p.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onPostCompact
@@ -802,9 +793,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(p.cooldownMs as number)) {
       throw new Error(`"onPostCompact.cooldownMs" must be a finite number`);
     }
-    if (p.cooldownMs < MIN_COOLDOWN_MS) {
-      p.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    p.cooldownMs = Math.max(p.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onInstructionsLoaded
@@ -843,9 +832,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(tr.cooldownMs as number)) {
       throw new Error(`"onTestRun.cooldownMs" must be a finite number`);
     }
-    if (tr.cooldownMs < MIN_COOLDOWN_MS) {
-      tr.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    tr.cooldownMs = Math.max(tr.cooldownMs, MIN_COOLDOWN_MS);
     if (tr.minDuration !== undefined) {
       if (
         typeof tr.minDuration !== "number" ||
@@ -875,9 +862,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         `"onTestPassAfterFailure.cooldownMs" must be a finite number`,
       );
     }
-    if (tpaf.cooldownMs < MIN_COOLDOWN_MS) {
-      tpaf.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    tpaf.cooldownMs = Math.max(tpaf.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onGitCommit
@@ -894,9 +879,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(gc.cooldownMs as number)) {
       throw new Error(`"onGitCommit.cooldownMs" must be a finite number`);
     }
-    if (gc.cooldownMs < MIN_COOLDOWN_MS) {
-      gc.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    gc.cooldownMs = Math.max(gc.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onGitPush
@@ -913,9 +896,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(gp.cooldownMs as number)) {
       throw new Error(`"onGitPush.cooldownMs" must be a finite number`);
     }
-    if (gp.cooldownMs < MIN_COOLDOWN_MS) {
-      gp.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    gp.cooldownMs = Math.max(gp.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onGitPull
@@ -932,9 +913,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(gpl.cooldownMs as number)) {
       throw new Error(`"onGitPull.cooldownMs" must be a finite number`);
     }
-    if (gpl.cooldownMs < MIN_COOLDOWN_MS) {
-      gpl.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    gpl.cooldownMs = Math.max(gpl.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onBranchCheckout
@@ -951,9 +930,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(bc.cooldownMs as number)) {
       throw new Error(`"onBranchCheckout.cooldownMs" must be a finite number`);
     }
-    if (bc.cooldownMs < MIN_COOLDOWN_MS) {
-      bc.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    bc.cooldownMs = Math.max(bc.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onPullRequest
@@ -970,9 +947,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(pr.cooldownMs as number)) {
       throw new Error(`"onPullRequest.cooldownMs" must be a finite number`);
     }
-    if (pr.cooldownMs < MIN_COOLDOWN_MS) {
-      pr.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    pr.cooldownMs = Math.max(pr.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onTaskCreated
@@ -989,9 +964,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(tc.cooldownMs as number)) {
       throw new Error(`"onTaskCreated.cooldownMs" must be a finite number`);
     }
-    if (tc.cooldownMs < MIN_COOLDOWN_MS) {
-      tc.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    tc.cooldownMs = Math.max(tc.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onPermissionDenied
@@ -1010,9 +983,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         `"onPermissionDenied.cooldownMs" must be a finite number`,
       );
     }
-    if (pd.cooldownMs < MIN_COOLDOWN_MS) {
-      pd.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    pd.cooldownMs = Math.max(pd.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onDiagnosticsCleared
@@ -1031,9 +1002,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         `"onDiagnosticsCleared.cooldownMs" must be a finite number`,
       );
     }
-    if (dc.cooldownMs < MIN_COOLDOWN_MS) {
-      dc.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    dc.cooldownMs = Math.max(dc.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onTaskSuccess
@@ -1050,9 +1019,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(ts.cooldownMs as number)) {
       throw new Error(`"onTaskSuccess.cooldownMs" must be a finite number`);
     }
-    if (ts.cooldownMs < MIN_COOLDOWN_MS) {
-      ts.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    ts.cooldownMs = Math.max(ts.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onDebugSessionStart
@@ -1071,9 +1038,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         `"onDebugSessionStart.cooldownMs" must be a finite number`,
       );
     }
-    if (dss.cooldownMs < MIN_COOLDOWN_MS) {
-      dss.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    dss.cooldownMs = Math.max(dss.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   // Validate onDebugSessionEnd
@@ -1090,9 +1055,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (!Number.isFinite(dse.cooldownMs as number)) {
       throw new Error(`"onDebugSessionEnd.cooldownMs" must be a finite number`);
     }
-    if (dse.cooldownMs < MIN_COOLDOWN_MS) {
-      dse.cooldownMs = MIN_COOLDOWN_MS;
-    }
+    dse.cooldownMs = Math.max(dse.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   return policy;

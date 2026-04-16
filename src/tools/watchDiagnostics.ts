@@ -281,11 +281,9 @@ export function createWatchDiagnosticsTool(
           }
 
           let settled = false;
-          // Declare mutable refs before cleanup/settle so cleanup is always
-          // initialized before settle can call it — avoids TDZ ReferenceError
-          // when the inner re-check triggers settle() before timer/abortHandler
-          // are assigned. `let` is required: each var is assigned after its
-          // declaration (in a later statement), not at declaration time.
+          // All cleanup-state variables are fully assigned BEFORE any listener
+          // registration or TOCTOU re-check so that cleanup() is safe to call
+          // from settle() at any point after this block.
           let timer: ReturnType<typeof setTimeout> | undefined;
           let abortHandler: (() => void) | undefined;
           let unsubscribe: (() => void) | undefined;
@@ -319,16 +317,26 @@ export function createWatchDiagnosticsTool(
               .catch(onEnrichError);
           };
 
+          // Step 1: set up the timeout timer FIRST so cleanup() is never called
+          // with an uninitialized timer reference.
+          timer = setTimeout(() => settle(false), timeoutMs);
+
+          // Step 2: set up the abort handler and register it BEFORE subscribing
+          // so cleanup() can always remove it.
+          abortHandler = () => settle(false);
+          signal?.addEventListener("abort", abortHandler);
+
+          // Step 3: register the diagnostics listener.
           unsubscribe = extensionClient.addDiagnosticsListener((file) => {
             if (!resolvedPath || file === resolvedPath) {
               settle(true);
             }
           });
 
-          // Re-check after registering the listener to close the TOCTOU window:
-          // a `diagnosticsChanged` notification could have fired between the
-          // initial timestamp check (above) and `addDiagnosticsListener` (just
-          // above). If so, settle immediately rather than waiting for timeout.
+          // Step 4 (TOCTOU re-check): MUST happen AFTER subscription — a
+          // diagnosticsChanged notification could have fired between the initial
+          // timestamp check (above) and addDiagnosticsListener (just above).
+          // If so, settle immediately rather than waiting for timeout.
           if (
             sinceTimestamp !== undefined &&
             extensionClient.lastDiagnosticsUpdate > sinceTimestamp
@@ -336,11 +344,6 @@ export function createWatchDiagnosticsTool(
             settle(true);
             return;
           }
-
-          timer = setTimeout(() => settle(false), timeoutMs);
-
-          abortHandler = () => settle(false);
-          signal?.addEventListener("abort", abortHandler);
         });
       }
 

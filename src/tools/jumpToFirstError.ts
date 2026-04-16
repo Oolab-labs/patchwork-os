@@ -17,11 +17,11 @@
  */
 import { fileURLToPath } from "node:url";
 import type { ExtensionClient } from "../extensionClient.js";
+import { err, okS, toCallToolResult } from "../fp/result.js";
 import type { ProgressFn } from "../transport.js";
 import type { createSetEditorDecorationsTool } from "./decorations.js";
 import type { createGetDiagnosticsTool } from "./getDiagnostics.js";
 import type { createOpenFileTool } from "./openFile.js";
-import { error, successStructured } from "./utils.js";
 
 type GetDiagnosticsTool = ReturnType<typeof createGetDiagnosticsTool>;
 type OpenFileTool = ReturnType<typeof createOpenFileTool>;
@@ -88,21 +88,27 @@ export function createJumpToFirstErrorTool(deps: {
       const diagData = (diag as { structuredContent?: Record<string, unknown> })
         .structuredContent;
       if (!diagData || typeof diagData !== "object") {
-        return error(
-          "getDiagnostics returned unexpected shape (no structuredContent)",
+        return toCallToolResult(
+          err(
+            "unknown",
+            "getDiagnostics returned unexpected shape (no structuredContent)",
+          ),
         );
       }
 
       const diagnostics = (diagData as { diagnostics?: unknown }).diagnostics;
       if (!Array.isArray(diagnostics) || diagnostics.length === 0) {
-        return successStructured({ found: false });
+        return toCallToolResult(okS({ found: false }));
       }
 
       const first = diagnostics[0] as Record<string, unknown>;
       const rawFile = typeof first.file === "string" ? first.file : undefined;
       if (!rawFile) {
-        return error(
-          "first diagnostic missing 'file' field — cannot jump to error",
+        return toCallToolResult(
+          err(
+            "unknown",
+            "first diagnostic missing 'file' field — cannot jump to error",
+          ),
         );
       }
       const filePath = normalizeFilePath(rawFile);
@@ -149,15 +155,17 @@ export function createJumpToFirstErrorTool(deps: {
         }
       }
 
-      return successStructured({
-        found: true,
-        file: filePath,
-        line,
-        column,
-        message,
-        ...(rule && { rule }),
-        decorationApplied,
-      });
+      return toCallToolResult(
+        okS({
+          found: true,
+          file: filePath,
+          line,
+          column,
+          message,
+          ...(rule && { rule }),
+          decorationApplied,
+        }),
+      );
     },
   };
 }
