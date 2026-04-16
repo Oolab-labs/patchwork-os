@@ -97,6 +97,30 @@ Call `getBridgeStatus` after connecting to see which probes passed and which too
 | `listClaudeTasks` | Requires `--claude-driver` |
 | `getClaudeTaskStatus` | Requires `--claude-driver` |
 
+### Task Launcher CLI (v2.42.0+)
+
+Headless parity with the VS Code sidebar — launch context-aware Claude tasks from a terminal. Same prompt-building logic as the sidebar, same dispatch path. Requires a running bridge with `--claude-driver subprocess`.
+
+```bash
+# 7 presets: fixErrors · refactorFile · addTests · explainCode · optimizePerf · runTests · resumeLastCancelled
+claude-ide-bridge quick-task fix-errors
+claude-ide-bridge quick-task add-tests --json
+claude-ide-bridge quick-task optimize-perf --port 55000
+
+# free-form description (Claude gathers its own context via getProjectContext + getHandoffNote)
+claude-ide-bridge start-task "Refactor the auth module for clarity, keep behaviour identical"
+
+# resume prior session from handoff note (no-op if note is an auto-snapshot)
+claude-ide-bridge continue-handoff
+```
+
+All three support:
+- `--json` — structured output for scripting (`{ok, result: {taskId, status, ...}}`)
+- `--port <n>` — target a specific bridge (default: most recent lock file)
+- `--source <name>` — tag for cooldown diagnostics (default: `cli`)
+
+Under the hood: `quick-task` POSTs to `/launch-quick-task` with bearer auth from the lock file; `start-task` + `continue-handoff` open a short-lived MCP session over HTTP and call `runClaudeTask` directly. 5s bridge-global cooldown per preset (shared across sidebar + CLI + MCP callers — prevents task-spam from multiple clients).
+
 ---
 
 ## What Requires the Extension

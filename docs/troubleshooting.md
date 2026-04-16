@@ -79,7 +79,7 @@ Ask Claude to call `bridgeDoctor` for a full health check — it reports lock fi
 
 ### Fewer tools than expected
 
-**Cause:** Slim mode (the default) exposes **56 tools** — LSP, debugger, editor state, and refactoring. Git, terminal, file ops, GitHub, and HTTP tools require `--full` mode (**137 tools** total).
+**Cause:** Slim mode (the default) exposes **56 tools** — LSP, debugger, editor state, and refactoring. Git, terminal, file ops, GitHub, and HTTP tools require `--full` mode (**141 tools** total).
 
 **Fix:** Start the bridge with the `--full` flag:
 ```bash

@@ -4,7 +4,7 @@
 
 Comply with all docs in `/documents/`. Consult before changes:
 
-- **[documents/platform-docs.md](documents/platform-docs.md)** — Full feature reference (137 tools). Consult before adding/modifying features.
+- **[documents/platform-docs.md](documents/platform-docs.md)** — Full feature reference (141 tools). Consult before adding/modifying features.
 - **[documents/prompts-reference.md](documents/prompts-reference.md)** — All 72 MCP prompts reference.
 - **[documents/styleguide.md](documents/styleguide.md)** — Code conventions, UI patterns, output formats. Follow for all new tools, handlers, responses.
 - **[documents/roadmap.md](documents/roadmap.md)** — Development direction. Check before exploratory work.
@@ -22,6 +22,9 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `gen-claude-md` — Generate starter CLAUDE.md for current workspace
 - `print-token [--port N]` — Print auth token from active lock file
 - `gen-plugin-stub <dir> --name <org/name> --prefix <prefix>` — Scaffold new plugin
+- `quick-task <preset>` — Launch a context-aware Claude task from a preset (fixErrors, refactorFile, addTests, explainCode, optimizePerf, runTests, resumeLastCancelled). Same dispatch path as the sidebar. Requires `--claude-driver subprocess`.
+- `start-task "<description>"` — Enqueue a free-form Claude task; Claude gathers its own workspace context.
+- `continue-handoff` — Resume from the stored handoff note (skips auto-snapshots).
 - `--watch` — Auto-restart supervisor with exponential backoff (2s → 30s). Safe for production.
 
 ## Bug Fix Protocol

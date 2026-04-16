@@ -5,7 +5,7 @@
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2FOolab--labs%2Fclaude--ide--bridge-blue)](https://github.com/Oolab-labs/claude-ide-bridge/pkgs/container/claude-ide-bridge)
 [![License: MIT](https://img.shields.io/npm/l/claude-ide-bridge)](https://opensource.org/licenses/MIT)
 
-**MCP bridge giving Claude Code IDE superpowers: 137 tools for LSP, debugging, git, GitHub, terminals, and more.**
+**MCP bridge giving Claude Code IDE superpowers: 141 tools for LSP, debugging, git, GitHub, terminals, and more.**
 
 A WebSocket bridge between Claude Code CLI and your VS Code extension. Claude sees what your IDE sees — live diagnostics, go-to-definition, call hierarchies, hover types, breakpoints, debugger state — and can act on it: edit files, run tests, commit, open PRs, all without you copy-pasting anything.
 
@@ -73,7 +73,7 @@ Or search **Claude IDE Bridge** in the VS Code / Cursor / Windsurf marketplace.
 
 The bridge starts in **slim mode** by default — 56 IDE-exclusive tools covering LSP, debugging, refactoring, and editor state. These are capabilities Claude does not have natively, so slim mode adds signal without duplicating built-in file/shell tools.
 
-Add `--full` to unlock all 137 tools, including git, GitHub, terminal, file tree, and orchestration:
+Add `--full` to unlock all 141 tools, including git, GitHub, terminal, file tree, and orchestration:
 
 ```bash
 claude-ide-bridge --full --watch
@@ -133,7 +133,7 @@ Claude calls `refactorAnalyze` (checks blast radius and risk), `refactorPreview`
 Standard setup. Extension connects automatically. Full LSP, debugger, and editor state available.
 
 ### Remote SSH
-VS Code Remote-SSH and Cursor SSH load the extension on the VPS side (`extensionKind: ["workspace"]`). Start the bridge on the remote machine. All 137 tools work over SSH.
+VS Code Remote-SSH and Cursor SSH load the extension on the VPS side (`extensionKind: ["workspace"]`). Start the bridge on the remote machine. All 141 tools work over SSH.
 
 ```bash
 # On the remote machine
@@ -164,6 +164,24 @@ docker compose up
 ```
 
 Headless image includes `typescript-language-server` and `universal-ctags` for LSP and symbol search without VS Code. See [documents/headless-quickstart.md](documents/headless-quickstart.md).
+
+### Launch tasks from a terminal (headless parity)
+
+The sidebar's quick-task buttons also work from the CLI — same context-gathering, same prompt-building, same dispatch path:
+
+```bash
+# 7 presets: fixErrors · refactorFile · addTests · explainCode · optimizePerf · runTests · resumeLastCancelled
+claude-ide-bridge quick-task fix-errors
+claude-ide-bridge quick-task add-tests --json
+
+# free-form description (Claude gathers its own context)
+claude-ide-bridge start-task "Refactor the auth module for clarity, keep behaviour identical"
+
+# resume prior session from handoff note
+claude-ide-bridge continue-handoff
+```
+
+Requires `--claude-driver subprocess` on the running bridge. All three subcommands accept `--json`, `--port`, `--source`. Enforces a 5s bridge-global cooldown per preset (shared with the sidebar).
 
 ---
 
@@ -245,7 +263,7 @@ claude-ide-bridge install claude-mem
 |---|---|
 | `claude-ide-bridge init` | One-command setup: install extension + write CLAUDE.md + register MCP server |
 | `claude-ide-bridge --watch` | Start bridge with auto-restart on crash (2s → 30s backoff) |
-| `claude-ide-bridge --full` | Enable all 137 tools (default: 56 slim tools) |
+| `claude-ide-bridge --full` | Enable all 141 tools (default: 56 slim tools) |
 | `claude-ide-bridge install-extension` | Install companion VS Code extension |
 | `claude-ide-bridge gen-claude-md --write` | Add bridge section to existing CLAUDE.md |
 | `claude-ide-bridge print-token` | Print auth token from active lock file |
@@ -253,6 +271,9 @@ claude-ide-bridge install claude-mem
 | `claude-ide-bridge marketplace list` | List available companion servers |
 | `claude-ide-bridge install <companion>` | Install companion into Claude Desktop config |
 | `claude-ide-bridge notify <Event>` | Post a hook event to a running bridge (for CC hook wiring) |
+| `claude-ide-bridge quick-task <preset>` | Launch a context-aware Claude task from a preset (headless parity with the sidebar) |
+| `claude-ide-bridge start-task "<description>"` | Enqueue a free-form Claude task with workspace context |
+| `claude-ide-bridge continue-handoff` | Resume prior session using the stored handoff note |
 | `claude-ide-bridge start-all` | Launch tmux session with bridge + extension watcher |
 
 **Key flags:**
@@ -281,7 +302,7 @@ claude-ide-bridge install claude-mem
 | File | Description |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System topology, request lifecycle, component map, design decisions |
-| [documents/platform-docs.md](documents/platform-docs.md) | Full tool reference — all 137 tools with parameters and examples |
+| [documents/platform-docs.md](documents/platform-docs.md) | Full tool reference — all 141 tools with parameters and examples |
 | [documents/prompts-reference.md](documents/prompts-reference.md) | All MCP prompts (31 prompts, 12 plugin skills, 4 subagents) |
 | [docs/automation.md](docs/automation.md) | Automation hooks reference — all 18 events, policy schema, condition filters |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Diagnostics, common errors, and fixes |
