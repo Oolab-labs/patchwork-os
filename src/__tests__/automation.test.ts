@@ -4853,7 +4853,6 @@ describe("interpreter shadow mode", () => {
     const logs: string[] = [];
     const hooks = new AutomationHooks(
       {
-        useInterpreter: true,
         onFileSave: {
           enabled: true,
           patterns: ["**/*.ts"],
@@ -4881,7 +4880,6 @@ describe("interpreter shadow mode", () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(
       {
-        useInterpreter: true,
         onFileSave: {
           enabled: true,
           patterns: ["**/*.ts"],
@@ -4909,7 +4907,6 @@ describe("interpreter shadow mode", () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(
       {
-        useInterpreter: true,
         onFileSave: {
           enabled: false,
           patterns: ["**/*.ts"],

@@ -6,6 +6,7 @@ import {
   isDeduped,
   isOnCooldown,
   isTaskActive,
+  mergeAutomationStates,
   recordDedup,
   recordPendingRetry,
   recordTrigger,
@@ -269,5 +270,34 @@ describe("setTestRunnerStatus", () => {
   it("does not mutate input", () => {
     setTestRunnerStatus(EMPTY_AUTOMATION_STATE, "vitest", "pass");
     expect(EMPTY_AUTOMATION_STATE.lastTestRunnerStatusByRunner.size).toBe(0);
+  });
+});
+
+describe("mergeAutomationStates", () => {
+  it("keeps max timestamp per key in lastTrigger", () => {
+    const a = recordTrigger(EMPTY_AUTOMATION_STATE, "K", "t1", NOW - 1000);
+    const b = recordTrigger(EMPTY_AUTOMATION_STATE, "K", "t2", NOW);
+    expect(mergeAutomationStates(a, b).lastTrigger.get("K")).toBe(NOW);
+    expect(mergeAutomationStates(b, a).lastTrigger.get("K")).toBe(NOW);
+  });
+
+  it("unions disjoint keys from both states", () => {
+    const a = recordTrigger(EMPTY_AUTOMATION_STATE, "A", "t", NOW);
+    const b = recordTrigger(EMPTY_AUTOMATION_STATE, "B", "t", NOW);
+    const merged = mergeAutomationStates(a, b);
+    expect(merged.lastTrigger.get("A")).toBe(NOW);
+    expect(merged.lastTrigger.get("B")).toBe(NOW);
+  });
+
+  it("concatenates taskTimestamps", () => {
+    const a = recordTrigger(EMPTY_AUTOMATION_STATE, "K", "t", 1);
+    const b = recordTrigger(EMPTY_AUTOMATION_STATE, "K", "t", 2);
+    expect(mergeAutomationStates(a, b).taskTimestamps).toEqual([1, 2]);
+  });
+
+  it("keeps max dedup timestamp per key", () => {
+    const a = recordDedup(EMPTY_AUTOMATION_STATE, "d", 100);
+    const b = recordDedup(EMPTY_AUTOMATION_STATE, "d", 500);
+    expect(mergeAutomationStates(a, b).deduplicationWindow.get("d")).toBe(500);
   });
 });

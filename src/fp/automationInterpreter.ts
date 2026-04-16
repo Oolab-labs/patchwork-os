@@ -17,6 +17,7 @@ import {
   clearPendingRetry,
   isDeduped,
   isOnCooldown,
+  mergeAutomationStates,
   recordDedup,
   recordPendingRetry,
   recordTrigger,
@@ -475,10 +476,10 @@ async function interpret(
             taskIds: [...merged.taskIds, ...result.value.taskIds],
             skipped: [...merged.skipped, ...result.value.skipped],
             errors: [...merged.errors, ...result.value.errors],
-            state:
-              result.value.taskIds.length > 0
-                ? result.value.state
-                : merged.state,
+            // Merge branch state into accumulator: keep max timestamp per key
+            // and union maps so cooldowns / dedup / triggers from each branch
+            // are preserved (prior code overwrote via last-wins).
+            state: mergeAutomationStates(merged.state, result.value.state),
           };
         } else {
           merged = {
@@ -589,11 +590,33 @@ async function interpret(
           const nextAttempt = attempt + 1;
           const nextRetryAt = ctx.now + program.retryDelayMs;
 
-          // Schedule retry (backend records it; in tests no actual timer fires)
+          // Schedule retry: re-invoke the wrapped program when the timer
+          // fires. State is a snapshot of when the retry was scheduled; for
+          // typical retryDelayMs (seconds) drift is negligible. TestBackend
+          // records the call but does not actually fire the timer.
+          const wrappedProgram = program.program;
+          const retrySnapshot = innerAcc.state;
           ctx.backend.scheduleRetry(program.key, program.retryDelayMs, () => {
             ctx.log(
               `[interpreter] retry attempt ${nextAttempt} for ${program.key}`,
             );
+            void (async () => {
+              try {
+                const retryCtx: InterpreterContext = {
+                  ...ctx,
+                  state: retrySnapshot,
+                  now: Date.now(),
+                };
+                await interpret(
+                  wrappedProgram,
+                  retryCtx,
+                  emptyAcc(retrySnapshot),
+                );
+              } catch (e) {
+                const m = e instanceof Error ? e.message : String(e);
+                ctx.log(`[interpreter] retry ${program.key} failed: ${m}`);
+              }
+            })();
           });
 
           const newState = recordPendingRetry(
