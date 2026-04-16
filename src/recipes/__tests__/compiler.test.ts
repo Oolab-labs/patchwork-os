@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compileRecipe, RecipeCompileError } from "../compiler.js";
+import {
+  compileRecipe,
+  compileRecipeFull,
+  RecipeCompileError,
+} from "../compiler.js";
 import type { Recipe } from "../schema.js";
 
 const BASE: Recipe = {
@@ -105,6 +109,60 @@ describe("compileRecipe", () => {
         trigger: { type: "webhook", path: "/hooks/x" },
       }),
     ).toThrow(RecipeCompileError);
+  });
+
+  it("compileRecipeFull derives CC permissions with risk-based bucketing", () => {
+    const r: Recipe = {
+      ...BASE,
+      steps: [
+        {
+          id: "read",
+          agent: true,
+          prompt: "look",
+          tools: ["Read", "Grep"],
+          risk: "low",
+        },
+        {
+          id: "edit",
+          agent: true,
+          prompt: "change",
+          tools: ["Edit(/src/**)"],
+          risk: "medium",
+        },
+        {
+          id: "deploy",
+          agent: false,
+          tool: "Bash(deploy prod)",
+          params: {},
+          risk: "high",
+        },
+      ],
+    };
+    const result = compileRecipeFull(r);
+    expect(result.program._tag).toBe("WithRateLimit");
+    expect(result.suggestedPermissions.allow).toEqual(["Grep", "Read"]);
+    expect(result.suggestedPermissions.ask).toContain("Edit(/src/**)");
+    expect(result.suggestedPermissions.ask).toContain("Bash(deploy prod)");
+  });
+
+  it("compileRecipeFull defaults to allow bucket when no risk declared", () => {
+    const r: Recipe = {
+      ...BASE,
+      steps: [{ id: "x", agent: false, tool: "send_message", params: {} }],
+    };
+    const result = compileRecipeFull(r);
+    expect(result.suggestedPermissions.allow).toEqual(["send_message"]);
+  });
+
+  it("compileRecipeFull dedupes duplicate tools across steps", () => {
+    const r: Recipe = {
+      ...BASE,
+      steps: [
+        { id: "a", agent: true, prompt: "x", tools: ["Read"] },
+        { id: "b", agent: true, prompt: "y", tools: ["Read"] },
+      ],
+    };
+    expect(compileRecipeFull(r).suggestedPermissions.allow).toEqual(["Read"]);
   });
 
   it("rejects cron + manual triggers", () => {
