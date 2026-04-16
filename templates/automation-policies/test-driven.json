@@ -45,8 +45,9 @@
     "prompt": "→{{branch}} (from {{previousBranch}}). getDiagnostics + runTests → branch, error count, pass/fail. ≤5 lines."
   },
 
-  "onPostCompact": {
+  "onCompaction": {
     "enabled": true,
+    "phase": "post",
     "cooldownMs": 5000,
     "prompt": "Compacted. getGitStatus + getDiagnostics + getHandoffNote. Drop articles/filler. Fragments OK. Abbreviate (DB/auth/config/req/res/fn). Stay terse. ≤8 lines."
   }

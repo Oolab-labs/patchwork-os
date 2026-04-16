@@ -140,6 +140,23 @@ export interface OnPostCompactPolicy extends PromptSource {
   cooldownMs: number;
 }
 
+/**
+ * Unified compaction hook (v2.43.0+) — replaces `onPreCompact` and
+ * `onPostCompact` with a single schema entry carrying a `phase` discriminator.
+ *
+ * The parser expands `onCompaction` into the internal `onPreCompact` or
+ * `onPostCompact` field before downstream processing; both legacy names still
+ * work but now log a deprecation warning at load time. Scheduled removal:
+ * no earlier than 3 minor versions + 30 days after v2.43.0.
+ */
+export interface OnCompactionPolicy extends PromptSource {
+  enabled: boolean;
+  /** "pre" fires before Claude Code compacts context; "post" fires after. */
+  phase: "pre" | "post";
+  /** Minimum ms between triggers. Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
 export interface OnInstructionsLoadedPolicy extends PromptSource {
   enabled: boolean;
   /**
@@ -402,9 +419,15 @@ export interface AutomationPolicy {
   onFileChanged?: OnFileChangedPolicy;
   /** Fired by Claude Code 2.1.83+ CwdChanged hook — fires when CC's working directory changes. */
   onCwdChanged?: OnCwdChangedPolicy;
-  /** Fired by Claude Code 2.1.76+ PostCompact hook — re-injects IDE context after compaction. */
+  /**
+   * Unified compaction hook (v2.43.0+) — replaces onPreCompact/onPostCompact.
+   * Expanded at load time into the internal `onPreCompact` or `onPostCompact`
+   * slot based on `phase`. Prefer this form in new policies.
+   */
+  onCompaction?: OnCompactionPolicy;
+  /** @deprecated v2.43.0 — use `onCompaction` with `phase: "post"`. Removed no earlier than v2.46 / 30 days. */
   onPostCompact?: OnPostCompactPolicy;
-  /** Fired by Claude Code PreCompact hook — runs before context window is trimmed. */
+  /** @deprecated v2.43.0 — use `onCompaction` with `phase: "pre"`. Removed no earlier than v2.46 / 30 days. */
   onPreCompact?: OnPreCompactPolicy;
   /** Fired by Claude Code 2.1.76+ InstructionsLoaded hook — injects bridge status at session start. */
   onInstructionsLoaded?: OnInstructionsLoadedPolicy;
@@ -554,6 +577,53 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   }
 
   const policy = parsed as AutomationPolicy;
+
+  // ── onCompaction normalization (v2.43.0+) ───────────────────────────────
+  // Expand the unified `onCompaction` hook into the internal onPreCompact or
+  // onPostCompact field based on `phase`. Legacy onPreCompact/onPostCompact
+  // still accepted — log a deprecation warning so users migrate. The
+  // `hadLegacy*` flags capture user-set values BEFORE expansion so we don't
+  // warn on entries we just synthesized from onCompaction.
+  const hadLegacyPreCompact = policy.onPreCompact !== undefined;
+  const hadLegacyPostCompact = policy.onPostCompact !== undefined;
+  if (policy.onCompaction !== undefined) {
+    const oc = policy.onCompaction;
+    if (typeof oc !== "object" || oc === null) {
+      throw new Error(`"onCompaction" must be an object`);
+    }
+    if (oc.phase !== "pre" && oc.phase !== "post") {
+      throw new Error(
+        `"onCompaction.phase" must be "pre" or "post" (got ${JSON.stringify(oc.phase)})`,
+      );
+    }
+    if (oc.phase === "pre" && hadLegacyPreCompact) {
+      throw new Error(
+        `Cannot set both "onCompaction" (phase: "pre") and "onPreCompact" — use onCompaction only.`,
+      );
+    }
+    if (oc.phase === "post" && hadLegacyPostCompact) {
+      throw new Error(
+        `Cannot set both "onCompaction" (phase: "post") and "onPostCompact" — use onCompaction only.`,
+      );
+    }
+    const { phase: _ignored, ...rest } = oc;
+    if (oc.phase === "pre") {
+      policy.onPreCompact = rest as OnPreCompactPolicy;
+    } else {
+      policy.onPostCompact = rest as OnPostCompactPolicy;
+    }
+    policy.onCompaction = undefined;
+  }
+  if (hadLegacyPreCompact) {
+    console.warn(
+      `[automation-policy] "onPreCompact" in "${filePath}" is deprecated — migrate to "onCompaction" with phase: "pre". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+    );
+  }
+  if (hadLegacyPostCompact) {
+    console.warn(
+      `[automation-policy] "onPostCompact" in "${filePath}" is deprecated — migrate to "onCompaction" with phase: "post". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+    );
+  }
 
   // Helper: throw with actual value in message for easier debugging
   function expectType(value: unknown, type: string, field: string): void {
