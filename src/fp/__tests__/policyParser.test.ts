@@ -86,11 +86,12 @@ describe("parsePolicy", () => {
 
     expect(result.value).toHaveLength(1);
     const top = result.value[0];
-    // Structure: WithDedup → WithCooldown → Hook (no retry since retryCount=0)
+    // Structure: WithDedup → Hook (no WithCooldown when dedupeByContent=true;
+    // dedup provides its own cooldown window so per-file cooldown is skipped)
     expect(top._tag).toBe("WithDedup");
     if (top._tag === "WithDedup") {
       expect(top.cooldownMs).toBe(900_000);
-      expect(top.program._tag).toBe("WithCooldown");
+      expect(top.program._tag).toBe("Hook");
     }
   });
 

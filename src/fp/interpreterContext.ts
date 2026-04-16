@@ -31,6 +31,8 @@ export interface Backend {
 export interface InterpreterContext {
   readonly state: AutomationState;
   readonly now: number;
+  /** The event type that triggered this interpreter run (e.g. "onFileSave"). */
+  readonly eventType: string;
   readonly eventData: Readonly<Record<string, string>>;
   readonly backend: Backend;
   readonly log: (msg: string) => void;

@@ -15,23 +15,6 @@ function makeInstantOrchestrator() {
   return new ClaudeOrchestrator(driver, "/tmp", () => {});
 }
 
-function makeSlowOrchestrator() {
-  const driver: IClaudeDriver = {
-    name: "slow",
-    async run(input) {
-      await new Promise<void>((_, reject) => {
-        input.signal.addEventListener("abort", () =>
-          reject(
-            Object.assign(new Error("AbortError"), { name: "AbortError" }),
-          ),
-        );
-      });
-      return { text: "ok", exitCode: 0, durationMs: 0 };
-    },
-  };
-  return new ClaudeOrchestrator(driver, "/tmp", () => {});
-}
-
 const BASE_RESULT = {
   sessionName: "My Node App",
   sessionType: "node",
@@ -111,34 +94,24 @@ describe("AutomationHooks.onDebugSessionStart", () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
 
-    await hooks.handleDebugSessionStart(BASE_RESULT);
+    hooks.handleDebugSessionStart(BASE_RESULT);
+    await hooks.flush();
     expect(orch.list().length).toBe(1);
 
     // Second trigger within cooldown
-    await hooks.handleDebugSessionStart(BASE_RESULT);
+    hooks.handleDebugSessionStart(BASE_RESULT);
+    await hooks.flush();
     expect(orch.list().length).toBe(1); // still 1 — cooldown blocked
 
     // Advance past cooldown
     vi.setSystemTime(Date.now() + 10_000);
 
-    await hooks.handleDebugSessionStart(BASE_RESULT);
+    hooks.handleDebugSessionStart(BASE_RESULT);
+    await hooks.flush();
     expect(orch.list().length).toBe(2);
   });
 
-  it("loop guard skips if previous task still running", async () => {
-    const orch = makeSlowOrchestrator();
-    const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
-
-    await hooks.handleDebugSessionStart(BASE_RESULT);
-    expect(orch.list().length).toBe(1);
-
-    // Advance past cooldown
-    vi.setSystemTime(Date.now() + 10_000);
-
-    // Second trigger while first task still running — guard should suppress
-    await hooks.handleDebugSessionStart(BASE_RESULT);
-    expect(orch.list().length).toBe(1); // still 1 — loop guard blocked
-  });
+  // Loop guard (active-task suppression) replaced by cooldown in Phase 4.
 
   it("fires after cooldown expires following a successful trigger", async () => {
     const orch = makeInstantOrchestrator();

@@ -61,6 +61,7 @@ export interface DiagnosticsErrorExtras {
 export interface TestRunExtras {
   readonly kind: "testRun";
   readonly onFailureOnly?: boolean;
+  readonly minDuration?: number;
 }
 
 export type HookExtras =

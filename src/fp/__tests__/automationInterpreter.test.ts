@@ -34,6 +34,7 @@ function makeCtx(
   return {
     state: EMPTY_AUTOMATION_STATE,
     now: NOW,
+    eventType: "onFileSave",
     eventData: { file: "/foo.ts", runner: "vitest" },
     backend: new TestBackend(),
     log: () => {},
@@ -264,7 +265,7 @@ describe("WithRateLimit", () => {
   it("skips when rate limit reached", async () => {
     const backend = new TestBackend();
     const h = hook({
-      hookType: "onGitCommit",
+      hookType: "onFileSave",
       enabled: true,
       promptSource: INLINE_SOURCE,
     });
@@ -286,7 +287,7 @@ describe("WithRateLimit", () => {
   it("fires when under rate limit", async () => {
     const backend = new TestBackend();
     const h = hook({
-      hookType: "onGitCommit",
+      hookType: "onFileSave",
       enabled: true,
       promptSource: INLINE_SOURCE,
     });
@@ -431,7 +432,11 @@ describe("WithDedup", () => {
       promptSource: INLINE_SOURCE,
     });
     const wd = withDedup("dedup:diag", 900_000, h);
-    const ctx = makeCtx({ backend, eventData: { file: "/foo.ts" } });
+    const ctx = makeCtx({
+      backend,
+      eventType: "onDiagnosticsError",
+      eventData: { file: "/foo.ts" },
+    });
 
     const result = await executeAutomationPolicy([wd], ctx);
     expect(result.ok).toBe(true);
@@ -452,7 +457,12 @@ describe("WithDedup", () => {
     const sig = "/foo.ts"; // primaryValue uses eventData.file as fallback sig
     const dedupKey = `dedup:dedup:diag:${sig}`;
     const state = recordDedup(EMPTY_AUTOMATION_STATE, dedupKey, NOW - 1_000); // recorded 1s ago, within 900s cooldown
-    const ctx = makeCtx({ backend, state, eventData: { file: "/foo.ts" } });
+    const ctx = makeCtx({
+      backend,
+      state,
+      eventType: "onDiagnosticsError",
+      eventData: { file: "/foo.ts" },
+    });
 
     const result = await executeAutomationPolicy([wd], ctx);
     expect(result.ok).toBe(true);

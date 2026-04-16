@@ -50,14 +50,16 @@ const BASE_POLICY = {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("AutomationHooks.onTestPassAfterFailure", () => {
-  it("fires when same runner transitions fail → pass", () => {
+  it("fires when same runner transitions fail → pass", async () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
 
     hooks.handleTestRun(makeTestResult({ failed: 2, runners: ["vitest"] }));
+    await hooks.flush();
     expect(orch.list().length).toBe(0); // onTestRun not configured — no task
 
     hooks.handleTestRun(makeTestResult({ failed: 0, runners: ["vitest"] }));
+    await hooks.flush();
     expect(orch.list().length).toBe(1); // fail→pass triggers
   });
 
@@ -98,72 +100,50 @@ describe("AutomationHooks.onTestPassAfterFailure", () => {
     expect(orch.list().length).toBe(0);
   });
 
-  it("fires for each runner independently when both transition fail → pass", () => {
+  it("fires for each runner independently when both transition fail → pass", async () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
 
     // both runners fail
     hooks.handleTestRun(makeTestResult({ failed: 1, runners: ["vitest"] }));
+    await hooks.flush();
     hooks.handleTestRun(makeTestResult({ failed: 1, runners: ["jest"] }));
+    await hooks.flush();
 
     // cooldown: advance time
     vi.setSystemTime(Date.now() + 10_000);
 
     // vitest passes
     hooks.handleTestRun(makeTestResult({ failed: 0, runners: ["vitest"] }));
+    await hooks.flush();
     expect(orch.list().length).toBe(1);
 
     // jest passes — cooldown still active for onTestPassAfterFailure global key
     // so second trigger is suppressed; this is correct behavior
     hooks.handleTestRun(makeTestResult({ failed: 0, runners: ["jest"] }));
+    await hooks.flush();
     // still 1 because the global cooldown blocks the second fire within 5s
     // (both transitions happened within the cooldown window)
   });
 
-  it("respects cooldownMs — second trigger within window is suppressed", () => {
+  it("respects cooldownMs — second trigger within window is suppressed", async () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
 
     hooks.handleTestRun(makeTestResult({ failed: 1, runners: ["vitest"] }));
     hooks.handleTestRun(makeTestResult({ failed: 0, runners: ["vitest"] }));
+    await hooks.flush();
     expect(orch.list().length).toBe(1);
 
     // Second fail→pass within cooldown window
     hooks.handleTestRun(makeTestResult({ failed: 1, runners: ["vitest"] }));
     hooks.handleTestRun(makeTestResult({ failed: 0, runners: ["vitest"] }));
+    await hooks.flush();
     // Cooldown blocks — still 1
     expect(orch.list().length).toBe(1);
   });
 
-  it("activeTestPassAfterFailureTaskId guard prevents double-enqueue while task running", () => {
-    const driver: IClaudeDriver = {
-      name: "slow",
-      async run(input) {
-        await new Promise<void>((_, reject) => {
-          input.signal.addEventListener("abort", () =>
-            reject(
-              Object.assign(new Error("AbortError"), { name: "AbortError" }),
-            ),
-          );
-        });
-        return { text: "ok", exitCode: 0, durationMs: 0 };
-      },
-    };
-    const orch = new ClaudeOrchestrator(driver, "/tmp", () => {});
-    const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
-
-    hooks.handleTestRun(makeTestResult({ failed: 1, runners: ["vitest"] }));
-    hooks.handleTestRun(makeTestResult({ failed: 0, runners: ["vitest"] }));
-    expect(orch.list().length).toBe(1);
-
-    // Advance past cooldown
-    vi.setSystemTime(Date.now() + 10_000);
-
-    // Second fail→pass while first task still running — guard should suppress
-    hooks.handleTestRun(makeTestResult({ failed: 1, runners: ["vitest"] }));
-    hooks.handleTestRun(makeTestResult({ failed: 0, runners: ["vitest"] }));
-    expect(orch.list().length).toBe(1); // still 1 — guard blocked second enqueue
-  });
+  // Loop guard (active-task suppression) replaced by cooldown in Phase 4.
 
   it("does not fire when hook is disabled", () => {
     const orch = makeInstantOrchestrator();

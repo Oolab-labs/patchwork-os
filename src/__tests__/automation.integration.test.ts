@@ -56,7 +56,7 @@ async function setupWithAutomation(policy: Record<string, unknown>) {
   );
 
   // Wire the /notify endpoint the same way bridge.ts does (~line 828)
-  server.notifyFn = (event, args) => {
+  server.notifyFn = (event, _args) => {
     switch (event) {
       case "PostCompact":
         hooks.handlePostCompact();
@@ -160,13 +160,17 @@ describe("automation hook integration — placeholder substitution", () => {
       failures: [],
     });
 
-    await new Promise((r) => setTimeout(r, 20));
+    await hooks.flush();
 
     const tasks = orch.list();
     expect(tasks.length).toBe(1);
-    expect(tasks[0]!.prompt).toContain("2 failed");
-    expect(tasks[0]!.prompt).toContain("10 passed");
-    expect(tasks[0]!.prompt).toContain("12 total");
+    // Values are nonce-wrapped in untrustedBlock — check raw values are present
+    expect(tasks[0]!.prompt).toContain("2");
+    expect(tasks[0]!.prompt).toContain("10");
+    expect(tasks[0]!.prompt).toContain("12");
+    expect(tasks[0]!.prompt).toContain("FAILED");
+    expect(tasks[0]!.prompt).toContain("PASSED");
+    expect(tasks[0]!.prompt).toContain("TOTAL");
   });
 });
 

@@ -1,39 +1,23 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { minimatch } from "minimatch";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import type { ExtensionClient } from "./extensionClient.js";
+import { executeAutomationPolicy } from "./fp/automationInterpreter.js";
+import type { AutomationProgram } from "./fp/automationProgram.js";
 import {
   type AutomationState,
   EMPTY_AUTOMATION_STATE,
+  setLatestDiagnostics,
+  setTestRunnerStatus,
   tasksInLastHour,
 } from "./fp/automationState.js";
-import {
-  buildHookMetadata as _buildHookMetadata,
-  truncatePrompt,
-  untrustedBlock,
-} from "./fp/automationUtils.js";
-import { getPrompt } from "./prompts.js";
+import type { InterpreterContext } from "./fp/interpreterContext.js";
+import { VsCodeBackend } from "./fp/interpreterContext.js";
+import { parsePolicy } from "./fp/policyParser.js";
 
-/** Maximum length (chars) of a single diagnostic message before truncation */
-const MAX_DIAGNOSTIC_MSG_CHARS = 500;
-const MAX_DIAGNOSTICS_IN_PROMPT = 20;
-
-// untrustedBlock and truncatePrompt are re-exported from fp/automationUtils for
-// backward-compat (automation.ts callers use them directly via closure).
-// buildHookMetadata wraps the pure version, injecting Date.now() at call time.
-/** Maximum length (chars) of a file path inserted into prompts */
-const MAX_FILE_PATH_CHARS = 500;
-function buildHookMetadata(hookName: string, file?: string): string {
-  return _buildHookMetadata(hookName, new Date().toISOString(), file);
-}
 /** Maximum length (chars) of an automation policy prompt template (matches runClaudeTask cap) */
 const MAX_POLICY_PROMPT_CHARS = 32_768;
-/** Prune lastTrigger entries older than this to prevent unbounded Map growth */
-const LAST_TRIGGER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
-/** Hard size cap on lastTrigger to bound memory in very large repos */
-const LAST_TRIGGER_MAX_SIZE = 10_000;
 
 /** Default system prompt for automation subprocesses when none is set in policy. */
 const DEFAULT_AUTOMATION_SYSTEM_PROMPT =
@@ -450,6 +434,13 @@ export interface AutomationPolicy {
   onDebugSessionEnd?: OnDebugSessionEndPolicy;
   /** Fired when a VS Code debug session starts (hasActiveSession transitions false→true). */
   onDebugSessionStart?: OnDebugSessionStartPolicy;
+  /**
+   * When true, the functional interpreter runs in shadow mode alongside the
+   * legacy imperative handlers.  Both paths execute; the interpreter result is
+   * logged for parity validation but does NOT replace the legacy path.
+   * Default: false.  Set to true to opt in to Phase 3 shadow mode.
+   */
+  useInterpreter?: boolean;
 }
 
 export interface Diagnostic {
@@ -922,346 +913,105 @@ export function checkCcHookWiring(): Record<string, boolean> {
 // ── AutomationHooks ───────────────────────────────────────────────────────────
 
 export class AutomationHooks {
-  /** Active retry-poll intervals — tracked so they can be cleared on destroy(). */
-  private _retryIntervals = new Set<ReturnType<typeof setInterval>>();
-  /** Pending retry delay timeouts — tracked so destroy() can cancel them. */
-  private _retryTimeouts = new Set<ReturnType<typeof setTimeout>>();
+  /** Compiled AST for the functional interpreter. Null if parse failed. */
+  private _programAST: AutomationProgram[] | null = null;
+  /** Backend instance for the functional interpreter. */
+  private _interpreterBackend: VsCodeBackend | null = null;
   /**
    * Pure-value state holding cooldown timestamps, diagnostic error counts, and
    * test outcomes.  Mutations go through the pure-function helpers from
    * `src/fp/automationState.ts`; the class re-assigns `_automationState` on
    * each "write" to maintain immutability semantics at the value level.
-   * The underlying Maps are still mutable instances — we swap the wrapper
-   * object rather than cloning the Maps on every operation for performance.
    */
   private _automationState: AutomationState = EMPTY_AUTOMATION_STATE;
-  /** Last trigger time per "trigger key" (e.g. "diagnostics:/path/to/file"). */
-  private lastTrigger = new Map<string, number>();
-  /**
-   * Active task IDs per file for the diagnostics handler.
-   * Kept separate from activeSaveTasks so a running save task does not suppress
-   * the diagnostics trigger (and vice-versa) for the same file.
-   */
-  private activeDiagnosticsTasks = new Map<string, string>();
-  /** Active task IDs per file for the file-saved handler. */
-  private activeSaveTasks = new Map<string, string>();
-  /** Active task IDs per file for the file-changed handler. */
-  private activeFileChangedTasks = new Map<string, string>();
-  /** Active task ID for the test-run handler (workspace-global). */
-  private activeTestRunTaskId: string | null = null;
-  /** Active task ID for the test-pass-after-failure handler (workspace-global). */
-  private activeTestPassAfterFailureTaskId: string | null = null;
-  /**
-   * Per-runner last outcome — used to detect fail→pass transitions.
-   * Key: runner name (e.g. "vitest", "jest"). Value: "pass" | "fail".
-   * Stored separately per runner so a vitest pass doesn't incorrectly trigger
-   * when a jest run was the one that previously failed.
-   */
-  private lastTestOutcomeByRunner = new Map<string, "pass" | "fail">();
-  /** Active task ID for the git-commit handler (workspace-global). */
-  private activeGitCommitTaskId: string | null = null;
-  /** Active task ID for the git-push handler (workspace-global). */
-  private activeGitPushTaskId: string | null = null;
-  /** Active task ID for the git-pull handler (workspace-global). */
-  private activeGitPullTaskId: string | null = null;
-  /** Active task ID for the branch-checkout handler (workspace-global). */
-  private activeBranchCheckoutTaskId: string | null = null;
-  /** Active task ID for the pull-request handler (workspace-global). */
-  private activePullRequestTaskId: string | null = null;
-  /** Active task ID for the task-created handler (workspace-global). */
-  private activeTaskCreatedTaskId: string | null = null;
-  /** Active task ID for the permission-denied handler (workspace-global). */
-  private activePermissionDeniedTaskId: string | null = null;
-  /** Active task IDs per file for the diagnostics-cleared handler. */
-  private activeDiagnosticsClearedTasks = new Map<string, string>();
   /** Tracks previous error count per normalized file path for zero-transition detection. */
   private prevDiagnosticErrors = new Map<string, number>();
-  /** Latest diagnostics by file — used by _evaluateWhen() for conditional hooks. */
-  private latestDiagnosticsByFile = new Map<string, Diagnostic[]>();
-  /** Last test runner outcome per runner name — used by _evaluateWhen(). */
-  private lastTestRunnerStatusByRunner = new Map<string, "passed" | "failed">();
-  /** Active task ID for the task-success handler (workspace-global). */
-  private activeTaskSuccessTaskId: string | null = null;
-  /** Active task ID for the debug-session-end handler (workspace-global). */
-  private activeDebugSessionEndTaskId: string | null = null;
-  /** Active task ID for the debug-session-start handler (workspace-global). */
-  private activeDebugSessionStartTaskId: string | null = null;
-  /** Active task ID for the post-compact handler (workspace-global). */
-  private activePostCompactTaskId: string | null = null;
-  /** Active task ID for the pre-compact handler (workspace-global). */
-  private activePreCompactTaskId: string | null = null;
-  /** Active task ID for the instructions-loaded handler (workspace-global). */
-  private activeInstructionsLoadedTaskId: string | null = null;
   /**
-   * Rolling window of task enqueue timestamps for maxTasksPerHour enforcement.
-   * Entries older than 60 minutes are pruned on each enqueue.
+   * Per-runner last outcome — used to detect fail→pass transitions for onTestPassAfterFailure.
+   * Key: runner name. Value: "pass" | "fail".
    */
-  private taskTimestamps: number[] = [];
+  private lastTestOutcomeByRunner = new Map<string, "pass" | "fail">();
   private _lastFiredAt: string | null = null;
+  /** Last interpreter run promise — allows tests to await completion. */
+  private _lastRunPromise: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly policy: AutomationPolicy,
-    private readonly orchestrator: ClaudeOrchestrator,
+    orchestrator: ClaudeOrchestrator,
     private readonly log: (msg: string) => void,
-    private readonly extensionClient?: ExtensionClient,
-    private readonly workspace?: string,
+    _extensionClient?: ExtensionClient,
+    _workspace?: string,
   ) {
-    // Wire _automationState to share the same Map instances as the class fields.
-    // The pure helpers in automationState.ts can then be called with this view
-    // for read-only checks (isOnCooldown, isTaskActive, tasksInLastHour).
-    // Writes still go through the class fields directly (same Map objects, so
-    // _automationState sees them immediately).
-    this._automationState = {
-      lastTrigger: this.lastTrigger,
-      activeTasks: new Map(), // not used by class — placeholder for type compat
-      prevDiagnosticErrors: this.prevDiagnosticErrors,
-      lastTestOutcomeByRunner: this.lastTestOutcomeByRunner,
-      taskTimestamps: this.taskTimestamps,
-      deduplicationWindow: new Map(),
-      pendingRetries: new Map(),
-      latestDiagnosticsByFile: new Map(),
-      lastTestRunnerStatusByRunner: new Map(),
-    };
-  }
-
-  /**
-   * Central enqueue for all automation-triggered tasks.
-   * Applies defaultModel (Haiku by default) and enforces maxTasksPerHour.
-   * Throws with the same "Task queue is full" message on rate-limit breach so
-   * callers can handle it identically.
-   */
-  private _enqueueAutomationTask(opts: {
-    prompt: string;
-    triggerSource: string;
-    hookCfg?: PromptSource;
-    /** Internal: current retry attempt (0 = first try). */
-    _retryAttempt?: number;
-  }): string {
-    const maxPerHour = this.policy.maxTasksPerHour ?? 20;
-    if (maxPerHour > 0) {
-      const now = Date.now();
-      const cutoff = now - 60 * 60 * 1_000;
-      // Prune old timestamps
-      let i = 0;
-      while (
-        i < this.taskTimestamps.length &&
-        (this.taskTimestamps[i] ?? 0) < cutoff
-      )
-        i++;
-      if (i > 0) this.taskTimestamps.splice(0, i);
-      if (this.taskTimestamps.length >= maxPerHour) {
-        throw new Error(
-          `Automation rate limit reached (max ${maxPerHour} tasks/hour)`,
-        );
-      }
-    }
-
-    const model =
-      opts.hookCfg?.model ??
-      this.policy.defaultModel ??
-      "claude-haiku-4-5-20251001";
-    const effort = opts.hookCfg?.effort ?? this.policy.defaultEffort ?? "low";
-    const systemPrompt =
-      this.policy.automationSystemPrompt ?? DEFAULT_AUTOMATION_SYSTEM_PROMPT;
-    const taskId = this.orchestrator.enqueue({
-      prompt: opts.prompt,
-      sessionId: "",
-      isAutomationTask: true,
-      triggerSource: opts.triggerSource,
-      model,
-      effort,
-      systemPrompt,
-    });
-    // Push timestamp only after successful enqueue so tasksThisHour never
-    // diverges from the actual task row count (F3 phantom-increment fix).
-    if (maxPerHour > 0) {
-      this.taskTimestamps.push(Date.now());
-    }
-    this._lastFiredAt = new Date().toISOString();
-
-    // Schedule retry watcher if retryCount > 0.
-    const retryCount = opts.hookCfg?.retryCount ?? 0;
-    const retryAttempt = opts._retryAttempt ?? 0;
-    if (retryCount > 0) {
-      const retryDelayMs = Math.max(
-        5_000,
-        opts.hookCfg?.retryDelayMs ?? 30_000,
-      );
-      this._watchForRetry(taskId, opts, retryAttempt, retryCount, retryDelayMs);
-    }
-
-    return taskId;
-  }
-
-  /**
-   * Poll a task until it reaches a terminal state. If the task ends with
-   * status "error" and retries remain, re-enqueue after `retryDelayMs`.
-   */
-  private _watchForRetry(
-    taskId: string,
-    opts: { prompt: string; triggerSource: string; hookCfg?: PromptSource },
-    retryAttempt: number,
-    retryCount: number,
-    retryDelayMs: number,
-  ): void {
-    const interval = setInterval(() => {
-      const task = this.orchestrator.getTask(taskId);
-      if (!task) {
-        clearInterval(interval);
-        this._retryIntervals.delete(interval);
-        return;
-      }
-      if (task.status === "pending" || task.status === "running") return;
-      clearInterval(interval);
-      this._retryIntervals.delete(interval);
-      if (task.status !== "error") return; // cancelled/done → no retry
-      const nextAttempt = retryAttempt + 1;
-      if (nextAttempt > retryCount) {
+    // Phase 4: always initialise interpreter (primary path)
+    {
+      const parseResult = parsePolicy(policy);
+      if (parseResult.ok) {
+        this._programAST = parseResult.value;
+        this._interpreterBackend = new VsCodeBackend(orchestrator, {
+          info: this.log.bind(this),
+        });
+      } else {
         this.log(
-          `[automation] ${opts.triggerSource}: max retries (${retryCount}) reached, dropping`,
+          `[automation] interpreter parse failed: ${parseResult.message}`,
         );
-        return;
       }
-      this.log(
-        `[automation] ${opts.triggerSource}: retry ${nextAttempt}/${retryCount} in ${retryDelayMs}ms`,
-      );
-      const retryTimeout = setTimeout(() => {
-        this._retryTimeouts.delete(retryTimeout);
-        try {
-          this._enqueueAutomationTask({
-            ...opts,
-            _retryAttempt: nextAttempt,
-          });
-        } catch (e) {
-          this.log(
-            `[automation] ${opts.triggerSource}: retry enqueue failed: ${e}`,
-          );
-        }
-      }, retryDelayMs);
-      this._retryTimeouts.add(retryTimeout);
-    }, 2_000);
-    this._retryIntervals.add(interval);
+    }
   }
 
-  /** Clear all pending retry-poll intervals. Call when tearing down the instance. */
-  destroy(): void {
-    for (const iv of this._retryIntervals) clearInterval(iv);
-    this._retryIntervals.clear();
-    for (const t of this._retryTimeouts) clearTimeout(t);
-    this._retryTimeouts.clear();
-  }
-
-  /**
-   * Resolve a named prompt, substituting any `{{placeholder}}` tokens in
-   * `promptArgs` values with sanitized event data before calling `getPrompt()`.
-   *
-   * Returns the resolved user-message text, or `null` if the prompt is unknown
-   * or has missing required arguments.
-   */
-  private _resolveNamedPrompt(
-    name: string,
-    args: Record<string, string>,
+  private async _runInterpreter(
+    eventType: string,
     eventData: Record<string, string>,
-  ): string | null {
-    // Substitute event placeholders into promptArgs values.
-    // Sanitize: strip control characters and cap length to prevent injection
-    // via crafted file paths or branch names embedded in args.
-    const resolvedArgs: Record<string, string> = {};
-    for (const [k, v] of Object.entries(args)) {
-      resolvedArgs[k] = v.replace(
-        /\{\{(\w+)\}\}/g,
-        (_match: string, placeholder: string) => {
-          const raw = eventData[placeholder] ?? "";
-          return raw
-            .replace(/[\x00-\x1F\x7F]/g, "")
-            .slice(0, MAX_FILE_PATH_CHARS);
-        },
-      );
-    }
-    const result = getPrompt(name, resolvedArgs);
-    if (!result) {
+  ): Promise<void> {
+    if (!this._programAST || !this._interpreterBackend) return;
+    const ctx: InterpreterContext = {
+      state: this._automationState,
+      now: Date.now(),
+      eventType,
+      eventData,
+      backend: this._interpreterBackend,
+      log: this.log.bind(this),
+    };
+    const result = await executeAutomationPolicy(this._programAST, ctx);
+    if (result.ok) {
+      this._automationState = result.value.updatedState;
+      if (result.value.taskIds.length > 0) {
+        this.log(
+          `[interpreter] ${eventType}: enqueued ${result.value.taskIds.length} task(s)`,
+        );
+      }
+      for (const s of result.value.skipped) {
+        this.log(`[interpreter] ${eventType}: skipped ${s.hook} — ${s.reason}`);
+      }
+      for (const e of result.value.errors) {
+        this.log(
+          `[interpreter] ${eventType}: error in ${e.hook} — ${e.message}`,
+        );
+      }
+    } else {
       this.log(
-        `[automation] promptName "${name}" could not be resolved — unknown prompt or missing required args`,
+        `[interpreter] ${eventType}: interpreter error — ${result.message}`,
       );
-      return null;
     }
-    const text = result.messages
-      .filter((m) => m.role === "user")
-      .map((m) => m.content.text)
-      .join("\n\n");
-    // Cap named-prompt output to the same 32KB limit used for inline prompts.
-    // A prompt chain (e.g. onPostCompact → project-status → contextBundle) can
-    // return 100KB+ which then gets injected into the automation task prompt and
-    // counts against Claude's context window on every hook firing.
-    return truncatePrompt(text);
   }
 
   /**
-   * Evaluate the optional `when` condition block on a hook.
-   * Called after _matchesCondition() succeeds and before cooldown checks.
-   * Returns true if all specified conditions pass (or no `when` block present).
+   * Returns a Promise that resolves once all in-flight interpreter runs finish.
+   * Useful in tests to await async side-effects before asserting on task counts.
    */
-  private _evaluateWhen(cfg: PromptSource, file?: string): boolean {
-    const when = cfg.when;
-    if (!when) return true;
-
-    if (
-      when.minDiagnosticCount !== undefined ||
-      when.diagnosticsMinSeverity !== undefined
-    ) {
-      const diags =
-        (file ? this.latestDiagnosticsByFile.get(file) : undefined) ?? [];
-      if (
-        when.minDiagnosticCount !== undefined &&
-        diags.length < when.minDiagnosticCount
-      ) {
-        return false;
-      }
-      if (when.diagnosticsMinSeverity !== undefined) {
-        const targetRank = when.diagnosticsMinSeverity === "error" ? 2 : 1;
-        const severityRank: Record<string, number> = {
-          error: 2,
-          warning: 1,
-          info: 0,
-          information: 0,
-          hint: 0,
-        };
-        const hasMatchingSeverity = diags.some(
-          (d) => (severityRank[d.severity] ?? 0) >= targetRank,
-        );
-        if (!hasMatchingSeverity) return false;
-      }
-    }
-
-    if (when.testRunnerLastStatus !== undefined) {
-      // Check any runner's last status (wildcard: first match wins)
-      const statuses = Array.from(this.lastTestRunnerStatusByRunner.values());
-      if (statuses.length === 0) return false;
-      if (when.testRunnerLastStatus !== "any") {
-        const hasMatch = statuses.some((s) => s === when.testRunnerLastStatus);
-        if (!hasMatch) return false;
-      }
-      // "any" passes as long as at least one runner has reported a status
-    }
-
-    return true;
+  async flush(): Promise<void> {
+    await this._lastRunPromise;
   }
 
-  private _matchesCondition(cfg: PromptSource, primaryValue: string): boolean {
-    if (!cfg.condition) return true;
-    const pattern = cfg.condition;
-    // Support !-prefixed negation: "!**/*.test.ts" means "fire when NOT matching"
-    if (pattern.startsWith("!")) {
-      return !minimatch(primaryValue, pattern.slice(1), { dot: true });
-    }
-    return minimatch(primaryValue, pattern, { dot: true });
+  /** Tear down the instance: nulls interpreter references. */
+  destroy(): void {
+    this._programAST = null;
+    this._interpreterBackend = null;
   }
 
   handleDiagnosticsChanged(file: string, diagnostics: Diagnostic[]): void {
-    // Normalize path before any processing
     const normalizedFile = path.resolve(file);
 
-    // Track error count for zero-transition detection (needed regardless of which hooks are enabled)
+    // Track error count for zero-transition detection (onDiagnosticsCleared)
     const severityRankForClear: Record<string, number> = {
       error: 2,
       warning: 1,
@@ -1274,181 +1024,76 @@ export class AutomationHooks {
     ).length;
     const prevErrorCount = this.prevDiagnosticErrors.get(normalizedFile) ?? 0;
     this.prevDiagnosticErrors.set(normalizedFile, currentErrorCount);
-    // Keep latest diagnostics for _evaluateWhen() condition checks
-    this.latestDiagnosticsByFile.set(normalizedFile, diagnostics);
-    // Evict the same oldest key from both maps together to keep them in sync.
-    // Using separate evictions could cause one map to drop file A while the other
-    // retains it, making _evaluateWhen() read stale diagnostics against a reset
-    // error-count baseline and triggering spurious onDiagnosticsCleared hooks.
+    // FIFO cap to bound memory
     if (this.prevDiagnosticErrors.size > 5_000) {
       const oldest = this.prevDiagnosticErrors.keys().next().value;
-      if (oldest !== undefined) {
-        this.prevDiagnosticErrors.delete(oldest);
-        this.latestDiagnosticsByFile.delete(oldest);
-      }
+      if (oldest !== undefined) this.prevDiagnosticErrors.delete(oldest);
     }
 
-    // Fire onDiagnosticsCleared if transitioning from non-zero → zero
-    if (prevErrorCount > 0 && currentErrorCount === 0) {
-      this.handleDiagnosticsCleared(normalizedFile);
-    }
-
-    const cfg = this.policy.onDiagnosticsError;
-    if (!cfg?.enabled) return;
-
-    // Condition filter
-    if (!this._matchesCondition(cfg, normalizedFile)) return;
-    if (!this._evaluateWhen(cfg, normalizedFile)) return;
-
-    // Skip onDiagnosticsError if there are no errors to report
-    if (currentErrorCount === 0) return;
-
-    // Loop guard: skip if a task for this file is still pending/running
-    const existingId = this.activeDiagnosticsTasks.get(normalizedFile);
-    if (existingId) {
-      const existing = this.orchestrator.getTask(existingId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping diagnostics trigger for ${normalizedFile} — task ${existingId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      // Prune stale entry for completed tasks
-      this.activeDiagnosticsTasks.delete(normalizedFile);
-    }
-
-    // Severity filter
-    const severityRank: Record<string, number> = {
-      error: 2,
+    // Feed interpreter state using severity numbers where lower = more severe
+    // (error=0, warning=1, info/hint=2+) matching automationState.ts / evaluateWhen convention.
+    const severityToNum: Record<string, number> = {
+      error: 0,
       warning: 1,
-      info: 0,
-      information: 0,
-      hint: 0,
+      info: 2,
+      information: 2,
+      hint: 3,
     };
-    const minRank = severityRank[cfg.minSeverity] ?? 0;
-    let matching = diagnostics.filter(
-      (d) => (severityRank[d.severity] ?? 0) >= minRank,
+    const maxSeverityNum = diagnostics.reduce((min, d) => {
+      const rank = severityToNum[d.severity] ?? 3;
+      return rank < min ? rank : min;
+    }, 4); // 4 = no diagnostics / below hint
+    this._automationState = setLatestDiagnostics(
+      this._automationState,
+      normalizedFile,
+      maxSeverityNum,
+      diagnostics.length,
     );
-    if (matching.length === 0) return;
 
-    // Optional diagnosticTypes filter: only fire for specific sources/codes
-    if (cfg.diagnosticTypes && cfg.diagnosticTypes.length > 0) {
-      const types = cfg.diagnosticTypes.map((t) => t.toLowerCase());
-      matching = matching.filter(
-        (d) =>
-          (d.source && types.includes(d.source.toLowerCase())) ||
-          (d.code !== undefined &&
-            types.includes(String(d.code).toLowerCase())),
+    // Build diagnostics text for {{diagnostics}} placeholder (capped at 20)
+    const diagsForPrompt = diagnostics.slice(0, 20);
+    const overflow = diagnostics.length - diagsForPrompt.length;
+    const diagnosticsText =
+      diagsForPrompt
+        .map(
+          (d) =>
+            `[${d.severity}] ${d.message}${d.source ? ` (${d.source})` : ""}`,
+        )
+        .join("\n") + (overflow > 0 ? `\n… and ${overflow} more` : "");
+
+    // Collect source/code strings for diagnosticTypes filtering
+    const diagnosticSources = diagnostics
+      .flatMap((d) => [
+        d.source?.toLowerCase() ?? "",
+        String(d.code ?? "").toLowerCase(),
+      ])
+      .filter(Boolean)
+      .join(",");
+
+    const diagnosticSig = diagnosticSignature(diagnostics);
+
+    // Fire onDiagnosticsCleared if transitioning from non-zero → zero; chain
+    // the interpreter runs so flush() awaits both and state is updated correctly.
+    if (prevErrorCount > 0 && currentErrorCount === 0) {
+      this._lastRunPromise = this._runInterpreter("onDiagnosticsCleared", {
+        file: normalizedFile,
+      }).then(() =>
+        this._runInterpreter("onDiagnosticsError", {
+          file: normalizedFile,
+          diagnostics: diagnosticsText,
+          diagnosticSources,
+          diagnosticSig,
+          count: String(diagnostics.length),
+        }),
       );
-      if (matching.length === 0) return;
-    }
-
-    // Cooldown check. When dedupeByContent is enabled, extend the key with a
-    // diagnostic-content signature so identical LSP re-emissions collide but
-    // genuinely different errors on the same file still trigger.
-    let key = `diagnostics:${normalizedFile}`;
-    let effectiveCooldownMs = cfg.cooldownMs;
-    if (cfg.dedupeByContent) {
-      const sig = diagnosticSignature(matching);
-      key = `diagnostics:${normalizedFile}:${sig}`;
-      effectiveCooldownMs = cfg.dedupeContentCooldownMs ?? 900_000;
-    }
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < effectiveCooldownMs) {
-      const remaining = effectiveCooldownMs - (now - last);
-      if (cfg.dedupeByContent) {
-        this.log(
-          `[automation] dedupe suppressed onDiagnosticsError for ${normalizedFile} (${remaining}ms remaining, sig=${key.slice(-12)})`,
-        );
-      } else {
-        this.log(
-          `[automation] cooldown active for ${normalizedFile} (${remaining}ms remaining)`,
-        );
-      }
-      return;
-    }
-
-    // Note: lastTrigger is set AFTER successful enqueue (below) so a failed
-    // enqueue does not impose a spurious cooldown on the next trigger attempt.
-    this._pruneLastTrigger(now);
-
-    // Truncate file path and each diagnostic message to prevent prompt injection
-    // via crafted file names or linter output embedding instruction-like content.
-    // The diagnosticsText is placed between explicit delimiters in the prompt to
-    // architecturally separate trusted policy instructions from untrusted data.
-    const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
-
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { file: safeFilePath },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
     } else {
-      const displayMatching = matching.slice(0, MAX_DIAGNOSTICS_IN_PROMPT);
-      const omittedCount = matching.length - displayMatching.length;
-      const diagnosticsText =
-        displayMatching
-          .map(
-            (d) =>
-              `[${d.severity}] ${d.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`,
-          )
-          .join("\n") +
-        (omittedCount > 0 ? `\n… and ${omittedCount} more` : "");
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{file\}\}/g,
-            untrustedBlock("FILE PATH", safeFilePath, nonce),
-          )
-          .replace(
-            /\{\{diagnostics\}\}/g,
-            untrustedBlock("DIAGNOSTIC DATA", diagnosticsText, nonce),
-          ) ?? "";
-    }
-
-    prompt = truncatePrompt(
-      buildHookMetadata("onDiagnosticsError", normalizedFile) + prompt,
-    );
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onDiagnosticsError",
-        hookCfg: cfg,
+      this._lastRunPromise = this._runInterpreter("onDiagnosticsError", {
+        file: normalizedFile,
+        diagnostics: diagnosticsText,
+        diagnosticSources,
+        diagnosticSig,
+        count: String(diagnostics.length),
       });
-      this.lastTrigger.set(key, now);
-      this.activeDiagnosticsTasks.set(normalizedFile, taskId);
-      this.log(
-        `[automation] triggered diagnostics task ${taskId.slice(0, 8)} for ${normalizedFile}`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue diagnostics task for ${normalizedFile}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  /** Prune lastTrigger entries older than LAST_TRIGGER_MAX_AGE_MS to prevent unbounded growth.
-   *  Also enforces LAST_TRIGGER_MAX_SIZE hard cap by evicting oldest entries first. */
-  private _pruneLastTrigger(now: number): void {
-    for (const [k, t] of this.lastTrigger) {
-      if (now - t > LAST_TRIGGER_MAX_AGE_MS) this.lastTrigger.delete(k);
-    }
-    // Hard size cap: evict oldest entries (insertion order) if still over limit
-    if (this.lastTrigger.size > LAST_TRIGGER_MAX_SIZE) {
-      let excess = this.lastTrigger.size - LAST_TRIGGER_MAX_SIZE;
-      for (const k of this.lastTrigger.keys()) {
-        this.lastTrigger.delete(k);
-        if (--excess <= 0) break;
-      }
     }
   }
 
@@ -1457,62 +1102,9 @@ export class AutomationHooks {
    * Fires when CC's working directory changes — useful for re-snapshotting workspace context.
    */
   handleCwdChanged(newCwd: string): void {
-    const cfg = this.policy.onCwdChanged;
-    if (!cfg?.enabled) return;
-
-    const safeCwdForCondition = newCwd.slice(0, MAX_FILE_PATH_CHARS);
-    if (!this._matchesCondition(cfg, safeCwdForCondition)) return;
-
-    // Cap path before using as map key to prevent unbounded map growth from
-    // an extension sending unique paths rapidly.
-    const safeCwd = newCwd.slice(0, MAX_FILE_PATH_CHARS);
-
-    // Cooldown check — keyed on the capped cwd so switching between two known
-    // directories doesn't bypass the global rate but each dir has its own window
-    const key = `cwdChanged:${safeCwd}`;
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for cwd-changed ${newCwd} (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { cwd: safeCwd },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "").replace(
-          /\{\{cwd\}\}/g,
-          untrustedBlock("CWD", safeCwd, nonce),
-        ) ?? "";
-    }
-    prompt = truncatePrompt(buildHookMetadata("onCwdChanged") + prompt);
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onCwdChanged",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.log(
-        `[automation] triggered cwd-changed task ${taskId.slice(0, 8)} for ${newCwd}`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue cwd-changed task for ${newCwd}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onCwdChanged", {
+      cwd: newCwd,
+    });
   }
 
   /**
@@ -1521,64 +1113,7 @@ export class AutomationHooks {
    * write a handoff note before Claude loses context.
    */
   handlePreCompact(): void {
-    const cfg = this.policy.onPreCompact;
-    if (!cfg?.enabled) return;
-
-    if (this.activePreCompactTaskId) {
-      const existing = this.orchestrator.getTask(this.activePreCompactTaskId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping pre-compact trigger — task ${this.activePreCompactTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activePreCompactTaskId = null;
-    }
-
-    const key = "pre-compact";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for PreCompact (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    let preCompactPrompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {},
-      );
-      if (resolved === null) return;
-      preCompactPrompt = resolved;
-    } else {
-      preCompactPrompt = cfg.prompt ?? "";
-    }
-    preCompactPrompt = truncatePrompt(
-      buildHookMetadata("onPreCompact") + preCompactPrompt,
-    );
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt: preCompactPrompt,
-        triggerSource: "onPreCompact",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activePreCompactTaskId = taskId;
-      this.log(`[automation] triggered PreCompact task ${taskId.slice(0, 8)}`);
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue PreCompact task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onPreCompact", {});
   }
 
   /**
@@ -1586,66 +1121,7 @@ export class AutomationHooks {
    * Re-enqueues the configured prompt so Claude can re-snapshot IDE state after losing context.
    */
   handlePostCompact(): void {
-    const cfg = this.policy.onPostCompact;
-    if (!cfg?.enabled) return;
-
-    if (this.activePostCompactTaskId) {
-      const existing = this.orchestrator.getTask(this.activePostCompactTaskId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping post-compact trigger — task ${this.activePostCompactTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activePostCompactTaskId = null;
-    }
-
-    const key = "post-compact";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for PostCompact (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    let postCompactPrompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {},
-      );
-      if (resolved === null) return;
-      postCompactPrompt = resolved;
-    } else {
-      postCompactPrompt = cfg.prompt ?? "";
-    }
-    postCompactPrompt = truncatePrompt(
-      buildHookMetadata("onPostCompact") + postCompactPrompt,
-    );
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt: postCompactPrompt,
-        triggerSource: "onPostCompact",
-        hookCfg: cfg,
-      });
-      // Set lastTrigger AFTER successful enqueue so a failed enqueue does not
-      // impose a spurious cooldown on the next trigger attempt.
-      this.lastTrigger.set(key, now);
-      this.activePostCompactTaskId = taskId;
-      this.log(`[automation] triggered PostCompact task ${taskId.slice(0, 8)}`);
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue PostCompact task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onPostCompact", {});
   }
 
   /**
@@ -1653,182 +1129,15 @@ export class AutomationHooks {
    * Fires once per session; injects bridge status / tool capability summary at start.
    */
   handleInstructionsLoaded(): void {
-    const cfg = this.policy.onInstructionsLoaded;
-    if (!cfg?.enabled) return;
-
-    if (this.activeInstructionsLoadedTaskId) {
-      const existing = this.orchestrator.getTask(
-        this.activeInstructionsLoadedTaskId,
-      );
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping instructions-loaded trigger — task ${this.activeInstructionsLoadedTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeInstructionsLoadedTaskId = null;
-    }
-
-    // Cross-hook cascade guard: each automation subprocess fires the
-    // InstructionsLoaded CC hook when it starts, which would spawn a second
-    // onInstructionsLoaded task without this check.  Suppress if any
-    // automation task is currently pending or running.
-    const anyAutomationActive = this.orchestrator
-      .list()
-      .some(
-        (t) =>
-          t.isAutomationTask &&
-          (t.status === "pending" || t.status === "running"),
-      );
-    if (anyAutomationActive) {
-      this.log(
-        "[automation] skipping instructions-loaded trigger — another automation task is active (cascade guard)",
-      );
-      return;
-    }
-
-    const cooldownMs = cfg.cooldownMs ?? 60_000;
-    const key = "instructions-loaded";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cooldownMs) {
-      this.log(
-        `[automation] cooldown active for InstructionsLoaded (${cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    let instrPrompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {},
-      );
-      if (resolved === null) return;
-      instrPrompt = resolved;
-    } else {
-      instrPrompt = cfg.prompt ?? "";
-    }
-    instrPrompt = truncatePrompt(
-      buildHookMetadata("onInstructionsLoaded") + instrPrompt,
-    );
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt: instrPrompt,
-        triggerSource: "onInstructionsLoaded",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeInstructionsLoadedTaskId = taskId;
-      this.log(
-        `[automation] triggered InstructionsLoaded task ${taskId.slice(0, 8)}`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue InstructionsLoaded task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onInstructionsLoaded", {});
   }
 
   handleFileSaved(_id: string, type: string, file: string): void {
-    const cfg = this.policy.onFileSave;
-    if (!cfg?.enabled) return;
     if (type !== "save") return;
-
-    // Normalize path to prevent loop-guard bypass via equivalent paths
     const normalizedFile = path.resolve(file);
-
-    // Condition filter
-    if (!this._matchesCondition(cfg, normalizedFile)) return;
-    if (!this._evaluateWhen(cfg, normalizedFile)) return;
-
-    // Pattern matching — also try workspace-relative path so patterns like
-    // "src/**/*.ts" work when VS Code sends absolute paths.
-    const relFile =
-      this.workspace && path.isAbsolute(normalizedFile)
-        ? path.relative(this.workspace, normalizedFile)
-        : normalizedFile;
-    const matched = cfg.patterns.some(
-      (pattern) =>
-        minimatch(normalizedFile, pattern, { dot: true }) ||
-        (relFile !== normalizedFile &&
-          minimatch(relFile, pattern, { dot: true })),
-    );
-    if (!matched) return;
-
-    // Loop guard
-    const existingId = this.activeSaveTasks.get(normalizedFile);
-    if (existingId) {
-      const existing = this.orchestrator.getTask(existingId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping save trigger for ${normalizedFile} — task ${existingId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      // Prune stale entry for completed tasks
-      this.activeSaveTasks.delete(normalizedFile);
-    }
-
-    // Cooldown check
-    const key = `save:${normalizedFile}`;
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for save ${normalizedFile} (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { file: safeFilePath },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "").replace(
-          /\{\{file\}\}/g,
-          untrustedBlock("FILE PATH", safeFilePath, nonce),
-        ) ?? "";
-    }
-    prompt = truncatePrompt(
-      buildHookMetadata("onFileSave", normalizedFile) + prompt,
-    );
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onFileSave",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeSaveTasks.set(normalizedFile, taskId);
-      this.log(
-        `[automation] triggered onFileSave task ${taskId.slice(0, 8)} for ${normalizedFile}`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue save task for ${normalizedFile}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onFileSave", {
+      file: normalizedFile,
+    });
   }
 
   /**
@@ -1837,95 +1146,11 @@ export class AutomationHooks {
    * Useful for triggering tasks on unsaved edits (e.g. lint-as-you-type workflows).
    */
   handleFileChanged(_id: string, type: string, file: string): void {
-    const cfg = this.policy.onFileChanged;
-    if (!cfg?.enabled) return;
     if (type !== "change") return;
-
     const normalizedFile = path.resolve(file);
-
-    // Condition filter
-    if (!this._matchesCondition(cfg, normalizedFile)) return;
-
-    // Pattern matching — also try workspace-relative path so patterns like
-    // "src/**/*.ts" work when VS Code sends absolute paths.
-    const relFile =
-      this.workspace && path.isAbsolute(normalizedFile)
-        ? path.relative(this.workspace, normalizedFile)
-        : normalizedFile;
-    const matched = cfg.patterns.some(
-      (pattern) =>
-        minimatch(normalizedFile, pattern, { dot: true }) ||
-        (relFile !== normalizedFile &&
-          minimatch(relFile, pattern, { dot: true })),
-    );
-    if (!matched) return;
-
-    // Loop guard
-    const existingId = this.activeFileChangedTasks.get(normalizedFile);
-    if (existingId) {
-      const existing = this.orchestrator.getTask(existingId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping file-changed trigger for ${normalizedFile} — task ${existingId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeFileChangedTasks.delete(normalizedFile);
-    }
-
-    // Cooldown check
-    const key = `fileChanged:${normalizedFile}`;
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for file-changed ${normalizedFile} (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { file: safeFilePath },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "").replace(
-          /\{\{file\}\}/g,
-          untrustedBlock("FILE PATH", safeFilePath, nonce),
-        ) ?? "";
-    }
-    prompt = truncatePrompt(
-      buildHookMetadata("onFileChanged", normalizedFile) + prompt,
-    );
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onFileChanged",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeFileChangedTasks.set(normalizedFile, taskId);
-      this.log(
-        `[automation] triggered file-changed task ${taskId.slice(0, 8)} for ${normalizedFile}`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue file-changed task for ${normalizedFile}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onFileChanged", {
+      file: normalizedFile,
+    });
   }
 
   /**
@@ -1934,222 +1159,51 @@ export class AutomationHooks {
    */
   handleTestRun(result: TestRunResult): void {
     const failureCount = result.summary.failed + result.summary.errored;
+    const current = failureCount === 0 ? "pass" : "fail";
 
     // Update per-runner outcome state unconditionally so onTestPassAfterFailure
     // can detect fail→pass transitions even when onTestRun is disabled/absent.
-    const testStatus = failureCount === 0 ? "passed" : "failed";
+    const passAfterFailRunners: string[] = [];
     for (const runner of result.runners) {
       const prev = this.lastTestOutcomeByRunner.get(runner);
-      const current = failureCount === 0 ? "pass" : "fail";
       this.lastTestOutcomeByRunner.set(runner, current);
-      // Update lastTestRunnerStatusByRunner for _evaluateWhen() condition checks
-      this.lastTestRunnerStatusByRunner.set(runner, testStatus);
+      // Feed interpreter state
+      this._automationState = setTestRunnerStatus(
+        this._automationState,
+        runner,
+        current,
+      );
       if (prev === "fail" && current === "pass") {
-        this._handleTestPassAfterFailure(result, runner);
+        passAfterFailRunners.push(runner);
       }
     }
 
-    const cfg = this.policy.onTestRun;
-    if (!cfg?.enabled) return;
+    const testRunEventData = {
+      runner: result.runners.join(", ") || "",
+      failed: String(failureCount),
+      passed: String(result.summary.passed),
+      total: String(result.summary.total),
+      failures: JSON.stringify(result.failures.slice(0, 100)),
+      durationMs: String(result.summary.durationMs ?? ""),
+    };
 
-    // Honour onFailureOnly: skip trigger when all tests pass
-    if (cfg.onFailureOnly && failureCount === 0) return;
-
-    // Skip if test run was shorter than the configured minimum duration
-    // Only skip when durationMs is known and below the threshold.
-    // If durationMs is absent (runner didn't report timing), let the hook fire —
-    // silently suppressing based on missing data would be surprising behaviour.
-    if (
-      cfg.minDuration !== undefined &&
-      result.summary.durationMs !== undefined &&
-      result.summary.durationMs < cfg.minDuration
-    ) {
-      this.log(
-        `[automation] skipping test-run trigger — duration ${result.summary.durationMs}ms < minDuration ${cfg.minDuration}ms`,
-      );
-      return;
-    }
-
-    // Evaluate optional when condition
-    if (!this._evaluateWhen(cfg)) return;
-
-    // Loop guard: skip if a task is still pending/running
-    if (this.activeTestRunTaskId) {
-      const existing = this.orchestrator.getTask(this.activeTestRunTaskId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping test-run trigger — task ${this.activeTestRunTaskId.slice(0, 8)} still active`,
+    // Chain interpreter runs so flush() awaits all of them and state is updated
+    // sequentially. If any runner had a fail→pass transition, run that first so
+    // its cooldown state is visible to subsequent runs within the same flush.
+    if (passAfterFailRunners.length > 0) {
+      let chain = Promise.resolve();
+      for (const runner of passAfterFailRunners) {
+        chain = chain.then(() =>
+          this._runInterpreter("onTestPassAfterFailure", { runner }),
         );
-        return;
       }
-      this.activeTestRunTaskId = null;
-    }
-
-    // Cooldown check (workspace-global key)
-    const key = "testRun:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for test-run (${cfg.cooldownMs - (now - last)}ms remaining)`,
+      this._lastRunPromise = chain.then(() =>
+        this._runInterpreter("onTestRun", testRunEventData),
       );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const runnerStr = result.runners.join(", ") || "unknown";
-    const failureLines = result.failures
-      .slice(0, 10)
-      .map((f) => {
-        const loc = f.file ? ` (${f.file.slice(0, MAX_FILE_PATH_CHARS)})` : "";
-        const msg = f.message
-          ? `: ${f.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS)}`
-          : "";
-        return `- ${f.name}${loc}${msg}`;
-      })
-      .join("\n");
-    const failuresText =
-      result.failures.length > 10
-        ? `${failureLines}\n… and ${result.failures.length - 10} more`
-        : failureLines;
-
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {
-          runner: runnerStr,
-          failed: String(failureCount),
-          passed: String(result.summary.passed),
-          total: String(result.summary.total),
-        },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
     } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{runner\}\}/g,
-            untrustedBlock("TEST RUNNER", runnerStr, nonce),
-          )
-          .replace(/\{\{failed\}\}/g, String(failureCount))
-          .replace(/\{\{passed\}\}/g, String(result.summary.passed))
-          .replace(/\{\{total\}\}/g, String(result.summary.total))
-          .replace(
-            /\{\{failures\}\}/g,
-            untrustedBlock("TEST FAILURES", failuresText, nonce),
-          ) ?? "";
-    }
-
-    prompt = truncatePrompt(buildHookMetadata("onTestRun") + prompt);
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onTestRun",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeTestRunTaskId = taskId;
-      this.log(
-        `[automation] triggered test-run task ${taskId.slice(0, 8)} (${failureCount} failure(s))`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue test-run task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-
-  /**
-   * Internal — fires onTestPassAfterFailure when a specific runner transitions
-   * from failing → passing. Called from handleTestRun after outcome state update.
-   */
-  private _handleTestPassAfterFailure(
-    result: TestRunResult,
-    runner: string,
-  ): void {
-    const cfg = this.policy.onTestPassAfterFailure;
-    if (!cfg?.enabled) return;
-
-    // Loop guard: skip if a task is still pending/running
-    if (this.activeTestPassAfterFailureTaskId) {
-      const existing = this.orchestrator.getTask(
-        this.activeTestPassAfterFailureTaskId,
-      );
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping test-pass-after-failure — task ${this.activeTestPassAfterFailureTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeTestPassAfterFailureTaskId = null;
-    }
-
-    // Cooldown check (workspace-global key)
-    const key = "testPassAfterFailure:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for test-pass-after-failure (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {
-          runner,
-          passed: String(result.summary.passed),
-          total: String(result.summary.total),
-        },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{runner\}\}/g,
-            untrustedBlock("TEST RUNNER", runner, nonce),
-          )
-          .replace(/\{\{passed\}\}/g, String(result.summary.passed))
-          .replace(/\{\{total\}\}/g, String(result.summary.total)) ?? "";
-    }
-
-    prompt = truncatePrompt(
-      buildHookMetadata("onTestPassAfterFailure") + prompt,
-    );
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onTestPassAfterFailure",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeTestPassAfterFailureTaskId = taskId;
-      this.log(
-        `[automation] triggered test-pass-after-failure task ${taskId.slice(0, 8)} (runner: ${runner})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue test-pass-after-failure task: ${err instanceof Error ? err.message : String(err)}`,
+      this._lastRunPromise = this._runInterpreter(
+        "onTestRun",
+        testRunEventData,
       );
     }
   }
@@ -2159,137 +1213,13 @@ export class AutomationHooks {
    * Fires the onGitCommit automation hook if configured.
    */
   async handleGitCommit(result: GitCommitResult): Promise<void> {
-    const cfg = this.policy.onGitCommit;
-    if (!cfg?.enabled) return;
-
-    if (!this._matchesCondition(cfg, result.branch)) return;
-
-    // Loop guard: skip if a task is still pending/running
-    if (this.activeGitCommitTaskId) {
-      const existing = this.orchestrator.getTask(this.activeGitCommitTaskId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping git-commit trigger — task ${this.activeGitCommitTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeGitCommitTaskId = null;
-    }
-
-    // Cooldown check (workspace-global)
-    const key = "gitCommit:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for git-commit (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeHash = result.hash.slice(0, 64);
-    const safeBranchCommit = result.branch.slice(0, MAX_FILE_PATH_CHARS);
-    const safeMessage = result.message.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
-    const fileList = result.files
-      .slice(0, 20)
-      .map((f) => `- ${f.slice(0, MAX_FILE_PATH_CHARS)}`)
-      .join("\n");
-    const filesText =
-      result.files.length > 20
-        ? `${fileList}\n… and ${result.files.length - 20} more`
-        : fileList;
-
-    // B1: Fetch changeImpact if extensionClient is connected and files exist
-    // Uses getDiagnostics as a lightweight proxy: summarizes error/warning count
-    // across changed files as a blast-radius indicator.
-    let changeImpact: string | undefined;
-    if (this.extensionClient?.isConnected() && result.files.length > 0) {
-      try {
-        const diagResult = await Promise.race([
-          this.extensionClient.getDiagnostics(),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
-        ]);
-        if (diagResult) {
-          const diagArr = Array.isArray(diagResult) ? diagResult : [];
-          const errorCount = diagArr.filter(
-            (d: { severity?: string }) =>
-              d.severity === "error" || d.severity === "warning",
-          ).length;
-          changeImpact = `${result.count} file(s) changed; ${errorCount} diagnostic(s) in workspace`;
-        }
-      } catch {
-        // best-effort — changeImpact remains undefined
-      }
-    }
-
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {
-          hash: safeHash,
-          branch: safeBranchCommit,
-          message: safeMessage,
-          count: String(result.count),
-        },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{hash\}\}/g,
-            untrustedBlock("COMMIT HASH", safeHash, nonce),
-          )
-          .replace(
-            /\{\{branch\}\}/g,
-            untrustedBlock("BRANCH", safeBranchCommit, nonce),
-          )
-          .replace(
-            /\{\{message\}\}/g,
-            untrustedBlock("COMMIT MESSAGE", safeMessage, nonce),
-          )
-          .replace(
-            /\{\{count\}\}/g,
-            untrustedBlock("COMMIT COUNT", String(result.count), nonce),
-          )
-          .replace(
-            /\{\{files\}\}/g,
-            untrustedBlock("COMMITTED FILES", filesText, nonce),
-          )
-          .replace(
-            /\{\{changeImpact\}\}/g,
-            changeImpact
-              ? untrustedBlock("CHANGE IMPACT", changeImpact, nonce)
-              : "(change impact unavailable)",
-          ) ?? "";
-    }
-
-    prompt = truncatePrompt(buildHookMetadata("onGitCommit") + prompt);
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onGitCommit",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeGitCommitTaskId = taskId;
-      this.log(
-        `[automation] triggered git-commit task ${taskId.slice(0, 8)} (hash: ${result.hash}, ${result.count} file(s))`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue git-commit task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onGitCommit", {
+      hash: result.hash,
+      branch: result.branch,
+      message: result.message,
+      count: String(result.count),
+      files: result.files.join(", "),
+    });
   }
 
   /**
@@ -2297,167 +1227,21 @@ export class AutomationHooks {
    * Fires the onGitPush automation hook if configured.
    */
   handleGitPush(result: GitPushResult): void {
-    const cfg = this.policy.onGitPush;
-    if (!cfg?.enabled) return;
-
-    if (!this._matchesCondition(cfg, result.branch)) return;
-
-    // Loop guard: skip if a task is still pending/running
-    if (this.activeGitPushTaskId) {
-      const existing = this.orchestrator.getTask(this.activeGitPushTaskId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping git-push trigger — task ${this.activeGitPushTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeGitPushTaskId = null;
-    }
-
-    // Cooldown check (workspace-global)
-    const key = "gitPush:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for git-push (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeRemote = result.remote.slice(0, MAX_FILE_PATH_CHARS);
-    const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
-    const safeHash = result.hash.slice(0, 64);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { remote: safeRemote, branch: safeBranch, hash: safeHash },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{remote\}\}/g,
-            untrustedBlock("REMOTE", safeRemote, nonce),
-          )
-          .replace(
-            /\{\{branch\}\}/g,
-            untrustedBlock("BRANCH", safeBranch, nonce),
-          )
-          .replace(
-            /\{\{hash\}\}/g,
-            untrustedBlock("COMMIT HASH", safeHash, nonce),
-          ) ?? "";
-    }
-    prompt = truncatePrompt(buildHookMetadata("onGitPush") + prompt);
-
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onGitPush",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeGitPushTaskId = taskId;
-      this.log(
-        `[automation] triggered git-push task ${taskId.slice(0, 8)} (${result.remote}/${result.branch} @ ${result.hash})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue git-push task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onGitPush", {
+      branch: result.branch,
+      remote: result.remote,
+      hash: result.hash,
+    });
   }
 
   /**
    * Fires the onGitPull automation hook if configured.
    */
   handleGitPull(result: GitPullResult): void {
-    const cfg = this.policy.onGitPull;
-    if (!cfg?.enabled) return;
-
-    if (!this._matchesCondition(cfg, result.branch)) return;
-
-    // Loop guard: skip if a task is still pending/running
-    if (this.activeGitPullTaskId) {
-      const existing = this.orchestrator.getTask(this.activeGitPullTaskId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping git-pull trigger — task ${this.activeGitPullTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeGitPullTaskId = null;
-    }
-
-    // Cooldown check (workspace-global)
-    const key = "gitPull:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for git-pull (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeRemote = result.remote.slice(0, MAX_FILE_PATH_CHARS);
-    const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { remote: safeRemote, branch: safeBranch },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{remote\}\}/g,
-            untrustedBlock("REMOTE", safeRemote, nonce),
-          )
-          .replace(
-            /\{\{branch\}\}/g,
-            untrustedBlock("BRANCH", safeBranch, nonce),
-          ) ?? "";
-    }
-    prompt = truncatePrompt(buildHookMetadata("onGitPull") + prompt);
-
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onGitPull",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeGitPullTaskId = taskId;
-      this.log(
-        `[automation] triggered git-pull task ${taskId.slice(0, 8)} (${result.remote}/${result.branch}, alreadyUpToDate=${result.alreadyUpToDate})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue git-pull task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onGitPull", {
+      branch: result.branch,
+      remote: result.remote,
+    });
   }
 
   /**
@@ -2465,334 +1249,37 @@ export class AutomationHooks {
    * Fires the onBranchCheckout automation hook if configured.
    */
   handleBranchCheckout(result: BranchCheckoutResult): void {
-    const cfg = this.policy.onBranchCheckout;
-    if (!cfg?.enabled) return;
-
-    if (!this._matchesCondition(cfg, result.branch)) return;
-
-    // Loop guard: skip if a task is still pending/running
-    if (this.activeBranchCheckoutTaskId) {
-      const existing = this.orchestrator.getTask(
-        this.activeBranchCheckoutTaskId,
-      );
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping branch-checkout trigger — task ${this.activeBranchCheckoutTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeBranchCheckoutTaskId = null;
-    }
-
-    // Cooldown check (workspace-global)
-    const key = "branchCheckout:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for branch-checkout (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
-    const safePreviousBranch = (
-      result.previousBranch ?? "(detached HEAD)"
-    ).slice(0, MAX_FILE_PATH_CHARS);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {
-          branch: safeBranch,
-          previousBranch: safePreviousBranch,
-          created: String(result.created),
-        },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{branch\}\}/g,
-            untrustedBlock("BRANCH", safeBranch, nonce),
-          )
-          .replace(
-            /\{\{previousBranch\}\}/g,
-            untrustedBlock("PREVIOUS BRANCH", safePreviousBranch, nonce),
-          )
-          .replace(/\{\{created\}\}/g, String(result.created)) ?? "";
-    }
-    prompt = truncatePrompt(buildHookMetadata("onBranchCheckout") + prompt);
-
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onBranchCheckout",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeBranchCheckoutTaskId = taskId;
-      this.log(
-        `[automation] triggered branch-checkout task ${taskId.slice(0, 8)} (${result.created ? "created" : "switched to"} ${result.branch})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue branch-checkout task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onBranchCheckout", {
+      branch: result.branch,
+      previousBranch: result.previousBranch ?? "(detached HEAD)",
+      created: String(result.created),
+    });
   }
 
   /**
    * Fires the onPullRequest automation hook if configured.
    */
   handlePullRequest(result: PullRequestResult): void {
-    const cfg = this.policy.onPullRequest;
-    if (!cfg?.enabled) return;
-
-    if (!this._matchesCondition(cfg, result.branch)) return;
-
-    // Loop guard: skip if a task is still pending/running
-    if (this.activePullRequestTaskId) {
-      const existing = this.orchestrator.getTask(this.activePullRequestTaskId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping pull-request trigger — task ${this.activePullRequestTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activePullRequestTaskId = null;
-    }
-
-    const key = "pullRequest:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] skipping pull-request trigger — cooldown active (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeUrl = result.url.slice(0, MAX_FILE_PATH_CHARS);
-    const safeTitle = result.title.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
-    const safeBranch = result.branch.slice(0, MAX_FILE_PATH_CHARS);
-    const safeNumber =
-      result.number !== null ? String(result.number) : "(unknown)";
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {
-          url: safeUrl,
-          title: safeTitle,
-          branch: safeBranch,
-          number: safeNumber,
-        },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(/\{\{url\}\}/g, untrustedBlock("PR URL", safeUrl, nonce))
-          .replace(/\{\{number\}\}/g, safeNumber)
-          .replace(
-            /\{\{title\}\}/g,
-            untrustedBlock("PR TITLE", safeTitle, nonce),
-          )
-          .replace(
-            /\{\{branch\}\}/g,
-            untrustedBlock("BRANCH", safeBranch, nonce),
-          ) ?? "";
-    }
-
-    prompt = truncatePrompt(buildHookMetadata("onPullRequest") + prompt);
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onPullRequest",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activePullRequestTaskId = taskId;
-      this.log(
-        `[automation] triggered pull-request task ${taskId.slice(0, 8)} (PR #${result.number ?? "?"}: ${result.title})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue pull-request task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onPullRequest", {
+      title: result.title,
+      url: result.url,
+      branch: result.branch,
+      number: result.number != null ? String(result.number) : "",
+    });
   }
 
   handleTaskCreated(result: TaskCreatedResult): void {
-    const cfg = this.policy.onTaskCreated;
-    if (!cfg?.enabled) return;
-
-    if (!this._matchesCondition(cfg, result.taskId)) return;
-
-    if (this.activeTaskCreatedTaskId) {
-      const existing = this.orchestrator.getTask(this.activeTaskCreatedTaskId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping task-created trigger — task ${this.activeTaskCreatedTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeTaskCreatedTaskId = null;
-    }
-
-    const key = "taskCreated:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] skipping task-created trigger — cooldown active (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeTaskId = result.taskId.slice(0, MAX_FILE_PATH_CHARS);
-    const safePrompt = result.prompt.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { taskId: safeTaskId, prompt: safePrompt },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{taskId\}\}/g,
-            untrustedBlock("TASK ID", safeTaskId, nonce),
-          )
-          .replace(
-            /\{\{prompt\}\}/g,
-            untrustedBlock("TASK PROMPT", safePrompt, nonce),
-          ) ?? "";
-    }
-
-    prompt = truncatePrompt(buildHookMetadata("onTaskCreated") + prompt);
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onTaskCreated",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeTaskCreatedTaskId = taskId;
-      this.log(
-        `[automation] triggered task-created task ${taskId.slice(0, 8)} (spawned task: ${result.taskId.slice(0, 8)})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue task-created task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onTaskCreated", {
+      taskId: result.taskId,
+      prompt: result.prompt,
+    });
   }
 
   handlePermissionDenied(result: PermissionDeniedResult): void {
-    const cfg = this.policy.onPermissionDenied;
-    if (!cfg?.enabled) return;
-
-    if (!this._matchesCondition(cfg, result.tool)) return;
-
-    if (this.activePermissionDeniedTaskId) {
-      const existing = this.orchestrator.getTask(
-        this.activePermissionDeniedTaskId,
-      );
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping permission-denied trigger — task ${this.activePermissionDeniedTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activePermissionDeniedTaskId = null;
-    }
-
-    const key = "permissionDenied:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] skipping permission-denied trigger — cooldown active (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeTool = result.tool.slice(0, MAX_FILE_PATH_CHARS);
-    const safeReason = result.reason.slice(0, MAX_DIAGNOSTIC_MSG_CHARS);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { tool: safeTool, reason: safeReason },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{tool\}\}/g,
-            untrustedBlock("TOOL NAME", safeTool, nonce),
-          )
-          .replace(
-            /\{\{reason\}\}/g,
-            untrustedBlock("DENIAL REASON", safeReason, nonce),
-          ) ?? "";
-    }
-
-    prompt = truncatePrompt(buildHookMetadata("onPermissionDenied") + prompt);
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onPermissionDenied",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activePermissionDeniedTaskId = taskId;
-      this.log(
-        `[automation] triggered permission-denied task ${taskId.slice(0, 8)} (tool: ${result.tool})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue permission-denied task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onPermissionDenied", {
+      tool: result.tool,
+      reason: result.reason,
+    });
   }
 
   /**
@@ -2800,77 +1287,10 @@ export class AutomationHooks {
    * Called internally by handleDiagnosticsChanged.
    */
   handleDiagnosticsCleared(normalizedFile: string): void {
-    const cfg = this.policy.onDiagnosticsCleared;
-    if (!cfg?.enabled) return;
-
-    if (!this._matchesCondition(cfg, normalizedFile)) return;
-
-    // Loop guard: skip if a task for this file is still pending/running
-    const existingId = this.activeDiagnosticsClearedTasks.get(normalizedFile);
-    if (existingId) {
-      const existing = this.orchestrator.getTask(existingId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping diagnostics-cleared trigger for ${normalizedFile} — task ${existingId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeDiagnosticsClearedTasks.delete(normalizedFile);
-    }
-
-    const key = `diagnosticsCleared:${normalizedFile}`;
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for diagnostics-cleared ${normalizedFile} (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeFilePath = normalizedFile.slice(0, MAX_FILE_PATH_CHARS);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { file: safeFilePath },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "").replace(
-          /\{\{file\}\}/g,
-          untrustedBlock("FILE PATH", safeFilePath, nonce),
-        ) ?? "";
-    }
-
-    prompt = truncatePrompt(
-      buildHookMetadata("onDiagnosticsCleared", normalizedFile) + prompt,
-    );
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onDiagnosticsCleared",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeDiagnosticsClearedTasks.set(normalizedFile, taskId);
-      this.log(
-        `[automation] triggered diagnostics-cleared task ${taskId.slice(0, 8)} for ${normalizedFile}`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue diagnostics-cleared task for ${normalizedFile}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onDiagnosticsCleared", {
+      file: normalizedFile,
+      diagnosticSig: "",
+    });
   }
 
   /**
@@ -2878,80 +1298,10 @@ export class AutomationHooks {
    * Call from bridge.ts when a task transitions to done.
    */
   handleTaskSuccess(result: TaskSuccessResult): void {
-    const cfg = this.policy.onTaskSuccess;
-    if (!cfg?.enabled) return;
-
-    if (!this._matchesCondition(cfg, result.taskId)) return;
-
-    // Loop guard: skip if a prior task-success task is still active
-    if (this.activeTaskSuccessTaskId) {
-      const existing = this.orchestrator.getTask(this.activeTaskSuccessTaskId);
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping task-success trigger — task ${this.activeTaskSuccessTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeTaskSuccessTaskId = null;
-    }
-
-    const key = "taskSuccess:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] skipping task-success trigger — cooldown active (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeTaskId = result.taskId.slice(0, MAX_FILE_PATH_CHARS);
-    const safeOutput = result.output.slice(0, 500);
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        { taskId: safeTaskId, output: safeOutput },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{taskId\}\}/g,
-            untrustedBlock("TASK ID", safeTaskId, nonce),
-          )
-          .replace(
-            /\{\{output\}\}/g,
-            untrustedBlock("TASK OUTPUT", safeOutput, nonce),
-          ) ?? "";
-    }
-
-    prompt = truncatePrompt(buildHookMetadata("onTaskSuccess") + prompt);
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onTaskSuccess",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeTaskSuccessTaskId = taskId;
-      this.log(
-        `[automation] triggered task-success task ${taskId.slice(0, 8)} (completed task: ${result.taskId.slice(0, 8)})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue task-success task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onTaskSuccess", {
+      taskId: result.taskId,
+      output: result.output,
+    });
   }
 
   /**
@@ -2959,85 +1309,10 @@ export class AutomationHooks {
    * Fires the onDebugSessionEnd automation hook if configured.
    */
   async handleDebugSessionEnd(result: DebugSessionEndResult): Promise<void> {
-    const cfg = this.policy.onDebugSessionEnd;
-    if (!cfg?.enabled) return;
-
-    // Loop guard: skip if a task is still pending/running
-    if (this.activeDebugSessionEndTaskId) {
-      const existing = this.orchestrator.getTask(
-        this.activeDebugSessionEndTaskId,
-      );
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping debug-session-end trigger — task ${this.activeDebugSessionEndTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeDebugSessionEndTaskId = null;
-    }
-
-    // Cooldown check (workspace-global)
-    const key = "debugSessionEnd:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for debug-session-end (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeSessionName = result.sessionName.slice(0, MAX_FILE_PATH_CHARS);
-    const safeSessionType = result.sessionType.slice(0, MAX_FILE_PATH_CHARS);
-
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {
-          sessionName: safeSessionName,
-          sessionType: safeSessionType,
-        },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{sessionName\}\}/g,
-            untrustedBlock("SESSION NAME", safeSessionName, nonce),
-          )
-          .replace(
-            /\{\{sessionType\}\}/g,
-            untrustedBlock("SESSION TYPE", safeSessionType, nonce),
-          ) ?? "";
-    }
-
-    prompt = truncatePrompt(buildHookMetadata("onDebugSessionEnd") + prompt);
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onDebugSessionEnd",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeDebugSessionEndTaskId = taskId;
-      this.log(
-        `[automation] triggered debug-session-end task ${taskId.slice(0, 8)} (session: ${result.sessionName}, type: ${result.sessionType})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue debug-session-end task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onDebugSessionEnd", {
+      sessionName: result.sessionName,
+      sessionType: result.sessionType,
+    });
   }
 
   /**
@@ -3047,94 +1322,12 @@ export class AutomationHooks {
   async handleDebugSessionStart(
     result: DebugSessionStartResult,
   ): Promise<void> {
-    const cfg = this.policy.onDebugSessionStart;
-    if (!cfg?.enabled) return;
-
-    // Loop guard: skip if a task is still pending/running
-    if (this.activeDebugSessionStartTaskId) {
-      const existing = this.orchestrator.getTask(
-        this.activeDebugSessionStartTaskId,
-      );
-      if (
-        existing &&
-        (existing.status === "pending" || existing.status === "running")
-      ) {
-        this.log(
-          `[automation] skipping debug-session-start trigger — task ${this.activeDebugSessionStartTaskId.slice(0, 8)} still active`,
-        );
-        return;
-      }
-      this.activeDebugSessionStartTaskId = null;
-    }
-
-    // Cooldown check (workspace-global)
-    const key = "debugSessionStart:global";
-    const now = Date.now();
-    const last = this.lastTrigger.get(key) ?? 0;
-    if (now - last < cfg.cooldownMs) {
-      this.log(
-        `[automation] cooldown active for debug-session-start (${cfg.cooldownMs - (now - last)}ms remaining)`,
-      );
-      return;
-    }
-
-    this._pruneLastTrigger(now);
-
-    const safeSessionName = result.sessionName.slice(0, MAX_FILE_PATH_CHARS);
-    const safeSessionType = result.sessionType.slice(0, MAX_FILE_PATH_CHARS);
-    const safeActiveFile = result.activeFile.slice(0, MAX_FILE_PATH_CHARS);
-    const breakpointCount = String(result.breakpointCount);
-
-    let prompt: string;
-    if (cfg.promptName) {
-      const resolved = this._resolveNamedPrompt(
-        cfg.promptName,
-        cfg.promptArgs ?? {},
-        {
-          sessionName: safeSessionName,
-          sessionType: safeSessionType,
-          activeFile: safeActiveFile,
-          breakpointCount,
-        },
-      );
-      if (resolved === null) return;
-      prompt = resolved;
-    } else {
-      const nonce = crypto.randomBytes(6).toString("hex");
-      prompt =
-        (cfg.prompt ?? "")
-          .replace(
-            /\{\{sessionName\}\}/g,
-            untrustedBlock("SESSION NAME", safeSessionName, nonce),
-          )
-          .replace(
-            /\{\{sessionType\}\}/g,
-            untrustedBlock("SESSION TYPE", safeSessionType, nonce),
-          )
-          .replace(
-            /\{\{activeFile\}\}/g,
-            untrustedBlock("ACTIVE FILE", safeActiveFile, nonce),
-          )
-          .replace(/\{\{breakpointCount\}\}/g, breakpointCount) ?? "";
-    }
-
-    prompt = truncatePrompt(buildHookMetadata("onDebugSessionStart") + prompt);
-    try {
-      const taskId = this._enqueueAutomationTask({
-        prompt,
-        triggerSource: "onDebugSessionStart",
-        hookCfg: cfg,
-      });
-      this.lastTrigger.set(key, now);
-      this.activeDebugSessionStartTaskId = taskId;
-      this.log(
-        `[automation] triggered debug-session-start task ${taskId.slice(0, 8)} (session: ${result.sessionName}, type: ${result.sessionType}, breakpoints: ${result.breakpointCount})`,
-      );
-    } catch (err) {
-      this.log(
-        `[automation] failed to enqueue debug-session-start task: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+    this._lastRunPromise = this._runInterpreter("onDebugSessionStart", {
+      sessionName: result.sessionName,
+      sessionType: result.sessionType,
+      breakpointCount: String(result.breakpointCount),
+      activeFile: result.activeFile,
+    });
   }
 
   /** Summary of automation policy for getBridgeStatus. */

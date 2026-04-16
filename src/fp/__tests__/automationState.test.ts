@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   clearActiveTask,
+  clearPendingRetry,
   EMPTY_AUTOMATION_STATE,
+  isDeduped,
   isOnCooldown,
   isTaskActive,
+  recordDedup,
+  recordPendingRetry,
   recordTrigger,
   setLastTestOutcome,
+  setLatestDiagnostics,
   setPrevDiagnosticErrors,
+  setTestRunnerStatus,
   tasksInLastHour,
 } from "../automationState.js";
 
@@ -147,5 +153,121 @@ describe("tasksInLastHour", () => {
       state = recordTrigger(state, `k${i}`, `t${i}`, NOW - i * 60_000);
     }
     expect(tasksInLastHour(state, NOW)).toBe(5);
+  });
+});
+
+describe("recordDedup + isDeduped", () => {
+  it("isDeduped returns false for unknown key", () => {
+    expect(isDeduped(EMPTY_AUTOMATION_STATE, "k", NOW, 5_000)).toBe(false);
+  });
+
+  it("isDeduped returns true within cooldown after recordDedup", () => {
+    const state = recordDedup(EMPTY_AUTOMATION_STATE, "k", NOW);
+    expect(isDeduped(state, "k", NOW + 4_000, 5_000)).toBe(true);
+  });
+
+  it("isDeduped returns false after cooldown expires", () => {
+    const state = recordDedup(EMPTY_AUTOMATION_STATE, "k", NOW);
+    expect(isDeduped(state, "k", NOW + 6_000, 5_000)).toBe(false);
+  });
+
+  it("does not mutate input", () => {
+    recordDedup(EMPTY_AUTOMATION_STATE, "k", NOW);
+    expect(EMPTY_AUTOMATION_STATE.deduplicationWindow.size).toBe(0);
+  });
+
+  it("caps at 5000 entries (FIFO eviction)", () => {
+    let state = EMPTY_AUTOMATION_STATE;
+    for (let i = 0; i < 5_000; i++) {
+      state = recordDedup(state, `key-${i}`, NOW + i);
+    }
+    expect(state.deduplicationWindow.size).toBe(5_000);
+    // Adding one more should evict oldest
+    const newState = recordDedup(state, "key-5000", NOW + 5_000);
+    expect(newState.deduplicationWindow.size).toBe(5_000);
+    expect(newState.deduplicationWindow.has("key-0")).toBe(false);
+    expect(newState.deduplicationWindow.has("key-5000")).toBe(true);
+  });
+});
+
+describe("recordPendingRetry + clearPendingRetry", () => {
+  it("stores retry record", () => {
+    const state = recordPendingRetry(
+      EMPTY_AUTOMATION_STATE,
+      "k",
+      1,
+      NOW + 30_000,
+      "task-1",
+    );
+    const entry = state.pendingRetries.get("k");
+    expect(entry).toEqual({
+      attempt: 1,
+      nextRetryAt: NOW + 30_000,
+      taskId: "task-1",
+    });
+  });
+
+  it("clearPendingRetry removes the key", () => {
+    const state = recordPendingRetry(EMPTY_AUTOMATION_STATE, "k", 1, NOW, "t");
+    const cleared = clearPendingRetry(state, "k");
+    expect(cleared.pendingRetries.has("k")).toBe(false);
+  });
+
+  it("does not mutate input", () => {
+    recordPendingRetry(EMPTY_AUTOMATION_STATE, "k", 1, NOW, "t");
+    expect(EMPTY_AUTOMATION_STATE.pendingRetries.size).toBe(0);
+  });
+});
+
+describe("setLatestDiagnostics", () => {
+  it("stores severity+count for file", () => {
+    const state = setLatestDiagnostics(EMPTY_AUTOMATION_STATE, "/foo.ts", 0, 3);
+    expect(state.latestDiagnosticsByFile.get("/foo.ts")).toEqual({
+      severity: 0,
+      count: 3,
+    });
+  });
+
+  it("overwrites existing entry", () => {
+    const s1 = setLatestDiagnostics(EMPTY_AUTOMATION_STATE, "/foo.ts", 0, 3);
+    const s2 = setLatestDiagnostics(s1, "/foo.ts", 1, 7);
+    expect(s2.latestDiagnosticsByFile.get("/foo.ts")).toEqual({
+      severity: 1,
+      count: 7,
+    });
+  });
+
+  it("does not mutate input", () => {
+    setLatestDiagnostics(EMPTY_AUTOMATION_STATE, "/foo.ts", 0, 1);
+    expect(EMPTY_AUTOMATION_STATE.latestDiagnosticsByFile.size).toBe(0);
+  });
+
+  it("caps at 5000 entries", () => {
+    let state = EMPTY_AUTOMATION_STATE;
+    for (let i = 0; i < 5_000; i++) {
+      state = setLatestDiagnostics(state, `/file-${i}.ts`, 0, 1);
+    }
+    expect(state.latestDiagnosticsByFile.size).toBe(5_000);
+    const next = setLatestDiagnostics(state, "/file-5000.ts", 0, 1);
+    expect(next.latestDiagnosticsByFile.size).toBe(5_000);
+    expect(next.latestDiagnosticsByFile.has("/file-0.ts")).toBe(false);
+  });
+});
+
+describe("setTestRunnerStatus", () => {
+  it("stores runner status", () => {
+    const state = setTestRunnerStatus(EMPTY_AUTOMATION_STATE, "vitest", "pass");
+    expect(state.lastTestRunnerStatusByRunner.get("vitest")).toBe("pass");
+  });
+
+  it("overwrites existing entry", () => {
+    const s1 = setTestRunnerStatus(EMPTY_AUTOMATION_STATE, "vitest", "pass");
+    const s2 = setTestRunnerStatus(s1, "vitest", "fail");
+    expect(s2.lastTestRunnerStatusByRunner.get("vitest")).toBe("fail");
+  });
+
+  it("does not mutate input", () => {
+    setTestRunnerStatus(EMPTY_AUTOMATION_STATE, "vitest", "pass");
+    expect(EMPTY_AUTOMATION_STATE.lastTestRunnerStatusByRunner.size).toBe(0);
   });
 });
