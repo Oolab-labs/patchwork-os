@@ -393,31 +393,28 @@ describe("loadPolicy — validation invariants", () => {
   test("any loaded policy: all standard hook cooldownMs >= MIN_COOLDOWN_MS", () => {
     fc.assert(
       fc.property(
-        fc.record(
-          {
-            onGitCommit: fc.option(
-              fc.record({
-                enabled: fc.boolean(),
-                cooldownMs: fc.oneof(
-                  fc.integer({ min: -10000, max: 100000 }),
-                  fc.constant(5000),
-                  fc.constant(1),
-                ),
-                prompt: fc.option(fc.string({ maxLength: 100 })),
-              }),
-              { nil: undefined },
-            ),
-            onPreCompact: fc.option(
-              fc.record({
-                enabled: fc.boolean(),
-                cooldownMs: fc.integer({ min: 0, max: 100000 }),
-                prompt: fc.option(fc.string({ maxLength: 100 })),
-              }),
-              { nil: undefined },
-            ),
-          },
-          { withDeletedKeys: false },
-        ),
+        fc.record({
+          onGitCommit: fc.option(
+            fc.record({
+              enabled: fc.boolean(),
+              cooldownMs: fc.oneof(
+                fc.integer({ min: -10000, max: 100000 }),
+                fc.constant(5000),
+                fc.constant(1),
+              ),
+              prompt: fc.option(fc.string({ maxLength: 100 })),
+            }),
+            { nil: undefined },
+          ),
+          onPreCompact: fc.option(
+            fc.record({
+              enabled: fc.boolean(),
+              cooldownMs: fc.integer({ min: 0, max: 100000 }),
+              prompt: fc.option(fc.string({ maxLength: 100 })),
+            }),
+            { nil: undefined },
+          ),
+        }),
         (rawPolicy) => {
           const f = writeTempPolicy(rawPolicy);
           try {
@@ -448,19 +445,16 @@ describe("loadPolicy — validation invariants", () => {
   test("any loaded policy: all hook enabled fields are booleans", () => {
     fc.assert(
       fc.property(
-        fc.record(
-          {
-            onBranchCheckout: fc.option(
-              fc.record({
-                enabled: fc.boolean(),
-                cooldownMs: fc.integer({ min: 5000, max: 60000 }),
-                prompt: fc.string({ maxLength: 50 }),
-              }),
-              { nil: undefined },
-            ),
-          },
-          { withDeletedKeys: false },
-        ),
+        fc.record({
+          onBranchCheckout: fc.option(
+            fc.record({
+              enabled: fc.boolean(),
+              cooldownMs: fc.integer({ min: 5000, max: 60000 }),
+              prompt: fc.string({ maxLength: 50 }),
+            }),
+            { nil: undefined },
+          ),
+        }),
         (rawPolicy) => {
           const f = writeTempPolicy(rawPolicy);
           try {
@@ -722,6 +716,84 @@ describe("mergeAutomationStates — PBT", () => {
         },
       ),
       { seed: 42 },
+    );
+  });
+
+  test("identity: merge(a, EMPTY) and merge(EMPTY, a) preserve a's lastTrigger + dedup maps", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.tuple(keyArb, tsArb), { minLength: 0, maxLength: 10 }),
+        fc.array(fc.tuple(keyArb, tsArb), { minLength: 0, maxLength: 10 }),
+        (triggers, dedups) => {
+          let a = EMPTY_AUTOMATION_STATE;
+          for (const [k, ts] of triggers) a = recordTrigger(a, k, "t", ts);
+          for (const [k, ts] of dedups) a = recordDedup(a, k, ts);
+
+          const left = mergeAutomationStates(a, EMPTY_AUTOMATION_STATE);
+          const right = mergeAutomationStates(EMPTY_AUTOMATION_STATE, a);
+
+          for (const [k, v] of a.lastTrigger) {
+            if (left.lastTrigger.get(k) !== v) return false;
+            if (right.lastTrigger.get(k) !== v) return false;
+          }
+          for (const [k, v] of a.deduplicationWindow) {
+            if (left.deduplicationWindow.get(k) !== v) return false;
+            if (right.deduplicationWindow.get(k) !== v) return false;
+          }
+          return (
+            left.lastTrigger.size === a.lastTrigger.size &&
+            right.lastTrigger.size === a.lastTrigger.size
+          );
+        },
+      ),
+      { seed: 42 },
+    );
+  });
+
+  test("associative on lastTrigger: merge(merge(a,b),c) == merge(a,merge(b,c))", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.tuple(keyArb, tsArb), { minLength: 0, maxLength: 6 }),
+        fc.array(fc.tuple(keyArb, tsArb), { minLength: 0, maxLength: 6 }),
+        fc.array(fc.tuple(keyArb, tsArb), { minLength: 0, maxLength: 6 }),
+        (ea, eb, ec) => {
+          const build = (entries: [string, number][]) => {
+            let s = EMPTY_AUTOMATION_STATE;
+            for (const [k, ts] of entries) s = recordTrigger(s, k, "t", ts);
+            return s;
+          };
+          const a = build(ea);
+          const b = build(eb);
+          const c = build(ec);
+          const left = mergeAutomationStates(mergeAutomationStates(a, b), c);
+          const right = mergeAutomationStates(a, mergeAutomationStates(b, c));
+
+          if (left.lastTrigger.size !== right.lastTrigger.size) return false;
+          for (const [k, v] of left.lastTrigger) {
+            if (right.lastTrigger.get(k) !== v) return false;
+          }
+          return true;
+        },
+      ),
+      { seed: 42 },
+    );
+  });
+
+  test("taskTimestamps cap: merged length never exceeds 10_000", () => {
+    // Construct two states each holding 6_000 timestamps → merged would be
+    // 12_000 without the cap. Assert merge truncates to 10_000.
+    const makeState = (offset: number) => {
+      let s = EMPTY_AUTOMATION_STATE;
+      // Bypass recordTrigger's own caps by constructing directly.
+      const ts = Array.from({ length: 6_000 }, (_, i) => offset + i);
+      s = { ...s, taskTimestamps: ts };
+      return s;
+    };
+    const merged = mergeAutomationStates(makeState(0), makeState(1_000_000));
+    expect(merged.taskTimestamps.length).toBe(10_000);
+    // Tail-preservation: last entry of b is preserved.
+    expect(merged.taskTimestamps[merged.taskTimestamps.length - 1]).toBe(
+      1_000_000 + 5_999,
     );
   });
 });

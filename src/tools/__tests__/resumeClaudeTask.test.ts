@@ -22,6 +22,7 @@ function makeTask(overrides: Partial<ClaudeTask> = {}): ClaudeTask {
 function makeOrchestrator(task?: ClaudeTask) {
   return {
     getTask: vi.fn((id: string) => (id === task?.id ? task : undefined)),
+    findTaskByPrefix: vi.fn((id: string) => (id === task?.id ? { task } : {})),
     enqueue: vi.fn(() => "new-task-id"),
   } as unknown as ClaudeOrchestrator;
 }
@@ -35,7 +36,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator();
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(parse(result).error).toMatch(/non-empty/);
   });
 
@@ -43,7 +44,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator();
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "no-such-id" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(parse(result).error).toMatch(/not found/i);
   });
 
@@ -52,7 +53,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator(task);
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "task-abc" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     // Must return same "not found" message — must not reveal the task exists
     expect(parse(result).error).toMatch(/not found/i);
   });
@@ -62,7 +63,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator(task);
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "task-abc" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(parse(result).error).toMatch(/pending/);
   });
 
@@ -71,7 +72,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator(task);
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "task-abc" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(parse(result).error).toMatch(/running/);
   });
 
@@ -80,7 +81,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator(task);
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "task-abc" });
-    expect(result.isError).toBeUndefined();
+    expect("isError" in result).toBe(false);
     const data = parse(result);
     expect(data.newTaskId).toBe("new-task-id");
     expect(data.originalTaskId).toBe("task-abc");
@@ -98,7 +99,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator(task);
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "task-abc" });
-    expect(result.isError).toBeUndefined();
+    expect("isError" in result).toBe(false);
     expect(orch.enqueue).toHaveBeenCalledOnce();
   });
 
@@ -107,7 +108,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator(task);
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "task-abc" });
-    expect(result.isError).toBeUndefined();
+    expect("isError" in result).toBe(false);
     expect(orch.enqueue).toHaveBeenCalledOnce();
   });
 
@@ -119,7 +120,7 @@ describe("resumeClaudeTask", () => {
     });
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "task-abc" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(parse(result).error).toMatch(/queue full/);
   });
 
@@ -179,7 +180,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator(task);
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "task-abc", effort: "turbo" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(parse(result).error).toMatch(/effort must be one of/i);
   });
 
@@ -188,7 +189,7 @@ describe("resumeClaudeTask", () => {
     const orch = makeOrchestrator(task);
     const tool = createResumeClaudeTaskTool(orch, "session-1");
     const result = await tool.handler({ taskId: "task-abc", maxBudgetUsd: 0 });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(parse(result).error).toMatch(/positive number/i);
   });
 });
