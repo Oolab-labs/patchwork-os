@@ -4,9 +4,39 @@
  *
  * Defaults are deliberately conservative. Unknown tools default to "medium"
  * until someone classifies them (safer than auto-approving).
+ *
+ * ── Alignment with Claude Code permissions (https://code.claude.com/docs/en/permissions)
+ *
+ * CC classifies tools by *behavior*, not by abstract risk. Our tiers map to
+ * CC's built-in categories as follows:
+ *
+ *   low    → read-only    — CC never prompts (Read, Grep, Glob, etc.)
+ *   medium → file-mod     — CC prompts, remembered for the session
+ *   high   → shell-exec   — CC prompts, remembered permanently per command
+ *                         + external-side-effect (gitPush, sendHttpRequest,
+ *                           githubCreatePR) — always requires approval
+ *
+ * CC's decision precedence is `deny → ask → allow` via rules in
+ * `permissions.{allow,ask,deny}` (settings.json). Our ApprovalQueue +
+ * /approvals endpoint plug in as a PreToolUse hook backend so the dashboard
+ * can serve as a browser/phone approval UI for CC itself. See
+ * scripts/patchwork-approval-hook.sh.
  */
 
 export type RiskTier = "low" | "medium" | "high";
+
+/** CC-native behavior class. Prefer this over RiskTier for new code. */
+export type ToolBehavior =
+  | "readOnly"
+  | "localWrite"
+  | "shellExec"
+  | "externalEffect";
+
+const BEHAVIOR_FROM_TIER: Record<RiskTier, ToolBehavior> = {
+  low: "readOnly",
+  medium: "localWrite",
+  high: "externalEffect",
+};
 
 const TIER_MAP: Record<string, RiskTier> = {
   // ── low: pure reads ───────────────────────────────────────────────────────
@@ -96,4 +126,9 @@ export function riskTierSummary(): Record<RiskTier, number> {
 /** Exposed for tests and the dashboard registry endpoint. */
 export function getRiskTierMap(): Readonly<Record<string, RiskTier>> {
   return TIER_MAP;
+}
+
+/** Derive CC-native behavior class from tool name. */
+export function classifyBehavior(toolName: string): ToolBehavior {
+  return BEHAVIOR_FROM_TIER[classifyTool(toolName)];
 }
