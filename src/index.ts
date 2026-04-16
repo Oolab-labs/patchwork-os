@@ -1063,6 +1063,30 @@ Steps performed:
     );
   }
 
+  // Patchwork: register PreToolUse approval hook so the dashboard can
+  // approve/reject CC tool calls in real time.
+  try {
+    const { registerPreToolUseHook } = await import("./preToolUseHook.js");
+    const result = registerPreToolUseHook(ccSettingsPath);
+    if (result.action === "added") {
+      process.stderr.write(
+        `  ✓ Patchwork PreToolUse hook — registered\n     ${result.hookCommand}\n\n`,
+      );
+    } else if (result.action === "already-wired") {
+      process.stderr.write(
+        `  ✓ Patchwork PreToolUse hook — already registered\n\n`,
+      );
+    } else {
+      process.stderr.write(
+        `  [warn] Patchwork PreToolUse hook — could not register: ${result.error}\n\n`,
+      );
+    }
+  } catch (err) {
+    process.stderr.write(
+      `  [warn] Patchwork PreToolUse hook — ${err instanceof Error ? err.message : String(err)}\n\n`,
+    );
+  }
+
   // Step 4: Verify shim can be found on PATH
   let shimOnPath = false;
   try {
