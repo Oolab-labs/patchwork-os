@@ -282,6 +282,65 @@ export function setLatestDiagnostics(
   return { ...state, latestDiagnosticsByFile: newMap };
 }
 
+// ── Merge helper (for Parallel node) ──────────────────────────────────────────
+
+/**
+ * Merge two AutomationStates produced by parallel branches that share the same
+ * initial state. For each map, keeps the max timestamp / last value per key.
+ * taskTimestamps are unioned. Used by the Parallel interpreter case so both
+ * branches' cooldown / trigger records are preserved.
+ */
+export function mergeAutomationStates(
+  a: AutomationState,
+  b: AutomationState,
+): AutomationState {
+  const maxNumMap = (
+    x: ReadonlyMap<string, number>,
+    y: ReadonlyMap<string, number>,
+  ): Map<string, number> => {
+    const out = new Map(x);
+    for (const [k, v] of y) {
+      const prev = out.get(k);
+      out.set(k, prev === undefined ? v : Math.max(prev, v));
+    }
+    return out;
+  };
+  const unionMap = <V>(
+    x: ReadonlyMap<string, V>,
+    y: ReadonlyMap<string, V>,
+  ): Map<string, V> => {
+    const out = new Map(x);
+    for (const [k, v] of y) out.set(k, v);
+    return out;
+  };
+  return {
+    lastTrigger: maxNumMap(a.lastTrigger, b.lastTrigger),
+    activeTasks: unionMap(a.activeTasks, b.activeTasks),
+    prevDiagnosticErrors: unionMap(
+      a.prevDiagnosticErrors,
+      b.prevDiagnosticErrors,
+    ),
+    lastTestOutcomeByRunner: unionMap(
+      a.lastTestOutcomeByRunner,
+      b.lastTestOutcomeByRunner,
+    ),
+    taskTimestamps: [...a.taskTimestamps, ...b.taskTimestamps].slice(-10_000),
+    deduplicationWindow: maxNumMap(
+      a.deduplicationWindow,
+      b.deduplicationWindow,
+    ),
+    pendingRetries: unionMap(a.pendingRetries, b.pendingRetries),
+    latestDiagnosticsByFile: unionMap(
+      a.latestDiagnosticsByFile,
+      b.latestDiagnosticsByFile,
+    ),
+    lastTestRunnerStatusByRunner: unionMap(
+      a.lastTestRunnerStatusByRunner,
+      b.lastTestRunnerStatusByRunner,
+    ),
+  };
+}
+
 // ── Test runner status helpers ────────────────────────────────────────────────
 
 /**

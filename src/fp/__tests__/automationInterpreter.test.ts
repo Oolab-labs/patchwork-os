@@ -544,6 +544,99 @@ describe("PBT: rate limit", () => {
   });
 });
 
+// ── Parallel state merge ──────────────────────────────────────────────────────
+
+describe("Parallel state merge", () => {
+  it("preserves cooldown keys set by multiple branches (not last-wins)", async () => {
+    const backend = new TestBackend();
+    const progA = withCooldown(
+      "A",
+      60_000,
+      hook({
+        hookType: "onFileSave",
+        enabled: true,
+        promptSource: INLINE_SOURCE,
+      }),
+    );
+    const progB = withCooldown(
+      "B",
+      60_000,
+      hook({
+        hookType: "onFileSave",
+        enabled: true,
+        promptSource: INLINE_SOURCE,
+      }),
+    );
+    const par = parallel([progA, progB]);
+    const ctx = makeCtx({ backend });
+    const result = await executeAutomationPolicy([par], ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.taskIds.length).toBe(2);
+    // Both cooldown keys must survive the merge
+    expect(result.value.updatedState.lastTrigger.get("A")).toBeDefined();
+    expect(result.value.updatedState.lastTrigger.get("B")).toBeDefined();
+  });
+
+  it("unions taskIds from all branches", async () => {
+    const backend = new TestBackend();
+    const mkHook = () =>
+      hook({
+        hookType: "onFileSave",
+        enabled: true,
+        promptSource: INLINE_SOURCE,
+      });
+    const par = parallel([mkHook(), mkHook(), mkHook()]);
+    const ctx = makeCtx({ backend });
+    const result = await executeAutomationPolicy([par], ctx);
+    if (!result.ok) throw new Error("not ok");
+    expect(result.value.taskIds.length).toBe(3);
+    // All three branches' onFileSave triggers must appear in taskTimestamps
+    expect(result.value.updatedState.taskTimestamps.length).toBe(3);
+  });
+});
+
+// ── WithRetry re-execution ────────────────────────────────────────────────────
+
+describe("WithRetry re-execution", () => {
+  it("retry callback re-invokes the wrapped program on next tick", async () => {
+    // Backend that fails first enqueue but succeeds on retry
+    let attempts = 0;
+    const realRetryBackend = new TestBackend();
+    // Override enqueueTask to fail once
+    realRetryBackend.enqueueTask = async (opts) => {
+      attempts++;
+      if (attempts === 1) throw new Error("first-try-failure");
+      realRetryBackend.collector.enqueuedTasks.push(opts);
+      return `task-${attempts}`;
+    };
+    // Override scheduleRetry to invoke fn synchronously (simulating timer fire)
+    realRetryBackend.scheduleRetry = (key, delayMs, fn) => {
+      realRetryBackend.collector.scheduledRetries.push({ key, delayMs });
+      fn();
+      return () => {};
+    };
+
+    const prog = withRetry(
+      "retry-key",
+      2,
+      5000,
+      hook({
+        hookType: "onFileSave",
+        enabled: true,
+        promptSource: INLINE_SOURCE,
+      }),
+    );
+    const ctx = makeCtx({ backend: realRetryBackend });
+    await executeAutomationPolicy([prog], ctx);
+    // Allow the void async in scheduleRetry callback to settle
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    expect(realRetryBackend.collector.scheduledRetries.length).toBe(1);
+  });
+});
+
 // ── PBT: parallel merge ───────────────────────────────────────────────────────
 
 describe("PBT: parallel merge", () => {

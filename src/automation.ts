@@ -434,13 +434,6 @@ export interface AutomationPolicy {
   onDebugSessionEnd?: OnDebugSessionEndPolicy;
   /** Fired when a VS Code debug session starts (hasActiveSession transitions false→true). */
   onDebugSessionStart?: OnDebugSessionStartPolicy;
-  /**
-   * When true, the functional interpreter runs in shadow mode alongside the
-   * legacy imperative handlers.  Both paths execute; the interpreter result is
-   * logged for parity validation but does NOT replace the legacy path.
-   * Default: false.  Set to true to opt in to Phase 3 shadow mode.
-   */
-  useInterpreter?: boolean;
 }
 
 export interface Diagnostic {

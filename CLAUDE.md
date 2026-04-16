@@ -118,6 +118,7 @@ All LSP tools available in default slim mode.
   - `validatedRequest<T>(method, params, validator)` — runtime shape predicate. Use when success path is object with specific required fields (e.g. `{items, count}` wrappers).
   - Direct `requestOrNull` + inline unwrap — when handler has rich contract (e.g. `{success: true/false, data, error}`) and caller needs structured error (see `closeTab`, `saveFile`). Do NOT use `tryRequest` — hides info caller needs.
   - When auditing: read handler in `vscode-extension/src/handlers/*.ts`, enumerate ALL return statements (success AND error paths) before choosing helper. Test mocks always lie — handler file is ground truth.
+- **Automation DSL**: automation hooks compile to an `AutomationProgram` ADT (`src/fp/automationProgram.ts`) via `parsePolicy` (`src/fp/policyParser.ts`) and run through a single interpreter `executeAutomationPolicy` (`src/fp/automationInterpreter.ts`). Seven nodes: `Hook`, `Sequence`, `Parallel`, `WithCooldown`, `WithDedup`, `WithRateLimit`, `WithRetry`. Side effects isolated behind the `Backend` interface (`src/fp/interpreterContext.ts`): `VsCodeBackend` (prod) + `TestBackend` (collector with `reset()`). `AutomationHooks` holds one `AutomationState` value (`src/fp/automationState.ts`) — all state transitions go through pure functions. New hooks: extend `HookType` union, add parser case, wire handler to `_runInterpreter(hookType, eventData)`. Parallel branches merge via `mergeAutomationStates` (max timestamp per key).
 
 ## Testing Requirements
 
