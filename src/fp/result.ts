@@ -10,10 +10,13 @@ export type BridgeErrorCode =
   | "invalid_arg"
   | "workspace_escape"
   | "extension_required"
+  | "extension_timeout"
   | "rate_limited"
   | "task_not_found"
   | "exec_failed"
   | "timeout"
+  | "not_found"
+  | "validation_error"
   | "unknown";
 
 export type ToolResult<T> =
@@ -80,4 +83,30 @@ export function flatMapResult<T, U>(
 ): ToolResult<U> {
   if (!r.ok) return r;
   return f(r.value);
+}
+
+export function legacyParseArgs<T>(
+  fn: () => T,
+  logger?: { warn: (msg: string, meta?: Record<string, unknown>) => void },
+): ToolResult<T> {
+  try {
+    return ok(fn());
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger?.warn("arg validation failure", { message });
+    return err("invalid_arg", message);
+  }
+}
+
+export async function traverse<A, B>(
+  items: A[],
+  f: (a: A, index: number) => Promise<B>,
+  onError?: (a: A, err: unknown, index: number) => B,
+): Promise<B[]> {
+  const settled = await Promise.allSettled(items.map((a, i) => f(a, i)));
+  return settled.map((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    if (onError) return onError(items[i] as A, r.reason, i);
+    throw r.reason;
+  });
 }
