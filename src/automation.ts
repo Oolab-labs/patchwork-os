@@ -180,11 +180,23 @@ export interface OnCwdChangedPolicy extends PromptSource {
 export interface OnTestRunPolicy extends PromptSource {
   enabled: boolean;
   /**
+   * Unified test-run trigger (v2.43.0+) replacing `onFailureOnly` and the
+   * separate `onTestPassAfterFailure` hook:
+   *   - "any"             — fire after every test run
+   *   - "failure"         — fire only when the run has failures (= onFailureOnly:true)
+   *   - "pass-after-fail" — fire only when a runner transitions fail → pass;
+   *                         routed internally to the onTestPassAfterFailure slot
+   * Exactly one of `filter` or `onFailureOnly` should be set; the two are
+   * mutually exclusive. If neither is set, defaults to "failure".
+   */
+  filter?: "any" | "failure" | "pass-after-fail";
+  /**
+   * @deprecated v2.43.0 — use `filter: "any"` or `filter: "failure"` instead.
    * Only trigger when there are test failures or errors.
    * Set to false to trigger after every test run regardless of outcome.
    * Default: true.
    */
-  onFailureOnly: boolean;
+  onFailureOnly?: boolean;
   /**
    * Only trigger when the test run duration meets or exceeds this threshold (ms).
    * Useful to ignore fast unit test runs and only fire on slow integration runs.
@@ -235,6 +247,17 @@ export interface OnDebugSessionEndPolicy extends PromptSource {
 export interface DebugSessionEndResult {
   sessionName: string;
   sessionType: string;
+}
+
+/**
+ * Unified debug-session hook (v2.43.0+) — replaces `onDebugSessionStart`
+ * and `onDebugSessionEnd`. Expanded at load time based on `phase`.
+ */
+export interface OnDebugSessionPolicy extends PromptSource {
+  enabled: boolean;
+  phase: "start" | "end";
+  /** Placeholders (inline prompt only): {{sessionName}}, {{sessionType}}, plus {{breakpointCount}}/{{activeFile}} for phase: "start" */
+  cooldownMs: number;
 }
 
 export interface OnDebugSessionStartPolicy extends PromptSource {
@@ -376,6 +399,16 @@ export interface OnDiagnosticsClearedPolicy extends PromptSource {
   cooldownMs: number;
 }
 
+/**
+ * Unified diagnostics-state hook (v2.43.0+) — replaces `onDiagnosticsError`
+ * and `onDiagnosticsCleared` with a single schema entry carrying a `state`
+ * discriminator. Expanded at load time. Legacy names still accepted with a
+ * deprecation warning. Removed no earlier than v2.46 + 30 days.
+ */
+export type OnDiagnosticsStateChangePolicy =
+  | ({ state: "error" } & OnDiagnosticsErrorPolicy)
+  | ({ state: "cleared" } & OnDiagnosticsClearedPolicy);
+
 export interface OnTaskSuccessPolicy extends PromptSource {
   enabled: boolean;
   /** Placeholders (inline prompt only): {{taskId}}, {{output}} */
@@ -413,6 +446,7 @@ export interface AutomationPolicy {
    * Override per-hook via the hook's own effort field.
    */
   defaultEffort?: "low" | "medium" | "high" | "max";
+  /** @deprecated v2.43.0 — use `onDiagnosticsStateChange` with `state: "error"`. */
   onDiagnosticsError?: OnDiagnosticsErrorPolicy;
   onFileSave?: OnFileSavePolicy;
   /** Fired by Claude Code 2.1.83+ FileChanged hook — reacts to any file edit, not just explicit saves. */
@@ -431,7 +465,7 @@ export interface AutomationPolicy {
   onPreCompact?: OnPreCompactPolicy;
   /** Fired by Claude Code 2.1.76+ InstructionsLoaded hook — injects bridge status at session start. */
   onInstructionsLoaded?: OnInstructionsLoadedPolicy;
-  /** Fired after every runTests call (or only on failures, depending on onFailureOnly). */
+  /** Fired after every runTests call. Use `filter` to target failures / pass-after-fail / all runs. */
   onTestRun?: OnTestRunPolicy;
   /** Fired when a test run transitions from failing → passing for the same runner. */
   onTestPassAfterFailure?: OnTestPassAfterFailurePolicy;
@@ -449,13 +483,20 @@ export interface AutomationPolicy {
   onTaskCreated?: OnTaskCreatedPolicy;
   /** Fired by Claude Code 2.1.89+ PermissionDenied hook — fires when a tool call is blocked. */
   onPermissionDenied?: OnPermissionDeniedPolicy;
-  /** Fired when all errors/warnings clear for a file (non-zero → zero transition). */
+  /**
+   * Unified diagnostics-state hook (v2.43.0+) — replaces onDiagnosticsError/
+   * onDiagnosticsCleared. Expanded at load time based on `state`.
+   */
+  onDiagnosticsStateChange?: OnDiagnosticsStateChangePolicy;
+  /** @deprecated v2.43.0 — use `onDiagnosticsStateChange` with `state: "cleared"`. */
   onDiagnosticsCleared?: OnDiagnosticsClearedPolicy;
   /** Fired when a Claude orchestrator task completes with status done. */
   onTaskSuccess?: OnTaskSuccessPolicy;
-  /** Fired when a VS Code debug session terminates (hasActiveSession transitions true→false). */
+  /** Unified debug-session hook (v2.43.0+). Expanded to onDebugSessionStart/End based on phase. */
+  onDebugSession?: OnDebugSessionPolicy;
+  /** @deprecated v2.43.0 — use `onDebugSession` with `phase: "end"`. */
   onDebugSessionEnd?: OnDebugSessionEndPolicy;
-  /** Fired when a VS Code debug session starts (hasActiveSession transitions false→true). */
+  /** @deprecated v2.43.0 — use `onDebugSession` with `phase: "start"`. */
   onDebugSessionStart?: OnDebugSessionStartPolicy;
 }
 
@@ -622,6 +663,156 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   if (hadLegacyPostCompact) {
     console.warn(
       `[automation-policy] "onPostCompact" in "${filePath}" is deprecated — migrate to "onCompaction" with phase: "post". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+    );
+  }
+
+  // ── onDiagnosticsStateChange normalization (v2.43.0+) ───────────────────
+  // Expand into internal onDiagnosticsError/onDiagnosticsCleared based on state.
+  const hadLegacyDiagError = policy.onDiagnosticsError !== undefined;
+  const hadLegacyDiagCleared = policy.onDiagnosticsCleared !== undefined;
+  if (policy.onDiagnosticsStateChange !== undefined) {
+    const oc = policy.onDiagnosticsStateChange;
+    if (typeof oc !== "object" || oc === null) {
+      throw new Error(`"onDiagnosticsStateChange" must be an object`);
+    }
+    if (oc.state !== "error" && oc.state !== "cleared") {
+      throw new Error(
+        `"onDiagnosticsStateChange.state" must be "error" or "cleared" (got ${JSON.stringify((oc as { state?: unknown }).state)})`,
+      );
+    }
+    if (oc.state === "error" && hadLegacyDiagError) {
+      throw new Error(
+        `Cannot set both "onDiagnosticsStateChange" (state: "error") and "onDiagnosticsError" — use onDiagnosticsStateChange only.`,
+      );
+    }
+    if (oc.state === "cleared" && hadLegacyDiagCleared) {
+      throw new Error(
+        `Cannot set both "onDiagnosticsStateChange" (state: "cleared") and "onDiagnosticsCleared" — use onDiagnosticsStateChange only.`,
+      );
+    }
+    const { state: _s, ...rest } = oc;
+    if (oc.state === "error") {
+      policy.onDiagnosticsError = rest as OnDiagnosticsErrorPolicy;
+    } else {
+      policy.onDiagnosticsCleared = rest as OnDiagnosticsClearedPolicy;
+    }
+    policy.onDiagnosticsStateChange = undefined;
+  }
+  if (hadLegacyDiagError) {
+    console.warn(
+      `[automation-policy] "onDiagnosticsError" in "${filePath}" is deprecated — migrate to "onDiagnosticsStateChange" with state: "error". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+    );
+  }
+  if (hadLegacyDiagCleared) {
+    console.warn(
+      `[automation-policy] "onDiagnosticsCleared" in "${filePath}" is deprecated — migrate to "onDiagnosticsStateChange" with state: "cleared". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+    );
+  }
+
+  // ── onDebugSession normalization (v2.43.0+) ─────────────────────────────
+  // Expand into internal onDebugSessionStart/onDebugSessionEnd based on phase.
+  const hadLegacyDebugStart = policy.onDebugSessionStart !== undefined;
+  const hadLegacyDebugEnd = policy.onDebugSessionEnd !== undefined;
+  if (policy.onDebugSession !== undefined) {
+    const oc = policy.onDebugSession;
+    if (typeof oc !== "object" || oc === null) {
+      throw new Error(`"onDebugSession" must be an object`);
+    }
+    if (oc.phase !== "start" && oc.phase !== "end") {
+      throw new Error(
+        `"onDebugSession.phase" must be "start" or "end" (got ${JSON.stringify(oc.phase)})`,
+      );
+    }
+    if (oc.phase === "start" && hadLegacyDebugStart) {
+      throw new Error(
+        `Cannot set both "onDebugSession" (phase: "start") and "onDebugSessionStart" — use onDebugSession only.`,
+      );
+    }
+    if (oc.phase === "end" && hadLegacyDebugEnd) {
+      throw new Error(
+        `Cannot set both "onDebugSession" (phase: "end") and "onDebugSessionEnd" — use onDebugSession only.`,
+      );
+    }
+    const { phase: _p, ...rest } = oc;
+    if (oc.phase === "start") {
+      policy.onDebugSessionStart = rest as OnDebugSessionStartPolicy;
+    } else {
+      policy.onDebugSessionEnd = rest as OnDebugSessionEndPolicy;
+    }
+    policy.onDebugSession = undefined;
+  }
+  if (hadLegacyDebugStart) {
+    console.warn(
+      `[automation-policy] "onDebugSessionStart" in "${filePath}" is deprecated — migrate to "onDebugSession" with phase: "start". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+    );
+  }
+  if (hadLegacyDebugEnd) {
+    console.warn(
+      `[automation-policy] "onDebugSessionEnd" in "${filePath}" is deprecated — migrate to "onDebugSession" with phase: "end". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+    );
+  }
+
+  // ── onTestRun(filter) normalization (v2.43.0+) ──────────────────────────
+  // The new canonical form is `onTestRun.filter: "any"|"failure"|"pass-after-fail"`.
+  // - "any" / "failure" rewrite to onFailureOnly:false/true on the same hook.
+  // - "pass-after-fail" is routed into the onTestPassAfterFailure slot (a
+  //   separate internal hook with its own dispatch path).
+  // Legacy `onFailureOnly` field + legacy `onTestPassAfterFailure` hook still
+  // work but warn at load time.
+  const hadLegacyOnFailureOnly =
+    policy.onTestRun !== undefined &&
+    (policy.onTestRun as { onFailureOnly?: unknown }).onFailureOnly !==
+      undefined;
+  const hadLegacyTestPassAfterFailure =
+    policy.onTestPassAfterFailure !== undefined;
+  if (
+    policy.onTestRun !== undefined &&
+    typeof policy.onTestRun === "object" &&
+    policy.onTestRun !== null
+  ) {
+    const tr = policy.onTestRun as unknown as {
+      filter?: unknown;
+      onFailureOnly?: unknown;
+    } & Record<string, unknown>;
+    if (tr.filter !== undefined) {
+      if (
+        tr.filter !== "any" &&
+        tr.filter !== "failure" &&
+        tr.filter !== "pass-after-fail"
+      ) {
+        throw new Error(
+          `"onTestRun.filter" must be one of "any", "failure", "pass-after-fail" (got ${JSON.stringify(tr.filter)})`,
+        );
+      }
+      if (tr.onFailureOnly !== undefined) {
+        throw new Error(
+          `Cannot set both "onTestRun.filter" and "onTestRun.onFailureOnly" — use "filter" only.`,
+        );
+      }
+      if (tr.filter === "pass-after-fail") {
+        if (hadLegacyTestPassAfterFailure) {
+          throw new Error(
+            `Cannot set both "onTestRun" (filter: "pass-after-fail") and legacy "onTestPassAfterFailure" — use onTestRun.filter only.`,
+          );
+        }
+        const { filter: _f, onFailureOnly: _ofo, ...rest } = tr;
+        policy.onTestPassAfterFailure =
+          rest as unknown as OnTestPassAfterFailurePolicy;
+        policy.onTestRun = undefined;
+      } else {
+        tr.onFailureOnly = tr.filter === "failure";
+        tr.filter = undefined;
+      }
+    }
+  }
+  if (hadLegacyOnFailureOnly) {
+    console.warn(
+      `[automation-policy] "onTestRun.onFailureOnly" in "${filePath}" is deprecated — migrate to "onTestRun.filter" ("failure" or "any"). Legacy field removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
+    );
+  }
+  if (hadLegacyTestPassAfterFailure) {
+    console.warn(
+      `[automation-policy] "onTestPassAfterFailure" in "${filePath}" is deprecated — migrate to "onTestRun" with filter: "pass-after-fail". Legacy hook removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
     );
   }
 
@@ -875,7 +1066,12 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     if (typeof tr.enabled !== "boolean") {
       throw new Error(`"onTestRun.enabled" must be a boolean`);
     }
-    if (typeof tr.onFailureOnly !== "boolean") {
+    // After C3 expansion, onFailureOnly is always populated (either by the
+    // filter rewrite or by user-provided legacy value). Accept missing as
+    // "failure" default for safety.
+    if (tr.onFailureOnly === undefined) {
+      tr.onFailureOnly = true;
+    } else if (typeof tr.onFailureOnly !== "boolean") {
       throw new Error(`"onTestRun.onFailureOnly" must be a boolean`);
     }
     validatePromptSource("onTestRun", tr);
@@ -1473,7 +1669,7 @@ export class AutomationHooks {
       onTestRun: p.onTestRun
         ? {
             enabled: p.onTestRun.enabled,
-            onFailureOnly: p.onTestRun.onFailureOnly,
+            onFailureOnly: p.onTestRun.onFailureOnly ?? true,
             cooldownMs: p.onTestRun.cooldownMs,
           }
         : null,

@@ -182,8 +182,7 @@ Event-driven hooks that trigger Claude tasks automatically.
 
 - **Activation**: `--automation --automation-policy <path.json> --claude-driver subprocess`
 - **Hooks**:
-  - `onDiagnosticsError` — new error/warning diagnostics. Placeholders: `{{file}}`, `{{diagnostics}}`. Severity filter + cooldown.
-  - `onDiagnosticsCleared` — errors/warnings drop to zero. Placeholder: `{{file}}`. Cooldown.
+  - `onDiagnosticsStateChange` (v2.43.0+) — unified diagnostics hook. `state: "error"` fires on new error/warning diagnostics (`{{file}}`, `{{diagnostics}}`, severity filter). `state: "cleared"` fires when errors/warnings drop to zero (`{{file}}`). Replaces deprecated `onDiagnosticsError` + `onDiagnosticsCleared`.
   - `onFileSave` — matching files saved. Minimatch glob patterns. Placeholder: `{{file}}`.
   - `onFileChanged` — matching files changed (buffer change, not save). Minimatch glob patterns. Placeholder: `{{file}}`.
   - `onCompaction` (v2.43.0+) — unified hook. `phase: "pre"` fires before compaction (snapshot state); `phase: "post"` fires after (re-inject IDE state). Replaces the now-deprecated `onPreCompact` + `onPostCompact` pair; legacy names still work but emit a deprecation warning. Removed no earlier than v2.46 + 30 days.
@@ -193,13 +192,12 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onGitPush` — fires after successful `gitPush`. Placeholders: `{{remote}}`, `{{branch}}`, `{{hash}}`.
   - `onBranchCheckout` — fires after successful `gitCheckout`. Placeholders: `{{branch}}`, `{{previousBranch}}`, `{{created}}`.
   - `onPullRequest` — fires after successful `githubCreatePR`. Placeholders: `{{url}}`, `{{number}}`, `{{title}}`, `{{branch}}`.
-  - `onTestRun` — fires after `runTests` completes. Placeholders: `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array). Supports `onFailureOnly` flag.
+  - `onTestRun` — fires after `runTests` completes. Placeholders: `{{runner}}`, `{{failed}}`, `{{passed}}`, `{{total}}`, `{{failures}}` (JSON array). Supports `filter: "any"|"failure"|"pass-after-fail"` (v2.43.0+). `"pass-after-fail"` replaces the deprecated separate `onTestPassAfterFailure` hook. Legacy `onFailureOnly` boolean still works but emits a deprecation warning.
   - `onTaskCreated` — fires on Claude Code TaskCreated hook (CC 2.1.84+). Placeholders: `{{taskId}}`, `{{prompt}}`.
   - `onTaskSuccess` — fires when orchestrator task completes successfully. Placeholders: `{{taskId}}`, `{{output}}`.
   - `onPermissionDenied` — fires on Claude Code PermissionDenied hook (CC 2.1.89+). Placeholders: `{{tool}}`, `{{reason}}`.
   - `onCwdChanged` — fires when Claude Code CWD changes (CC 2.1.83+). Placeholder: `{{cwd}}`.
-  - `onDebugSessionStart` — fires when a VS Code debug session starts. Placeholders: `{{sessionName}}`, `{{sessionType}}`, `{{breakpointCount}}`, `{{activeFile}}`.
-  - `onDebugSessionEnd` — fires when a VS Code debug session terminates. Placeholders: `{{sessionName}}`, `{{sessionType}}`.
+  - `onDebugSession` (v2.43.0+) — unified debug-session hook. `phase: "start"` fires on session start (`{{sessionName}}`, `{{sessionType}}`, `{{breakpointCount}}`, `{{activeFile}}`). `phase: "end"` fires on termination (`{{sessionName}}`, `{{sessionType}}`). Replaces deprecated `onDebugSessionStart` + `onDebugSessionEnd`.
 - **Shared options**: all hooks support inline `prompt` string or `promptName`/`promptArgs` named prompt references. All support `cooldownMs` (min 5000).
 - **Cooldown**: min 5s between triggers for same file/event. Max prompt size: 32KB.
 - **CC hook wiring** — hooks relying on Claude Code's hook system need MCP notify tools called from `settings.json`. Bridge registers these automatically when `--automation` active:
