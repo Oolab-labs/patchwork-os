@@ -40,8 +40,7 @@ export function createOpenFileTool(
         properties: {
           filePath: {
             type: "string",
-            description:
-              "Absolute or workspace-relative path to the file to open",
+            description: "Workspace or absolute path to the file to open",
           },
           startLine: {
             type: "integer",

@@ -168,7 +168,7 @@ export function createEditTextTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path to the file",
+            description: "Workspace or absolute path to the file",
           },
           edits: {
             type: "array" as const,

@@ -24,7 +24,7 @@ export function createExplainSymbolTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Workspace or absolute file path",
           },
           line: {
             type: "integer" as const,

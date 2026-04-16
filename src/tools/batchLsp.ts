@@ -96,7 +96,7 @@ export function createBatchGetHoverTool(
               properties: {
                 filePath: {
                   type: "string" as const,
-                  description: "Absolute or workspace-relative path",
+                  description: "Workspace or absolute path",
                 },
                 line: {
                   type: "integer" as const,
@@ -209,7 +209,7 @@ export function createBatchFindImplementationsTool(
               properties: {
                 filePath: {
                   type: "string" as const,
-                  description: "Absolute or workspace-relative path",
+                  description: "Workspace or absolute path",
                 },
                 line: {
                   type: "integer" as const,
@@ -326,7 +326,7 @@ export function createBatchGoToDefinitionTool(
               properties: {
                 filePath: {
                   type: "string" as const,
-                  description: "Absolute or workspace-relative path",
+                  description: "Workspace or absolute path",
                 },
                 line: {
                   type: "integer" as const,

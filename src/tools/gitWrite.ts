@@ -409,7 +409,7 @@ export function createGitBlameTool(workspace: string) {
         properties: {
           filePath: {
             type: "string",
-            description: "Absolute or workspace-relative path to the file",
+            description: "Workspace or absolute path to the file",
           },
           startLine: {
             type: "number",

@@ -130,6 +130,7 @@ All LSP tools available in both slim and full mode (full is the default since v2
 - Use vitest for both bridge and extension tests
 - Coverage gates: 75% lines, 70% branches, 75% functions
 - Test circuit breaker and reconnect behavior for connection-related changes
+- **outputSchema is mandatory** for all tools. `scripts/audit-lsp-tools.mjs` enforces per-schema-block (not per-file) — multi-tool files can't mask gaps. Exceptions go in `scripts/audit-output-schema-allowlist.json` with a reason; ratchet gate rejects new entries and stale ones.
 
 ## Plugin System
 

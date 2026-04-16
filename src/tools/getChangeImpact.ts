@@ -42,8 +42,7 @@ export function createGetChangeImpactTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description:
-              "Absolute or workspace-relative path of the edited file",
+            description: "Workspace or absolute path of the edited file",
           },
           changedSymbols: {
             type: "array" as const,

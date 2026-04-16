@@ -168,7 +168,7 @@ export function createGoToDefinitionTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           line: {
             type: "integer" as const,
@@ -282,7 +282,7 @@ export function createFindReferencesTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           line: {
             type: "integer" as const,
@@ -414,7 +414,7 @@ export function createGetHoverTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           line: {
             type: "integer" as const,
@@ -485,7 +485,7 @@ export function createGetCodeActionsTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           startLine: {
             type: "integer" as const,
@@ -585,7 +585,7 @@ export function createApplyCodeActionTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           startLine: {
             type: "integer" as const,
@@ -617,6 +617,21 @@ export function createApplyCodeActionTool(
           "actionTitle",
         ],
         additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          applied: { type: "boolean" as const },
+          title: { type: "string" as const },
+          command: { type: ["string", "null"] as const },
+          error: { type: "string" as const },
+          available: {
+            type: "array" as const,
+            items: { type: "string" as const },
+          },
+        },
+        required: ["applied"],
+        additionalProperties: true as const,
       },
     },
     handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
@@ -681,7 +696,7 @@ export function createPreviewCodeActionTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           startLine: {
             type: "integer" as const,
@@ -817,7 +832,7 @@ export function createRenameSymbolTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           line: {
             type: "integer" as const,
@@ -907,7 +922,7 @@ export function createGetCallHierarchyTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           line: {
             type: "integer" as const,
@@ -1182,7 +1197,7 @@ export function createPrepareRenameTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           line: {
             type: "integer" as const,
@@ -1259,7 +1274,7 @@ export function createFormatRangeTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           startLine: {
             type: "integer" as const,
@@ -1332,7 +1347,7 @@ export function createFindImplementationsTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           line: {
             type: "integer" as const,
@@ -1432,7 +1447,7 @@ export function createGoToTypeDefinitionTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           line: {
             type: "integer" as const,
@@ -1515,7 +1530,7 @@ export function createGoToDeclarationTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           line: {
             type: "integer" as const,

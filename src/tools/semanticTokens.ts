@@ -24,7 +24,7 @@ export function createGetSemanticTokensTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           startLine: {
             type: "integer" as const,
