@@ -26,6 +26,10 @@ export interface ClaudeTaskInput {
   useAnt?: boolean;
 }
 
+/**
+ * @deprecated Use ClaudeTaskOutcome instead for discriminated-union pattern.
+ * Kept for backward compat — existing ClaudeTask fields reference these fields.
+ */
 export interface ClaudeTaskOutput {
   text: string;
   exitCode: number;
@@ -40,12 +44,79 @@ export interface ClaudeTaskOutput {
   startupMs?: number;
 }
 
+/**
+ * Discriminated-union replacement for ClaudeTaskOutput.
+ * Use toClaudeTaskOutcome() to convert a ClaudeTaskOutput.
+ */
+export type ClaudeTaskOutcome =
+  | {
+      outcome: "done";
+      text: string;
+      durationMs: number;
+      startupMs?: number;
+    }
+  | {
+      outcome: "error";
+      text: string;
+      exitCode: number;
+      stderrTail?: string;
+      durationMs: number;
+    }
+  | {
+      outcome: "aborted";
+      text: string;
+      cancelKind: "startup_timeout" | "timeout" | "user";
+      stderrTail?: string;
+      durationMs: number;
+    };
+
+/**
+ * Map a ClaudeTaskOutput flat struct to the ClaudeTaskOutcome discriminated union.
+ * cancelKind defaults to "user" when the abort cause cannot be determined from
+ * the flat struct alone (caller should prefer reading cancelReason from ClaudeTask).
+ */
+export function toClaudeTaskOutcome(
+  output: ClaudeTaskOutput,
+): ClaudeTaskOutcome {
+  if (output.wasAborted) {
+    const cancelKind: "startup_timeout" | "timeout" | "user" =
+      output.startupTimedOut ? "startup_timeout" : "user";
+    return {
+      outcome: "aborted",
+      text: output.text,
+      cancelKind,
+      stderrTail: output.stderrTail,
+      durationMs: output.durationMs,
+    };
+  }
+  if (output.exitCode !== 0) {
+    return {
+      outcome: "error",
+      text: output.text,
+      exitCode: output.exitCode,
+      stderrTail: output.stderrTail,
+      durationMs: output.durationMs,
+    };
+  }
+  return {
+    outcome: "done",
+    text: output.text,
+    durationMs: output.durationMs,
+    startupMs: output.startupMs,
+  };
+}
+
 export interface IClaudeDriver {
   readonly name: string;
   run(input: ClaudeTaskInput): Promise<ClaudeTaskOutput>;
   /** Optional lifecycle hooks — no-op in SubprocessDriver. */
   spawnForSession?(sessionId: string): Promise<void>;
   killForSession?(sessionId: string): void;
+  /**
+   * Optional: run and return a ClaudeTaskOutcome discriminated union.
+   * Default implementation wraps run() via toClaudeTaskOutcome().
+   */
+  runOutcome?(input: ClaudeTaskInput): Promise<ClaudeTaskOutcome>;
 }
 
 const OUTPUT_CAP = 50 * 1024; // 50KB
@@ -248,7 +319,7 @@ export class SubprocessDriver implements IClaudeDriver {
         } catch {
           // Non-JSON line — treat as plain text (backward compat for old binaries
           // that don't support --output-format stream-json, or binary error output).
-          const text = line + "\n";
+          const text = `${line}\n`;
           accumulated += text;
           if (outputBytesSent < OUTPUT_CAP) {
             const send = text.slice(0, OUTPUT_CAP - outputBytesSent);
@@ -395,6 +466,10 @@ export class SubprocessDriver implements IClaudeDriver {
       stderrTail: stderrTailOf(stderr),
       startupMs: startupMsOf(),
     };
+  }
+
+  async runOutcome(input: ClaudeTaskInput): Promise<ClaudeTaskOutcome> {
+    return toClaudeTaskOutcome(await this.run(input));
   }
 }
 

@@ -38,7 +38,11 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 import { spawn } from "node:child_process";
 
-import { ApiDriver, SubprocessDriver } from "../claudeDriver.js";
+import {
+  ApiDriver,
+  SubprocessDriver,
+  toClaudeTaskOutcome,
+} from "../claudeDriver.js";
 
 const spawnMock = vi.mocked(spawn);
 
@@ -619,5 +623,77 @@ describe("scrubSecrets", () => {
     const result = scrubSecrets(input);
     expect(result).toContain("[REDACTED_API_KEY]");
     expect(result).toContain("Bearer [REDACTED]");
+  });
+});
+
+describe("toClaudeTaskOutcome", () => {
+  it("maps exitCode=0 non-aborted output to outcome:done", () => {
+    const outcome = toClaudeTaskOutcome({
+      text: "hello",
+      exitCode: 0,
+      durationMs: 100,
+      startupMs: 50,
+    });
+    expect(outcome.outcome).toBe("done");
+    if (outcome.outcome === "done") {
+      expect(outcome.text).toBe("hello");
+      expect(outcome.durationMs).toBe(100);
+      expect(outcome.startupMs).toBe(50);
+    }
+  });
+
+  it("maps exitCode!=0 non-aborted output to outcome:error", () => {
+    const outcome = toClaudeTaskOutcome({
+      text: "fail",
+      exitCode: 1,
+      durationMs: 200,
+      stderrTail: "some error",
+    });
+    expect(outcome.outcome).toBe("error");
+    if (outcome.outcome === "error") {
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.stderrTail).toBe("some error");
+    }
+  });
+
+  it("maps wasAborted=true without startupTimedOut to outcome:aborted cancelKind:user", () => {
+    const outcome = toClaudeTaskOutcome({
+      text: "partial",
+      exitCode: -1,
+      durationMs: 300,
+      wasAborted: true,
+    });
+    expect(outcome.outcome).toBe("aborted");
+    if (outcome.outcome === "aborted") {
+      expect(outcome.cancelKind).toBe("user");
+    }
+  });
+
+  it("maps wasAborted+startupTimedOut to outcome:aborted cancelKind:startup_timeout", () => {
+    const outcome = toClaudeTaskOutcome({
+      text: "",
+      exitCode: -1,
+      durationMs: 50,
+      wasAborted: true,
+      startupTimedOut: true,
+    });
+    expect(outcome.outcome).toBe("aborted");
+    if (outcome.outcome === "aborted") {
+      expect(outcome.cancelKind).toBe("startup_timeout");
+    }
+  });
+
+  it("preserves stderrTail on aborted outcome", () => {
+    const outcome = toClaudeTaskOutcome({
+      text: "",
+      exitCode: -1,
+      durationMs: 10,
+      wasAborted: true,
+      stderrTail: "stderr snippet",
+    });
+    expect(outcome.outcome).toBe("aborted");
+    if (outcome.outcome === "aborted") {
+      expect(outcome.stderrTail).toBe("stderr snippet");
+    }
   });
 });

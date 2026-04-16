@@ -1,13 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   err,
   flatMapResult,
+  legacyParseArgs,
   mapResult,
   ok,
   okL,
   okS,
   okSL,
   toCallToolResult,
+  traverse,
 } from "../result.js";
 
 describe("ok constructors", () => {
@@ -147,5 +149,103 @@ describe("flatMapResult", () => {
     const r = flatMapResult(ok(1), () => err("task_not_found", "missing"));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.code).toBe("task_not_found");
+  });
+});
+
+describe("legacyParseArgs", () => {
+  it("returns ok when fn succeeds", () => {
+    const r = legacyParseArgs(() => ({ x: 42 }));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toEqual({ x: 42 });
+  });
+
+  it("returns err(invalid_arg) when fn throws Error", () => {
+    const r = legacyParseArgs(() => {
+      throw new Error("bad value");
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe("invalid_arg");
+      expect(r.message).toBe("bad value");
+    }
+  });
+
+  it("returns err(invalid_arg) when fn throws non-Error", () => {
+    const r = legacyParseArgs(() => {
+      throw "string error";
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe("invalid_arg");
+      expect(r.message).toBe("string error");
+    }
+  });
+
+  it("calls logger.warn on failure", () => {
+    const logger = { warn: vi.fn() };
+    legacyParseArgs(() => {
+      throw new Error("oops");
+    }, logger);
+    expect(logger.warn).toHaveBeenCalledWith("arg validation failure", {
+      message: "oops",
+    });
+  });
+
+  it("does not call logger when fn succeeds", () => {
+    const logger = { warn: vi.fn() };
+    legacyParseArgs(() => 1, logger);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("traverse", () => {
+  it("maps all items successfully", async () => {
+    const result = await traverse([1, 2, 3], async (n) => n * 2);
+    expect(result).toEqual([2, 4, 6]);
+  });
+
+  it("throws when item fails and no onError", async () => {
+    await expect(
+      traverse([1, 2, 3], async (n) => {
+        if (n === 2) throw new Error("boom");
+        return n;
+      }),
+    ).rejects.toThrow("boom");
+  });
+
+  it("calls onError for failed items when provided", async () => {
+    const result = await traverse(
+      [1, 2, 3],
+      async (n) => {
+        if (n === 2) throw new Error("boom");
+        return n * 10;
+      },
+      (_a, _err, _i) => -1,
+    );
+    expect(result).toEqual([10, -1, 30]);
+  });
+
+  it("passes index to f and onError", async () => {
+    const indices: number[] = [];
+    const errIndices: number[] = [];
+    await traverse(
+      ["a", "b", "c"],
+      async (_item, i) => {
+        indices.push(i);
+        if (i === 1) throw new Error("x");
+        return i;
+      },
+      (_a, _err, i) => {
+        errIndices.push(i);
+        return -1;
+      },
+    );
+    expect(indices).toEqual([0, 1, 2]);
+    expect(errIndices).toEqual([1]);
+  });
+
+  it("returns empty array for empty input", async () => {
+    const result = await traverse([], async (n: number) => n);
+    expect(result).toEqual([]);
   });
 });
