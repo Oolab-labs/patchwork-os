@@ -15,23 +15,6 @@ function makeInstantOrchestrator() {
   return new ClaudeOrchestrator(driver, "/tmp", () => {});
 }
 
-function makeSlowOrchestrator() {
-  const driver: IClaudeDriver = {
-    name: "slow",
-    async run(input) {
-      await new Promise<void>((_, reject) => {
-        input.signal.addEventListener("abort", () =>
-          reject(
-            Object.assign(new Error("AbortError"), { name: "AbortError" }),
-          ),
-        );
-      });
-      return { text: "ok", exitCode: 0, durationMs: 0 };
-    },
-  };
-  return new ClaudeOrchestrator(driver, "/tmp", () => {});
-}
-
 const BASE_POLICY = {
   onPreCompact: {
     enabled: true,
@@ -85,34 +68,24 @@ describe("AutomationHooks.onPreCompact", () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
 
-    await hooks.handlePreCompact();
+    hooks.handlePreCompact();
+    await hooks.flush();
     expect(orch.list().length).toBe(1);
 
     // Second trigger within cooldown
-    await hooks.handlePreCompact();
+    hooks.handlePreCompact();
+    await hooks.flush();
     expect(orch.list().length).toBe(1); // still 1 — cooldown blocked
 
     // Advance past cooldown
     vi.setSystemTime(Date.now() + 10_000);
 
-    await hooks.handlePreCompact();
+    hooks.handlePreCompact();
+    await hooks.flush();
     expect(orch.list().length).toBe(2);
   });
 
-  it("loop guard skips if previous task still running", async () => {
-    const orch = makeSlowOrchestrator();
-    const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
-
-    await hooks.handlePreCompact();
-    expect(orch.list().length).toBe(1);
-
-    // Advance past cooldown
-    vi.setSystemTime(Date.now() + 10_000);
-
-    // Second trigger while first task still running — guard should suppress
-    await hooks.handlePreCompact();
-    expect(orch.list().length).toBe(1); // still 1 — loop guard blocked
-  });
+  // Loop guard (active-task suppression) replaced by cooldown in Phase 4.
 
   it("fires after cooldown expires following a successful trigger", async () => {
     const orch = makeInstantOrchestrator();
@@ -151,13 +124,15 @@ describe("AutomationHooks.onPreCompact", () => {
       () => {},
     );
 
-    await hooks.handlePreCompact();
+    hooks.handlePreCompact();
+    await hooks.flush();
     expect(orch.list().length).toBe(1);
 
     // Advance only 1 second — cooldown (1h) still blocks
     vi.setSystemTime(Date.now() + 1_000);
 
-    await hooks.handlePreCompact();
+    hooks.handlePreCompact();
+    await hooks.flush();
     expect(orch.list().length).toBe(1); // blocked by large cooldown
   });
 });

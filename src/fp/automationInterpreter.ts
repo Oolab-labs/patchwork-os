@@ -6,6 +6,7 @@
 
 import crypto from "node:crypto";
 import { minimatch } from "minimatch";
+import { getPrompt } from "../prompts.js";
 import type {
   AutomationProgram,
   HookType,
@@ -171,7 +172,9 @@ export function primaryValue(
 }
 
 /**
- * Resolve a PromptSourceNode to a string (inline only; named = placeholder).
+ * Resolve a PromptSourceNode to a string.
+ * For named prompts, calls getPrompt() and concatenates user messages.
+ * Returns null if a named prompt cannot be resolved (unknown name / missing args).
  */
 export function resolvePromptSource(
   source:
@@ -181,10 +184,24 @@ export function resolvePromptSource(
         promptName: string;
         promptArgs?: Record<string, string>;
       },
-  _eventData: Readonly<Record<string, string>>,
-): string {
+  eventData: Readonly<Record<string, string>>,
+): string | null {
   if (source.kind === "inline") return source.prompt;
-  return `[named:${source.promptName}]`;
+  // Substitute event placeholders into promptArgs values
+  const resolvedArgs: Record<string, string> = {};
+  for (const [k, v] of Object.entries(source.promptArgs ?? {})) {
+    resolvedArgs[k] = v.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => {
+      const raw = eventData[key] ?? "";
+      return raw.replace(/[\x00-\x1F\x7F]/g, "").slice(0, 500);
+    });
+  }
+  const result = getPrompt(source.promptName, resolvedArgs);
+  if (!result) return null;
+  const text = result.messages
+    .filter((m) => m.role === "user")
+    .map((m) => m.content.text)
+    .join("\n\n");
+  return truncatePrompt(text);
 }
 
 /**
@@ -228,19 +245,31 @@ function buildFinalPrompt(
     "url",
     "number",
     "title",
+    "diagnostics",
   ];
+
+  // Keys that carry pre-formatted multi-line output — higher truncation limit
+  const MULTI_LINE_KEYS = new Set([
+    "diagnostics",
+    "failures",
+    "files",
+    "output",
+  ]);
 
   let resolved = promptTemplate;
   for (const key of PLACEHOLDER_KEYS) {
     const val = eventData[key];
     if (val !== undefined && resolved.includes(`{{${key}}}`)) {
+      // Truncate user-controlled values at 500 chars (10 000 for structured multi-line outputs)
+      const limit = MULTI_LINE_KEYS.has(key) ? 10_000 : 500;
+      const truncatedVal = val.replace(/[\x00-\x1F\x7F]/g, "").slice(0, limit);
       resolved = resolved.split(`{{${key}}}`).join(
         untrustedBlock(
           key
             .toUpperCase()
             .replace(/[^A-Z0-9]/g, " ")
             .trim(),
-          val,
+          truncatedVal,
           nonce,
         ),
       );
@@ -280,6 +309,22 @@ async function interpret(
         };
       }
 
+      // patterns[] check (onFileSave / onFileChanged): file must match at least one glob
+      if (program.patterns && program.patterns.length > 0) {
+        const matchesAny = program.patterns.some((pat) =>
+          matchesCondition(pat, primary),
+        );
+        if (!matchesAny) {
+          return {
+            ...acc,
+            skipped: [
+              ...acc.skipped,
+              { reason: "pattern_mismatch", hook: program.hookType },
+            ],
+          };
+        }
+      }
+
       if (
         !evaluateWhen(program.when, program.hookType, acc.state, ctx.eventData)
       ) {
@@ -292,10 +337,80 @@ async function interpret(
         };
       }
 
+      // onDiagnosticsError: diagnosticTypes filter — skip when no matching source/code
+      if (
+        program.extras?.kind === "diagnosticsError" &&
+        program.extras.diagnosticTypes &&
+        program.extras.diagnosticTypes.length > 0
+      ) {
+        const sources = (ctx.eventData.diagnosticSources ?? "")
+          .split(",")
+          .filter(Boolean);
+        const allowed = program.extras.diagnosticTypes.map((t) =>
+          t.toLowerCase(),
+        );
+        const hasMatch = sources.some((s) => allowed.includes(s));
+        if (!hasMatch) {
+          return {
+            ...acc,
+            skipped: [
+              ...acc.skipped,
+              { reason: "diagnosticTypes", hook: program.hookType },
+            ],
+          };
+        }
+      }
+
+      // onTestRun: extras.onFailureOnly — skip when there are no failures
+      if (
+        program.extras?.kind === "testRun" &&
+        program.extras.onFailureOnly === true
+      ) {
+        const failedCount = parseInt(ctx.eventData.failed ?? "0", 10);
+        if (failedCount === 0) {
+          return {
+            ...acc,
+            skipped: [
+              ...acc.skipped,
+              { reason: "onFailureOnly", hook: program.hookType },
+            ],
+          };
+        }
+      }
+
+      // onTestRun: minDuration — skip when test run was shorter than threshold
+      if (
+        program.extras?.kind === "testRun" &&
+        (program.extras as { minDuration?: number }).minDuration !== undefined
+      ) {
+        const durationMs = parseFloat(ctx.eventData.durationMs ?? "");
+        const minDuration = (program.extras as { minDuration?: number })
+          .minDuration!;
+        if (!Number.isNaN(durationMs) && durationMs < minDuration) {
+          return {
+            ...acc,
+            skipped: [
+              ...acc.skipped,
+              { reason: "minDuration", hook: program.hookType },
+            ],
+          };
+        }
+      }
+
       const promptTemplate = resolvePromptSource(
         program.promptSource,
         ctx.eventData,
       );
+      if (promptTemplate === null) {
+        // Named prompt could not be resolved — skip silently (unknown prompt / missing args)
+        return {
+          ...acc,
+          skipped: [
+            ...acc.skipped,
+            { reason: "prompt_unresolved", hook: program.hookType },
+          ],
+        };
+      }
       const nonce = crypto.randomBytes(8).toString("hex");
       const finalPrompt = buildFinalPrompt(
         promptTemplate,
@@ -499,6 +614,23 @@ async function interpret(
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
+/** Returns the hookType of the innermost Hook node by drilling through wrappers. */
+function innerHookType(p: AutomationProgram): string | undefined {
+  switch (p._tag) {
+    case "Hook":
+      return p.hookType;
+    case "WithCooldown":
+    case "WithDedup":
+    case "WithRateLimit":
+    case "WithRetry":
+      return innerHookType(p.program);
+    case "Sequence":
+    case "Parallel":
+      // Composite — no single hookType; always include
+      return undefined;
+  }
+}
+
 export async function executeAutomationPolicy(
   programs: AutomationProgram[],
   ctx: InterpreterContext,
@@ -506,6 +638,14 @@ export async function executeAutomationPolicy(
   try {
     let acc = emptyAcc(ctx.state);
     for (const p of programs) {
+      // Filter top-level programs by eventType. Composite nodes (Sequence,
+      // Parallel) have no single hookType and are always evaluated.
+      if (ctx.eventType) {
+        const ht = innerHookType(p);
+        if (ht !== undefined && ht !== ctx.eventType) {
+          continue;
+        }
+      }
       acc = await interpret(p, ctx, acc);
     }
     return ok({

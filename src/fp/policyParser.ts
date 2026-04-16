@@ -134,7 +134,18 @@ function buildHook(
   });
 
   const key = cooldownKey(hookType, condition);
-  let program: AutomationProgram = withCooldown(key, cooldownMs, hookNode);
+
+  // When dedupeByContent is active, the content-based dedup provides its own
+  // cooldown window — skip the standard per-file WithCooldown so that
+  // diagnostics with different content can fire within the cooldown window.
+  const useDedup =
+    hookType === "onDiagnosticsError" &&
+    extras?.kind === "diagnosticsError" &&
+    extras.dedupeByContent;
+
+  let program: AutomationProgram = useDedup
+    ? hookNode
+    : withCooldown(key, cooldownMs, hookNode);
 
   // Wrap WithRetry around WithCooldown if retryCount > 0
   const retryCount = src.retryCount ?? 0;
@@ -144,14 +155,11 @@ function buildHook(
   }
 
   // Wrap WithDedup for diagnostics error with dedupeByContent
-  if (
-    hookType === "onDiagnosticsError" &&
-    extras?.kind === "diagnosticsError" &&
-    extras.dedupeByContent
-  ) {
+  if (useDedup) {
     const dedupCooldown = Math.max(
       5_000,
-      extras.dedupeContentCooldownMs ?? 900_000,
+      (extras as { dedupeContentCooldownMs?: number })
+        .dedupeContentCooldownMs ?? 900_000,
     );
     program = withDedup(`dedup:${key}`, dedupCooldown, program);
   }
@@ -172,9 +180,14 @@ export function parsePolicy(
 ): ToolResult<AutomationProgram[]> {
   const programs: AutomationProgram[] = [];
 
-  const defaultModel = policy.defaultModel;
-  const defaultEffort = policy.defaultEffort;
-  const defaultSystemPrompt = policy.automationSystemPrompt;
+  const defaultModel = policy.defaultModel ?? "claude-haiku-4-5-20251001";
+  const defaultEffort = policy.defaultEffort ?? "low";
+  const DEFAULT_SYSTEM_PROMPT =
+    "You are a concise automation assistant. " +
+    "Respond in \u22645 lines. No preamble. No markdown headers. " +
+    "Call the tools listed in the task prompt, then report results only.";
+  const defaultSystemPrompt =
+    policy.automationSystemPrompt ?? DEFAULT_SYSTEM_PROMPT;
 
   // Helper to push a hook or return early on error
   function push(result: ToolResult<AutomationProgram>): boolean {
@@ -197,9 +210,24 @@ export function parsePolicy(
       dedupeByContent: p.dedupeByContent,
       dedupeContentCooldownMs: p.dedupeContentCooldownMs,
     };
+    // Merge minSeverity into the `when` block so the interpreter's evaluateWhen()
+    // enforces it at evaluation time (extras are stored but not evaluated by the
+    // interpreter — only `when` fields are checked).
+    const diagSeverity = p.minSeverity as
+      | "error"
+      | "warning"
+      | "info"
+      | "hint"
+      | undefined;
+    const pWithSeverity: PromptSource = diagSeverity
+      ? ({
+          ...p,
+          when: { ...p.when, diagnosticsMinSeverity: diagSeverity },
+        } as unknown as PromptSource)
+      : (p as unknown as PromptSource);
     const result = buildHook(
       "onDiagnosticsError",
-      p,
+      pWithSeverity,
       true,
       p.cooldownMs,
       p.condition,
@@ -352,6 +380,7 @@ export function parsePolicy(
     const extras: HookExtras = {
       kind: "testRun",
       onFailureOnly: p.onFailureOnly,
+      minDuration: p.minDuration,
     };
     const result = buildHook(
       "onTestRun",
