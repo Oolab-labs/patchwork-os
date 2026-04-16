@@ -10,6 +10,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.42.1] — 2026-04-16
+
+### Fixed
+- **CI gate**: `launchQuickTask` description shortened 319 → 99 chars to pass the 200-char `audit-lsp-tools` gate. Full behaviour documented in `documents/platform-docs.md` + `documents/headless-quickstart.md`.
+
+---
+
 ## [2.42.0] — 2026-04-16
 
 ### Added
