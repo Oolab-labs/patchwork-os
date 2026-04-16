@@ -29,6 +29,7 @@ export const ToolErrorCodes = {
   EXTERNAL_COMMAND_FAILED: "external_command_failed",
   TASK_NOT_FOUND: "task_not_found",
   DRIVER_NOT_CONFIGURED: "driver_not_configured",
+  COOLDOWN_ACTIVE: "cooldown_active",
 } as const;
 
 export type ToolErrorCode =

@@ -491,6 +491,22 @@ if (process.argv[2] === "tools") {
   process.exit(0);
 }
 
+// Headless parity subcommands — launch Claude tasks from CLI (no sidebar/VS Code required).
+// Reuse the bridge's running process; no new dependencies.
+if (process.argv[2] === "quick-task") {
+  const { runQuickTask } = await import("./commands/task.js");
+  await runQuickTask(process.argv.slice(3));
+  // runQuickTask calls process.exit() itself
+}
+if (process.argv[2] === "start-task") {
+  const { runStartTask } = await import("./commands/task.js");
+  await runStartTask(process.argv.slice(3));
+}
+if (process.argv[2] === "continue-handoff") {
+  const { runContinueHandoff } = await import("./commands/task.js");
+  await runContinueHandoff(process.argv.slice(3));
+}
+
 // Handle print-token subcommand — print the bridge auth token from a lock file
 if (process.argv[2] === "print-token") {
   const argv = process.argv.slice(3);
