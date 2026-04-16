@@ -734,8 +734,8 @@ Steps performed:
   3. Write .claude/rules/bridge-tools.md
   4. Register MCP shim in ~/.claude.json
   5. Wire CC automation hooks in ~/.claude/settings.json
-  6. Verify claude-ide-bridge is on PATHPATH
-  6. Print next steps`);
+  6. Verify claude-ide-bridge is on PATH
+  7. Print next steps`);
     process.exit(0);
   }
 
@@ -941,13 +941,14 @@ Steps performed:
     process.stderr.write(`  [skip] Bridge rules — template not found\n\n`);
   }
 
-  // Step 3: Register shim in ~/.claude.json so bridge tools appear in every claude session
-  const claudeJsonPath = path.join(
-    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
-    "..",
-    "claude.json",
-  );
-  const claudeJsonAbs = path.resolve(claudeJsonPath);
+  // Step 3: Register shim in ~/.claude.json so bridge tools appear in every claude session.
+  // NOTE: ~/.claude.json is a FILE sitting next to the ~/.claude/ directory, with the same
+  // dotted prefix. Earlier versions computed `path.join(CONFIG_DIR, "..", "claude.json")`
+  // which dropped the leading dot and wrote to ~/claude.json — a ghost file that Claude
+  // Code never reads. Append ".json" to the config dir path instead.
+  const claudeDirForJson =
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+  const claudeJsonAbs = path.resolve(`${claudeDirForJson}.json`);
   try {
     let claudeJson: Record<string, unknown> = {};
     if (existsSync(claudeJsonAbs)) {
@@ -1087,15 +1088,36 @@ Steps performed:
     process.stderr.write("  ✓ Shim — claude-ide-bridge found on PATH\n\n");
   }
 
-  // Step 5: Success message
+  // Step 5: Success message + next steps
+  // Check if the workspace is a linked git worktree — surface Cowork gotcha if so.
+  // (In main worktree .git is a dir; in a linked worktree it is a file.)
+  let inWorktree = false;
+  try {
+    inWorktree = statSync(path.join(workspace, ".git")).isFile();
+  } catch {
+    /* no .git at workspace — not a git repo, fine */
+  }
+
   process.stdout.write(
-    "✅ Added onDebugSessionStart + onPreCompact + getProjectContext. " +
-      "Cold starts are now ~3× faster. " +
-      "Run claude-ide-bridge status to see everything live.\n\n",
+    "\n✅ Setup complete.\n\n" +
+      "Next steps:\n" +
+      `  1. Start the bridge:    claude-ide-bridge --watch   (runs in this workspace)\n` +
+      "  2. Restart your IDE once so it picks up the new extension + MCP config.\n" +
+      "  3. Open Claude Code and type /mcp — the claude-ide-bridge server should show as connected.\n" +
+      "  4. Type /ide to see live workspace state (open editors, diagnostics, git status).\n\n",
   );
 
+  if (inWorktree) {
+    process.stdout.write(
+      "⚠ This workspace is a linked git worktree. If this is a Cowork session,\n" +
+        "  bridge MCP tools are unreachable from inside Cowork itself — run\n" +
+        "  /mcp__bridge__cowork in regular Claude Code/Desktop chat FIRST to\n" +
+        "  gather context, then switch to Cowork. See docs/cowork.md.\n\n",
+    );
+  }
+
   // Step 6: Verify setup
-  process.stdout.write("\n📋 Setup verification:\n");
+  process.stdout.write("📋 Setup verification:\n");
   process.stdout.write(
     shimOnPath
       ? "  ✓ bridge on PATH\n"
