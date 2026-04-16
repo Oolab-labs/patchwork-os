@@ -1017,6 +1017,10 @@ export class AutomationHooks {
       prevDiagnosticErrors: this.prevDiagnosticErrors,
       lastTestOutcomeByRunner: this.lastTestOutcomeByRunner,
       taskTimestamps: this.taskTimestamps,
+      deduplicationWindow: new Map(),
+      pendingRetries: new Map(),
+      latestDiagnosticsByFile: new Map(),
+      lastTestRunnerStatusByRunner: new Map(),
     };
   }
 
