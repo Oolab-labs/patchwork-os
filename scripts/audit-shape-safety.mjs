@@ -168,4 +168,51 @@ if (issues === 0 && allowlistHits.length > 0) {
   }
 }
 
+// ── Unsafe cast audit (boundary files) ───────────────────────────────────────
+//
+// These files receive external/untrusted data (plugin manifests, HTTP bodies,
+// WebSocket messages). Casts of `as unknown as SomeType` bypass TypeScript's
+// type system without runtime validation — similar to the proxy<T> pattern that
+// caused 8 latent bugs in v2.25.18–24.
+//
+// These findings are INFORMATIONAL ONLY — they do not fail CI. Some casts may
+// be intentional and safe (e.g. after schema validation). Review each match and
+// either add a runtime validator or add a comment explaining why it's safe.
+
+const FILES_TO_SCAN_FOR_UNSAFE_CASTS = [
+  path.join(root, "src", "pluginLoader.ts"),
+  path.join(root, "src", "streamableHttp.ts"),
+  path.join(root, "src", "server.ts"),
+];
+
+const unsafeCastPattern = /as\s+unknown\s+as\s+[A-Z]/;
+const unsafeCastFindings = [];
+
+for (const filePath of FILES_TO_SCAN_FOR_UNSAFE_CASTS) {
+  let fileSrc;
+  try {
+    fileSrc = readFileSync(filePath, "utf8");
+  } catch {
+    console.warn(`  ⚠ Could not read ${path.relative(root, filePath)}`);
+    continue;
+  }
+  const fileLines = fileSrc.split("\n");
+  for (let i = 0; i < fileLines.length; i++) {
+    if (unsafeCastPattern.test(fileLines[i])) {
+      const rel = path.relative(root, filePath);
+      unsafeCastFindings.push(`${rel}:${i + 1} — ${fileLines[i].trim()}`);
+    }
+  }
+}
+
+console.log(`\n--- Unsafe cast audit (3 boundary files) ${"─".repeat(10)}`);
+if (unsafeCastFindings.length === 0) {
+  console.log("  (none found)");
+} else {
+  for (const f of unsafeCastFindings) console.log(`  ${f}`);
+}
+console.log(
+  `\nFound ${unsafeCastFindings.length} unsafe cast(s) in boundary files (informational — review each)`,
+);
+
 process.exit(issues > 0 ? 1 : 0);
