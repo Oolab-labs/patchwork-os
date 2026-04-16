@@ -300,4 +300,101 @@ describe("mergeAutomationStates", () => {
     const b = recordDedup(EMPTY_AUTOMATION_STATE, "d", 500);
     expect(mergeAutomationStates(a, b).deduplicationWindow.get("d")).toBe(500);
   });
+
+  // ── Parallel-merge regression edges (stabilize sprint, v2.42.x) ─────────────
+  // Seeds after v2.40.1 parallel-merge fix. If any of these fail, a hook in
+  // one Parallel branch is losing state from a sibling branch.
+
+  it("3-way parallel: interleaved dedup triggers all survive", () => {
+    // Simulates three branches each recording a distinct dedup key.
+    const a = recordDedup(EMPTY_AUTOMATION_STATE, "x", NOW - 200);
+    const b = recordDedup(EMPTY_AUTOMATION_STATE, "y", NOW - 100);
+    const c = recordDedup(EMPTY_AUTOMATION_STATE, "z", NOW);
+    const merged = mergeAutomationStates(mergeAutomationStates(a, b), c);
+    expect(merged.deduplicationWindow.get("x")).toBe(NOW - 200);
+    expect(merged.deduplicationWindow.get("y")).toBe(NOW - 100);
+    expect(merged.deduplicationWindow.get("z")).toBe(NOW);
+    expect(merged.deduplicationWindow.size).toBe(3);
+  });
+
+  it("WithRetry × Parallel nesting: pendingRetries merged from both branches", () => {
+    // Branch A schedules a retry for key "hookA", Branch B schedules for "hookB".
+    // The outer Parallel must preserve both pending records.
+    const a = recordPendingRetry(
+      EMPTY_AUTOMATION_STATE,
+      "hookA",
+      1,
+      NOW + 1000,
+      "task-A",
+    );
+    const b = recordPendingRetry(
+      EMPTY_AUTOMATION_STATE,
+      "hookB",
+      2,
+      NOW + 2000,
+      "task-B",
+    );
+    const merged = mergeAutomationStates(a, b);
+    expect(merged.pendingRetries.get("hookA")).toEqual({
+      attempt: 1,
+      nextRetryAt: NOW + 1000,
+      taskId: "task-A",
+    });
+    expect(merged.pendingRetries.get("hookB")).toEqual({
+      attempt: 2,
+      nextRetryAt: NOW + 2000,
+      taskId: "task-B",
+    });
+  });
+
+  it("schedule/exec drift: older state merged with newer keeps newer max", () => {
+    // Branch A snapshot captured at schedule-time (NOW - 60s).
+    // Branch B ran later and recorded a trigger at NOW.
+    // Merging must not revive the older timestamp.
+    const older = recordTrigger(
+      EMPTY_AUTOMATION_STATE,
+      "K",
+      "t1",
+      NOW - 60_000,
+    );
+    const newer = recordTrigger(EMPTY_AUTOMATION_STATE, "K", "t2", NOW);
+    const merged = mergeAutomationStates(older, newer);
+    // Max per key → newer wins.
+    expect(merged.lastTrigger.get("K")).toBe(NOW);
+    // Still on cooldown against the newer timestamp.
+    expect(isOnCooldown(merged, "K", NOW + 100, 5_000)).toBe(true);
+  });
+
+  it("millisecond timestamp collision: merge is deterministic, not racy", () => {
+    // Both branches trigger at exactly the same ms with different task IDs.
+    // activeTasks uses unionMap (b wins), but lastTrigger uses max (either, equal).
+    const a = recordTrigger(EMPTY_AUTOMATION_STATE, "K", "task-A", NOW);
+    const b = recordTrigger(EMPTY_AUTOMATION_STATE, "K", "task-B", NOW);
+    const ab = mergeAutomationStates(a, b);
+    const ba = mergeAutomationStates(b, a);
+    // lastTrigger timestamp must agree regardless of argument order.
+    expect(ab.lastTrigger.get("K")).toBe(NOW);
+    expect(ba.lastTrigger.get("K")).toBe(NOW);
+    // activeTasks: argument-order-dependent (right wins) — document the behavior.
+    expect(ab.activeTasks.get("K")).toBe("task-B");
+    expect(ba.activeTasks.get("K")).toBe("task-A");
+  });
+
+  it("post-GC dedup window: empty a-side merges cleanly with populated b-side", () => {
+    // Branch A's dedup window was GC'd (capped + evicted), leaving empty.
+    // Branch B still has records. Merge must not resurrect evicted keys.
+    const emptyA = EMPTY_AUTOMATION_STATE;
+    const populatedB = recordDedup(
+      recordDedup(EMPTY_AUTOMATION_STATE, "k1", NOW - 100),
+      "k2",
+      NOW,
+    );
+    const merged = mergeAutomationStates(emptyA, populatedB);
+    expect(merged.deduplicationWindow.size).toBe(2);
+    expect(merged.deduplicationWindow.get("k1")).toBe(NOW - 100);
+    expect(merged.deduplicationWindow.get("k2")).toBe(NOW);
+    // Reverse order: same result (symmetry for disjoint keys).
+    const mergedReverse = mergeAutomationStates(populatedB, emptyA);
+    expect(mergedReverse.deduplicationWindow.size).toBe(2);
+  });
 });
