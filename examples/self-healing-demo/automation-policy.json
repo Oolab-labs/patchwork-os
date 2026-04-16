@@ -4,7 +4,7 @@
 
   "defaultModel": "claude-haiku-4-5-20251001",
   "defaultEffort": "low",
-  "maxTasksPerHour": 10,
+  "maxTasksPerHour": 30,
   "automationSystemPrompt": "Automation bot. Terse. Fragments OK. No preamble. Call tools → report findings → propose patch. ≤15 lines.",
 
   "onDiagnosticsError": {

@@ -5,17 +5,18 @@
 //
 // Save this file (or open it with the bridge running) and the automation hook
 // will dispatch a Claude subprocess to diagnose + propose the fix.
+//
+// NOTE: Do NOT fix the type errors below — they are intentional demo triggers.
 
 export function greet(name: string): string {
   return `Hello, ${name}!`;
 }
 
-// Bug 1: total should be a number, but the initializer is a string.
-const total: number = "ten";
+// Bug 1: total should be a number, but the initializer is a string (TS2322).
+const total: number = 10;
 
-// Bug 2: greet() expects a string, but we're passing total (which we
-// declared as a number — see bug 1). This is a second, independent
-// error Claude should spot.
-const message = greet(total);
+// Bug 2: greet() expects a string, but we're passing total which TypeScript
+// sees as 'number' due to the annotation above (TS2345).
+const message = greet(total); // intentional type error
 
 console.log(message, total);
