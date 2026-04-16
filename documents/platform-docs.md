@@ -431,9 +431,9 @@ These tools require `--claude-driver subprocess` (or `api`) at startup. They are
 | Tool | Mode | Description |
 |------|------|-------------|
 | `runClaudeTask` | F | Enqueue a Claude subprocess task. Params: `prompt` (max 32 KB), `contextFiles` (max 20, workspace-confined), `timeoutMs` (5000–600000, default 120000), `stream` (bool), `model`. Returns `{ taskId, status }` immediately, or blocks and streams if `stream: true` |
-| `getClaudeTaskStatus` | F | Poll a task by ID. Returns `{ taskId, status, output (500 char cap), startedAt, completedAt, durationMs }`. Session-scoped |
+| `getClaudeTaskStatus` | F | Poll a task by ID. Returns `{ taskId, status, output (500 char cap), startedAt, completedAt, durationMs }`. Session-scoped; automation-spawned tasks (`sessionId=""`) visible to all sessions |
 | `cancelClaudeTask` | F | Cancel a pending or running task. No-op if already completed. Session-scoped |
-| `listClaudeTasks` | F | List session-scoped tasks with optional `status` filter. Output capped at 200 chars per task |
+| `listClaudeTasks` | F | List tasks with optional `status` filter. Session-scoped; automation-spawned tasks included for all sessions. Output capped at 100 chars per task |
 | `resumeClaudeTask` | F | Re-enqueue a completed or failed task. Preserves original prompt, contextFiles, timeoutMs, and model. Session-scoped |
 
 Task lifecycle: `pending → running → done | error | cancelled`.
