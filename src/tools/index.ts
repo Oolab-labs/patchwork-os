@@ -133,6 +133,7 @@ import {
 } from "./httpClient.js";
 import { createGetInlayHintsTool } from "./inlayHints.js";
 import { createJumpToFirstErrorTool } from "./jumpToFirstError.js";
+import { createLaunchQuickTaskTool } from "./launchQuickTask.js";
 import { createListClaudeTasksTool } from "./listClaudeTasks.js";
 import { createListTerminalsTool } from "./listTerminals.js";
 import {
@@ -177,6 +178,7 @@ import { createSelectionRangesTool } from "./selectionRanges.js";
 import { createGetSemanticTokensTool } from "./semanticTokens.js";
 import { createSetActiveWorkspaceFolderTool } from "./setActiveWorkspaceFolder.js";
 import { createSignatureHelpTool } from "./signatureHelp.js";
+import { createSpawnWorkspaceTool } from "./spawnWorkspace.js";
 import {
   createCreateTerminalTool,
   createDisposeTerminalTool,
@@ -196,7 +198,6 @@ import {
   createListVSCodeTasksTool,
   createRunVSCodeTaskTool,
 } from "./vscodeTasks.js";
-import { createSpawnWorkspaceTool } from "./spawnWorkspace.js";
 import { createWatchDiagnosticsTool } from "./watchDiagnostics.js";
 import { createSetWorkspaceSettingTool } from "./workspaceSettings.js";
 
@@ -353,6 +354,63 @@ export function registerAllTools(
     workspace,
     extensionClient,
   );
+  const getHandoffNoteToolInstance = createGetHandoffNoteTool({
+    workspace: config.workspace,
+  });
+  const getProjectContextToolInstance = createGetProjectContextTool(
+    workspace,
+    extensionClient,
+    probes,
+    { onCacheUpdated: onContextCacheUpdated },
+  );
+  const getAnalyticsReportToolInstance =
+    activityLog !== undefined
+      ? createGetAnalyticsReportTool(activityLog, orchestrator ?? null)
+      : null;
+  const getPerformanceReportToolInstance =
+    activityLog !== undefined
+      ? createGetPerformanceReportTool({
+          activityLog,
+          extensionClient,
+          getSessions: () => {
+            let inGrace = 0;
+            if (sessions) {
+              for (const s of (
+                sessions as Map<string, { graceTimer: unknown }>
+              ).values()) {
+                if (s.graceTimer) inGrace++;
+              }
+            }
+            return { active: sessions?.size ?? 0, inGrace };
+          },
+          getRateLimitRejected: () => activityLog.getRateLimitRejections(),
+          getExtensionDisconnectCount: getExtensionDisconnectCount ?? (() => 0),
+        })
+      : null;
+  const runClaudeTaskToolInstance =
+    orchestrator !== null
+      ? createRunClaudeTaskTool(orchestrator, sessionId, workspace)
+      : null;
+  const resumeClaudeTaskToolInstance =
+    orchestrator !== null
+      ? createResumeClaudeTaskTool(orchestrator, sessionId)
+      : null;
+  const launchQuickTaskToolInstance =
+    runClaudeTaskToolInstance !== null && resumeClaudeTaskToolInstance !== null
+      ? createLaunchQuickTaskTool({
+          runTask: (a) => runClaudeTaskToolInstance.handler(a),
+          resumeTask: (a) => resumeClaudeTaskToolInstance.handler(a),
+          getHandoff: () => getHandoffNoteToolInstance.handler({}),
+          getContext: () => getProjectContextToolInstance.handler({}),
+          getDiagnostics: () => diagnosticsTool.handler({}),
+          getPerfReport: getPerformanceReportToolInstance
+            ? () => getPerformanceReportToolInstance.handler({})
+            : undefined,
+          getAnalyticsReport: getAnalyticsReportToolInstance
+            ? () => getAnalyticsReportToolInstance.handler({})
+            : undefined,
+        })
+      : null;
 
   const tools = [
     openFileTool,
@@ -510,7 +568,7 @@ export function registerAllTools(
     // Phase 4: Additional features
     createReadClipboardTool(extensionClient),
     createWriteClipboardTool(extensionClient),
-    createGetHandoffNoteTool({ workspace: config.workspace }),
+    getHandoffNoteToolInstance,
     createSetHandoffNoteTool(sessionId, { workspace: config.workspace }),
     createGetWorkspaceSettingsTool(extensionClient),
     createSetWorkspaceSettingTool(extensionClient),
@@ -557,33 +615,14 @@ export function registerAllTools(
     createRefactorExtractFunctionTool(workspace, extensionClient),
     createGetGitHotspotsTool(workspace),
     createGetSymbolHistoryTool(workspace, extensionClient),
-    createGetProjectContextTool(workspace, extensionClient, probes, {
-      onCacheUpdated: onContextCacheUpdated,
-    }),
+    getProjectContextToolInstance,
     createGetSessionUsageTool(transport),
     createSearchToolsTool(transport),
-    ...(activityLog !== undefined
-      ? [
-          createGetAnalyticsReportTool(activityLog, orchestrator ?? null),
-          createGetPerformanceReportTool({
-            activityLog,
-            extensionClient,
-            getSessions: () => {
-              let inGrace = 0;
-              if (sessions) {
-                for (const s of (
-                  sessions as Map<string, { graceTimer: unknown }>
-                ).values()) {
-                  if (s.graceTimer) inGrace++;
-                }
-              }
-              return { active: sessions?.size ?? 0, inGrace };
-            },
-            getRateLimitRejected: () => activityLog.getRateLimitRejections(),
-            getExtensionDisconnectCount:
-              getExtensionDisconnectCount ?? (() => 0),
-          }),
-        ]
+    ...(getAnalyticsReportToolInstance !== null
+      ? [getAnalyticsReportToolInstance]
+      : []),
+    ...(getPerformanceReportToolInstance !== null
+      ? [getPerformanceReportToolInstance]
       : []),
     createSpawnWorkspaceTool(),
     createPreviewEditTool(workspace),
@@ -629,13 +668,16 @@ export function registerAllTools(
           ),
         ]
       : []),
-    ...(orchestrator !== null
+    ...(orchestrator !== null && runClaudeTaskToolInstance !== null
       ? [
-          createRunClaudeTaskTool(orchestrator, sessionId, workspace),
+          runClaudeTaskToolInstance,
           createGetClaudeTaskStatusTool(orchestrator, sessionId),
           createCancelClaudeTaskTool(orchestrator, sessionId),
           createListClaudeTasksTool(orchestrator, sessionId),
-          createResumeClaudeTaskTool(orchestrator, sessionId),
+          ...(resumeClaudeTaskToolInstance
+            ? [resumeClaudeTaskToolInstance]
+            : []),
+          ...(launchQuickTaskToolInstance ? [launchQuickTaskToolInstance] : []),
         ]
       : []),
   ];

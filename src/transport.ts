@@ -239,6 +239,21 @@ export class McpTransport {
   }
 
   /**
+   * Invoke a registered tool by name, bypassing the JSON-RPC dispatch path.
+   * Used by HTTP endpoints (e.g. /launch-quick-task) that need to call tools
+   * in-process without a full MCP session. No AJV validation — callers must
+   * pre-validate args. Returns null if the tool is not registered.
+   */
+  invokeToolDirect(
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> | null {
+    const tool = this.tools.get(toolName);
+    if (!tool) return null;
+    return Promise.resolve(tool.handler(args));
+  }
+
+  /**
    * Mark the transport as initialized without requiring the MCP handshake.
    * Use this when the caller has already authenticated the client at a higher
    * level (e.g. the orchestrator validates auth at WebSocket upgrade time).

@@ -1103,6 +1103,52 @@ export class Bridge {
       }
     };
 
+    // 3c-launchQuickTask. Wire POST /launch-quick-task endpoint. Pick any live
+    // session's transport to dispatch (all sessions share the same registered
+    // tools). When no sessions are connected, the endpoint returns 503.
+    this.server.launchQuickTaskFn = async (presetId, source) => {
+      const firstSession = this.sessions.values().next().value;
+      if (!firstSession) {
+        return {
+          ok: false,
+          error: "No active bridge session — connect a client first",
+        };
+      }
+      const result = await firstSession.transport.invokeToolDirect(
+        "launchQuickTask",
+        { presetId, source },
+      );
+      if (result === null) {
+        return {
+          ok: false,
+          error:
+            "launchQuickTask not registered — requires --claude-driver subprocess",
+        };
+      }
+      const r = result as {
+        content?: Array<{ text?: string }>;
+        isError?: boolean;
+        structuredContent?: unknown;
+      };
+      if (r.isError) {
+        const errText = r.content?.[0]?.text ?? "{}";
+        try {
+          const parsed = JSON.parse(errText) as {
+            error?: string;
+            code?: string;
+          };
+          return {
+            ok: false,
+            error: parsed.error ?? "unknown error",
+            code: parsed.code,
+          };
+        } catch {
+          return { ok: false, error: errText };
+        }
+      }
+      return { ok: true, result: r.structuredContent ?? null };
+    };
+
     // 3b. Set up Streamable HTTP transport handler (POST/GET/DELETE /mcp)
     this.httpMcpHandler = new StreamableHttpHandler(
       this.config,

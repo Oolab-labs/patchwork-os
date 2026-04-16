@@ -133,6 +133,18 @@ export class Server extends EventEmitter<ServerEvents> {
         args: Record<string, string>,
       ) => { ok: boolean; error?: string })
     | null = null;
+  /** Set by bridge to handle POST /launch-quick-task — invokes launchQuickTask tool in-process. */
+  public launchQuickTaskFn:
+    | ((
+        presetId: string,
+        source: string,
+      ) => Promise<{
+        ok: boolean;
+        result?: unknown;
+        error?: string;
+        code?: string;
+      }>)
+    | null = null;
 
   /**
    * Attach an OAuth 2.0 Authorization Server.
@@ -653,6 +665,59 @@ export class Server extends EventEmitter<ServerEvents> {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
           }
+        });
+        return;
+      }
+      // Quick-task launch endpoint — mirrors /notify pattern. Bearer auth already checked above.
+      if (
+        parsedUrl.pathname === "/launch-quick-task" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            try {
+              const body = Buffer.concat(chunks).toString("utf-8");
+              const parsed = JSON.parse(body) as {
+                presetId?: string;
+                source?: string;
+              };
+              const presetId = parsed.presetId;
+              const source = parsed.source ?? "cli";
+              if (typeof presetId !== "string" || !presetId) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    ok: false,
+                    error: "presetId required",
+                  }),
+                );
+                return;
+              }
+              if (!this.launchQuickTaskFn) {
+                res.writeHead(503, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    ok: false,
+                    error:
+                      "Quick tasks unavailable — requires --claude-driver subprocess",
+                  }),
+                );
+                return;
+              }
+              const result = await this.launchQuickTaskFn(presetId, source);
+              res.writeHead(result.ok ? 200 : 429, {
+                "Content-Type": "application/json",
+              });
+              res.end(JSON.stringify(result));
+            } catch {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({ ok: false, error: "Invalid JSON body" }),
+              );
+            }
+          })();
         });
         return;
       }
