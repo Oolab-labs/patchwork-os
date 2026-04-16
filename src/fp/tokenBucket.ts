@@ -23,10 +23,10 @@ export function refillBucket(
   limit: number,
   windowMs = 60_000,
 ): TokenBucketState {
-  const elapsed = now - state.lastRefill;
+  const elapsed = Math.max(0, now - state.lastRefill); // guard against clock skew
   const refill = (elapsed / windowMs) * limit;
   return {
-    tokens: Math.min(limit, state.tokens + refill),
+    tokens: Math.min(limit, Math.max(0, state.tokens + refill)),
     lastRefill: now,
   };
 }
