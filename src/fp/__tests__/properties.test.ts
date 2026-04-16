@@ -252,22 +252,27 @@ describe("truncateOutput — size invariants + idempotency", () => {
 });
 
 describe("truncatePrompt — size invariant", () => {
-  test("result length is always <= MAX_POLICY_PROMPT_CHARS", () => {
+  test("result byte length is always <= MAX_POLICY_PROMPT_CHARS + suffix", () => {
     const MAX = 32_768;
+    const SUFFIX_BYTES = Buffer.byteLength(
+      "\n[... truncated to fit 32KB limit ...]",
+      "utf8",
+    );
     fc.assert(
       fc.property(fc.string({ maxLength: 70_000 }), (prompt) => {
         const result = truncatePrompt(prompt);
-        return result.length <= MAX + 50; // small slack for truncation notice
+        return Buffer.byteLength(result, "utf8") <= MAX + SUFFIX_BYTES;
       }),
       { seed: 42 },
     );
   });
 
-  test("if input length <= MAX, output equals input", () => {
+  test("if input byte length <= MAX, output equals input", () => {
     const MAX = 32_768;
     fc.assert(
       fc.property(fc.string({ maxLength: MAX }), (prompt) => {
-        if (prompt.length > MAX) return true;
+        // Only assert identity when input is within the byte limit.
+        if (Buffer.byteLength(prompt, "utf8") > MAX) return true;
         return truncatePrompt(prompt) === prompt;
       }),
       { seed: 42 },

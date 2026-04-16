@@ -1441,11 +1441,16 @@ export class Bridge {
     }
     // Flush checkpoint with current session state before cleaning up sessions.
     // The periodic checkpoint writer runs every 30s, so up to 30s of editor
-    // state can be lost on SIGTERM without this. The flush runs synchronously
-    // so the checkpoint file is complete before we remove the lock file.
+    // state can be lost on SIGTERM without this. Awaited with a 3s timeout so
+    // a slow/blocked filesystem write never hangs shutdown indefinitely.
     if (this.checkpoint && this.port > 0) {
       try {
-        this.checkpoint.write(this._buildCheckpoint(this.port));
+        await Promise.race([
+          Promise.resolve().then(() =>
+            this.checkpoint!.write(this._buildCheckpoint(this.port)),
+          ),
+          new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+        ]);
       } catch {
         // best-effort — don't prevent clean shutdown
       }

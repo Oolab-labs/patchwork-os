@@ -3,7 +3,7 @@
  * No side effects, no Date.now(), no process.*, no fs.*.
  */
 
-/** Maximum length (chars) of an automation policy prompt template (matches runClaudeTask cap) */
+/** Maximum byte length of an automation policy prompt (matches runClaudeTask cap) */
 export const MAX_POLICY_PROMPT_CHARS = 32_768;
 
 /** Maximum length (chars) of a file path inserted into prompts */
@@ -32,14 +32,31 @@ export function untrustedBlock(
 }
 
 /**
- * Truncate a final prompt to MAX_POLICY_PROMPT_CHARS at the last newline before
- * the limit and append a truncation notice.
+ * Truncate a final prompt to MAX_POLICY_PROMPT_CHARS bytes at the last newline
+ * before the limit and append a truncation notice.
+ *
+ * Uses Buffer byte-length rather than JS string .length (UTF-16 code units) so
+ * that multibyte characters (emoji, CJK, surrogate pairs) are never split at a
+ * code-unit boundary, which would produce malformed text.
  */
 export function truncatePrompt(prompt: string): string {
-  if (prompt.length <= MAX_POLICY_PROMPT_CHARS) return prompt;
-  const cutoff = prompt.lastIndexOf("\n", MAX_POLICY_PROMPT_CHARS);
-  const end = cutoff > 0 ? cutoff : MAX_POLICY_PROMPT_CHARS;
-  return `${prompt.slice(0, end)}\n[... truncated to fit 32KB limit ...]`;
+  // Buffer.byteLength counts actual UTF-8 bytes, not UTF-16 code units.
+  if (Buffer.byteLength(prompt, "utf8") <= MAX_POLICY_PROMPT_CHARS)
+    return prompt;
+
+  // Slice to MAX_POLICY_PROMPT_CHARS bytes then decode — Node.js drops any
+  // incomplete multibyte sequence at the boundary automatically.
+  let truncated = Buffer.from(prompt, "utf8")
+    .subarray(0, MAX_POLICY_PROMPT_CHARS)
+    .toString("utf8");
+
+  // Prefer breaking at the last newline so we don't cut mid-sentence.
+  const lastNl = truncated.lastIndexOf("\n");
+  if (lastNl > 0) {
+    truncated = truncated.slice(0, lastNl);
+  }
+
+  return `${truncated}\n[... truncated to fit 32KB limit ...]`;
 }
 
 /**
