@@ -59,11 +59,60 @@ describe("installRecipeFromFile", () => {
     expect(second.action).toBe("replaced");
   });
 
-  it("rejects non-JSON source file with helpful message", () => {
+  it("accepts YAML recipe files", () => {
     const src = path.join(dir, "recipe.yaml");
-    writeFileSync(src, "name: x\nversion: '1.0'");
+    writeFileSync(
+      src,
+      `name: yaml-recipe
+version: "1.0"
+description: from YAML
+trigger:
+  type: file_watch
+  patterns:
+    - "**/*.md"
+steps:
+  - id: summarize
+    agent: true
+    prompt: summarize the change
+    tools:
+      - Read
+    risk: low
+`,
+    );
+    const recipesDir = path.join(dir, "recipes");
+    const result = installRecipeFromFile(src, { recipesDir });
+    expect(result.action).toBe("created");
+    expect(result.installedPath.endsWith("yaml-recipe.json")).toBe(true);
+    const written = JSON.parse(readFileSync(result.installedPath, "utf-8"));
+    expect(written.trigger.type).toBe("file_watch");
+    expect(written.steps[0].tools).toEqual(["Read"]);
+  });
+
+  it("accepts .yml extension", () => {
+    const src = path.join(dir, "recipe.yml");
+    writeFileSync(
+      src,
+      `name: short-ext
+version: "1.0"
+trigger: { type: manual }
+steps:
+  - id: x
+    agent: false
+    tool: send_message
+    params: { text: hi }
+`,
+    );
+    // manual trigger fails compile, but parse works — asserts .yml is accepted
     expect(() => installRecipeFromFile(src, { recipesDir: dir })).toThrow(
-      /YAML support lands/,
+      /manual trigger/,
+    );
+  });
+
+  it("rejects unknown extensions", () => {
+    const src = path.join(dir, "recipe.toml");
+    writeFileSync(src, "name = 'x'");
+    expect(() => installRecipeFromFile(src, { recipesDir: dir })).toThrow(
+      /Expected \.json, \.yaml, or \.yml/,
     );
   });
 
