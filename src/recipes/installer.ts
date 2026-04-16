@@ -1,0 +1,80 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import type { CompiledRecipe } from "./compiler.js";
+import { compileRecipeFull } from "./compiler.js";
+import { parseRecipe } from "./parser.js";
+
+/**
+ * Recipe installer — loads a recipe file, validates, compiles, and copies it
+ * into ~/.patchwork/recipes/ so the bridge picks it up at next restart.
+ *
+ * Phase-2 scope: JSON only. YAML lands when the `yaml` dep is added.
+ * The on-disk schema is unchanged either way — compile is source-format agnostic.
+ */
+
+export interface InstallOptions {
+  recipesDir: string;
+  force?: boolean;
+  fs?: {
+    readFile?: (p: string) => string;
+    writeFile?: (p: string, content: string) => void;
+    copyFile?: (src: string, dest: string) => void;
+    mkdir?: (p: string) => void;
+  };
+}
+
+export interface InstallResult {
+  compiled: CompiledRecipe;
+  installedPath: string;
+  action: "created" | "replaced";
+  permissionsJson: string;
+}
+
+export function installRecipeFromFile(
+  sourcePath: string,
+  opts: InstallOptions,
+): InstallResult {
+  const ext = path.extname(sourcePath).toLowerCase();
+  if (ext !== ".json") {
+    throw new Error(
+      `Unsupported recipe format '${ext || "<none>"}' for ${sourcePath}. YAML support lands with the 'yaml' dep; use JSON for now.`,
+    );
+  }
+
+  const fs = opts.fs ?? {};
+  const readFile = fs.readFile ?? ((p: string) => readFileSync(p, "utf-8"));
+  const writeFile =
+    fs.writeFile ?? ((p: string, c: string) => writeFileSync(p, c));
+  const mkdir = fs.mkdir ?? ((p: string) => mkdirSync(p, { recursive: true }));
+
+  const raw = JSON.parse(readFile(sourcePath)) as unknown;
+  const recipe = parseRecipe(raw);
+  const compiled = compileRecipeFull(recipe);
+
+  mkdir(opts.recipesDir);
+  const destPath = path.join(opts.recipesDir, `${recipe.name}.json`);
+  let action: "created" | "replaced" = "created";
+  try {
+    readFile(destPath);
+    action = "replaced";
+  } catch {
+    // file doesn't exist — creating
+  }
+  writeFile(destPath, JSON.stringify(recipe, null, 2));
+
+  // Write permissions suggestion alongside for user review.
+  const permsPath = `${destPath}.permissions.json`;
+  const permissionsJson = JSON.stringify(
+    { permissions: compiled.suggestedPermissions },
+    null,
+    2,
+  );
+  writeFile(permsPath, permissionsJson);
+
+  return {
+    compiled,
+    installedPath: destPath,
+    action,
+    permissionsJson,
+  };
+}

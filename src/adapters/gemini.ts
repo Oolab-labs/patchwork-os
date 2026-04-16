@@ -6,6 +6,7 @@ import type {
   ToolCall,
   ToolDef,
 } from "./base.js";
+import { parseSseStream } from "./sse.js";
 
 /**
  * GeminiAdapter — Google Generative Language API (v1beta generateContent).
@@ -135,25 +136,125 @@ export class GeminiAdapter implements ModelAdapter {
   }
 
   async *stream(params: CompletionParams): AsyncIterable<StreamChunk> {
+    const model = params.model ?? this.opts.defaultModel ?? DEFAULT_MODEL;
+    const url =
+      this.opts.baseURL ??
+      `${API_BASE}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(this.apiKey)}`;
+
+    const contents = params.messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      }));
+
+    const body = {
+      systemInstruction: params.systemPrompt
+        ? { parts: [{ text: params.systemPrompt }] }
+        : undefined,
+      contents,
+      tools: this.translateTools(params.tools),
+      generationConfig: {
+        maxOutputTokens: params.maxTokens,
+        temperature: params.temperature,
+      },
+    };
+
+    const fetchImpl = this.opts.fetchImpl ?? fetch;
+    let res: Response;
     try {
-      const result = await this.complete(params);
-      if (result.text) yield { type: "text", delta: result.text };
-      for (const tc of result.toolCalls) {
-        yield { type: "tool_call_start", id: tc.id, name: tc.name };
-        yield {
-          type: "tool_call_delta",
-          id: tc.id,
-          argumentsDelta: JSON.stringify(tc.arguments),
-        };
-        yield { type: "tool_call_end", id: tc.id };
-      }
-      yield { type: "done", result };
+      res = await fetchImpl(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "text/event-stream",
+        },
+        body: JSON.stringify(body),
+      });
     } catch (err) {
       yield {
         type: "error",
         message: err instanceof Error ? err.message : String(err),
       };
+      return;
     }
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      yield {
+        type: "error",
+        message: `GeminiAdapter: API error ${res.status}: ${text.slice(0, 500)}`,
+      };
+      return;
+    }
+
+    const textParts: string[] = [];
+    const toolCallsOut: ToolCall[] = [];
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let finishReason: string | undefined;
+    let fcCounter = 0;
+
+    try {
+      for await (const evt of parseSseStream(res.body)) {
+        if (!evt.data) continue;
+        let parsed: GeminiResponse;
+        try {
+          parsed = JSON.parse(evt.data) as GeminiResponse;
+        } catch {
+          continue;
+        }
+        const candidate = parsed.candidates?.[0];
+        if (!candidate) continue;
+        for (const part of candidate.content?.parts ?? []) {
+          if (typeof part.text === "string" && part.text.length > 0) {
+            textParts.push(part.text);
+            yield { type: "text", delta: part.text };
+          }
+          if (part.functionCall) {
+            const id = `gemini_${Date.now()}_${fcCounter++}`;
+            const name = part.functionCall.name ?? "";
+            const args = part.functionCall.args ?? {};
+            yield { type: "tool_call_start", id, name };
+            yield {
+              type: "tool_call_delta",
+              id,
+              argumentsDelta: JSON.stringify(args),
+            };
+            yield { type: "tool_call_end", id };
+            toolCallsOut.push({ id, name, arguments: args });
+          }
+        }
+        if (candidate.finishReason) finishReason = candidate.finishReason;
+        if (parsed.usageMetadata) {
+          inputTokens = parsed.usageMetadata.promptTokenCount ?? inputTokens;
+          outputTokens =
+            parsed.usageMetadata.candidatesTokenCount ?? outputTokens;
+        }
+      }
+    } catch (err) {
+      yield {
+        type: "error",
+        message: err instanceof Error ? err.message : String(err),
+      };
+      return;
+    }
+
+    const stopReason: CompletionResult["stopReason"] =
+      toolCallsOut.length > 0
+        ? "tool_use"
+        : finishReason === "MAX_TOKENS"
+          ? "max_tokens"
+          : "end_turn";
+
+    yield {
+      type: "done",
+      result: {
+        text: textParts.join(""),
+        toolCalls: toolCallsOut,
+        stopReason,
+        usage: { inputTokens, outputTokens },
+      },
+    };
   }
 
   supportsTools() {

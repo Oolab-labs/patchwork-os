@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClaudeAdapter } from "../claude.js";
+import { GeminiAdapter } from "../gemini.js";
+import { OpenAIAdapter } from "../openai.js";
 import { parseSseStream } from "../sse.js";
 
 function stringToStream(s: string): ReadableStream<Uint8Array> {
@@ -111,5 +113,125 @@ describe("ClaudeAdapter.stream (SSE)", () => {
       chunks.push(c);
     }
     expect(chunks[0]?.type).toBe("error");
+  });
+});
+
+describe("OpenAIAdapter.stream (SSE)", () => {
+  it("reassembles text + tool_call deltas across chunks", async () => {
+    const payload = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "he" } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "llo" } }] })}\n\n`,
+      `data: ${JSON.stringify({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "c1",
+                  function: { name: "read_file", arguments: '{"pa' },
+                },
+              ],
+            },
+          },
+        ],
+      })}\n\n`,
+      `data: ${JSON.stringify({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, function: { arguments: 'th":"a.ts"}' } },
+              ],
+            },
+          },
+        ],
+      })}\n\n`,
+      `data: ${JSON.stringify({
+        choices: [{ delta: {}, finish_reason: "tool_calls" }],
+        usage: { prompt_tokens: 5, completion_tokens: 2 },
+      })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join("");
+
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      body: stringToStream(payload),
+      text: async () => "",
+    })) as unknown as typeof fetch;
+
+    const a = new OpenAIAdapter({ apiKey: "sk", fetchImpl });
+    const chunks = [];
+    for await (const c of a.stream({
+      systemPrompt: "",
+      messages: [{ role: "user", content: "hi" }],
+    })) {
+      chunks.push(c);
+    }
+    const texts = chunks
+      .filter((c) => c.type === "text")
+      .map((c) => (c as { delta: string }).delta);
+    expect(texts).toEqual(["he", "llo"]);
+    const done = chunks.at(-1);
+    expect(done?.type).toBe("done");
+    if (done?.type === "done") {
+      expect(done.result.text).toBe("hello");
+      expect(done.result.toolCalls[0]).toEqual({
+        id: "c1",
+        name: "read_file",
+        arguments: { path: "a.ts" },
+      });
+      expect(done.result.stopReason).toBe("tool_use");
+      expect(done.result.usage).toEqual({ inputTokens: 5, outputTokens: 2 });
+    }
+  });
+});
+
+describe("GeminiAdapter.stream (SSE)", () => {
+  it("emits text deltas + functionCall + done", async () => {
+    const payload = [
+      `data: ${JSON.stringify({
+        candidates: [{ content: { role: "model", parts: [{ text: "hi" }] } }],
+      })}\n\n`,
+      `data: ${JSON.stringify({
+        candidates: [
+          {
+            content: {
+              role: "model",
+              parts: [
+                { functionCall: { name: "read_file", args: { p: "a" } } },
+              ],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+      })}\n\n`,
+    ].join("");
+
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      body: stringToStream(payload),
+      text: async () => "",
+    })) as unknown as typeof fetch;
+
+    const a = new GeminiAdapter({ apiKey: "AIza", fetchImpl });
+    const chunks = [];
+    for await (const c of a.stream({
+      systemPrompt: "",
+      messages: [{ role: "user", content: "x" }],
+    })) {
+      chunks.push(c);
+    }
+    const textDelta = chunks.find((c) => c.type === "text");
+    expect(textDelta).toEqual({ type: "text", delta: "hi" });
+    const done = chunks.at(-1);
+    expect(done?.type).toBe("done");
+    if (done?.type === "done") {
+      expect(done.result.toolCalls[0]?.name).toBe("read_file");
+      expect(done.result.stopReason).toBe("tool_use");
+    }
   });
 });

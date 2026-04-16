@@ -715,6 +715,39 @@ export function register(ctx) {
 }
 
 // Handle init subcommand — one-command setup: install extension + write CLAUDE.md + print next steps
+// Patchwork: `patchwork recipe install <file.json>` subcommand.
+if (process.argv[2] === "recipe" && process.argv[3] === "install") {
+  const file = process.argv[4];
+  if (!file) {
+    process.stderr.write(
+      "Usage: patchwork recipe install <file.json>\n",
+    );
+    process.exit(1);
+  }
+  (async () => {
+    try {
+      const { installRecipeFromFile } = await import(
+        "./recipes/installer.js"
+      );
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const result = installRecipeFromFile(path.resolve(file), {
+        recipesDir,
+      });
+      process.stdout.write(
+        `  ✓ ${result.action} ${result.installedPath}\n` +
+          `  ℹ permissions snippet written to ${result.installedPath}.permissions.json\n` +
+          `    Review + merge into ~/.claude/settings.json to pre-approve recipe steps.\n`,
+      );
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 if (process.argv[2] === "init") {
   const argv = process.argv.slice(3);
 
