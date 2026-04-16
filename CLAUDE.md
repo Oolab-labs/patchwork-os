@@ -4,7 +4,7 @@
 
 Comply with all docs in `/documents/`. Consult before changes:
 
-- **[documents/platform-docs.md](documents/platform-docs.md)** — Full feature reference (141 tools). Consult before adding/modifying features.
+- **[documents/platform-docs.md](documents/platform-docs.md)** — Full feature reference (170 tools). Consult before adding/modifying features.
 - **[documents/prompts-reference.md](documents/prompts-reference.md)** — All 72 MCP prompts reference.
 - **[documents/styleguide.md](documents/styleguide.md)** — Code conventions, UI patterns, output formats. Follow for all new tools, handlers, responses.
 - **[documents/roadmap.md](documents/roadmap.md)** — Development direction. Check before exploratory work.
