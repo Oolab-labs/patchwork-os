@@ -8,6 +8,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **`spawnWorkspace.waitForExtension`** — boolean flag; polls `/health` on the spawned bridge until `extensionConnected: true` before returning. Shares the existing `timeoutMs` budget; on handshake timeout the bridge is SIGTERM'd and the caller gets a specific timeout error distinguishing "no lock" from "extension never connected". Closes the "how do I know LSP is ready?" gap. (gap #2 of Spawn-a-Bridge roadmap)
+- **`spawnWorkspace.codeServer`** — boolean flag; also spawns `code-server` against the workspace so the bundled VS Code extension can complete the handshake and make LSP available on the spawned bridge. Related flags: `codeServerPort` (default 8080), `codeServerBin` (default `code-server` on PATH). Implicitly enables `waitForExtension`. Missing binary → `code=code_server_missing` and the bridge we just spawned is cleaned up. (gap #1 of Spawn-a-Bridge roadmap)
+- **`docs/spawn-a-bridge.md`** — usage guide for the new flags, prerequisites, and the remaining roadmap gaps.
+
+### Tests
+- **Stabilize sprint**: 33 new regression tests across four high-blast-radius surfaces from the v2.11→v2.42 week — shape-safety regressions for the v2.25.18–24 `proxy<T>` bugs (12), `mergeAutomationStates` parallel-merge edges (5), the `/launch-quick-task` HTTP boundary (10), and the `spawnWorkspace` flag additions (6). Net 2802 → 2835 tests, all green.
+
 ---
 
 ## [2.42.1] — 2026-04-16
