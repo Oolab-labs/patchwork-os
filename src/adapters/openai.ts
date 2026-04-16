@@ -6,6 +6,7 @@ import type {
   ToolCall,
   ToolDef,
 } from "./base.js";
+import { parseSseStream } from "./sse.js";
 
 /**
  * OpenAIAdapter — Chat Completions API via fetch. Compatible with any
@@ -172,26 +173,158 @@ export class OpenAIAdapter implements ModelAdapter {
   }
 
   async *stream(params: CompletionParams): AsyncIterable<StreamChunk> {
+    const apiKey = this.getApiKey();
+    const body = {
+      model: params.model ?? this.opts.defaultModel ?? DEFAULT_MODEL,
+      messages: this.translateMessages(params),
+      tools: this.translateTools(params.tools),
+      max_tokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
+      temperature: params.temperature,
+      stream: true,
+    };
+
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      accept: "text/event-stream",
+    };
+    if (apiKey) headers.authorization = `Bearer ${apiKey}`;
+
+    const fetchImpl = this.opts.fetchImpl ?? fetch;
+    let res: Response;
     try {
-      const result = await this.complete(params);
-      if (result.text) yield { type: "text", delta: result.text };
-      for (const tc of result.toolCalls) {
-        yield { type: "tool_call_start", id: tc.id, name: tc.name };
-        yield {
-          type: "tool_call_delta",
-          id: tc.id,
-          argumentsDelta: JSON.stringify(tc.arguments),
-        };
-        yield { type: "tool_call_end", id: tc.id };
-      }
-      yield { type: "done", result };
+      res = await fetchImpl(this.opts.baseURL ?? API_URL, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
     } catch (err) {
       yield {
         type: "error",
         message: err instanceof Error ? err.message : String(err),
       };
+      return;
     }
+
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      yield {
+        type: "error",
+        message: `${this.name}Adapter: API error ${res.status}: ${text.slice(0, 500)}`,
+      };
+      return;
+    }
+
+    const textParts: string[] = [];
+    // OpenAI streams tool_calls by index. Each delta adds partial function
+    // name/arguments JSON. Reassemble per-index.
+    const toolStates = new Map<
+      number,
+      { id: string; name: string; argsJson: string; started: boolean }
+    >();
+    let finishReason: string | undefined;
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    try {
+      for await (const evt of parseSseStream(res.body)) {
+        if (!evt.data || evt.data === "[DONE]") continue;
+        let parsed: OpenAIStreamChunk;
+        try {
+          parsed = JSON.parse(evt.data) as OpenAIStreamChunk;
+        } catch {
+          continue;
+        }
+
+        if (parsed.usage) {
+          inputTokens = parsed.usage.prompt_tokens ?? inputTokens;
+          outputTokens = parsed.usage.completion_tokens ?? outputTokens;
+        }
+
+        const choice = parsed.choices?.[0];
+        if (!choice) continue;
+        if (choice.finish_reason) finishReason = choice.finish_reason;
+
+        const delta = choice.delta;
+        if (!delta) continue;
+
+        if (typeof delta.content === "string" && delta.content.length > 0) {
+          textParts.push(delta.content);
+          yield { type: "text", delta: delta.content };
+        }
+
+        for (const tc of delta.tool_calls ?? []) {
+          const idx = tc.index ?? 0;
+          let state = toolStates.get(idx);
+          if (!state) {
+            state = { id: "", name: "", argsJson: "", started: false };
+            toolStates.set(idx, state);
+          }
+          if (tc.id) state.id = tc.id;
+          if (tc.function?.name) state.name = tc.function.name;
+          if (!state.started && state.id && state.name) {
+            state.started = true;
+            yield {
+              type: "tool_call_start",
+              id: state.id,
+              name: state.name,
+            };
+          }
+          const argsDelta = tc.function?.arguments ?? "";
+          if (argsDelta) {
+            state.argsJson += argsDelta;
+            if (state.id) {
+              yield {
+                type: "tool_call_delta",
+                id: state.id,
+                argumentsDelta: argsDelta,
+              };
+            }
+          }
+        }
+      }
+    } catch (err) {
+      yield {
+        type: "error",
+        message: err instanceof Error ? err.message : String(err),
+      };
+      return;
+    }
+
+    for (const state of toolStates.values()) {
+      if (state.started) yield { type: "tool_call_end", id: state.id };
+    }
+
+    const toolCalls: ToolCall[] = [...toolStates.values()]
+      .filter((s) => s.started)
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        arguments: safeJsonParse(s.argsJson),
+      }));
+
+    const stopReason: CompletionResult["stopReason"] =
+      finishReason === "tool_calls"
+        ? "tool_use"
+        : finishReason === "length"
+          ? "max_tokens"
+          : finishReason === "stop"
+            ? "end_turn"
+            : toolCalls.length > 0
+              ? "tool_use"
+              : "end_turn";
+
+    yield {
+      type: "done",
+      result: {
+        text: textParts.join(""),
+        toolCalls,
+        stopReason,
+        usage: { inputTokens, outputTokens },
+      },
+    };
   }
+
+  // end stream
 
   supportsTools() {
     return true;
@@ -201,7 +334,25 @@ export class OpenAIAdapter implements ModelAdapter {
   }
 }
 
+interface OpenAIStreamChunk {
+  choices?: Array<{
+    index?: number;
+    delta?: {
+      content?: string | null;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        type?: "function";
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+    finish_reason?: string | null;
+  }>;
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
+}
+
 function safeJsonParse(s: string): Record<string, unknown> {
+  if (!s) return {};
   try {
     const parsed = JSON.parse(s);
     return typeof parsed === "object" && parsed !== null ? parsed : {};

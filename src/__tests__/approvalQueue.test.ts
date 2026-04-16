@@ -4,6 +4,7 @@ import {
   classifyBehavior,
   classifyTool,
   getRiskTierMap,
+  inferTierFromName,
   requiresApproval,
   riskTierSummary,
 } from "../riskTier.js";
@@ -15,8 +16,27 @@ describe("riskTier", () => {
     expect(classifyTool("gitPush")).toBe("high");
   });
 
-  it("defaults unknown tools to medium (safe)", () => {
-    expect(classifyTool("imaginaryTool")).toBe("medium");
+  it("falls back to inference for unmapped tools", () => {
+    // Known names still win
+    expect(classifyTool("gitPush")).toBe("high");
+    // Inference kicks in
+    expect(classifyTool("getSomethingNew")).toBe("low");
+    expect(classifyTool("editSomethingNew")).toBe("medium");
+    expect(classifyTool("runScript")).toBe("high");
+  });
+
+  it("inferTierFromName heuristics", () => {
+    expect(inferTierFromName("getBuffer")).toBe("low");
+    expect(inferTierFromName("findFoo")).toBe("low");
+    expect(inferTierFromName("searchBar")).toBe("low");
+    expect(inferTierFromName("editDoc")).toBe("medium");
+    expect(inferTierFromName("writeLine")).toBe("medium");
+    expect(inferTierFromName("renameSymbol")).toBe("medium");
+    expect(inferTierFromName("gitPush")).toBe("high");
+    expect(inferTierFromName("runCommand")).toBe("high");
+    expect(inferTierFromName("sendMessage")).toBe("high");
+    expect(inferTierFromName("deleteFile")).toBe("high");
+    expect(inferTierFromName("mystery")).toBe("medium"); // safe default
   });
 
   it("requiresApproval honors policy", () => {

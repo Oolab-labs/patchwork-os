@@ -106,8 +106,51 @@ const TIER_MAP: Record<string, RiskTier> = {
   evaluateInDebugger: "high",
 };
 
+/**
+ * Infer a risk tier from the tool name when the hardcoded map has no entry.
+ * Lets us classify newly-added tools without maintaining a parallel list.
+ * Heuristics ordered from most-specific to most-general; first match wins.
+ */
+export function inferTierFromName(toolName: string): RiskTier {
+  const n = toolName;
+  // Write / destructive / external
+  if (
+    /^(git(Push|Pull|Fetch|Commit))$/.test(n) ||
+    /^github(Create|Comment|Post|Delete)/.test(n) ||
+    /^(delete|unlink|drop)[A-Z]/.test(n) ||
+    n === "renameFile" ||
+    /^(run|exec|spawn|send|start|stop|kill|launch|resume|cancel)[A-Z]/.test(
+      n,
+    ) ||
+    /^(open|execute|dispatch)[A-Z]/.test(n) ||
+    n === "sendHttpRequest"
+  )
+    return "high";
+
+  // Local writes
+  if (
+    /^(edit|write|create|save|format|apply|fix|refactor|rename|organize|stage|commit|add|stash)[A-Z]/.test(
+      n,
+    ) ||
+    /(^set|^update|^replace)[A-Z]/.test(n) ||
+    /search[A-Z].*Replace/i.test(n)
+  )
+    return "medium";
+
+  // Reads
+  if (
+    /^(get|find|search|list|read|describe|explain|goTo|hover|preview|capture|explore|resolve|probe|check|lookup|parse|classify|compute|compare|render|validate|ping|ready|detect|watch)/.test(
+      n,
+    ) ||
+    n === "contextBundle"
+  )
+    return "low";
+
+  return "medium";
+}
+
 export function classifyTool(toolName: string): RiskTier {
-  return TIER_MAP[toolName] ?? "medium";
+  return TIER_MAP[toolName] ?? inferTierFromName(toolName);
 }
 
 export function requiresApproval(
