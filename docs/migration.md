@@ -87,7 +87,7 @@ rm ~/.claude/ide/*.lock
 | `writeFile` | `editText` |
 | `listFiles` | `getFileTree` |
 
-**Slim mode**: v2 introduces slim mode (default) — only 56 tools are exposed without `--full`. If you relied on all tools being available, add `--full` to your start command.
+**Slim mode**: v2 introduced slim mode (default in v2.0–v2.42). **v2.43.0 flipped the default back to full mode** — all ~140 tools are now registered by default. Pass `--slim` to opt into the IDE-exclusive subset. The `--full` flag is retained as a no-op for backward compatibility with older start commands.
 
 **MCP config**: Regenerate after upgrade:
 ```bash
@@ -97,7 +97,7 @@ claude-ide-bridge gen-mcp-config > ~/.claude/mcp-config.json
 ### Migration Steps (v1 → v2)
 1. `npm install -g claude-ide-bridge@latest`
 2. `rm ~/.claude/ide/*.lock` — clear stale lock files
-3. Update start command: add `--full` if you need all tools
+3. Update start command: drop `--full` (now the default); add `--slim` only if you want the IDE-exclusive subset
 4. Regenerate MCP config: `claude-ide-bridge gen-mcp-config`
 5. Re-install VS Code extension (v2 extension required; v1 extension is incompatible)
 6. Update any tool names in scripts (see table above)
@@ -162,7 +162,7 @@ claude-ide-bridge notify CwdChanged --cwd $CWD
 `getBridgeStatus` now reports two version fields: `extensionVersion` (wire protocol, `"1.1.0"`) and `extensionPackageVersion` (npm, e.g. `"1.3.2"`). The log line `version=1.1.0` refers to the wire protocol — this is expected and does not mean the extension is stale.
 
 ### Tools missing after upgrade
-Run `getToolCapabilities` to see which tools are available in the current mode. If tools you expect are missing, confirm you started the bridge with `--full`. Slim mode (default) exposes only IDE-exclusive tools.
+Run `getToolCapabilities` to see which tools are available in the current mode. Since v2.43.0 full mode is the default — if tools you expect are missing, check that your start command does NOT pass `--slim` and that `claude-ide-bridge.config.json` does not set `"fullMode": false`.
 
 ### `goToDefinition` / `findReferences` not working headlessly
 These tools now have a headless LSP fallback via `typescript-language-server`. If the fallback is not triggering, confirm `typescript-language-server` is installed:

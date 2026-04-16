@@ -79,14 +79,14 @@ Ask Claude to call `bridgeDoctor` for a full health check — it reports lock fi
 
 ### Fewer tools than expected
 
-**Cause:** Slim mode (the default) exposes **56 tools** — LSP, debugger, editor state, and refactoring. Git, terminal, file ops, GitHub, and HTTP tools require `--full` mode (**141 tools** total).
+**Cause:** The bridge was started with `--slim`, or `"fullMode": false` is set in the config file. Slim mode exposes only ~60 IDE-exclusive tools (LSP, debugger, editor state). Git, terminal, file ops, GitHub, and HTTP tools are hidden.
 
-**Fix:** Start the bridge with the `--full` flag:
+**Fix:** Drop `--slim` from your start command, or remove `"fullMode": false` from `claude-ide-bridge.config.json`:
 ```bash
-claude-ide-bridge --watch --full
+claude-ide-bridge --watch
 ```
 
-To confirm which mode is active and which tools are registered, ask Claude to call `getToolCapabilities`.
+Full mode has been the default since v2.43.0 — all ~140 tools are registered automatically. To confirm which mode is active and which tools are registered, ask Claude to call `getToolCapabilities`.
 
 ---
 
@@ -230,7 +230,7 @@ WSL paths (`/mnt/c/Users/...`) and Windows paths (`C:\Users\...`) are not interc
 ```bash
 docker run \
   -v ~/.claude/ide:/root/.claude/ide \
-  claude-ide-bridge --watch --full
+  claude-ide-bridge --watch
 ```
 
 Or set `CLAUDE_CONFIG_DIR` to a mounted volume path in both the container and your host shell.
