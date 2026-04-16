@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
@@ -63,6 +64,22 @@ function formatDuration(ms: number): string {
   const seconds = totalSeconds % 60;
   if (minutes === 0) return `${seconds}s`;
   return `${minutes}m ${seconds}s`;
+}
+
+/**
+ * Detect whether the workspace is a linked git worktree (not the main one).
+ * In the main worktree `.git` is a directory; in a linked worktree it is a
+ * file containing `gitdir: <path>`. Used to surface a Cowork-awareness hint
+ * at startup — Cowork runs in a linked worktree, but so do many non-Cowork
+ * workflows, so the hint is informational only.
+ */
+export function isInGitWorktree(workspace: string): boolean {
+  try {
+    const stat = fs.statSync(path.join(workspace, ".git"));
+    return stat.isFile();
+  } catch {
+    return false;
+  }
 }
 
 interface AgentSession {
@@ -1324,6 +1341,11 @@ export class Bridge {
         ? "  Tools:      full (~140 tools — IDE + git + terminal + file ops + HTTP + GitHub) [default]"
         : "  Tools:      slim (~60 IDE-exclusive tools — pass --slim)",
     );
+    if (isInGitWorktree(this.config.workspace)) {
+      this.logger.info(
+        "  Worktree:   cwd is a linked git worktree. If this is a Cowork session, bridge MCP tools are unreachable from inside Cowork itself — see docs/cowork.md.",
+      );
+    }
     this.logger.info("  Connect:    run `claude` in a new terminal, then /ide");
     if (this.config.gracePeriodMs !== 30_000) {
       this.logger.info(
