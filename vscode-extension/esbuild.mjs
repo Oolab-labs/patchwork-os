@@ -28,6 +28,17 @@ const ctx = await esbuild.context({
 
 import * as fs from "node:fs";
 
+// Sync shared preset module from bridge (single source of truth at ../src/quickTaskPresets.ts).
+// We copy into extension's src/ because rootDir constraints in tsconfig reject cross-tree imports.
+const presetSrc = path.join(__dirname, "../src/quickTaskPresets.ts");
+const presetDst = path.join(__dirname, "src/quickTaskPresets.ts");
+if (fs.existsSync(presetSrc)) {
+  const header =
+    "// AUTO-GENERATED from ../src/quickTaskPresets.ts — do not edit.\n";
+  const body = fs.readFileSync(presetSrc, "utf8");
+  fs.writeFileSync(presetDst, header + body);
+}
+
 // Copy codicons dist (CSS + TTF font) so the webview can load them via asWebviewUri
 const codiconsSrc = path.join(__dirname, "node_modules/@vscode/codicons/dist");
 const codiconsDst = path.join(__dirname, "out/codicons");
