@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import type { ExtensionClient } from "../extensionClient.js";
 import { type FileUri, uriToAbsPath } from "../fp/brandedTypes.js";
@@ -76,6 +77,11 @@ export function createWatchDiagnosticsTool(
     if (cached && Date.now() - cached.cachedAt < BLAME_CACHE_TTL_MS) {
       return cached.commitHash;
     }
+    // Skip subprocess for files that no longer exist on disk. Diagnostics can
+    // outlive their source file (rename, delete); spawning git blame for each
+    // is wasteful (one fork per stale diagnostic) and dominates cost when the
+    // cache is hot with dead files.
+    if (!existsSync(file)) return undefined;
     try {
       const { stdout } = await execFileAsync(
         "git",
