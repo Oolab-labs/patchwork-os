@@ -733,9 +733,9 @@ describe("ClaudeOrchestrator._drain does not loop forever when all tasks exceed 
     // _drain is called synchronously inside enqueue — if the infinite-loop bug
     // is present the process hangs on the enqueue calls below.
     const before = Date.now();
-    orch.enqueue({ prompt: hugePrompt + "1" });
-    orch.enqueue({ prompt: hugePrompt + "2" });
-    orch.enqueue({ prompt: hugePrompt + "3" });
+    orch.enqueue({ prompt: `${hugePrompt}1` });
+    orch.enqueue({ prompt: `${hugePrompt}2` });
+    orch.enqueue({ prompt: `${hugePrompt}3` });
     // If we reach here quickly, the loop guard worked.
     expect(Date.now() - before).toBeLessThan(500);
 
