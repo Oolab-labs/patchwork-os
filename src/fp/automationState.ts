@@ -35,6 +35,30 @@ export interface AutomationState {
    * Used for maxTasksPerHour rate-limiting.
    */
   readonly taskTimestamps: readonly number[];
+  /**
+   * Per-content-signature dedup timestamps (keyed: `dedup:${hookKey}:${sig}`).
+   * Bounded at 5_000 entries — same eviction as lastTrigger.
+   */
+  readonly deduplicationWindow: ReadonlyMap<string, number>;
+  /**
+   * Pending retry records for WithRetry nodes.
+   * Key = `${hookType}:${primaryValue}`.
+   */
+  readonly pendingRetries: ReadonlyMap<
+    string,
+    { attempt: number; nextRetryAt: number; taskId: string }
+  >;
+  /**
+   * Cached diagnostics per file for evaluateWhen condition checks.
+   */
+  readonly latestDiagnosticsByFile: ReadonlyMap<
+    string,
+    { severity: number; count: number }
+  >;
+  /**
+   * Last known test runner outcome (pass/fail) for evaluateWhen checks.
+   */
+  readonly lastTestRunnerStatusByRunner: ReadonlyMap<string, "pass" | "fail">;
 }
 
 export const EMPTY_AUTOMATION_STATE: AutomationState = {
@@ -43,6 +67,10 @@ export const EMPTY_AUTOMATION_STATE: AutomationState = {
   prevDiagnosticErrors: new Map(),
   lastTestOutcomeByRunner: new Map(),
   taskTimestamps: [],
+  deduplicationWindow: new Map(),
+  pendingRetries: new Map(),
+  latestDiagnosticsByFile: new Map(),
+  lastTestRunnerStatusByRunner: new Map(),
 };
 
 // ── Cooldown helpers ──────────────────────────────────────────────────────────
@@ -162,4 +190,109 @@ export function setLastTestOutcome(
 export function tasksInLastHour(state: AutomationState, now: number): number {
   const cutoff = now - 3_600_000;
   return state.taskTimestamps.filter((t) => t > cutoff).length;
+}
+
+// ── Deduplication helpers ─────────────────────────────────────────────────────
+
+const DEDUP_MAX_SIZE = 5_000;
+
+/**
+ * Record a dedup timestamp for `key` at `now`.
+ * Evicts oldest entry when size exceeds DEDUP_MAX_SIZE.
+ */
+export function recordDedup(
+  state: AutomationState,
+  key: string,
+  now: number,
+): AutomationState {
+  const newMap = new Map(state.deduplicationWindow);
+  newMap.set(key, now);
+  if (newMap.size > DEDUP_MAX_SIZE) {
+    // Evict oldest by insertion order (Map preserves insertion order)
+    const firstKey = newMap.keys().next().value as string;
+    newMap.delete(firstKey);
+  }
+  return { ...state, deduplicationWindow: newMap };
+}
+
+/**
+ * Returns true if `key` was recorded within `cooldownMs` of `now`.
+ * Pure — does not mutate `state`.
+ */
+export function isDeduped(
+  state: AutomationState,
+  key: string,
+  now: number,
+  cooldownMs: number,
+): boolean {
+  const last = state.deduplicationWindow.get(key);
+  if (last === undefined) return false;
+  return now - last < cooldownMs;
+}
+
+// ── Pending retry helpers ─────────────────────────────────────────────────────
+
+/**
+ * Record or update a pending retry for `key`.
+ */
+export function recordPendingRetry(
+  state: AutomationState,
+  key: string,
+  attempt: number,
+  nextRetryAt: number,
+  taskId: string,
+): AutomationState {
+  const newMap = new Map(state.pendingRetries);
+  newMap.set(key, { attempt, nextRetryAt, taskId });
+  return { ...state, pendingRetries: newMap };
+}
+
+/**
+ * Remove the pending retry record for `key`.
+ */
+export function clearPendingRetry(
+  state: AutomationState,
+  key: string,
+): AutomationState {
+  const newMap = new Map(state.pendingRetries);
+  newMap.delete(key);
+  return { ...state, pendingRetries: newMap };
+}
+
+// ── Diagnostics-by-file helpers ───────────────────────────────────────────────
+
+const DIAGNOSTICS_FILE_MAX_SIZE = 5_000;
+
+/**
+ * Update the cached diagnostics for `file`.
+ * Bounded at 5000 files — FIFO eviction.
+ */
+export function setLatestDiagnostics(
+  state: AutomationState,
+  file: string,
+  severity: number,
+  count: number,
+): AutomationState {
+  const newMap = new Map(state.latestDiagnosticsByFile);
+  newMap.set(file, { severity, count });
+  if (newMap.size > DIAGNOSTICS_FILE_MAX_SIZE) {
+    const firstKey = newMap.keys().next().value as string;
+    newMap.delete(firstKey);
+  }
+  return { ...state, latestDiagnosticsByFile: newMap };
+}
+
+// ── Test runner status helpers ────────────────────────────────────────────────
+
+/**
+ * Update the last known test runner outcome for `runner`.
+ */
+export function setTestRunnerStatus(
+  state: AutomationState,
+  runner: string,
+  outcome: "pass" | "fail",
+): AutomationState {
+  const newMap = new Map(state.lastTestRunnerStatusByRunner);
+  newMap.set(runner, outcome);
+  return { ...state, lastTestRunnerStatusByRunner: newMap };
 }
