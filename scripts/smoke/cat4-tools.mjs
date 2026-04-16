@@ -57,7 +57,7 @@ function startBridge(port, workspace, extraArgs = []) {
 
 console.log("\n[CAT-4] Tool listing — slim vs full");
 
-const slimProc = startBridge(SLIM_PORT, tmpSlim);
+const slimProc = startBridge(SLIM_PORT, tmpSlim, ["--slim"]);
 const fullProc = startBridge(FULL_PORT, tmpFull, ["--full"]);
 
 try {
