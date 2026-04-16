@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
+import { routeApprovalRequest } from "./approvalHttp.js";
+import { getApprovalQueue } from "./approvalQueue.js";
 import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import type { Logger } from "./logger.js";
@@ -664,6 +666,51 @@ export class Server extends EventEmitter<ServerEvents> {
           } catch {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+          }
+        });
+        return;
+      }
+      // Patchwork approval surface — PreToolUse hook + dashboard approve/reject.
+      // Bearer auth already checked above.
+      if (
+        parsedUrl.pathname === "/approvals" ||
+        /^\/(approve|reject)\/[A-Za-z0-9-]+$/.test(parsedUrl.pathname)
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", async () => {
+          let parsedBody: Record<string, unknown> | undefined;
+          if (chunks.length > 0) {
+            try {
+              parsedBody = JSON.parse(
+                Buffer.concat(chunks).toString("utf-8"),
+              ) as Record<string, unknown>;
+            } catch {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "invalid JSON body" }));
+              return;
+            }
+          }
+          try {
+            const result = await routeApprovalRequest(
+              {
+                method: req.method ?? "GET",
+                path: parsedUrl.pathname,
+                body: parsedBody,
+              },
+              { queue: getApprovalQueue(), workspace: process.cwd() },
+            );
+            res.writeHead(result.status, {
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify(result.body));
+          } catch (err) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
           }
         });
         return;
