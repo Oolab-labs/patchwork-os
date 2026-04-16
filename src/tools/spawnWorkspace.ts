@@ -18,6 +18,10 @@ export interface SpawnWorkspaceResult {
    * `waitForExtension` was not requested.
    */
   extensionConnected?: boolean;
+  /** PID of the spawned `code-server` process when `codeServer: true`. */
+  codeServerPid?: number;
+  /** Port chosen for the spawned `code-server` (when `codeServer: true`). */
+  codeServerPort?: number;
 }
 
 export type HealthFetcher = (
@@ -122,6 +126,21 @@ export function createSpawnWorkspaceTool(
             description:
               "If true, poll /health on the spawned bridge until extensionConnected=true. Shares the timeoutMs budget.",
           },
+          codeServer: {
+            type: "boolean",
+            description:
+              "If true, also spawn `code-server` against the workspace (prereq: installed on PATH with extension pre-loaded). Implicitly enables waitForExtension.",
+          },
+          codeServerPort: {
+            type: "integer",
+            description:
+              "Port for the spawned code-server (default: 8080). Ignored when codeServer=false.",
+          },
+          codeServerBin: {
+            type: "string",
+            description:
+              "Override code-server binary path (default: 'code-server' on PATH).",
+          },
         },
         required: ["path"],
         additionalProperties: false as const,
@@ -135,6 +154,8 @@ export function createSpawnWorkspaceTool(
           authToken: { type: "string" },
           lockFile: { type: "string" },
           extensionConnected: { type: "boolean" },
+          codeServerPid: { type: "number" },
+          codeServerPort: { type: "number" },
         },
         required: ["pid", "port", "workspace", "authToken", "lockFile"],
       },
@@ -216,7 +237,19 @@ async function spawnWorkspace(
   const deadline = Date.now() + timeoutMs;
   const pollInterval = 500;
 
-  const waitForExtension = args.waitForExtension === true;
+  const codeServerMode = args.codeServer === true;
+  // code-server mode is useless without waiting for the extension to connect
+  // (that's the whole point — spawn an IDE so LSP becomes available).
+  const waitForExtension = args.waitForExtension === true || codeServerMode;
+  const codeServerPort =
+    typeof args.codeServerPort === "number" &&
+    Number.isInteger(args.codeServerPort)
+      ? args.codeServerPort
+      : 8080;
+  const codeServerBin =
+    typeof args.codeServerBin === "string" && args.codeServerBin.length > 0
+      ? args.codeServerBin
+      : "code-server";
 
   while (Date.now() < deadline) {
     const found = await findLockForPid(lockDir, pid);
@@ -229,6 +262,49 @@ async function spawnWorkspace(
         authToken: found.data.authToken,
         lockFile: found.lockFile,
       };
+
+      // Spawn code-server once the bridge is listening so the extension
+      // inside code-server can immediately discover the lock file and
+      // connect. Any spawn failure (binary missing, etc.) surfaces as
+      // code_server_missing so the caller gets a clean diagnostic instead
+      // of the generic handshake-timeout error below.
+      let codeServerPid: number | undefined;
+      if (codeServerMode) {
+        try {
+          const csChild = spawnFn(
+            codeServerBin,
+            [
+              "--bind-addr",
+              `127.0.0.1:${codeServerPort}`,
+              "--auth",
+              "none",
+              workspacePath,
+            ],
+            { detached: true, stdio: "ignore" },
+          );
+          if (csChild.pid === undefined) {
+            return err(
+              "code_server_missing",
+              `code-server spawned without a PID — check '${codeServerBin}' is on PATH`,
+            );
+          }
+          csChild.unref();
+          codeServerPid = csChild.pid;
+          baseResult.codeServerPid = codeServerPid;
+          baseResult.codeServerPort = codeServerPort;
+        } catch (e) {
+          // Clean up the bridge we just spawned before reporting.
+          try {
+            process.kill(pid, "SIGTERM");
+          } catch {
+            /* ignore */
+          }
+          return err(
+            "code_server_missing",
+            `Failed to spawn '${codeServerBin}': ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
 
       if (!waitForExtension) {
         return okS<SpawnWorkspaceResult>(baseResult);
@@ -258,6 +334,13 @@ async function spawnWorkspace(
         process.kill(pid, "SIGTERM");
       } catch {
         // already exited
+      }
+      if (codeServerPid !== undefined) {
+        try {
+          process.kill(codeServerPid, "SIGTERM");
+        } catch {
+          // already exited
+        }
       }
       return err(
         "timeout",

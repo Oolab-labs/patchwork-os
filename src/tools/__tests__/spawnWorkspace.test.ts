@@ -274,6 +274,131 @@ describe("spawnWorkspace handler", () => {
     expect(healthFetcher).not.toHaveBeenCalled();
   });
 
+  it("codeServer: spawns code-server with correct args and returns its PID+port", async () => {
+    const bridgePid = 77001;
+    const csPid = 77002;
+    const spawnCalls: Array<{ cmd: string; args: string[] }> = [];
+    const spawnFn: SpawnFn = (cmd, args) => {
+      spawnCalls.push({ cmd, args });
+      // First call = bridge, second = code-server
+      return makeChild(spawnCalls.length === 1 ? bridgePid : csPid);
+    };
+
+    const lockContents = {
+      pid: bridgePid,
+      workspace: tmpDir,
+      authToken: "tok-cs",
+      isBridge: true,
+      port: 6060,
+    };
+    const lockPath = path.join(lockDir, `${bridgePid}.lock`);
+    setTimeout(() => {
+      fs.writeFile(lockPath, JSON.stringify(lockContents)).catch(() => {});
+    }, 100);
+
+    const healthFetcher: HealthFetcher = async () => ({
+      extensionConnected: true,
+    });
+
+    const { handler } = createSpawnWorkspaceTool(spawnFn, healthFetcher);
+    const result = await handler({
+      path: tmpDir,
+      timeoutMs: 3000,
+      codeServer: true,
+      codeServerPort: 9090,
+    });
+
+    expect(result).not.toMatchObject({ isError: true });
+    const data = parseText(result);
+    expect(data).toMatchObject({
+      pid: bridgePid,
+      port: 6060,
+      codeServerPid: csPid,
+      codeServerPort: 9090,
+      extensionConnected: true,
+    });
+
+    // Second spawn call should be code-server with bind-addr + workspace
+    expect(spawnCalls).toHaveLength(2);
+    const csCall = spawnCalls[1]!;
+    expect(csCall.cmd).toBe("code-server");
+    expect(csCall.args).toContain("--bind-addr");
+    expect(csCall.args).toContain("127.0.0.1:9090");
+    expect(csCall.args).toContain("--auth");
+    expect(csCall.args).toContain("none");
+    expect(csCall.args).toContain(tmpDir);
+  });
+
+  it("codeServer: returns code_server_missing and kills bridge when spawn throws", async () => {
+    const bridgePid = 77010;
+    let call = 0;
+    const spawnFn: SpawnFn = () => {
+      call += 1;
+      if (call === 1) return makeChild(bridgePid);
+      throw new Error("ENOENT: code-server not found");
+    };
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    const lockContents = {
+      pid: bridgePid,
+      workspace: tmpDir,
+      authToken: "tok-miss",
+      isBridge: true,
+      port: 6161,
+    };
+    const lockPath = path.join(lockDir, `${bridgePid}.lock`);
+    await fs.writeFile(lockPath, JSON.stringify(lockContents));
+
+    const { handler } = createSpawnWorkspaceTool(spawnFn);
+    const result = await handler({
+      path: tmpDir,
+      timeoutMs: 3000,
+      codeServer: true,
+    });
+
+    expect(result).toMatchObject({ isError: true });
+    const parsed = parseText(result);
+    expect(parsed.code).toBe("code_server_missing");
+    expect(parsed.error).toMatch(/code-server/);
+    // Bridge must be cleaned up when code-server spawn fails.
+    expect(killSpy).toHaveBeenCalledWith(bridgePid, "SIGTERM");
+  });
+
+  it("codeServer: honors codeServerBin override", async () => {
+    const bridgePid = 77020;
+    const spawnCalls: Array<{ cmd: string }> = [];
+    const spawnFn: SpawnFn = (cmd) => {
+      spawnCalls.push({ cmd });
+      return makeChild(spawnCalls.length === 1 ? bridgePid : 77021);
+    };
+
+    const lockContents = {
+      pid: bridgePid,
+      workspace: tmpDir,
+      authToken: "tok-bin",
+      isBridge: true,
+      port: 6262,
+    };
+    await fs.writeFile(
+      path.join(lockDir, `${bridgePid}.lock`),
+      JSON.stringify(lockContents),
+    );
+
+    const healthFetcher: HealthFetcher = async () => ({
+      extensionConnected: true,
+    });
+
+    const { handler } = createSpawnWorkspaceTool(spawnFn, healthFetcher);
+    await handler({
+      path: tmpDir,
+      timeoutMs: 2000,
+      codeServer: true,
+      codeServerBin: "/opt/homebrew/bin/code-server",
+    });
+
+    expect(spawnCalls[1]?.cmd).toBe("/opt/homebrew/bin/code-server");
+  });
+
   it("skips non-bridge lock files (isBridge: false)", async () => {
     const pid = 66666;
     const child = makeChild(pid);
