@@ -193,6 +193,40 @@ describe("init --workspace", () => {
     const content = fs.readFileSync(path.join(ws, "CLAUDE.md"), "utf-8");
     expect(content.split("## Claude IDE Bridge").length - 1).toBe(1);
   });
+
+  it("registers MCP shim at <CONFIG_DIR>.json, not at the path-lost sibling (regression)", () => {
+    // Regression: prior code used `path.join(CONFIG_DIR, "..", "claude.json")`
+    // which produces `~/claude.json` (no dot) instead of `~/.claude.json`.
+    // Bug symptom: `init` reported success but Claude Code never saw the shim.
+    const ws = makeTmpDir();
+    const fakeHome = makeTmpDir();
+    const configDir = path.join(fakeHome, ".claude");
+    // No file or dir at configDir yet — init creates settings.json under it.
+    const expectedClaudeJson = `${configDir}.json`; // ~/.claude.json equivalent
+    const wrongClaudeJson = path.join(fakeHome, "claude.json"); // ghost file
+
+    const result = spawnSync("node", [distIndex, "init", "--workspace", ws], {
+      input: "n\n",
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        CLAUDE_CODE_IDE_SKIP_VALID_CHECK: "true",
+        CLAUDE_CONFIG_DIR: configDir,
+        HOME: fakeHome,
+      },
+      timeout: 30_000,
+    });
+
+    expect(result.status).toBe(0);
+    expect(fs.existsSync(expectedClaudeJson)).toBe(true);
+    expect(fs.existsSync(wrongClaudeJson)).toBe(false);
+
+    const parsed = JSON.parse(fs.readFileSync(expectedClaudeJson, "utf-8")) as {
+      mcpServers?: Record<string, unknown>;
+    };
+    expect(parsed.mcpServers).toBeDefined();
+    expect(parsed.mcpServers?.["claude-ide-bridge"]).toBeDefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
