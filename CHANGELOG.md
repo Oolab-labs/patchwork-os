@@ -6,6 +6,230 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+---
+
+## [2.42.0] — 2026-04-16
+
+### Added
+- **Headless parity CLI** — `start-task "<description>"`, `quick-task <preset>`, `continue-handoff`. Sidebar, CLI, and MCP clients now share one dispatch path. All subcommands support `--json`, `--port`, `--source`. Auth via bridge lock file token (same pattern as `notify`).
+- **`launchQuickTask` MCP tool** — context-aware preset launcher. Composes `runClaudeTask` via in-process deps, enforces 5s bridge-global cooldown with source-tagged diagnostics, appends handoff context unless auto-snapshot. Presets: `fixErrors`, `refactorFile`, `addTests`, `explainCode`, `optimizePerf`, `runTests`, `resumeLastCancelled`.
+- **`src/quickTaskPresets.ts`** — shared preset module; extension's `_buildPresets` now delegates. Copied into extension tree at esbuild time.
+- **POST `/launch-quick-task`** HTTP endpoint — bearer auth, 200 ok / 429 cooldown / 503 when no session connected.
+- **`McpTransport.invokeToolDirect()`** — public method for HTTP endpoints to dispatch tools without a full JSON-RPC session.
+- **`ToolErrorCodes.COOLDOWN_ACTIVE`** — new tool-level error code.
+- **`docs/perf-baseline.md`** — loopback p50/p95/p99 for 8 representative tool calls. All ≤ 1ms on M4 Max / 500 iterations. Anchor for future regression detection.
+
+### Changed
+- Extension bumped to v1.4.7 (Windsurf cache invalidation).
+
+### Stats
+- 141 tools; 2802 bridge tests / 191 files.
+
+---
+
+## [2.41.0] — 2026-04-16
+
+### Added
+- **4-track follow-up**: PBT expansion, `spawnWorkspace` tool, managed-agents docs, visual skills.
+
+---
+
+## [2.40.1] — 2026-04-16
+
+### Fixed
+- **FP interpreter**: parallel state merge correctness, retry re-execution semantics; interpreter doc cleanup.
+
+---
+
+## [2.40.0] — 2026-04-16
+
+### Added
+- **Functional Interpreter / Algebraic DSL (phases 1–4 complete)** — `src/fp/`: `AutomationProgram` ADT, `policyParser`, `executeAutomationPolicy`, `VsCodeBackend` / `TestBackend`. Extended `AutomationState` with 4 new fields + 6 new pure transition functions. All 20 automation hooks wired through the interpreter.
+
+### Changed
+- **`automation.ts`**: removed 2879 lines of imperative handler bodies — behaviour migrated wholesale into the interpreter.
+
+### Stats
+- 2761 bridge tests / 188 files.
+
+---
+
+## [2.39.0] — 2026-04-16
+
+### Added
+- **FP layer (Red Book) complete + audited** — `src/fp/` module with `ToolResult<T>`, `BridgeErrorCode`, `traverse`, `longPoll`, `ExtensionSnapshot`, `activityAnalytics`, `tokenBucket`, `automationUtils`, `automationState`, `commandDescription`, `brandedTypes`. 29 property-based tests (fast-check seed:42).
+
+### Fixed
+- `untrustedBlock` DoS (regex metachar → `split/join`).
+- `HOOK_SUBJECT_KEY` typo (`onTaskRun` → `onTestRun`).
+- `toClaudeTaskOutcome` missing `cancelReason` param.
+- `batchLsp` outputSchema missing `required[]`.
+- `traverse` dedup moved out of `result.ts` into `async.test.ts`.
+
+---
+
+## [2.38.0] — 2026-04-16
+
+### Fixed (security + stability)
+- **`sendPush`** uses `safeSend()` — backpressure-aware WS send.
+- **Automation retry**: `setTimeout` tracked in `_retryTimeouts` Set; `destroy()` cancels.
+- **`_drain`** infinite loop guard — skipped counter breaks oversized-task cycle.
+- **`testTraceToSource`**: `coverageDir` now workspace-jailed.
+- **`handoffNote`**: `CLAUDE_CONFIG_DIR` `path.resolve()` closes traversal window.
+- **OAuth CIMD fetch**: disables redirects (`redirect:"error"`).
+
+### Changed
+- **`proxy<T>` fully eliminated** — all 7 call-sites migrated to `tryRequest` / `validatedRequest`; `proxy` method removed.
+- **`listVSCodeCommands`** return type corrected (`{commands, total, capped}`).
+- **Shape-safety allowlist** cleared — all migrations done; CI gate now enforces zero new `proxy` calls.
+
+---
+
+## [2.37.0] — 2026-04-15
+
+### Added
+- **Edit transactions** — `beginTransaction`, `stageEdit`, `commitTransaction`, `rollbackTransaction`.
+- **Diagnostic workflows** — `testTraceToSource`, `explainDiagnostic`, `previewEdit`, `replaceBlock`, `refactorPreview`.
+- **Coverage tracing** — `getCodeCoverage` + lcov/json-summary parsing.
+
+### Performance
+- **Token efficiency**: `outputSchema` stripped from wire schema in `tools/list`; parameter descriptions compressed ~50%.
+
+### Fixed
+- **`token-efficiency status`** subcommand: replaces session-scoped stats with `/health` + `tools/list` counts.
+
+---
+
+## [2.36.1] — 2026-04-15
+
+### Fixed (post-release audit — 9 bugs)
+- **H1**: `writePatchedClaudeMd` restores `.bak` on rename failure (previously lost data).
+- **H2**: `patchClaudeMdImport` replaces **all** duplicate sentinels, not just the first.
+- **H3**: marker-present case wraps marker inside sentinels so future updates work.
+- **H4**: `handoffNote` parse errors no longer cached — retries from disk, logs the error.
+- **H5**: tool bucket rate limit uses `-32004` (was `-32029`, inconsistent with global limiter).
+- **M1**: `handleDelete` returns 409 when `tools/call` in-flight (was destroying live session).
+- **M2**: `tools` with no subcommand exits `1`, not `0` (CI false-success fix).
+- **L1**: `toolsSearch` tests restore stdout spy in `finally` (leak on throw).
+- **L2**: `init-idempotency` test 8 asserts correct return value `"updated"`.
+
+---
+
+## [2.36.0] — 2026-04-15
+
+### Added
+- **`claude-ide-bridge tools search <query>` / `tools list`** — offline CLI, no bridge required. `--json` flag, 11 categories, 160 tools indexed.
+- **`docs/protocol-spec.md`** — 575-line developer reference: 3 transports, MCP handshake, extension handshake, error codes, rate limiting, slim/full modes, OAuth, curl quick-start.
+- **`init` idempotency** — version-stamped CLAUDE.md blocks with 5 state transitions (`already-current` / `updated` / `patched` / `already-present` / `no-section`). Re-running `init` after upgrade now updates stale content cleanly.
+
+### Fixed
+- **`writePatchedClaudeMd`** race window — removed `unlinkSync` before `wx` write.
+- **`patchClaudeMdImport`** no longer drops user content under the bridge marker.
+- **`tools --json list`** flag-before-subcommand now parses correctly.
+- **CLAUDE.md idle TTL** corrected `10min → 2hr`; protocol spec `-32029` named.
+
+### Stats
+- 15 new tests; 2462 bridge tests total.
+
+---
+
+## [2.35.1] — 2026-04-15
+
+### Changed
+- **`handoffNote`** — 30s in-memory read cache (pre-computed paths at factory time; cache hits avoid repeated sha256/disk reads for automation hooks).
+- **`AnalyticsViewProvider`** — takes `ExtensionContext` as 5th arg (needed for `workspaceState` pin persistence).
+- **Extension** bumped to v1.4.5.
+
+### Added
+- `.gitignore` ignores `session-*.md` export files.
+
+---
+
+## [2.35.0] — 2026-04-15
+
+### Added
+- **`getPerformanceReport`** tool (slim mode) — health score 0–100, p50/p95/p99 per-tool latency, windowed throughput, connectionQuality rating.
+- **`ActivityLog`**: `windowedStats(windowMs)`, `recordRateLimitRejection()`, extended `toPrometheus()` with percentile metrics.
+- **Transport**: `recordRateLimitRejection()` on `-32004` rejections.
+- **Dashboard**: Health Score card + Top Tool p95 latency card.
+- **Analytics sidebar**: MCP session `DELETE` cleanup, SSE last-data-line fix, auto-snapshot detection, Output button for all tasks, `taskOutput` overlay, health badge + latency table, blue active / grey cancelled badges.
+
+### Fixed
+- **`claudeOrchestrator`**: pending-cancel output, unconditional abort output.
+- **`getAnalyticsReport`**: include `output` / `errorMessage` in task mapping (2000-char cap).
+
+### Changed
+- Extension bumped to v1.4.4. CLAUDE.md: always bump version before packaging `.vsix`.
+
+---
+
+## [2.34.0] — 2026-04-14
+
+### Added
+- **Live analytics endpoint** — authenticated `GET /analytics`. `analyticsFn` wired from `activityLog.stats()` + orchestrator task list.
+- **Periodic snapshot** — `_buildSnapshotSummary()` captures real extension state, diagnostics, top tools; 5-min timer with `unref()`.
+
+### Changed
+- **Extension analytics panel**: replaced hardcoded stub with real HTTP fetch to `/analytics`. 512 KB body cap + in-flight guard. Full UX rewrite: active tasks section, handoff preview (2-line), 5 real quick-task presets in 2-col grid, collapsible recent tasks + stats, live "updated Xs ago" counter (15s refresh).
+
+### Fixed
+- **`hooksLast24h`** counts `isAutomationTask` tasks, not lifecycle events.
+- **`memoryGraphQueries`**: `description` → `hint` (CI audit gate fix).
+
+---
+
+## [2.33.0] — 2026-04-14
+
+### Added (polish features F1–F11)
+- **F1**: live status bar — context age, debug flash, pre-compact armed state.
+- **F2**: `init` success message + auto-open docs.
+- **F3**: automation `when.testRunnerLastStatus` `"any"` branch.
+- **F4**: marketplace stars column.
+- **F5**: update-check on bridge start.
+- **F6**: Levenshtein "did you mean?" for unknown CLI flags.
+- **F7**: `expectType()` helper replaces 19 inline throws in `automation.ts`.
+- **F8**: `getBridgeStatus` exposes `automationPolicyPath` + `lastHookFiredAt`.
+- **F9**: `getProjectContext` tracks `topModulesSource` / `ctagsStatus` + `onCacheUpdated` callback.
+- **F10**: `auditDependencies` progress start/end messages.
+- **F11**: VS Code walkthrough onboarding contribution.
+
+### Fixed (workspace-escape hardening)
+- 8 tool descriptions now scope to workspace; `resolveFilePath` error hints native Read tool.
+- Automation-policy prompts tightened.
+
+---
+
+## [2.32.0] — 2026-04-13
+
+### Added (token efficiency)
+- **Phase 1+4+5+6a**: `cache_control`, summarize, `getSessionUsage`, lower default limits.
+- **Phase 2+6b**: `searchTools` + LSP verbosity controls.
+
+### Fixed
+- Extension tests: added `registerWebviewViewProvider` to vscode mock.
+
+---
+
+## [2.31.0] — 2026-04-13
+
+### Added
+- **Analytics sidebar**: Start Task button (context-injected Claude task), recent tasks + Resume buttons, quick-task presets, Continue from handoff.
+- **`getAnalyticsReport`** tool.
+- **Ant CLI support** — `useAnt: true` on `runClaudeTask`.
+- **Automation**: `onDebugSessionStart`, `onPreCompact` hooks; `getProjectContext` tool.
+
+### Changed
+- Documentation rewrite (removed ICPs.md + cowork-workflow.md; fixed broken refs).
+- Extension bumped to v1.4.0.
+
+### Fixed
+- Shim passive-mode `waitFor` timeout 10s → 20s (flaky on slow CI).
+- CI: build before test in `publish-npm` workflow (init.test.ts needs `dist/`).
+
+---
+
 ## [2.30.0] — 2026-04-14
 
 ### Added
