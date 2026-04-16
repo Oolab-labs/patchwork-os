@@ -122,7 +122,7 @@ export class Bridge {
   private port = 0;
   private pluginTools: LoadedPluginTool[] = [];
   private pluginWatcher: PluginWatcher | null = null;
-  private automationHooks: AutomationHooks | null = null;
+  private automationHooks: AutomationHooks | undefined = undefined;
   private httpMcpHandler: StreamableHttpHandler | null = null;
   private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */

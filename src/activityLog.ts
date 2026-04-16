@@ -169,11 +169,10 @@ export class ActivityLog {
       // Step 2: if still over byte limit (e.g. a few very long lines survived),
       // halve the line array repeatedly until under the byte budget.
       // This prevents O(N) disk-thrashing on every append.
-      while (
-        lines.join("\n").length + 1 > MAX_PERSIST_BYTES &&
-        lines.length > 1
-      ) {
+      let joined = lines.join("\n");
+      while (joined.length + 1 > MAX_PERSIST_BYTES && lines.length > 1) {
         lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
+        joined = lines.join("\n");
       }
       await fs.promises.writeFile(this.persistPath, `${lines.join("\n")}\n`, {
         mode: 0o600,

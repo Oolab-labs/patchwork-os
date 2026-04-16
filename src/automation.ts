@@ -1196,6 +1196,8 @@ export class AutomationHooks {
    * each "write" to maintain immutability semantics at the value level.
    */
   private _automationState: AutomationState = EMPTY_AUTOMATION_STATE;
+  /** Accumulated skip counts keyed by hook name → reason. */
+  private _skipCountsByHookAndReason = new Map<string, Map<string, number>>();
   /** Tracks previous error count per normalized file path for zero-transition detection. */
   private prevDiagnosticErrors = new Map<string, number>();
   /**
@@ -1253,6 +1255,13 @@ export class AutomationHooks {
       }
       for (const s of result.value.skipped) {
         this.log(`[interpreter] ${eventType}: skipped ${s.hook} — ${s.reason}`);
+        if (!this._skipCountsByHookAndReason.has(s.hook)) {
+          this._skipCountsByHookAndReason.set(s.hook, new Map());
+        }
+        const byReason = this._skipCountsByHookAndReason.get(s.hook);
+        if (byReason) {
+          byReason.set(s.reason, (byReason.get(s.reason) ?? 0) + 1);
+        }
       }
       for (const e of result.value.errors) {
         this.log(
@@ -1779,7 +1788,11 @@ export class AutomationHooks {
     return this.policy.onPreCompact?.enabled === true;
   }
 
-  getStats(): { hooksEnabled: number; lastFiredAt: string | null } {
+  getStats(): {
+    hooksEnabled: number;
+    lastFiredAt: string | null;
+    skipCountsByHookAndReason?: Record<string, Record<string, number>>;
+  } {
     const hookKeys = [
       "onFileSave",
       "onFileChanged",
@@ -1806,6 +1819,23 @@ export class AutomationHooks {
       const hook = this.policy[k] as { enabled?: boolean } | undefined;
       return hook !== undefined && hook.enabled !== false;
     }).length;
-    return { hooksEnabled, lastFiredAt: this._lastFiredAt };
+
+    // Convert skipCountsByHookAndReason Map to plain object
+    const skipCountsByHookAndReason: Record<
+      string,
+      Record<string, number>
+    > = {};
+    for (const [hook, reasons] of this._skipCountsByHookAndReason) {
+      skipCountsByHookAndReason[hook] = Object.fromEntries(reasons);
+    }
+
+    return {
+      hooksEnabled,
+      lastFiredAt: this._lastFiredAt,
+      skipCountsByHookAndReason:
+        Object.keys(skipCountsByHookAndReason).length > 0
+          ? skipCountsByHookAndReason
+          : undefined,
+    };
   }
 }
