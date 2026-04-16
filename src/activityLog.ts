@@ -13,6 +13,12 @@ import type {
   LifecycleEntry,
   TimelineEntry,
 } from "./activityTypes.js";
+import {
+  computeCoOccurrence,
+  computePercentiles,
+  computeStats,
+  computeWindowedStats,
+} from "./fp/activityAnalytics.js";
 
 function escapeLabelValue(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
@@ -370,29 +376,7 @@ export class ActivityLog {
     string,
     { count: number; avgDurationMs: number; errors: number }
   > {
-    const map = new Map<
-      string,
-      { count: number; totalMs: number; errors: number }
-    >();
-    for (const entry of this.entries) {
-      const s = map.get(entry.tool) ?? { count: 0, totalMs: 0, errors: 0 };
-      s.count++;
-      s.totalMs += entry.durationMs;
-      if (entry.status === "error") s.errors++;
-      map.set(entry.tool, s);
-    }
-    const result: Record<
-      string,
-      { count: number; avgDurationMs: number; errors: number }
-    > = {};
-    for (const [tool, s] of map) {
-      result[tool] = {
-        count: s.count,
-        avgDurationMs: Math.round(s.totalMs / s.count),
-        errors: s.errors,
-      };
-    }
-    return result;
+    return computeStats(this.entries);
   }
 
   /**
@@ -403,28 +387,7 @@ export class ActivityLog {
     string,
     { p50: number; p95: number; p99: number; sampleCount: number }
   > {
-    const result: Record<
-      string,
-      { p50: number; p95: number; p99: number; sampleCount: number }
-    > = {};
-    for (const [tool, raw] of this.durationSamples) {
-      if (raw.length < 2) continue;
-      const sorted = [...raw].sort((a, b) => a - b);
-      const n = sorted.length;
-      result[tool] = {
-        p50: this._percentileValue(sorted, 50),
-        p95: this._percentileValue(sorted, 95),
-        p99: this._percentileValue(sorted, 99),
-        sampleCount: n,
-      };
-    }
-    return result;
-  }
-
-  /** Nearest-rank percentile from a pre-sorted array. */
-  private _percentileValue(sorted: number[], pct: number): number {
-    const idx = Math.ceil((pct / 100) * sorted.length) - 1;
-    return Math.round(sorted[Math.max(0, idx)] ?? 0);
+    return computePercentiles(this.durationSamples);
   }
 
   /** Increment the rate-limit rejection counter. */
@@ -444,34 +407,7 @@ export class ActivityLog {
   windowedStats(
     windowMs: number,
   ): Record<string, { count: number; errors: number; avgDurationMs: number }> {
-    const cutoff = Date.now() - windowMs;
-    const map = new Map<
-      string,
-      { count: number; totalMs: number; errors: number }
-    >();
-    // entries are chronological — scan in reverse, stop when outside window
-    for (let i = this.entries.length - 1; i >= 0; i--) {
-      const e = this.entries[i];
-      if (!e) continue;
-      if (new Date(e.timestamp).getTime() < cutoff) break;
-      const s = map.get(e.tool) ?? { count: 0, totalMs: 0, errors: 0 };
-      s.count++;
-      s.totalMs += e.durationMs;
-      if (e.status === "error") s.errors++;
-      map.set(e.tool, s);
-    }
-    const result: Record<
-      string,
-      { count: number; errors: number; avgDurationMs: number }
-    > = {};
-    for (const [tool, s] of map) {
-      result[tool] = {
-        count: s.count,
-        errors: s.errors,
-        avgDurationMs: s.count > 0 ? Math.round(s.totalMs / s.count) : 0,
-      };
-    }
-    return result;
+    return computeWindowedStats(this.entries, windowMs, Date.now());
   }
 
   /**
@@ -483,30 +419,6 @@ export class ActivityLog {
   coOccurrence(
     windowMs = DEFAULT_CO_OCCURRENCE_WINDOW_MS,
   ): { pair: string; count: number }[] {
-    const counts = new Map<string, number>();
-    // Entries are chronological. The inner loop breaks as soon as tB - tA
-    // exceeds windowMs, so effective complexity is O(n × k) where k is the
-    // average number of entries within the window — bounded by the ring buffer
-    // capacity (1 000). Not a true O(n²) scan.
-    const n = this.entries.length;
-    for (let i = 0; i < n; i++) {
-      const a = this.entries[i];
-      if (!a) continue;
-      const tA = new Date(a.timestamp).getTime();
-      for (let j = i + 1; j < n; j++) {
-        const b = this.entries[j];
-        if (!b) continue;
-        const tB = new Date(b.timestamp).getTime();
-        if (tB - tA > windowMs) break; // sorted chronologically — safe to break
-        if (a.tool === b.tool) continue; // skip self-pairs
-        const key =
-          a.tool < b.tool ? `${a.tool}|${b.tool}` : `${b.tool}|${a.tool}`;
-        counts.set(key, (counts.get(key) ?? 0) + 1);
-      }
-    }
-    return [...counts.entries()]
-      .map(([pair, count]) => ({ pair, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 50);
+    return computeCoOccurrence(this.entries, windowMs);
   }
 }

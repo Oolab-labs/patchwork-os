@@ -83,6 +83,27 @@ describe("batchGetHover", () => {
     expect(data.results[0].result).toBeNull();
   });
 
+  it("populates error field on rejection with the rejection message", async () => {
+    const client = makeClient({
+      getHover: vi.fn(() =>
+        Promise.reject(new Error("Hover request timed out")),
+      ),
+    });
+    const tool = createBatchGetHoverTool(workspace, client as never);
+    const result = (await tool.handler({ items: [ITEM] })) as any;
+    const data = JSON.parse(result.content[0].text);
+    expect(data.results[0].error).toBe("Hover request timed out");
+    expect(data.results[0].result).toBeNull();
+  });
+
+  it("does not set error field on success", async () => {
+    const client = makeClient();
+    const tool = createBatchGetHoverTool(workspace, client as never);
+    const result = (await tool.handler({ items: [ITEM] })) as any;
+    const data = JSON.parse(result.content[0].text);
+    expect(data.results[0].error).toBeUndefined();
+  });
+
   it("includes filePath/line/column in each result", async () => {
     const client = makeClient();
     const tool = createBatchGetHoverTool(workspace, client as never);
@@ -243,5 +264,31 @@ describe("batchFindImplementations", () => {
     const data = JSON.parse(result.content[0].text);
     expect(data.results[0].result).not.toBeNull();
     expect(data.results[1].result).toBeNull();
+  });
+
+  it("populates error field on rejection for findImplementations", async () => {
+    const client = makeClient({
+      findImplementations: vi.fn(() =>
+        Promise.reject(new Error("LSP server unavailable")),
+      ),
+    });
+    const tool = createBatchFindImplementationsTool(workspace, client as never);
+    const result = (await tool.handler({ items: [ITEM] })) as any;
+    const data = JSON.parse(result.content[0].text);
+    expect(data.results[0].error).toBe("LSP server unavailable");
+    expect(data.results[0].result).toBeNull();
+  });
+
+  it("populates error field on rejection for batchGoToDefinition", async () => {
+    const client = makeClient({
+      goToDefinition: vi.fn(() =>
+        Promise.reject(new Error("Definition not found")),
+      ),
+    });
+    const tool = createBatchGoToDefinitionTool(workspace, client as never);
+    const result = (await tool.handler({ items: [ITEM] })) as any;
+    const data = JSON.parse(result.content[0].text);
+    expect(data.results[0].error).toBe("Definition not found");
+    expect(data.results[0].result).toBeNull();
   });
 });

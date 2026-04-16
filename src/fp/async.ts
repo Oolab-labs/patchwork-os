@@ -9,6 +9,35 @@
  *   - cleanup on all settle paths (timeout, abort, change, TOCTOU)
  */
 
+/**
+ * traverse<A, B>(items, f) — like Promise.all but preserves per-item errors
+ * instead of short-circuiting.
+ *
+ * Returns an array of `{ ok: true; value: B } | { ok: false; error: string }`
+ * for each item in `items`, in order.  Rejections are captured as `ok: false`
+ * rather than propagating.  This mirrors Haskell's `traverse` semantics over
+ * the `Either` applicative: every element is attempted independently.
+ */
+export type TraverseResult<B> =
+  | { ok: true; value: B }
+  | { ok: false; error: string };
+
+export async function traverse<A, B>(
+  items: A[],
+  f: (item: A) => Promise<B>,
+): Promise<TraverseResult<B>[]> {
+  const settled = await Promise.allSettled(items.map(f));
+  return settled.map((r) =>
+    r.status === "fulfilled"
+      ? { ok: true, value: r.value }
+      : {
+          ok: false,
+          error:
+            r.reason instanceof Error ? r.reason.message : String(r.reason),
+        },
+  );
+}
+
 export interface LongPollOptions<T> {
   timeoutMs: number;
   signal?: AbortSignal;

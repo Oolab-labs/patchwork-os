@@ -397,6 +397,20 @@ export function createGetDiagnosticsTool(
       );
       let diagnostics = results.flat();
 
+      // Dedup: tsc appends trailing period to messages; extension/other linters
+      // may not. Normalise message before building the key so "Cannot find name
+      // 'x'." and "Cannot find name 'x'" are treated as the same diagnostic.
+      {
+        const seen = new Set<string>();
+        diagnostics = diagnostics.filter((d) => {
+          const normalizedMsg = d.message.replace(/\.$/, "").trim();
+          const key = `${d.file}:${d.line ?? ""}:${d.column ?? ""}:${normalizedMsg}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+
       // Filter by URI if specified
       if (uri) {
         const normalizedUri = uri.startsWith("file://") ? uri : toFileUri(uri);

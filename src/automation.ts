@@ -4,58 +4,32 @@ import path from "node:path";
 import { minimatch } from "minimatch";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import type { ExtensionClient } from "./extensionClient.js";
+import {
+  type AutomationState,
+  EMPTY_AUTOMATION_STATE,
+  tasksInLastHour,
+} from "./fp/automationState.js";
+import {
+  buildHookMetadata as _buildHookMetadata,
+  truncatePrompt,
+  untrustedBlock,
+} from "./fp/automationUtils.js";
 import { getPrompt } from "./prompts.js";
 
 /** Maximum length (chars) of a single diagnostic message before truncation */
 const MAX_DIAGNOSTIC_MSG_CHARS = 500;
 const MAX_DIAGNOSTICS_IN_PROMPT = 20;
 
-/**
- * Wrap an untrusted user-controlled value in delimiters that include a
- * per-trigger nonce so a crafted value cannot forge a closing delimiter.
- * The nonce is stripped from the value itself before insertion.
- */
-function untrustedBlock(label: string, value: string, nonce: string): string {
-  if (!/^[A-Z][A-Z0-9 ]*$/.test(label)) {
-    throw new Error(
-      `untrustedBlock: label must be uppercase ASCII, got: ${JSON.stringify(label)}`,
-    );
-  }
-  const safe = value.replace(new RegExp(nonce, "g"), "");
-  return `\n--- BEGIN ${label} [${nonce}] (untrusted) ---\n${safe}\n--- END ${label} [${nonce}] ---\n`;
-}
+// untrustedBlock and truncatePrompt are re-exported from fp/automationUtils for
+// backward-compat (automation.ts callers use them directly via closure).
+// buildHookMetadata wraps the pure version, injecting Date.now() at call time.
 /** Maximum length (chars) of a file path inserted into prompts */
 const MAX_FILE_PATH_CHARS = 500;
-
-/**
- * Build a trusted metadata prefix that is prepended to every automation hook
- * prompt BEFORE any untrustedBlock() substitutions. This allows Claude to
- * identify which hook triggered the task and correlate it with IDE context.
- */
 function buildHookMetadata(hookName: string, file?: string): string {
-  // Strip control characters from the file path before embedding in the trusted
-  // metadata prefix — prevents a crafted file name containing \n from injecting
-  // additional lines into the structured header block.
-  const safeFile = file
-    ? file.slice(0, MAX_FILE_PATH_CHARS).replace(/[\x00-\x1F\x7F]/g, "")
-    : "N/A";
-  return `@@ HOOK: ${hookName} | file: ${safeFile} | ts: ${new Date().toISOString()} @@\n`;
+  return _buildHookMetadata(hookName, new Date().toISOString(), file);
 }
 /** Maximum length (chars) of an automation policy prompt template (matches runClaudeTask cap) */
 const MAX_POLICY_PROMPT_CHARS = 32_768;
-
-/**
- * Truncate a final prompt to MAX_POLICY_PROMPT_CHARS at the last newline before
- * the limit and append a truncation notice. Called after all placeholder
- * substitutions and buildHookMetadata() prepends so the cap applies to the
- * fully-assembled string, not just the raw template.
- */
-function truncatePrompt(prompt: string): string {
-  if (prompt.length <= MAX_POLICY_PROMPT_CHARS) return prompt;
-  const cutoff = prompt.lastIndexOf("\n", MAX_POLICY_PROMPT_CHARS);
-  const end = cutoff > 0 ? cutoff : MAX_POLICY_PROMPT_CHARS;
-  return `${prompt.slice(0, end)}\n[... truncated to fit 32KB limit ...]`;
-}
 /** Prune lastTrigger entries older than this to prevent unbounded Map growth */
 const LAST_TRIGGER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 /** Hard size cap on lastTrigger to bound memory in very large repos */
@@ -638,7 +612,81 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
-  // Validate onDiagnosticsError
+  // ── Generic hook validation fold ─────────────────────────────────────────
+  //
+  // Every hook that follows the standard shape (enabled boolean + cooldownMs
+  // required + validatePromptSource) is covered by iterating STANDARD_HOOK_KEYS.
+  // Hooks with additional fields (onDiagnosticsError, onFileSave, onFileChanged,
+  // onInstructionsLoaded, onTestRun) are handled separately AFTER the fold.
+  //
+  // HOOK_SUBJECT_KEY documents which context field each hook's `condition` glob
+  // is matched against.  This prevents accidentally applying wrong subject logic
+  // to non-file hooks.
+  type PolicyKey = keyof typeof policy;
+
+  const HOOK_SUBJECT_KEY: Record<string, string> = {
+    onFileSave: "file",
+    onFileChanged: "file",
+    onGitCommit: "message",
+    onGitPush: "branch",
+    onGitPull: "branch",
+    onBranchCheckout: "branch",
+    onPullRequest: "title",
+    onTestPassAfterFailure: "runner",
+    onTaskCreated: "prompt",
+    onTaskSuccess: "output",
+    onPermissionDenied: "tool",
+    onDiagnosticsCleared: "file",
+    onCwdChanged: "cwd",
+    onPreCompact: "session",
+    onPostCompact: "session",
+    onTaskRun: "runner",
+    onDebugSessionStart: "sessionName",
+    onDebugSessionEnd: "sessionName",
+  };
+  void HOOK_SUBJECT_KEY; // referenced by callers; kept for documentation
+
+  // Standard hooks: required cooldownMs, no extra fields
+  const STANDARD_HOOK_KEYS = [
+    "onTestPassAfterFailure",
+    "onGitCommit",
+    "onGitPush",
+    "onGitPull",
+    "onBranchCheckout",
+    "onPullRequest",
+    "onTaskCreated",
+    "onPermissionDenied",
+    "onDiagnosticsCleared",
+    "onTaskSuccess",
+    "onDebugSessionStart",
+    "onDebugSessionEnd",
+    "onCwdChanged",
+    "onPreCompact",
+    "onPostCompact",
+  ] as const satisfies ReadonlyArray<PolicyKey>;
+
+  for (const key of STANDARD_HOOK_KEYS) {
+    const cfg = policy[key];
+    if (cfg === undefined) continue;
+    if (typeof cfg !== "object" || cfg === null) {
+      throw new Error(`"${key}" must be an object`);
+    }
+    const rec = cfg as unknown as Record<string, unknown>;
+    if (typeof rec.enabled !== "boolean") {
+      throw new Error(`"${key}.enabled" must be a boolean`);
+    }
+    validatePromptSource(key, rec);
+    expectType(rec.cooldownMs, "number", `${key}.cooldownMs`);
+    if (!Number.isFinite(rec.cooldownMs as number)) {
+      throw new Error(`"${key}.cooldownMs" must be a finite number`);
+    }
+    rec.cooldownMs = Math.max(rec.cooldownMs as number, MIN_COOLDOWN_MS);
+  }
+
+  // ── Per-hook extras (after generic fold) ─────────────────────────────────
+
+  // Validate onDiagnosticsError (extra: minSeverity required, diagnosticTypes,
+  // dedupeByContent, dedupeContentCooldownMs)
   if (policy.onDiagnosticsError !== undefined) {
     const d = policy.onDiagnosticsError;
     if (typeof d !== "object" || d === null) {
@@ -693,7 +741,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     }
   }
 
-  // Validate onFileSave
+  // Validate onFileSave (extra: patterns required)
   if (policy.onFileSave !== undefined) {
     const s = policy.onFileSave;
     if (typeof s !== "object" || s === null) {
@@ -719,7 +767,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     s.cooldownMs = Math.max(s.cooldownMs, MIN_COOLDOWN_MS);
   }
 
-  // Validate onFileChanged
+  // Validate onFileChanged (extra: patterns required)
   if (policy.onFileChanged !== undefined) {
     const fc = policy.onFileChanged;
     if (typeof fc !== "object" || fc === null) {
@@ -745,58 +793,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     fc.cooldownMs = Math.max(fc.cooldownMs, MIN_COOLDOWN_MS);
   }
 
-  // Validate onCwdChanged
-  if (policy.onCwdChanged !== undefined) {
-    const cw = policy.onCwdChanged;
-    if (typeof cw !== "object" || cw === null) {
-      throw new Error(`"onCwdChanged" must be an object`);
-    }
-    if (typeof cw.enabled !== "boolean") {
-      throw new Error(`"onCwdChanged.enabled" must be a boolean`);
-    }
-    validatePromptSource("onCwdChanged", cw);
-    expectType(cw.cooldownMs, "number", "onCwdChanged.cooldownMs");
-    if (!Number.isFinite(cw.cooldownMs as number)) {
-      throw new Error(`"onCwdChanged.cooldownMs" must be a finite number`);
-    }
-    cw.cooldownMs = Math.max(cw.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onPreCompact
-  if (policy.onPreCompact !== undefined) {
-    const p = policy.onPreCompact;
-    if (typeof p !== "object" || p === null) {
-      throw new Error(`"onPreCompact" must be an object`);
-    }
-    if (typeof p.enabled !== "boolean") {
-      throw new Error(`"onPreCompact.enabled" must be a boolean`);
-    }
-    validatePromptSource("onPreCompact", p);
-    expectType(p.cooldownMs, "number", "onPreCompact.cooldownMs");
-    if (!Number.isFinite(p.cooldownMs as number)) {
-      throw new Error(`"onPreCompact.cooldownMs" must be a finite number`);
-    }
-    p.cooldownMs = Math.max(p.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onPostCompact
-  if (policy.onPostCompact !== undefined) {
-    const p = policy.onPostCompact;
-    if (typeof p !== "object" || p === null) {
-      throw new Error(`"onPostCompact" must be an object`);
-    }
-    if (typeof p.enabled !== "boolean") {
-      throw new Error(`"onPostCompact.enabled" must be a boolean`);
-    }
-    validatePromptSource("onPostCompact", p);
-    expectType(p.cooldownMs, "number", "onPostCompact.cooldownMs");
-    if (!Number.isFinite(p.cooldownMs as number)) {
-      throw new Error(`"onPostCompact.cooldownMs" must be a finite number`);
-    }
-    p.cooldownMs = Math.max(p.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onInstructionsLoaded
+  // Validate onInstructionsLoaded (special: cooldownMs optional, min 5000)
   if (policy.onInstructionsLoaded !== undefined) {
     const il = policy.onInstructionsLoaded;
     if (typeof il !== "object" || il === null) {
@@ -815,7 +812,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     validatePromptSource("onInstructionsLoaded", il);
   }
 
-  // Validate onTestRun
+  // Validate onTestRun (extra: onFailureOnly required, minDuration optional)
   if (policy.onTestRun !== undefined) {
     const tr = policy.onTestRun;
     if (typeof tr !== "object" || tr === null) {
@@ -844,218 +841,6 @@ export function loadPolicy(filePath: string): AutomationPolicy {
         );
       }
     }
-  }
-
-  // Validate onTestPassAfterFailure
-  if (policy.onTestPassAfterFailure !== undefined) {
-    const tpaf = policy.onTestPassAfterFailure;
-    if (typeof tpaf !== "object" || tpaf === null) {
-      throw new Error(`"onTestPassAfterFailure" must be an object`);
-    }
-    if (typeof tpaf.enabled !== "boolean") {
-      throw new Error(`"onTestPassAfterFailure.enabled" must be a boolean`);
-    }
-    validatePromptSource("onTestPassAfterFailure", tpaf);
-    expectType(tpaf.cooldownMs, "number", "onTestPassAfterFailure.cooldownMs");
-    if (!Number.isFinite(tpaf.cooldownMs as number)) {
-      throw new Error(
-        `"onTestPassAfterFailure.cooldownMs" must be a finite number`,
-      );
-    }
-    tpaf.cooldownMs = Math.max(tpaf.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onGitCommit
-  if (policy.onGitCommit !== undefined) {
-    const gc = policy.onGitCommit;
-    if (typeof gc !== "object" || gc === null) {
-      throw new Error(`"onGitCommit" must be an object`);
-    }
-    if (typeof gc.enabled !== "boolean") {
-      throw new Error(`"onGitCommit.enabled" must be a boolean`);
-    }
-    validatePromptSource("onGitCommit", gc);
-    expectType(gc.cooldownMs, "number", "onGitCommit.cooldownMs");
-    if (!Number.isFinite(gc.cooldownMs as number)) {
-      throw new Error(`"onGitCommit.cooldownMs" must be a finite number`);
-    }
-    gc.cooldownMs = Math.max(gc.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onGitPush
-  if (policy.onGitPush !== undefined) {
-    const gp = policy.onGitPush;
-    if (typeof gp !== "object" || gp === null) {
-      throw new Error(`"onGitPush" must be an object`);
-    }
-    if (typeof gp.enabled !== "boolean") {
-      throw new Error(`"onGitPush.enabled" must be a boolean`);
-    }
-    validatePromptSource("onGitPush", gp);
-    expectType(gp.cooldownMs, "number", "onGitPush.cooldownMs");
-    if (!Number.isFinite(gp.cooldownMs as number)) {
-      throw new Error(`"onGitPush.cooldownMs" must be a finite number`);
-    }
-    gp.cooldownMs = Math.max(gp.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onGitPull
-  if (policy.onGitPull !== undefined) {
-    const gpl = policy.onGitPull;
-    if (typeof gpl !== "object" || gpl === null) {
-      throw new Error(`"onGitPull" must be an object`);
-    }
-    if (typeof gpl.enabled !== "boolean") {
-      throw new Error(`"onGitPull.enabled" must be a boolean`);
-    }
-    validatePromptSource("onGitPull", gpl);
-    expectType(gpl.cooldownMs, "number", "onGitPull.cooldownMs");
-    if (!Number.isFinite(gpl.cooldownMs as number)) {
-      throw new Error(`"onGitPull.cooldownMs" must be a finite number`);
-    }
-    gpl.cooldownMs = Math.max(gpl.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onBranchCheckout
-  if (policy.onBranchCheckout !== undefined) {
-    const bc = policy.onBranchCheckout;
-    if (typeof bc !== "object" || bc === null) {
-      throw new Error(`"onBranchCheckout" must be an object`);
-    }
-    if (typeof bc.enabled !== "boolean") {
-      throw new Error(`"onBranchCheckout.enabled" must be a boolean`);
-    }
-    validatePromptSource("onBranchCheckout", bc);
-    expectType(bc.cooldownMs, "number", "onBranchCheckout.cooldownMs");
-    if (!Number.isFinite(bc.cooldownMs as number)) {
-      throw new Error(`"onBranchCheckout.cooldownMs" must be a finite number`);
-    }
-    bc.cooldownMs = Math.max(bc.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onPullRequest
-  if (policy.onPullRequest !== undefined) {
-    const pr = policy.onPullRequest;
-    if (typeof pr !== "object" || pr === null) {
-      throw new Error(`"onPullRequest" must be an object`);
-    }
-    if (typeof pr.enabled !== "boolean") {
-      throw new Error(`"onPullRequest.enabled" must be a boolean`);
-    }
-    validatePromptSource("onPullRequest", pr);
-    expectType(pr.cooldownMs, "number", "onPullRequest.cooldownMs");
-    if (!Number.isFinite(pr.cooldownMs as number)) {
-      throw new Error(`"onPullRequest.cooldownMs" must be a finite number`);
-    }
-    pr.cooldownMs = Math.max(pr.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onTaskCreated
-  if (policy.onTaskCreated !== undefined) {
-    const tc = policy.onTaskCreated;
-    if (typeof tc !== "object" || tc === null) {
-      throw new Error(`"onTaskCreated" must be an object`);
-    }
-    if (typeof tc.enabled !== "boolean") {
-      throw new Error(`"onTaskCreated.enabled" must be a boolean`);
-    }
-    validatePromptSource("onTaskCreated", tc);
-    expectType(tc.cooldownMs, "number", "onTaskCreated.cooldownMs");
-    if (!Number.isFinite(tc.cooldownMs as number)) {
-      throw new Error(`"onTaskCreated.cooldownMs" must be a finite number`);
-    }
-    tc.cooldownMs = Math.max(tc.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onPermissionDenied
-  if (policy.onPermissionDenied !== undefined) {
-    const pd = policy.onPermissionDenied;
-    if (typeof pd !== "object" || pd === null) {
-      throw new Error(`"onPermissionDenied" must be an object`);
-    }
-    if (typeof pd.enabled !== "boolean") {
-      throw new Error(`"onPermissionDenied.enabled" must be a boolean`);
-    }
-    validatePromptSource("onPermissionDenied", pd);
-    expectType(pd.cooldownMs, "number", "onPermissionDenied.cooldownMs");
-    if (!Number.isFinite(pd.cooldownMs as number)) {
-      throw new Error(
-        `"onPermissionDenied.cooldownMs" must be a finite number`,
-      );
-    }
-    pd.cooldownMs = Math.max(pd.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onDiagnosticsCleared
-  if (policy.onDiagnosticsCleared !== undefined) {
-    const dc = policy.onDiagnosticsCleared;
-    if (typeof dc !== "object" || dc === null) {
-      throw new Error(`"onDiagnosticsCleared" must be an object`);
-    }
-    if (typeof dc.enabled !== "boolean") {
-      throw new Error(`"onDiagnosticsCleared.enabled" must be a boolean`);
-    }
-    validatePromptSource("onDiagnosticsCleared", dc);
-    expectType(dc.cooldownMs, "number", "onDiagnosticsCleared.cooldownMs");
-    if (!Number.isFinite(dc.cooldownMs as number)) {
-      throw new Error(
-        `"onDiagnosticsCleared.cooldownMs" must be a finite number`,
-      );
-    }
-    dc.cooldownMs = Math.max(dc.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onTaskSuccess
-  if (policy.onTaskSuccess !== undefined) {
-    const ts = policy.onTaskSuccess;
-    if (typeof ts !== "object" || ts === null) {
-      throw new Error(`"onTaskSuccess" must be an object`);
-    }
-    if (typeof ts.enabled !== "boolean") {
-      throw new Error(`"onTaskSuccess.enabled" must be a boolean`);
-    }
-    validatePromptSource("onTaskSuccess", ts);
-    expectType(ts.cooldownMs, "number", "onTaskSuccess.cooldownMs");
-    if (!Number.isFinite(ts.cooldownMs as number)) {
-      throw new Error(`"onTaskSuccess.cooldownMs" must be a finite number`);
-    }
-    ts.cooldownMs = Math.max(ts.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onDebugSessionStart
-  if (policy.onDebugSessionStart !== undefined) {
-    const dss = policy.onDebugSessionStart;
-    if (typeof dss !== "object" || dss === null) {
-      throw new Error(`"onDebugSessionStart" must be an object`);
-    }
-    if (typeof dss.enabled !== "boolean") {
-      throw new Error(`"onDebugSessionStart.enabled" must be a boolean`);
-    }
-    validatePromptSource("onDebugSessionStart", dss);
-    expectType(dss.cooldownMs, "number", "onDebugSessionStart.cooldownMs");
-    if (!Number.isFinite(dss.cooldownMs as number)) {
-      throw new Error(
-        `"onDebugSessionStart.cooldownMs" must be a finite number`,
-      );
-    }
-    dss.cooldownMs = Math.max(dss.cooldownMs, MIN_COOLDOWN_MS);
-  }
-
-  // Validate onDebugSessionEnd
-  if (policy.onDebugSessionEnd !== undefined) {
-    const dse = policy.onDebugSessionEnd;
-    if (typeof dse !== "object" || dse === null) {
-      throw new Error(`"onDebugSessionEnd" must be an object`);
-    }
-    if (typeof dse.enabled !== "boolean") {
-      throw new Error(`"onDebugSessionEnd.enabled" must be a boolean`);
-    }
-    validatePromptSource("onDebugSessionEnd", dse);
-    expectType(dse.cooldownMs, "number", "onDebugSessionEnd.cooldownMs");
-    if (!Number.isFinite(dse.cooldownMs as number)) {
-      throw new Error(`"onDebugSessionEnd.cooldownMs" must be a finite number`);
-    }
-    dse.cooldownMs = Math.max(dse.cooldownMs, MIN_COOLDOWN_MS);
   }
 
   return policy;
@@ -1141,6 +926,15 @@ export class AutomationHooks {
   private _retryIntervals = new Set<ReturnType<typeof setInterval>>();
   /** Pending retry delay timeouts — tracked so destroy() can cancel them. */
   private _retryTimeouts = new Set<ReturnType<typeof setTimeout>>();
+  /**
+   * Pure-value state holding cooldown timestamps, diagnostic error counts, and
+   * test outcomes.  Mutations go through the pure-function helpers from
+   * `src/fp/automationState.ts`; the class re-assigns `_automationState` on
+   * each "write" to maintain immutability semantics at the value level.
+   * The underlying Maps are still mutable instances — we swap the wrapper
+   * object rather than cloning the Maps on every operation for performance.
+   */
+  private _automationState: AutomationState = EMPTY_AUTOMATION_STATE;
   /** Last trigger time per "trigger key" (e.g. "diagnostics:/path/to/file"). */
   private lastTrigger = new Map<string, number>();
   /**
@@ -1211,7 +1005,20 @@ export class AutomationHooks {
     private readonly log: (msg: string) => void,
     private readonly extensionClient?: ExtensionClient,
     private readonly workspace?: string,
-  ) {}
+  ) {
+    // Wire _automationState to share the same Map instances as the class fields.
+    // The pure helpers in automationState.ts can then be called with this view
+    // for read-only checks (isOnCooldown, isTaskActive, tasksInLastHour).
+    // Writes still go through the class fields directly (same Map objects, so
+    // _automationState sees them immediately).
+    this._automationState = {
+      lastTrigger: this.lastTrigger,
+      activeTasks: new Map(), // not used by class — placeholder for type compat
+      prevDiagnosticErrors: this.prevDiagnosticErrors,
+      lastTestOutcomeByRunner: this.lastTestOutcomeByRunner,
+      taskTimestamps: this.taskTimestamps,
+    };
+  }
 
   /**
    * Central enqueue for all automation-triggered tasks.
@@ -3491,9 +3298,7 @@ export class AutomationHooks {
       unwiredEnabledHooks,
       defaultModel: p.defaultModel ?? "claude-haiku-4-5-20251001",
       maxTasksPerHour: p.maxTasksPerHour ?? 20,
-      tasksThisHour: this.taskTimestamps.filter(
-        (t) => t >= Date.now() - 60 * 60 * 1_000,
-      ).length,
+      tasksThisHour: tasksInLastHour(this._automationState, Date.now()),
       defaultEffort: p.defaultEffort ?? "low",
       automationSystemPrompt: (
         p.automationSystemPrompt ?? DEFAULT_AUTOMATION_SYSTEM_PROMPT

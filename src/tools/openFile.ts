@@ -123,7 +123,7 @@ export function createOpenFileTool(
       }
 
       // Fallback: CLI spawn
-      let gotoArg = filePath;
+      let gotoArg: string = filePath;
       if (startText) {
         const line = await findLineNumber(filePath, startText);
         if (line) gotoArg = `${filePath}:${line}`;

@@ -1,4 +1,5 @@
 import type { ExtensionClient } from "../extensionClient.js";
+import { traverse } from "../fp/async.js";
 import {
   extensionRequired,
   resolveFilePath,
@@ -119,7 +120,20 @@ export function createBatchGetHoverTool(
       outputSchema: {
         type: "object",
         properties: {
-          results: { type: "array" },
+          results: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                filePath: { type: "string" },
+                line: { type: "integer" },
+                column: { type: "integer" },
+                result: {},
+                error: { type: "string" },
+              },
+              required: ["filePath", "line", "column", "result"],
+            },
+          },
           count: { type: "integer" },
         },
         required: ["results", "count"],
@@ -137,25 +151,31 @@ export function createBatchGetHoverTool(
         AbortSignal.timeout(15_000),
       ]);
 
-      const settled = await Promise.allSettled(
-        items.map((item) =>
-          extensionClient.getHover(
-            item.filePath,
-            item.line,
-            item.column,
-            compositeSignal,
-          ),
+      const traversed = await traverse(items, (item) =>
+        extensionClient.getHover(
+          item.filePath,
+          item.line,
+          item.column,
+          compositeSignal,
         ),
       );
 
       const results = items.map((item, i) => {
-        const r = settled[i];
-        const raw = r?.status === "fulfilled" ? (r.value ?? null) : null;
+        const r = traversed[i];
+        if (r?.ok) {
+          return {
+            filePath: item.filePath,
+            line: item.line,
+            column: item.column,
+            result: applyBatchLspVerbosity(r.value ?? null, lspVerbosity),
+          };
+        }
         return {
           filePath: item.filePath,
           line: item.line,
           column: item.column,
-          result: applyBatchLspVerbosity(raw, lspVerbosity),
+          result: null,
+          error: r?.error ?? "Unknown error",
         };
       });
 
@@ -213,7 +233,20 @@ export function createBatchFindImplementationsTool(
       outputSchema: {
         type: "object",
         properties: {
-          results: { type: "array" },
+          results: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                filePath: { type: "string" },
+                line: { type: "integer" },
+                column: { type: "integer" },
+                result: {},
+                error: { type: "string" },
+              },
+              required: ["filePath", "line", "column", "result"],
+            },
+          },
           count: { type: "integer" },
         },
         required: ["results", "count"],
@@ -235,24 +268,31 @@ export function createBatchFindImplementationsTool(
         AbortSignal.timeout(15_000),
       ]);
 
-      const settled = await Promise.allSettled(
-        items.map((item) =>
-          extensionClient.findImplementations(
-            item.filePath,
-            item.line,
-            item.column,
-            compositeSignal,
-          ),
+      const traversed = await traverse(items, (item) =>
+        extensionClient.findImplementations(
+          item.filePath,
+          item.line,
+          item.column,
+          compositeSignal,
         ),
       );
 
       const results = items.map((item, i) => {
-        const r = settled[i];
+        const r = traversed[i];
+        if (r?.ok) {
+          return {
+            filePath: item.filePath,
+            line: item.line,
+            column: item.column,
+            result: r.value ?? null,
+          };
+        }
         return {
           filePath: item.filePath,
           line: item.line,
           column: item.column,
-          result: r?.status === "fulfilled" ? (r.value ?? null) : null,
+          result: null,
+          error: r?.error ?? "Unknown error",
         };
       });
 
@@ -310,7 +350,20 @@ export function createBatchGoToDefinitionTool(
       outputSchema: {
         type: "object",
         properties: {
-          results: { type: "array" },
+          results: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                filePath: { type: "string" },
+                line: { type: "integer" },
+                column: { type: "integer" },
+                result: {},
+                error: { type: "string" },
+              },
+              required: ["filePath", "line", "column", "result"],
+            },
+          },
           count: { type: "integer" },
         },
         required: ["results", "count"],
@@ -332,24 +385,31 @@ export function createBatchGoToDefinitionTool(
         AbortSignal.timeout(15_000),
       ]);
 
-      const settled = await Promise.allSettled(
-        items.map((item) =>
-          extensionClient.goToDefinition(
-            item.filePath,
-            item.line,
-            item.column,
-            compositeSignal,
-          ),
+      const traversed = await traverse(items, (item) =>
+        extensionClient.goToDefinition(
+          item.filePath,
+          item.line,
+          item.column,
+          compositeSignal,
         ),
       );
 
       const results = items.map((item, i) => {
-        const r = settled[i];
+        const r = traversed[i];
+        if (r?.ok) {
+          return {
+            filePath: item.filePath,
+            line: item.line,
+            column: item.column,
+            result: r.value ?? null,
+          };
+        }
         return {
           filePath: item.filePath,
           line: item.line,
           column: item.column,
-          result: r?.status === "fulfilled" ? (r.value ?? null) : null,
+          result: null,
+          error: r?.error ?? "Unknown error",
         };
       });
 
