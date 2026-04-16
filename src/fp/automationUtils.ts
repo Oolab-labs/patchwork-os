@@ -24,7 +24,10 @@ export function untrustedBlock(
       `untrustedBlock: label must be uppercase ASCII, got: ${JSON.stringify(label)}`,
     );
   }
-  const safe = value.replace(new RegExp(nonce, "g"), "");
+  // Use literal string replacement (not RegExp) — nonce is an opaque ID that
+  // may contain regex metacharacters (e.g. "[", "+", ".").  RegExp would throw
+  // SyntaxError for those inputs, enabling a DoS on every hook trigger.
+  const safe = value.split(nonce).join("");
   return `\n--- BEGIN ${label} [${nonce}] (untrusted) ---\n${safe}\n--- END ${label} [${nonce}] ---\n`;
 }
 

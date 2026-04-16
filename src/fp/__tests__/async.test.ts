@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { longPoll } from "../async.js";
+import { longPoll, traverse } from "../async.js";
 
 describe("longPoll", () => {
   beforeEach(() => {
@@ -151,5 +151,51 @@ describe("longPoll", () => {
     await promise;
     // getSnapshot should only have been called once (on first settle)
     expect(settleCount).toBe(1);
+  });
+});
+
+describe("traverse", () => {
+  it("maps all items to ok results", async () => {
+    const results = await traverse([1, 2, 3], async (n) => n * 2);
+    expect(results).toEqual([
+      { ok: true, value: 2 },
+      { ok: true, value: 4 },
+      { ok: true, value: 6 },
+    ]);
+  });
+
+  it("captures rejections as ok:false without short-circuiting", async () => {
+    const results = await traverse([1, 2, 3], async (n) => {
+      if (n === 2) throw new Error("boom");
+      return n * 10;
+    });
+    expect(results[0]).toEqual({ ok: true, value: 10 });
+    expect(results[1]).toEqual({ ok: false, error: "boom" });
+    expect(results[2]).toEqual({ ok: true, value: 30 });
+  });
+
+  it("captures non-Error rejections as string", async () => {
+    const results = await traverse([1], async () => {
+      throw "raw string rejection"; // eslint-disable-line @typescript-eslint/only-throw-error
+    });
+    expect(results[0]).toEqual({ ok: false, error: "raw string rejection" });
+  });
+
+  it("returns empty array for empty input", async () => {
+    const results = await traverse([], async (n: number) => n);
+    expect(results).toEqual([]);
+  });
+
+  it("preserves item order despite concurrent execution", async () => {
+    // Items resolve in reverse order (item 0 slowest)
+    const results = await traverse([3, 2, 1], async (n) => {
+      await new Promise((r) => setTimeout(r, n));
+      return n;
+    });
+    expect(results).toEqual([
+      { ok: true, value: 3 },
+      { ok: true, value: 2 },
+      { ok: true, value: 1 },
+    ]);
   });
 });

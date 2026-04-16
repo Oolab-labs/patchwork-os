@@ -524,23 +524,24 @@ describe("untrustedBlock — nonce stripping", () => {
     .stringMatching(/^[A-Z][A-Z0-9 ]{0,19}$/)
     .filter((s) => /^[A-Z][A-Z0-9 ]*$/.test(s));
 
+  // Nonce generator: alphanumeric + regex metacharacters to exercise the
+  // literal-string replacement path (previously `new RegExp(nonce)` would throw
+  // SyntaxError on nonces containing "[", "+", ".", etc.).
+  const anyNonce = fc
+    .string({ minLength: 8, maxLength: 32 })
+    .filter((s) => !/[\r\n]/.test(s));
+
   test("output contains opening delimiter exactly once", () => {
     fc.assert(
       fc.property(
         validLabel,
         fc.string({ maxLength: 500 }),
-        fc
-          .string({ minLength: 8, maxLength: 32 })
-          .filter((s) => !/[\r\n]/.test(s)),
+        anyNonce,
         (label, value, nonce) => {
-          try {
-            const result = untrustedBlock(label, value, nonce);
-            const opening = `--- BEGIN ${label} [${nonce}]`;
-            const count = result.split(opening).length - 1;
-            return count === 1;
-          } catch {
-            return true;
-          }
+          const result = untrustedBlock(label, value, nonce);
+          const opening = `--- BEGIN ${label} [${nonce}]`;
+          const count = result.split(opening).length - 1;
+          return count === 1;
         },
       ),
       { seed: 42 },
@@ -552,18 +553,12 @@ describe("untrustedBlock — nonce stripping", () => {
       fc.property(
         validLabel,
         fc.string({ maxLength: 500 }),
-        fc
-          .string({ minLength: 8, maxLength: 32 })
-          .filter((s) => !/[\r\n]/.test(s)),
+        anyNonce,
         (label, value, nonce) => {
-          try {
-            const result = untrustedBlock(label, value, nonce);
-            const closing = `--- END ${label} [${nonce}] ---`;
-            const count = result.split(closing).length - 1;
-            return count === 1;
-          } catch {
-            return true;
-          }
+          const result = untrustedBlock(label, value, nonce);
+          const closing = `--- END ${label} [${nonce}] ---`;
+          const count = result.split(closing).length - 1;
+          return count === 1;
         },
       ),
       { seed: 42 },
@@ -572,25 +567,15 @@ describe("untrustedBlock — nonce stripping", () => {
 
   test("adversarial value containing closing delimiter — stripped from value portion", () => {
     fc.assert(
-      fc.property(
-        validLabel,
-        fc
-          .string({ minLength: 8, maxLength: 32 })
-          .filter((s) => !/[\r\n]/.test(s)),
-        (label, nonce) => {
-          // Value that embeds the nonce — prompt injection attempt
-          const adversarialValue = `innocent prefix ${nonce} evil suffix`;
-          try {
-            const result = untrustedBlock(label, adversarialValue, nonce);
-            const closing = `--- END ${label} [${nonce}] ---`;
-            // Closing delimiter must appear exactly once
-            const count = result.split(closing).length - 1;
-            return count === 1;
-          } catch {
-            return true;
-          }
-        },
-      ),
+      fc.property(validLabel, anyNonce, (label, nonce) => {
+        // Value that embeds the nonce — prompt injection attempt
+        const adversarialValue = `innocent prefix ${nonce} evil suffix`;
+        const result = untrustedBlock(label, adversarialValue, nonce);
+        const closing = `--- END ${label} [${nonce}] ---`;
+        // Closing delimiter must appear exactly once
+        const count = result.split(closing).length - 1;
+        return count === 1;
+      }),
       { seed: 42 },
     );
   });
@@ -600,26 +585,24 @@ describe("untrustedBlock — nonce stripping", () => {
       fc.property(
         validLabel,
         fc.string({ maxLength: 200 }),
-        fc
-          .string({ minLength: 8, maxLength: 32 })
-          .filter((s) => !/[\r\n]/.test(s)),
+        anyNonce,
         (label, value, nonce) => {
-          try {
-            const result = untrustedBlock(label, value, nonce);
-            const hasNonceInOpening = result.includes(
-              `BEGIN ${label} [${nonce}]`,
-            );
-            const hasNonceInClosing = result.includes(
-              `END ${label} [${nonce}]`,
-            );
-            return hasNonceInOpening && hasNonceInClosing;
-          } catch {
-            return true;
-          }
+          const result = untrustedBlock(label, value, nonce);
+          return (
+            result.includes(`BEGIN ${label} [${nonce}]`) &&
+            result.includes(`END ${label} [${nonce}]`)
+          );
         },
       ),
       { seed: 42 },
     );
+  });
+
+  test("nonces with regex metacharacters do not throw", () => {
+    const metacharNonces = ["[abc]+", "foo.bar", "(baz)?", "x{2,4}", "^start"];
+    for (const nonce of metacharNonces) {
+      expect(() => untrustedBlock("LABEL", "some value", nonce)).not.toThrow();
+    }
   });
 
   test("invalid label throws", () => {

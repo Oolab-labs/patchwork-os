@@ -72,15 +72,24 @@ export type ClaudeTaskOutcome =
 
 /**
  * Map a ClaudeTaskOutput flat struct to the ClaudeTaskOutcome discriminated union.
- * cancelKind defaults to "user" when the abort cause cannot be determined from
- * the flat struct alone (caller should prefer reading cancelReason from ClaudeTask).
+ *
+ * @param output     Flat output from ClaudeDriver.run().
+ * @param cancelReason  Optional cancelReason from the ClaudeTask record (set by
+ *                   the orchestrator after run() returns).  When provided,
+ *                   "timeout" and "startup_timeout" cancelKinds are reachable.
+ *                   Without it, aborted tasks default to cancelKind "user".
  */
 export function toClaudeTaskOutcome(
   output: ClaudeTaskOutput,
+  cancelReason?: "timeout" | "startup_timeout" | "user" | "shutdown",
 ): ClaudeTaskOutcome {
   if (output.wasAborted) {
     const cancelKind: "startup_timeout" | "timeout" | "user" =
-      output.startupTimedOut ? "startup_timeout" : "user";
+      output.startupTimedOut || cancelReason === "startup_timeout"
+        ? "startup_timeout"
+        : cancelReason === "timeout"
+          ? "timeout"
+          : "user";
     return {
       outcome: "aborted",
       text: output.text,

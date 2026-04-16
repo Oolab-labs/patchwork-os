@@ -640,7 +640,7 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     onCwdChanged: "cwd",
     onPreCompact: "session",
     onPostCompact: "session",
-    onTaskRun: "runner",
+    onTestRun: "runner",
     onDebugSessionStart: "sessionName",
     onDebugSessionEnd: "sessionName",
   };
