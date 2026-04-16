@@ -50,6 +50,10 @@ scripts/test-rg.mjs
 demo-script.md
 demo-project/
 
+# Example subproject lockfiles (examples have their own node_modules, not managed here)
+examples/*/package-lock.json
+examples/*/node_modules/
+
 # Visual skill output (/ide-diagnostics-board, /ide-coverage, /ide-deps)
 diagnostics-*.html
 coverage-*.html
