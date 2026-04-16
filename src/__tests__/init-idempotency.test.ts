@@ -15,7 +15,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { extractClaudeMdBlockVersion, patchClaudeMdImport } from "../index.js";
+// Import directly from the patch module rather than ../index.js — importing
+// index triggers its top-level CLI side effects (parseConfig → Bridge.start)
+// which can try to bind to a real port from inherited user config, producing
+// spurious EADDRINUSE "Unhandled Rejection" noise during test runs.
+import {
+  extractClaudeMdBlockVersion,
+  patchClaudeMdImport,
+} from "../claudeMdPatch.js";
 
 const MARKER = "## Claude IDE Bridge";
 const IMPORT_LINE = "@import .claude/rules/bridge-tools.md";
