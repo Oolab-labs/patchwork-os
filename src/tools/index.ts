@@ -196,6 +196,7 @@ import {
   createListVSCodeTasksTool,
   createRunVSCodeTaskTool,
 } from "./vscodeTasks.js";
+import { createSpawnWorkspaceTool } from "./spawnWorkspace.js";
 import { createWatchDiagnosticsTool } from "./watchDiagnostics.js";
 import { createSetWorkspaceSettingTool } from "./workspaceSettings.js";
 
@@ -584,6 +585,7 @@ export function registerAllTools(
           }),
         ]
       : []),
+    createSpawnWorkspaceTool(),
     createPreviewEditTool(workspace),
     ...(() => {
       const tx = createTransactionTools(workspace);
