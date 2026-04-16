@@ -55,15 +55,14 @@ function extractLspArray(src) {
 /**
  * Scan a tool source file and return all schema tool names.
  * Finds every `schema: { ... name: "toolName" ... }` block.
+ * Returns [{name, hasOutputSchema}, ...].
  */
 function extractToolNamesFromFile(src) {
-  const names = [];
-  // Find each `schema: {` and scan forward for the closing `}` to get the name
+  const out = [];
   let i = 0;
   while (i < src.length) {
     const schemaIdx = src.indexOf("schema: {", i);
     if (schemaIdx === -1) break;
-    // Walk forward to find the matching `}` (depth-1 close)
     let depth = 0;
     let blockStart = -1;
     for (let j = schemaIdx + 8; j < src.length; j++) {
@@ -74,7 +73,11 @@ function extractToolNamesFromFile(src) {
         if (depth === 1) {
           const block = src.slice(blockStart, j + 1);
           const m = block.match(/\bname:\s*"([a-zA-Z][a-zA-Z0-9_]+)"/);
-          if (m) names.push(m[1]);
+          if (m)
+            out.push({
+              name: m[1],
+              hasOutputSchema: /\boutputSchema\s*:/.test(block),
+            });
           break;
         }
         depth--;
@@ -82,7 +85,7 @@ function extractToolNamesFromFile(src) {
     }
     i = schemaIdx + 9;
   }
-  return names;
+  return out;
 }
 
 // ── load sources ──────────────────────────────────────────────────────────────
@@ -104,13 +107,20 @@ const allToolFiles = readdirSync(toolsDir).filter(
 );
 const registeredNames = new Set();
 const fileToNames = new Map(); // file → [toolName, ...]
+const toolSchemaEntries = []; // {name, file, hasOutputSchema}
 
 for (const f of allToolFiles) {
   const src = readFileSync(path.join(toolsDir, f), "utf8");
-  const names = extractToolNamesFromFile(src);
-  if (names.length) {
-    fileToNames.set(f, names);
-    for (const n of names) registeredNames.add(n);
+  const entries = extractToolNamesFromFile(src);
+  if (entries.length) {
+    fileToNames.set(
+      f,
+      entries.map((e) => e.name),
+    );
+    for (const e of entries) {
+      registeredNames.add(e.name);
+      toolSchemaEntries.push({ ...e, file: f });
+    }
   }
 }
 
@@ -204,6 +214,57 @@ for (const [f] of fileToNames) {
   }
 }
 
+// ── check 7: every tool declares outputSchema (per schema block, incl. subdirs)
+//
+// Ratcheting gate. Allowlist lives in audit-output-schema-allowlist.json and
+// only shrinks. New tools without outputSchema will fail CI.
+
+const allowlistPath = path.join(
+  root,
+  "scripts",
+  "audit-output-schema-allowlist.json",
+);
+const outputSchemaAllowlist = new Set(
+  JSON.parse(readFileSync(allowlistPath, "utf8")).allowlist.map((e) => e.name),
+);
+
+function walkToolFiles(dir, acc = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name !== "__tests__")
+        walkToolFiles(path.join(dir, entry.name), acc);
+    } else if (
+      entry.name.endsWith(".ts") &&
+      !entry.name.endsWith(".d.ts") &&
+      !entry.name.endsWith(".test.ts")
+    ) {
+      acc.push(path.join(dir, entry.name));
+    }
+  }
+  return acc;
+}
+
+const missingOutputSchema = [];
+const staleAllowlist = [];
+const seenAllowed = new Set();
+
+for (const absFile of walkToolFiles(toolsDir)) {
+  const src = readFileSync(absFile, "utf8");
+  const entries = extractToolNamesFromFile(src);
+  const rel = path.relative(toolsDir, absFile);
+  for (const e of entries) {
+    if (e.hasOutputSchema) continue;
+    if (outputSchemaAllowlist.has(e.name)) {
+      seenAllowed.add(e.name);
+      continue;
+    }
+    missingOutputSchema.push(`${e.name} (${rel})`);
+  }
+}
+for (const name of outputSchemaAllowlist) {
+  if (!seenAllowed.has(name)) staleAllowlist.push(name);
+}
+
 // ── check 5: orphaned tool source files ──────────────────────────────────────
 
 // Any .ts file in src/tools/ that exports create*Tool but is NOT imported in index.ts
@@ -291,6 +352,24 @@ if (orphaned.length === 0) {
   ok("All tool source files are imported in index.ts");
 } else {
   fail("Tool source files not imported in index.ts (orphaned)", orphaned);
+}
+
+if (missingOutputSchema.length === 0) {
+  ok("All tools declare outputSchema (or are in allowlist)");
+} else {
+  fail(
+    "Tools missing outputSchema (add outputSchema or justify in audit-output-schema-allowlist.json)",
+    missingOutputSchema,
+  );
+}
+
+if (staleAllowlist.length === 0) {
+  ok("outputSchema allowlist is clean (no stale entries)");
+} else {
+  fail(
+    "outputSchema allowlist entries with no matching tool (remove from allowlist)",
+    staleAllowlist,
+  );
 }
 
 console.log(

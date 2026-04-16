@@ -1,0 +1,10 @@
+{
+  "_comment": "Tools intentionally without outputSchema. Ratcheting gate: list only shrinks. Add entries only when a tool's return shape is genuinely unstructured (e.g. binary/media responses). Each entry must include a reason.",
+  "allowlist": [
+    {
+      "name": "captureScreenshot",
+      "file": "screenshot.ts",
+      "reason": "Returns base64 image content block — no structured JSON to describe"
+    }
+  ]
+}

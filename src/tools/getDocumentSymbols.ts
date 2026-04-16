@@ -38,7 +38,7 @@ export function createGetDocumentSymbolsTool(
         properties: {
           filePath: {
             type: "string",
-            description: "Absolute or workspace-relative path to the file",
+            description: "Workspace or absolute path to the file",
           },
         },
         required: ["filePath"],

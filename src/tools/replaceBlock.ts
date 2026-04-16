@@ -31,7 +31,7 @@ export function createReplaceBlockTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative file path",
+            description: "Workspace or absolute file path",
           },
           oldContent: {
             type: "string" as const,

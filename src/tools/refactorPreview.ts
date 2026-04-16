@@ -26,7 +26,7 @@ export function createRefactorPreviewTool(
         properties: {
           filePath: {
             type: "string",
-            description: "Absolute or workspace-relative path",
+            description: "Workspace or absolute path",
           },
           startLine: {
             type: "integer",

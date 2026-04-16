@@ -30,8 +30,7 @@ export function createCreateFileTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description:
-              "Absolute or workspace-relative path for new file or directory",
+            description: "Workspace or absolute path for new file or directory",
           },
           content: {
             type: "string" as const,
@@ -161,7 +160,7 @@ export function createDeleteFileTool(
         properties: {
           filePath: {
             type: "string" as const,
-            description: "Absolute or workspace-relative path to delete",
+            description: "Workspace or absolute path to delete",
           },
           recursive: {
             type: "boolean" as const,
