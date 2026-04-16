@@ -51,13 +51,18 @@ describe("SLIM_TOOL_NAMES", () => {
 
 // ── parseConfig flag ───────────────────────────────────────────────────────
 
-describe("parseConfig --full flag", () => {
-  it("defaults to slim mode (fullMode: false)", () => {
+describe("parseConfig --slim/--full flags", () => {
+  it("defaults to full mode (fullMode: true) — flipped in v2.43.0", () => {
     const config = parseConfig(["node", "bridge"]);
+    expect(config.fullMode).toBe(true);
+  });
+
+  it("sets fullMode: false when --slim is passed (opt-in)", () => {
+    const config = parseConfig(["node", "bridge", "--slim"]);
     expect(config.fullMode).toBe(false);
   });
 
-  it("sets fullMode: true when --full is passed", () => {
+  it("--full remains a no-op opt-in for backward compatibility", () => {
     const config = parseConfig(["node", "bridge", "--full"]);
     expect(config.fullMode).toBe(true);
   });

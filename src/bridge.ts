@@ -1321,8 +1321,8 @@ export class Bridge {
     this.logger.info(`  Lock file:  ${lockPath}`);
     this.logger.info(
       this.config.fullMode
-        ? "  Tools:      full (~95 tools — git, terminal, file ops, HTTP, GitHub)"
-        : "  Tools:      slim (38 IDE tools — pass --full for git/terminal/file ops/HTTP/GitHub)",
+        ? "  Tools:      full (~140 tools — IDE + git + terminal + file ops + HTTP + GitHub) [default]"
+        : "  Tools:      slim (~60 IDE-exclusive tools — pass --slim)",
     );
     this.logger.info("  Connect:    run `claude` in a new terminal, then /ide");
     if (this.config.gracePeriodMs !== 30_000) {

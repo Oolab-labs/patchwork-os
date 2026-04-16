@@ -202,11 +202,12 @@ import { createWatchDiagnosticsTool } from "./watchDiagnostics.js";
 import { createSetWorkspaceSettingTool } from "./workspaceSettings.js";
 
 /**
- * The 53 IDE-exclusive tools registered in slim mode (the default).
+ * The IDE-exclusive tools registered in slim mode (opt-in via `--slim`).
  *
- * Slim mode exposes only tools that require a live IDE extension — tools that
- * Claude cannot replicate via its native Read/Write/Bash capabilities. Everything
- * else (git, terminal, file ops, HTTP, GitHub) is available in full mode (--full).
+ * Full mode is the default (enabled since v2.43.0). Slim mode exposes only
+ * tools that require a live IDE extension — tools Claude cannot replicate via
+ * its native Read/Write/Bash capabilities. Everything else (git, terminal,
+ * file ops, HTTP, GitHub) is available in full mode.
  *
  * To move a tool between modes: add or remove its name from this set.
  */

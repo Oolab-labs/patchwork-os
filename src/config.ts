@@ -362,7 +362,7 @@ export function parseConfig(argv: string[]): Config {
   let toolRateLimit = 60;
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
   let auditLogPath: string | null = null;
-  let fullMode = fileConfig.fullMode ?? false;
+  let fullMode = fileConfig.fullMode ?? true;
   let maxSessions: number = fileConfig.maxSessions ?? 5;
   if (
     fileConfig.maxSessions !== undefined &&
@@ -540,6 +540,9 @@ export function parseConfig(argv: string[]): Config {
       case "--full":
         fullMode = true;
         break;
+      case "--slim":
+        fullMode = false;
+        break;
       case "--max-sessions": {
         const msStr = requireArg(args, ++i, "--max-sessions");
         const ms = Number.parseInt(msStr, 10);
@@ -643,8 +646,9 @@ Options:
   --max-sessions <n>        Max concurrent Claude sessions (default: 5, max: 100)
   --lsp-verbosity <level>   Hover/LSP output verbosity: "minimal" (type sig only, ~60% smaller),
                             "normal" (default), "verbose" (all fields)
-  --full                    Register all ~95 tools including git, terminal, file ops, HTTP, and GitHub.
-                            Default is slim mode (38 IDE-exclusive tools). Use --full to restore the complete tool set.
+  --slim                    Register only the ~60 IDE-exclusive tools (LSP, debugger, editor state).
+                            Default is full mode (~140 tools: adds git, terminal, file ops, HTTP, GitHub).
+  --full                    (default — flag retained for backward compatibility) Explicitly request full tool set.
   --vps                     VPS/headless mode: expands allowlist with curl, systemctl, docker, tar, dig, openssl, etc.
   --db                      Database mode: expands allowlist with psql, pg_dump, mysql, sqlite3, redis-cli, mongosh, etc.
   --allow-private-http      Allow sendHttpRequest to reach localhost/private IPs (for VPS where bridge runs alongside services)

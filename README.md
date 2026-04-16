@@ -31,8 +31,8 @@ npm install -g claude-ide-bridge
 cd /your/project
 claude-ide-bridge init
 
-# 3. Start the bridge
-claude-ide-bridge --full --watch
+# 3. Start the bridge (full tool set is the default — add --slim for IDE-only)
+claude-ide-bridge --watch
 
 # 4. Open Claude Code — bridge connects automatically
 claude --ide
@@ -69,31 +69,32 @@ Or search **Claude IDE Bridge** in the VS Code / Cursor / Windsurf marketplace.
 | Claude Orchestration | 5 | `runClaudeTask`, `listClaudeTasks`, `getClaudeTaskStatus`, `cancelClaudeTask` | F |
 | Quality & Analysis | 11 | `getCodeCoverage`, `auditDependencies`, `detectUnusedCode`, `generateTests`, `getSecurityAdvisories` | F |
 
-**S = slim mode (default) · F = full mode (`--full` flag)**
+**S = slim (opt-in via `--slim`) · F = full mode (default)**
 
 ---
 
 ## Slim vs Full Mode
 
-The bridge starts in **slim mode** by default — 56 IDE-exclusive tools covering LSP, debugging, refactoring, and editor state. These are capabilities Claude does not have natively, so slim mode adds signal without duplicating built-in file/shell tools.
+The bridge starts in **full mode** by default (changed in v2.43.0) — all ~140 tools, covering LSP/debugger/refactoring plus git, GitHub, terminal, file tree, and orchestration.
 
-Add `--full` to unlock all 141 tools, including git, GitHub, terminal, file tree, and orchestration:
+Pass `--slim` to restrict to the ~60 IDE-exclusive tools (LSP, debugger, editor state only) — useful when you want Claude to use its native Read/Write/Bash tools for everything else:
 
 ```bash
-claude-ide-bridge --full --watch
+claude-ide-bridge --slim --watch
 ```
 
 Or set permanently in `claude-ide-bridge.config.json`:
 
 ```json
-{ "fullMode": true }
+{ "fullMode": false }
 ```
 
-**Use `--full` when:**
-- Running headless or in CI and you want structured git/GitHub output
-- You want `runTests` (framework detection, structured pass/fail) instead of `npm test`
-- You need `githubCreatePR` with PR template support
-- You want Claude managing the whole workflow end-to-end (edit → test → commit → PR)
+**Use `--slim` when:**
+- You prefer Claude's native Read/Write/Bash over bridge file/git/HTTP tools
+- Running in a locked-down environment and want to minimize exposed surface
+- You only need LSP navigation, debugger, and editor state signal
+
+The `--full` flag is retained as a no-op opt-in for backward compatibility.
 
 ---
 
@@ -137,11 +138,11 @@ Claude calls `refactorAnalyze` (checks blast radius and risk), `refactorPreview`
 Standard setup. Extension connects automatically. Full LSP, debugger, and editor state available.
 
 ### Remote SSH
-VS Code Remote-SSH and Cursor SSH load the extension on the VPS side (`extensionKind: ["workspace"]`). Start the bridge on the remote machine. All 141 tools work over SSH.
+VS Code Remote-SSH and Cursor SSH load the extension on the VPS side (`extensionKind: ["workspace"]`). Start the bridge on the remote machine. All ~140 tools work over SSH.
 
 ```bash
 # On the remote machine
-claude-ide-bridge --full --watch --bind 0.0.0.0
+claude-ide-bridge --watch --bind 0.0.0.0
 ```
 
 ### VPS + systemd
@@ -159,7 +160,7 @@ See [deploy/README.md](deploy/README.md) and [docs/remote-access.md](docs/remote
 
 ### Docker
 ```bash
-docker run -p 3284:3284 ghcr.io/oolab-labs/claude-ide-bridge:latest --full --bind 0.0.0.0
+docker run -p 3284:3284 ghcr.io/oolab-labs/claude-ide-bridge:latest --bind 0.0.0.0
 ```
 
 Or with Compose:
@@ -216,7 +217,7 @@ Event-driven hooks that trigger Claude tasks automatically — no polling, no ma
 
 Start with:
 ```bash
-claude-ide-bridge --full --watch --automation --automation-policy ./policy.json --claude-driver subprocess
+claude-ide-bridge --watch --automation --automation-policy ./policy.json --claude-driver subprocess
 ```
 
 **18 hook events:** `onFileSave`, `onFileChanged`, `onDiagnosticsError`, `onDiagnosticsCleared`, `onGitCommit`, `onGitPush`, `onGitPull`, `onBranchCheckout`, `onPullRequest`, `onTestRun`, `onTestPassAfterFailure`, `onPostCompact`, `onInstructionsLoaded`, `onTaskCreated`, `onTaskSuccess`, `onPermissionDenied`, `onCwdChanged`, `onDebugSessionEnd`
@@ -234,7 +235,7 @@ Extend the bridge with custom MCP tools without forking. Plugins load in-process
 claude-ide-bridge gen-plugin-stub ./my-plugin --name "org/my-plugin" --prefix "myPrefix"
 
 # Load it
-claude-ide-bridge --full --watch --plugin ./my-plugin --plugin-watch
+claude-ide-bridge --watch --plugin ./my-plugin --plugin-watch
 ```
 
 Publish to npm with keyword `claude-ide-bridge-plugin` — users install by package name:
@@ -267,7 +268,7 @@ claude-ide-bridge install claude-mem
 |---|---|
 | `claude-ide-bridge init` | One-command setup: install extension + write CLAUDE.md + register MCP server |
 | `claude-ide-bridge --watch` | Start bridge with auto-restart on crash (2s → 30s backoff) |
-| `claude-ide-bridge --full` | Enable all 141 tools (default: 56 slim tools) |
+| `claude-ide-bridge --slim` | Restrict to ~60 IDE-exclusive tools (default: ~140 full tools) |
 | `claude-ide-bridge install-extension` | Install companion VS Code extension |
 | `claude-ide-bridge gen-claude-md --write` | Add bridge section to existing CLAUDE.md |
 | `claude-ide-bridge print-token` | Print auth token from active lock file |
@@ -284,7 +285,8 @@ claude-ide-bridge install claude-mem
 
 | Flag | Default | Description |
 |---|---|---|
-| `--full` | off | Enable all tools |
+| `--slim` | off | Restrict to IDE-exclusive tools (default: full, ~140 tools) |
+| `--full` | on | No-op (retained for backward compat — full is the default since v2.43.0) |
 | `--watch` | off | Auto-restart on crash |
 | `--bind <host>` | `127.0.0.1` | Bind address (`0.0.0.0` for remote access) |
 | `--port <n>` | auto | Port (auto-detected from lock files) |
