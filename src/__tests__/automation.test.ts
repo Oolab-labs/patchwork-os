@@ -1173,7 +1173,10 @@ describe("loadPolicy — onTestRun", () => {
     expect(policy.onTestRun?.cooldownMs).toBe(5_000);
   });
 
-  it("throws when onTestRun.onFailureOnly is missing", () => {
+  it("defaults onFailureOnly to true when neither filter nor onFailureOnly is set (v2.43.0 relaxation)", () => {
+    // Pre-v2.43.0 this threw; v2.43.0 makes onFailureOnly optional in favor of
+    // the new `filter` field. When neither is set we default to the prior
+    // behavior (onFailureOnly: true = only fire on failures).
     const p = path.join(tmpDir, "policy.json");
     fs.writeFileSync(
       p,
@@ -1182,11 +1185,11 @@ describe("loadPolicy — onTestRun", () => {
           enabled: true,
           prompt: "Fix tests",
           cooldownMs: 10_000,
-          // onFailureOnly omitted
         },
       }),
     );
-    expect(() => loadPolicy(p)).toThrow(/onFailureOnly/);
+    const policy = loadPolicy(p);
+    expect(policy.onTestRun?.onFailureOnly).toBe(true);
   });
 });
 
