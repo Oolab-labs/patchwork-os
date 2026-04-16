@@ -1,0 +1,18 @@
+{
+  "_comment": "Self-healing demo policy. When TS language server reports a new error, Claude is spawned to diagnose it. Response is surface-only — the fix is NOT auto-applied.",
+  "_usage": "claude-ide-bridge --workspace $PWD --full --automation --automation-policy ./automation-policy.json --claude-driver subprocess",
+
+  "defaultModel": "claude-haiku-4-5-20251001",
+  "defaultEffort": "low",
+  "maxTasksPerHour": 10,
+  "automationSystemPrompt": "Automation bot. Terse. Fragments OK. No preamble. Call tools → report findings → propose patch. ≤15 lines.",
+
+  "onDiagnosticsError": {
+    "enabled": true,
+    "minSeverity": "error",
+    "diagnosticTypes": ["ts"],
+    "patterns": ["src/**/*.ts"],
+    "cooldownMs": 20000,
+    "prompt": "New TS error in {{file}}:\n\n{{diagnostics}}\n\nSteps: (1) getHover at the error position to fetch expected vs actual types; (2) if the error references a symbol, goToTypeDefinition or explainSymbol to ground it; (3) describe the root cause in one sentence; (4) propose the exact patch (file + line range + replacement). Do NOT call editText — propose only."
+  }
+}

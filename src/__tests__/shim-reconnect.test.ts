@@ -1,11 +1,14 @@
 /**
  * Tests for mcp-stdio-shim.cjs reconnection behavior.
  *
- * Bug 1: Shim exits immediately (code 1) when no lock file exists at startup.
- *        It should poll/wait for a lock file to appear instead.
+ * Covers two historically flaky paths that are now fixed and regression-locked:
+ *   1. Startup with no lock file — shim polls instead of exiting.
+ *   2. Bridge restart when fs.watch drops the event (macOS) — polling fallback
+ *      still reconnects.
  *
- * Bug 2: When the bridge restarts and no fs.watch event fires (macOS unreliability),
- *        there is no polling fallback — the shim stays disconnected forever.
+ * Plus the three-tier lock preference (orchestrator > bridge > fallback) and
+ * the watcher-stability guarantee that a child bridge restart does not steal
+ * the connection away from the orchestrator.
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
@@ -102,7 +105,7 @@ function spawnShim(env: Record<string, string> = {}): ChildProcess {
 }
 
 // ---------------------------------------------------------------------------
-// BUG 1: Shim should wait for a lock file on startup, not exit immediately
+// Regression: shim waits for a lock file on startup instead of exiting (code 1)
 // ---------------------------------------------------------------------------
 describe("startup with no lock file", () => {
   it("should stay alive for at least 3s waiting for a lock file to appear", async () => {
@@ -116,7 +119,7 @@ describe("startup with no lock file", () => {
     // Give it 3 seconds — it should NOT have exited
     await new Promise((r) => setTimeout(r, 3000));
 
-    // BUG: currently exits immediately with code 1 → this assertion FAILS
+    // Shim must NOT exit while waiting for a lock file to appear.
     expect(exitCode).toBeNull();
   });
 
@@ -142,13 +145,14 @@ describe("startup with no lock file", () => {
 
     await closeServer(wss);
 
-    // BUG: shim already exited so it never connects → this assertion FAILS
+    // Shim must detect the lock appearing mid-wait and connect.
     expect(connected).toBe(true);
   });
 });
 
 // ---------------------------------------------------------------------------
-// BUG 2: Shim should reconnect via polling when fs.watch event is missed
+// Regression: shim reconnects via polling even when fs.watch drops the event
+// (macOS fs.watch can silently miss changes — polling fallback covers this)
 // ---------------------------------------------------------------------------
 describe("reconnection after bridge restart", () => {
   it("reconnects via watcher when lock file changes to a new port", async () => {
@@ -238,15 +242,13 @@ describe("reconnection after bridge restart", () => {
       () =>
         stderrLines.filter((l) => l.includes("Connected")).length >
         reconnectedCount,
-      // BUG: without polling fallback, if watch event was missed, this never fires
-      // Current timeout is generous but the test documents the expected behavior
+      // Generous timeout — whether fs.watch fires first or the polling
+      // fallback does, reconnect must happen.
       10000,
     );
 
     await closeServer(wss2);
 
-    // BUG: without a polling loop, if the watch event is missed this FAILS
-    // (We can't guarantee the watch event fires in all macOS CI environments)
     expect(reconnected).toBe(true);
   });
 });
