@@ -12,57 +12,57 @@
  */
 
 export interface Message {
-	role: "system" | "user" | "assistant" | "tool";
-	content: string;
-	/** Present when role === "tool"; matches the assistant tool_use id. */
-	toolCallId?: string;
-	/** Present on assistant messages that invoke tools. */
-	toolCalls?: ToolCall[];
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  /** Present when role === "tool"; matches the assistant tool_use id. */
+  toolCallId?: string;
+  /** Present on assistant messages that invoke tools. */
+  toolCalls?: ToolCall[];
 }
 
 export interface ToolCall {
-	id: string;
-	name: string;
-	arguments: Record<string, unknown>;
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
 }
 
 export interface ToolDef {
-	name: string;
-	description: string;
-	/** JSON Schema for arguments. */
-	inputSchema: Record<string, unknown>;
+  name: string;
+  description: string;
+  /** JSON Schema for arguments. */
+  inputSchema: Record<string, unknown>;
 }
 
 export interface CompletionParams {
-	systemPrompt: string;
-	messages: Message[];
-	tools?: ToolDef[];
-	maxTokens?: number;
-	/** Provider-specific model identifier. Falls back to adapter default. */
-	model?: string;
-	/** 0.0 – 1.0. Provider may clamp. */
-	temperature?: number;
+  systemPrompt: string;
+  messages: Message[];
+  tools?: ToolDef[];
+  maxTokens?: number;
+  /** Provider-specific model identifier. Falls back to adapter default. */
+  model?: string;
+  /** 0.0 – 1.0. Provider may clamp. */
+  temperature?: number;
 }
 
 export interface CompletionResult {
-	text: string;
-	toolCalls: ToolCall[];
-	stopReason: "end_turn" | "tool_use" | "max_tokens" | "error";
-	usage: { inputTokens: number; outputTokens: number };
+  text: string;
+  toolCalls: ToolCall[];
+  stopReason: "end_turn" | "tool_use" | "max_tokens" | "error";
+  usage: { inputTokens: number; outputTokens: number };
 }
 
 export type StreamChunk =
-	| { type: "text"; delta: string }
-	| { type: "tool_call_start"; id: string; name: string }
-	| { type: "tool_call_delta"; id: string; argumentsDelta: string }
-	| { type: "tool_call_end"; id: string }
-	| { type: "done"; result: CompletionResult }
-	| { type: "error"; message: string };
+  | { type: "text"; delta: string }
+  | { type: "tool_call_start"; id: string; name: string }
+  | { type: "tool_call_delta"; id: string; argumentsDelta: string }
+  | { type: "tool_call_end"; id: string }
+  | { type: "done"; result: CompletionResult }
+  | { type: "error"; message: string };
 
 export interface ModelAdapter {
-	readonly name: string;
-	complete(params: CompletionParams): Promise<CompletionResult>;
-	stream(params: CompletionParams): AsyncIterable<StreamChunk>;
-	supportsTools(): boolean;
-	supportsVision(): boolean;
+  readonly name: string;
+  complete(params: CompletionParams): Promise<CompletionResult>;
+  stream(params: CompletionParams): AsyncIterable<StreamChunk>;
+  supportsTools(): boolean;
+  supportsVision(): boolean;
 }
