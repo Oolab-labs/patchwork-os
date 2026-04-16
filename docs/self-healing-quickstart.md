@@ -4,7 +4,7 @@ Five minutes from `npm install` to "I saved a broken file and Claude told me wha
 
 This is not a tutorial about writing automation hooks — it's the minimum demo that proves the pattern works. The full example lives in [`examples/self-healing-demo/`](../examples/self-healing-demo/).
 
-**[▶ Watch the 60-second demo](https://github.com/Oolab-labs/claude-ide-bridge/releases/download/v2.42.3/Screen.Recording.2026-04-16.at.15.29.12.mov)**
+https://github.com/user-attachments/assets/a81a8d11-2cc3-46f3-88ad-6a905a221a2c
 
 ## Prereqs
 
