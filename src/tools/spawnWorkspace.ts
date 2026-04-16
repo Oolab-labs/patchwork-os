@@ -12,7 +12,33 @@ export interface SpawnWorkspaceResult {
   workspace: string;
   authToken: string;
   lockFile: string;
+  /**
+   * True when `waitForExtension` was requested AND the spawned bridge
+   * reported extensionConnected=true before the deadline. Undefined when
+   * `waitForExtension` was not requested.
+   */
+  extensionConnected?: boolean;
 }
+
+export type HealthFetcher = (
+  url: string,
+  token: string,
+) => Promise<{ extensionConnected: boolean } | null>;
+
+const defaultHealthFetcher: HealthFetcher = async (url, token) => {
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { extensionConnected?: unknown };
+    return {
+      extensionConnected: body.extensionConnected === true,
+    };
+  } catch {
+    return null;
+  }
+};
 
 interface LockFileContents {
   pid: number;
@@ -61,12 +87,15 @@ async function findLockForPid(
   return null;
 }
 
-export function createSpawnWorkspaceTool(spawnFn: SpawnFn = spawn) {
+export function createSpawnWorkspaceTool(
+  spawnFn: SpawnFn = spawn,
+  healthFetcher: HealthFetcher = defaultHealthFetcher,
+) {
   return {
     schema: {
       name: "spawnWorkspace",
       description:
-        "Spawn a new claude-ide-bridge process for a workspace directory. Returns connection info (pid, port, authToken) once the lock file appears.",
+        "Spawn claude-ide-bridge for a workspace dir. Returns pid/port/authToken once lock appears; optionally waits for extension handshake.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -82,11 +111,16 @@ export function createSpawnWorkspaceTool(spawnFn: SpawnFn = spawn) {
           timeoutMs: {
             type: "integer",
             description:
-              "Max ms to wait for bridge lock file to appear (default: 30000)",
+              "Max ms to wait for bridge lock (and extension handshake when waitForExtension=true). Default 30000.",
           },
           token: {
             type: "string",
             description: "Fixed auth token for the spawned bridge (optional)",
+          },
+          waitForExtension: {
+            type: "boolean",
+            description:
+              "If true, poll /health on the spawned bridge until extensionConnected=true. Shares the timeoutMs budget.",
           },
         },
         required: ["path"],
@@ -100,12 +134,15 @@ export function createSpawnWorkspaceTool(spawnFn: SpawnFn = spawn) {
           workspace: { type: "string" },
           authToken: { type: "string" },
           lockFile: { type: "string" },
+          extensionConnected: { type: "boolean" },
         },
         required: ["pid", "port", "workspace", "authToken", "lockFile"],
       },
     },
     handler: async (args: Record<string, unknown>) => {
-      return toCallToolResult(await spawnWorkspace(args, spawnFn));
+      return toCallToolResult(
+        await spawnWorkspace(args, spawnFn, healthFetcher),
+      );
     },
   };
 }
@@ -113,6 +150,7 @@ export function createSpawnWorkspaceTool(spawnFn: SpawnFn = spawn) {
 async function spawnWorkspace(
   args: Record<string, unknown>,
   spawnFn: SpawnFn,
+  healthFetcher: HealthFetcher,
 ): Promise<ToolResult<SpawnWorkspaceResult>> {
   const rawPath = args.path;
   if (typeof rawPath !== "string" || rawPath.trim() === "") {
@@ -178,17 +216,53 @@ async function spawnWorkspace(
   const deadline = Date.now() + timeoutMs;
   const pollInterval = 500;
 
+  const waitForExtension = args.waitForExtension === true;
+
   while (Date.now() < deadline) {
     const found = await findLockForPid(lockDir, pid);
     if (found !== null) {
       const port = found.data.port ?? portArg ?? 0;
-      return okS<SpawnWorkspaceResult>({
+      const baseResult: SpawnWorkspaceResult = {
         pid,
         port,
         workspace: found.data.workspace,
         authToken: found.data.authToken,
         lockFile: found.lockFile,
-      });
+      };
+
+      if (!waitForExtension) {
+        return okS<SpawnWorkspaceResult>(baseResult);
+      }
+
+      // Share the remaining timeout budget between lock discovery and
+      // extension handshake. If the bridge wrote a lock but the extension
+      // never connects, we still time out.
+      const healthUrl = `http://127.0.0.1:${port}/health`;
+      while (Date.now() < deadline) {
+        const health = await healthFetcher(healthUrl, found.data.authToken);
+        if (health?.extensionConnected === true) {
+          return okS<SpawnWorkspaceResult>({
+            ...baseResult,
+            extensionConnected: true,
+          });
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, Math.min(pollInterval, remaining)),
+        );
+      }
+
+      // Lock appeared but extension never connected — kill child + timeout.
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        // already exited
+      }
+      return err(
+        "timeout",
+        `Bridge started (pid=${pid}) but extension did not connect within ${timeoutMs}ms`,
+      );
     }
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
