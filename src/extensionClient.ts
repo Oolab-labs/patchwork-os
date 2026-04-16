@@ -975,13 +975,14 @@ export class ExtensionClient {
 
   // --- LSP Semantic Features ---
 
+  // handler returns array of { file, line, column, endLine, endColumn } | null — tryRequest
   async goToDefinition(
     file: string,
     line: number,
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.tryRequest<unknown[]>(
       "extension/goToDefinition",
       { file, line, column },
       undefined,
@@ -989,15 +990,20 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { references: [...], count } — validated
   async findReferences(
     file: string,
     line: number,
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/findReferences",
       { file, line, column },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.references) ? r : null;
+      },
       undefined,
       signal,
     );
@@ -1045,20 +1051,26 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { contents: string[], range? } | null — validated
   async getHover(
     file: string,
     line: number,
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/getHover",
       { file, line, column },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.contents) ? r : null;
+      },
       undefined,
       signal,
     );
   }
 
+  // handler returns { actions: [{title, kind?, isPreferred}] } — validated
   async getCodeActions(
     file: string,
     startLine: number,
@@ -1067,9 +1079,13 @@ export class ExtensionClient {
     endColumn: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/getCodeActions",
       { file, startLine, startColumn, endLine, endColumn },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.actions) ? r : null;
+      },
       undefined,
       signal,
     );
@@ -1109,6 +1125,7 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { success, newName?, affectedFiles?, totalEdits?, error? } — rich contract, caller needs success field
   async renameSymbol(
     file: string,
     line: number,
@@ -1117,9 +1134,13 @@ export class ExtensionClient {
     signal?: AbortSignal,
   ): Promise<unknown> {
     // Rename can be slow on large projects
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/renameSymbol",
       { file, line, column, newName },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
       15_000,
       signal,
     );
@@ -1152,15 +1173,20 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { formatted: boolean, editCount? } or { formatted: false, reason? } — validated
   async formatRange(
     file: string,
     startLine: number,
     endLine: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/formatRange",
       { file, startLine, endLine },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.formatted === "boolean" ? r : null;
+      },
       undefined,
       signal,
     );
@@ -1315,18 +1341,24 @@ export class ExtensionClient {
     });
   }
 
+  // handler returns { symbols: FlatSymbol[], count } — validated
   async getDocumentSymbols(
     file: string,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/getDocumentSymbols",
       { file },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.symbols) ? r : null;
+      },
       undefined,
       signal,
     );
   }
 
+  // handler returns { symbol, incoming?, outgoing? } | null — validated
   async getCallHierarchy(
     file: string,
     line: number,
@@ -1335,9 +1367,13 @@ export class ExtensionClient {
     maxResults?: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/getCallHierarchy",
       { file, line, column, direction, maxResults },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.symbol === "object" && o.symbol !== null ? r : null;
+      },
       15_000,
       signal,
     );
@@ -1564,20 +1600,25 @@ export class ExtensionClient {
 
   // --- Inlay Hints ---
 
+  // handler returns { hints: [...], count, capped? } — validated
   async getInlayHints(
     file: string,
     startLine: number,
     endLine: number,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/getInlayHints", {
-      file,
-      startLine,
-      endLine,
-    });
+    return this.validatedRequest(
+      "extension/getInlayHints",
+      { file, startLine, endLine },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.hints) ? r : null;
+      },
+    );
   }
 
   // --- Type Hierarchy ---
 
+  // handler returns { found: boolean, root?, supertypes, subtypes, direction } — validated
   async getTypeHierarchy(
     file: string,
     line: number,
@@ -1586,9 +1627,13 @@ export class ExtensionClient {
     maxResults?: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/getTypeHierarchy",
       { file, line, column, direction, maxResults },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.found === "boolean" ? r : null;
+      },
       15_000,
       signal,
     );
@@ -1596,10 +1641,15 @@ export class ExtensionClient {
 
   // --- Code Lens ---
 
+  // handler returns { lenses: [...], count } — validated
   async getCodeLens(file: string, signal?: AbortSignal): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/getCodeLens",
       { file },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.lenses) ? r : null;
+      },
       undefined,
       signal,
     );
@@ -1607,6 +1657,7 @@ export class ExtensionClient {
 
   // --- Semantic Tokens ---
 
+  // handler returns { tokens: [...], count, capped, legend: { tokenTypes, tokenModifiers } } — validated
   async getSemanticTokens(
     file: string,
     startLine?: number,
@@ -1614,9 +1665,13 @@ export class ExtensionClient {
     maxTokens?: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/getSemanticTokens",
       { file, startLine, endLine, maxTokens },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.tokens) ? r : null;
+      },
       15_000,
       signal,
     );
