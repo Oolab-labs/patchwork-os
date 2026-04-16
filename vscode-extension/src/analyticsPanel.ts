@@ -957,6 +957,8 @@ ${codiconsUri ? `<link rel="stylesheet" href="${codiconsUri}">` : ""}
   .bottom-bar { display: flex; gap: 4px; margin-top: 10px; align-items: center; }
   .bottom-bar .start-btn { flex: 1; padding: 6px; font-size: 12px; font-weight: 600; }
   .last-updated { font-size: 10px; color: var(--vscode-descriptionForeground); margin-top: 5px; text-align: right; }
+  .headless-hint { font-size: 10px; color: var(--vscode-descriptionForeground); margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--vscode-panel-border); opacity: 0.75; }
+  .headless-hint code { font-family: var(--vscode-editor-font-family); font-size: 10px; background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 2px; }
   #taskStatus { font-size: 11px; margin-top: 6px; color: var(--vscode-descriptionForeground); min-height: 16px; }
   .collapsible { overflow: hidden; transition: max-height 0.2s ease; }
   .collapsible.collapsed { max-height: 0 !important; }
@@ -1038,6 +1040,9 @@ ${
 </div>
 <div class="last-updated" id="lastUpdated"></div>
 <div id="taskStatus"></div>
+<div class="headless-hint">
+  Also works headless: <code>claude-ide-bridge quick-task fix-errors</code>
+</div>
 
 <script>
 const vscodeApi = acquireVsCodeApi();
