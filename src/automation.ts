@@ -593,6 +593,70 @@ function validatePromptSource(hookName: string, cfg: PromptSource): void {
   }
 }
 
+/**
+ * Expand a discriminated unified hook (e.g. onCompaction.phase="pre"|"post")
+ * into the corresponding internal legacy slot, then clear the unified key.
+ * Throws if the discriminator value is invalid or if both the unified hook
+ * and the legacy slot are set simultaneously.
+ * legacyA/legacyB may be null when there is no legacy field to guard against.
+ */
+function expandDiscriminatedHook(
+  policy: AutomationPolicy,
+  unifiedKey: string,
+  discriminatorKey: string,
+  valueA: string,
+  slotA: string,
+  legacyA: string | null,
+  valueB: string,
+  slotB: string,
+  legacyB: string | null,
+  filePath: string,
+): void {
+  const p = policy as Record<string, unknown>;
+  const hook = p[unifiedKey];
+  if (hook === undefined) return;
+  if (typeof hook !== "object" || hook === null) {
+    throw new Error(`"${unifiedKey}" must be an object`);
+  }
+  const discriminator = (hook as Record<string, unknown>)[discriminatorKey];
+  if (discriminator !== valueA && discriminator !== valueB) {
+    throw new Error(
+      `"${unifiedKey}.${discriminatorKey}" must be "${valueA}" or "${valueB}" (got ${JSON.stringify(discriminator)})`,
+    );
+  }
+  // Only guard the slot that matches the actual discriminator value.
+  if (
+    discriminator === valueA &&
+    legacyA !== null &&
+    p[legacyA] !== undefined
+  ) {
+    throw new Error(
+      `Cannot set both "${unifiedKey}" (${discriminatorKey}: "${valueA}") and "${legacyA}" — use ${unifiedKey} only.`,
+    );
+  }
+  if (
+    discriminator === valueB &&
+    legacyB !== null &&
+    p[legacyB] !== undefined
+  ) {
+    throw new Error(
+      `Cannot set both "${unifiedKey}" (${discriminatorKey}: "${valueB}") and "${legacyB}" — use ${unifiedKey} only.`,
+    );
+  }
+  const { [discriminatorKey]: _disc, ...rest } = hook as Record<
+    string,
+    unknown
+  >;
+  const targetKey = discriminator === valueA ? slotA : slotB;
+  p[targetKey] = rest;
+  p[unifiedKey] = undefined;
+
+  // Deprecation warnings for pre-existing legacy fields (set before expansion).
+  // These are emitted after the expansion so callers can check the hadLegacy*
+  // flags they captured before calling this helper.
+  void filePath; // filePath passed through to callers for their warn messages
+}
+
 /** Load and validate a JSON automation policy file. Throws on any failure. */
 export function loadPolicy(filePath: string): AutomationPolicy {
   let raw: string;
@@ -620,41 +684,22 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   const policy = parsed as AutomationPolicy;
 
   // ── onCompaction normalization (v2.43.0+) ───────────────────────────────
-  // Expand the unified `onCompaction` hook into the internal onPreCompact or
-  // onPostCompact field based on `phase`. Legacy onPreCompact/onPostCompact
-  // still accepted — log a deprecation warning so users migrate. The
-  // `hadLegacy*` flags capture user-set values BEFORE expansion so we don't
-  // warn on entries we just synthesized from onCompaction.
+  // Expand unified `onCompaction` into internal onPreCompact/onPostCompact.
+  // hadLegacy* captured BEFORE expansion so warn only for user-set values.
   const hadLegacyPreCompact = policy.onPreCompact !== undefined;
   const hadLegacyPostCompact = policy.onPostCompact !== undefined;
-  if (policy.onCompaction !== undefined) {
-    const oc = policy.onCompaction;
-    if (typeof oc !== "object" || oc === null) {
-      throw new Error(`"onCompaction" must be an object`);
-    }
-    if (oc.phase !== "pre" && oc.phase !== "post") {
-      throw new Error(
-        `"onCompaction.phase" must be "pre" or "post" (got ${JSON.stringify(oc.phase)})`,
-      );
-    }
-    if (oc.phase === "pre" && hadLegacyPreCompact) {
-      throw new Error(
-        `Cannot set both "onCompaction" (phase: "pre") and "onPreCompact" — use onCompaction only.`,
-      );
-    }
-    if (oc.phase === "post" && hadLegacyPostCompact) {
-      throw new Error(
-        `Cannot set both "onCompaction" (phase: "post") and "onPostCompact" — use onCompaction only.`,
-      );
-    }
-    const { phase: _ignored, ...rest } = oc;
-    if (oc.phase === "pre") {
-      policy.onPreCompact = rest as OnPreCompactPolicy;
-    } else {
-      policy.onPostCompact = rest as OnPostCompactPolicy;
-    }
-    policy.onCompaction = undefined;
-  }
+  expandDiscriminatedHook(
+    policy,
+    "onCompaction",
+    "phase",
+    "pre",
+    "onPreCompact",
+    "onPreCompact",
+    "post",
+    "onPostCompact",
+    "onPostCompact",
+    filePath,
+  );
   if (hadLegacyPreCompact) {
     console.warn(
       `[automation-policy] "onPreCompact" in "${filePath}" is deprecated — migrate to "onCompaction" with phase: "pre". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
@@ -670,34 +715,18 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   // Expand into internal onDiagnosticsError/onDiagnosticsCleared based on state.
   const hadLegacyDiagError = policy.onDiagnosticsError !== undefined;
   const hadLegacyDiagCleared = policy.onDiagnosticsCleared !== undefined;
-  if (policy.onDiagnosticsStateChange !== undefined) {
-    const oc = policy.onDiagnosticsStateChange;
-    if (typeof oc !== "object" || oc === null) {
-      throw new Error(`"onDiagnosticsStateChange" must be an object`);
-    }
-    if (oc.state !== "error" && oc.state !== "cleared") {
-      throw new Error(
-        `"onDiagnosticsStateChange.state" must be "error" or "cleared" (got ${JSON.stringify((oc as { state?: unknown }).state)})`,
-      );
-    }
-    if (oc.state === "error" && hadLegacyDiagError) {
-      throw new Error(
-        `Cannot set both "onDiagnosticsStateChange" (state: "error") and "onDiagnosticsError" — use onDiagnosticsStateChange only.`,
-      );
-    }
-    if (oc.state === "cleared" && hadLegacyDiagCleared) {
-      throw new Error(
-        `Cannot set both "onDiagnosticsStateChange" (state: "cleared") and "onDiagnosticsCleared" — use onDiagnosticsStateChange only.`,
-      );
-    }
-    const { state: _s, ...rest } = oc;
-    if (oc.state === "error") {
-      policy.onDiagnosticsError = rest as OnDiagnosticsErrorPolicy;
-    } else {
-      policy.onDiagnosticsCleared = rest as OnDiagnosticsClearedPolicy;
-    }
-    policy.onDiagnosticsStateChange = undefined;
-  }
+  expandDiscriminatedHook(
+    policy,
+    "onDiagnosticsStateChange",
+    "state",
+    "error",
+    "onDiagnosticsError",
+    "onDiagnosticsError",
+    "cleared",
+    "onDiagnosticsCleared",
+    "onDiagnosticsCleared",
+    filePath,
+  );
   if (hadLegacyDiagError) {
     console.warn(
       `[automation-policy] "onDiagnosticsError" in "${filePath}" is deprecated — migrate to "onDiagnosticsStateChange" with state: "error". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,
@@ -713,34 +742,18 @@ export function loadPolicy(filePath: string): AutomationPolicy {
   // Expand into internal onDebugSessionStart/onDebugSessionEnd based on phase.
   const hadLegacyDebugStart = policy.onDebugSessionStart !== undefined;
   const hadLegacyDebugEnd = policy.onDebugSessionEnd !== undefined;
-  if (policy.onDebugSession !== undefined) {
-    const oc = policy.onDebugSession;
-    if (typeof oc !== "object" || oc === null) {
-      throw new Error(`"onDebugSession" must be an object`);
-    }
-    if (oc.phase !== "start" && oc.phase !== "end") {
-      throw new Error(
-        `"onDebugSession.phase" must be "start" or "end" (got ${JSON.stringify(oc.phase)})`,
-      );
-    }
-    if (oc.phase === "start" && hadLegacyDebugStart) {
-      throw new Error(
-        `Cannot set both "onDebugSession" (phase: "start") and "onDebugSessionStart" — use onDebugSession only.`,
-      );
-    }
-    if (oc.phase === "end" && hadLegacyDebugEnd) {
-      throw new Error(
-        `Cannot set both "onDebugSession" (phase: "end") and "onDebugSessionEnd" — use onDebugSession only.`,
-      );
-    }
-    const { phase: _p, ...rest } = oc;
-    if (oc.phase === "start") {
-      policy.onDebugSessionStart = rest as OnDebugSessionStartPolicy;
-    } else {
-      policy.onDebugSessionEnd = rest as OnDebugSessionEndPolicy;
-    }
-    policy.onDebugSession = undefined;
-  }
+  expandDiscriminatedHook(
+    policy,
+    "onDebugSession",
+    "phase",
+    "start",
+    "onDebugSessionStart",
+    "onDebugSessionStart",
+    "end",
+    "onDebugSessionEnd",
+    "onDebugSessionEnd",
+    filePath,
+  );
   if (hadLegacyDebugStart) {
     console.warn(
       `[automation-policy] "onDebugSessionStart" in "${filePath}" is deprecated — migrate to "onDebugSession" with phase: "start". Legacy name removed no earlier than v2.46 + 30 days after v2.43.0 release.`,

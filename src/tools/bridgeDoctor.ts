@@ -1,8 +1,9 @@
-import { execFile } from "node:child_process";
+import { execFile, execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import type { Config } from "../config.js";
 import type { ExtensionClient } from "../extensionClient.js";
 import type { ProbeResults } from "../probe.js";
 import { successStructured } from "./utils.js";
@@ -348,6 +349,138 @@ async function checkGhCli(probes: ProbeResults): Promise<CheckResult> {
   }
 }
 
+async function checkAutomationPolicy(config: Config): Promise<CheckResult> {
+  if (!config.automationEnabled) {
+    return {
+      name: "Automation Policy",
+      status: "skip",
+      detail: "Automation not enabled",
+    };
+  }
+  if (config.automationPolicyPath == null) {
+    return {
+      name: "Automation Policy",
+      status: "warn",
+      detail: "No --automation-policy path set",
+      suggestion: "Pass --automation-policy <path> to enable automation",
+    };
+  }
+  try {
+    fs.accessSync(config.automationPolicyPath, fs.constants.R_OK);
+    return {
+      name: "Automation Policy",
+      status: "ok",
+      detail: `Policy file readable: ${config.automationPolicyPath}`,
+    };
+  } catch {
+    return {
+      name: "Automation Policy",
+      status: "error",
+      detail: `Policy file unreadable: ${config.automationPolicyPath}`,
+      suggestion: "Verify path and file permissions",
+    };
+  }
+}
+
+async function checkOAuthTokenStore(config: Config): Promise<CheckResult> {
+  if (!config.issuerUrl) {
+    return {
+      name: "OAuth Token Store",
+      status: "skip",
+      detail: "OAuth not active",
+    };
+  }
+  const configDir =
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+  const tokenFile = path.join(configDir, "ide", "oauth-tokens.json");
+  if (!fs.existsSync(tokenFile)) {
+    return {
+      name: "OAuth Token Store",
+      status: "ok",
+      detail: "No token store yet (created on first auth)",
+    };
+  }
+  try {
+    fs.accessSync(tokenFile, fs.constants.R_OK);
+    return {
+      name: "OAuth Token Store",
+      status: "ok",
+      detail: "Token store readable",
+    };
+  } catch {
+    return {
+      name: "OAuth Token Store",
+      status: "warn",
+      detail: "oauth-tokens.json unreadable",
+      suggestion: "chmod 600 ~/.claude/ide/oauth-tokens.json",
+    };
+  }
+}
+
+async function checkCircuitBreaker(
+  extensionClient: ExtensionClient,
+): Promise<CheckResult> {
+  if (!extensionClient.isConnected()) {
+    return {
+      name: "Circuit Breaker",
+      status: "skip",
+      detail: "Extension not connected",
+    };
+  }
+  const cb = extensionClient.getCircuitBreakerState();
+  if (cb.suspended) {
+    return {
+      name: "Circuit Breaker",
+      status: "error",
+      detail: "Extension circuit is OPEN — requests fast-failing",
+      suggestion:
+        "Check VS Code Output panel for extension errors, then reconnect",
+    };
+  }
+  if (cb.failures > 0) {
+    return {
+      name: "Circuit Breaker",
+      status: "warn",
+      detail: `Circuit has ${cb.failures} recent failure(s)`,
+      suggestion: "Extension may be intermittently unstable",
+    };
+  }
+  return {
+    name: "Circuit Breaker",
+    status: "ok",
+    detail: "Circuit closed, no recent opens",
+  };
+}
+
+async function checkClaudeDriver(config: Config): Promise<CheckResult> {
+  if (config.claudeDriver !== "subprocess") {
+    return {
+      name: "Claude Driver",
+      status: "skip",
+      detail: "Claude driver not set to subprocess",
+    };
+  }
+  const binary = config.claudeBinary || "claude";
+  try {
+    execSync(
+      process.platform === "win32" ? `where ${binary}` : `which ${binary}`,
+      { stdio: "pipe" },
+    );
+    return {
+      name: "Claude Driver",
+      status: "ok",
+      detail: "claude binary found",
+    };
+  } catch {
+    return {
+      name: "Claude Driver",
+      status: "warn",
+      detail: "claude binary not found on PATH",
+      suggestion: "Install Claude CLI or set --claude-binary <path>",
+    };
+  }
+}
+
 // ── Overall health ────────────────────────────────────────────────────────────
 
 function overallHealth(
@@ -367,6 +500,7 @@ export function createBridgeDoctorTool(
   extensionClient: ExtensionClient,
   probes: ProbeResults,
   port: number,
+  config: Config,
 ) {
   return {
     schema: {
@@ -419,6 +553,10 @@ export function createBridgeDoctorTool(
         checkNodeModules(workspace),
         checkLockFile(port),
         checkGhCli(probes),
+        checkAutomationPolicy(config),
+        checkOAuthTokenStore(config),
+        checkCircuitBreaker(extensionClient),
+        checkClaudeDriver(config),
       ]);
 
       const health = overallHealth(checks);

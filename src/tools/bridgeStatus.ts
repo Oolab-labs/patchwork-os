@@ -107,8 +107,10 @@ export function createBridgeStatusTool(
               suspended: { type: "boolean" },
               consecutiveFailures: { type: "integer" },
               resumesInMs: { type: "integer" },
+              openCount: { type: "integer" },
+              lastOpenedAt: { type: ["string", "null"] },
             },
-            required: ["suspended", "consecutiveFailures"],
+            required: ["suspended", "consecutiveFailures", "openCount"],
           },
           uptimeSeconds: { type: "integer" },
           latencyMs: { type: ["integer", "null"] },
@@ -231,6 +233,8 @@ export function createBridgeStatusTool(
         circuitBreaker: {
           suspended: circuitBreaker.suspended,
           consecutiveFailures: circuitBreaker.failures,
+          openCount: circuitBreaker.openCount,
+          lastOpenedAt: circuitBreaker.lastOpenedAt,
           ...(circuitBreaker.suspended && {
             resumesInMs: Math.max(
               0,

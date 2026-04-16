@@ -26,11 +26,23 @@ const PROBES_ALL_TRUE = {
   jest: false,
   pytest: false,
   codex: false,
+  universalCtags: true,
+  typescriptLanguageServer: true,
+  ant: false,
 };
 
 const PROBES_NONE = Object.fromEntries(
   Object.keys(PROBES_ALL_TRUE).map((k) => [k, false]),
 ) as typeof PROBES_ALL_TRUE;
+
+const BASE_CONFIG = {
+  automationEnabled: false,
+  automationPolicyPath: null,
+  issuerUrl: null,
+  claudeDriver: "none" as const,
+  claudeBinary: "claude",
+  port: 0,
+} as unknown as import("../../config.js").Config;
 
 function makeExtensionClient(connected = true) {
   return {
@@ -83,6 +95,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       PROBES_ALL_TRUE,
       0,
+      BASE_CONFIG,
     );
     const result = (await tool.handler({})) as any;
     expect(result.structuredContent).toBeDefined();
@@ -97,6 +110,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       PROBES_ALL_TRUE,
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     // Extension connected, git repo exists, probes good → at most degraded due to lock file
@@ -109,6 +123,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(false),
       PROBES_ALL_TRUE,
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const extensionCheck = data.checks.find(
@@ -127,7 +142,13 @@ describe("bridgeDoctor", () => {
         suspendedUntil: Date.now() + 5000,
       },
     );
-    const tool = createBridgeDoctorTool(workspace, client, PROBES_ALL_TRUE, 0);
+    const tool = createBridgeDoctorTool(
+      workspace,
+      client,
+      PROBES_ALL_TRUE,
+      0,
+      BASE_CONFIG,
+    );
     const data = parse(await tool.handler({}));
     const extensionCheck = data.checks.find(
       (c) => c.name === "VS Code extension",
@@ -143,6 +164,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       PROBES_ALL_TRUE,
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const wsCheck = data.checks.find((c) => c.name === "Workspace path");
@@ -157,6 +179,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       { ...PROBES_ALL_TRUE, tsc: true },
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const tsCheck = data.checks.find((c) => c.name === "TypeScript (tsc)");
@@ -174,6 +197,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       { ...PROBES_ALL_TRUE, tsc: true },
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const tsCheck = data.checks.find((c) => c.name === "TypeScript (tsc)");
@@ -188,6 +212,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       { ...PROBES_NONE },
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const tsCheck = data.checks.find((c) => c.name === "TypeScript (tsc)");
@@ -201,6 +226,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       { ...PROBES_NONE },
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const linterCheck = data.checks.find((c) => c.name === "Linter");
@@ -218,6 +244,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       PROBES_ALL_TRUE,
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const nmCheck = data.checks.find((c) => c.name === "node_modules");
@@ -236,6 +263,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       PROBES_ALL_TRUE,
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const nmCheck = data.checks.find((c) => c.name === "node_modules");
@@ -262,6 +290,7 @@ describe("bridgeDoctor", () => {
         makeExtensionClient(true),
         PROBES_ALL_TRUE,
         port,
+        BASE_CONFIG,
       );
       const data = parse(await tool.handler({}));
       const lockCheck = data.checks.find((c) => c.name === "Lock file");
@@ -284,6 +313,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       PROBES_ALL_TRUE,
       port,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const lockCheck = data.checks.find((c) => c.name === "Lock file");
@@ -296,6 +326,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       { ...PROBES_NONE },
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     const ghCheck = data.checks.find((c) => c.name === "GitHub CLI (gh)");
@@ -309,6 +340,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(false), // disconnected → at least one warn
       PROBES_NONE,
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     expect(data.summary).toMatch(/\d+ issue/);
@@ -322,6 +354,7 @@ describe("bridgeDoctor", () => {
       makeExtensionClient(true),
       { ...PROBES_ALL_TRUE, tsc: false, gh: false }, // skip checks that hit real binaries
       0,
+      BASE_CONFIG,
     );
     const data = parse(await tool.handler({}));
     // Lock file will still be a warn (port=0), so this is degraded — just verify summary format

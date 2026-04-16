@@ -1,6 +1,6 @@
 # Claude IDE Bridge — Platform Documentation
 
-Version **2.42.0** · 141 tools · 72 MCP prompts · 20 automation hooks
+Version **2.42.0** · 170 tools · 72 MCP prompts · 20 automation hooks
 
 ---
 

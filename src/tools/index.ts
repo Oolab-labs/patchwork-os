@@ -434,6 +434,7 @@ export function registerAllTools(
       extensionClient,
       probes,
       config.port ?? 0,
+      config,
     ),
     createSearchWorkspaceTool(workspace, probes),
     createSearchAndReplaceTool(workspace),

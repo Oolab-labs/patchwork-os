@@ -125,6 +125,8 @@ export class ExtensionClient {
   private extensionSuspendedUntil = 0;
   private extensionFailureTimes: number[] = []; // timestamps of recent timeouts
   private extensionHalfOpen = false;
+  private _circuitOpenCount = 0;
+  private _lastCircuitOpenedAt: Date | null = null;
 
   // State pushed by extension via notifications
   public latestDiagnostics = new Map<string, Diagnostic[]>();
@@ -766,7 +768,9 @@ export class ExtensionClient {
       const result = await inner;
       // Success — reset circuit breaker and half-open state
       if (this.extensionFailureTimes.length > 0) {
-        this.logger.warn("Extension backoff reset — connection recovered");
+        this.logger.info("Extension backoff reset — connection recovered", {
+          openCount: this._circuitOpenCount,
+        });
       }
       this.extensionFailureTimes = [];
       this.extensionSuspendedUntil = 0;
@@ -793,8 +797,11 @@ export class ExtensionClient {
           const capMs = Math.min(1_000 * 2 ** (failures - 1), 60_000);
           const backoffMs = Math.floor(Math.random() * capMs) + 1;
           this.extensionSuspendedUntil = now + backoffMs;
+          this._circuitOpenCount++;
+          this._lastCircuitOpenedAt = new Date();
           this.logger.warn(
             `Extension circuit open (${failures} failures) — suspending for ${Math.round(backoffMs / 100) / 10}s`,
+            { openCount: this._circuitOpenCount },
           );
           // Fast-fail all other in-flight requests immediately when the circuit
           // opens. Without this, each queued request waits its own REQUEST_TIMEOUT
@@ -1773,6 +1780,8 @@ export class ExtensionClient {
     suspended: boolean;
     suspendedUntil: number;
     failures: number;
+    openCount: number;
+    lastOpenedAt: string | null;
   } {
     const now = Date.now();
     // Prune stale entries so callers always see the active window count,
@@ -1784,6 +1793,8 @@ export class ExtensionClient {
       suspended: now < this.extensionSuspendedUntil,
       suspendedUntil: this.extensionSuspendedUntil,
       failures: activeFailures.length,
+      openCount: this._circuitOpenCount,
+      lastOpenedAt: this._lastCircuitOpenedAt?.toISOString() ?? null,
     };
   }
 
