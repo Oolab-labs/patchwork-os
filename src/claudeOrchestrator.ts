@@ -126,7 +126,7 @@ interface PersistedTask {
 export class ClaudeOrchestrator {
   static readonly MAX_CONCURRENT = 10;
   static readonly MAX_QUEUE = 20;
-  static readonly MAX_HISTORY = 100;
+  static readonly MAX_HISTORY = 500;
   static readonly DEFAULT_TIMEOUT_MS = 120_000;
   /** Maximum total estimated tokens in-flight across all running tasks. */
   static readonly MAX_TOKEN_BUDGET = 500_000;
@@ -237,7 +237,15 @@ export class ClaudeOrchestrator {
   }
 
   getTask(id: string): ClaudeTask | undefined {
-    return this.tasks.get(id);
+    const exact = this.tasks.get(id);
+    if (exact) return exact;
+    // Support 8-char (or longer) UUID prefix matching for convenience
+    if (id.length >= 8 && id.length < 36) {
+      for (const [key, task] of this.tasks) {
+        if (key.startsWith(id)) return task;
+      }
+    }
+    return undefined;
   }
 
   list(status?: TaskStatus): ClaudeTask[] {
