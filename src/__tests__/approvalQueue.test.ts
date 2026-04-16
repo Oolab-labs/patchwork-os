@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApprovalQueue } from "../approvalQueue.js";
 import {
+  classifyBehavior,
   classifyTool,
   getRiskTierMap,
   requiresApproval,
@@ -34,6 +35,12 @@ describe("riskTier", () => {
   it("map is read-only view", () => {
     const m = getRiskTierMap();
     expect(m.gitPush).toBe("high");
+  });
+
+  it("classifyBehavior maps tiers to CC behavior classes", () => {
+    expect(classifyBehavior("getBufferContent")).toBe("readOnly");
+    expect(classifyBehavior("editText")).toBe("localWrite");
+    expect(classifyBehavior("gitPush")).toBe("externalEffect");
   });
 });
 
