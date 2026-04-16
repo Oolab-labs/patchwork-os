@@ -918,10 +918,15 @@ export class ExtensionClient {
     return this.tryRequest<boolean>("extension/isDirty", { file });
   }
 
+  // handler returns { content, isDirty, languageId, lineCount, version, source } | { success:false, error } — validatedRequest
   async getFileContent(file: string): Promise<unknown> {
-    return this.requestOrNull("extension/getFileContent", { file });
+    return this.validatedRequest("extension/getFileContent", { file }, (r) => {
+      const o = r as Record<string, unknown>;
+      return typeof o.content === "string" ? r : null;
+    });
   }
 
+  // handler returns true (boolean) on success — bare requestOrNull, caller checks === true
   async openFile(file: string, line?: number): Promise<boolean> {
     const result = await this.requestOrNull("extension/openFile", {
       file,
@@ -1009,43 +1014,58 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { found: true, implementations, count } | null — validatedRequest
   async findImplementations(
     file: string,
     line: number,
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/findImplementations",
       { file, line, column },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.found === "boolean" ? r : null;
+      },
       undefined,
       signal,
     );
   }
 
+  // handler returns { found: true, locations } | null — validatedRequest
   async goToTypeDefinition(
     file: string,
     line: number,
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/goToTypeDefinition",
       { file, line, column },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.found === "boolean" ? r : null;
+      },
       undefined,
       signal,
     );
   }
 
+  // handler returns { found: true, locations } | null — validatedRequest
   async goToDeclaration(
     file: string,
     line: number,
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/goToDeclaration",
       { file, line, column },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.found === "boolean" ? r : null;
+      },
       undefined,
       signal,
     );
@@ -1091,6 +1111,7 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { applied: boolean, title?, command?, error?, available? } — validatedRequest
   async applyCodeAction(
     file: string,
     startLine: number,
@@ -1100,14 +1121,19 @@ export class ExtensionClient {
     actionTitle: string,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/applyCodeAction",
       { file, startLine, startColumn, endLine, endColumn, actionTitle },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.applied === "boolean" ? r : null;
+      },
       undefined,
       signal,
     );
   }
 
+  // handler returns { title, changes, ... } | { error } — tryRequest (error-obj on failure)
   async previewCodeAction(
     file: string,
     startLine: number,
@@ -1117,7 +1143,7 @@ export class ExtensionClient {
     actionTitle: string,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.tryRequest(
       "extension/previewCodeAction",
       { file, startLine, startColumn, endLine, endColumn, actionTitle },
       15_000,
@@ -1159,15 +1185,20 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { canRename: boolean, range?, placeholder?, reason? } — validatedRequest
   async prepareRename(
     file: string,
     line: number,
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/prepareRename",
       { file, line, column },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.canRename === "boolean" ? r : null;
+      },
       undefined,
       signal,
     );
@@ -1192,13 +1223,14 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { activeSignature, activeParameter, signatures } | null — tryRequest
   async signatureHelp(
     file: string,
     line: number,
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.tryRequest(
       "extension/signatureHelp",
       { file, line, column },
       undefined,
@@ -1206,35 +1238,47 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { ranges: [...] } — validatedRequest
   async foldingRanges(file: string, signal?: AbortSignal): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/foldingRanges",
       { file },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.ranges) ? r : null;
+      },
       undefined,
       signal,
     );
   }
 
+  // handler returns { ranges: [...] } — validatedRequest
   async selectionRanges(
     file: string,
     line: number,
     column: number,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/selectionRanges",
       { file, line, column },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.ranges) ? r : null;
+      },
       undefined,
       signal,
     );
   }
 
+  // handler returns { watching: true, id, pattern } — tryRequest
   async watchFiles(id: string, pattern: string): Promise<unknown> {
-    return this.requestOrNull("extension/watchFiles", { id, pattern });
+    return this.tryRequest("extension/watchFiles", { id, pattern });
   }
 
+  // handler returns { unwatched: true, id } — tryRequest
   async unwatchFiles(id: string): Promise<unknown> {
-    return this.requestOrNull("extension/unwatchFiles", { id });
+    return this.tryRequest("extension/unwatchFiles", { id });
   }
 
   async captureScreenshot(): Promise<{
@@ -1255,28 +1299,45 @@ export class ExtensionClient {
 
   // --- Terminal Features ---
 
+  // handler returns { terminals, count, outputCaptureAvailable } — validatedRequest
   async listTerminals(): Promise<unknown> {
-    return this.requestOrNull("extension/listTerminals");
+    return this.validatedRequest("extension/listTerminals", undefined, (r) => {
+      const o = r as Record<string, unknown>;
+      return Array.isArray(o.terminals) ? r : null;
+    });
   }
 
+  // handler returns { available: boolean, ... } — validatedRequest
   async getTerminalOutput(
     name?: string,
     index?: number,
     lines?: number,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/getTerminalOutput", {
-      name,
-      index,
-      lines,
-    });
+    return this.validatedRequest(
+      "extension/getTerminalOutput",
+      { name, index, lines },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.available === "boolean" ? r : null;
+      },
+    );
   }
 
+  // handler returns { success: boolean, terminalName? } — validatedRequest
   async disposeTerminal(name?: string, index?: number): Promise<unknown> {
-    return this.requestOrNull("extension/disposeTerminal", { name, index });
+    return this.validatedRequest(
+      "extension/disposeTerminal",
+      { name, index },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
+    );
   }
 
   // --- File Operations ---
 
+  // handler returns { success: boolean, filePath, isDirectory, created } | { success: false, error } — validatedRequest
   async createFile(
     filePath: string,
     content?: string,
@@ -1284,61 +1345,81 @@ export class ExtensionClient {
     overwrite?: boolean,
     openAfterCreate?: boolean,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/createFile", {
-      filePath,
-      content,
-      isDirectory,
-      overwrite,
-      openAfterCreate,
-    });
+    return this.validatedRequest(
+      "extension/createFile",
+      { filePath, content, isDirectory, overwrite, openAfterCreate },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
+    );
   }
 
+  // handler returns { success: boolean, filePath, deleted } | { success: false, error } — validatedRequest
   async deleteFile(
     filePath: string,
     recursive?: boolean,
     useTrash?: boolean,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/deleteFile", {
-      filePath,
-      recursive,
-      useTrash,
-    });
+    return this.validatedRequest(
+      "extension/deleteFile",
+      { filePath, recursive, useTrash },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
+    );
   }
 
+  // handler returns { success: boolean, oldPath, newPath, renamed } | { success: false, error } — validatedRequest
   async renameFile(
     oldPath: string,
     newPath: string,
     overwrite?: boolean,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/renameFile", {
-      oldPath,
-      newPath,
-      overwrite,
-    });
+    return this.validatedRequest(
+      "extension/renameFile",
+      { oldPath, newPath, overwrite },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
+    );
   }
 
   // --- Text Editing ---
 
+  // handler returns { success: boolean, editCount, saved } | { success: false, error } — validatedRequest
   async editText(
     filePath: string,
     edits: unknown[],
     save?: boolean,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/editText", { filePath, edits, save });
+    return this.validatedRequest(
+      "extension/editText",
+      { filePath, edits, save },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
+    );
   }
 
+  // handler returns { success: boolean, saved, source } | { success: false, error } — validatedRequest
   async replaceBlock(
     filePath: string,
     oldContent: string,
     newContent: string,
     save?: boolean,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/replaceBlock", {
-      filePath,
-      oldContent,
-      newContent,
-      save,
-    });
+    return this.validatedRequest(
+      "extension/replaceBlock",
+      { filePath, oldContent, newContent, save },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
+    );
   }
 
   // handler returns { symbols: FlatSymbol[], count } — validated
@@ -1394,40 +1475,48 @@ export class ExtensionClient {
     return this.tryRequest("extension/fixAllLintErrors", { file }, 15_000);
   }
 
+  // handler returns { success: true, actionsApplied } | { error } — tryRequest (error-obj on failure)
   async organizeImports(file: string): Promise<unknown> {
-    return this.requestOrNull("extension/organizeImports", { file }, 15_000);
+    return this.tryRequest("extension/organizeImports", { file }, 15_000);
   }
 
   // --- Terminal Control ---
 
+  // handler returns { success: true, name, index } — validatedRequest
   async createTerminal(
     name?: string,
     cwd?: string,
     env?: Record<string, string>,
     show?: boolean,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/createTerminal", {
-      name,
-      cwd,
-      env,
-      show,
-    });
+    return this.validatedRequest(
+      "extension/createTerminal",
+      { name, cwd, env, show },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
+    );
   }
 
+  // handler returns { success: boolean, terminalName? } | { success: false, error, availableTerminals } — validatedRequest
   async sendTerminalCommand(
     text: string,
     name?: string,
     index?: number,
     addNewline?: boolean,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/sendTerminalCommand", {
-      text,
-      name,
-      index,
-      addNewline,
-    });
+    return this.validatedRequest(
+      "extension/sendTerminalCommand",
+      { text, name, index, addNewline },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
+    );
   }
 
+  // handler returns { matched: boolean, matchedLine?, elapsed?, terminalName, timedOut?, error? } — validatedRequest
   async waitForTerminalOutput(
     pattern: string,
     name?: string,
@@ -1435,13 +1524,18 @@ export class ExtensionClient {
     timeoutMs?: number,
   ): Promise<unknown> {
     const requestTimeout = (timeoutMs ?? 30_000) + 5_000;
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/waitForTerminalOutput",
       { pattern, name, index, timeoutMs },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.matched === "boolean" ? r : null;
+      },
       requestTimeout,
     );
   }
 
+  // handler returns { success: boolean, exitCode?, output, terminalName, timedOut?, error? } — validatedRequest
   async executeInTerminal(
     command: string,
     name?: string,
@@ -1451,9 +1545,13 @@ export class ExtensionClient {
   ): Promise<unknown> {
     // Add 5s overhead beyond the command timeout so the bridge doesn't cut the extension off early
     const requestTimeout = (timeoutMs ?? 30_000) + 5_000;
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/executeInTerminal",
       { command, name, index, timeoutMs, show },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
       requestTimeout,
     );
   }
@@ -1471,49 +1569,69 @@ export class ExtensionClient {
     );
   }
 
+  // handler returns { result, type?, variablesReference? } — validatedRequest
   async evaluateInDebugger(
     expression: string,
     frameId?: number,
     context?: string,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/evaluateInDebugger",
       { expression, frameId, context },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return "result" in o ? r : null;
+      },
       15_000,
       signal,
     );
   }
 
+  // handler returns { set: number, file } — validatedRequest
   async setDebugBreakpoints(
     file: string,
     breakpoints: BreakpointSpec[],
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/setDebugBreakpoints",
       { file, breakpoints },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.set === "number" ? r : null;
+      },
       undefined,
       signal,
     );
   }
 
+  // handler returns { started: boolean } — validatedRequest
   async startDebugging(
     configName?: string,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/startDebugging",
       { configName },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.started === "boolean" ? r : null;
+      },
       15_000,
       signal,
     );
   }
 
+  // handler returns { stopped: boolean, message? } | { stopped: false, error } — validatedRequest
   async stopDebugging(signal?: AbortSignal): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/stopDebugging",
       undefined,
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.stopped === "boolean" ? r : null;
+      },
       undefined,
       signal,
     );
@@ -1521,32 +1639,45 @@ export class ExtensionClient {
 
   // --- Decorations ---
 
+  // handler returns { applied: number, editorsUpdated: number } — validatedRequest
   async setDecorations(
     id: string,
     file: string,
     decorations: DecorationSpec[],
   ): Promise<unknown> {
-    return this.requestOrNull("extension/setDecorations", {
-      id,
-      file,
-      decorations,
-    });
+    return this.validatedRequest(
+      "extension/setDecorations",
+      { id, file, decorations },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.applied === "number" ? r : null;
+      },
+    );
   }
 
+  // handler returns { cleared: number } — validatedRequest
   async clearDecorations(id?: string): Promise<unknown> {
-    return this.requestOrNull("extension/clearDecorations", { id });
+    return this.validatedRequest("extension/clearDecorations", { id }, (r) => {
+      const o = r as Record<string, unknown>;
+      return typeof o.cleared === "number" ? r : null;
+    });
   }
 
   // --- VS Code Commands ---
 
+  // handler returns { result, _warning? } — validatedRequest
   async executeVSCodeCommand(
     command: string,
     args?: unknown[],
   ): Promise<unknown> {
-    return this.requestOrNull("extension/executeVSCodeCommand", {
-      command,
-      args,
-    });
+    return this.validatedRequest(
+      "extension/executeVSCodeCommand",
+      { command, args },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return "result" in o ? r : null;
+      },
+    );
   }
 
   async listVSCodeCommands(
@@ -1566,36 +1697,53 @@ export class ExtensionClient {
 
   // --- Workspace Settings ---
 
+  // handler returns { section, settings } — validatedRequest
   async getWorkspaceSettings(
     section?: string,
     target?: string,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/getWorkspaceSettings", {
-      section,
-      target,
-    });
+    return this.validatedRequest(
+      "extension/getWorkspaceSettings",
+      { section, target },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.settings === "object" && o.settings !== null ? r : null;
+      },
+    );
   }
 
+  // handler returns { set: true, key, target } — validatedRequest
   async setWorkspaceSetting(
     key: string,
     value: unknown,
     target?: string,
   ): Promise<unknown> {
-    return this.requestOrNull("extension/setWorkspaceSetting", {
-      key,
-      value,
-      target,
-    });
+    return this.validatedRequest(
+      "extension/setWorkspaceSetting",
+      { key, value, target },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.set === "boolean" ? r : null;
+      },
+    );
   }
 
   // --- Clipboard ---
 
+  // handler returns { text, byteLength, truncated } — validatedRequest
   async readClipboard(): Promise<unknown> {
-    return this.requestOrNull("extension/readClipboard");
+    return this.validatedRequest("extension/readClipboard", undefined, (r) => {
+      const o = r as Record<string, unknown>;
+      return typeof o.text === "string" ? r : null;
+    });
   }
 
+  // handler returns { written: boolean, byteLength? } | { written: false, error } — validatedRequest
   async writeClipboard(text: string): Promise<unknown> {
-    return this.requestOrNull("extension/writeClipboard", { text });
+    return this.validatedRequest("extension/writeClipboard", { text }, (r) => {
+      const o = r as Record<string, unknown>;
+      return typeof o.written === "boolean" ? r : null;
+    });
   }
 
   // --- Inlay Hints ---
@@ -1690,23 +1838,33 @@ export class ExtensionClient {
 
   // --- Tasks ---
 
+  // handler returns { tasks: [...] } — validatedRequest
   async listTasks(type?: string): Promise<unknown> {
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/listTasks",
       type ? { type } : undefined,
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return Array.isArray(o.tasks) ? r : null;
+      },
       15_000,
     );
   }
 
+  // handler returns { success: boolean, name, exitCode? } | { success: false, error, timedOut? } — validatedRequest
   async runTask(
     name: string,
     type?: string,
     timeoutMs?: number,
   ): Promise<unknown> {
     const requestTimeout = (timeoutMs ?? 60_000) + 5_000;
-    return this.requestOrNull(
+    return this.validatedRequest(
       "extension/runTask",
       { name, type, timeoutMs },
+      (r) => {
+        const o = r as Record<string, unknown>;
+        return typeof o.success === "boolean" ? r : null;
+      },
       requestTimeout,
     );
   }
@@ -1731,10 +1889,12 @@ export class ExtensionClient {
 
   // --- Notebook ---
 
+  // handler not yet implemented in extension — bare requestOrNull returns null until implemented
   async getNotebookCells(file: string): Promise<unknown> {
     return this.requestOrNull("extension/getNotebookCells", { file });
   }
 
+  // handler not yet implemented in extension — bare requestOrNull returns null until implemented
   async runNotebookCell(
     file: string,
     cellIndex: number,
@@ -1748,6 +1908,7 @@ export class ExtensionClient {
     );
   }
 
+  // handler not yet implemented in extension — bare requestOrNull returns null until implemented
   async getNotebookOutput(file: string, cellIndex: number): Promise<unknown> {
     return this.requestOrNull("extension/getNotebookOutput", {
       file,
