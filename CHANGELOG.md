@@ -10,6 +10,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.43.0] — 2026-04-16
+
+### Changed
+- **Default tool mode flipped from slim → full.** `claude-ide-bridge` now starts with the full ~140-tool set by default (IDE + git + terminal + file ops + HTTP + GitHub). Prior default was slim (~60 IDE-exclusive tools), which required users to pass `--full` to access git/terminal/GitHub — friction reported by ~85% of users in the DX assessment.
+- **`--slim` CLI flag added** (opt-out). Users who want the narrower IDE-only surface (LSP, debugger, editor state) pass `--slim` explicitly, or set `"fullMode": false` in `claude-ide-bridge.config.json`.
+- **`--full` is now a no-op** retained for backward compatibility — any existing scripts passing `--full` continue to work unchanged.
+- **Startup banner updated** (`src/bridge.ts:1322-1326`) to reflect the new default and show `--slim` opt-out hint when running slim.
+- **README quickstart, slim/full section, key-flags table** updated. `documents/platform-docs.md` + `docs/*.md` references to "slim mode is default" remain stale — follow-up doc pass queued.
+
+### Tests
+- `slimMode.test.ts`: flipped default assertion; added `--slim` opt-out test; added `--full` no-op backward-compat test. Full suite 2852 green.
+
+### Verification
+- Roadmap assessment (`/Users/wesh/.claude/plans/make-a-plan-on-majestic-seal.md`) Phase A verified the shape-safety gate (`scripts/audit-shape-safety.mjs`) is active in CI and startup banner prints the lock file path clearly. Phase A's proposed tool removals (`getHoverAtCursor`, `getTypeSignature`, `navigateToSymbolByName`) aborted after full-repo grep revealed they have real callers in MCP prompts (`src/prompts.ts` `type-of`), headless LSP fallback (`src/tools/headless/lspFallback.ts`), documented capabilities (`documents/platform-docs.md`, `ARCHITECTURE.md`), and plugin examples. All three tools retained.
+
+---
+
 ## [2.42.2] — 2026-04-16
 
 ### Fixed
