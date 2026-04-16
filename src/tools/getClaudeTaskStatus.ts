@@ -42,8 +42,10 @@ export function createGetClaudeTaskStatusTool(
           timeoutMs: { type: "number" },
           startupMs: { type: "number" },
           hint: { type: "string" },
+          origin: { type: "string", enum: ["session", "automation"] },
+          triggerSource: { type: "string" },
         },
-        required: ["taskId", "status", "createdAt"],
+        required: ["taskId", "status", "createdAt", "origin"],
       },
     },
     handler: async (args: Record<string, unknown>) => {
@@ -55,7 +57,18 @@ export function createGetClaudeTaskStatusTool(
         );
       }
 
-      const task = orchestrator.getTask(taskId);
+      // Visibility mirrors list/status auth: own session + automation tasks.
+      const resolved = orchestrator.findTaskByPrefix(
+        taskId,
+        (t) => t.sessionId === sessionId || t.sessionId === "",
+      );
+      if (resolved.ambiguous) {
+        return error(
+          `Task ID prefix "${taskId}" is ambiguous — matches ${resolved.candidates?.length ?? 0} tasks: ${(resolved.candidates ?? []).map((c) => c.slice(0, 8)).join(", ")}. Provide a longer prefix.`,
+          ToolErrorCodes.AMBIGUOUS_TASK_ID,
+        );
+      }
+      const task = resolved.task;
       if (!task) {
         return error(
           `Task "${taskId}" not found`,
@@ -93,6 +106,8 @@ export function createGetClaudeTaskStatusTool(
         timeoutMs: task.timeoutMs,
         startupMs: task.startupMs,
         hint,
+        origin: task.isAutomationTask ? "automation" : "session",
+        triggerSource: task.triggerSource,
       });
     },
   };

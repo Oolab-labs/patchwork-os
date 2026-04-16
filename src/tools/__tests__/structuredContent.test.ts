@@ -68,7 +68,7 @@ import { createGetSemanticTokensTool } from "../semanticTokens.js";
 import { createGetTypeHierarchyTool } from "../typeHierarchy.js";
 import { execSafe } from "../utils.js";
 
-const mockExecSafe = vi.mocked(execSafe);
+const mockExecSafe = execSafe as any;
 
 const WORKSPACE = tmpdir();
 
@@ -93,7 +93,9 @@ function execOk(stdout = "", exitCode = 0) {
 }
 
 describe("structuredContent contract", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   // ── getGitHotspots ────────────────────────────────────────────────────────
 
@@ -185,7 +187,7 @@ describe("structuredContent contract", () => {
         });
         assertStructured(result as Parameters<typeof assertStructured>[0]);
       } finally {
-        await fs.unlink(testFile).catch(() => {});
+        await fs.unlink(testFile).catch((_err) => {});
       }
     });
   });
@@ -202,7 +204,7 @@ describe("structuredContent contract", () => {
         const result = await tool.handler({ filePath: testFile });
         assertStructured(result as Parameters<typeof assertStructured>[0]);
       } finally {
-        await fs.unlink(testFile).catch(() => {});
+        await fs.unlink(testFile).catch((_err) => {});
       }
     });
   });
@@ -635,18 +637,20 @@ describe("structuredContent contract", () => {
 
   describe("getClaudeTaskStatus", () => {
     it("emits structuredContent for a found task", async () => {
+      const task = {
+        id: "task-1",
+        status: "done",
+        createdAt: Date.now(),
+        startedAt: Date.now(),
+        doneAt: Date.now(),
+        output: "hello",
+        errorMessage: undefined,
+        timeoutMs: 120_000,
+        sessionId: "session-1",
+      };
       const mockOrchestrator = {
-        getTask: vi.fn().mockReturnValue({
-          id: "task-1",
-          status: "done",
-          createdAt: Date.now(),
-          startedAt: Date.now(),
-          doneAt: Date.now(),
-          output: "hello",
-          errorMessage: undefined,
-          timeoutMs: 120_000,
-          sessionId: "session-1",
-        }),
+        getTask: vi.fn().mockReturnValue(task),
+        findTaskByPrefix: vi.fn().mockReturnValue({ task }),
       } as never;
       const tool = createGetClaudeTaskStatusTool(mockOrchestrator, "session-1");
       const result = await tool.handler({ taskId: "task-1" });
@@ -684,12 +688,14 @@ describe("structuredContent contract", () => {
 
   describe("cancelClaudeTask", () => {
     it("emits structuredContent on successful cancellation", async () => {
+      const task = {
+        id: "task-1",
+        status: "pending",
+        sessionId: "session-1",
+      };
       const mockOrchestrator = {
-        getTask: vi.fn().mockReturnValue({
-          id: "task-1",
-          status: "pending",
-          sessionId: "session-1",
-        }),
+        getTask: vi.fn().mockReturnValue(task),
+        findTaskByPrefix: vi.fn().mockReturnValue({ task }),
         cancel: vi.fn().mockReturnValue(true),
       } as never;
       const tool = createCancelClaudeTaskTool(mockOrchestrator, "session-1");
@@ -702,16 +708,18 @@ describe("structuredContent contract", () => {
 
   describe("resumeClaudeTask", () => {
     it("emits structuredContent on successful resume", async () => {
+      const task = {
+        id: "task-1",
+        status: "done",
+        sessionId: "session-1",
+        prompt: "hello",
+        contextFiles: [],
+        timeoutMs: 120_000,
+        model: undefined,
+      };
       const mockOrchestrator = {
-        getTask: vi.fn().mockReturnValue({
-          id: "task-1",
-          status: "done",
-          sessionId: "session-1",
-          prompt: "hello",
-          contextFiles: [],
-          timeoutMs: 120_000,
-          model: undefined,
-        }),
+        getTask: vi.fn().mockReturnValue(task),
+        findTaskByPrefix: vi.fn().mockReturnValue({ task }),
         enqueue: vi.fn().mockReturnValue("task-2"),
       } as never;
       const tool = createResumeClaudeTaskTool(mockOrchestrator, "session-1");
@@ -894,7 +902,7 @@ describe("structuredContent contract", () => {
         getHover: vi.fn().mockResolvedValue(null),
       } as never;
       const tool = createGetHoverAtCursorTool(mockClient);
-      const result = await tool.handler({});
+      const result = await tool.handler();
       assertStructured(result as Parameters<typeof assertStructured>[0]);
     });
   });

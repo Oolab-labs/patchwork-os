@@ -722,6 +722,84 @@ describe("_buildTasksPayload: triggerSource is included", () => {
   it("MAX_HISTORY is 500", () => {
     expect(ClaudeOrchestrator.MAX_HISTORY).toBe(500);
   });
+
+  it("findTaskByPrefix — unique prefix returns task", async () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", () => {});
+    const id = orch.enqueue({ prompt: "p" });
+    await new Promise((r) => setImmediate(r));
+    const res = orch.findTaskByPrefix(id.slice(0, 8));
+    expect(res.task?.id).toBe(id);
+    expect(res.ambiguous).toBeUndefined();
+  });
+
+  it("findTaskByPrefix — ambiguous prefix returns candidates + ambiguous:true", async () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", () => {});
+    // Seed two tasks with a known shared 8-char prefix by injecting directly
+    // (bypass randomUUID since collisions are rare). We stub `tasks` through
+    // the only public channel: enqueue then rewrite keys via the internal map.
+    const id1 = orch.enqueue({ prompt: "a" });
+    const id2 = orch.enqueue({ prompt: "b" });
+    await new Promise((r) => setImmediate(r));
+    // Force shared prefix by moving id2 under a synthetic colliding key.
+    const shared = id1.slice(0, 8);
+    const synthetic = `${shared}${"f".repeat(28)}`;
+    // biome-ignore lint/suspicious/noExplicitAny: test-only map access
+    const tasksMap: Map<string, any> = (orch as any).tasks;
+    const t2 = tasksMap.get(id2)!;
+    tasksMap.delete(id2);
+    tasksMap.set(synthetic, { ...t2, id: synthetic });
+
+    const res = orch.findTaskByPrefix(shared);
+    expect(res.ambiguous).toBe(true);
+    expect(res.candidates?.length).toBe(2);
+    expect(res.task).toBeUndefined();
+    // getTask returns undefined on ambiguous
+    expect(orch.getTask(shared)).toBeUndefined();
+  });
+
+  it("findTaskByPrefix — no match returns empty result", () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", () => {});
+    const res = orch.findTaskByPrefix("deadbeef");
+    expect(res.task).toBeUndefined();
+    expect(res.ambiguous).toBeUndefined();
+  });
+
+  it("findTaskByPrefix — visibility predicate hides other sessions from candidate list", async () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", () => {});
+    // Two tasks under different sessions with a shared synthetic prefix.
+    const id1 = orch.enqueue({ prompt: "a", sessionId: "session-A" });
+    const id2 = orch.enqueue({ prompt: "b", sessionId: "session-B" });
+    await new Promise((r) => setImmediate(r));
+    const shared = id1.slice(0, 8);
+    const synthetic = `${shared}${"f".repeat(28)}`;
+    // biome-ignore lint/suspicious/noExplicitAny: test-only map access
+    const tasksMap: Map<string, any> = (orch as any).tasks;
+    const t2 = tasksMap.get(id2)!;
+    tasksMap.delete(id2);
+    tasksMap.set(synthetic, { ...t2, id: synthetic });
+
+    // Session A querying shared prefix sees only its own task — unique match, no ambiguity.
+    const scopedA = orch.findTaskByPrefix(
+      shared,
+      (t) => t.sessionId === "session-A",
+    );
+    expect(scopedA.ambiguous).toBeUndefined();
+    expect(scopedA.task?.id).toBe(id1);
+
+    // Session C (unrelated) sees nothing — no leakage of prefixes from A or B.
+    const scopedC = orch.findTaskByPrefix(
+      shared,
+      (t) => t.sessionId === "session-C",
+    );
+    expect(scopedC.task).toBeUndefined();
+    expect(scopedC.ambiguous).toBeUndefined();
+    expect(scopedC.candidates).toBeUndefined();
+
+    // Unscoped call (no predicate) still returns both — orchestrator-internal use only.
+    const unscoped = orch.findTaskByPrefix(shared);
+    expect(unscoped.ambiguous).toBe(true);
+    expect(unscoped.candidates?.length).toBe(2);
+  });
 });
 
 // ── _drain infinite loop guard ────────────────────────────────────────────────

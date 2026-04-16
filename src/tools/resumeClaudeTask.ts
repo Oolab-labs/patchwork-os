@@ -74,7 +74,18 @@ export function createResumeClaudeTaskTool(
         );
       }
 
-      const original = orchestrator.getTask(taskId);
+      // Resume auth is strict: only own session's tasks are visible.
+      const resolved = orchestrator.findTaskByPrefix(
+        taskId,
+        (t) => t.sessionId === sessionId,
+      );
+      if (resolved.ambiguous) {
+        return error(
+          `Task ID prefix "${taskId}" is ambiguous — matches ${resolved.candidates?.length ?? 0} tasks: ${(resolved.candidates ?? []).map((c) => c.slice(0, 8)).join(", ")}. Provide a longer prefix.`,
+          ToolErrorCodes.AMBIGUOUS_TASK_ID,
+        );
+      }
+      const original = resolved.task;
       if (!original) {
         return error(
           `Task "${taskId}" not found`,

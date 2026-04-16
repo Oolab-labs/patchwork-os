@@ -35,6 +35,29 @@ function makeOrchestrator(
 ) {
   return {
     getTask: (id: string) => tasks[id] ?? null,
+    findTaskByPrefix: (
+      id: string,
+      visible?: (t: ReturnType<typeof makeTask>) => boolean,
+    ) => {
+      if (tasks[id]) {
+        return visible && !visible(tasks[id]) ? {} : { task: tasks[id] };
+      }
+      // Simulate prefix ambiguity when id matches ≥2 task-id prefixes.
+      const hits = Object.values(tasks).filter(
+        (t) =>
+          typeof t.id === "string" &&
+          t.id.startsWith(id) &&
+          (!visible || visible(t)),
+      );
+      if (hits.length === 1) return { task: hits[0] };
+      if (hits.length > 1) {
+        return {
+          ambiguous: true,
+          candidates: hits.map((t) => t.id as string),
+        };
+      }
+      return {};
+    },
     cancel: (id: string) => {
       if (tasks[id]) {
         tasks[id].status = "cancelled";
@@ -352,5 +375,73 @@ describe("listClaudeTasks — session scoping and filtering", () => {
     const tool = createListClaudeTasksTool(orch, "session-A");
     const result = parse(await tool.handler({}));
     expect(result.tasks[0].output).toBeUndefined();
+  });
+});
+
+// ── AMBIGUOUS_TASK_ID — surfaced by all 3 handlers ────────────────────────────
+
+describe("ambiguous prefix resolution", () => {
+  const SHARED_PREFIX = "12345678";
+
+  function makeAmbiguousOrch() {
+    // Two tasks owned by session-A with the same 8-char prefix.
+    return makeOrchestrator({
+      [`${SHARED_PREFIX}aaaa1111222233334444555566667777`]: makeTask({
+        id: `${SHARED_PREFIX}aaaa1111222233334444555566667777`,
+        status: "done",
+      }),
+      [`${SHARED_PREFIX}bbbb1111222233334444555566667777`]: makeTask({
+        id: `${SHARED_PREFIX}bbbb1111222233334444555566667777`,
+        status: "done",
+      }),
+    });
+  }
+
+  it("getClaudeTaskStatus returns AMBIGUOUS_TASK_ID with candidate prefixes", async () => {
+    const tool = createGetClaudeTaskStatusTool(
+      makeAmbiguousOrch(),
+      "session-A",
+    );
+    const result = parse(await tool.handler({ taskId: SHARED_PREFIX }));
+    expect(result.code).toBe("ambiguous_task_id");
+    expect(result.error).toMatch(/ambiguous/i);
+    expect(result.error).toMatch(/matches 2 tasks/);
+  });
+
+  it("cancelClaudeTask returns AMBIGUOUS_TASK_ID", async () => {
+    const tool = createCancelClaudeTaskTool(makeAmbiguousOrch(), "session-A");
+    const result = parse(await tool.handler({ taskId: SHARED_PREFIX }));
+    expect(result.code).toBe("ambiguous_task_id");
+  });
+
+  it("cancelClaudeTask passes resolved full id to orchestrator.cancel (not prefix)", async () => {
+    const fullId = "abcdef0112345678aaaa1111222233334444";
+    const task = makeTask({ id: fullId, status: "running" });
+    const cancelSpy = vi.fn(() => true);
+    const orch = {
+      findTaskByPrefix: () => ({ task }),
+      cancel: cancelSpy,
+    } as any;
+    const tool = createCancelClaudeTaskTool(orch, "session-A");
+    await tool.handler({ taskId: "abcdef01" });
+    expect(cancelSpy).toHaveBeenCalledWith(fullId);
+  });
+
+  it("ambiguity candidates are filtered by session — no cross-session leakage", async () => {
+    // Two tasks share a prefix but belong to different sessions.
+    const orch = makeOrchestrator({
+      [`${SHARED_PREFIX}aaaa`]: makeTask({
+        id: `${SHARED_PREFIX}aaaa`,
+        sessionId: "session-A",
+      }),
+      [`${SHARED_PREFIX}bbbb`]: makeTask({
+        id: `${SHARED_PREFIX}bbbb`,
+        sessionId: "session-B",
+      }),
+    });
+    // Session A sees only its own task — unique match, no ambiguity.
+    const tool = createCancelClaudeTaskTool(orch, "session-A");
+    const result = parse(await tool.handler({ taskId: SHARED_PREFIX }));
+    expect(result.code).not.toBe("ambiguous_task_id");
   });
 });

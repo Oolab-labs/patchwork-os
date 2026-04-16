@@ -237,15 +237,51 @@ export class ClaudeOrchestrator {
   }
 
   getTask(id: string): ClaudeTask | undefined {
+    const res = this.findTaskByPrefix(id);
+    return res.ambiguous ? undefined : res.task;
+  }
+
+  /**
+   * Resolve a task ID, with support for UUID prefixes (≥8 chars).
+   * Returns `{task}` on unique exact/prefix match, `{ambiguous: true, candidates}` when
+   * multiple prefix matches exist (caller should surface as error), or `{}` for no match.
+   *
+   * Optional `visible(task)` predicate scopes both the match AND the candidate list
+   * to tasks the caller is allowed to see — prevents cross-session prefix enumeration.
+   * When omitted, all tasks are visible (internal callers only).
+   */
+  findTaskByPrefix(
+    id: string,
+    visible?: (task: ClaudeTask) => boolean,
+  ): {
+    task?: ClaudeTask;
+    ambiguous?: boolean;
+    candidates?: string[];
+  } {
+    const canSee = (t: ClaudeTask) => (visible ? visible(t) : true);
     const exact = this.tasks.get(id);
-    if (exact) return exact;
-    // Support 8-char (or longer) UUID prefix matching for convenience
+    if (exact && canSee(exact)) return { task: exact };
     if (id.length >= 8 && id.length < 36) {
+      const matches: ClaudeTask[] = [];
       for (const [key, task] of this.tasks) {
-        if (key.startsWith(id)) return task;
+        if (key.startsWith(id) && canSee(task)) {
+          matches.push(task);
+          if (matches.length > 1) break;
+        }
+      }
+      if (matches.length === 1) return { task: matches[0] };
+      if (matches.length > 1) {
+        const candidates: string[] = [];
+        for (const [key, task] of this.tasks) {
+          if (key.startsWith(id) && canSee(task)) {
+            candidates.push(key);
+            if (candidates.length >= 10) break;
+          }
+        }
+        return { ambiguous: true, candidates };
       }
     }
-    return undefined;
+    return {};
   }
 
   list(status?: TaskStatus): ClaudeTask[] {
