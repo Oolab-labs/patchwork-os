@@ -1,8 +1,18 @@
 # Cowork (Computer-Use) Workflow
 
+> ## ⚠ READ BEFORE OPENING COWORK
+>
+> **Bridge MCP tools do NOT work inside Cowork.** `getDiagnostics`, `goToDefinition`, `gitCommit`, and every other bridge tool are unreachable from within a Cowork session. This is a fundamental architectural constraint — there is no configuration that changes it.
+>
+> **Before switching to Cowork:** run `/mcp__bridge__cowork` in regular Claude Code or Desktop chat. This single prompt captures workspace state (open editors, diagnostics, git status/diff) and writes it to the handoff note that Cowork can read at start.
+>
+> **If tools vanish inside Cowork:** you forgot to run the prompt, or you opened Cowork from the wrong client. Exit Cowork, run `/mcp__bridge__cowork` in regular chat, re-open Cowork.
+
+---
+
 ## Overview
 
-Cowork is Claude's computer-use mode. **MCP bridge tools are NOT available inside Cowork** — the MCP server cannot be reached from within a Cowork session. This is a fundamental constraint, not a configuration issue.
+Cowork is Claude's computer-use mode. The MCP server cannot be reached from within a Cowork session — the transport layer is isolated by design.
 
 The workaround: gather all IDE context *before* entering Cowork, write it to the handoff note, then Cowork reads that note at the start.
 

@@ -314,7 +314,7 @@ claude-ide-bridge install claude-mem
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Diagnostics, common errors, and fixes |
 | [docs/remote-access.md](docs/remote-access.md) | VPS setup, OAuth 2.0, nginx/Caddy reverse proxy |
 | [documents/headless-quickstart.md](documents/headless-quickstart.md) | CI, Docker, server use without VS Code |
-| [docs/cowork-workflow.md](docs/cowork-workflow.md) | Computer-use (Cowork) workflow and git worktree setup |
+| [docs/cowork.md](docs/cowork.md) | Computer-use (Cowork) workflow and git worktree setup — **MCP bridge tools unavailable inside Cowork** |
 | [docs/multi-ide.md](docs/multi-ide.md) | Multiple sessions and parallel editor instances |
 | [docs/migration.md](docs/migration.md) | Upgrade guide between major versions |
 | [documents/plugin-authoring.md](documents/plugin-authoring.md) | Plugin manifest schema, entrypoint API, distribution |
