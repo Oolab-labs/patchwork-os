@@ -63,8 +63,8 @@ export function createGetClaudeTaskStatusTool(
         );
       }
 
-      // Authorization: sessions may only query their own tasks
-      if (task.sessionId !== sessionId) {
+      // Authorization: sessions may query their own tasks, plus automation-spawned tasks (sessionId === "")
+      if (task.sessionId !== sessionId && task.sessionId !== "") {
         return error(
           `Task "${taskId}" not found`,
           ToolErrorCodes.TASK_NOT_FOUND,

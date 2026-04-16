@@ -186,6 +186,22 @@ describe("getClaudeTaskStatus — task lookup and authorization", () => {
     expect(result.error).toMatch(/not found/i);
   });
 
+  it("returns automation task (sessionId '') to any session", async () => {
+    const orch = makeOrchestrator({
+      "auto-1": makeTask({
+        id: "auto-1",
+        sessionId: "",
+        status: "done",
+        output: "fix: add semicolon",
+      }),
+    });
+    const tool = createGetClaudeTaskStatusTool(orch, "session-B");
+    const result = parse(await tool.handler({ taskId: "auto-1" }));
+    expect(result.taskId).toBe("auto-1");
+    expect(result.status).toBe("done");
+    expect(result.output).toBe("fix: add semicolon");
+  });
+
   it("returns status for caller's own task", async () => {
     const orch = makeOrchestrator({
       "task-1": makeTask({ status: "done", output: "Hello, world!" }),
@@ -288,6 +304,18 @@ describe("listClaudeTasks — session scoping and filtering", () => {
     const tool = createListClaudeTasksTool(orch, "session-A");
     const result = parse(await tool.handler({}));
     expect(result.count).toBe(2);
+    expect(result.tasks.map((t: any) => t.taskId)).not.toContain("task-3");
+  });
+
+  it("includes automation tasks (sessionId '') for any caller session", async () => {
+    const orch = makeOrchestrator({
+      ...tasks,
+      "auto-1": makeTask({ id: "auto-1", sessionId: "", status: "done" }),
+    });
+    const tool = createListClaudeTasksTool(orch, "session-A");
+    const result = parse(await tool.handler({}));
+    expect(result.tasks.map((t: any) => t.taskId)).toContain("auto-1");
+    // session-B's task still excluded
     expect(result.tasks.map((t: any) => t.taskId)).not.toContain("task-3");
   });
 

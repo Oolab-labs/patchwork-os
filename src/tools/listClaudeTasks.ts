@@ -72,10 +72,10 @@ export function createListClaudeTasksTool(
         }
       }
 
-      // Only return tasks belonging to this session
+      // Return tasks belonging to this session, plus automation-spawned tasks (sessionId === "")
       const tasks = orchestrator
         .list(statusFilter as TaskStatus | undefined)
-        .filter((t) => t.sessionId === sessionId);
+        .filter((t) => t.sessionId === sessionId || t.sessionId === "");
 
       return successStructured({
         count: tasks.length,
