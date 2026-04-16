@@ -1599,6 +1599,25 @@ Options:
 
 const config = parseConfig(process.argv);
 
+// Patchwork: resolve --model flag (optional, non-invasive) — stashes the
+// configured adapter on globalThis for consumers that opt into the adapter
+// layer. Bridge subprocess driver still works when --model is absent.
+try {
+  const { resolveModel } = await import("./patchworkCli.js");
+  const resolved = resolveModel(process.argv);
+  if (resolved) {
+    (globalThis as { __patchworkAdapter?: unknown }).__patchworkAdapter =
+      resolved.adapter;
+    process.stderr.write(
+      `[patchwork] model adapter initialized: ${resolved.adapter.name}\n`,
+    );
+  }
+} catch (err) {
+  process.stderr.write(
+    `[patchwork] adapter init failed: ${err instanceof Error ? err.message : String(err)}\n`,
+  );
+}
+
 // If --analytics flag was passed, persist the preference immediately
 if (config.analyticsEnabled !== null) {
   setAnalyticsPref(config.analyticsEnabled);

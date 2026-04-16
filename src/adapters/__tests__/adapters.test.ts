@@ -109,23 +109,7 @@ describe("ClaudeAdapter", () => {
     ).rejects.toThrow(/API error 429/);
   });
 
-  it("stream emits text + done", async () => {
-    const fetchImpl = mockFetch({
-      content: [{ type: "text", text: "hi" }],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 1, output_tokens: 1 },
-    });
-    const a = new ClaudeAdapter({ apiKey: "k", fetchImpl });
-    const chunks = [];
-    for await (const c of a.stream({
-      systemPrompt: "",
-      messages: [{ role: "user", content: "x" }],
-    })) {
-      chunks.push(c);
-    }
-    expect(chunks[0]).toEqual({ type: "text", delta: "hi" });
-    expect(chunks.at(-1)?.type).toBe("done");
-  });
+  // ClaudeAdapter.stream() is covered by src/adapters/__tests__/sse.test.ts
 
   it("translates tool_result messages back to Anthropic shape", async () => {
     let sentBody: Record<string, unknown> = {};
