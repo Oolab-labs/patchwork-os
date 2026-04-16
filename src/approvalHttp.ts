@@ -50,6 +50,19 @@ export async function routeApprovalRequest(
     return { status: 200, body: deps.queue.list() };
   }
 
+  if (method === "GET" && path === "/cc-permissions") {
+    const rules = (deps.ccLoader ?? loadCcPermissions)(deps.workspace);
+    return {
+      status: 200,
+      body: {
+        allow: rules.allow,
+        ask: rules.ask,
+        deny: rules.deny,
+        workspace: deps.workspace,
+      },
+    };
+  }
+
   if (method === "POST" && path === "/approvals") {
     return await handleApprovalRequest(req, deps);
   }
