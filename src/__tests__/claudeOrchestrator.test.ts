@@ -699,6 +699,29 @@ describe("_buildTasksPayload: triggerSource is included", () => {
     const task = orch.getTask(orch.list()[0]!.id);
     expect(task?.triggerSource).toBeUndefined();
   });
+
+  it("getTask — 8-char prefix matches full UUID", async () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", () => {});
+    const id = orch.enqueue({ prompt: "prefix-test" });
+    await new Promise((r) => setImmediate(r));
+    const prefix = id.slice(0, 8);
+    expect(prefix.length).toBe(8);
+    const task = orch.getTask(prefix);
+    expect(task).toBeDefined();
+    expect(task?.id).toBe(id);
+  });
+
+  it("getTask — exact lookup still works and takes priority over prefix", async () => {
+    const orch = new ClaudeOrchestrator(makeInstantDriver(), "/tmp", () => {});
+    const id = orch.enqueue({ prompt: "exact-test" });
+    await new Promise((r) => setImmediate(r));
+    expect(orch.getTask(id)).toBeDefined();
+    expect(orch.getTask("nonexistent-id-xyz")).toBeUndefined();
+  });
+
+  it("MAX_HISTORY is 500", () => {
+    expect(ClaudeOrchestrator.MAX_HISTORY).toBe(500);
+  });
 });
 
 // ── _drain infinite loop guard ────────────────────────────────────────────────
