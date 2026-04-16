@@ -57,7 +57,7 @@ function makeInput(
 function closeChild(code = 0) {
   mockChild.stdout.emit(
     "data",
-    JSON.stringify({ type: "result", is_error: false, result: "ok" }) + "\n",
+    `${JSON.stringify({ type: "result", is_error: false, result: "ok" })}\n`,
   );
   mockChild.emit("close", code);
 }
