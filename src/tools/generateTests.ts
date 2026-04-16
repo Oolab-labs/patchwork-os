@@ -155,6 +155,7 @@ function generatePytestScaffold(filePath: string, exports: string[]): string {
 }
 
 export function createGenerateTestsTool(workspace: string) {
+  const frameworkCache = new Map<string, string>();
   return {
     schema: {
       name: "generateTests",
@@ -240,7 +241,16 @@ export function createGenerateTestsTool(workspace: string) {
         ? extractPythonExports(content)
         : extractTsJsExports(content);
 
-      const framework = detectFramework(frameworkArg, filePath, workspace);
+      const cacheKey = `${workspace}:${frameworkArg}`;
+      const cached = frameworkCache.get(cacheKey);
+      const framework =
+        cached !== undefined
+          ? cached
+          : (() => {
+              const result = detectFramework(frameworkArg, filePath, workspace);
+              frameworkCache.set(cacheKey, result);
+              return result;
+            })();
 
       const outputFile = outputFileArg ?? deriveOutputFile(filePath, framework);
 

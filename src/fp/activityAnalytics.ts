@@ -93,19 +93,8 @@ export function computeCoOccurrence(
       if (a.tool === b.tool) continue;
       const key =
         a.tool < b.tool ? `${a.tool}|${b.tool}` : `${b.tool}|${a.tool}`;
+      if (counts.size >= CO_OCCURRENCE_MAP_CAP) continue; // skip new pairs at cap
       counts.set(key, (counts.get(key) ?? 0) + 1);
-      // Enforce map cap: evict lowest-count entry when exceeded
-      if (counts.size > CO_OCCURRENCE_MAP_CAP) {
-        let minKey = "";
-        let minCount = Number.POSITIVE_INFINITY;
-        for (const [k, v] of counts) {
-          if (v < minCount) {
-            minCount = v;
-            minKey = k;
-          }
-        }
-        if (minKey) counts.delete(minKey);
-      }
     }
   }
   return [...counts.entries()]

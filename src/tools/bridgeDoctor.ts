@@ -8,6 +8,15 @@ import type { ExtensionClient } from "../extensionClient.js";
 import type { ProbeResults } from "../probe.js";
 import { successStructured } from "./utils.js";
 
+/** Minimal interface to read stats from AutomationHooks without importing the whole class. */
+interface AutomationHooksLike {
+  getStats(): {
+    hooksEnabled: number;
+    lastFiredAt: string | null;
+    skipCountsByHookAndReason?: Record<string, Record<string, number>>;
+  };
+}
+
 const execFileAsync = promisify(execFile);
 
 export type CheckStatus = "ok" | "warn" | "error" | "skip";
@@ -481,6 +490,42 @@ async function checkClaudeDriver(config: Config): Promise<CheckResult> {
   }
 }
 
+function checkSkipReasons(
+  automationHooks: AutomationHooksLike | undefined,
+): CheckResult {
+  if (!automationHooks) {
+    return {
+      name: "Automation Skip Reasons",
+      status: "skip",
+      detail: "Automation not enabled",
+    };
+  }
+  const stats = automationHooks.getStats();
+  const skipMap = stats.skipCountsByHookAndReason ?? {};
+  const warnings: string[] = [];
+  for (const [hook, reasons] of Object.entries(skipMap)) {
+    for (const [reason, count] of Object.entries(reasons)) {
+      if (count > 10) {
+        warnings.push(`${hook} skipped ${count}x (${reason})`);
+      }
+    }
+  }
+  if (warnings.length === 0) {
+    return {
+      name: "Automation Skip Reasons",
+      status: "ok",
+      detail: "No frequent skips",
+    };
+  }
+  return {
+    name: "Automation Skip Reasons",
+    status: "warn",
+    detail: warnings.join("; "),
+    suggestion:
+      "Check your minimatch patterns or cooldownMs settings for the listed hooks",
+  };
+}
+
 // ── Overall health ────────────────────────────────────────────────────────────
 
 function overallHealth(
@@ -501,6 +546,7 @@ export function createBridgeDoctorTool(
   probes: ProbeResults,
   port: number,
   config: Config,
+  automationHooks?: AutomationHooksLike,
 ) {
   return {
     schema: {
@@ -557,6 +603,7 @@ export function createBridgeDoctorTool(
         checkOAuthTokenStore(config),
         checkCircuitBreaker(extensionClient),
         checkClaudeDriver(config),
+        Promise.resolve(checkSkipReasons(automationHooks)),
       ]);
 
       const health = overallHealth(checks);
