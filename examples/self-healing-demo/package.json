@@ -1,0 +1,12 @@
+{
+  "name": "self-healing-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Minimal reproduction of the claude-ide-bridge onDiagnosticsError → runClaudeTask loop.",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

@@ -15,6 +15,8 @@ Works locally, over SSH, in Docker, and on a VPS. Extension is optional — head
 Claude Code ──── bridge ──── VS Code extension ──── your editor state
 ```
 
+> **See it work in 5 minutes:** save a broken file, Claude notices, diagnoses, proposes a fix — no prompt typed. [Self-healing quickstart →](./docs/self-healing-quickstart.md)
+
 ## Quick Start
 
 **Prerequisites:** [Claude Code CLI](https://claude.ai/code), Node.js ≥ 20
