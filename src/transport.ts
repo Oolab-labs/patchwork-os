@@ -2,6 +2,7 @@ import { Ajv, type ValidateFunction } from "ajv";
 import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
 import { ErrorCodes } from "./errors.js";
+import { consumeToken, refillBucket } from "./fp/tokenBucket.js";
 import type { Logger } from "./logger.js";
 import { withSpan } from "./telemetry.js";
 import { BRIDGE_PROTOCOL_VERSION, PACKAGE_VERSION } from "./version.js";
@@ -204,21 +205,18 @@ export class McpTransport {
   /** Refill the token bucket and return whether at least one token is available (does NOT consume). */
   private peekToolRateLimit(): boolean {
     if (this.toolRateLimit <= 0) return true;
-    const now = Date.now();
-    const elapsed = now - this.toolBucket.lastRefill;
-    const refill = (elapsed / 60_000) * this.toolRateLimit;
-    this.toolBucket.tokens = Math.min(
-      this.toolRateLimit,
-      this.toolBucket.tokens + refill,
-    );
-    this.toolBucket.lastRefill = now;
+    const next = refillBucket(this.toolBucket, Date.now(), this.toolRateLimit);
+    this.toolBucket.tokens = next.tokens;
+    this.toolBucket.lastRefill = next.lastRefill;
     return this.toolBucket.tokens >= 1;
   }
 
   /** Consume one token. Call only after peekToolRateLimit() returned true. */
   private consumeToolRateLimitToken(): void {
     if (this.toolRateLimit <= 0) return;
-    this.toolBucket.tokens -= 1;
+    const { nextState } = consumeToken(this.toolBucket);
+    this.toolBucket.tokens = nextState.tokens;
+    this.toolBucket.lastRefill = nextState.lastRefill;
   }
 
   private getValidator(toolName: string): ValidateFunction | null {

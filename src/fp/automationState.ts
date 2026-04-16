@@ -1,0 +1,165 @@
+/**
+ * Pure value type + transition functions for AutomationHooks state.
+ *
+ * The mutable fields of AutomationHooks that govern cooldowns, active-task
+ * tracking, and per-runner test outcomes are extracted here as an immutable
+ * record.  AutomationHooks holds a single `private state: AutomationState`
+ * and delegates the pure logic to these functions.
+ *
+ * All functions are pure (no side-effects, no I/O, no mutation of the input
+ * state).  They return new AutomationState values.
+ */
+
+export interface AutomationState {
+  /** Last trigger time (ms since epoch) per trigger key. */
+  readonly lastTrigger: ReadonlyMap<string, number>;
+  /**
+   * Active task IDs per hook key.
+   * Key: a hook-specific string (e.g. "diagnostics:/path/to/file",
+   * "gitCommit", "save:/path/to/file").
+   * Value: the Claude task ID that was spawned for this key.
+   */
+  readonly activeTasks: ReadonlyMap<string, string>;
+  /**
+   * Previous error counts per file (used by onDiagnosticsError /
+   * onDiagnosticsCleared to detect transitions).
+   */
+  readonly prevDiagnosticErrors: ReadonlyMap<string, number>;
+  /**
+   * Last test outcome per runner (used by onTestPassAfterFailure to detect
+   * fail→pass transitions).
+   */
+  readonly lastTestOutcomeByRunner: ReadonlyMap<string, "pass" | "fail">;
+  /**
+   * Rolling window of task enqueue timestamps (ms since epoch).
+   * Used for maxTasksPerHour rate-limiting.
+   */
+  readonly taskTimestamps: readonly number[];
+}
+
+export const EMPTY_AUTOMATION_STATE: AutomationState = {
+  lastTrigger: new Map(),
+  activeTasks: new Map(),
+  prevDiagnosticErrors: new Map(),
+  lastTestOutcomeByRunner: new Map(),
+  taskTimestamps: [],
+};
+
+// ── Cooldown helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Returns true if `key` is still within its cooldown window.
+ * Pure — does not mutate `state`.
+ */
+export function isOnCooldown(
+  state: AutomationState,
+  key: string,
+  now: number,
+  cooldownMs: number,
+): boolean {
+  const last = state.lastTrigger.get(key);
+  if (last === undefined) return false;
+  return now - last < cooldownMs;
+}
+
+// ── Trigger recording ─────────────────────────────────────────────────────────
+
+/**
+ * Return a new AutomationState where `key` has been marked as triggered at
+ * `now` and the associated `taskId` recorded as the active task for `key`.
+ *
+ * The `taskTimestamps` array is grown by one entry (capped at 10 000 entries
+ * matching the cap in AutomationHooks).
+ */
+export function recordTrigger(
+  state: AutomationState,
+  key: string,
+  taskId: string,
+  now: number,
+): AutomationState {
+  const MAX_TASK_TIMESTAMPS = 10_000;
+  const newLastTrigger = new Map(state.lastTrigger);
+  newLastTrigger.set(key, now);
+
+  const newActiveTasks = new Map(state.activeTasks);
+  newActiveTasks.set(key, taskId);
+
+  const rawTimestamps = [...state.taskTimestamps, now];
+  const newTaskTimestamps =
+    rawTimestamps.length > MAX_TASK_TIMESTAMPS
+      ? rawTimestamps.slice(rawTimestamps.length - MAX_TASK_TIMESTAMPS)
+      : rawTimestamps;
+
+  return {
+    ...state,
+    lastTrigger: newLastTrigger,
+    activeTasks: newActiveTasks,
+    taskTimestamps: newTaskTimestamps,
+  };
+}
+
+// ── Active-task helpers ───────────────────────────────────────────────────────
+
+/**
+ * Returns true if there is currently an active task for `key`.
+ * Pure — does not mutate `state`.
+ */
+export function isTaskActive(state: AutomationState, key: string): boolean {
+  return state.activeTasks.has(key);
+}
+
+/**
+ * Return a new AutomationState where the active task for `key` has been
+ * cleared (e.g. after the task completes or is cancelled).
+ */
+export function clearActiveTask(
+  state: AutomationState,
+  key: string,
+): AutomationState {
+  const newActiveTasks = new Map(state.activeTasks);
+  newActiveTasks.delete(key);
+  return { ...state, activeTasks: newActiveTasks };
+}
+
+// ── Diagnostic error count helpers ────────────────────────────────────────────
+
+/**
+ * Return a new AutomationState with the previous error count for `file`
+ * updated to `count`.
+ */
+export function setPrevDiagnosticErrors(
+  state: AutomationState,
+  file: string,
+  count: number,
+): AutomationState {
+  const newMap = new Map(state.prevDiagnosticErrors);
+  newMap.set(file, count);
+  return { ...state, prevDiagnosticErrors: newMap };
+}
+
+// ── Test-outcome helpers ──────────────────────────────────────────────────────
+
+/**
+ * Return a new AutomationState with the last test outcome for `runner`
+ * updated to `outcome`.
+ */
+export function setLastTestOutcome(
+  state: AutomationState,
+  runner: string,
+  outcome: "pass" | "fail",
+): AutomationState {
+  const newMap = new Map(state.lastTestOutcomeByRunner);
+  newMap.set(runner, outcome);
+  return { ...state, lastTestOutcomeByRunner: newMap };
+}
+
+// ── Rate-limit helper ─────────────────────────────────────────────────────────
+
+/**
+ * Count tasks enqueued within the last hour.
+ * Pure — does not mutate `state`.
+ */
+export function tasksInLastHour(state: AutomationState, now: number): number {
+  const cutoff = now - 3_600_000;
+  return state.taskTimestamps.filter((t) => t > cutoff).length;
+}

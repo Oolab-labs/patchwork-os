@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ExtensionClient } from "../extensionClient.js";
+import { type FileUri, uriToAbsPath } from "../fp/brandedTypes.js";
 import type { ProbeResults } from "../probe.js";
 import type { ToolHandler } from "../transport.js";
 import { biomeLinter } from "./linters/biome.js";
@@ -376,7 +377,11 @@ export function createWatchDiagnosticsTool(
           const diagUri = d.file.startsWith("file://")
             ? d.file
             : toFileUri(d.file);
-          return diagUri === normalizedUri;
+          // normalise both sides to AbsPath so file:// vs plain-path mismatches
+          // are caught without a string-replace
+          const diagAbs = uriToAbsPath(diagUri as FileUri);
+          const normAbs = uriToAbsPath(normalizedUri as FileUri);
+          return diagAbs === normAbs;
         });
       }
 

@@ -209,3 +209,59 @@ describe("getDiagnostics — extension path relatedInformation sanitization", ()
     ).toBeLessThanOrEqual(200);
   });
 });
+
+describe("getDiagnostics — trailing-period dedup normalization", () => {
+  // Biome JSON format: { diagnostics: [{ path: { file }, description, severity, category }] }
+  // The biome linter maps `description` → `message` and always sets line=1, column=1.
+  // So two diagnostics with same file + same message (differing only by period) on the
+  // same position will collide in the dedup key.
+  it("deduplicates two diagnostics differing only by trailing period", async () => {
+    // tsc emits "Cannot find name 'x'." (with period)
+    // extension / pyright may emit "Cannot find name 'x'" (without)
+    const biomeOutput = JSON.stringify({
+      diagnostics: [
+        {
+          path: { file: "/ws/foo.ts" },
+          description: "Cannot find name 'x'.",
+          severity: "error",
+          category: "parse",
+        },
+        {
+          path: { file: "/ws/foo.ts" },
+          description: "Cannot find name 'x'",
+          severity: "error",
+          category: "parse",
+        },
+      ],
+    });
+    mockExecSafe.mockResolvedValue(ok(biomeOutput));
+    const tool = createGetDiagnosticsTool("/ws", probes);
+    const data = parse(await tool.handler({}));
+    // The two messages differ only by trailing period — should be deduped to 1
+    expect(data.diagnostics.length).toBe(1);
+  });
+
+  it("does not dedup diagnostics that differ in message content", async () => {
+    const biomeOutput = JSON.stringify({
+      diagnostics: [
+        {
+          path: { file: "/ws/foo.ts" },
+          description: "Type 'string' is not assignable to type 'number'.",
+          severity: "error",
+          category: "parse",
+        },
+        {
+          path: { file: "/ws/foo.ts" },
+          description: "Type 'boolean' is not assignable to type 'number'.",
+          severity: "error",
+          category: "parse",
+        },
+      ],
+    });
+    mockExecSafe.mockResolvedValue(ok(biomeOutput));
+    const tool = createGetDiagnosticsTool("/ws", probes);
+    const data = parse(await tool.handler({}));
+    // Different messages — should NOT be deduped
+    expect(data.diagnostics.length).toBe(2);
+  });
+});

@@ -2,6 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import type { AbsPath } from "../fp/brandedTypes.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -104,7 +105,7 @@ export function resolveFilePath(
   filePath: string,
   workspace: string,
   opts: { write?: boolean } = {},
-): string {
+): AbsPath {
   if (typeof filePath !== "string") {
     throw new Error("filePath must be a string");
   }
@@ -196,7 +197,7 @@ export function resolveFilePath(
     }
   }
 
-  return resolved;
+  return resolved as AbsPath;
 }
 
 export async function findLineNumber(
