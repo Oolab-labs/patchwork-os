@@ -324,7 +324,9 @@ export function createGitCheckoutTool(
 
       // Validate ref names to prevent git flag injection (e.g. --orphan, -b)
       if (!isValidRef(branch)) {
-        return error(`Invalid branch name: "${branch}"`);
+        return error(
+          `Invalid branch name: must match git ref rules (no spaces, no shell metacharacters)`,
+        );
       }
       if (base !== undefined && !isValidRef(base)) {
         return error(`Invalid base ref: "${base}"`);
@@ -761,7 +763,9 @@ export function createGitPullTool(
         return error(`Invalid remote name: "${remote}"`);
       }
       if (branch !== undefined && !isValidRef(branch)) {
-        return error(`Invalid branch name: "${branch}"`);
+        return error(
+          `Invalid branch name: must match git ref rules (no spaces, no shell metacharacters)`,
+        );
       }
 
       const pullArgs = ["pull"];
@@ -896,7 +900,9 @@ export function createGitPushTool(
         return error(`Invalid remote name: "${remote}"`);
       }
       if (branchArg !== undefined && !isValidRef(branchArg)) {
-        return error(`Invalid branch name: "${branchArg}"`);
+        return error(
+          `Invalid branch name: must match git ref rules (no spaces, no shell metacharacters)`,
+        );
       }
 
       const branch = branchArg ?? (await currentBranch(workspace, signal));

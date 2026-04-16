@@ -64,6 +64,20 @@ describe("truncatePrompt", () => {
     const p = "hello world";
     expect(truncatePrompt(p)).toBe(truncatePrompt(p));
   });
+
+  it("does not split surrogate pairs — result is valid UTF-8", () => {
+    // Each emoji is 4 UTF-8 bytes (2 UTF-16 code units / surrogate pair).
+    // Fill just past the limit so truncation must occur at a multibyte boundary.
+    const emoji = "😀"; // 4 bytes
+    const count = Math.ceil((MAX_POLICY_PROMPT_CHARS + 4) / 4);
+    const result = truncatePrompt(emoji.repeat(count));
+    // Must decode cleanly — no replacement characters.
+    expect(result).not.toContain("\uFFFD");
+    // Result byte length must not exceed the limit + suffix.
+    const suffix = "\n[... truncated to fit 32KB limit ...]";
+    const bodyBytes = Buffer.byteLength(result.replace(suffix, ""), "utf8");
+    expect(bodyBytes).toBeLessThanOrEqual(MAX_POLICY_PROMPT_CHARS);
+  });
 });
 
 describe("buildHookMetadata", () => {
