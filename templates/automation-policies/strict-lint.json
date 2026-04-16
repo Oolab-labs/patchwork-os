@@ -32,8 +32,9 @@
     "prompt": "Commit {{branch}}: {{message}}\nFiles: {{files}}\ngetDiagnostics workspace-wide. Errors → block. Warnings → report. Zero-warning policy."
   },
 
-  "onPostCompact": {
+  "onCompaction": {
     "enabled": true,
+    "phase": "post",
     "cooldownMs": 5000,
     "prompt": "Compacted. getGitStatus + getDiagnostics workspace-wide. Drop articles/filler. Fragments OK. Abbreviate (DB/auth/config/req/res/fn). Stay terse. Branch, error count, warning count ≤5 lines."
   }

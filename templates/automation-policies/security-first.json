@@ -37,8 +37,9 @@
     "prompt": "Type err {{file}}:\n{{diagnostics}}\nSecurity impact: null-deref/injection/auth-bypass risk? Safest fix."
   },
 
-  "onPostCompact": {
+  "onCompaction": {
     "enabled": true,
+    "phase": "post",
     "cooldownMs": 5000,
     "prompt": "Compacted. getGitStatus + getDiagnostics. Drop articles/filler. Fragments OK. Abbreviate (DB/auth/config/req/res/fn). Stay terse. Security-sensitive files modified? ≤8 lines."
   }

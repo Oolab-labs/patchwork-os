@@ -84,8 +84,9 @@
     "cooldownMs": 15000
   },
 
-  "onPostCompact": {
+  "onCompaction": {
     "enabled": true,
+    "phase": "post",
     "prompt": "Context was just compacted. Re-orient: call getProjectInfo for workspace summary, getGitStatus for current changes, and getDiagnostics to check health. Report in ≤10 lines so the session can continue smoothly.",
     "cooldownMs": 60000
   },

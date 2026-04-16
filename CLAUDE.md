@@ -186,8 +186,7 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onDiagnosticsCleared` — errors/warnings drop to zero. Placeholder: `{{file}}`. Cooldown.
   - `onFileSave` — matching files saved. Minimatch glob patterns. Placeholder: `{{file}}`.
   - `onFileChanged` — matching files changed (buffer change, not save). Minimatch glob patterns. Placeholder: `{{file}}`.
-  - `onPreCompact` — fires before Claude Code compacts context. Snapshot state before trimming.
-  - `onPostCompact` — fires after Claude Code compacts context. Re-injects IDE state.
+  - `onCompaction` (v2.43.0+) — unified hook. `phase: "pre"` fires before compaction (snapshot state); `phase: "post"` fires after (re-inject IDE state). Replaces the now-deprecated `onPreCompact` + `onPostCompact` pair; legacy names still work but emit a deprecation warning. Removed no earlier than v2.46 + 30 days.
   - `onInstructionsLoaded` — fires at session start. Injects bridge status summary.
   - `onGitCommit` — fires after successful `gitCommit`. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`.
   - `onGitPull` — fires after successful `gitPull`. Placeholders: `{{remote}}`, `{{branch}}`.

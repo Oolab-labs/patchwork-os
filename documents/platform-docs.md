@@ -548,7 +548,8 @@ When started with `--automation --automation-policy <file>`, the bridge enqueues
 | `onTaskSuccess` | Orchestrator task completes with status `done` | `{{taskId}}`, `{{output}}` |
 | `onPermissionDenied` | Claude Code `PermissionDenied` hook (CC 2.1.89+) | `{{tool}}`, `{{reason}}` |
 | `onCwdChanged` | Claude Code working directory changes (CC 2.1.83+) | `{{cwd}}` |
-| `onPostCompact` | Claude Code compacts conversation context (CC 2.1.76+) | — |
+| `onCompaction` (v2.43.0+) | Claude Code compacts conversation context (CC 2.1.76+). Set `phase: "pre"` or `phase: "post"` | — |
+| `onPreCompact`/`onPostCompact` (deprecated) | Legacy split form of `onCompaction`. Still accepted; emits a deprecation warning at load time. Removed no earlier than v2.46 + 30 days | — |
 | `onInstructionsLoaded` | Session starts or CLAUDE.md reloads (CC 2.1.76+). No cooldown | — |
 | `onGitCommit` (via `when` condition) | Conditional evaluation with `AutomationCondition` | — |
 
