@@ -17,7 +17,7 @@ Claude Code ──── bridge ──── VS Code extension ──── your
 
 > **See it work in 5 minutes:** save a broken file, Claude notices, diagnoses, proposes a fix — no prompt typed. [Self-healing quickstart →](./docs/self-healing-quickstart.md)
 
-[![Self-healing demo — save broken file, Claude fixes it](https://img.shields.io/badge/▶_Watch_demo-60s-blue)](https://github.com/Oolab-labs/claude-ide-bridge/releases/download/v2.42.3/Screen.Recording.2026-04-16.at.15.29.12.mov)
+https://github.com/user-attachments/assets/a81a8d11-2cc3-46f3-88ad-6a905a221a2c
 
 ## Quick Start
 
