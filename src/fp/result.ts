@@ -97,16 +97,3 @@ export function legacyParseArgs<T>(
     return err("invalid_arg", message);
   }
 }
-
-export async function traverse<A, B>(
-  items: A[],
-  f: (a: A, index: number) => Promise<B>,
-  onError?: (a: A, err: unknown, index: number) => B,
-): Promise<B[]> {
-  const settled = await Promise.allSettled(items.map((a, i) => f(a, i)));
-  return settled.map((r, i) => {
-    if (r.status === "fulfilled") return r.value;
-    if (onError) return onError(items[i] as A, r.reason, i);
-    throw r.reason;
-  });
-}
