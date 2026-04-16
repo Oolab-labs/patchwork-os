@@ -42,14 +42,14 @@ The bridge operates in two modes controlled at startup:
 
 | Mode | Flag | Tool count | Description |
 |------|------|-----------|-------------|
-| Slim | _(default)_ | 56 | IDE-exclusive tools only — LSP, debugger, editor state, bridge introspection |
-| Full | `--full` | 137 | All tools including git, GitHub, terminal, file ops, HTTP, orchestration |
+| Full | _(default since v2.43.0)_ | ~140 | All tools including git, GitHub, terminal, file ops, HTTP, orchestration |
+| Slim | `--slim` | ~60 | IDE-exclusive tools only — LSP, debugger, editor state, bridge introspection |
 
-**Slim mode** exposes only tools that Claude cannot replicate via its native Read/Write/Bash capabilities. This keeps the `tools/list` payload small and focused on what the IDE uniquely provides.
+**Full mode** (the default) exposes every workspace operation. Use this when Claude needs to perform git operations, run terminal commands, edit files, or interact with GitHub without falling back to shell commands.
 
-**Full mode** adds 81 additional tools covering every workspace operation. Use full mode when Claude needs to perform git operations, run terminal commands, edit files, or interact with GitHub without falling back to shell commands.
+**Slim mode** (opt-in via `--slim`) exposes only tools Claude cannot replicate via its native Read/Write/Bash capabilities. Use slim mode when you prefer Claude's native file/shell tools or want to minimize the exposed surface in locked-down environments.
 
-The `SLIM_TOOL_NAMES` set in `src/tools/index.ts` is the canonical source of truth for which 56 tools are available in slim mode.
+The `SLIM_TOOL_NAMES` set in `src/tools/index.ts` is the canonical source of truth for which tools remain available in slim mode.
 
 **Slim tool categories:**
 
@@ -62,7 +62,7 @@ The `SLIM_TOOL_NAMES` set in `src/tools/index.ts` is the canonical source of tru
 | Bridge Introspection | 3 |
 | VS Code escape hatch (`executeVSCodeCommand`) | 1 |
 
-**Full-only tool categories (require `--full`):**
+**Full-only tool categories (hidden when `--slim` is passed):**
 
 | Category | Count |
 |----------|-------|
@@ -110,7 +110,7 @@ The fallback activates only when the probe for the required CLI tool succeeded a
 
 ## Tool Reference
 
-**Mode column:** `S` = slim (available by default), `F` = full-only (`--full` required)
+**Mode column:** `S` = slim (retained when `--slim` is passed), `F` = full-only (hidden in slim mode). Full mode is the default.
 
 ---
 
@@ -591,4 +591,4 @@ For use without VS Code — see `documents/headless-quickstart.md` for the full 
 - All editor state tools (open editors, selections, buffer content from memory, decorations).
 - Terminal tools (`createTerminal`, `runInTerminal`, etc.) — these use VS Code shell integration.
 
-**CI pattern:** run the bridge with `--full` and `--headless` (no extension), configure `typescript-language-server` and `ctags` in the Docker image, and use `getToolCapabilities` in the first step to confirm which fallback paths are active. See `documents/headless-quickstart.md` for Docker and GitHub Actions examples.
+**CI pattern:** run the bridge with `--headless` (no extension), configure `typescript-language-server` and `ctags` in the Docker image, and use `getToolCapabilities` in the first step to confirm which fallback paths are active. Full mode is the default; pass `--slim` if you want only IDE-exclusive tools. See `documents/headless-quickstart.md` for Docker and GitHub Actions examples.

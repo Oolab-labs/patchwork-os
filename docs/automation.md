@@ -2,14 +2,14 @@
 
 ## What automation hooks do
 
-Automation hooks let Claude act autonomously on IDE and git events without user input. When a Claude Code lifecycle event fires — a file is saved, a test run completes, a branch is checked out — the bridge evaluates your policy file, and if the matching hook is enabled and its cooldown has elapsed, the bridge spawns a Claude Code subprocess with the configured prompt. The subprocess has full access to bridge tools (`--full` mode), runs to completion, and exits. No user interaction is required at any step.
+Automation hooks let Claude act autonomously on IDE and git events without user input. When a Claude Code lifecycle event fires — a file is saved, a test run completes, a branch is checked out — the bridge evaluates your policy file, and if the matching hook is enabled and its cooldown has elapsed, the bridge spawns a Claude Code subprocess with the configured prompt. The subprocess has full access to bridge tools (full mode is the default since v2.43.0), runs to completion, and exits. No user interaction is required at any step.
 
 ---
 
 ## Prerequisites
 
 - `--automation` — enables hook evaluation in the bridge
-- `--full` — most hooks invoke tools like `runTests`, `gitCommit`, `getDiagnostics` that are only available in full mode
+- Full mode (the default since v2.43.0) — most hooks invoke tools like `runTests`, `gitCommit`, `getDiagnostics` that are hidden in slim mode; do NOT pass `--slim` alongside `--automation`
 - `--claude-driver subprocess` — required to spawn Claude Code subprocesses; without this, hooks are evaluated but never dispatched
 - `--automation-policy <path>` — path to your policy JSON file; if omitted, the bridge looks for `automation-policy.json` in the workspace root
 
@@ -33,7 +33,6 @@ Full command:
 ```bash
 claude-ide-bridge \
   --watch \
-  --full \
   --automation \
   --automation-policy /path/to/automation-policy.json \
   --claude-driver subprocess

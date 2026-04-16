@@ -268,7 +268,7 @@ When the extension is connected, LSP and editor tools become functional. When di
 - These tools still appear in `tools/list` — clients should not hide them
 - The bridge's `getBridgeStatus` tool reports connection state
 
-**Slim mode:** If the bridge started without `--full`, only ~57 tools are registered (all LSP/editor tools, no shell/git/orchestration). Extension connection still enables LSP functionality within that set.
+**Slim mode:** If the bridge started with `--slim`, only ~60 tools are registered (all LSP/editor tools, no shell/git/orchestration). Extension connection still enables LSP functionality within that set. Full mode (the default since v2.43.0) registers ~140 tools.
 
 ---
 
@@ -443,8 +443,8 @@ These appear inside `content[0].text` as a JSON object when `isError: true`. The
 
 | Mode | Flag | Tool count | What's included |
 |---|---|---|---|
-| Slim | (default) | ~57 | All LSP, diagnostics, editor state, debugger, bridge introspection |
-| Full | `--full` | ~145 | Slim + file I/O, shell commands, git, GitHub, orchestration, test runner |
+| Full | _(default since v2.43.0)_ | ~140 | Slim + file I/O, shell commands, git, GitHub, orchestration, test runner |
+| Slim | `--slim` | ~60 | All LSP, diagnostics, editor state, debugger, bridge introspection |
 
 ### 8.2 Slim tool set
 

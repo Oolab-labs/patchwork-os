@@ -55,7 +55,7 @@ Before staging, run `npx biome check --write <files>` on changed files. Fix befo
 
 ## LSP Workflows
 
-All LSP tools available in default slim mode.
+All LSP tools available in both slim and full mode (full is the default since v2.43.0).
 
 **Adding a new tool**
 1. `searchWorkspaceSymbols` — confirm similar tool doesn't exist
@@ -306,7 +306,7 @@ Bridge tool substitution rules in `.claude/rules/bridge-tools.md` (loaded above)
 
 ### Quick reference
 
-> Tools marked **[full]** require `--full` mode (not available in default slim mode). Slim mode exposes only IDE-exclusive tools (LSP, debugger, editor state). Call `getToolCapabilities` to confirm available tools.
+> Tools marked **[full]** are NOT available when the bridge was started with `--slim`. Full mode is the default (since v2.43.0); slim mode opts out to expose only IDE-exclusive tools (LSP, debugger, editor state). Call `getToolCapabilities` to confirm available tools.
 
 | Task | Tool | Mode |
 |---|---|---|
@@ -368,7 +368,7 @@ Bridge tool substitution rules in `.claude/rules/bridge-tools.md` (loaded above)
 
 Terse messages via Claude Desktop Dispatch (phone/Siri) are auto-routed to bridge prompts. Invoke directly by name in any chat. Keep responses under 20 lines for Dispatch.
 
-> Require `--full` mode. Won't work in slim mode.
+> Require full mode (the default). Not available when the bridge was started with `--slim`.
 
 | Phone message | Prompt | Tools called |
 |---|---|---|
