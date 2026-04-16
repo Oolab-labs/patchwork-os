@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import type { CompiledRecipe } from "./compiler.js";
 import { compileRecipeFull } from "./compiler.js";
 import { parseRecipe } from "./parser.js";
@@ -35,9 +36,9 @@ export function installRecipeFromFile(
   opts: InstallOptions,
 ): InstallResult {
   const ext = path.extname(sourcePath).toLowerCase();
-  if (ext !== ".json") {
+  if (ext !== ".json" && ext !== ".yaml" && ext !== ".yml") {
     throw new Error(
-      `Unsupported recipe format '${ext || "<none>"}' for ${sourcePath}. YAML support lands with the 'yaml' dep; use JSON for now.`,
+      `Unsupported recipe format '${ext || "<none>"}' for ${sourcePath}. Expected .json, .yaml, or .yml.`,
     );
   }
 
@@ -47,7 +48,11 @@ export function installRecipeFromFile(
     fs.writeFile ?? ((p: string, c: string) => writeFileSync(p, c));
   const mkdir = fs.mkdir ?? ((p: string) => mkdirSync(p, { recursive: true }));
 
-  const raw = JSON.parse(readFile(sourcePath)) as unknown;
+  const text = readFile(sourcePath);
+  const raw =
+    ext === ".json"
+      ? (JSON.parse(text) as unknown)
+      : (parseYaml(text) as unknown);
   const recipe = parseRecipe(raw);
   const compiled = compileRecipeFull(recipe);
 
