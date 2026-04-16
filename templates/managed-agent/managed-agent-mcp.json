@@ -1,0 +1,102 @@
+{
+  "_note": "MCP server config for attaching claude-ide-bridge to an Anthropic Managed Agent. Paste into platform.claude.com → Settings → MCP Servers. Replace YOUR_BRIDGE_URL and YOUR_TOKEN before use.",
+  "_docs": "Full setup guide: documents/managed-agents.md. VPS setup: deploy/README.md + docs/remote-access.md.",
+
+  "name": "claude-ide-bridge",
+  "description": "Live workspace tools: git, file search, diagnostics, tests, LSP (when VS Code extension connected).",
+
+  "transport": {
+    "_note": "Streamable HTTP transport. Bridge exposes MCP at POST /mcp with Bearer token auth.",
+    "type": "http",
+    "url": "https://YOUR_BRIDGE_URL/mcp",
+    "headers": {
+      "Authorization": "Bearer YOUR_TOKEN"
+    }
+  },
+
+  "_setup": {
+    "step1": "Start bridge on VPS: claude-ide-bridge --bind 0.0.0.0 --full --fixed-token YOUR_TOKEN --watch --workspace /path/to/project",
+    "step2": "Place nginx with TLS in front (see deploy/nginx-claude-bridge.conf.template). Managed Agents requires HTTPS.",
+    "step3": "Replace YOUR_BRIDGE_URL with your domain (e.g. bridge.example.com) and YOUR_TOKEN with the fixed token.",
+    "step4": "Verify: curl -H 'Authorization: Bearer YOUR_TOKEN' https://YOUR_BRIDGE_URL/health",
+    "recommended_flags": "--bind 0.0.0.0 --full --fixed-token <uuid> --watch --vps",
+    "token_tip": "Use --fixed-token to prevent token rotation between agent invocations. Store token in a secrets manager."
+  },
+
+  "_headless_tools": {
+    "note": "These tools work without VS Code extension connected.",
+    "git": [
+      "getGitStatus",
+      "getGitDiff",
+      "getGitLog",
+      "gitAdd",
+      "gitCommit",
+      "gitPush",
+      "gitPull",
+      "gitCheckout",
+      "gitListBranches",
+      "gitBlame"
+    ],
+    "github": [
+      "githubCreatePR",
+      "githubListPRs",
+      "githubViewPR",
+      "githubGetPRDiff",
+      "githubPostPRReview",
+      "githubCreateIssue",
+      "githubListIssues"
+    ],
+    "files": [
+      "getBufferContent",
+      "createFile",
+      "deleteFile",
+      "renameFile",
+      "findFiles",
+      "getFileTree"
+    ],
+    "search": ["searchWorkspace", "searchWorkspaceSymbols"],
+    "shell": ["runCommand", "runInTerminal", "getTerminalOutput"],
+    "tests": ["runTests"],
+    "diagnostics": ["getDiagnostics"],
+    "project": [
+      "getProjectInfo",
+      "getProjectContext",
+      "getDependencyTree",
+      "auditDependencies",
+      "getSecurityAdvisories"
+    ]
+  },
+
+  "_extension_required_tools": {
+    "note": "These tools return isError:true when VS Code extension is not connected. They work when code-server runs on the VPS with the bridge extension installed.",
+    "lsp": [
+      "getHover",
+      "getCallHierarchy",
+      "getChangeImpact",
+      "explainSymbol",
+      "getInlayHints",
+      "signatureHelp",
+      "getTypeHierarchy",
+      "getDocumentSymbols"
+    ],
+    "refactor": [
+      "refactorAnalyze",
+      "refactorPreview",
+      "renameSymbol",
+      "refactorExtractFunction"
+    ],
+    "debugger": [
+      "setDebugBreakpoints",
+      "startDebugging",
+      "evaluateInDebugger",
+      "getDebugState"
+    ],
+    "editor": [
+      "getOpenEditors",
+      "captureScreenshot",
+      "openFile",
+      "formatDocument",
+      "fixAllLintErrors"
+    ]
+  }
+}

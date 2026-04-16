@@ -610,3 +610,118 @@ describe("untrustedBlock — nonce stripping", () => {
     expect(() => untrustedBlock("has-dash", "value", "nonce12345")).toThrow();
   });
 });
+
+// ─── Target 7: mergeAutomationStates ─────────────────────────────────────────
+
+import {
+  EMPTY_AUTOMATION_STATE,
+  mergeAutomationStates,
+  recordDedup,
+  recordTrigger,
+} from "../automationState.js";
+
+const keyArb = fc.stringMatching(/^[a-z][a-z0-9]{0,19}$/);
+const tsArb = fc.integer({ min: 1_000_000, max: 2_000_000_000 });
+
+describe("mergeAutomationStates — PBT", () => {
+  test("idempotent: merge(a, a) = a for lastTrigger keys and timestamps", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.tuple(keyArb, tsArb), { minLength: 0, maxLength: 10 }),
+        (entries) => {
+          let state = EMPTY_AUTOMATION_STATE;
+          for (const [k, ts] of entries) {
+            state = recordTrigger(state, k, "task", ts);
+          }
+          const merged = mergeAutomationStates(state, state);
+          // All keys must survive
+          for (const [k] of entries) {
+            if (!merged.lastTrigger.has(k)) return false;
+          }
+          // Timestamps must not decrease
+          for (const [k, _] of merged.lastTrigger) {
+            const orig = state.lastTrigger.get(k);
+            if (orig !== undefined && merged.lastTrigger.get(k)! < orig) {
+              return false;
+            }
+          }
+          return true;
+        },
+      ),
+      { seed: 42 },
+    );
+  });
+
+  test("commutative: merge(a,b) and merge(b,a) have same lastTrigger keys and max timestamps", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.tuple(keyArb, tsArb), { minLength: 1, maxLength: 8 }),
+        fc.array(fc.tuple(keyArb, tsArb), { minLength: 1, maxLength: 8 }),
+        (entriesA, entriesB) => {
+          let a = EMPTY_AUTOMATION_STATE;
+          for (const [k, ts] of entriesA) a = recordTrigger(a, k, "t", ts);
+          let b = EMPTY_AUTOMATION_STATE;
+          for (const [k, ts] of entriesB) b = recordTrigger(b, k, "t", ts);
+
+          const ab = mergeAutomationStates(a, b);
+          const ba = mergeAutomationStates(b, a);
+
+          // Same key sets
+          const abKeys = [...ab.lastTrigger.keys()].sort().join(",");
+          const baKeys = [...ba.lastTrigger.keys()].sort().join(",");
+          if (abKeys !== baKeys) return false;
+
+          // Same timestamps per key
+          for (const k of ab.lastTrigger.keys()) {
+            if (ab.lastTrigger.get(k) !== ba.lastTrigger.get(k)) return false;
+          }
+          return true;
+        },
+      ),
+      { seed: 42 },
+    );
+  });
+
+  test("merge keeps max timestamp: result[k] >= max(a[k], b[k]) for all shared keys", () => {
+    fc.assert(
+      fc.property(keyArb, tsArb, tsArb, (key, tsA, tsB) => {
+        const a = recordTrigger(EMPTY_AUTOMATION_STATE, key, "t", tsA);
+        const b = recordTrigger(EMPTY_AUTOMATION_STATE, key, "t", tsB);
+        const merged = mergeAutomationStates(a, b);
+        const got = merged.lastTrigger.get(key)!;
+        return got === Math.max(tsA, tsB);
+      }),
+      { seed: 42 },
+    );
+  });
+
+  test("deduplicationWindow max preserved", () => {
+    fc.assert(
+      fc.property(keyArb, tsArb, tsArb, (key, tsA, tsB) => {
+        const a = recordDedup(EMPTY_AUTOMATION_STATE, key, tsA);
+        const b = recordDedup(EMPTY_AUTOMATION_STATE, key, tsB);
+        const merged = mergeAutomationStates(a, b);
+        return merged.deduplicationWindow.get(key) === Math.max(tsA, tsB);
+      }),
+      { seed: 42 },
+    );
+  });
+
+  test("taskTimestamps length = sum of both inputs (no dedup)", () => {
+    fc.assert(
+      fc.property(
+        fc.array(tsArb, { minLength: 0, maxLength: 20 }),
+        fc.array(tsArb, { minLength: 0, maxLength: 20 }),
+        (tsAs, tsBs) => {
+          let a = EMPTY_AUTOMATION_STATE;
+          for (const ts of tsAs) a = recordTrigger(a, "k", "t", ts);
+          let b = EMPTY_AUTOMATION_STATE;
+          for (const ts of tsBs) b = recordTrigger(b, "k", "t", ts);
+          const merged = mergeAutomationStates(a, b);
+          return merged.taskTimestamps.length === tsAs.length + tsBs.length;
+        },
+      ),
+      { seed: 42 },
+    );
+  });
+});
