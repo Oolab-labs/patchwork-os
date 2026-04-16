@@ -674,6 +674,7 @@ export class Server extends EventEmitter<ServerEvents> {
       // Bearer auth already checked above.
       if (
         parsedUrl.pathname === "/approvals" ||
+        parsedUrl.pathname === "/cc-permissions" ||
         /^\/(approve|reject)\/[A-Za-z0-9-]+$/.test(parsedUrl.pathname)
       ) {
         const chunks: Buffer[] = [];

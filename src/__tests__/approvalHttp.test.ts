@@ -126,6 +126,28 @@ describe("routeApprovalRequest", () => {
     expect(res.status).toBe(400);
   });
 
+  it("GET /cc-permissions returns merged rules + workspace", async () => {
+    const res = await routeApprovalRequest(
+      { method: "GET", path: "/cc-permissions" },
+      {
+        queue: new ApprovalQueue(),
+        workspace: "/my/ws",
+        ccLoader: () => ({
+          allow: ["Read"],
+          ask: ["Bash(npm run *)"],
+          deny: ["gitPush"],
+        }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      allow: ["Read"],
+      ask: ["Bash(npm run *)"],
+      deny: ["gitPush"],
+      workspace: "/my/ws",
+    });
+  });
+
   it("unknown route → 404", async () => {
     const res = await routeApprovalRequest(
       { method: "GET", path: "/what" },
