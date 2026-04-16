@@ -32,6 +32,85 @@ const DEFAULT_COOLDOWN_MS = 5_000;
 const DEFAULT_MAX_PER_HOUR = 30;
 const DEFAULT_RETRY_DELAY_MS = 10_000;
 
+/**
+ * Compile result containing both the AutomationProgram and a suggested
+ * settings.json permissions snippet derived from the recipe's declared tools.
+ * Users can merge `suggestedPermissions` into ~/.claude/settings.json's
+ * `permissions.allow` array to pre-approve recipe steps and avoid per-run
+ * dashboard prompts.
+ */
+export interface CompiledRecipe {
+  program: AutomationProgram;
+  suggestedPermissions: {
+    allow: string[];
+    ask: string[];
+    deny: string[];
+  };
+}
+
+/**
+ * Full compile — returns program + suggested CC permission snippet.
+ *
+ * Tool strings in recipe steps are interpreted using CC rule conventions:
+ *   - Already-formatted like `Bash(npm run *)` or `Read(./.env)` pass through
+ *   - Bare MCP tool names (e.g. `read_file`) get wrapped as-is
+ *
+ * Risk tier influences the destination bucket:
+ *   - step.risk === "low"     → allow
+ *   - step.risk === "medium"  → ask
+ *   - step.risk === "high"    → ask (never auto-allow high-risk without user opt-in)
+ *   - no risk declared        → allow (assume the recipe author trusts it)
+ */
+export function compileRecipeFull(recipe: Recipe): CompiledRecipe {
+  return {
+    program: compileRecipe(recipe),
+    suggestedPermissions: derivePermissions(recipe),
+  };
+}
+
+function derivePermissions(
+  recipe: Recipe,
+): CompiledRecipe["suggestedPermissions"] {
+  const allow = new Set<string>();
+  const ask = new Set<string>();
+  const deny = new Set<string>();
+
+  for (const step of recipe.steps) {
+    const rules = toolStringsForStep(step);
+    const bucket = bucketForRisk(step.risk);
+    const target = bucket === "allow" ? allow : bucket === "ask" ? ask : deny;
+    for (const r of rules) target.add(r);
+  }
+
+  return {
+    allow: [...allow].sort(),
+    ask: [...ask].sort(),
+    deny: [...deny].sort(),
+  };
+}
+
+function toolStringsForStep(step: Recipe["steps"][number]): string[] {
+  if (step.agent === true) {
+    return (step.tools ?? []).map(normalizeToolString);
+  }
+  return [normalizeToolString(step.tool)];
+}
+
+function normalizeToolString(raw: string): string {
+  // Already CC rule syntax — pass through.
+  if (raw.includes("(") && raw.endsWith(")")) return raw;
+  // Bare name — leave as plain tool rule (matches all uses).
+  return raw;
+}
+
+function bucketForRisk(
+  risk: Recipe["steps"][number]["risk"],
+): "allow" | "ask" | "deny" {
+  if (risk === "high") return "ask";
+  if (risk === "medium") return "ask";
+  return "allow";
+}
+
 export function compileRecipe(recipe: Recipe): AutomationProgram {
   const { hookType, patterns } = mapTrigger(recipe.trigger, recipe.name);
   const prompt = buildPrompt(recipe);
