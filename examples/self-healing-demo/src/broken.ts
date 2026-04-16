@@ -13,10 +13,10 @@ export function greet(name: string): string {
 }
 
 // Bug 1: total should be a number, but the initializer is a string (TS2322).
-const total: number = 10;
+const total: number = "ten";
 
 // Bug 2: greet() expects a string, but we're passing total which TypeScript
 // sees as 'number' due to the annotation above (TS2345).
-const message = greet(total); // intentional type error
+const message = greet(total);
 
 console.log(message, total);

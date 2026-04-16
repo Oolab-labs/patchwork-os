@@ -110,6 +110,7 @@
     "vitest": "^3.0.0"
   },
   "lint-staged": {
+    "{src,vscode-extension/src,scripts,deploy}/**/*.{ts,js,mjs,cjs,json}": "biome check --no-errors-on-unmatched",
     "*.{ts,js,mjs,cjs,json}": "biome check --no-errors-on-unmatched"
   }
 }
