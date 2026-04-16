@@ -168,8 +168,11 @@
     ]
   },
   "scripts": {
+    "sync-presets": "node scripts/sync-presets.mjs",
+    "prebuild": "npm run sync-presets",
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
+    "pretest": "npm run sync-presets",
     "test": "vitest run",
     "test:watch": "vitest",
     "package": "npx @vscode/vsce package --no-dependencies"
