@@ -19,6 +19,19 @@ import { join } from "node:path";
 
 export type Decision = "allow" | "ask" | "deny";
 
+export type RuleSource = "managed" | "project-local" | "project" | "user";
+
+export interface AttributedRule {
+  pattern: string;
+  source: RuleSource;
+}
+
+export interface AttributedPermissionRules {
+  allow: AttributedRule[];
+  ask: AttributedRule[];
+  deny: AttributedRule[];
+}
+
 export interface PermissionRules {
   allow: string[];
   ask: string[];
@@ -61,6 +74,54 @@ export function loadCcPermissions(
       if (Array.isArray(r.allow)) merged.allow.push(...r.allow);
       if (Array.isArray(r.ask)) merged.ask.push(...r.ask);
       if (Array.isArray(r.deny)) merged.deny.push(...r.deny);
+    } catch {
+      // silently skip — malformed settings shouldn't block the bridge
+    }
+  }
+  return merged;
+}
+
+/**
+ * Like loadCcPermissions but tags each rule with its originating source file
+ * so the dashboard can render per-rule attribution badges.
+ */
+export function loadCcPermissionsAttributed(
+  workspace: string,
+  deps: LoadCcPermissionsDeps = {},
+): AttributedPermissionRules {
+  const read = deps.readFile ?? ((p: string) => readFileSync(p, "utf8"));
+  const ex = deps.exists ?? existsSync;
+
+  const sources: Array<{ path: string; source: RuleSource }> = [
+    ...(deps.managedPath
+      ? [{ path: deps.managedPath, source: "managed" as RuleSource }]
+      : []),
+    {
+      path: join(workspace, ".claude", "settings.local.json"),
+      source: "project-local" as RuleSource,
+    },
+    {
+      path: join(workspace, ".claude", "settings.json"),
+      source: "project" as RuleSource,
+    },
+    {
+      path: join(homedir(), ".claude", "settings.json"),
+      source: "user" as RuleSource,
+    },
+  ];
+
+  const merged: AttributedPermissionRules = { allow: [], ask: [], deny: [] };
+  for (const { path: p, source } of sources) {
+    if (!ex(p)) continue;
+    try {
+      const parsed = JSON.parse(read(p)) as SettingsFile;
+      const r = parsed.permissions ?? {};
+      if (Array.isArray(r.allow))
+        merged.allow.push(...r.allow.map((pattern) => ({ pattern, source })));
+      if (Array.isArray(r.ask))
+        merged.ask.push(...r.ask.map((pattern) => ({ pattern, source })));
+      if (Array.isArray(r.deny))
+        merged.deny.push(...r.deny.map((pattern) => ({ pattern, source })));
     } catch {
       // silently skip — malformed settings shouldn't block the bridge
     }
