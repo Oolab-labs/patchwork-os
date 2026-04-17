@@ -1,0 +1,165 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parseSchedule, RecipeScheduler } from "../scheduler.js";
+
+describe("parseSchedule", () => {
+  it.each([
+    ["@every 30s", 30_000],
+    ["@every 5m", 5 * 60_000],
+    ["@every 2h", 2 * 60 * 60_000],
+    ["@every 250ms", 250],
+    ["  @every 1m  ", 60_000],
+  ])("parses %s → %d ms", (input, expected) => {
+    expect(parseSchedule(input)).toBe(expected);
+  });
+
+  it.each([
+    "",
+    "*/5 * * * *", // standard cron not yet supported
+    "@every 0s",
+    "@every -1m",
+    "every 5m",
+    "@every 5",
+    "@every 5d",
+  ])("rejects unsupported schedule %s", (input) => {
+    expect(parseSchedule(input)).toBeNull();
+  });
+});
+
+describe("RecipeScheduler", () => {
+  let tmp: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "patchwork-sched-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  function writeRecipe(
+    name: string,
+    trigger: { type: string; schedule?: string },
+    opts: { prompt?: string } = {},
+  ) {
+    const body = {
+      name,
+      version: "1",
+      description: `Test recipe ${name}`,
+      trigger,
+      steps: [
+        {
+          id: "main",
+          agent: true,
+          prompt: opts.prompt ?? `run ${name}`,
+        },
+      ],
+    };
+    writeFileSync(
+      path.join(tmp, `${name}.json`),
+      JSON.stringify(body, null, 2),
+    );
+  }
+
+  it("schedules only cron-triggered recipes", () => {
+    writeRecipe("every-minute", { type: "cron", schedule: "@every 1m" });
+    writeRecipe("manual-only", { type: "manual" });
+    const enqueued: string[] = [];
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: ({ triggerSource }) => {
+        enqueued.push(triggerSource);
+        return "tid";
+      },
+    });
+    const scheduled = scheduler.start();
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]!.name).toBe("every-minute");
+    expect(scheduled[0]!.intervalMs).toBe(60_000);
+    scheduler.stop();
+  });
+
+  it("fires enqueue on each interval tick (fake timers)", () => {
+    writeRecipe("every-second", { type: "cron", schedule: "@every 1s" });
+    const enqueued: Array<{ prompt: string; triggerSource: string }> = [];
+    const fakeTimer: { cb: () => void; ms: number } = { cb: () => {}, ms: 0 };
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: (opts) => {
+        enqueued.push({
+          prompt: opts.prompt,
+          triggerSource: opts.triggerSource,
+        });
+        return "tid";
+      },
+      setInterval: ((cb: () => void, ms: number) => {
+        fakeTimer.cb = cb;
+        fakeTimer.ms = ms;
+        return { ref: () => {}, unref: () => {} } as unknown as NodeJS.Timeout;
+      }) as unknown as typeof setInterval,
+      clearInterval: (() => {}) as unknown as typeof clearInterval,
+    });
+    scheduler.start();
+    expect(fakeTimer.ms).toBe(1000);
+    expect(enqueued).toHaveLength(0);
+
+    fakeTimer.cb();
+    fakeTimer.cb();
+    expect(enqueued).toHaveLength(2);
+    expect(enqueued[0]!.triggerSource).toBe("cron:every-second");
+    expect(enqueued[0]!.prompt).toContain("every-second");
+    expect(enqueued[0]!.prompt).toContain("RECIPE DONE");
+  });
+
+  it("skips cron recipes with an unsupported schedule string", () => {
+    writeRecipe("bad", { type: "cron", schedule: "*/5 * * * *" });
+    writeRecipe("good", { type: "cron", schedule: "@every 10m" });
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+    });
+    const scheduled = scheduler.start();
+    expect(scheduled.map((s) => s.name).sort()).toEqual(["good"]);
+  });
+
+  it("stop() clears all timers and list() returns empty", () => {
+    writeRecipe("a", { type: "cron", schedule: "@every 1m" });
+    writeRecipe("b", { type: "cron", schedule: "@every 2m" });
+    let cleared = 0;
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+      setInterval: (() =>
+        ({}) as unknown as NodeJS.Timeout) as unknown as typeof setInterval,
+      clearInterval: (() => {
+        cleared++;
+      }) as unknown as typeof clearInterval,
+    });
+    expect(scheduler.start()).toHaveLength(2);
+    scheduler.stop();
+    expect(cleared).toBe(2);
+    expect(scheduler.list()).toHaveLength(0);
+  });
+
+  it("tolerates missing recipes directory", () => {
+    const scheduler = new RecipeScheduler({
+      recipesDir: path.join(tmp, "does-not-exist"),
+      enqueue: () => "tid",
+    });
+    expect(scheduler.start()).toEqual([]);
+  });
+
+  it("ignores malformed recipe files", () => {
+    mkdirSync(tmp, { recursive: true });
+    writeFileSync(path.join(tmp, "broken.json"), "{ not json");
+    writeRecipe("ok", { type: "cron", schedule: "@every 30s" });
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+    });
+    const scheduled = scheduler.start();
+    expect(scheduled.map((s) => s.name)).toEqual(["ok"]);
+  });
+});

@@ -25,6 +25,7 @@ import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
+import { RecipeScheduler } from "./recipes/scheduler.js";
 import { listInstalledRecipes, loadRecipePrompt } from "./recipesHttp.js";
 import { classifyTool } from "./riskTier.js";
 import { Server } from "./server.js";
@@ -126,6 +127,7 @@ export class Bridge {
   private pluginTools: LoadedPluginTool[] = [];
   private pluginWatcher: PluginWatcher | null = null;
   private automationHooks: AutomationHooks | undefined = undefined;
+  private recipeScheduler: RecipeScheduler | null = null;
   private httpMcpHandler: StreamableHttpHandler | null = null;
   private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
@@ -875,6 +877,19 @@ export class Bridge {
           },
         );
         this.logger.info(`[bridge] Claude driver: ${driver.name}`);
+        // Patchwork: start cron-trigger scheduler once the orchestrator exists.
+        const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+        this.recipeScheduler = new RecipeScheduler({
+          recipesDir,
+          enqueue: (opts) => this.orchestrator!.enqueue(opts),
+          logger: this.logger,
+        });
+        const scheduled = this.recipeScheduler.start();
+        if (scheduled.length > 0) {
+          this.logger.info(
+            `[patchwork] scheduled ${scheduled.length} cron recipe${scheduled.length === 1 ? "" : "s"}`,
+          );
+        }
       }
     }
 
@@ -1481,6 +1496,8 @@ export class Bridge {
     this.logger.info("Shutting down...");
     this._stopPeriodicSnapshots();
     this.automationHooks?.destroy();
+    this.recipeScheduler?.stop();
+    this.recipeScheduler = null;
     this.pluginWatcher?.stop();
     this.pluginWatcher = null;
     this.httpMcpHandler?.close();
