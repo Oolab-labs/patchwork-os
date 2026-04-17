@@ -1,24 +1,29 @@
 "use client";
 import { useEffect, useState } from "react";
 
-interface Settings {
-  port?: number;
-  workspace?: string;
-  extensionConnected?: boolean;
-  slim?: boolean;
-  approvalGate?: string;
-  protocolVersion?: string;
-  packageVersion?: string;
+interface StatusResponse {
+  uptimeMs?: number;
+  claudeCode?: boolean;
+  activeSessions?: number;
+  extension?: boolean;
+  patchwork?: {
+    port?: number;
+    workspace?: string;
+    approvalGate?: string;
+    fullMode?: boolean;
+    claudeDriver?: string;
+    automationEnabled?: boolean;
+  };
   [k: string]: unknown;
 }
 
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<StatusResponse | null>(null);
   const [err, setErr] = useState<string>();
   const [unsupported, setUnsupported] = useState(false);
 
   useEffect(() => {
-    (async () => {
+    const tick = async () => {
       try {
         const res = await fetch("/api/bridge/status");
         if (res.status === 404) {
@@ -26,11 +31,15 @@ export default function SettingsPage() {
           return;
         }
         if (!res.ok) throw new Error(`/status ${res.status}`);
-        setSettings((await res.json()) as Settings);
+        setSettings((await res.json()) as StatusResponse);
+        setErr(undefined);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
-    })();
+    };
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
   }, []);
 
   return (
@@ -64,26 +73,49 @@ export default function SettingsPage() {
           <div className="card-head">
             <h2>Bridge</h2>
             <span
-              className={`pill ${settings.extensionConnected ? "ok" : "warn"}`}
+              className={`pill ${settings.extension ? "ok" : "warn"}`}
             >
-              extension {settings.extensionConnected ? "connected" : "offline"}
+              extension {settings.extension ? "connected" : "offline"}
             </span>
           </div>
-          <Row label="Port" value={settings.port?.toString() ?? "—"} mono />
-          <Row label="Workspace" value={settings.workspace ?? "—"} mono />
           <Row
-            label="Approval gate"
-            value={settings.approvalGate ?? "default"}
-          />
-          <Row label="Mode" value={settings.slim ? "slim" : "full"} />
-          <Row
-            label="Protocol version"
-            value={settings.protocolVersion ?? "—"}
+            label="Port"
+            value={settings.patchwork?.port?.toString() ?? "—"}
             mono
           />
           <Row
-            label="Package version"
-            value={settings.packageVersion ?? "—"}
+            label="Workspace"
+            value={settings.patchwork?.workspace ?? "—"}
+            mono
+          />
+          <Row
+            label="Approval gate"
+            value={settings.patchwork?.approvalGate ?? "off"}
+          />
+          <Row
+            label="Mode"
+            value={settings.patchwork?.fullMode === false ? "slim" : "full"}
+          />
+          <Row
+            label="Claude driver"
+            value={settings.patchwork?.claudeDriver ?? "none"}
+          />
+          <Row
+            label="Automation"
+            value={settings.patchwork?.automationEnabled ? "enabled" : "off"}
+          />
+          <Row
+            label="Active Claude sessions"
+            value={(settings.activeSessions ?? 0).toString()}
+            mono
+          />
+          <Row
+            label="Uptime"
+            value={
+              settings.uptimeMs != null
+                ? `${Math.floor(settings.uptimeMs / 1000)}s`
+                : "—"
+            }
             mono
           />
         </div>

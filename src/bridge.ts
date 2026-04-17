@@ -25,6 +25,7 @@ import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
+import { listInstalledRecipes, loadRecipePrompt } from "./recipesHttp.js";
 import { classifyTool } from "./riskTier.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
@@ -1059,6 +1060,42 @@ export class Bridge {
         timeoutMs: t.timeoutMs,
       })),
     });
+    this.server.recipesFn = () => {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      return listInstalledRecipes(recipesDir) as unknown as Record<
+        string,
+        unknown
+      >;
+    };
+    this.server.runRecipeFn = async (name: string) => {
+      if (!this.orchestrator) {
+        return {
+          ok: false,
+          error:
+            "Orchestrator unavailable — start bridge with --claude-driver subprocess",
+        };
+      }
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const loaded = loadRecipePrompt(recipesDir, name);
+      if (!loaded) {
+        return {
+          ok: false,
+          error: `Recipe "${name}" not found in ${recipesDir}`,
+        };
+      }
+      try {
+        const taskId = this.orchestrator.enqueue({
+          prompt: loaded.prompt,
+          triggerSource: `recipe:${name}`,
+        });
+        return { ok: true, taskId };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    };
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
       const anySession = [...this.sessions.values()][0];
@@ -1095,6 +1132,14 @@ export class Bridge {
         extension: this.extensionClient.isConnected(),
         extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
         timeline: this.activityLog.queryTimeline({ last: 50 }),
+        patchwork: {
+          workspace: this.config.workspace,
+          approvalGate: this.config.approvalGate,
+          fullMode: this.config.fullMode,
+          claudeDriver: this.config.claudeDriver,
+          automationEnabled: this.config.automationEnabled,
+          port: this.port,
+        },
       };
     };
 
