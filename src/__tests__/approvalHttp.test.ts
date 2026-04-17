@@ -73,6 +73,39 @@ describe("routeApprovalRequest", () => {
     expect(res.body).toMatchObject({ decision: "allow", reason: "approved" });
   });
 
+  it("POST /approvals in dontAsk mode → auto-denies unmatched tools", async () => {
+    const queue = new ApprovalQueue();
+    const res = await routeApprovalRequest(
+      {
+        method: "POST",
+        path: "/approvals",
+        body: { toolName: "sendHttpRequest", permissionMode: "dontAsk" },
+      },
+      { queue, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(res.body).toMatchObject({
+      decision: "deny",
+      reason: "dontAsk_mode",
+    });
+    expect(queue.size()).toBe(0);
+  });
+
+  it("POST /approvals in dontAsk still honors cc allow rule", async () => {
+    const queue = new ApprovalQueue();
+    const res = await routeApprovalRequest(
+      {
+        method: "POST",
+        path: "/approvals",
+        body: { toolName: "Read", permissionMode: "dontAsk" },
+      },
+      { queue, workspace: "/tmp", ccLoader: allowRules("Read") },
+    );
+    expect(res.body).toMatchObject({
+      decision: "allow",
+      reason: "cc_allow_rule",
+    });
+  });
+
   it("POST /approve/:id resolves and returns allow", async () => {
     const queue = new ApprovalQueue();
     const { callId } = queue.request({
