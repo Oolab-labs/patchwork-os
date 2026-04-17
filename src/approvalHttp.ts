@@ -2,6 +2,16 @@ import type { ApprovalQueue } from "./approvalQueue.js";
 import { evaluateRules, loadCcPermissions } from "./ccPermissions.js";
 import { classifyTool } from "./riskTier.js";
 
+// Tools CC allows in plan mode (read-only — no filesystem or network writes).
+const PLAN_MODE_READ_TOOLS = new Set([
+  "Read",
+  "Glob",
+  "Grep",
+  "WebFetch",
+  "WebSearch",
+  "LS",
+]);
+
 /**
  * HTTP route handlers for the Patchwork approval surface. Pure functions —
  * bridge HTTP server (src/transport.ts) mounts them in a follow-up PR; this
@@ -26,7 +36,11 @@ import { classifyTool } from "./riskTier.js";
 export interface ApprovalHttpDeps {
   queue: ApprovalQueue;
   workspace: string;
+  /** Absolute path to a managed settings file (admin-controlled, highest precedence). */
+  managedSettingsPath?: string;
   ccLoader?: typeof loadCcPermissions;
+  /** Optional hook — called after every approval decision for audit/activity logging. */
+  onDecision?: (event: string, meta: Record<string, unknown>) => void;
 }
 
 export interface HttpRequest {
@@ -51,7 +65,9 @@ export async function routeApprovalRequest(
   }
 
   if (method === "GET" && path === "/cc-permissions") {
-    const rules = (deps.ccLoader ?? loadCcPermissions)(deps.workspace);
+    const rules = (deps.ccLoader ?? loadCcPermissions)(deps.workspace, {
+      managedPath: deps.managedSettingsPath,
+    });
     return {
       status: 200,
       body: {
@@ -103,21 +119,81 @@ async function handleApprovalRequest(
       ? (body.params as Record<string, unknown>)
       : {};
   const summary = typeof body.summary === "string" ? body.summary : undefined;
+  const permissionMode =
+    typeof body.permissionMode === "string" ? body.permissionMode : undefined;
+  const sessionId =
+    typeof body.sessionId === "string" ? body.sessionId : undefined;
+
+  const emit = (decision: string, reason: string) =>
+    deps.onDecision?.("approval_decision", {
+      toolName,
+      specifier,
+      decision,
+      reason,
+      permissionMode,
+      sessionId,
+    });
 
   if (!toolName) {
     return { status: 400, body: { error: "toolName required" } };
   }
 
   // CC settings.json precedence
-  const rules = (deps.ccLoader ?? loadCcPermissions)(deps.workspace);
+  const rules = (deps.ccLoader ?? loadCcPermissions)(deps.workspace, {
+    managedPath: deps.managedSettingsPath,
+  });
   const decision = evaluateRules(toolName, specifier, rules);
-  if (decision === "deny")
+  if (decision === "deny") {
+    emit("deny", "cc_deny_rule");
     return { status: 200, body: { decision: "deny", reason: "cc_deny_rule" } };
-  if (decision === "allow")
+  }
+  if (decision === "allow") {
+    emit("allow", "cc_allow_rule");
     return {
       status: 200,
       body: { decision: "allow", reason: "cc_allow_rule" },
     };
+  }
+
+  // Per the permission-modes doc, `dontAsk` is non-interactive: `ask` rules
+  // and unmatched tools must auto-deny rather than queue for a dashboard
+  // human. Honor that so we don't hang CC on a prompt it will never get.
+  if (permissionMode === "dontAsk") {
+    emit("deny", "dontAsk_mode");
+    return {
+      status: 200,
+      body: { decision: "deny", reason: "dontAsk_mode" },
+    };
+  }
+
+  // `auto` mode: CC's classifier owns escalation decisions autonomously.
+  // Queuing for a human dashboard would block indefinitely — allow through.
+  if (permissionMode === "auto") {
+    emit("allow", "auto_mode");
+    return {
+      status: 200,
+      body: { decision: "allow", reason: "auto_mode" },
+    };
+  }
+
+  // `plan` mode: CC blocks all write operations at its own layer.
+  // Read-only tools → allow (CC won't block them anyway).
+  // Write/exec tools → deny without queuing (CC would reject the write even
+  // if we approved it, so queuing for a human is pointless churn).
+  if (permissionMode === "plan") {
+    if (PLAN_MODE_READ_TOOLS.has(toolName)) {
+      emit("allow", "plan_mode_read");
+      return {
+        status: 200,
+        body: { decision: "allow", reason: "plan_mode_read" },
+      };
+    }
+    emit("deny", "plan_mode_write");
+    return {
+      status: 200,
+      body: { decision: "deny", reason: "plan_mode_write" },
+    };
+  }
 
   // Fall through to dashboard approval
   const tier = classifyTool(toolName);
@@ -126,8 +202,10 @@ async function handleApprovalRequest(
     params,
     tier,
     summary,
+    sessionId,
   });
   const outcome = await promise;
+  emit(outcome === "approved" ? "allow" : "deny", outcome);
   return {
     status: 200,
     body: {

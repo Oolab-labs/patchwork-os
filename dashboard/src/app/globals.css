@@ -38,10 +38,11 @@
   --info-soft: #60a5fa22;
 
   /* type */
-  --font-sans: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto,
-    Inter, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas,
-    monospace;
+  --font-sans:
+    ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, Inter,
+    sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
   /* spacing (4px base) */
   --s-1: 4px;
@@ -337,7 +338,9 @@ button {
   padding: var(--s-5);
   display: block;
   color: inherit;
-  transition: border-color 120ms, transform 120ms;
+  transition:
+    border-color 120ms,
+    transform 120ms;
 }
 .stat-card:hover {
   border-color: var(--border-strong);
@@ -380,7 +383,9 @@ button {
   background: var(--bg-2);
   color: var(--fg-0);
   cursor: pointer;
-  transition: background 120ms, border-color 120ms;
+  transition:
+    background 120ms,
+    border-color 120ms;
 }
 .btn:hover {
   background: var(--bg-3);
@@ -551,25 +556,59 @@ button {
   font-size: 13px;
   margin-bottom: var(--s-3);
 }
-.approval-params {
+.approval-primary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin: var(--s-3) 0;
+  padding: var(--s-2) var(--s-3);
+  background: var(--bg-0);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--r-2) var(--r-2) 0;
+}
+.approval-primary-label {
+  font-size: 11px;
+  color: var(--fg-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.approval-primary-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--fg-0);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+.approval-params-wrap {
   margin: var(--s-3) 0;
 }
-.approval-params summary {
+.approval-params-toggle {
+  background: none;
+  border: none;
+  padding: 0;
   cursor: pointer;
   color: var(--fg-2);
   font-size: 12px;
-  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
 }
-.approval-params pre {
+.approval-params-toggle:hover {
+  color: var(--fg-1);
+}
+.approval-params-json {
   margin-top: var(--s-2);
   background: var(--bg-0);
   border: 1px solid var(--border-subtle);
   padding: var(--s-3);
   border-radius: var(--r-2);
   font-size: 12px;
-  max-height: 220px;
+  max-height: 300px;
   overflow: auto;
   color: var(--fg-1);
+  tab-size: 2;
 }
 .approval-actions {
   display: flex;

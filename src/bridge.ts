@@ -1105,6 +1105,10 @@ export class Bridge {
         timeoutMs: t.timeoutMs,
       })),
     });
+    this.server.managedSettingsPath =
+      this.config.managedSettingsPath ?? undefined;
+    this.server.onApprovalDecision = (event, meta) =>
+      this.activityLog.recordEvent(event, meta);
     this.server.recipesFn = () => {
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
       return listInstalledRecipes(recipesDir) as unknown as Record<

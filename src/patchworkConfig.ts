@@ -20,6 +20,8 @@ export interface PatchworkConfig {
     pushNotifications: boolean;
   };
   recipesDir?: string;
+  /** Absolute path to a managed settings file (admin-controlled, highest rule precedence). */
+  managedSettingsPath?: string;
 }
 
 const DEFAULTS: PatchworkConfig = {
