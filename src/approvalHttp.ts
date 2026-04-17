@@ -103,6 +103,8 @@ async function handleApprovalRequest(
       ? (body.params as Record<string, unknown>)
       : {};
   const summary = typeof body.summary === "string" ? body.summary : undefined;
+  const permissionMode =
+    typeof body.permissionMode === "string" ? body.permissionMode : undefined;
 
   if (!toolName) {
     return { status: 400, body: { error: "toolName required" } };
@@ -118,6 +120,16 @@ async function handleApprovalRequest(
       status: 200,
       body: { decision: "allow", reason: "cc_allow_rule" },
     };
+
+  // Per the permission-modes doc, `dontAsk` is non-interactive: `ask` rules
+  // and unmatched tools must auto-deny rather than queue for a dashboard
+  // human. Honor that so we don't hang CC on a prompt it will never get.
+  if (permissionMode === "dontAsk") {
+    return {
+      status: 200,
+      body: { decision: "deny", reason: "dontAsk_mode" },
+    };
+  }
 
   // Fall through to dashboard approval
   const tier = classifyTool(toolName);
