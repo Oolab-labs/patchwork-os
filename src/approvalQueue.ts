@@ -13,6 +13,12 @@ import type { RiskTier } from "./riskTier.js";
  *  - TTL prevents zombie entries if the dashboard never responds
  */
 
+export interface RiskSignal {
+  kind: "destructive_flag" | "domain_reputation" | "path_escape" | "chaining";
+  label: string;
+  severity: "low" | "medium" | "high";
+}
+
 export interface PendingApproval {
   callId: string;
   toolName: string;
@@ -21,6 +27,7 @@ export interface PendingApproval {
   requestedAt: number;
   sessionId?: string;
   summary?: string;
+  riskSignals?: RiskSignal[];
 }
 
 export type ApprovalDecision = "approved" | "rejected" | "expired";
@@ -83,6 +90,7 @@ export class ApprovalQueue {
       requestedAt: e.requestedAt,
       sessionId: e.sessionId,
       summary: e.summary,
+      riskSignals: e.riskSignals,
     }));
   }
 
