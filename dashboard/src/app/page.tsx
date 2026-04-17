@@ -1,7 +1,18 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { StatCard } from "@/components/StatCard";
 import { fmtDuration } from "@/components/time";
+import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+
+interface BridgeHealth {
+  status: string;
+  uptimeMs: number;
+  connections: number;
+  extensionConnected: boolean;
+  extensionVersion: string;
+  activeSessions: number;
+}
 
 interface Overview {
   pendingApprovals: number;
@@ -24,9 +35,15 @@ export default function HomePage() {
     let alive = true;
     const tick = async () => {
       const [approvals, tasks, metrics] = await Promise.all([
-        fetch("/api/bridge/approvals").then((r) => (r.ok ? r.json() : [])).catch(() => []),
-        fetch("/api/bridge/tasks").then((r) => (r.ok ? r.json() : { tasks: [] })).catch(() => ({ tasks: [] })),
-        fetch("/api/bridge/metrics").then((r) => (r.ok ? r.text() : "")).catch(() => ""),
+        fetch("/api/bridge/approvals")
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => []),
+        fetch("/api/bridge/tasks")
+          .then((r) => (r.ok ? r.json() : { tasks: [] }))
+          .catch(() => ({ tasks: [] })),
+        fetch("/api/bridge/metrics")
+          .then((r) => (r.ok ? r.text() : ""))
+          .catch(() => ""),
       ]);
       if (!alive) return;
       const metricsText = metrics as string;
@@ -35,7 +52,8 @@ export default function HomePage() {
       setData({
         pendingApprovals: Array.isArray(approvals) ? approvals.length : 0,
         runningTasks: (tasks.tasks ?? []).filter(
-          (t: { status: string }) => t.status === "running" || t.status === "pending",
+          (t: { status: string }) =>
+            t.status === "running" || t.status === "pending",
         ).length,
         recentActivity: toolCalls,
         uptimeMs: uptime,
@@ -49,6 +67,12 @@ export default function HomePage() {
       clearInterval(id);
     };
   }, []);
+
+  const {
+    data: health,
+    error: healthError,
+    loading: healthLoading,
+  } = useBridgeFetch<BridgeHealth>("/api/bridge/health", { intervalMs: 5000 });
 
   return (
     <section>
@@ -88,6 +112,54 @@ export default function HomePage() {
         </Link>
       </div>
 
+      <div className="page-head" style={{ marginTop: "var(--s-4)" }}>
+        <div>
+          <h2>Bridge Status</h2>
+        </div>
+      </div>
+
+      {!healthLoading && healthError ? (
+        <p
+          style={{
+            color: "var(--fg-3)",
+            fontSize: 13,
+            marginBottom: "var(--s-8)",
+          }}
+        >
+          Bridge offline
+        </p>
+      ) : !healthLoading && health ? (
+        <div className="stat-grid">
+          <StatCard
+            label="Uptime"
+            value={fmtDuration(health.uptimeMs)}
+            foot="Bridge uptime"
+          />
+          <StatCard
+            label="Sessions"
+            value={health.activeSessions}
+            foot="Active Claude Code sessions"
+          />
+          <StatCard
+            label="Extension"
+            value={
+              <span
+                className={`pill ${health.extensionConnected ? "ok" : "err"}`}
+              >
+                <span className="pill-dot" />
+                {health.extensionConnected ? "Connected" : "Disconnected"}
+              </span>
+            }
+            foot={health.extensionVersion ?? "—"}
+          />
+          <StatCard
+            label="Connections"
+            value={health.connections}
+            foot="WebSocket clients"
+          />
+        </div>
+      ) : null}
+
       <div className="card">
         <div className="card-head">
           <h2>Quick actions</h2>
@@ -114,7 +186,9 @@ function parseToolCallTotal(text: string): number {
   let total = 0;
   for (const line of text.split("\n")) {
     if (!line || line.startsWith("#")) continue;
-    const m = line.match(/^bridge_tool_calls_total(?:\{[^}]*\})?\s+(\d+(?:\.\d+)?)/);
+    const m = line.match(
+      /^bridge_tool_calls_total(?:\{[^}]*\})?\s+(\d+(?:\.\d+)?)/,
+    );
     if (m) total += Number.parseFloat(m[1]);
   }
   return Math.round(total);

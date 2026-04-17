@@ -650,6 +650,7 @@ export class StreamableHttpHandler {
           params,
           tier,
           sessionId: sessionId ?? undefined,
+          riskSignals: [],
         });
         return promise;
       });

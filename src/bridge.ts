@@ -31,6 +31,7 @@ import {
   listInstalledRecipes,
   loadRecipePrompt,
   renderWebhookPrompt,
+  saveRecipe,
 } from "./recipesHttp.js";
 import { classifyTool } from "./riskTier.js";
 import { RecipeRunLog } from "./runLog.js";
@@ -274,20 +275,22 @@ export class Bridge {
       transport.sessionId = sessionId;
       transport.setActivityLog(this.activityLog);
       transport.setToolRateLimit(this.config.toolRateLimit);
-      if (this.config.approvalGate !== "off") {
-        const gateAll = this.config.approvalGate === "all";
+      if (this.server.approvalGate !== "off") {
         this.logger.info(
-          `[patchwork] approval gate active: ${this.config.approvalGate} tier(s) require dashboard approval`,
+          `[patchwork] approval gate active: ${this.server.approvalGate} tier(s) require dashboard approval`,
         );
         transport.setApprovalGate(async ({ toolName, params, sessionId }) => {
           const tier = classifyTool(toolName);
-          if (!gateAll && tier !== "high") return "bypass";
+          if (this.server.approvalGate === "off") return "bypass";
+          if (this.server.approvalGate !== "all" && tier !== "high")
+            return "bypass";
           const queue = getApprovalQueue();
           const { promise } = queue.request({
             toolName,
             params,
             tier,
             sessionId: sessionId ?? undefined,
+            riskSignals: [],
           });
           return promise;
         });
@@ -1107,6 +1110,9 @@ export class Bridge {
     });
     this.server.managedSettingsPath =
       this.config.managedSettingsPath ?? undefined;
+    this.server.approvalGate = this.config.approvalGate ?? "off";
+    this.server.approvalWebhookUrl =
+      this.config.approvalWebhookUrl ?? undefined;
     this.server.onApprovalDecision = (event, meta) =>
       this.activityLog.recordEvent(event, meta);
     this.server.recipesFn = () => {
@@ -1115,6 +1121,10 @@ export class Bridge {
         string,
         unknown
       >;
+    };
+    this.server.saveRecipeFn = (draft) => {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      return saveRecipe(recipesDir, draft);
     };
     this.server.runsFn = (q) => {
       if (!this.recipeRunLog) return [];
@@ -1130,6 +1140,15 @@ export class Bridge {
         ...(q.after !== undefined && { after: q.after }),
       }) as unknown as Record<string, unknown>[];
     };
+    this.server.sessionsFn = () =>
+      [...this.sessions.values()].map((s) => ({
+        id: s.id,
+        connectedAt: new Date(s.connectedAt).toISOString(),
+        openedFileCount: s.openedFiles.size,
+        pendingApprovals: getApprovalQueue()
+          .list()
+          .filter((a) => a.sessionId === s.id).length,
+      }));
     this.server.webhookFn = async (hookPath: string, payload: unknown) => {
       if (!this.orchestrator) {
         return {
@@ -1226,11 +1245,12 @@ export class Bridge {
         timeline: this.activityLog.queryTimeline({ last: 50 }),
         patchwork: {
           workspace: this.config.workspace,
-          approvalGate: this.config.approvalGate,
+          approvalGate: this.server.approvalGate,
           fullMode: this.config.fullMode,
           claudeDriver: this.config.claudeDriver,
           automationEnabled: this.config.automationEnabled,
           port: this.port,
+          webhookUrl: this.server.approvalWebhookUrl ?? null,
         },
       };
     };

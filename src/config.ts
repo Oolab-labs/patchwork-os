@@ -2,6 +2,10 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  loadConfig as loadPatchworkConfig,
+  defaultConfigPath as patchworkConfigPath,
+} from "./patchworkConfig.js";
 
 export interface Config {
   workspace: string;
@@ -30,6 +34,8 @@ export interface Config {
   approvalGate: "off" | "high" | "all";
   /** Patchwork: admin-controlled managed settings file (highest rule precedence, cannot be overridden). */
   managedSettingsPath: string | null;
+  /** Patchwork: outbound webhook URL for approval queue notifications (from dashboard.webhookUrl in patchwork config). */
+  approvalWebhookUrl: string | null;
   watch: boolean;
   plugins: string[];
   pluginWatch: boolean;
@@ -367,6 +373,21 @@ export function parseConfig(argv: string[]): Config {
     (fileConfig as { approvalGate?: "off" | "high" | "all" }).approvalGate ??
     "off";
   let managedSettingsPath: string | null = null;
+  // Read approvalWebhookUrl and approvalGate from patchwork config (non-fatal, CLI flag takes precedence)
+  const approvalWebhookUrl: string | null = (() => {
+    try {
+      const pw = loadPatchworkConfig(patchworkConfigPath());
+      if (
+        pw.approvalGate &&
+        !(fileConfig as { approvalGate?: string }).approvalGate
+      ) {
+        approvalGate = pw.approvalGate;
+      }
+      return pw.dashboard?.webhookUrl ?? null;
+    } catch {
+      return null;
+    }
+  })();
   let toolRateLimit = 60;
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
   let auditLogPath: string | null = null;
@@ -857,6 +878,7 @@ Environment Variables:
     automationPolicyPath,
     approvalGate,
     managedSettingsPath,
+    approvalWebhookUrl,
     toolRateLimit,
     watch,
     plugins,

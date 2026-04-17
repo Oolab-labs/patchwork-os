@@ -8,6 +8,11 @@ import { renderDashboardHtml } from "./dashboard.js";
 import type { Logger } from "./logger.js";
 import type { OAuthServer } from "./oauth.js";
 import {
+  loadConfig as loadPatchworkConfig,
+  defaultConfigPath as patchworkConfigPath,
+  saveConfig as savePatchworkConfig,
+} from "./patchworkConfig.js";
+import {
   BRIDGE_PROTOCOL_VERSION,
   PACKAGE_LICENSE,
   PACKAGE_VERSION,
@@ -18,6 +23,7 @@ const SESSION_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 import type { ActivityListener } from "./activityTypes.js";
+import type { RecipeDraft } from "./recipesHttp.js";
 
 interface AliveWebSocket extends WebSocket {
   isAlive: boolean;
@@ -89,6 +95,13 @@ function setupPongHandler(ws: AliveWebSocket): void {
 // Raised from 50ms to reduce connection-storm DoS surface in public deployments.
 const MIN_CONNECTION_INTERVAL_MS = 500;
 
+export interface SessionSummary {
+  id: string;
+  connectedAt: string; // ISO string
+  openedFileCount: number;
+  pendingApprovals: number;
+}
+
 export class Server extends EventEmitter<ServerEvents> {
   private httpServer: http.Server;
   private wss: WsServer;
@@ -118,6 +131,10 @@ export class Server extends EventEmitter<ServerEvents> {
   public tasksFn: (() => { tasks: Record<string, unknown>[] }) | null = null;
   /** Patchwork: set by bridge to list installed recipes for the dashboard. */
   public recipesFn: (() => Record<string, unknown>) | null = null;
+  /** Patchwork: set by bridge to save a new recipe draft to disk. */
+  public saveRecipeFn:
+    | ((draft: RecipeDraft) => { ok: boolean; path?: string; error?: string })
+    | null = null;
   /** Patchwork: set by bridge to query the recipe run audit log. */
   public runsFn:
     | ((q: {
@@ -136,6 +153,10 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
   /** Patchwork: admin-controlled managed settings path (highest rule precedence). */
   public managedSettingsPath: string | undefined = undefined;
+  /** Patchwork: live approval gate level — mutated by POST /settings, read by bridge per-session setup. */
+  public approvalGate: "off" | "high" | "all" = "off";
+  /** Patchwork: outbound webhook URL for approval notifications (from dashboard.webhookUrl in config). */
+  public approvalWebhookUrl: string | undefined = undefined;
   /** Patchwork: approval decision audit callback wired to activityLog.recordEvent. */
   public onApprovalDecision:
     | ((event: string, meta: Record<string, unknown>) => void)
@@ -171,6 +192,8 @@ export class Server extends EventEmitter<ServerEvents> {
         args: Record<string, string>,
       ) => { ok: boolean; error?: string })
     | null = null;
+  /** Patchwork: set by bridge to list active agent sessions for the dashboard. */
+  public sessionsFn: (() => SessionSummary[]) | null = null;
   /** Set by bridge to handle POST /launch-quick-task — invokes launchQuickTask tool in-process. */
   public launchQuickTaskFn:
     | ((
@@ -781,6 +804,40 @@ export class Server extends EventEmitter<ServerEvents> {
         }
         return;
       }
+      if (req.url === "/recipes" && req.method === "POST") {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          try {
+            const body = Buffer.concat(chunks).toString("utf-8");
+            const draft = JSON.parse(body || "{}") as RecipeDraft;
+            if (typeof draft.name !== "string" || !draft.name) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ ok: false, error: "name required" }));
+              return;
+            }
+            if (!this.saveRecipeFn) {
+              res.writeHead(503, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "Recipe saving unavailable",
+                }),
+              );
+              return;
+            }
+            const result = this.saveRecipeFn(draft);
+            res.writeHead(result.ok ? 201 : 400, {
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify(result));
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+          }
+        });
+        return;
+      }
       if (req.url === "/recipes" && req.method === "GET") {
         try {
           const data = this.recipesFn?.() ?? { recipesDir: null, recipes: [] };
@@ -794,6 +851,82 @@ export class Server extends EventEmitter<ServerEvents> {
             }),
           );
         }
+        return;
+      }
+      if (req.url === "/sessions" && req.method === "GET") {
+        try {
+          if (!this.sessionsFn) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "sessions not available" }));
+            return;
+          }
+          const data = this.sessionsFn();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      if (parsedUrl.pathname === "/settings" && req.method === "POST") {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          try {
+            const body = JSON.parse(
+              Buffer.concat(chunks).toString("utf-8"),
+            ) as { webhookUrl?: string; approvalGate?: string };
+            const raw = body.webhookUrl?.trim() ?? "";
+            if (raw !== "" && !/^https:\/\/.+/.test(raw)) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "webhookUrl must be HTTPS" }));
+              return;
+            }
+            const gateRaw = body.approvalGate;
+            if (
+              gateRaw !== undefined &&
+              gateRaw !== "off" &&
+              gateRaw !== "high" &&
+              gateRaw !== "all"
+            ) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: 'approvalGate must be "off", "high", or "all"',
+                }),
+              );
+              return;
+            }
+            const configPath = patchworkConfigPath();
+            const cfg = loadPatchworkConfig(configPath);
+            cfg.dashboard = {
+              port: cfg.dashboard?.port ?? 3000,
+              requireApproval: cfg.dashboard?.requireApproval ?? ["high"],
+              pushNotifications: cfg.dashboard?.pushNotifications ?? false,
+              webhookUrl: raw || undefined,
+            };
+            if (gateRaw !== undefined) {
+              cfg.approvalGate = gateRaw as "off" | "high" | "all";
+              this.approvalGate = gateRaw as "off" | "high" | "all";
+            }
+            savePatchworkConfig(cfg, configPath);
+            this.approvalWebhookUrl = raw || undefined;
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true }));
+          } catch (err) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        });
         return;
       }
       // CC hook notify endpoint — lightweight alternative to full MCP session for hook wiring.
@@ -859,12 +992,15 @@ export class Server extends EventEmitter<ServerEvents> {
                 method: req.method ?? "GET",
                 path: parsedUrl.pathname,
                 body: parsedBody,
+                query: parsedUrl.searchParams,
               },
               {
                 queue: getApprovalQueue(),
                 workspace: process.cwd(),
                 managedSettingsPath: this.managedSettingsPath,
                 onDecision: this.onApprovalDecision,
+                webhookUrl: this.approvalWebhookUrl,
+                approvalGate: this.approvalGate,
               },
             );
             res.writeHead(result.status, {
