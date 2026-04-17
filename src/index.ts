@@ -719,16 +719,12 @@ export function register(ctx) {
 if (process.argv[2] === "recipe" && process.argv[3] === "install") {
   const file = process.argv[4];
   if (!file) {
-    process.stderr.write(
-      "Usage: patchwork recipe install <file.json>\n",
-    );
+    process.stderr.write("Usage: patchwork recipe install <file.json>\n");
     process.exit(1);
   }
   (async () => {
     try {
-      const { installRecipeFromFile } = await import(
-        "./recipes/installer.js"
-      );
+      const { installRecipeFromFile } = await import("./recipes/installer.js");
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
       const result = installRecipeFromFile(path.resolve(file), {
         recipesDir,

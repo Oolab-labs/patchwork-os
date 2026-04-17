@@ -7,6 +7,7 @@ import { ActivityLog } from "./activityLog.js";
 import { buildSummary } from "./analyticsAggregator.js";
 import { getAnalyticsPref } from "./analyticsPrefs.js";
 import { sendAnalytics } from "./analyticsSend.js";
+import { getApprovalQueue } from "./approvalQueue.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { loadOrCreateBridgeToken } from "./bridgeToken.js";
 import { repairBridgeToolsRulesIfStale } from "./bridgeToolsRules.js";
@@ -24,6 +25,7 @@ import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
+import { classifyTool } from "./riskTier.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
@@ -262,6 +264,24 @@ export class Bridge {
       transport.sessionId = sessionId;
       transport.setActivityLog(this.activityLog);
       transport.setToolRateLimit(this.config.toolRateLimit);
+      if (this.config.approvalGate !== "off") {
+        const gateAll = this.config.approvalGate === "all";
+        this.logger.info(
+          `[patchwork] approval gate active: ${this.config.approvalGate} tier(s) require dashboard approval`,
+        );
+        transport.setApprovalGate(async ({ toolName, params, sessionId }) => {
+          const tier = classifyTool(toolName);
+          if (!gateAll && tier !== "high") return "bypass";
+          const queue = getApprovalQueue();
+          const { promise } = queue.request({
+            toolName,
+            params,
+            tier,
+            sessionId: sessionId ?? undefined,
+          });
+          return promise;
+        });
+      }
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
       );
