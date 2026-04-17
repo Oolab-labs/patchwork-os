@@ -26,7 +26,12 @@ import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
 import { RecipeScheduler } from "./recipes/scheduler.js";
-import { listInstalledRecipes, loadRecipePrompt } from "./recipesHttp.js";
+import {
+  findWebhookRecipe,
+  listInstalledRecipes,
+  loadRecipePrompt,
+  renderWebhookPrompt,
+} from "./recipesHttp.js";
 import { classifyTool } from "./riskTier.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
@@ -1081,6 +1086,35 @@ export class Bridge {
         string,
         unknown
       >;
+    };
+    this.server.webhookFn = async (hookPath: string, payload: unknown) => {
+      if (!this.orchestrator) {
+        return {
+          ok: false,
+          error: "orchestrator_unavailable",
+        };
+      }
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const match = findWebhookRecipe(recipesDir, hookPath);
+      if (!match) {
+        return { ok: false, error: "not_found" };
+      }
+      const loaded = loadRecipePrompt(recipesDir, match.name);
+      if (!loaded) {
+        return { ok: false, error: "recipe_file_missing" };
+      }
+      try {
+        const taskId = this.orchestrator.enqueue({
+          prompt: renderWebhookPrompt(loaded.prompt, payload),
+          triggerSource: `webhook:${match.name}`,
+        });
+        return { ok: true, taskId, name: match.name };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
     };
     this.server.runRecipeFn = async (name: string) => {
       if (!this.orchestrator) {

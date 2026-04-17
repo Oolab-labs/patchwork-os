@@ -124,6 +124,18 @@ export class Server extends EventEmitter<ServerEvents> {
         name: string,
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null = null;
+  /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
+  public webhookFn:
+    | ((
+        path: string,
+        payload: unknown,
+      ) => Promise<{
+        ok: boolean;
+        taskId?: string;
+        name?: string;
+        error?: string;
+      }>)
+    | null = null;
   /** Set by bridge to handle MCP Streamable HTTP sessions (POST/GET/DELETE /mcp) */
   public httpMcpHandler:
     | ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>)
@@ -641,6 +653,46 @@ export class Server extends EventEmitter<ServerEvents> {
             }),
           );
         }
+        return;
+      }
+      if (parsedUrl.pathname?.startsWith("/hooks/") && req.method === "POST") {
+        const hookPath = parsedUrl.pathname.substring("/hooks".length);
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            let payload: unknown;
+            if (chunks.length > 0) {
+              const body = Buffer.concat(chunks).toString("utf-8");
+              if (body.trim()) {
+                try {
+                  payload = JSON.parse(body);
+                } catch {
+                  payload = body;
+                }
+              }
+            }
+            if (!this.webhookFn) {
+              res.writeHead(503, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error:
+                    "Webhooks unavailable — start bridge with --claude-driver subprocess",
+                }),
+              );
+              return;
+            }
+            const result = await this.webhookFn(hookPath, payload);
+            const status = result.ok
+              ? 200
+              : result.error === "not_found"
+                ? 404
+                : 400;
+            res.writeHead(status, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(result));
+          })();
+        });
         return;
       }
       if (parsedUrl.pathname === "/recipes/run" && req.method === "POST") {
