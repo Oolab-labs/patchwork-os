@@ -90,13 +90,11 @@ export function Shell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="app-main">
-        <header className="app-header" role="banner">
+        <header className="app-header">
           <div className="app-header-title">{pageTitle(pathname ?? "/")}</div>
           <BridgePill status={status} />
         </header>
-        <main className="app-content" role="main">
-          {children}
-        </main>
+        <main className="app-content">{children}</main>
       </div>
     </div>
   );
