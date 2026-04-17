@@ -72,9 +72,12 @@ if [[ -z "$tool_name" ]]; then
   exit 0
 fi
 
-# bypassPermissions: CC has explicitly opted out of the permission layer.
-# Fail open so our dashboard doesn't lie about what it's intercepting.
-if [[ "$permission_mode" == "bypassPermissions" ]]; then
+# Modes where we defer entirely to CC's own permission layer:
+#   bypassPermissions = gates explicitly disabled.
+#   auto             = CC classifier handles escalation; our queue would block.
+# plan mode is NOT skipped here — we forward to the bridge which short-circuits
+# per tool (reads → allow, writes → deny) without queuing.
+if [[ "$permission_mode" == "bypassPermissions" || "$permission_mode" == "auto" ]]; then
   exit 0
 fi
 
@@ -105,15 +108,27 @@ export PATCHWORK_SESSION_ID="$session_id"
 
 request_body=$(python3 - <<'PY'
 import json, os
+
+tool = os.environ.get("PATCHWORK_TOOL_NAME", "")
 try:
     params = json.loads(os.environ.get("PATCHWORK_TOOL_INPUT", "") or "{}")
     if not isinstance(params, dict):
         params = {"value": params}
 except Exception:
     params = {}
+
+# Derive specifier so evaluateRules can apply Bash(npm run *) / WebFetch(url) rules.
+specifier = ""
+if tool == "Bash":
+    specifier = params.get("command", "")
+elif tool in ("WebFetch", "WebSearch"):
+    specifier = params.get("url", "")
+elif tool in ("Read", "Edit", "Write"):
+    specifier = params.get("file_path", "") or params.get("path", "")
+
 print(json.dumps({
-    "toolName": os.environ.get("PATCHWORK_TOOL_NAME", ""),
-    "specifier": "",
+    "toolName": tool,
+    "specifier": specifier,
     "params": params,
     "summary": "",
     "permissionMode": os.environ.get("PATCHWORK_PERMISSION_MODE", ""),

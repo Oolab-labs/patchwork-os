@@ -29,17 +29,24 @@ export interface SettingsFile {
   permissions?: Partial<PermissionRules>;
 }
 
+export interface LoadCcPermissionsDeps {
+  readFile?: (p: string) => string;
+  exists?: (p: string) => boolean;
+  /** Path to a managed settings file (highest precedence, cannot be overridden). */
+  managedPath?: string;
+}
+
 export function loadCcPermissions(
   workspace: string,
-  deps: {
-    readFile?: (p: string) => string;
-    exists?: (p: string) => boolean;
-  } = {},
+  deps: LoadCcPermissionsDeps = {},
 ): PermissionRules {
   const read = deps.readFile ?? ((p: string) => readFileSync(p, "utf8"));
   const ex = deps.exists ?? existsSync;
 
+  // Managed path (if provided) is prepended — its deny rules are absolute
+  // because deny already wins over all other layers in evaluateRules.
   const paths = [
+    ...(deps.managedPath ? [deps.managedPath] : []),
     join(workspace, ".claude", "settings.local.json"),
     join(workspace, ".claude", "settings.json"),
     join(homedir(), ".claude", "settings.json"),
@@ -62,14 +69,17 @@ export function loadCcPermissions(
 }
 
 /**
- * Classify a tool call against CC rules. Rule matching is minimal — it
- * covers the common cases needed to avoid re-prompting:
- *   - Tool name only (e.g. "Read", "WebFetch")
- *   - Tool(specifier) exact match
- *   - `:*` or trailing ` *` wildcard on Bash/WebFetch specifier
+ * Classify a tool call against CC rules using deny → ask → allow precedence.
  *
- * Full gitignore-style Read/Edit pattern matching is out of scope here;
- * CC itself handles those inside its own runtime.
+ * Specifier patterns follow CC's glob syntax:
+ *   - Tool name only:           "Read"
+ *   - Exact specifier:          "Bash(git status)"
+ *   - Glob specifier:           "Bash(npm run *)", "WebFetch(https://api.example.com/*)"
+ *   - Legacy colon-star:        "Bash(git:*)"
+ *   - Full wildcard:            "Bash(*)"
+ *
+ * Path-glob rules (Read/Edit with file patterns) are forwarded to allow
+ * so CC's own runtime can apply the finer-grained check.
  */
 export function evaluateRules(
   toolName: string,
@@ -98,7 +108,7 @@ function matchRule(
   specifier: string | undefined,
   rule: string,
 ): boolean {
-  // Tool-name-only rule
+  // Tool-name-only rule — no specifier constraint.
   if (!rule.includes("(")) return rule === toolName;
 
   const open = rule.indexOf("(");
@@ -107,20 +117,53 @@ function matchRule(
   const tool = rule.slice(0, open);
   const pat = rule.slice(open + 1, close);
   if (tool !== toolName) return false;
-  if (!specifier) return pat === "" || pat === "*" || pat === ":*";
 
-  // wildcard forms
-  if (pat === "*" || pat === ":*") return true;
-  if (pat.endsWith(":*")) {
-    const prefix = pat.slice(0, -2);
-    return specifier === prefix || specifier.startsWith(`${prefix} `);
+  // Full wildcard — matches any specifier (or no specifier).
+  if (pat === "*") return true;
+
+  // No specifier on call — only the bare wildcards match.
+  if (!specifier) return pat === "" || pat === ":*";
+
+  // Legacy colon-star form: "git:*" means "git" or "git <anything>".
+  // Normalize to space-star so the glob engine handles it uniformly.
+  const normalized = pat.endsWith(":*") ? `${pat.slice(0, -2)} *` : pat;
+
+  return globMatch(normalized, specifier);
+}
+
+/**
+ * Minimal glob matcher supporting `*` (any sequence) and `?` (any char).
+ * No path semantics — `*` matches across separators, which is what CC
+ * uses for command specifiers like "npm run *" or "https://example.com/*".
+ */
+function globMatch(pattern: string, str: string): boolean {
+  // Fast path: no wildcards.
+  if (!pattern.includes("*") && !pattern.includes("?")) {
+    return pattern === str;
   }
-  if (pat.endsWith(" *")) {
-    const prefix = pat.slice(0, -2);
-    return specifier === prefix || specifier.startsWith(`${prefix} `);
+
+  // dp[i][j] = pattern[0..i) matches str[0..j)
+  const p = pattern.length;
+  const s = str.length;
+  const dp: boolean[][] = Array.from({ length: p + 1 }, () =>
+    new Array<boolean>(s + 1).fill(false),
+  );
+  dp[0]![0] = true;
+
+  // Leading stars match empty string.
+  for (let i = 1; i <= p; i++) {
+    if (pattern[i - 1] === "*") dp[i]![0] = dp[i - 1]![0]!;
   }
-  if (pat.startsWith("* ")) {
-    return specifier.endsWith(pat.slice(1));
+
+  for (let i = 1; i <= p; i++) {
+    for (let j = 1; j <= s; j++) {
+      if (pattern[i - 1] === "*") {
+        dp[i]![j] = dp[i - 1]![j]! || dp[i]![j - 1]!;
+      } else if (pattern[i - 1] === "?" || pattern[i - 1] === str[j - 1]) {
+        dp[i]![j] = dp[i - 1]![j - 1]!;
+      }
+    }
   }
-  return pat === specifier;
+
+  return dp[p]![s]!;
 }

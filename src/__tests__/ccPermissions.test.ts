@@ -42,6 +42,37 @@ describe("evaluateRules", () => {
     expect(evaluateRules("Bash", "git status", r)).toBe("allow");
   });
 
+  it("glob: mid-string wildcard matches", () => {
+    const r = { allow: ["Bash(git push origin *)"], ask: [], deny: [] };
+    expect(evaluateRules("Bash", "git push origin main", r)).toBe("allow");
+    expect(evaluateRules("Bash", "git push origin feature/x", r)).toBe("allow");
+    expect(evaluateRules("Bash", "git push upstream main", r)).toBe("none");
+  });
+
+  it("glob: URL prefix wildcard", () => {
+    const r = {
+      allow: ["WebFetch(https://api.example.com/*)"],
+      ask: [],
+      deny: [],
+    };
+    expect(
+      evaluateRules("WebFetch", "https://api.example.com/v1/users", r),
+    ).toBe("allow");
+    expect(evaluateRules("WebFetch", "https://evil.com/", r)).toBe("none");
+  });
+
+  it("glob: question-mark matches single char", () => {
+    const r = { allow: ["Bash(ls ?)"], ask: [], deny: [] };
+    expect(evaluateRules("Bash", "ls .", r)).toBe("allow");
+    expect(evaluateRules("Bash", "ls ..", r)).toBe("none");
+  });
+
+  it("glob: multi-star pattern", () => {
+    const r = { allow: ["Bash(docker * --rm *)"], ask: [], deny: [] };
+    expect(evaluateRules("Bash", "docker run --rm alpine", r)).toBe("allow");
+    expect(evaluateRules("Bash", "docker build .", r)).toBe("none");
+  });
+
   it("matches WebFetch(domain:...) literal spec", () => {
     const r = {
       allow: ["WebFetch(domain:github.com)"],
@@ -50,6 +81,39 @@ describe("evaluateRules", () => {
     };
     expect(evaluateRules("WebFetch", "domain:github.com", r)).toBe("allow");
     expect(evaluateRules("WebFetch", "domain:evil.com", r)).toBe("none");
+  });
+});
+
+describe("loadCcPermissions — managed path", () => {
+  it("managed deny wins over workspace allow", () => {
+    const files: Record<string, string> = {
+      "/managed/settings.json": JSON.stringify({
+        permissions: { deny: ["gitPush"] },
+      }),
+      "/ws/.claude/settings.json": JSON.stringify({
+        permissions: { allow: ["gitPush"] },
+      }),
+    };
+    const rules = loadCcPermissions("/ws", {
+      readFile: (p) => files[p] ?? "",
+      exists: (p) => p in files,
+      managedPath: "/managed/settings.json",
+    });
+    expect(rules.deny).toContain("gitPush");
+    expect(rules.allow).toContain("gitPush");
+    // evaluateRules must pick deny first
+    expect(evaluateRules("gitPush", undefined, rules)).toBe("deny");
+  });
+
+  it("missing managed file is silently skipped", () => {
+    const rules = loadCcPermissions("/ws", {
+      readFile: () => {
+        throw new Error("shouldn't read missing file");
+      },
+      exists: () => false,
+      managedPath: "/does/not/exist.json",
+    });
+    expect(rules.deny).toEqual([]);
   });
 });
 

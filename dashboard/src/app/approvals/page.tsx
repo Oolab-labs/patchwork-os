@@ -7,7 +7,8 @@ interface Pending {
   tier: "low" | "medium" | "high";
   requestedAt: number;
   summary?: string;
-  params?: unknown;
+  params?: Record<string, unknown>;
+  sessionId?: string;
   expiresAt?: number;
 }
 
@@ -21,10 +22,39 @@ interface CcRules {
 const API = "/api/bridge";
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 
+// Extract the single most important param to show inline above the JSON block.
+function primaryParam(
+  toolName: string,
+  params: Record<string, unknown> | undefined,
+): string | null {
+  if (!params) return null;
+  const candidates: Record<string, string[]> = {
+    Bash: ["command"],
+    WebFetch: ["url"],
+    WebSearch: ["query"],
+    Read: ["file_path", "path"],
+    Edit: ["file_path", "path"],
+    Write: ["file_path", "path"],
+    Glob: ["pattern"],
+    Grep: ["pattern"],
+  };
+  const keys = candidates[toolName] ?? [];
+  for (const k of keys) {
+    const v = params[k];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  // fallback: first string value
+  for (const v of Object.values(params)) {
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return null;
+}
+
 export default function ApprovalsPage() {
   const [pending, setPending] = useState<Pending[]>([]);
   const [rules, setRules] = useState<CcRules | null>(null);
   const [err, setErr] = useState<string>();
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -55,6 +85,20 @@ export default function ApprovalsPage() {
   async function decide(callId: string, decision: "approve" | "reject") {
     await fetch(`${API}/${decision}/${callId}`, { method: "POST" });
     setPending((prev) => prev.filter((p) => p.callId !== callId));
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.delete(callId);
+      return next;
+    });
+  }
+
+  function toggleExpand(callId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(callId)) next.delete(callId);
+      else next.add(callId);
+      return next;
+    });
   }
 
   return (
@@ -85,16 +129,28 @@ export default function ApprovalsPage() {
             const expires = p.expiresAt ?? p.requestedAt + DEFAULT_TTL_MS;
             const remaining = Math.max(0, expires - Date.now());
             const urgent = remaining < 60_000;
+            const primary = primaryParam(p.toolName, p.params);
+            const hasParams = p.params && Object.keys(p.params).length > 0;
+            const isExpanded = expanded.has(p.callId);
+
             return (
               <article key={p.callId} className="approval">
                 <div className="approval-head">
                   <h3>{p.toolName}</h3>
                   <span className={`pill ${tierClass(p.tier)}`}>
-                    {p.tier} tier
+                    {p.tier} risk
                   </span>
                   {match && (
                     <span className={`pill ${ruleClass(match)}`}>
                       CC: {match}
+                    </span>
+                  )}
+                  {p.sessionId && (
+                    <span
+                      className="pill muted"
+                      title={`Session: ${p.sessionId}`}
+                    >
+                      session {p.sessionId.slice(0, 8)}
                     </span>
                   )}
                   <span className="approval-spacer" />
@@ -102,16 +158,44 @@ export default function ApprovalsPage() {
                     className={`countdown${urgent ? " urgent" : ""}`}
                     title={`Expires at ${new Date(expires).toLocaleTimeString()}`}
                   >
-                    expires in {formatCountdown(remaining)}
+                    {formatCountdown(remaining)}
                   </span>
                 </div>
+
                 {p.summary && <p className="approval-summary">{p.summary}</p>}
-                {p.params !== undefined && (
-                  <details className="approval-params">
-                    <summary>Params preview</summary>
-                    <pre>{safeStringify(p.params)}</pre>
-                  </details>
+
+                {primary && (
+                  <div className="approval-primary">
+                    <span className="approval-primary-label">
+                      {primaryLabel(p.toolName)}
+                    </span>
+                    <code className="approval-primary-value">{primary}</code>
+                  </div>
                 )}
+
+                {hasParams && (
+                  <div className="approval-params-wrap">
+                    <button
+                      type="button"
+                      className="approval-params-toggle"
+                      onClick={() => toggleExpand(p.callId)}
+                      aria-expanded={isExpanded}
+                    >
+                      {isExpanded ? "▾" : "▸"} Full params
+                      {!isExpanded && p.params && (
+                        <span className="muted" style={{ marginLeft: 6 }}>
+                          {Object.keys(p.params).join(", ")}
+                        </span>
+                      )}
+                    </button>
+                    {isExpanded && (
+                      <pre className="approval-params-json">
+                        {safeStringify(p.params)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+
                 <div className="approval-actions">
                   <button
                     type="button"
@@ -128,7 +212,9 @@ export default function ApprovalsPage() {
                     Reject
                   </button>
                   <span className="approval-spacer" />
-                  <span className="pill muted">id: {p.callId.slice(0, 8)}</span>
+                  <span className="pill muted" title={p.callId}>
+                    {p.callId.slice(0, 8)}
+                  </span>
                 </div>
               </article>
             );
@@ -149,6 +235,20 @@ export default function ApprovalsPage() {
       )}
     </section>
   );
+}
+
+function primaryLabel(toolName: string): string {
+  const labels: Record<string, string> = {
+    Bash: "command",
+    WebFetch: "url",
+    WebSearch: "query",
+    Read: "file",
+    Edit: "file",
+    Write: "file",
+    Glob: "pattern",
+    Grep: "pattern",
+  };
+  return labels[toolName] ?? "value";
 }
 
 function RuleRow({
