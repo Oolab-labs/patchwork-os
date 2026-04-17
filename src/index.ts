@@ -714,6 +714,57 @@ export function register(ctx) {
   process.exit(0);
 }
 
+// Patchwork: `patchwork recipe run <name>` — POSTs to a running bridge's
+// /recipes/run endpoint to enqueue the recipe via the Claude orchestrator.
+if (process.argv[2] === "recipe" && process.argv[3] === "run") {
+  const name = process.argv[4];
+  if (!name) {
+    process.stderr.write("Usage: patchwork recipe run <name>\n");
+    process.exit(1);
+  }
+  (async () => {
+    try {
+      const { findBridgeLock } = await import("./bridgeLockDiscovery.js");
+      const lock = findBridgeLock();
+      if (!lock) {
+        process.stderr.write(
+          "Error: no running bridge found under ~/.claude/ide/. Start the bridge with --claude-driver subprocess first.\n",
+        );
+        process.exit(1);
+        return;
+      }
+      const res = await fetch(`http://127.0.0.1:${lock.port}/recipes/run`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${lock.authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name }),
+      });
+      const body = (await res.json()) as {
+        ok: boolean;
+        taskId?: string;
+        error?: string;
+      };
+      if (!body.ok) {
+        process.stderr.write(`Error: ${body.error ?? "unknown"}\n`);
+        process.exit(1);
+        return;
+      }
+      process.stdout.write(
+        `  ✓ enqueued recipe "${name}" as task ${(body.taskId ?? "").slice(0, 8)}\n` +
+          "    Watch progress on the dashboard Tasks page or via listClaudeTasks.\n",
+      );
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 // Handle init subcommand — one-command setup: install extension + write CLAUDE.md + print next steps
 // Patchwork: `patchwork recipe install <file.json>` subcommand.
 if (process.argv[2] === "recipe" && process.argv[3] === "install") {
@@ -1614,6 +1665,7 @@ Options:
     "marketplace",
     "status",
     "shim",
+    "recipe",
   ];
   const unknownSub = process.argv[2];
   if (

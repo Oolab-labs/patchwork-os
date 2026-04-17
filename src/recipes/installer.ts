@@ -54,7 +54,20 @@ export function installRecipeFromFile(
       ? (JSON.parse(text) as unknown)
       : (parseYaml(text) as unknown);
   const recipe = parseRecipe(raw);
-  const compiled = compileRecipeFull(recipe);
+  // Manual-trigger recipes run via `patchwork recipe run <name>` and bypass
+  // the automation interpreter, so the compile step (which targets the
+  // interpreter DSL) doesn't apply. Skip compile and synthesize an empty
+  // CompiledRecipe stub so the caller API stays uniform.
+  const compiled: CompiledRecipe =
+    recipe.trigger.type === "manual"
+      ? {
+          program: {
+            tag: "Sequence",
+            steps: [],
+          } as unknown as CompiledRecipe["program"],
+          suggestedPermissions: { allow: [], ask: [], deny: [] },
+        }
+      : compileRecipeFull(recipe);
 
   mkdir(opts.recipesDir);
   const destPath = path.join(opts.recipesDir, `${recipe.name}.json`);
