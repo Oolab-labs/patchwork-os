@@ -3,13 +3,25 @@ import { Fragment, useEffect, useState } from "react";
 import { fmtDuration } from "@/components/time";
 
 interface Task {
-  id: string;
-  prompt?: string;
-  status: "pending" | "running" | "done" | "error" | "cancelled" | "interrupted";
+  taskId: string;
+  sessionId?: string;
+  status:
+    | "pending"
+    | "running"
+    | "done"
+    | "error"
+    | "cancelled"
+    | "interrupted";
+  createdAt?: number;
   startedAt?: number;
-  endedAt?: number;
+  doneAt?: number;
   output?: string;
-  error?: string;
+  errorMessage?: string;
+  stderrTail?: string;
+  startupMs?: number;
+  timeoutMs?: number;
+  cancelReason?: string;
+  wasAborted?: boolean;
 }
 
 export default function TasksPage() {
@@ -70,30 +82,37 @@ export default function TasksPage() {
                 <th style={{ width: 100 }}>ID</th>
                 <th style={{ width: 110 }}>Status</th>
                 <th style={{ width: 100 }}>Duration</th>
-                <th>Prompt</th>
+                <th>Output preview</th>
                 <th style={{ width: 40 }} aria-label="expand" />
               </tr>
             </thead>
             <tbody>
               {tasks.map((t) => {
                 const dur =
-                  t.startedAt && t.endedAt
-                    ? fmtDuration(t.endedAt - t.startedAt)
+                  t.startedAt && t.doneAt
+                    ? fmtDuration(t.doneAt - t.startedAt)
                     : t.startedAt
                       ? fmtDuration(Date.now() - t.startedAt)
                       : "—";
-                const open = !!expanded[t.id];
-                const hasDetail = !!(t.output || t.error);
+                const open = !!expanded[t.taskId];
+                const errText = t.errorMessage ?? t.stderrTail;
+                const hasDetail = !!(t.output || errText);
+                const preview = (t.output ?? errText ?? "")
+                  .split("\n")[0]
+                  .slice(0, 140);
                 return (
-                  <Fragment key={t.id}>
+                  <Fragment key={t.taskId}>
                     <tr
                       onClick={() =>
                         hasDetail &&
-                        setExpanded((p) => ({ ...p, [t.id]: !p[t.id] }))
+                        setExpanded((p) => ({
+                          ...p,
+                          [t.taskId]: !p[t.taskId],
+                        }))
                       }
                       style={{ cursor: hasDetail ? "pointer" : "default" }}
                     >
-                      <td className="mono">{t.id.slice(0, 8)}</td>
+                      <td className="mono">{t.taskId.slice(0, 8)}</td>
                       <td>
                         <span className={`pill ${statusClass(t.status)}`}>
                           <span className="pill-dot" />
@@ -109,16 +128,21 @@ export default function TasksPage() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {t.prompt ?? <span className="muted">—</span>}
+                        {preview || <span className="muted">—</span>}
                       </td>
-                      <td className="muted">{hasDetail ? (open ? "▾" : "▸") : ""}</td>
+                      <td className="muted">
+                        {hasDetail ? (open ? "▾" : "▸") : ""}
+                      </td>
                     </tr>
                     {open && hasDetail && (
                       <tr className="task-row-expand">
                         <td colSpan={5} style={{ padding: 0 }}>
-                          {t.error && (
-                            <pre className="task-output" style={{ color: "var(--err)" }}>
-                              {t.error}
+                          {errText && (
+                            <pre
+                              className="task-output"
+                              style={{ color: "var(--err)" }}
+                            >
+                              {errText}
                             </pre>
                           )}
                           {t.output && (
