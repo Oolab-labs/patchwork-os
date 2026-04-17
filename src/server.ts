@@ -118,6 +118,16 @@ export class Server extends EventEmitter<ServerEvents> {
   public tasksFn: (() => { tasks: Record<string, unknown>[] }) | null = null;
   /** Patchwork: set by bridge to list installed recipes for the dashboard. */
   public recipesFn: (() => Record<string, unknown>) | null = null;
+  /** Patchwork: set by bridge to query the recipe run audit log. */
+  public runsFn:
+    | ((q: {
+        limit?: number;
+        trigger?: string;
+        status?: string;
+        recipe?: string;
+        after?: number;
+      }) => Record<string, unknown>[])
+    | null = null;
   /** Patchwork: set by bridge to launch a named recipe via the orchestrator. */
   public runRecipeFn:
     | ((
@@ -733,6 +743,36 @@ export class Server extends EventEmitter<ServerEvents> {
             }
           })();
         });
+        return;
+      }
+      if (parsedUrl.pathname === "/runs" && req.method === "GET") {
+        try {
+          const sp = parsedUrl.searchParams;
+          const limitRaw = sp.get("limit");
+          const afterRaw = sp.get("after");
+          const trigger = sp.get("trigger");
+          const status = sp.get("status");
+          const recipe = sp.get("recipe");
+          const limit = limitRaw ? Number.parseInt(limitRaw, 10) : Number.NaN;
+          const after = afterRaw ? Number.parseInt(afterRaw, 10) : Number.NaN;
+          const runs =
+            this.runsFn?.({
+              ...(Number.isFinite(limit) && { limit }),
+              ...(trigger && { trigger }),
+              ...(status && { status }),
+              ...(recipe && { recipe }),
+              ...(Number.isFinite(after) && { after }),
+            }) ?? [];
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ runs }));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
         return;
       }
       if (req.url === "/recipes" && req.method === "GET") {

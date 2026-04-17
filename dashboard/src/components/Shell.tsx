@@ -11,6 +11,7 @@ const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/tasks", label: "Tasks", icon: "\u25B8" },
   { href: "/metrics", label: "Metrics", icon: "\u25B4" },
   { href: "/recipes", label: "Recipes", icon: "\u25C9" },
+  { href: "/runs", label: "Runs", icon: "\u29D6" },
   { href: "/settings", label: "Settings", icon: "\u2699" },
 ];
 
@@ -37,8 +38,7 @@ function useBridgeStatus(): BridgeStatus {
         // fallback: hit approvals as a liveness ping
         try {
           const res = await fetch("/api/bridge/approvals");
-          if (alive)
-            setStatus({ ok: res.ok, ...(res.ok ? {} : {}) });
+          if (alive) setStatus({ ok: res.ok, ...(res.ok ? {} : {}) });
         } catch {
           if (alive) setStatus({ ok: false });
         }
@@ -86,16 +86,12 @@ export function Shell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
-        <div className="app-sidebar-footer">
-          Patchwork OS · oversight v0.1
-        </div>
+        <div className="app-sidebar-footer">Patchwork OS · oversight v0.1</div>
       </aside>
 
       <div className="app-main">
         <header className="app-header" role="banner">
-          <div className="app-header-title">
-            {pageTitle(pathname ?? "/")}
-          </div>
+          <div className="app-header-title">{pageTitle(pathname ?? "/")}</div>
           <BridgePill status={status} />
         </header>
         <main className="app-content" role="main">
