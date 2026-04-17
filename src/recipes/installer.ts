@@ -58,8 +58,12 @@ export function installRecipeFromFile(
   // the automation interpreter, so the compile step (which targets the
   // interpreter DSL) doesn't apply. Skip compile and synthesize an empty
   // CompiledRecipe stub so the caller API stays uniform.
+  // Manual + cron triggers bypass the automation interpreter (they run via
+  // `patchwork recipe run <name>` and the RecipeScheduler respectively),
+  // so the compile step doesn't apply. Synthesize an empty CompiledRecipe
+  // stub so the caller API stays uniform.
   const compiled: CompiledRecipe =
-    recipe.trigger.type === "manual"
+    recipe.trigger.type === "manual" || recipe.trigger.type === "cron"
       ? {
           program: {
             tag: "Sequence",
