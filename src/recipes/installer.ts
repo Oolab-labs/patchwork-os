@@ -58,20 +58,23 @@ export function installRecipeFromFile(
   // the automation interpreter, so the compile step (which targets the
   // interpreter DSL) doesn't apply. Skip compile and synthesize an empty
   // CompiledRecipe stub so the caller API stays uniform.
-  // Manual + cron triggers bypass the automation interpreter (they run via
-  // `patchwork recipe run <name>` and the RecipeScheduler respectively),
-  // so the compile step doesn't apply. Synthesize an empty CompiledRecipe
-  // stub so the caller API stays uniform.
-  const compiled: CompiledRecipe =
-    recipe.trigger.type === "manual" || recipe.trigger.type === "cron"
-      ? {
-          program: {
-            tag: "Sequence",
-            steps: [],
-          } as unknown as CompiledRecipe["program"],
-          suggestedPermissions: { allow: [], ask: [], deny: [] },
-        }
-      : compileRecipeFull(recipe);
+  // Manual, cron, and webhook triggers bypass the automation interpreter —
+  // they fire via the CLI, RecipeScheduler, and POST /hooks/* endpoint
+  // respectively. Synthesize an empty CompiledRecipe stub so the caller API
+  // stays uniform; file_watch and git_hook still run through compile.
+  const bypassCompile =
+    recipe.trigger.type === "manual" ||
+    recipe.trigger.type === "cron" ||
+    recipe.trigger.type === "webhook";
+  const compiled: CompiledRecipe = bypassCompile
+    ? {
+        program: {
+          tag: "Sequence",
+          steps: [],
+        } as unknown as CompiledRecipe["program"],
+        suggestedPermissions: { allow: [], ask: [], deny: [] },
+      }
+    : compileRecipeFull(recipe);
 
   mkdir(opts.recipesDir);
   const destPath = path.join(opts.recipesDir, `${recipe.name}.json`);

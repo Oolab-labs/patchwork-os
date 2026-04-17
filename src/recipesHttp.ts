@@ -70,6 +70,43 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
 }
 
 /**
+ * Scan recipes and return the first webhook-triggered recipe whose
+ * trigger.path matches the requested path. Returns null on miss.
+ * Path match is exact (leading-slash required) — no wildcards yet.
+ */
+export function findWebhookRecipe(
+  recipesDir: string,
+  requestPath: string,
+): { name: string; path: string } | null {
+  let entries: string[];
+  try {
+    entries = readdirSync(recipesDir);
+  } catch {
+    return null;
+  }
+  for (const f of entries) {
+    if (!f.endsWith(".json") || f.endsWith(".permissions.json")) continue;
+    try {
+      const raw = readFileSync(path.join(recipesDir, f), "utf-8");
+      const parsed = JSON.parse(raw) as {
+        name?: string;
+        trigger?: { type?: string; path?: string };
+      };
+      if (parsed.trigger?.type !== "webhook") continue;
+      if (parsed.trigger.path === requestPath) {
+        return {
+          name: parsed.name ?? path.basename(f, ".json"),
+          path: requestPath,
+        };
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+  return null;
+}
+
+/**
  * Load a recipe by name and render a plain-text prompt suitable for
  * enqueueing to the Claude orchestrator. Returns null when the recipe
  * can't be found.
@@ -119,4 +156,25 @@ export function loadRecipePrompt(
     "\nWhen finished, print a one-line summary prefixed with 'RECIPE DONE:'.",
   );
   return { prompt: lines.join("\n"), path: candidate };
+}
+
+/**
+ * Append a webhook payload to a base prompt so the agent can reference
+ * the request body. Payload is JSON-stringified and truncated so a
+ * runaway caller can't blow up the orchestrator prompt budget.
+ */
+export function renderWebhookPrompt(
+  basePrompt: string,
+  payload: unknown,
+): string {
+  if (payload === undefined) return basePrompt;
+  const MAX = 8_000;
+  let body: string;
+  try {
+    body = JSON.stringify(payload, null, 2);
+  } catch {
+    body = String(payload);
+  }
+  if (body.length > MAX) body = `${body.slice(0, MAX)}\n…[truncated]`;
+  return `${basePrompt}\n\nWebhook payload:\n\`\`\`json\n${body}\n\`\`\``;
 }
