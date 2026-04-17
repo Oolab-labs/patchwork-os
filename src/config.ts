@@ -28,6 +28,8 @@ export interface Config {
   toolRateLimit: number;
   /** Patchwork: gate tool dispatch on human approval via dashboard. "high" = only high-risk tools (default-safe); "all" = every tool; "off" = disabled. */
   approvalGate: "off" | "high" | "all";
+  /** Patchwork: admin-controlled managed settings file (highest rule precedence, cannot be overridden). */
+  managedSettingsPath: string | null;
   watch: boolean;
   plugins: string[];
   pluginWatch: boolean;
@@ -364,6 +366,7 @@ export function parseConfig(argv: string[]): Config {
   let approvalGate: "off" | "high" | "all" =
     (fileConfig as { approvalGate?: "off" | "high" | "all" }).approvalGate ??
     "off";
+  let managedSettingsPath: string | null = null;
   let toolRateLimit = 60;
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
   let auditLogPath: string | null = null;
@@ -515,6 +518,13 @@ export function parseConfig(argv: string[]): Config {
           );
         }
         approvalGate = val;
+        break;
+      }
+      case "--managed-settings": {
+        const mp = requireArg(args, ++i, "--managed-settings");
+        if (mp.length > 4096)
+          throw new Error("--managed-settings path too long (max 4096 chars)");
+        managedSettingsPath = path.resolve(mp);
         break;
       }
       case "--automation":
@@ -674,6 +684,10 @@ Options:
   --version, -v             Print version and exit
   --analytics <on|off>      Enable or disable anonymous usage analytics
   --help                    Show this help
+
+Patchwork:
+  --approval-gate <level>   Gate tool calls via oversight dashboard: "off" | "high" | "all" (default: "off")
+  --managed-settings <path> Admin-controlled settings file (highest rule precedence, cannot be overridden by users)
 
 Automation:
   --claude-driver <mode>    Enable Claude subprocess driver: "subprocess" | "api" | "none" (default: "none")
@@ -842,6 +856,7 @@ Environment Variables:
     automationEnabled,
     automationPolicyPath,
     approvalGate,
+    managedSettingsPath,
     toolRateLimit,
     watch,
     plugins,

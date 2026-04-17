@@ -134,6 +134,12 @@ export class Server extends EventEmitter<ServerEvents> {
         name: string,
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null = null;
+  /** Patchwork: admin-controlled managed settings path (highest rule precedence). */
+  public managedSettingsPath: string | undefined = undefined;
+  /** Patchwork: approval decision audit callback wired to activityLog.recordEvent. */
+  public onApprovalDecision:
+    | ((event: string, meta: Record<string, unknown>) => void)
+    | undefined = undefined;
   /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
   public webhookFn:
     | ((
@@ -854,7 +860,12 @@ export class Server extends EventEmitter<ServerEvents> {
                 path: parsedUrl.pathname,
                 body: parsedBody,
               },
-              { queue: getApprovalQueue(), workspace: process.cwd() },
+              {
+                queue: getApprovalQueue(),
+                workspace: process.cwd(),
+                managedSettingsPath: this.managedSettingsPath,
+                onDecision: this.onApprovalDecision,
+              },
             );
             res.writeHead(result.status, {
               "Content-Type": "application/json",

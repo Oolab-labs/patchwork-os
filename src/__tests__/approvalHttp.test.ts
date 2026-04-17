@@ -90,6 +90,91 @@ describe("routeApprovalRequest", () => {
     expect(queue.size()).toBe(0);
   });
 
+  it("POST /approvals in plan mode + read tool → allow without queuing", async () => {
+    const queue = new ApprovalQueue();
+    const res = await routeApprovalRequest(
+      {
+        method: "POST",
+        path: "/approvals",
+        body: { toolName: "Read", permissionMode: "plan" },
+      },
+      { queue, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(res.body).toMatchObject({
+      decision: "allow",
+      reason: "plan_mode_read",
+    });
+    expect(queue.size()).toBe(0);
+  });
+
+  it("POST /approvals in plan mode + write tool → deny without queuing", async () => {
+    const queue = new ApprovalQueue();
+    for (const tool of ["Bash", "Edit", "Write"]) {
+      const res = await routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: { toolName: tool, permissionMode: "plan" },
+        },
+        { queue, workspace: "/tmp", ccLoader: emptyRules() },
+      );
+      expect(res.body).toMatchObject({
+        decision: "deny",
+        reason: "plan_mode_write",
+      });
+    }
+    expect(queue.size()).toBe(0);
+  });
+
+  it("POST /approvals in plan mode still honors cc deny rule on read tool", async () => {
+    const queue = new ApprovalQueue();
+    const res = await routeApprovalRequest(
+      {
+        method: "POST",
+        path: "/approvals",
+        body: { toolName: "WebFetch", permissionMode: "plan" },
+      },
+      { queue, workspace: "/tmp", ccLoader: denyRules("WebFetch") },
+    );
+    expect(res.body).toMatchObject({
+      decision: "deny",
+      reason: "cc_deny_rule",
+    });
+  });
+
+  it("POST /approvals in auto mode → allow without queuing", async () => {
+    const queue = new ApprovalQueue();
+    const res = await routeApprovalRequest(
+      {
+        method: "POST",
+        path: "/approvals",
+        body: { toolName: "Bash", permissionMode: "auto" },
+      },
+      { queue, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(res.body).toMatchObject({
+      decision: "allow",
+      reason: "auto_mode",
+    });
+    expect(queue.size()).toBe(0);
+  });
+
+  it("POST /approvals in auto mode still honors cc deny rule", async () => {
+    const queue = new ApprovalQueue();
+    const res = await routeApprovalRequest(
+      {
+        method: "POST",
+        path: "/approvals",
+        body: { toolName: "gitPush", permissionMode: "auto" },
+      },
+      { queue, workspace: "/tmp", ccLoader: denyRules("gitPush") },
+    );
+    expect(res.body).toMatchObject({
+      decision: "deny",
+      reason: "cc_deny_rule",
+    });
+  });
+
   it("POST /approvals in dontAsk still honors cc allow rule", async () => {
     const queue = new ApprovalQueue();
     const res = await routeApprovalRequest(
@@ -178,6 +263,57 @@ describe("routeApprovalRequest", () => {
       ask: ["Bash(npm run *)"],
       deny: ["gitPush"],
       workspace: "/my/ws",
+    });
+  });
+
+  it("onDecision callback fires with correct metadata", async () => {
+    const events: Array<{ event: string; meta: Record<string, unknown> }> = [];
+    const queue = new ApprovalQueue();
+    await routeApprovalRequest(
+      {
+        method: "POST",
+        path: "/approvals",
+        body: { toolName: "Bash", specifier: "ls", sessionId: "s1" },
+      },
+      {
+        queue,
+        workspace: "/tmp",
+        ccLoader: allowRules("Bash"),
+        onDecision: (event, meta) => events.push({ event, meta }),
+      },
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      event: "approval_decision",
+      meta: {
+        toolName: "Bash",
+        specifier: "ls",
+        decision: "allow",
+        reason: "cc_allow_rule",
+        sessionId: "s1",
+      },
+    });
+  });
+
+  it("onDecision fires on deny path", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const queue = new ApprovalQueue();
+    await routeApprovalRequest(
+      {
+        method: "POST",
+        path: "/approvals",
+        body: { toolName: "gitPush", permissionMode: "dontAsk" },
+      },
+      {
+        queue,
+        workspace: "/tmp",
+        ccLoader: emptyRules(),
+        onDecision: (_, meta) => events.push(meta),
+      },
+    );
+    expect(events[0]).toMatchObject({
+      decision: "deny",
+      reason: "dontAsk_mode",
     });
   });
 

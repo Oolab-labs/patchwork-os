@@ -8,6 +8,12 @@ interface ActivityEvent {
   status?: "success" | "error";
   durationMs?: number;
   at?: number;
+  // approval_decision fields (from metadata spread)
+  toolName?: string;
+  decision?: string;
+  reason?: string;
+  permissionMode?: string;
+  specifier?: string;
   [k: string]: unknown;
 }
 
@@ -53,7 +59,8 @@ export default function ActivityPage() {
     const q = filter.trim().toLowerCase();
     if (!q) return events;
     return events.filter((e) => {
-      const hay = `${e.kind} ${e.tool ?? ""} ${e.status ?? ""}`.toLowerCase();
+      const hay =
+        `${e.kind} ${e.tool ?? ""} ${e.toolName ?? ""} ${e.status ?? ""} ${e.decision ?? ""} ${e.reason ?? ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [events, filter]);
@@ -100,38 +107,67 @@ export default function ActivityPage() {
               <tr>
                 <th style={{ width: 140 }}>Time</th>
                 <th style={{ width: 110 }}>Kind</th>
-                <th>Tool</th>
+                <th>Tool / Event</th>
                 <th style={{ width: 110 }}>Duration</th>
-                <th style={{ width: 110 }}>Status</th>
+                <th style={{ width: 130 }}>Status / Decision</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e, i) => (
-                <tr key={`${e.at ?? i}-${i}`}>
-                  <td className="muted" title={e.at ? new Date(e.at).toISOString() : ""}>
-                    {e.at ? relTime(e.at) : "—"}
-                  </td>
-                  <td>
-                    <span className="pill muted">{e.kind}</span>
-                  </td>
-                  <td className="mono">{e.tool ?? "—"}</td>
-                  <td className="mono muted">
-                    {typeof e.durationMs === "number" ? `${e.durationMs}ms` : "—"}
-                  </td>
-                  <td>
-                    {e.status ? (
+              {filtered.map((e, i) => {
+                const isApproval = e.kind === "approval_decision";
+                const toolLabel = isApproval
+                  ? (e.toolName ?? "—")
+                  : (e.tool ?? "—");
+                const specLabel =
+                  isApproval && e.specifier ? ` (${e.specifier})` : "";
+                return (
+                  <tr key={`${e.at ?? i}-${i}`}>
+                    <td
+                      className="muted"
+                      title={e.at ? new Date(e.at).toISOString() : ""}
+                    >
+                      {e.at ? relTime(e.at) : "—"}
+                    </td>
+                    <td>
                       <span
-                        className={`status-cell ${e.status === "error" ? "err" : "ok"}`}
+                        className={`pill ${isApproval ? (e.decision === "allow" ? "ok" : "err") : "muted"}`}
                       >
-                        <span className="pill-dot" />
-                        {e.status}
+                        {e.kind}
                       </span>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="mono">
+                      {toolLabel}
+                      {specLabel && <span className="muted">{specLabel}</span>}
+                    </td>
+                    <td className="mono muted">
+                      {typeof e.durationMs === "number"
+                        ? `${e.durationMs}ms`
+                        : isApproval && e.reason
+                          ? e.reason
+                          : "—"}
+                    </td>
+                    <td>
+                      {isApproval ? (
+                        <span
+                          className={`status-cell ${e.decision === "allow" ? "ok" : "err"}`}
+                        >
+                          <span className="pill-dot" />
+                          {e.decision ?? "—"}
+                        </span>
+                      ) : e.status ? (
+                        <span
+                          className={`status-cell ${e.status === "error" ? "err" : "ok"}`}
+                        >
+                          <span className="pill-dot" />
+                          {e.status}
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

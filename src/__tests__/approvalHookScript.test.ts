@@ -121,6 +121,7 @@ describe("patchwork-approval-hook.sh", () => {
     expect(lastRequest).not.toBeNull();
     expect(lastRequest!.body).toMatchObject({
       toolName: "Bash",
+      specifier: "echo hi",
       permissionMode: "default",
       sessionId: "test-session",
     });
@@ -159,6 +160,15 @@ describe("patchwork-approval-hook.sh", () => {
     );
     expect(r.code).toBe(0);
     // The bridge was never called — no request recorded.
+    expect(lastRequest).toBeNull();
+  });
+
+  it("skips the gate entirely in auto mode", async () => {
+    const r = await runHook(buildPayload({ permission_mode: "auto" }), {
+      CLAUDE_CONFIG_DIR: tmp,
+      PATCHWORK_BRIDGE_PORT: String(port),
+    });
+    expect(r.code).toBe(0);
     expect(lastRequest).toBeNull();
   });
 
