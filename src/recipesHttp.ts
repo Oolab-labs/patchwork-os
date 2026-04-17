@@ -1,4 +1,10 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 
 /**
@@ -6,6 +12,49 @@ import path from "node:path";
  * dashboard Recipes page can list what's available. The bridge does not yet
  * run recipes natively; this endpoint is strictly read-only today.
  */
+
+export interface RecipeDraft {
+  name: string;
+  description?: string;
+  trigger: {
+    type: "manual" | "webhook" | "schedule";
+    path?: string;
+    cron?: string;
+  };
+  steps: Array<{ id: string; kind: "prompt"; prompt: string }>;
+}
+
+export function saveRecipe(
+  recipesDir: string,
+  draft: RecipeDraft,
+): { ok: boolean; path?: string; error?: string } {
+  const safeName = draft.name.toLowerCase().replace(/\s+/g, "-");
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) {
+    return { ok: false, error: "Invalid recipe name" };
+  }
+  const candidate = path.resolve(recipesDir, `${safeName}.json`);
+  const base = path.resolve(recipesDir);
+  if (!candidate.startsWith(base + path.sep)) {
+    return { ok: false, error: "Invalid path" };
+  }
+  try {
+    mkdirSync(recipesDir, { recursive: true });
+    const payload = {
+      name: safeName,
+      description: draft.description,
+      trigger: draft.trigger,
+      steps: draft.steps,
+      createdAt: Date.now(),
+    };
+    writeFileSync(candidate, JSON.stringify(payload, null, 2), "utf-8");
+    return { ok: true, path: candidate };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
 
 export interface RecipeSummary {
   name: string;
@@ -15,6 +64,7 @@ export interface RecipeSummary {
   path: string;
   installedAt: number;
   hasPermissions: boolean;
+  source: "user" | "project" | "unknown";
 }
 
 export interface ListRecipesResult {
@@ -51,6 +101,18 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
       } catch {
         // no permissions sidecar
       }
+      const resolvedRecipesDir = path.resolve(recipesDir);
+      let source: RecipeSummary["source"];
+      if (
+        fullPath.startsWith(resolvedRecipesDir + path.sep) ||
+        fullPath === resolvedRecipesDir
+      ) {
+        source = "user";
+      } else if (fullPath.includes(`${path.sep}.patchwork${path.sep}recipes`)) {
+        source = "project";
+      } else {
+        source = "unknown";
+      }
       recipes.push({
         name: parsed.name ?? path.basename(f, ".json"),
         description: parsed.description,
@@ -59,6 +121,7 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         path: fullPath,
         installedAt: stat.mtimeMs,
         hasPermissions,
+        source,
       });
     } catch {
       // skip malformed recipe file
@@ -115,7 +178,13 @@ export function loadRecipePrompt(
   recipesDir: string,
   name: string,
 ): { prompt: string; path: string } | null {
-  const candidate = path.join(recipesDir, `${name}.json`);
+  const safeName = name.toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) return null;
+
+  const candidate = path.resolve(recipesDir, `${safeName}.json`);
+  const base = path.resolve(recipesDir);
+  if (!candidate.startsWith(base + path.sep)) return null;
+
   let raw: string;
   try {
     raw = readFileSync(candidate, "utf-8");

@@ -56,6 +56,16 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
     });
   }
 
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    const sfs = req.headers.get("sec-fetch-site");
+    if (sfs && sfs !== "same-origin" && sfs !== "none") {
+      return new Response(JSON.stringify({ error: "CSRF check failed" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
+
   const body =
     req.method === "GET" || req.method === "HEAD"
       ? undefined

@@ -18,8 +18,11 @@ export interface PatchworkConfig {
     port: number;
     requireApproval: Array<"low" | "medium" | "high">;
     pushNotifications: boolean;
+    webhookUrl?: string;
   };
   recipesDir?: string;
+  /** Approval gate level — mirrors CLI --approval-gate. Persisted so dashboard changes survive restart. */
+  approvalGate?: "off" | "high" | "all";
   /** Absolute path to a managed settings file (admin-controlled, highest rule precedence). */
   managedSettingsPath?: string;
 }
