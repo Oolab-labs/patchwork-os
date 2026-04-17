@@ -33,6 +33,7 @@ import {
   renderWebhookPrompt,
 } from "./recipesHttp.js";
 import { classifyTool } from "./riskTier.js";
+import { RecipeRunLog } from "./runLog.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
@@ -133,6 +134,7 @@ export class Bridge {
   private pluginWatcher: PluginWatcher | null = null;
   private automationHooks: AutomationHooks | undefined = undefined;
   private recipeScheduler: RecipeScheduler | null = null;
+  private recipeRunLog: RecipeRunLog | null = null;
   private httpMcpHandler: StreamableHttpHandler | null = null;
   private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
@@ -848,6 +850,12 @@ export class Bridge {
         (msg) => this.logger.info(msg),
       );
       if (driver) {
+        // Patchwork: persistent audit trail of recipe-triggered runs.
+        const patchworkDir = path.join(os.homedir(), ".patchwork");
+        this.recipeRunLog = new RecipeRunLog({
+          dir: patchworkDir,
+          logger: this.logger,
+        });
         this.orchestrator = new ClaudeOrchestrator(
           driver,
           this.config.workspace,
@@ -856,8 +864,25 @@ export class Bridge {
             this.extensionClient.notifyTaskOutput(taskId, chunk),
           (taskId, status) => {
             this.extensionClient.notifyTaskDone(taskId, status);
+            const task = this.orchestrator?.getTask(taskId);
+            if (task && this.recipeRunLog) {
+              this.recipeRunLog.record({
+                id: task.id,
+                triggerSource: task.triggerSource,
+                status: task.status,
+                createdAt: task.createdAt,
+                ...(task.startedAt !== undefined && {
+                  startedAt: task.startedAt,
+                }),
+                ...(task.doneAt !== undefined && { doneAt: task.doneAt }),
+                ...(task.model !== undefined && { model: task.model }),
+                ...(task.output !== undefined && { output: task.output }),
+                ...(task.errorMessage !== undefined && {
+                  errorMessage: task.errorMessage,
+                }),
+              });
+            }
             if (status === "done" && this.automationHooks) {
-              const task = this.orchestrator?.getTask(taskId);
               // Loop guard: skip automation-spawned tasks to prevent infinite chains
               if (!task?.isAutomationTask) {
                 this.automationHooks.handleTaskSuccess({
@@ -1086,6 +1111,20 @@ export class Bridge {
         string,
         unknown
       >;
+    };
+    this.server.runsFn = (q) => {
+      if (!this.recipeRunLog) return [];
+      return this.recipeRunLog.query({
+        ...(q.limit !== undefined && { limit: q.limit }),
+        ...(q.trigger !== undefined && {
+          trigger: q.trigger as "cron" | "webhook" | "recipe",
+        }),
+        ...(q.status !== undefined && {
+          status: q.status as "done" | "error" | "cancelled" | "interrupted",
+        }),
+        ...(q.recipe !== undefined && { recipe: q.recipe }),
+        ...(q.after !== undefined && { after: q.after }),
+      }) as unknown as Record<string, unknown>[];
     };
     this.server.webhookFn = async (hookPath: string, payload: unknown) => {
       if (!this.orchestrator) {
