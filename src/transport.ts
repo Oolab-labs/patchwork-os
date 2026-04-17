@@ -162,6 +162,29 @@ export class McpTransport {
     lastRefill: Date.now(),
   };
 
+  /**
+   * Optional approval gate invoked before executing a tool. Returns the
+   * decision or null to bypass gating for this call. Wired in by bridge.ts
+   * when the dashboard approval flow is enabled.
+   */
+  private approvalGate:
+    | ((req: {
+        toolName: string;
+        params: Record<string, unknown>;
+        sessionId: string | null;
+      }) => Promise<"approved" | "rejected" | "expired" | "bypass">)
+    | null = null;
+
+  setApprovalGate(
+    fn: (req: {
+      toolName: string;
+      params: Record<string, unknown>;
+      sessionId: string | null;
+    }) => Promise<"approved" | "rejected" | "expired" | "bypass">,
+  ): void {
+    this.approvalGate = fn;
+  }
+
   constructor(private logger: Logger) {}
 
   /**
@@ -1123,6 +1146,41 @@ export class McpTransport {
                 this.activeToolCalls++;
                 this.inFlightToolNames.set(msg.id, params.name);
                 let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+                if (this.approvalGate) {
+                  const decision = await this.approvalGate({
+                    toolName: params.name,
+                    params: toolArgs as Record<string, unknown>,
+                    sessionId: this.sessionId,
+                  });
+                  if (decision === "rejected" || decision === "expired") {
+                    this.activeToolCalls--;
+                    this.inFlightToolNames.delete(msg.id);
+                    this.inFlightControllers.delete(msg.id);
+                    this.errorCount++;
+                    this.activityLog?.record(
+                      params.name,
+                      Date.now() - startTime,
+                      "error",
+                    );
+                    response = {
+                      jsonrpc: "2.0",
+                      id: msg.id,
+                      result: {
+                        content: [
+                          {
+                            type: "text",
+                            text:
+                              decision === "rejected"
+                                ? `Tool call "${params.name}" rejected by human reviewer via Patchwork dashboard.`
+                                : `Tool call "${params.name}" expired without human decision (no action taken).`,
+                          },
+                        ],
+                        isError: true,
+                      },
+                    };
+                    break;
+                  }
+                }
                 try {
                   const effectiveTimeout = tool.timeoutMs ?? TOOL_TIMEOUT_MS;
                   const timeoutPromise = new Promise<never>((_, reject) => {

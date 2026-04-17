@@ -1,201 +1,219 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 interface Pending {
-	callId: string;
-	toolName: string;
-	tier: "low" | "medium" | "high";
-	requestedAt: number;
-	summary?: string;
+  callId: string;
+  toolName: string;
+  tier: "low" | "medium" | "high";
+  requestedAt: number;
+  summary?: string;
+  params?: unknown;
+  expiresAt?: number;
 }
 
 interface CcRules {
-	allow: string[];
-	ask: string[];
-	deny: string[];
-	workspace: string;
+  allow: string[];
+  ask: string[];
+  deny: string[];
+  workspace: string;
 }
 
-const BRIDGE_PORT = process.env.NEXT_PUBLIC_BRIDGE_PORT ?? "41291";
-const API = `http://127.0.0.1:${BRIDGE_PORT}`;
+const API = "/api/bridge";
+const DEFAULT_TTL_MS = 5 * 60 * 1000;
 
 export default function ApprovalsPage() {
-	const [pending, setPending] = useState<Pending[]>([]);
-	const [rules, setRules] = useState<CcRules | null>(null);
-	const [err, setErr] = useState<string>();
+  const [pending, setPending] = useState<Pending[]>([]);
+  const [rules, setRules] = useState<CcRules | null>(null);
+  const [err, setErr] = useState<string>();
+  const [, setTick] = useState(0);
 
-	useEffect(() => {
-		const tick = async () => {
-			try {
-				const [pRes, rRes] = await Promise.all([
-					fetch(`${API}/approvals`),
-					fetch(`${API}/cc-permissions`),
-				]);
-				if (!pRes.ok) throw new Error(`/approvals ${pRes.status}`);
-				setPending((await pRes.json()) as Pending[]);
-				if (rRes.ok) setRules((await rRes.json()) as CcRules);
-				setErr(undefined);
-			} catch (e) {
-				setErr(e instanceof Error ? e.message : String(e));
-			}
-		};
-		tick();
-		const id = setInterval(tick, 2000);
-		return () => clearInterval(id);
-	}, []);
+  useEffect(() => {
+    const tick = async () => {
+      try {
+        const [pRes, rRes] = await Promise.all([
+          fetch(`${API}/approvals`),
+          fetch(`${API}/cc-permissions`),
+        ]);
+        if (!pRes.ok) throw new Error(`/approvals ${pRes.status}`);
+        setPending((await pRes.json()) as Pending[]);
+        if (rRes.ok) setRules((await rRes.json()) as CcRules);
+        setErr(undefined);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      }
+    };
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }, []);
 
-	async function decide(callId: string, decision: "approve" | "reject") {
-		await fetch(`${API}/${decision}/${callId}`, { method: "POST" });
-	}
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
-	return (
-		<section>
-			<h2>Pending approvals</h2>
-			{err && <p style={{ color: "#f87171" }}>Unreachable: {err}</p>}
-			{pending.length === 0 && !err && (
-				<p style={{ opacity: 0.7 }}>Nothing waiting.</p>
-			)}
-			<ul style={{ listStyle: "none", padding: 0 }}>
-				{pending.map((p) => {
-					const match = matchRule(p.toolName, rules);
-					return (
-						<li
-							key={p.callId}
-							style={{
-								border: "1px solid #1b2028",
-								borderRadius: 8,
-								padding: 12,
-								marginBottom: 8,
-							}}
-						>
-							<div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-								<strong>{p.toolName}</strong>
-								<span style={{ color: tierColor(p.tier) }}>{p.tier}</span>
-								{match && <span style={badge(match)}>CC: {match}</span>}
-								<small style={{ marginLeft: "auto", opacity: 0.6 }}>
-									{new Date(p.requestedAt).toLocaleTimeString()}
-								</small>
-							</div>
-							{p.summary && <p style={{ opacity: 0.8 }}>{p.summary}</p>}
-							<div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-								<button
-									onClick={() => decide(p.callId, "approve")}
-									style={btn("#16a34a")}
-									type="button"
-								>
-									Approve
-								</button>
-								<button
-									onClick={() => decide(p.callId, "reject")}
-									style={btn("#dc2626")}
-									type="button"
-								>
-									Reject
-								</button>
-							</div>
-						</li>
-					);
-				})}
-			</ul>
+  async function decide(callId: string, decision: "approve" | "reject") {
+    await fetch(`${API}/${decision}/${callId}`, { method: "POST" });
+    setPending((prev) => prev.filter((p) => p.callId !== callId));
+  }
 
-			{rules && (
-				<details style={{ marginTop: 24, opacity: 0.75 }}>
-					<summary>CC permission rules ({rules.workspace})</summary>
-					<RulesSummary rules={rules} />
-				</details>
-			)}
-		</section>
-	);
+  return (
+    <section>
+      <div className="page-head">
+        <div>
+          <h1>Approvals</h1>
+          <div className="page-head-sub">
+            Review and decide on tool calls awaiting human approval.
+          </div>
+        </div>
+        <span className={`pill ${pending.length > 0 ? "warn" : "muted"}`}>
+          {pending.length} pending
+        </span>
+      </div>
+
+      {err && <div className="alert-err">Unreachable: {err}</div>}
+
+      {pending.length === 0 && !err ? (
+        <div className="empty-state">
+          <h3>Nothing waiting</h3>
+          <p>All tool calls have been handled by policy or already decided.</p>
+        </div>
+      ) : (
+        <div className="approval-list">
+          {pending.map((p) => {
+            const match = matchRule(p.toolName, rules);
+            const expires = p.expiresAt ?? p.requestedAt + DEFAULT_TTL_MS;
+            const remaining = Math.max(0, expires - Date.now());
+            const urgent = remaining < 60_000;
+            return (
+              <article key={p.callId} className="approval">
+                <div className="approval-head">
+                  <h3>{p.toolName}</h3>
+                  <span className={`pill ${tierClass(p.tier)}`}>
+                    {p.tier} tier
+                  </span>
+                  {match && (
+                    <span className={`pill ${ruleClass(match)}`}>
+                      CC: {match}
+                    </span>
+                  )}
+                  <span className="approval-spacer" />
+                  <span
+                    className={`countdown${urgent ? " urgent" : ""}`}
+                    title={`Expires at ${new Date(expires).toLocaleTimeString()}`}
+                  >
+                    expires in {formatCountdown(remaining)}
+                  </span>
+                </div>
+                {p.summary && <p className="approval-summary">{p.summary}</p>}
+                {p.params !== undefined && (
+                  <details className="approval-params">
+                    <summary>Params preview</summary>
+                    <pre>{safeStringify(p.params)}</pre>
+                  </details>
+                )}
+                <div className="approval-actions">
+                  <button
+                    type="button"
+                    className="btn success"
+                    onClick={() => decide(p.callId, "approve")}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    className="btn danger"
+                    onClick={() => decide(p.callId, "reject")}
+                  >
+                    Reject
+                  </button>
+                  <span className="approval-spacer" />
+                  <span className="pill muted">id: {p.callId.slice(0, 8)}</span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {rules && (
+        <div className="card" style={{ marginTop: "var(--s-6)" }}>
+          <div className="card-head">
+            <h2>CC permission rules</h2>
+            <span className="pill muted">{rules.workspace}</span>
+          </div>
+          <RuleRow label="deny" tone="err" items={rules.deny} />
+          <RuleRow label="ask" tone="warn" items={rules.ask} />
+          <RuleRow label="allow" tone="ok" items={rules.allow} />
+        </div>
+      )}
+    </section>
+  );
 }
 
-function RulesSummary({ rules }: { rules: CcRules }) {
-	return (
-		<div style={{ fontSize: 12, marginTop: 8 }}>
-			<Row
-				label="deny"
-				count={rules.deny.length}
-				tone="#f87171"
-				items={rules.deny}
-			/>
-			<Row
-				label="ask"
-				count={rules.ask.length}
-				tone="#fbbf24"
-				items={rules.ask}
-			/>
-			<Row
-				label="allow"
-				count={rules.allow.length}
-				tone="#34d399"
-				items={rules.allow}
-			/>
-		</div>
-	);
-}
-
-function Row({
-	label,
-	count,
-	tone,
-	items,
+function RuleRow({
+  label,
+  tone,
+  items,
 }: {
-	label: string;
-	count: number;
-	tone: string;
-	items: string[];
+  label: string;
+  tone: "ok" | "warn" | "err";
+  items: string[];
 }) {
-	return (
-		<div style={{ marginBottom: 4 }}>
-			<strong style={{ color: tone }}>
-				{label} ({count})
-			</strong>
-			{items.length > 0 && (
-				<span style={{ opacity: 0.7 }}>
-					: {items.slice(0, 5).join(", ")}
-					{items.length > 5 ? "…" : ""}
-				</span>
-			)}
-		</div>
-	);
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: "var(--s-3)",
+        padding: "6px 0",
+        fontSize: 13,
+        alignItems: "baseline",
+      }}
+    >
+      <span className={`pill ${tone}`} style={{ minWidth: 60 }}>
+        {label} · {items.length}
+      </span>
+      <span style={{ color: "var(--fg-2)", flex: 1 }}>
+        {items.length > 0
+          ? `${items.slice(0, 8).join(", ")}${items.length > 8 ? "…" : ""}`
+          : "—"}
+      </span>
+    </div>
+  );
 }
 
 function matchRule(
-	toolName: string,
-	rules: CcRules | null,
+  toolName: string,
+  rules: CcRules | null,
 ): "deny" | "ask" | "allow" | null {
-	if (!rules) return null;
-	const match = (list: string[]) =>
-		list.some((r) => r === toolName || r.startsWith(`${toolName}(`));
-	if (match(rules.deny)) return "deny";
-	if (match(rules.ask)) return "ask";
-	if (match(rules.allow)) return "allow";
-	return null;
+  if (!rules) return null;
+  const match = (list: string[]) =>
+    list.some((r) => r === toolName || r.startsWith(`${toolName}(`));
+  if (match(rules.deny)) return "deny";
+  if (match(rules.ask)) return "ask";
+  if (match(rules.allow)) return "allow";
+  return null;
 }
 
-function badge(kind: "deny" | "ask" | "allow"): React.CSSProperties {
-	const bg =
-		kind === "deny" ? "#4c1d1d" : kind === "ask" ? "#4c3a1d" : "#1d4c2d";
-	const fg =
-		kind === "deny" ? "#fca5a5" : kind === "ask" ? "#fcd34d" : "#86efac";
-	return {
-		background: bg,
-		color: fg,
-		fontSize: 11,
-		padding: "2px 6px",
-		borderRadius: 4,
-	};
+function ruleClass(kind: "deny" | "ask" | "allow"): string {
+  return kind === "deny" ? "err" : kind === "ask" ? "warn" : "ok";
 }
 
-function tierColor(t: string) {
-	return t === "high" ? "#f87171" : t === "medium" ? "#fbbf24" : "#34d399";
+function tierClass(t: string): string {
+  return t === "high" ? "err" : t === "medium" ? "warn" : "ok";
 }
-function btn(bg: string): React.CSSProperties {
-	return {
-		background: bg,
-		color: "white",
-		border: "none",
-		padding: "6px 12px",
-		borderRadius: 4,
-		cursor: "pointer",
-	};
+
+function formatCountdown(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  return `${m}:${rs.toString().padStart(2, "0")}`;
+}
+
+function safeStringify(v: unknown): string {
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
 }
