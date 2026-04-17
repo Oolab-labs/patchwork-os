@@ -1,5 +1,11 @@
-import type { ApprovalQueue } from "./approvalQueue.js";
-import { evaluateRules, loadCcPermissions } from "./ccPermissions.js";
+import * as dns from "node:dns/promises";
+import * as path from "node:path";
+import type { ApprovalQueue, RiskSignal } from "./approvalQueue.js";
+import {
+  evaluateRules,
+  loadCcPermissions,
+  loadCcPermissionsAttributed,
+} from "./ccPermissions.js";
 import { classifyTool } from "./riskTier.js";
 
 // Tools CC allows in plan mode (read-only — no filesystem or network writes).
@@ -41,12 +47,17 @@ export interface ApprovalHttpDeps {
   ccLoader?: typeof loadCcPermissions;
   /** Optional hook — called after every approval decision for audit/activity logging. */
   onDecision?: (event: string, meta: Record<string, unknown>) => void;
+  /** Optional webhook URL — POST notification dispatched when approval is queued. */
+  webhookUrl?: string;
+  /** Gate tier — "off" bypasses all queueing; "high" only queues high-tier tools; "all" queues everything. */
+  approvalGate?: "off" | "high" | "all";
 }
 
 export interface HttpRequest {
   method: string;
   path: string;
   body?: Record<string, unknown>;
+  query?: URLSearchParams;
 }
 
 export interface HttpResponse {
@@ -61,11 +72,19 @@ export async function routeApprovalRequest(
   const { method, path } = req;
 
   if (method === "GET" && path === "/approvals") {
-    return { status: 200, body: deps.queue.list() };
+    const sessionId = req.query?.get("session");
+    const list = deps.queue.list();
+    const filtered = sessionId
+      ? list.filter((a) => a.sessionId === sessionId)
+      : list;
+    return { status: 200, body: filtered };
   }
 
   if (method === "GET" && path === "/cc-permissions") {
     const rules = (deps.ccLoader ?? loadCcPermissions)(deps.workspace, {
+      managedPath: deps.managedSettingsPath,
+    });
+    const attributed = loadCcPermissionsAttributed(deps.workspace, {
       managedPath: deps.managedSettingsPath,
     });
     return {
@@ -75,6 +94,7 @@ export async function routeApprovalRequest(
         ask: rules.ask,
         deny: rules.deny,
         workspace: deps.workspace,
+        attributed,
       },
     };
   }
@@ -104,6 +124,203 @@ export async function routeApprovalRequest(
   }
 
   return { status: 404, body: { error: "not found" } };
+}
+
+/**
+ * Blocked IP patterns for SSRF defense.
+ * Covers loopback, RFC-1918 private ranges, and link-local.
+ */
+function isBlockedIp(ip: string): boolean {
+  // IPv6 loopback
+  if (ip === "::1" || ip === "0:0:0:0:0:0:0:1") return true;
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4) return false;
+  const [a, b] = parts as [number, number, number, number];
+  // 127.0.0.0/8 — loopback
+  if (a === 127) return true;
+  // 10.0.0.0/8 — private
+  if (a === 10) return true;
+  // 172.16.0.0/12 — private
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  // 192.168.0.0/16 — private
+  if (a === 192 && b === 168) return true;
+  // 169.254.0.0/16 — link-local
+  if (a === 169 && b === 254) return true;
+  return false;
+}
+
+/**
+ * Dispatch a JSON webhook notification when an approval is queued.
+ * Failures are logged but never thrown — webhook errors must not block
+ * the approval flow.
+ */
+async function dispatchApprovalWebhook(
+  webhookUrl: string,
+  payload: {
+    toolName: string;
+    tier: string;
+    callId: string;
+    requestedAt: number;
+    summary?: string;
+  },
+): Promise<void> {
+  // Only HTTPS targets allowed
+  if (!webhookUrl.startsWith("https://")) {
+    console.warn(
+      `[webhook] Rejected non-HTTPS webhook URL: ${webhookUrl.slice(0, 60)}`,
+    );
+    return;
+  }
+
+  let hostname: string;
+  try {
+    hostname = new URL(webhookUrl).hostname;
+  } catch {
+    console.warn(`[webhook] Malformed webhook URL — skipping dispatch`);
+    return;
+  }
+
+  // Reject bare "localhost" hostname before DNS resolution
+  if (hostname === "localhost") {
+    console.warn(`[webhook] Blocked loopback webhook hostname: ${hostname}`);
+    return;
+  }
+
+  // Resolve hostname and check resolved IP against blocklist
+  try {
+    const resolved = await dns.lookup(hostname);
+    if (isBlockedIp(resolved.address)) {
+      console.warn(
+        `[webhook] Blocked private/loopback IP for webhook: ${resolved.address}`,
+      );
+      return;
+    }
+  } catch (err) {
+    console.warn(
+      `[webhook] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn(
+        `[webhook] Non-2xx response from webhook: ${res.status} ${res.statusText}`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[webhook] Dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function computeRiskSignals(
+  toolName: string,
+  params: Record<string, unknown>,
+  workspace: string,
+): RiskSignal[] {
+  const signals: RiskSignal[] = [];
+
+  // Destructive flags — Bash / runCommand
+  if (toolName === "Bash" || toolName === "runCommand") {
+    const cmd = typeof params.command === "string" ? params.command : "";
+    if (/\brm\b.*-[a-z]*r[a-z]*f|\brm\b.*-[a-z]*f[a-z]*r/i.test(cmd)) {
+      signals.push({
+        kind: "destructive_flag",
+        label: "rm with -rf flags",
+        severity: "high",
+      });
+    }
+    if (/--force\b/i.test(cmd)) {
+      signals.push({
+        kind: "destructive_flag",
+        label: "contains --force flag",
+        severity: "medium",
+      });
+    }
+    if (/\bsudo\b/i.test(cmd)) {
+      signals.push({
+        kind: "destructive_flag",
+        label: "runs as sudo",
+        severity: "high",
+      });
+    }
+    if (/\bDROP\s+(TABLE|DATABASE|SCHEMA)\b/i.test(cmd)) {
+      signals.push({
+        kind: "destructive_flag",
+        label: "SQL DROP statement",
+        severity: "high",
+      });
+    }
+    if (/\bTRUNCATE\b/i.test(cmd)) {
+      signals.push({
+        kind: "destructive_flag",
+        label: "SQL TRUNCATE statement",
+        severity: "medium",
+      });
+    }
+    if (/[`$()]\s*|&&|\|\|/.test(cmd)) {
+      signals.push({
+        kind: "chaining",
+        label: "command chaining or substitution",
+        severity: "low",
+      });
+    }
+  }
+
+  // Domain reputation — WebFetch / sendHttpRequest
+  if (toolName === "WebFetch" || toolName === "sendHttpRequest") {
+    const url = typeof params.url === "string" ? params.url : "";
+    if (url && !url.startsWith("https://")) {
+      signals.push({
+        kind: "domain_reputation",
+        label: "non-HTTPS URL",
+        severity: "medium",
+      });
+    }
+    try {
+      const hostname = new URL(url).hostname;
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+        signals.push({
+          kind: "domain_reputation",
+          label: "direct IP address",
+          severity: "medium",
+        });
+      }
+    } catch {
+      // unparseable URL — skip hostname check
+    }
+  }
+
+  // Path escape — Write / Edit / Read
+  if (toolName === "Write" || toolName === "Edit" || toolName === "Read") {
+    const filePath =
+      typeof params.file_path === "string" ? params.file_path : "";
+    if (filePath) {
+      const resolved = path.resolve(filePath);
+      const wsRoot = path.resolve(workspace) + path.sep;
+      if (!resolved.startsWith(wsRoot)) {
+        signals.push({
+          kind: "path_escape",
+          label: "file path outside workspace",
+          severity: "high",
+        });
+      }
+    }
+  }
+
+  return signals;
 }
 
 async function handleApprovalRequest(
@@ -197,13 +414,42 @@ async function handleApprovalRequest(
 
   // Fall through to dashboard approval
   const tier = classifyTool(toolName);
+
+  // Respect approvalGate setting — "off" bypasses, "high" only queues high-tier tools
+  const gate = deps.approvalGate ?? "off";
+  if (gate === "off") {
+    emit("allow", "gate_off");
+    return { status: 200, body: { decision: "allow", reason: "gate_off" } };
+  }
+  if (gate === "high" && tier !== "high") {
+    emit("allow", "gate_below_threshold");
+    return {
+      status: 200,
+      body: { decision: "allow", reason: "gate_below_threshold" },
+    };
+  }
+
+  const riskSignals = computeRiskSignals(toolName, params, deps.workspace);
   const { callId, promise } = deps.queue.request({
     toolName,
     params,
     tier,
     summary,
     sessionId,
+    riskSignals,
   });
+
+  // Fire webhook notification in the background — never block approval flow
+  if (deps.webhookUrl) {
+    dispatchApprovalWebhook(deps.webhookUrl, {
+      toolName,
+      tier,
+      callId,
+      requestedAt: Date.now(),
+      summary,
+    }).catch(() => {});
+  }
+
   const outcome = await promise;
   emit(outcome === "approved" ? "allow" : "deny", outcome);
   return {
