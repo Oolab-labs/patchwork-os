@@ -1,6 +1,8 @@
 import { EventEmitter } from "node:events";
 import http from "node:http";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
+import { routeApprovalRequest } from "./approvalHttp.js";
+import { getApprovalQueue } from "./approvalQueue.js";
 import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import type { Logger } from "./logger.js";
@@ -114,6 +116,26 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
   /** Set by bridge to provide task list data (sanitized — no raw prompts) */
   public tasksFn: (() => { tasks: Record<string, unknown>[] }) | null = null;
+  /** Patchwork: set by bridge to list installed recipes for the dashboard. */
+  public recipesFn: (() => Record<string, unknown>) | null = null;
+  /** Patchwork: set by bridge to launch a named recipe via the orchestrator. */
+  public runRecipeFn:
+    | ((
+        name: string,
+      ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
+    | null = null;
+  /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
+  public webhookFn:
+    | ((
+        path: string,
+        payload: unknown,
+      ) => Promise<{
+        ok: boolean;
+        taskId?: string;
+        name?: string;
+        error?: string;
+      }>)
+    | null = null;
   /** Set by bridge to handle MCP Streamable HTTP sessions (POST/GET/DELETE /mcp) */
   public httpMcpHandler:
     | ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>)
@@ -633,6 +655,101 @@ export class Server extends EventEmitter<ServerEvents> {
         }
         return;
       }
+      if (parsedUrl.pathname?.startsWith("/hooks/") && req.method === "POST") {
+        const hookPath = parsedUrl.pathname.substring("/hooks".length);
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            let payload: unknown;
+            if (chunks.length > 0) {
+              const body = Buffer.concat(chunks).toString("utf-8");
+              if (body.trim()) {
+                try {
+                  payload = JSON.parse(body);
+                } catch {
+                  payload = body;
+                }
+              }
+            }
+            if (!this.webhookFn) {
+              res.writeHead(503, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error:
+                    "Webhooks unavailable — start bridge with --claude-driver subprocess",
+                }),
+              );
+              return;
+            }
+            const result = await this.webhookFn(hookPath, payload);
+            const status = result.ok
+              ? 200
+              : result.error === "not_found"
+                ? 404
+                : 400;
+            res.writeHead(status, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(result));
+          })();
+        });
+        return;
+      }
+      if (parsedUrl.pathname === "/recipes/run" && req.method === "POST") {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            try {
+              const body = Buffer.concat(chunks).toString("utf-8");
+              const parsed = JSON.parse(body || "{}") as { name?: string };
+              const name = parsed.name;
+              if (typeof name !== "string" || !name) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ ok: false, error: "name required" }));
+                return;
+              }
+              if (!this.runRecipeFn) {
+                res.writeHead(503, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    ok: false,
+                    error:
+                      "Recipe execution unavailable — requires --claude-driver subprocess",
+                  }),
+                );
+                return;
+              }
+              const result = await this.runRecipeFn(name);
+              res.writeHead(result.ok ? 200 : 400, {
+                "Content-Type": "application/json",
+              });
+              res.end(JSON.stringify(result));
+            } catch {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({ ok: false, error: "Invalid JSON body" }),
+              );
+            }
+          })();
+        });
+        return;
+      }
+      if (req.url === "/recipes" && req.method === "GET") {
+        try {
+          const data = this.recipesFn?.() ?? { recipesDir: null, recipes: [] };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
       // CC hook notify endpoint — lightweight alternative to full MCP session for hook wiring.
       if (parsedUrl.pathname === "/notify" && req.method === "POST") {
         const chunks: Buffer[] = [];
@@ -664,6 +781,52 @@ export class Server extends EventEmitter<ServerEvents> {
           } catch {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+          }
+        });
+        return;
+      }
+      // Patchwork approval surface — PreToolUse hook + dashboard approve/reject.
+      // Bearer auth already checked above.
+      if (
+        parsedUrl.pathname === "/approvals" ||
+        parsedUrl.pathname === "/cc-permissions" ||
+        /^\/(approve|reject)\/[A-Za-z0-9-]+$/.test(parsedUrl.pathname)
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", async () => {
+          let parsedBody: Record<string, unknown> | undefined;
+          if (chunks.length > 0) {
+            try {
+              parsedBody = JSON.parse(
+                Buffer.concat(chunks).toString("utf-8"),
+              ) as Record<string, unknown>;
+            } catch {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "invalid JSON body" }));
+              return;
+            }
+          }
+          try {
+            const result = await routeApprovalRequest(
+              {
+                method: req.method ?? "GET",
+                path: parsedUrl.pathname,
+                body: parsedBody,
+              },
+              { queue: getApprovalQueue(), workspace: process.cwd() },
+            );
+            res.writeHead(result.status, {
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify(result.body));
+          } catch (err) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
           }
         });
         return;

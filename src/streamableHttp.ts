@@ -18,6 +18,7 @@ import { EventEmitter } from "node:events";
 import type http from "node:http";
 import { WebSocket } from "ws";
 import type { ActivityLog } from "./activityLog.js";
+import { getApprovalQueue } from "./approvalQueue.js";
 import type { Config } from "./config.js";
 import type { ExtensionClient } from "./extensionClient.js";
 import type { FileLock } from "./fileLock.js";
@@ -25,6 +26,7 @@ import type { Logger } from "./logger.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import type { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
+import { classifyTool } from "./riskTier.js";
 import { corsOrigin } from "./server.js";
 import { registerAllTools } from "./tools/index.js";
 import { McpTransport } from "./transport.js";
@@ -637,6 +639,21 @@ export class StreamableHttpHandler {
       transport.setInstructions(this.instructions);
     if (scope) transport.setSessionScope(scope);
     if (denyTools.size > 0) transport.setDenyTools(denyTools);
+    if (this.config.approvalGate !== "off") {
+      const gateAll = this.config.approvalGate === "all";
+      transport.setApprovalGate(async ({ toolName, params, sessionId }) => {
+        const tier = classifyTool(toolName);
+        if (!gateAll && tier !== "high") return "bypass";
+        const queue = getApprovalQueue();
+        const { promise } = queue.request({
+          toolName,
+          params,
+          tier,
+          sessionId: sessionId ?? undefined,
+        });
+        return promise;
+      });
+    }
 
     const terminalPrefix = `h${id.slice(0, 8)}-`; // "h" prefix distinguishes HTTP sessions
 

@@ -26,6 +26,8 @@ export interface Config {
   automationEnabled: boolean;
   automationPolicyPath: string | null;
   toolRateLimit: number;
+  /** Patchwork: gate tool dispatch on human approval via dashboard. "high" = only high-risk tools (default-safe); "all" = every tool; "off" = disabled. */
+  approvalGate: "off" | "high" | "all";
   watch: boolean;
   plugins: string[];
   pluginWatch: boolean;
@@ -359,6 +361,9 @@ export function parseConfig(argv: string[]): Config {
   let automationEnabled = fileConfig.automationEnabled ?? false;
   let automationPolicyPath: string | null =
     fileConfig.automationPolicyPath ?? null;
+  let approvalGate: "off" | "high" | "all" =
+    (fileConfig as { approvalGate?: "off" | "high" | "all" }).approvalGate ??
+    "off";
   let toolRateLimit = 60;
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
   let auditLogPath: string | null = null;
@@ -502,6 +507,16 @@ export function parseConfig(argv: string[]): Config {
         if (antBinary.length > 4096)
           throw new Error("--ant-binary value too long (max 4096 chars)");
         break;
+      case "--approval-gate": {
+        const val = requireArg(args, ++i, "--approval-gate");
+        if (val !== "off" && val !== "high" && val !== "all") {
+          throw new Error(
+            `--approval-gate must be one of: off, high, all (got "${val}")`,
+          );
+        }
+        approvalGate = val;
+        break;
+      }
       case "--automation":
         automationEnabled = true;
         break;
@@ -826,6 +841,7 @@ Environment Variables:
     antBinary,
     automationEnabled,
     automationPolicyPath,
+    approvalGate,
     toolRateLimit,
     watch,
     plugins,

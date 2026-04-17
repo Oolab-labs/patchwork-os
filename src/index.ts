@@ -714,7 +714,87 @@ export function register(ctx) {
   process.exit(0);
 }
 
+// Patchwork: `patchwork recipe run <name>` — POSTs to a running bridge's
+// /recipes/run endpoint to enqueue the recipe via the Claude orchestrator.
+if (process.argv[2] === "recipe" && process.argv[3] === "run") {
+  const name = process.argv[4];
+  if (!name) {
+    process.stderr.write("Usage: patchwork recipe run <name>\n");
+    process.exit(1);
+  }
+  (async () => {
+    try {
+      const { findBridgeLock } = await import("./bridgeLockDiscovery.js");
+      const lock = findBridgeLock();
+      if (!lock) {
+        process.stderr.write(
+          "Error: no running bridge found under ~/.claude/ide/. Start the bridge with --claude-driver subprocess first.\n",
+        );
+        process.exit(1);
+        return;
+      }
+      const res = await fetch(`http://127.0.0.1:${lock.port}/recipes/run`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${lock.authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name }),
+      });
+      const body = (await res.json()) as {
+        ok: boolean;
+        taskId?: string;
+        error?: string;
+      };
+      if (!body.ok) {
+        process.stderr.write(`Error: ${body.error ?? "unknown"}\n`);
+        process.exit(1);
+        return;
+      }
+      process.stdout.write(
+        `  ✓ enqueued recipe "${name}" as task ${(body.taskId ?? "").slice(0, 8)}\n` +
+          "    Watch progress on the dashboard Tasks page or via listClaudeTasks.\n",
+      );
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 // Handle init subcommand — one-command setup: install extension + write CLAUDE.md + print next steps
+// Patchwork: `patchwork recipe install <file.json>` subcommand.
+if (process.argv[2] === "recipe" && process.argv[3] === "install") {
+  const file = process.argv[4];
+  if (!file) {
+    process.stderr.write("Usage: patchwork recipe install <file.json>\n");
+    process.exit(1);
+  }
+  (async () => {
+    try {
+      const { installRecipeFromFile } = await import("./recipes/installer.js");
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const result = installRecipeFromFile(path.resolve(file), {
+        recipesDir,
+      });
+      process.stdout.write(
+        `  ✓ ${result.action} ${result.installedPath}\n` +
+          `  ℹ permissions snippet written to ${result.installedPath}.permissions.json\n` +
+          `    Review + merge into ~/.claude/settings.json to pre-approve recipe steps.\n`,
+      );
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 if (process.argv[2] === "init") {
   const argv = process.argv.slice(3);
 
@@ -1060,6 +1140,30 @@ Steps performed:
     process.stderr.write(
       `  [warn] Could not update ${ccSettingsPath} — add CC hook entries manually.\n` +
         `         See CLAUDE.md Automation Policy section for the settings.json snippet.\n\n`,
+    );
+  }
+
+  // Patchwork: register PreToolUse approval hook so the dashboard can
+  // approve/reject CC tool calls in real time.
+  try {
+    const { registerPreToolUseHook } = await import("./preToolUseHook.js");
+    const result = registerPreToolUseHook(ccSettingsPath);
+    if (result.action === "added") {
+      process.stderr.write(
+        `  ✓ Patchwork PreToolUse hook — registered\n     ${result.hookCommand}\n\n`,
+      );
+    } else if (result.action === "already-wired") {
+      process.stderr.write(
+        `  ✓ Patchwork PreToolUse hook — already registered\n\n`,
+      );
+    } else {
+      process.stderr.write(
+        `  [warn] Patchwork PreToolUse hook — could not register: ${result.error}\n\n`,
+      );
+    }
+  } catch (err) {
+    process.stderr.write(
+      `  [warn] Patchwork PreToolUse hook — ${err instanceof Error ? err.message : String(err)}\n\n`,
     );
   }
 
@@ -1561,6 +1665,7 @@ Options:
     "marketplace",
     "status",
     "shim",
+    "recipe",
   ];
   const unknownSub = process.argv[2];
   if (
@@ -1598,6 +1703,25 @@ Options:
 }
 
 const config = parseConfig(process.argv);
+
+// Patchwork: resolve --model flag (optional, non-invasive) — stashes the
+// configured adapter on globalThis for consumers that opt into the adapter
+// layer. Bridge subprocess driver still works when --model is absent.
+try {
+  const { resolveModel } = await import("./patchworkCli.js");
+  const resolved = resolveModel(process.argv);
+  if (resolved) {
+    (globalThis as { __patchworkAdapter?: unknown }).__patchworkAdapter =
+      resolved.adapter;
+    process.stderr.write(
+      `[patchwork] model adapter initialized: ${resolved.adapter.name}\n`,
+    );
+  }
+} catch (err) {
+  process.stderr.write(
+    `[patchwork] adapter init failed: ${err instanceof Error ? err.message : String(err)}\n`,
+  );
+}
 
 // If --analytics flag was passed, persist the preference immediately
 if (config.analyticsEnabled !== null) {

@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PatchworkConfig",
+  "type": "object",
+  "required": ["model"],
+  "properties": {
+    "model": {
+      "type": "string",
+      "enum": ["claude", "openai", "gemini", "grok", "local"]
+    },
+    "defaultModel": { "type": "string" },
+    "apiKeys": {
+      "type": "object",
+      "properties": {
+        "anthropic": { "type": "string" },
+        "openai": { "type": "string" },
+        "google": { "type": "string" },
+        "xai": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "localEndpoint": { "type": "string", "format": "uri" },
+    "localModel": { "type": "string" },
+    "dashboard": {
+      "type": "object",
+      "properties": {
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "requireApproval": {
+          "type": "array",
+          "items": { "enum": ["low", "medium", "high"] }
+        },
+        "pushNotifications": { "type": "boolean" }
+      }
+    },
+    "recipesDir": { "type": "string" }
+  },
+  "additionalProperties": false
+}

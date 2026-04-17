@@ -7,6 +7,7 @@ import { ActivityLog } from "./activityLog.js";
 import { buildSummary } from "./analyticsAggregator.js";
 import { getAnalyticsPref } from "./analyticsPrefs.js";
 import { sendAnalytics } from "./analyticsSend.js";
+import { getApprovalQueue } from "./approvalQueue.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { loadOrCreateBridgeToken } from "./bridgeToken.js";
 import { repairBridgeToolsRulesIfStale } from "./bridgeToolsRules.js";
@@ -24,6 +25,14 @@ import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
+import { RecipeScheduler } from "./recipes/scheduler.js";
+import {
+  findWebhookRecipe,
+  listInstalledRecipes,
+  loadRecipePrompt,
+  renderWebhookPrompt,
+} from "./recipesHttp.js";
+import { classifyTool } from "./riskTier.js";
 import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
@@ -123,6 +132,7 @@ export class Bridge {
   private pluginTools: LoadedPluginTool[] = [];
   private pluginWatcher: PluginWatcher | null = null;
   private automationHooks: AutomationHooks | undefined = undefined;
+  private recipeScheduler: RecipeScheduler | null = null;
   private httpMcpHandler: StreamableHttpHandler | null = null;
   private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
@@ -262,6 +272,24 @@ export class Bridge {
       transport.sessionId = sessionId;
       transport.setActivityLog(this.activityLog);
       transport.setToolRateLimit(this.config.toolRateLimit);
+      if (this.config.approvalGate !== "off") {
+        const gateAll = this.config.approvalGate === "all";
+        this.logger.info(
+          `[patchwork] approval gate active: ${this.config.approvalGate} tier(s) require dashboard approval`,
+        );
+        transport.setApprovalGate(async ({ toolName, params, sessionId }) => {
+          const tier = classifyTool(toolName);
+          if (!gateAll && tier !== "high") return "bypass";
+          const queue = getApprovalQueue();
+          const { promise } = queue.request({
+            toolName,
+            params,
+            tier,
+            sessionId: sessionId ?? undefined,
+          });
+          return promise;
+        });
+      }
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
       );
@@ -854,6 +882,19 @@ export class Bridge {
           },
         );
         this.logger.info(`[bridge] Claude driver: ${driver.name}`);
+        // Patchwork: start cron-trigger scheduler once the orchestrator exists.
+        const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+        this.recipeScheduler = new RecipeScheduler({
+          recipesDir,
+          enqueue: (opts) => this.orchestrator!.enqueue(opts),
+          logger: this.logger,
+        });
+        const scheduled = this.recipeScheduler.start();
+        if (scheduled.length > 0) {
+          this.logger.info(
+            `[patchwork] scheduled ${scheduled.length} cron recipe${scheduled.length === 1 ? "" : "s"}`,
+          );
+        }
       }
     }
 
@@ -1039,6 +1080,71 @@ export class Bridge {
         timeoutMs: t.timeoutMs,
       })),
     });
+    this.server.recipesFn = () => {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      return listInstalledRecipes(recipesDir) as unknown as Record<
+        string,
+        unknown
+      >;
+    };
+    this.server.webhookFn = async (hookPath: string, payload: unknown) => {
+      if (!this.orchestrator) {
+        return {
+          ok: false,
+          error: "orchestrator_unavailable",
+        };
+      }
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const match = findWebhookRecipe(recipesDir, hookPath);
+      if (!match) {
+        return { ok: false, error: "not_found" };
+      }
+      const loaded = loadRecipePrompt(recipesDir, match.name);
+      if (!loaded) {
+        return { ok: false, error: "recipe_file_missing" };
+      }
+      try {
+        const taskId = this.orchestrator.enqueue({
+          prompt: renderWebhookPrompt(loaded.prompt, payload),
+          triggerSource: `webhook:${match.name}`,
+        });
+        return { ok: true, taskId, name: match.name };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    };
+    this.server.runRecipeFn = async (name: string) => {
+      if (!this.orchestrator) {
+        return {
+          ok: false,
+          error:
+            "Orchestrator unavailable — start bridge with --claude-driver subprocess",
+        };
+      }
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const loaded = loadRecipePrompt(recipesDir, name);
+      if (!loaded) {
+        return {
+          ok: false,
+          error: `Recipe "${name}" not found in ${recipesDir}`,
+        };
+      }
+      try {
+        const taskId = this.orchestrator.enqueue({
+          prompt: loaded.prompt,
+          triggerSource: `recipe:${name}`,
+        });
+        return { ok: true, taskId };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    };
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
       const anySession = [...this.sessions.values()][0];
@@ -1075,6 +1181,14 @@ export class Bridge {
         extension: this.extensionClient.isConnected(),
         extensionCircuitBreaker: this.extensionClient.getCircuitBreakerState(),
         timeline: this.activityLog.queryTimeline({ last: 50 }),
+        patchwork: {
+          workspace: this.config.workspace,
+          approvalGate: this.config.approvalGate,
+          fullMode: this.config.fullMode,
+          claudeDriver: this.config.claudeDriver,
+          automationEnabled: this.config.automationEnabled,
+          port: this.port,
+        },
       };
     };
 
@@ -1416,6 +1530,8 @@ export class Bridge {
     this.logger.info("Shutting down...");
     this._stopPeriodicSnapshots();
     this.automationHooks?.destroy();
+    this.recipeScheduler?.stop();
+    this.recipeScheduler = null;
     this.pluginWatcher?.stop();
     this.pluginWatcher = null;
     this.httpMcpHandler?.close();
