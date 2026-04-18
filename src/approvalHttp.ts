@@ -341,7 +341,17 @@ async function handleApprovalRequest(
   const sessionId =
     typeof body.sessionId === "string" ? body.sessionId : undefined;
 
-  const emit = (decision: string, reason: string) =>
+  // riskSignals are computed lazily — most short-circuit branches skip the
+  // cost by never calling computeRiskSignals. The queue-awaiting branch
+  // passes the already-computed signals via the optional arg.
+  const emit = (
+    decision: string,
+    reason: string,
+    extras?: {
+      riskSignals?: RiskSignal[];
+      callId?: string;
+    },
+  ) =>
     deps.onDecision?.("approval_decision", {
       toolName,
       specifier,
@@ -349,6 +359,12 @@ async function handleApprovalRequest(
       reason,
       permissionMode,
       sessionId,
+      ...(summary !== undefined && { summary }),
+      ...(extras?.riskSignals &&
+        extras.riskSignals.length > 0 && {
+          riskSignals: extras.riskSignals,
+        }),
+      ...(extras?.callId && { callId: extras.callId }),
     });
 
   if (!toolName) {
@@ -451,7 +467,10 @@ async function handleApprovalRequest(
   }
 
   const outcome = await promise;
-  emit(outcome === "approved" ? "allow" : "deny", outcome);
+  emit(outcome === "approved" ? "allow" : "deny", outcome, {
+    riskSignals,
+    callId,
+  });
   return {
     status: 200,
     body: {
