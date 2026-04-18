@@ -29,6 +29,7 @@ import { createCloseAllDiffTabsTool, createCloseTabTool } from "./closeTabs.js";
 import { createGetCodeLensTool } from "./codeLens.js";
 import { createContextBundleTool } from "./contextBundle.js";
 import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
+import { createCtxQueryTracesTool } from "./ctxQueryTraces.js";
 import {
   createEvaluateInDebuggerTool,
   createSetDebugBreakpointsTool,
@@ -324,6 +325,7 @@ export function registerAllTools(
   onContextCacheUpdated?: (generatedAt: string) => void,
   getExtensionDisconnectCount?: () => number,
   commitIssueLinkLog?: import("../commitIssueLinkLog.js").CommitIssueLinkLog,
+  recipeRunLog?: import("../runLog.js").RecipeRunLog,
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -650,6 +652,11 @@ export function registerAllTools(
     createGetPRTemplateTool(workspace),
     createEnrichCommitTool(workspace, commitIssueLinkLog),
     createEnrichStackTraceTool(workspace),
+    createCtxQueryTracesTool({
+      activityLog: activityLog ?? null,
+      commitIssueLinkLog: commitIssueLinkLog ?? null,
+      recipeRunLog: recipeRunLog ?? null,
+    }),
     ...(commitIssueLinkLog
       ? [createGetCommitsForIssueTool(workspace, commitIssueLinkLog)]
       : []),

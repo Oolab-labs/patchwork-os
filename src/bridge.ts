@@ -392,6 +392,7 @@ export class Bridge {
         },
         () => this.extensionDisconnectCount,
         this.commitIssueLinkLog ?? undefined,
+        this.recipeRunLog ?? undefined,
       );
 
       transport.attach(ws);
