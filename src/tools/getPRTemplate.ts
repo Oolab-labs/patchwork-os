@@ -1,4 +1,5 @@
 import { runGitStdout } from "./git-utils.js";
+import { extractIssueRefs } from "./issueRefs.js";
 import { error, execSafe, optionalString, successStructured } from "./utils.js";
 
 function runGit(
@@ -37,14 +38,6 @@ async function detectBaseBranch(
     if (b === "main" || b === "master") return b;
   }
   return "main";
-}
-
-function extractIssueRefs(text: string): string[] {
-  const refs = new Set<string>();
-  for (const match of text.matchAll(/#(\d+)/g)) {
-    refs.add(`#${match[1]}`);
-  }
-  return Array.from(refs);
 }
 
 function formatBullet(
