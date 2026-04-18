@@ -51,6 +51,43 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
+/**
+ * Render a single digest line. Decision traces carry ref + tags + solution
+ * that matter for agent self-triage, so we surface them explicitly instead
+ * of collapsing into the generic summary. Other trace types use the summary
+ * as-is — they don't share the ref/tag shape.
+ */
+function formatTraceLine(
+  t: {
+    traceType: string;
+    ts: number;
+    key: string;
+    summary: string;
+    body: Record<string, unknown>;
+  },
+  now: number,
+): string {
+  const when = relTime(t.ts, now);
+  if (t.traceType === "decision") {
+    const ref = String(t.body.ref ?? t.key);
+    const solution =
+      typeof t.body.solution === "string" ? t.body.solution : t.summary;
+    const tags = Array.isArray(t.body.tags)
+      ? (t.body.tags as unknown[])
+          .filter((x): x is string => typeof x === "string")
+          .slice(0, 3)
+      : [];
+    const tagPart = tags.length > 0 ? ` [${tags.join(",")}]` : "";
+    // Budget: ref + tags + " — <when>" are fixed; truncate solution to fit.
+    const prefix = `${ref}${tagPart} `;
+    const suffix = ` — ${when}`;
+    const budget = MAX_SUMMARY_CHARS - prefix.length - suffix.length;
+    const body = budget > 10 ? truncate(solution, budget) : "";
+    return `${prefix}${body}${suffix}`;
+  }
+  return `${truncate(t.summary, MAX_SUMMARY_CHARS)} — ${when}`;
+}
+
 interface FormatOptions {
   windowMs?: number;
   topN?: number;
@@ -90,7 +127,15 @@ export async function buildRecentTracesDigest(
 
   const structured = (result as { structuredContent?: unknown })
     .structuredContent as
-    | { traces?: Array<{ traceType: string; ts: number; summary: string }> }
+    | {
+        traces?: Array<{
+          traceType: string;
+          ts: number;
+          key: string;
+          summary: string;
+          body: Record<string, unknown>;
+        }>;
+      }
     | undefined;
   const traces = structured?.traces ?? [];
   if (traces.length === 0) return [];
@@ -99,9 +144,7 @@ export async function buildRecentTracesDigest(
   const lines: string[] = ["RECENT DECISIONS (last 12h):"];
   for (const t of top) {
     const icon = TYPE_ICON[t.traceType] ?? "·";
-    const summary = truncate(t.summary, MAX_SUMMARY_CHARS);
-    const line = `  ${icon} ${summary} — ${relTime(t.ts, now)}`;
-    lines.push(line);
+    lines.push(`  ${icon} ${formatTraceLine(t, now)}`);
   }
 
   // Hard byte cap — keep dropping oldest entries until under budget.

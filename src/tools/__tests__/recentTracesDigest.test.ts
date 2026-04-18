@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ActivityLog } from "../../activityLog.js";
 import { CommitIssueLinkLog } from "../../commitIssueLinkLog.js";
+import { DecisionTraceLog } from "../../decisionTraceLog.js";
 import { RecipeRunLog } from "../../runLog.js";
 import { buildRecentTracesDigest } from "../recentTracesDigest.js";
 
@@ -207,5 +208,77 @@ describe("buildRecentTracesDigest", () => {
       { topN: 50 },
     );
     expect(lines.join("\n").length).toBeLessThanOrEqual(2_048);
+  });
+});
+
+describe("buildRecentTracesDigest — decision formatting", () => {
+  it("surfaces ref + tags + solution for decision traces", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "PR-42",
+      problem: "token leak in git remote URL",
+      solution: "env -u GITHUB_TOKEN for all gh invocations",
+      workspace: "/ws",
+      tags: ["security", "gh"],
+    });
+    const lines = await buildRecentTracesDigest({
+      decisionTraceLog: decisionLog,
+    });
+    expect(lines[1]).toContain("★");
+    expect(lines[1]).toContain("PR-42");
+    expect(lines[1]).toContain("[security,gh]");
+    expect(lines[1]).toContain("env -u GITHUB_TOKEN");
+    // Must not double-print the ref (old format was "<ref> — <solution>")
+    expect(lines[1]?.match(/PR-42/g)?.length).toBe(1);
+  });
+
+  it("omits tag bracket when trace has no tags", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "#99",
+      problem: "p",
+      solution: "s",
+      workspace: "/ws",
+    });
+    const lines = await buildRecentTracesDigest({
+      decisionTraceLog: decisionLog,
+    });
+    expect(lines[1]).toContain("#99");
+    expect(lines[1]).not.toContain("[");
+  });
+
+  it("caps tags shown at 3 to protect budget", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "#1",
+      problem: "p",
+      solution: "s",
+      workspace: "/ws",
+      tags: ["a", "b", "c", "d", "e"],
+    });
+    const lines = await buildRecentTracesDigest({
+      decisionTraceLog: decisionLog,
+    });
+    expect(lines[1]).toContain("[a,b,c]");
+    expect(lines[1]).not.toContain("d");
+  });
+
+  it("keeps the full 80-char summary budget including ref+tags", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "#long",
+      problem: "p",
+      solution: "x".repeat(200),
+      workspace: "/ws",
+      tags: ["tag"],
+    });
+    const lines = await buildRecentTracesDigest({
+      decisionTraceLog: decisionLog,
+    });
+    const bullet = lines[1] ?? "";
+    expect(bullet).toContain("…");
+    const summaryMatch = bullet.match(/^ {2}. (.+) — \d+[smhd] ago$/);
+    expect(summaryMatch).not.toBeNull();
+    expect((summaryMatch?.[1] ?? "").length).toBeLessThanOrEqual(80);
   });
 });
