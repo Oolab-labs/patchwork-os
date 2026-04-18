@@ -1255,6 +1255,8 @@ export class Bridge {
         : null;
       const lifecycle = this.activityLog.querySessionLifecycle(id, 100);
       const tools = this.activityLog.querySessionTools(id, 100);
+      const decisions =
+        this.decisionTraceLog?.query({ sessionId: id, limit: 50 }) ?? [];
       const approvals = getApprovalQueue()
         .list()
         .filter((a) => a.sessionId === id);
@@ -1262,6 +1264,7 @@ export class Bridge {
         summary,
         lifecycle: lifecycle as unknown as Record<string, unknown>[],
         tools: tools as unknown as Record<string, unknown>[],
+        decisions: decisions as unknown as Record<string, unknown>[],
         approvals: approvals as unknown as Record<string, unknown>[],
       };
     };
