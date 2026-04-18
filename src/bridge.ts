@@ -15,6 +15,7 @@ import { createDriver } from "./claudeDriver.js";
 import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { CommitIssueLinkLog } from "./commitIssueLinkLog.js";
 import type { Config } from "./config.js";
+import { DecisionTraceLog } from "./decisionTraceLog.js";
 import { ExtensionClient } from "./extensionClient.js";
 import { FileLock } from "./fileLock.js";
 import { buildEnforcementReminder } from "./instructionsUtils.js";
@@ -140,6 +141,7 @@ export class Bridge {
   private recipeScheduler: RecipeScheduler | null = null;
   private recipeRunLog: RecipeRunLog | null = null;
   private commitIssueLinkLog: CommitIssueLinkLog | null = null;
+  private decisionTraceLog: DecisionTraceLog | null = null;
   /** Pre-computed digest of recent decisions, refreshed on each session connect. */
   private recentTracesDigest: string[] = [];
   private httpMcpHandler: StreamableHttpHandler | null = null;
@@ -401,6 +403,7 @@ export class Bridge {
         () => this.extensionDisconnectCount,
         this.commitIssueLinkLog ?? undefined,
         this.recipeRunLog ?? undefined,
+        this.decisionTraceLog ?? undefined,
       );
 
       transport.attach(ws);
@@ -763,6 +766,7 @@ export class Bridge {
       activityLog: this.activityLog,
       commitIssueLinkLog: this.commitIssueLinkLog,
       recipeRunLog: this.recipeRunLog,
+      decisionTraceLog: this.decisionTraceLog,
     })
       .then((lines) => {
         this.recentTracesDigest = lines;
@@ -887,6 +891,10 @@ export class Bridge {
       // Patchwork: enrichment link log is useful regardless of orchestrator.
       const patchworkDir = path.join(os.homedir(), ".patchwork");
       this.commitIssueLinkLog = new CommitIssueLinkLog({
+        dir: patchworkDir,
+        logger: this.logger,
+      });
+      this.decisionTraceLog = new DecisionTraceLog({
         dir: patchworkDir,
         logger: this.logger,
       });
@@ -1075,6 +1083,7 @@ export class Bridge {
         activityLog: this.activityLog,
         commitIssueLinkLog: this.commitIssueLinkLog,
         recipeRunLog: this.recipeRunLog,
+        decisionTraceLog: this.decisionTraceLog,
       });
       const result = await tool.handler({
         ...(query.traceType && { traceType: query.traceType }),
