@@ -70,14 +70,25 @@ Advisory lock (`proper-lockfile` or `flock`) around every append; reload the who
 
 ## Decision
 
-**Adopt Option A (tail-on-read)**, with a seq-scheme change to eliminate collisions:
+**Adopt Option A (tail-on-read).** Keep `seq` as a per-process integer — no composite-id schema change. Add an advisory lock around each append so tearing isn't a correctness concern.
 
-1. **ID scheme:** replace integer `seq` with a composite `{ writerId, localSeq }` where `writerId` is a per-process UUID (stable for bridge lifetime) and `localSeq` is the current monotonic counter. Serialize as `seq: "<writerId>:<localSeq>"` or split into two fields — bikeshed in implementation PR. Existing numeric rows are grandfathered: reader treats a bare number as `{ writerId: "legacy", localSeq: n }`.
-2. **Tail-on-read:** each log tracks `lastReadOffset: number` (file byte offset). `query()` first calls `fstat`; if `size > lastReadOffset`, reads `[lastReadOffset, size)`, parses new rows, merges into the in-memory ring (respecting `memoryCap`), advances `lastReadOffset`.
-3. **Memory ring unchanged:** still bounded by `memoryCap`. Tail reads evict oldest entries as needed.
-4. **Writes unchanged:** still `appendFileSync`. POSIX guarantees atomic appends for writes ≤ `PIPE_BUF` (4KB on Linux/macOS), which covers every realistic trace row.
+1. **Tail-on-read:** each log tracks `lastReadOffset: number` (file byte offset). `query()` first calls `statSync(file)`; if `size > lastReadOffset`, reads `[lastReadOffset, size)`, parses new rows, merges into the in-memory ring (respecting `memoryCap`), advances `lastReadOffset` and `this.seq`. Reuses the existing parse/validate block from `loadExisting` — factor into `parseLine()`.
+2. **`seq` stays per-process, non-unique across writers.** A codebase audit ([docs/adr-0007-research.md] — see PR thread) confirms no consumer requires uniqueness: seq is used only as a pagination cursor and sort key. Pagination cursor becomes a `(createdAt, seq)` tuple so ties are broken deterministically. React keys in the dashboard already use `taskId` / `(ts, key)` tuples, not seq. No schema change on the wire; the `after` query param gains a companion `afterTs`.
+3. **Sort order:** `ORDER BY createdAt DESC, seq DESC`. Both in-memory (`sort`) and in the dashboard.
+4. **Append atomicity:** POSIX does **not** guarantee non-interleaved concurrent appends to regular files. Linux ext4/xfs holds the inode mutex for sub-page writes in practice (not a contract). macOS APFS has been empirically shown to tear at ~256 bytes — well below our typical row size. Therefore: wrap each append in `proper-lockfile` (or `fs.flockSync` via a native binding) around a short critical section: `open(O_APPEND) → flock(LOCK_EX) → write → flock(LOCK_UN) → close`. Lock contention at our write volume (≤ tens/min) is negligible. Readers remain lock-free — torn rows would fail `JSON.parse` and be skipped, but locking eliminates that failure mode entirely.
+5. **Memory ring unchanged:** still bounded by `memoryCap`. Tail reads evict oldest entries as needed.
 
-The tail-on-read cost is one `fstat` per query plus occasional small reads. For the query volume we see (dashboard polls, session-start digest), this is well under 1ms amortized.
+The tail-on-read cost is one `statSync` per query plus occasional small reads. For the query volume we see (dashboard polls, session-start digest), this is well under 1ms amortized.
+
+## When to revisit (trigger for Option C / SQLite)
+
+Tail-on-read is the right answer *now* at current scale (≤1k traces/day, bounded in-memory ring). It is **not** the permanent answer. Migrate to SQLite when any of these trip:
+
+- Any single log crosses **~50k persisted rows** (linear-scan query latency starts to matter).
+- A query pattern needs a genuine **cross-log join** (e.g. "traces whose ref matches a commit that closed issue N") at the storage layer rather than the dashboard layer.
+- The context platform ships a **networked** sync story (different product; different ADR).
+
+Migrating later is strictly cheaper than migrating now: rows to convert grow linearly, but schema decisions made against observed query patterns are dramatically better than guessed ones.
 
 ## Non-goals
 
