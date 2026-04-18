@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 
-type TraceType = "approval" | "enrichment" | "recipe_run";
+type TraceType = "approval" | "enrichment" | "recipe_run" | "decision";
 
 interface DecisionTrace {
   traceType: TraceType;
@@ -20,6 +20,7 @@ interface TracesResponse {
     approval: boolean;
     enrichment: boolean;
     recipe_run: boolean;
+    decision: boolean;
   };
 }
 
@@ -27,12 +28,14 @@ const TYPE_LABELS: Record<TraceType, string> = {
   approval: "Approval",
   enrichment: "Enrichment",
   recipe_run: "Recipe run",
+  decision: "Decision",
 };
 
 const TYPE_COLORS: Record<TraceType, string> = {
   approval: "var(--warn, #d97706)",
   enrichment: "var(--ok, #059669)",
   recipe_run: "var(--fg-2)",
+  decision: "#a78bfa",
 };
 
 export default function TracesPage() {
@@ -90,7 +93,9 @@ export default function TracesPage() {
         }}
       >
         <div style={{ display: "flex", gap: "var(--s-2)" }}>
-          {(["all", "approval", "enrichment", "recipe_run"] as const).map(
+          {(
+            ["all", "approval", "enrichment", "recipe_run", "decision"] as const
+          ).map(
             (f) => {
               const active = filter === f;
               return (
