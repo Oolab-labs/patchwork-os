@@ -40,6 +40,7 @@ import { Server } from "./server.js";
 import { type CheckpointData, SessionCheckpoint } from "./sessionCheckpoint.js";
 import { StreamableHttpHandler } from "./streamableHttp.js";
 import { initTelemetry, shutdownTelemetry } from "./telemetry.js";
+import { createCtxQueryTracesTool } from "./tools/ctxQueryTraces.js";
 import { readNote, writeNote } from "./tools/handoffNote.js";
 import { registerAllTools } from "./tools/index.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
@@ -1041,6 +1042,33 @@ export class Bridge {
         latency: { perTool, overallP95Ms },
         health: { score, signals },
       };
+    };
+    this.server.tracesFn = async (query) => {
+      const tool = createCtxQueryTracesTool({
+        activityLog: this.activityLog,
+        commitIssueLinkLog: this.commitIssueLinkLog,
+        recipeRunLog: this.recipeRunLog,
+      });
+      const result = await tool.handler({
+        ...(query.traceType && { traceType: query.traceType }),
+        ...(query.key && { key: query.key }),
+        ...(query.since !== undefined && { since: query.since }),
+        ...(query.limit !== undefined && { limit: query.limit }),
+      });
+      const structured = (result as { structuredContent?: unknown })
+        .structuredContent;
+      if (structured && typeof structured === "object") {
+        return structured as Record<string, unknown>;
+      }
+      const text = result.content[0]?.text;
+      if (typeof text === "string") {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return { traces: [], count: 0 };
+        }
+      }
+      return { traces: [], count: 0 };
     };
     this.server.analyticsFn = async (windowHours?: number) => {
       const wh =
