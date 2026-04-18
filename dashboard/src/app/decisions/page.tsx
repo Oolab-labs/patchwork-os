@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 
 interface DecisionTrace {
   traceType: "decision";
@@ -25,6 +26,19 @@ interface TracesResponse {
   sources: { decision: boolean };
 }
 
+const validateTraces: ShapeCheck<TracesResponse> = shape(
+  "/traces?traceType=decision",
+  (raw, errors) => {
+    if (!isRecord(raw)) {
+      errors.push({ path: "$", reason: "expected object" });
+      return null;
+    }
+    arr(raw, "traces", errors);
+    if (errors.length > 0) return null;
+    return raw as unknown as TracesResponse;
+  },
+);
+
 export default function DecisionsPage() {
   const [tag, setTag] = useState("");
   const [keyQuery, setKeyQuery] = useState("");
@@ -42,7 +56,7 @@ export default function DecisionsPage() {
 
   const { data, error, loading } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
-    { intervalMs: 5000 },
+    { intervalMs: 5000, transform: validateTraces },
   );
 
   const traces = data?.traces ?? [];
@@ -162,7 +176,13 @@ export default function DecisionsPage() {
         </div>
       )}
 
-      {error && <div className="alert-err">Unreachable: {error}</div>}
+      {error && (
+        <div className="alert-err">
+          {error.startsWith("/traces")
+            ? `Response shape unexpected (bridge version mismatch?): ${error}`
+            : `Unreachable: ${error}`}
+        </div>
+      )}
 
       {!loading && traces.length === 0 && !error ? (
         <div className="empty-state">
