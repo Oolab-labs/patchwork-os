@@ -43,6 +43,7 @@ import { createDetectUnusedCodeTool } from "./detectUnusedCode.js";
 import { createGetDocumentLinksTool } from "./documentLinks.js";
 import { createEditTextTool } from "./editText.js";
 import { createEnrichCommitTool } from "./enrichCommit.js";
+import { createEnrichStackTraceTool } from "./enrichStackTrace.js";
 import { createExplainDiagnosticTool } from "./explainDiagnostic.js";
 import { createExplainSymbolTool } from "./explainSymbol.js";
 import {
@@ -648,6 +649,7 @@ export function registerAllTools(
     createScreenshotAndAnnotateTool(workspace, extensionClient),
     createGetPRTemplateTool(workspace),
     createEnrichCommitTool(workspace, commitIssueLinkLog),
+    createEnrichStackTraceTool(workspace),
     ...(commitIssueLinkLog
       ? [createGetCommitsForIssueTool(workspace, commitIssueLinkLog)]
       : []),

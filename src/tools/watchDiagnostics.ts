@@ -1,25 +1,12 @@
-import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { promisify } from "node:util";
 import type { ExtensionClient } from "../extensionClient.js";
 import { type FileUri, uriToAbsPath } from "../fp/brandedTypes.js";
 import type { ProbeResults } from "../probe.js";
 import type { ToolHandler } from "../transport.js";
+import { createBlameResolver } from "./blame-utils.js";
 import { biomeLinter } from "./linters/biome.js";
 
-const execFileAsync = promisify(execFile);
-
-const BLAME_CACHE_TTL_MS = 30_000;
-const BLAME_TIMEOUT_MS = 2_000;
 /** Maximum concurrent git-blame subprocesses per enrichDiagnostics call. */
 const BLAME_CONCURRENCY = 8;
-/** Maximum blame cache entries per tool instance before FIFO eviction. */
-const BLAME_CACHE_MAX_SIZE = 1_000;
-
-interface BlameEntry {
-  commitHash: string;
-  cachedAt: number;
-}
 
 interface DiagnosticHistory {
   firstSeenAt: number;
@@ -58,47 +45,8 @@ export function createWatchDiagnosticsTool(
   linterFilter?: string[],
 ) {
   // Per-instance blame cache — scoped to this tool instance to prevent
-  // cross-test pollution and allow independent TTL/size management.
-  const blameCache = new Map<string, BlameEntry>();
-
-  function evictBlameCache(): void {
-    if (blameCache.size <= BLAME_CACHE_MAX_SIZE) return;
-    // FIFO eviction: delete the oldest inserted key
-    const firstKey = blameCache.keys().next().value;
-    if (firstKey !== undefined) blameCache.delete(firstKey);
-  }
-
-  async function getIntroducedByCommit(
-    file: string,
-    line: number,
-  ): Promise<string | undefined> {
-    const key = `${file}:${line}`;
-    const cached = blameCache.get(key);
-    if (cached && Date.now() - cached.cachedAt < BLAME_CACHE_TTL_MS) {
-      return cached.commitHash;
-    }
-    // Skip subprocess for files that no longer exist on disk. Diagnostics can
-    // outlive their source file (rename, delete); spawning git blame for each
-    // is wasteful (one fork per stale diagnostic) and dominates cost when the
-    // cache is hot with dead files.
-    if (!existsSync(file)) return undefined;
-    try {
-      const { stdout } = await execFileAsync(
-        "git",
-        ["blame", "-L", `${line},${line}`, "--porcelain", "--", file],
-        { cwd: workspace, timeout: BLAME_TIMEOUT_MS },
-      );
-      const hash = stdout.slice(0, 40).trim();
-      if (/^[0-9a-f]{40}$/.test(hash) && !hash.startsWith("0000000")) {
-        blameCache.set(key, { commitHash: hash, cachedAt: Date.now() });
-        evictBlameCache();
-        return hash;
-      }
-    } catch {
-      // git not available, file not tracked, or timeout — silently omit
-    }
-    return undefined;
-  }
+  // cross-test pollution. Backed by the shared blame-utils helper.
+  const { getIntroducedByCommit } = createBlameResolver(workspace);
 
   // Per-instance diagnostic history: "file:line:message_prefix" → { firstSeenAt, recurrenceCount }
   // Capped to prevent unbounded growth in long-running sessions.
