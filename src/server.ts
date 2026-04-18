@@ -185,6 +185,9 @@ export class Server extends EventEmitter<ServerEvents> {
   public analyticsFn:
     | ((windowHours?: number) => Promise<Record<string, unknown>>)
     | null = null;
+  /** Set by bridge to answer GET /activity — history of recent tool calls + lifecycle events. */
+  public activityFn: ((last: number) => Record<string, unknown>[]) | null =
+    null;
   /** Set by bridge to answer GET /traces via ctxQueryTraces over persistent logs. */
   public tracesFn:
     | ((query: {
@@ -552,6 +555,26 @@ export class Server extends EventEmitter<ServerEvents> {
           };
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      if (parsedUrl.pathname === "/activity" && req.method === "GET") {
+        try {
+          const lastStr = parsedUrl.searchParams.get("last");
+          const last =
+            lastStr !== null && /^\d+$/.test(lastStr)
+              ? Math.min(Number(lastStr), 500)
+              : 100;
+          const data = this.activityFn?.(last) ?? [];
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ events: data, count: data.length }));
         } catch (err) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(
