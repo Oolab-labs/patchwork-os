@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 
 interface SessionSummary {
   id: string;
@@ -56,6 +57,32 @@ interface DetailResponse {
   approvals: PendingApproval[];
 }
 
+/**
+ * Minimal runtime validation — catches bridge/dashboard version drift
+ * (e.g. an older bridge that predates tools[] / decisions[]) and turns
+ * silent blank sections into a loud error. Intentionally permissive on
+ * optional arrays: missing is fine (older bridge), wrong type is not.
+ */
+const validateDetail: ShapeCheck<DetailResponse> = shape(
+  "/sessions/:id",
+  (raw, errors) => {
+    if (!isRecord(raw)) {
+      errors.push({ path: "$", reason: "expected object" });
+      return null;
+    }
+    // summary may be null (unknown session) — only fail on unexpected shapes.
+    if (raw.summary !== null && !isRecord(raw.summary)) {
+      errors.push({ path: "summary", reason: "expected object or null" });
+    }
+    arr(raw, "lifecycle", errors);
+    arr(raw, "approvals", errors);
+    arr(raw, "tools", errors, { optional: true });
+    arr(raw, "decisions", errors, { optional: true });
+    if (errors.length > 0) return null;
+    return raw as unknown as DetailResponse;
+  },
+);
+
 const NOISE_EVENTS = new Set([
   "claude_connected",
   "claude_disconnected",
@@ -71,7 +98,7 @@ export default function SessionDetailPage() {
 
   const { data, error, loading, status } = useBridgeFetch<DetailResponse>(
     `/api/bridge/sessions/${id}`,
-    { intervalMs: 3000 },
+    { intervalMs: 3000, transform: validateDetail },
   );
 
   const summary = data?.summary ?? null;
@@ -126,7 +153,13 @@ export default function SessionDetailPage() {
         )}
       </div>
 
-      {error && !data && <div className="alert-err">Unreachable: {error}</div>}
+      {error && !data && (
+        <div className="alert-err">
+          {error.startsWith("/sessions/:id")
+            ? `Response shape unexpected (bridge version mismatch?): ${error}`
+            : `Unreachable: ${error}`}
+        </div>
+      )}
       {!loading && !data && status === 404 && (
         <div className="empty-state">
           <h3>Session not found</h3>
