@@ -44,6 +44,7 @@ import { createCtxQueryTracesTool } from "./tools/ctxQueryTraces.js";
 import { readNote, writeNote } from "./tools/handoffNote.js";
 import { registerAllTools } from "./tools/index.js";
 import { cleanupTempDirs } from "./tools/openDiff.js";
+import { buildRecentTracesDigest } from "./tools/recentTracesDigest.js";
 import { resolveFilePath } from "./tools/utils.js";
 import { McpTransport } from "./transport.js";
 import { PACKAGE_VERSION } from "./version.js";
@@ -139,6 +140,8 @@ export class Bridge {
   private recipeScheduler: RecipeScheduler | null = null;
   private recipeRunLog: RecipeRunLog | null = null;
   private commitIssueLinkLog: CommitIssueLinkLog | null = null;
+  /** Pre-computed digest of recent decisions, refreshed on each session connect. */
+  private recentTracesDigest: string[] = [];
   private httpMcpHandler: StreamableHttpHandler | null = null;
   private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
@@ -301,6 +304,10 @@ export class Bridge {
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
       );
+      // Refresh trace digest before every session's first instruction read.
+      // Fire-and-forget — if it's slow (shouldn't be; local file + memory),
+      // the session just sees the previous digest. Never blocks connect.
+      this.refreshRecentTracesDigest();
       transport.setInstructions(this.buildInstructions());
       transport.onInitialized = () => {
         if (this.pendingListChanged && ws.readyState === WebSocket.OPEN) {
@@ -731,6 +738,10 @@ export class Bridge {
   private buildInstructions(): string {
     const lines = [`claude-ide-bridge v${PACKAGE_VERSION}`];
     lines.push("");
+    if (this.recentTracesDigest.length > 0) {
+      lines.push(...this.recentTracesDigest);
+      lines.push("");
+    }
     lines.push("CONTEXT PLATFORM:");
     lines.push(
       "  Use ctx tools for issue/PR/error context — not gh or githubViewPR.",
@@ -745,6 +756,22 @@ export class Bridge {
     lines.push("");
     lines.push(...buildEnforcementReminder());
     return lines.join("\n");
+  }
+
+  private refreshRecentTracesDigest(): void {
+    buildRecentTracesDigest({
+      activityLog: this.activityLog,
+      commitIssueLinkLog: this.commitIssueLinkLog,
+      recipeRunLog: this.recipeRunLog,
+    })
+      .then((lines) => {
+        this.recentTracesDigest = lines;
+      })
+      .catch((err) => {
+        this.logger.warn?.(
+          `[traces-digest] refresh failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
   }
 
   private cleanupSession(id: string): void {
