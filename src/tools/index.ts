@@ -66,6 +66,7 @@ import { createGetBufferContentTool } from "./getBufferContent.js";
 import { createGetChangeImpactTool } from "./getChangeImpact.js";
 import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
 import { createGetCodeCoverageTool } from "./getCodeCoverage.js";
+import { createGetCommitsForIssueTool } from "./getCommitsForIssue.js";
 import {
   createGetCurrentSelectionTool,
   createGetLatestSelectionTool,
@@ -321,6 +322,7 @@ export function registerAllTools(
   getDisconnectInfo?: () => DisconnectInfo,
   onContextCacheUpdated?: (generatedAt: string) => void,
   getExtensionDisconnectCount?: () => number,
+  commitIssueLinkLog?: import("../commitIssueLinkLog.js").CommitIssueLinkLog,
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -645,7 +647,10 @@ export function registerAllTools(
     createTestTraceToSourceTool(workspace),
     createScreenshotAndAnnotateTool(workspace, extensionClient),
     createGetPRTemplateTool(workspace),
-    createEnrichCommitTool(workspace),
+    createEnrichCommitTool(workspace, commitIssueLinkLog),
+    ...(commitIssueLinkLog
+      ? [createGetCommitsForIssueTool(workspace, commitIssueLinkLog)]
+      : []),
     createGetCodeCoverageTool(workspace),
     createGenerateTestsTool(workspace),
     ...(probes.gh
@@ -839,6 +844,7 @@ export const TOOL_CATEGORIES: Record<string, string[]> = {
   githubPostPRReview: ["github"],
   getPRTemplate: ["github"],
   enrichCommit: ["github"],
+  getCommitsForIssue: ["github"],
   getAIComments: ["github"],
   createGithubIssueFromAIComment: ["github"],
   // Bridge / orchestration
