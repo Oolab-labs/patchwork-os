@@ -179,7 +179,7 @@ export class Bridge {
     this.extensionClient = new ExtensionClient(this.logger);
 
     // Handle new Claude Code connections
-    this.server.on("connection", (ws: WebSocket) => {
+    this.server.on("connection", async (ws: WebSocket) => {
       // Reject connections before probes are ready
       if (!this.ready) {
         this.logger.warn("Connection rejected — bridge not ready yet");
@@ -306,10 +306,11 @@ export class Bridge {
       transport.setExtensionConnectedFn(() =>
         this.extensionClient.isConnected(),
       );
-      // Refresh trace digest before every session's first instruction read.
-      // Fire-and-forget — if it's slow (shouldn't be; local file + memory),
-      // the session just sees the previous digest. Never blocks connect.
-      this.refreshRecentTracesDigest();
+      // Refresh trace digest before setting instructions. Underlying query
+      // is pure in-memory so this is microtask-cheap; awaiting ensures the
+      // session's first `initialize` response includes the fresh digest
+      // rather than the previous (empty on first connect) cache.
+      await this.refreshRecentTracesDigest();
       transport.setInstructions(this.buildInstructions());
       transport.onInitialized = () => {
         if (this.pendingListChanged && ws.readyState === WebSocket.OPEN) {
@@ -761,21 +762,19 @@ export class Bridge {
     return lines.join("\n");
   }
 
-  private refreshRecentTracesDigest(): void {
-    buildRecentTracesDigest({
-      activityLog: this.activityLog,
-      commitIssueLinkLog: this.commitIssueLinkLog,
-      recipeRunLog: this.recipeRunLog,
-      decisionTraceLog: this.decisionTraceLog,
-    })
-      .then((lines) => {
-        this.recentTracesDigest = lines;
-      })
-      .catch((err) => {
-        this.logger.warn?.(
-          `[traces-digest] refresh failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
+  private async refreshRecentTracesDigest(): Promise<void> {
+    try {
+      this.recentTracesDigest = await buildRecentTracesDigest({
+        activityLog: this.activityLog,
+        commitIssueLinkLog: this.commitIssueLinkLog,
+        recipeRunLog: this.recipeRunLog,
+        decisionTraceLog: this.decisionTraceLog,
       });
+    } catch (err) {
+      this.logger.warn?.(
+        `[traces-digest] refresh failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   private cleanupSession(id: string): void {
@@ -1477,7 +1476,10 @@ export class Bridge {
       this.oauthServer
         ? (token) => this.oauthServer?.resolveBearerScope(token) ?? null
         : null,
-      this.buildInstructions(),
+      async () => {
+        await this.refreshRecentTracesDigest();
+        return this.buildInstructions();
+      },
     );
     this.server.httpMcpHandler = (req, res) =>
       this.httpMcpHandler?.handle(req, res) ?? Promise.resolve();
