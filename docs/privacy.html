@@ -4,7 +4,7 @@
   <link rel="icon" type="image/svg+xml" href="/claude-ide-bridge/favicon.svg">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Privacy Policy — Claude IDE Bridge</title>
+  <title>Privacy Policy — Patchwork OS / Claude IDE Bridge</title>
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -32,11 +32,12 @@
 <body>
 
 <h1>Privacy Policy</h1>
-<p class="meta">Claude IDE Bridge &mdash; Last updated: March 2026</p>
+<p class="meta">Patchwork OS / Claude IDE Bridge &mdash; Oolab Labs &mdash; Last updated: April 2026</p>
 
 <div class="note">
-  <strong>Short version:</strong> Claude IDE Bridge runs entirely on your own machine.
-  No data about you, your code, or your IDE is collected, transmitted, or stored by Oolab Labs.
+  <strong>Short version:</strong> Patchwork OS and Claude IDE Bridge run entirely on your own machine.
+  When you connect Gmail, your email is read locally and never transmitted to Oolab Labs or any third party.
+  Nothing leaves your machine without your explicit approval.
 </div>
 
 <h2>1. What Claude IDE Bridge is</h2>
@@ -82,31 +83,48 @@
   Oolab Labs.
 </p>
 
-<h2>5. Third-party services</h2>
+<h2>5. Gmail connector (Patchwork OS)</h2>
 <p>
-  The bridge itself makes no outbound network requests. Any AI inference is performed by
-  Claude Code, which calls Anthropic's API directly. Use of Claude Code and the Claude API
-  is subject to <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's Privacy Policy</a>.
+  Patchwork OS can optionally connect to Gmail via OAuth 2.0. When you connect Gmail:
+</p>
+<ul>
+  <li><strong>Scope requested:</strong> <code>https://www.googleapis.com/auth/gmail.readonly</code> — read-only access to your email messages and metadata.</li>
+  <li><strong>What we do with it:</strong> Email content is read locally on your machine by the Patchwork OS process. Summaries or draft replies are written to <code>~/.patchwork/inbox/</code> on your machine only.</li>
+  <li><strong>What we never do:</strong> We do not forward email content to Oolab Labs servers. We do not send, delete, or modify emails unless you configure a recipe to do so and explicitly approve the action.</li>
+  <li><strong>Token storage:</strong> Your OAuth refresh token is stored at <code>~/.patchwork/tokens/gmail.json</code> with file permissions readable only by your user account (<code>0600</code>). It is never transmitted off your machine.</li>
+  <li><strong>Revoke anytime:</strong> You can disconnect Gmail from the Patchwork OS dashboard Connections page, or revoke access at <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>.</li>
+</ul>
+<p>
+  Patchwork OS's use of Gmail data complies with the
+  <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>,
+  including the Limited Use requirements.
 </p>
 
-<h2>6. Open source</h2>
+<h2>6. Third-party services</h2>
+<p>
+  The bridge itself makes no outbound network requests beyond the connectors you explicitly configure.
+  Any AI inference is performed by the model provider you configure using your own API key — Oolab Labs
+  is not an intermediary. Use of the Claude API is subject to
+  <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's Privacy Policy</a>.
+</p>
+
+<h2>7. Open source</h2>
 <p>
   Claude IDE Bridge is fully open source. You can inspect everything it does at
   <a href="https://github.com/Oolab-labs/claude-ide-bridge" target="_blank" rel="noopener">github.com/Oolab-labs/claude-ide-bridge</a>.
 </p>
 
-<h2>7. Changes to this policy</h2>
+<h2>8. Changes to this policy</h2>
 <p>
   If this policy changes materially, the updated version will be published at this URL and
   the "Last updated" date above will be revised. Because no personal data is collected,
   changes are unlikely.
 </p>
 
-<h2>8. Contact</h2>
+<h2>9. Contact</h2>
 <p>
-  Questions about this policy can be directed to
-  <a href="mailto:mcp-review@anthropic.com">the maintainer</a> via the
-  <a href="https://github.com/Oolab-labs/claude-ide-bridge/issues" target="_blank" rel="noopener">GitHub issue tracker</a>.
+  Questions about this policy: <a href="mailto:support@gigsecure.co.ke">support@gigsecure.co.ke</a>
+  or open an issue at <a href="https://github.com/Oolab-labs/patchwork-os/issues" target="_blank" rel="noopener">github.com/Oolab-labs/patchwork-os/issues</a>.
 </p>
 
 </body>
