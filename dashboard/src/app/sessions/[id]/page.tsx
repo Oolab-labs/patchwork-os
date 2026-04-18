@@ -18,6 +18,19 @@ interface LifecycleEntry {
   metadata?: Record<string, unknown>;
 }
 
+interface ToolEntry {
+  id: number;
+  timestamp: string;
+  tool: string;
+  durationMs: number;
+  status: "success" | "error";
+  errorMessage?: string;
+}
+
+type StreamRow =
+  | { kind: "lifecycle"; entry: LifecycleEntry }
+  | { kind: "tool"; entry: ToolEntry };
+
 interface PendingApproval {
   callId: string;
   toolName: string;
@@ -29,6 +42,7 @@ interface PendingApproval {
 interface DetailResponse {
   summary: SessionSummary | null;
   lifecycle: LifecycleEntry[];
+  tools?: ToolEntry[];
   approvals: PendingApproval[];
 }
 
@@ -52,7 +66,14 @@ export default function SessionDetailPage() {
 
   const summary = data?.summary ?? null;
   const approvals = data?.approvals ?? [];
-  const lifecycle = (data?.lifecycle ?? []).slice().reverse(); // newest first
+  const lifecycle = data?.lifecycle ?? [];
+  const tools = data?.tools ?? [];
+  const stream: StreamRow[] = [
+    ...lifecycle.map((entry) => ({ kind: "lifecycle" as const, entry })),
+    ...tools.map((entry) => ({ kind: "tool" as const, entry })),
+  ]
+    .sort((a, b) => a.entry.id - b.entry.id)
+    .reverse(); // newest first
 
   return (
     <section>
@@ -171,11 +192,11 @@ export default function SessionDetailPage() {
         </div>
       )}
 
-      {lifecycle.length > 0 && (
+      {stream.length > 0 && (
         <div className="card" style={{ marginTop: "var(--s-4)" }}>
           <div className="card-head">
             <h2>Event stream</h2>
-            <span className="pill muted">{lifecycle.length}</span>
+            <span className="pill muted">{stream.length}</span>
           </div>
           <div className="table-wrap">
             <table className="table">
@@ -187,7 +208,30 @@ export default function SessionDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {lifecycle.map((e) => {
+                {stream.map((row) => {
+                  if (row.kind === "tool") {
+                    const t = row.entry;
+                    return (
+                      <tr key={`t-${t.id}`}>
+                        <td className="muted" title={t.timestamp}>
+                          {relTime(Date.parse(t.timestamp))}
+                        </td>
+                        <td>
+                          <span
+                            className={`pill ${t.status === "success" ? "ok" : "err"}`}
+                          >
+                            {t.tool}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 13 }}>
+                          {t.status === "error" && t.errorMessage
+                            ? t.errorMessage
+                            : `${t.durationMs}ms`}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  const e = row.entry;
                   const isNoise = NOISE_EVENTS.has(e.event);
                   const isApproval = e.event === "approval_decision";
                   const meta = e.metadata ?? {};
@@ -197,7 +241,7 @@ export default function SessionDetailPage() {
                       ? meta.summary
                       : "—";
                   return (
-                    <tr key={e.id}>
+                    <tr key={`l-${e.id}`}>
                       <td className="muted" title={e.timestamp}>
                         {relTime(Date.parse(e.timestamp))}
                       </td>
@@ -226,7 +270,7 @@ export default function SessionDetailPage() {
         </div>
       )}
 
-      {summary && lifecycle.length === 0 && approvals.length === 0 && (
+      {summary && stream.length === 0 && approvals.length === 0 && (
         <div className="empty-state" style={{ marginTop: "var(--s-4)" }}>
           <h3>No recorded activity</h3>
           <p>

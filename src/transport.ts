@@ -1161,6 +1161,8 @@ export class McpTransport {
                       params.name,
                       Date.now() - startTime,
                       "error",
+                      undefined,
+                      this.sessionId ?? undefined,
                     );
                     response = {
                       jsonrpc: "2.0",
@@ -1217,7 +1219,13 @@ export class McpTransport {
                     timeoutPromise,
                   ]);
                   const durationMs = Date.now() - startTime;
-                  this.activityLog?.record(params.name, durationMs, "success");
+                  this.activityLog?.record(
+                    params.name,
+                    durationMs,
+                    "success",
+                    undefined,
+                    this.sessionId ?? undefined,
+                  );
                   callLog.debug(`Tool completed in ${durationMs}ms`);
                   // Validate structuredContent against outputSchema before sending.
                   // Strips structuredContent rather than forwarding non-conforming data
@@ -1327,6 +1335,7 @@ export class McpTransport {
                   Date.now() - startTime,
                   "error",
                   message,
+                  this.sessionId ?? undefined,
                 );
                 const errPayload: Record<string, string> = { error: message };
                 if (errCode !== undefined) errPayload.code = errCode;

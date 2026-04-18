@@ -220,6 +220,7 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((id: string) => {
         summary: SessionSummary | null;
         lifecycle: Record<string, unknown>[];
+        tools: Record<string, unknown>[];
         approvals: Record<string, unknown>[];
       })
     | null = null;
