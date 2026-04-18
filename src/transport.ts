@@ -1162,7 +1162,7 @@ export class McpTransport {
                       Date.now() - startTime,
                       "error",
                       undefined,
-                      this.claudeCodeSessionId ?? undefined,
+                      this.sessionId ?? undefined,
                     );
                     response = {
                       jsonrpc: "2.0",
@@ -1224,7 +1224,7 @@ export class McpTransport {
                     durationMs,
                     "success",
                     undefined,
-                    this.claudeCodeSessionId ?? undefined,
+                    this.sessionId ?? undefined,
                   );
                   callLog.debug(`Tool completed in ${durationMs}ms`);
                   // Validate structuredContent against outputSchema before sending.
@@ -1335,7 +1335,7 @@ export class McpTransport {
                   Date.now() - startTime,
                   "error",
                   message,
-                  this.claudeCodeSessionId ?? undefined,
+                  this.sessionId ?? undefined,
                 );
                 const errPayload: Record<string, string> = { error: message };
                 if (errCode !== undefined) errPayload.code = errCode;
