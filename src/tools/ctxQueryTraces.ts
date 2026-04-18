@@ -1,5 +1,6 @@
 import type { ActivityLog } from "../activityLog.js";
 import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
+import type { DecisionTraceLog } from "../decisionTraceLog.js";
 import type { RecipeRunLog } from "../runLog.js";
 import { optionalInt, optionalString, successStructured } from "./utils.js";
 
@@ -18,7 +19,7 @@ import { optionalInt, optionalString, successStructured } from "./utils.js";
  * need richer per-type shapes can key on `traceType` and unwrap `body`.
  */
 
-export type TraceType = "approval" | "enrichment" | "recipe_run";
+export type TraceType = "approval" | "enrichment" | "recipe_run" | "decision";
 
 export interface DecisionTrace {
   traceType: TraceType;
@@ -41,6 +42,7 @@ export interface CtxQueryTracesDeps {
   recipeRunLog?: RecipeRunLog | null;
   commitIssueLinkLog?: CommitIssueLinkLog | null;
   activityLog?: ActivityLog | null;
+  decisionTraceLog?: DecisionTraceLog | null;
 }
 
 function approvalTraces(activityLog: ActivityLog): DecisionTrace[] {
@@ -93,6 +95,16 @@ function recipeRunTraces(log: RecipeRunLog): DecisionTrace[] {
   }));
 }
 
+function decisionTraces(log: DecisionTraceLog): DecisionTrace[] {
+  return log.query({ limit: 500 }).map((d) => ({
+    traceType: "decision",
+    ts: d.createdAt,
+    key: d.ref,
+    summary: `${d.ref} — ${d.solution}`,
+    body: d as unknown as Record<string, unknown>,
+  }));
+}
+
 export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
   return {
     schema: {
@@ -105,7 +117,7 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         properties: {
           traceType: {
             type: "string",
-            enum: ["approval", "enrichment", "recipe_run"],
+            enum: ["approval", "enrichment", "recipe_run", "decision"],
             description:
               "Optional filter — restrict to one source. Omit to get all.",
           },
@@ -137,7 +149,7 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
               properties: {
                 traceType: {
                   type: "string",
-                  enum: ["approval", "enrichment", "recipe_run"],
+                  enum: ["approval", "enrichment", "recipe_run", "decision"],
                 },
                 ts: { type: "integer" },
                 key: { type: "string" },
@@ -154,6 +166,7 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
               approval: { type: "boolean" },
               enrichment: { type: "boolean" },
               recipe_run: { type: "boolean" },
+              decision: { type: "boolean" },
             },
           },
         },
@@ -174,6 +187,7 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         approval: Boolean(deps.activityLog),
         enrichment: Boolean(deps.commitIssueLinkLog),
         recipe_run: Boolean(deps.recipeRunLog),
+        decision: Boolean(deps.decisionTraceLog),
       };
 
       const pools: DecisionTrace[] = [];
@@ -188,6 +202,9 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
       }
       if ((!traceType || traceType === "recipe_run") && deps.recipeRunLog) {
         pools.push(...recipeRunTraces(deps.recipeRunLog));
+      }
+      if ((!traceType || traceType === "decision") && deps.decisionTraceLog) {
+        pools.push(...decisionTraces(deps.decisionTraceLog));
       }
 
       let filtered = pools;

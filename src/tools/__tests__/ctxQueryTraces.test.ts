@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ActivityLog } from "../../activityLog.js";
 import { CommitIssueLinkLog } from "../../commitIssueLinkLog.js";
+import { DecisionTraceLog } from "../../decisionTraceLog.js";
 import { RecipeRunLog } from "../../runLog.js";
 import { createCtxQueryTracesTool } from "../ctxQueryTraces.js";
 
@@ -145,6 +146,7 @@ describe("ctxQueryTraces", () => {
       approval: false,
       enrichment: true,
       recipe_run: false,
+      decision: false,
     });
   });
 
@@ -199,5 +201,54 @@ describe("ctxQueryTraces", () => {
     expect(res.traces[0].body.callId).toBe("call-xyz");
     expect(res.traces[0].body.summary).toBe("rm tmpfile");
     expect(res.traces[0].body.riskSignals).toHaveLength(1);
+  });
+
+  it("includes decision traces when decisionTraceLog is provided", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "#42",
+      problem: "auth timeout",
+      solution: "lazy cache init",
+      workspace: "/ws",
+      tags: ["perf"],
+    });
+    const tool = createCtxQueryTracesTool({
+      activityLog: null,
+      commitIssueLinkLog: null,
+      recipeRunLog: null,
+      decisionTraceLog: decisionLog,
+    });
+    const res = parse(await tool.handler({}));
+    expect(res.sources.decision).toBe(true);
+    expect(res.count).toBe(1);
+    expect(res.traces[0].traceType).toBe("decision");
+    expect(res.traces[0].key).toBe("#42");
+    expect(res.traces[0].summary).toContain("lazy cache init");
+  });
+
+  it("filters by traceType=decision", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "#1",
+      problem: "p",
+      solution: "s",
+      workspace: "/ws",
+    });
+    linkLog.record({
+      sha: "aaa",
+      ref: "#1",
+      linkType: "closes",
+      resolved: true,
+      workspace: "/ws",
+    });
+    const tool = createCtxQueryTracesTool({
+      activityLog: null,
+      commitIssueLinkLog: linkLog,
+      recipeRunLog: null,
+      decisionTraceLog: decisionLog,
+    });
+    const res = parse(await tool.handler({ traceType: "decision" }));
+    expect(res.count).toBe(1);
+    expect(res.traces[0].traceType).toBe("decision");
   });
 });
