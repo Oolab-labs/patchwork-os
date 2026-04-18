@@ -188,6 +188,14 @@ export class Server extends EventEmitter<ServerEvents> {
   /** Set by bridge to answer GET /activity — history of recent tool calls + lifecycle events. */
   public activityFn: ((last: number) => Record<string, unknown>[]) | null =
     null;
+  /** Set by bridge to answer GET /approvals/:callId — decision record + nearby session activity. */
+  public approvalDetailFn:
+    | ((callId: string) => {
+        pending: Record<string, unknown> | null;
+        decision: Record<string, unknown> | null;
+        nearby: Record<string, unknown>[];
+      })
+    | null = null;
   /** Set by bridge to answer GET /traces via ctxQueryTraces over persistent logs. */
   public tracesFn:
     | ((query: {
@@ -1036,6 +1044,32 @@ export class Server extends EventEmitter<ServerEvents> {
         });
         return;
       }
+      // Single-approval detail lookup for the dashboard detail page.
+      const detailMatch = /^\/approvals\/([A-Za-z0-9-]+)$/.exec(
+        parsedUrl.pathname,
+      );
+      if (detailMatch && req.method === "GET") {
+        const callId = detailMatch[1] as string;
+        try {
+          const data = this.approvalDetailFn?.(callId);
+          if (!data || (!data.pending && !data.decision)) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "unknown callId" }));
+            return;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+
       // Patchwork approval surface — PreToolUse hook + dashboard approve/reject.
       // Bearer auth already checked above.
       if (
