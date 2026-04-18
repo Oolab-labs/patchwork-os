@@ -42,6 +42,7 @@ import {
 import { createDetectUnusedCodeTool } from "./detectUnusedCode.js";
 import { createGetDocumentLinksTool } from "./documentLinks.js";
 import { createEditTextTool } from "./editText.js";
+import { createEnrichCommitTool } from "./enrichCommit.js";
 import { createExplainDiagnosticTool } from "./explainDiagnostic.js";
 import { createExplainSymbolTool } from "./explainSymbol.js";
 import {
@@ -644,6 +645,7 @@ export function registerAllTools(
     createTestTraceToSourceTool(workspace),
     createScreenshotAndAnnotateTool(workspace, extensionClient),
     createGetPRTemplateTool(workspace),
+    createEnrichCommitTool(workspace),
     createGetCodeCoverageTool(workspace),
     createGenerateTestsTool(workspace),
     ...(probes.gh
@@ -836,6 +838,7 @@ export const TOOL_CATEGORIES: Record<string, string[]> = {
   githubGetPRDiff: ["github"],
   githubPostPRReview: ["github"],
   getPRTemplate: ["github"],
+  enrichCommit: ["github"],
   getAIComments: ["github"],
   createGithubIssueFromAIComment: ["github"],
   // Bridge / orchestration
