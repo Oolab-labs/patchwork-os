@@ -90,17 +90,31 @@ export default function TracesPage() {
         }}
       >
         <div style={{ display: "flex", gap: "var(--s-2)" }}>
-          {(["all", "approval", "enrichment", "recipe_run"] as const).map((f) => (
-            <button
-              type="button"
-              key={f}
-              onClick={() => setFilter(f)}
-              className={filter === f ? "pill" : "pill muted"}
-              style={{ cursor: "pointer", textTransform: "capitalize" }}
-            >
-              {f === "all" ? "All" : TYPE_LABELS[f as TraceType]}
-            </button>
-          ))}
+          {(["all", "approval", "enrichment", "recipe_run"] as const).map(
+            (f) => {
+              const active = filter === f;
+              return (
+                <button
+                  type="button"
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={active ? "pill" : "pill muted"}
+                  style={{
+                    cursor: "pointer",
+                    textTransform: "capitalize",
+                    ...(active && {
+                      background: "var(--accent, #8b5cf6)",
+                      color: "var(--bg-0, #0a0a0a)",
+                      borderColor: "var(--accent, #8b5cf6)",
+                      fontWeight: 600,
+                    }),
+                  }}
+                >
+                  {f === "all" ? "All" : TYPE_LABELS[f as TraceType]}
+                </button>
+              );
+            },
+          )}
         </div>
         <input
           type="text"
@@ -141,10 +155,15 @@ export default function TracesPage() {
 
       {!loading && traces.length === 0 && !error ? (
         <div className="empty-state">
-          <h3>No traces yet</h3>
+          <h3>
+            {filter === "all" && !keyQuery
+              ? "No traces yet"
+              : "No matching traces"}
+          </h3>
           <p>
-            Traces will appear once the bridge records approval decisions,
-            enrichment links, or recipe runs.
+            {filter === "all" && !keyQuery
+              ? "Traces will appear once the bridge records approval decisions, enrichment links, or recipe runs."
+              : `No ${filter === "all" ? "traces" : TYPE_LABELS[filter as TraceType].toLowerCase()} traces${keyQuery ? ` matching "${keyQuery}"` : ""}.`}
           </p>
         </div>
       ) : (
