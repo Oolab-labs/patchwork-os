@@ -1084,6 +1084,17 @@ export class Bridge {
         unknown
       >[];
     };
+    this.server.approvalDetailFn = (callId: string) => {
+      const queue = getApprovalQueue();
+      const pending = queue.list().find((p) => p.callId === callId) ?? null;
+      const { decision, nearby } =
+        this.activityLog.findApprovalByCallId(callId);
+      return {
+        pending: pending as unknown as Record<string, unknown> | null,
+        decision: decision as unknown as Record<string, unknown> | null,
+        nearby: nearby as unknown as Record<string, unknown>[],
+      };
+    };
     this.server.tracesFn = async (query) => {
       const tool = createCtxQueryTracesTool({
         activityLog: this.activityLog,
