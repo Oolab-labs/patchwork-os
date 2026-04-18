@@ -1078,6 +1078,12 @@ export class Bridge {
         health: { score, signals },
       };
     };
+    this.server.activityFn = (last: number) => {
+      return this.activityLog.queryTimeline({ last }) as unknown as Record<
+        string,
+        unknown
+      >[];
+    };
     this.server.tracesFn = async (query) => {
       const tool = createCtxQueryTracesTool({
         activityLog: this.activityLog,
