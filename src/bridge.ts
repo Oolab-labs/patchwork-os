@@ -13,6 +13,7 @@ import { loadOrCreateBridgeToken } from "./bridgeToken.js";
 import { repairBridgeToolsRulesIfStale } from "./bridgeToolsRules.js";
 import { createDriver } from "./claudeDriver.js";
 import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
+import { CommitIssueLinkLog } from "./commitIssueLinkLog.js";
 import type { Config } from "./config.js";
 import { ExtensionClient } from "./extensionClient.js";
 import { FileLock } from "./fileLock.js";
@@ -136,6 +137,7 @@ export class Bridge {
   private automationHooks: AutomationHooks | undefined = undefined;
   private recipeScheduler: RecipeScheduler | null = null;
   private recipeRunLog: RecipeRunLog | null = null;
+  private commitIssueLinkLog: CommitIssueLinkLog | null = null;
   private httpMcpHandler: StreamableHttpHandler | null = null;
   private oauthServer: OAuthServerImpl | null = null;
   /** Incremented each time the VS Code extension (re)connects — guards stale async callbacks. */
@@ -389,6 +391,7 @@ export class Bridge {
           this._emitLiveState();
         },
         () => this.extensionDisconnectCount,
+        this.commitIssueLinkLog ?? undefined,
       );
 
       transport.attach(ws);
@@ -852,9 +855,14 @@ export class Bridge {
         this.config.antBinary,
         (msg) => this.logger.info(msg),
       );
+      // Patchwork: enrichment link log is useful regardless of orchestrator.
+      const patchworkDir = path.join(os.homedir(), ".patchwork");
+      this.commitIssueLinkLog = new CommitIssueLinkLog({
+        dir: patchworkDir,
+        logger: this.logger,
+      });
       if (driver) {
-        // Patchwork: persistent audit trail of recipe-triggered runs.
-        const patchworkDir = path.join(os.homedir(), ".patchwork");
+        // Recipe run-history needs the orchestrator to produce anything.
         this.recipeRunLog = new RecipeRunLog({
           dir: patchworkDir,
           logger: this.logger,
