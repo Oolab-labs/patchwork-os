@@ -1,5 +1,6 @@
 import type { ActivityLog } from "../activityLog.js";
 import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
+import type { DecisionTraceLog } from "../decisionTraceLog.js";
 import type { RecipeRunLog } from "../runLog.js";
 import { createCtxQueryTracesTool } from "./ctxQueryTraces.js";
 
@@ -19,6 +20,7 @@ export interface RecentTracesDigestDeps {
   activityLog?: ActivityLog | null;
   commitIssueLinkLog?: CommitIssueLinkLog | null;
   recipeRunLog?: RecipeRunLog | null;
+  decisionTraceLog?: DecisionTraceLog | null;
 }
 
 const DEFAULT_WINDOW_MS = 12 * 60 * 60 * 1000; // 12 hours
@@ -30,6 +32,7 @@ const TYPE_ICON: Record<string, string> = {
   approval: "•",
   enrichment: "⇄",
   recipe_run: "▸",
+  decision: "★",
 };
 
 function relTime(ms: number, now: number): string {
@@ -70,7 +73,12 @@ export async function buildRecentTracesDigest(
   const now = options.now ?? Date.now();
 
   // If no sources are available, skip the section entirely.
-  if (!deps.activityLog && !deps.commitIssueLinkLog && !deps.recipeRunLog) {
+  if (
+    !deps.activityLog &&
+    !deps.commitIssueLinkLog &&
+    !deps.recipeRunLog &&
+    !deps.decisionTraceLog
+  ) {
     return [];
   }
 

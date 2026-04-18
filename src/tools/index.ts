@@ -31,6 +31,7 @@ import { createContextBundleTool } from "./contextBundle.js";
 import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
 import { createCtxGetTaskContextTool } from "./ctxGetTaskContext.js";
 import { createCtxQueryTracesTool } from "./ctxQueryTraces.js";
+import { createCtxSaveTraceTool } from "./ctxSaveTrace.js";
 import {
   createEvaluateInDebuggerTool,
   createSetDebugBreakpointsTool,
@@ -327,6 +328,7 @@ export function registerAllTools(
   getExtensionDisconnectCount?: () => number,
   commitIssueLinkLog?: import("../commitIssueLinkLog.js").CommitIssueLinkLog,
   recipeRunLog?: import("../runLog.js").RecipeRunLog,
+  decisionTraceLog?: import("../decisionTraceLog.js").DecisionTraceLog,
 ): void {
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
@@ -657,11 +659,21 @@ export function registerAllTools(
       activityLog: activityLog ?? null,
       commitIssueLinkLog: commitIssueLinkLog ?? null,
       recipeRunLog: recipeRunLog ?? null,
+      decisionTraceLog: decisionTraceLog ?? null,
     }),
     createCtxGetTaskContextTool({
       workspace,
       commitIssueLinkLog: commitIssueLinkLog ?? null,
     }),
+    ...(decisionTraceLog
+      ? [
+          createCtxSaveTraceTool(
+            workspace,
+            decisionTraceLog,
+            sessionId ? () => sessionId : undefined,
+          ),
+        ]
+      : []),
     ...(commitIssueLinkLog
       ? [createGetCommitsForIssueTool(workspace, commitIssueLinkLog)]
       : []),
