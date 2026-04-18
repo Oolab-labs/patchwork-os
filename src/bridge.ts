@@ -219,7 +219,7 @@ export class Bridge {
             `Session ${clientSessionId.slice(0, 8)} resumed — grace period cancelled`,
           );
           this.activityLog.recordEvent("session_resumed", {
-            sessionId: clientSessionId.slice(0, 8),
+            sessionId: clientSessionId,
           });
           this.logger.event("session_resumed", { sessionId: clientSessionId });
           // Re-attach close/error handlers to the new WebSocket
@@ -231,7 +231,7 @@ export class Bridge {
               `Claude Code disconnected (session ${clientSessionId.slice(0, 8)}) code=${code} reason=${reason.toString() || "(none)"}`,
             );
             this.activityLog.recordEvent("claude_disconnected", {
-              sessionId: clientSessionId.slice(0, 8),
+              sessionId: clientSessionId,
             });
             this.logger.event("claude_disconnected", {
               sessionId: clientSessionId,
@@ -242,7 +242,7 @@ export class Bridge {
                 this.cleanupSession(clientSessionId);
               }, this.config.gracePeriodMs);
               this.activityLog.recordEvent("grace_started", {
-                sessionId: clientSessionId.slice(0, 8),
+                sessionId: clientSessionId,
                 gracePeriodMs: this.config.gracePeriodMs,
               });
               this.logger.info(
@@ -413,7 +413,7 @@ export class Bridge {
       );
       this.lastConnectAt = new Date().toISOString();
       this.activityLog.recordEvent("claude_connected", {
-        sessionId: sessionId.slice(0, 8),
+        sessionId,
         activeSessions: this.sessions.size,
       });
       this.logger.event("claude_connected", {
@@ -433,7 +433,7 @@ export class Bridge {
           `Claude Code disconnected (session ${sessionId.slice(0, 8)}) code=${code} reason=${reason.toString() || "(none)"}`,
         );
         this.activityLog.recordEvent("claude_disconnected", {
-          sessionId: sessionId.slice(0, 8),
+          sessionId,
         });
         this.logger.event("claude_disconnected", { sessionId });
         const s = this.sessions.get(sessionId);
@@ -442,7 +442,7 @@ export class Bridge {
             this.cleanupSession(sessionId);
           }, this.config.gracePeriodMs);
           this.activityLog.recordEvent("grace_started", {
-            sessionId: sessionId.slice(0, 8),
+            sessionId,
             gracePeriodMs: this.config.gracePeriodMs,
           });
           this.logger.info(
@@ -784,7 +784,7 @@ export class Bridge {
     if (session.graceTimer) {
       clearTimeout(session.graceTimer);
       this.activityLog.recordEvent("grace_expired", {
-        sessionId: id.slice(0, 8),
+        sessionId: id,
       });
     }
     // Read stats before detach() — counters survive detach
