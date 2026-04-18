@@ -1106,6 +1106,7 @@ export class Bridge {
         ...(query.traceType && { traceType: query.traceType }),
         ...(query.key && { key: query.key }),
         ...(query.q && { q: query.q }),
+        ...(query.tag && { tag: query.tag }),
         ...(query.since !== undefined && { since: query.since }),
         ...(query.limit !== undefined && { limit: query.limit }),
       });

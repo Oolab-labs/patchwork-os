@@ -332,3 +332,98 @@ describe("ctxQueryTraces — q (text search)", () => {
     expect(res.traces[0].body.subject).toBe("pineapple");
   });
 });
+
+describe("ctxQueryTraces — tag filter", () => {
+  it("restricts to decision traces carrying the tag", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "#1",
+      problem: "p1",
+      solution: "s1",
+      workspace: "/ws",
+      tags: ["perf", "db"],
+    });
+    decisionLog.record({
+      ref: "#2",
+      problem: "p2",
+      solution: "s2",
+      workspace: "/ws",
+      tags: ["ui"],
+    });
+    const tool = createCtxQueryTracesTool({
+      activityLog: null,
+      commitIssueLinkLog: null,
+      recipeRunLog: null,
+      decisionTraceLog: decisionLog,
+    });
+    const res = parse(await tool.handler({ tag: "perf" }));
+    expect(res.count).toBe(1);
+    expect(res.traces[0].body.ref).toBe("#1");
+  });
+
+  it("excludes non-decision trace types when tag is set", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "#1",
+      problem: "p",
+      solution: "s",
+      workspace: "/ws",
+      tags: ["perf"],
+    });
+    // Enrichment row with no tags — should be filtered out entirely.
+    linkLog.record({
+      sha: "aaa",
+      ref: "#99",
+      linkType: "closes",
+      resolved: true,
+      workspace: "/ws",
+    });
+    const tool = createCtxQueryTracesTool({
+      activityLog: null,
+      commitIssueLinkLog: linkLog,
+      recipeRunLog: null,
+      decisionTraceLog: decisionLog,
+    });
+    const res = parse(await tool.handler({ tag: "perf" }));
+    expect(res.count).toBe(1);
+    expect(res.traces[0].traceType).toBe("decision");
+  });
+
+  it("returns nothing when no decision carries the tag", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "#1",
+      problem: "p",
+      solution: "s",
+      workspace: "/ws",
+      tags: ["ui"],
+    });
+    const tool = createCtxQueryTracesTool({
+      activityLog: null,
+      commitIssueLinkLog: null,
+      recipeRunLog: null,
+      decisionTraceLog: decisionLog,
+    });
+    const res = parse(await tool.handler({ tag: "missing" }));
+    expect(res.count).toBe(0);
+  });
+
+  it("tag is exact-match, case-sensitive", async () => {
+    const decisionLog = new DecisionTraceLog({ dir });
+    decisionLog.record({
+      ref: "#1",
+      problem: "p",
+      solution: "s",
+      workspace: "/ws",
+      tags: ["Perf"],
+    });
+    const tool = createCtxQueryTracesTool({
+      activityLog: null,
+      commitIssueLinkLog: null,
+      recipeRunLog: null,
+      decisionTraceLog: decisionLog,
+    });
+    expect(parse(await tool.handler({ tag: "perf" })).count).toBe(0);
+    expect(parse(await tool.handler({ tag: "Perf" })).count).toBe(1);
+  });
+});
