@@ -29,6 +29,7 @@ import { createCloseAllDiffTabsTool, createCloseTabTool } from "./closeTabs.js";
 import { createGetCodeLensTool } from "./codeLens.js";
 import { createContextBundleTool } from "./contextBundle.js";
 import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
+import { createCtxGetTaskContextTool } from "./ctxGetTaskContext.js";
 import { createCtxQueryTracesTool } from "./ctxQueryTraces.js";
 import {
   createEvaluateInDebuggerTool,
@@ -656,6 +657,10 @@ export function registerAllTools(
       activityLog: activityLog ?? null,
       commitIssueLinkLog: commitIssueLinkLog ?? null,
       recipeRunLog: recipeRunLog ?? null,
+    }),
+    createCtxGetTaskContextTool({
+      workspace,
+      commitIssueLinkLog: commitIssueLinkLog ?? null,
     }),
     ...(commitIssueLinkLog
       ? [createGetCommitsForIssueTool(workspace, commitIssueLinkLog)]
