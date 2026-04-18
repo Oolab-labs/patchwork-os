@@ -617,3 +617,39 @@ describe("ActivityLog.findApprovalByCallId", () => {
     expect(out.nearby).toEqual([]);
   });
 });
+
+describe("ActivityLog.querySessionLifecycle", () => {
+  it("returns only entries matching sessionId", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    log.recordEvent("claude_connected", { sessionId: "a" });
+    log.recordEvent("session_resumed", { sessionId: "b" });
+    log.recordEvent("approval_decision", {
+      sessionId: "a",
+      toolName: "Bash",
+      decision: "allow",
+    });
+    const out = log.querySessionLifecycle("a");
+    expect(out).toHaveLength(2);
+    for (const e of out) expect(e.metadata?.sessionId).toBe("a");
+  });
+
+  it("returns empty when no match", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    log.recordEvent("claude_connected", { sessionId: "a" });
+    expect(log.querySessionLifecycle("not-there")).toEqual([]);
+  });
+
+  it("respects limit — keeps newest", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    for (let i = 0; i < 5; i++) {
+      log.recordEvent(`ev-${i}`, { sessionId: "s", i });
+    }
+    const out = log.querySessionLifecycle("s", 2);
+    expect(out).toHaveLength(2);
+    expect(out[0]?.metadata?.i).toBe(3);
+    expect(out[1]?.metadata?.i).toBe(4);
+  });
+});

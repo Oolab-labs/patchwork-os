@@ -48,7 +48,12 @@ export default function SessionsPage() {
           }}
         >
           {sessions.map((s) => (
-            <div key={s.id} className="card">
+            <Link
+              key={s.id}
+              href={`/sessions/${s.id}`}
+              className="card"
+              style={{ textDecoration: "none", color: "inherit" }}
+            >
               <div className="card-head">
                 <h2>
                   <code
@@ -96,18 +101,13 @@ export default function SessionsPage() {
                 >
                   <span>Pending approvals</span>
                   {s.pendingApprovals > 0 ? (
-                    <Link
-                      href={`/approvals?session=${s.id}`}
-                      className="pill err"
-                    >
-                      {s.pendingApprovals}
-                    </Link>
+                    <span className="pill err">{s.pendingApprovals}</span>
                   ) : (
                     <span style={{ color: "var(--fg-3)" }}>none</span>
                   )}
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

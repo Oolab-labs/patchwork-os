@@ -1240,6 +1240,28 @@ export class Bridge {
           .list()
           .filter((a) => a.sessionId === s.id).length,
       }));
+    this.server.sessionDetailFn = (id: string) => {
+      const s = this.sessions.get(id);
+      const summary = s
+        ? {
+            id: s.id,
+            connectedAt: new Date(s.connectedAt).toISOString(),
+            openedFileCount: s.openedFiles.size,
+            pendingApprovals: getApprovalQueue()
+              .list()
+              .filter((a) => a.sessionId === s.id).length,
+          }
+        : null;
+      const lifecycle = this.activityLog.querySessionLifecycle(id, 100);
+      const approvals = getApprovalQueue()
+        .list()
+        .filter((a) => a.sessionId === id);
+      return {
+        summary,
+        lifecycle: lifecycle as unknown as Record<string, unknown>[],
+        approvals: approvals as unknown as Record<string, unknown>[],
+      };
+    };
     this.server.webhookFn = async (hookPath: string, payload: unknown) => {
       if (!this.orchestrator) {
         return {
