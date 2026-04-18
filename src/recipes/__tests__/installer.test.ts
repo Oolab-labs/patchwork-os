@@ -102,10 +102,10 @@ steps:
     params: { text: hi }
 `,
     );
-    // manual trigger fails compile, but parse works — asserts .yml is accepted
-    expect(() => installRecipeFromFile(src, { recipesDir: dir })).toThrow(
-      /manual trigger/,
-    );
+    // Manual triggers bypass compile by design — install succeeds; asserts .yml is accepted
+    const result = installRecipeFromFile(src, { recipesDir: dir });
+    expect(result.action).toBe("created");
+    expect(result.installedPath.endsWith("short-ext.json")).toBe(true);
   });
 
   it("rejects unknown extensions", () => {

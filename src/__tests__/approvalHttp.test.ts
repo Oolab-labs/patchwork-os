@@ -62,7 +62,12 @@ describe("routeApprovalRequest", () => {
         path: "/approvals",
         body: { toolName: "sendHttpRequest", params: { url: "x" } },
       },
-      { queue, workspace: "/tmp", ccLoader: emptyRules() },
+      {
+        queue,
+        workspace: "/tmp",
+        ccLoader: emptyRules(),
+        approvalGate: "all",
+      },
     );
     // Wait for the request to hit the queue
     await new Promise((r) => setTimeout(r, 10));
@@ -258,7 +263,7 @@ describe("routeApprovalRequest", () => {
       },
     );
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
+    expect(res.body).toMatchObject({
       allow: ["Read"],
       ask: ["Bash(npm run *)"],
       deny: ["gitPush"],
@@ -327,5 +332,225 @@ describe("routeApprovalRequest", () => {
       },
     );
     expect(res.status).toBe(404);
+  });
+
+  describe("approvalGate modes", () => {
+    it("gate=off → allow without queueing", async () => {
+      const queue = new ApprovalQueue();
+      const res = await routeApprovalRequest(
+        { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "off",
+        },
+      );
+      expect(res.body).toMatchObject({ decision: "allow", reason: "gate_off" });
+      expect(queue.size()).toBe(0);
+    });
+
+    it("gate=high → low-tier tool allowed without queue", async () => {
+      const queue = new ApprovalQueue();
+      const res = await routeApprovalRequest(
+        { method: "POST", path: "/approvals", body: { toolName: "Read" } },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "high",
+        },
+      );
+      expect(res.body).toMatchObject({
+        decision: "allow",
+        reason: "gate_below_threshold",
+      });
+      expect(queue.size()).toBe(0);
+    });
+
+    it("gate=all → queues even low-tier tools", async () => {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        { method: "POST", path: "/approvals", body: { toolName: "Read" } },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      expect(queue.list()).toHaveLength(1);
+      const first = queue.list()[0];
+      if (!first) throw new Error("missing queued item");
+      queue.reject(first.callId);
+      const res = await pending;
+      expect(res.body).toMatchObject({ decision: "deny", reason: "rejected" });
+    });
+  });
+
+  describe("permission-mode: auto", () => {
+    it("auto mode → allow without queueing", async () => {
+      const queue = new ApprovalQueue();
+      const res = await routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: { toolName: "gitPush", permissionMode: "auto" },
+        },
+        { queue, workspace: "/tmp", ccLoader: emptyRules() },
+      );
+      expect(res.body).toMatchObject({
+        decision: "allow",
+        reason: "auto_mode",
+      });
+      expect(queue.size()).toBe(0);
+    });
+  });
+
+  describe("risk signals", () => {
+    it("Bash with rm -rf → destructive_flag high signal queued", async () => {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: {
+            toolName: "Bash",
+            params: { command: "rm -rf /tmp/foo" },
+          },
+        },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      const item = queue.list()[0];
+      if (!item) throw new Error("missing queued item");
+      const signals = item.riskSignals ?? [];
+      expect(signals.some((s) => s.label.includes("rm with -rf"))).toBe(true);
+      queue.approve(item.callId);
+      await pending;
+    });
+
+    it("sendHttpRequest with non-HTTPS + raw IP → two domain_reputation signals", async () => {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: {
+            toolName: "sendHttpRequest",
+            params: { url: "http://10.0.0.1/x" },
+          },
+        },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      const item = queue.list()[0];
+      if (!item) throw new Error("missing queued item");
+      const kinds = (item.riskSignals ?? []).map((s) => s.kind);
+      expect(kinds).toContain("domain_reputation");
+      queue.approve(item.callId);
+      await pending;
+    });
+
+    it("Write to path outside workspace → path_escape signal", async () => {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: {
+            toolName: "Write",
+            params: { file_path: "/etc/passwd" },
+          },
+        },
+        {
+          queue,
+          workspace: "/tmp/ws",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      const item = queue.list()[0];
+      if (!item) throw new Error("missing queued item");
+      expect(
+        (item.riskSignals ?? []).some((s) => s.kind === "path_escape"),
+      ).toBe(true);
+      queue.approve(item.callId);
+      await pending;
+    });
+  });
+
+  describe("webhook dispatch", () => {
+    it("non-HTTPS webhook URL is rejected (no fetch call)", async () => {
+      const originalFetch = globalThis.fetch;
+      const calls: string[] = [];
+      globalThis.fetch = (async (url: string) => {
+        calls.push(url);
+        return new Response("{}", { status: 200 });
+      }) as typeof globalThis.fetch;
+      try {
+        const queue = new ApprovalQueue();
+        const pending = routeApprovalRequest(
+          { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+          {
+            queue,
+            workspace: "/tmp",
+            ccLoader: emptyRules(),
+            approvalGate: "all",
+            webhookUrl: "http://example.com/hook",
+          },
+        );
+        await new Promise((r) => setTimeout(r, 10));
+        const item = queue.list()[0];
+        if (!item) throw new Error("missing queued item");
+        queue.approve(item.callId);
+        await pending;
+        expect(calls).toHaveLength(0);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it("localhost webhook hostname is blocked", async () => {
+      const originalFetch = globalThis.fetch;
+      const calls: string[] = [];
+      globalThis.fetch = (async (url: string) => {
+        calls.push(url);
+        return new Response("{}", { status: 200 });
+      }) as typeof globalThis.fetch;
+      try {
+        const queue = new ApprovalQueue();
+        const pending = routeApprovalRequest(
+          { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+          {
+            queue,
+            workspace: "/tmp",
+            ccLoader: emptyRules(),
+            approvalGate: "all",
+            webhookUrl: "https://localhost/hook",
+          },
+        );
+        await new Promise((r) => setTimeout(r, 10));
+        const item = queue.list()[0];
+        if (!item) throw new Error("missing queued item");
+        queue.approve(item.callId);
+        await pending;
+        expect(calls).toHaveLength(0);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 });
