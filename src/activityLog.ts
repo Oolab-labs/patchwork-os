@@ -256,6 +256,58 @@ export class ActivityLog {
     return Math.max(0, this.nextId - 1);
   }
 
+  /**
+   * Look up a single approval_decision lifecycle entry by callId. Returns
+   * the decision entry plus tool entries + lifecycle events for the same
+   * session in the ±60s window around the decision (for context).
+   *
+   * The dashboard approval detail view is the only caller; keep the window
+   * tight so we don't walk unbounded history for each lookup.
+   */
+  findApprovalByCallId(callId: string): {
+    decision: LifecycleEntry | null;
+    nearby: TimelineEntry[];
+  } {
+    const decision =
+      this.lifecycleEntries.find(
+        (e) =>
+          e.event === "approval_decision" &&
+          typeof e.metadata?.callId === "string" &&
+          e.metadata.callId === callId,
+      ) ?? null;
+    if (!decision) return { decision: null, nearby: [] };
+
+    const sessionId =
+      typeof decision.metadata?.sessionId === "string"
+        ? decision.metadata.sessionId
+        : undefined;
+    if (!sessionId) return { decision, nearby: [] };
+
+    const tDecision = Date.parse(decision.timestamp);
+    const windowMs = 60_000;
+    const lo = tDecision - windowMs;
+    const hi = tDecision + windowMs;
+
+    const tools: TimelineEntry[] = this.entries
+      .filter((e) => {
+        const t = Date.parse(e.timestamp);
+        return t >= lo && t <= hi;
+      })
+      .map((e) => ({ kind: "tool" as const, ...e }));
+
+    const lifecycle: TimelineEntry[] = this.lifecycleEntries
+      .filter((e) => {
+        if (e.id === decision.id) return false;
+        if (e.metadata?.sessionId !== sessionId) return false;
+        const t = Date.parse(e.timestamp);
+        return t >= lo && t <= hi;
+      })
+      .map((e) => ({ kind: "lifecycle" as const, ...e }));
+
+    const nearby = [...tools, ...lifecycle].sort((a, b) => a.id - b.id);
+    return { decision, nearby };
+  }
+
   queryTimeline(opts?: { last?: number }): TimelineEntry[] {
     const tools: TimelineEntry[] = this.entries.map((e) => ({
       kind: "tool" as const,

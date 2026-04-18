@@ -564,3 +564,56 @@ describe("ActivityLog.recordRateLimitRejection", () => {
     expect(log.getRateLimitRejections()).toBe(2);
   });
 });
+
+describe("ActivityLog.findApprovalByCallId", () => {
+  it("returns null decision when callId is not logged", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    const out = log.findApprovalByCallId("missing");
+    expect(out.decision).toBeNull();
+    expect(out.nearby).toEqual([]);
+  });
+
+  it("finds the decision and same-session lifecycle events in window", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    log.recordEvent("approval_decision", {
+      callId: "call-1",
+      toolName: "Bash",
+      decision: "allow",
+      sessionId: "sess-a",
+    });
+    // Same session, within ±60s.
+    log.recordEvent("session_resumed", { sessionId: "sess-a" });
+    // Different session — must be excluded.
+    log.recordEvent("claude_connected", { sessionId: "sess-other" });
+
+    const out = log.findApprovalByCallId("call-1");
+    expect(out.decision?.metadata?.callId).toBe("call-1");
+    expect(out.nearby).toHaveLength(1);
+    expect(out.nearby[0]).toMatchObject({
+      kind: "lifecycle",
+      event: "session_resumed",
+    });
+  });
+
+  it("excludes the decision itself from nearby list", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    log.recordEvent("approval_decision", {
+      callId: "call-2",
+      sessionId: "sess-b",
+    });
+    const out = log.findApprovalByCallId("call-2");
+    expect(out.nearby.every((e) => e.id !== out.decision?.id)).toBe(true);
+  });
+
+  it("returns empty nearby when decision has no sessionId", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    log.recordEvent("approval_decision", { callId: "call-3" });
+    const out = log.findApprovalByCallId("call-3");
+    expect(out.decision).not.toBeNull();
+    expect(out.nearby).toEqual([]);
+  });
+});

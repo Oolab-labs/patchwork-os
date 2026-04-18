@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
@@ -325,6 +326,13 @@ function ApprovalsContent() {
                   >
                     Reject
                   </button>
+                  <Link
+                    href={`/approvals/${p.callId}`}
+                    className="btn sm ghost"
+                    style={{ textDecoration: "none" }}
+                  >
+                    Details →
+                  </Link>
                   <span className="approval-spacer" />
                   <span className="pill muted" title={p.callId}>
                     {p.callId.slice(0, 8)}
