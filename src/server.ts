@@ -201,6 +201,7 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((query: {
         traceType?: string;
         key?: string;
+        q?: string;
         since?: number;
         limit?: number;
       }) => Promise<Record<string, unknown>>)
@@ -602,6 +603,7 @@ export class Server extends EventEmitter<ServerEvents> {
             ? await this.tracesFn({
                 traceType: q.get("traceType") ?? undefined,
                 key: q.get("key") ?? undefined,
+                q: q.get("q") ?? undefined,
                 since:
                   sinceStr !== null && /^\d+$/.test(sinceStr)
                     ? Number(sinceStr)

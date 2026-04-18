@@ -1105,6 +1105,7 @@ export class Bridge {
       const result = await tool.handler({
         ...(query.traceType && { traceType: query.traceType }),
         ...(query.key && { key: query.key }),
+        ...(query.q && { q: query.q }),
         ...(query.since !== undefined && { since: query.since }),
         ...(query.limit !== undefined && { limit: query.limit }),
       });

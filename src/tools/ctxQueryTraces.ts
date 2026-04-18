@@ -126,6 +126,11 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
             description:
               "Exact key match (sessionId:toolName / sha:ref / taskId). Substring match on the key; case-sensitive.",
           },
+          q: {
+            type: "string",
+            description:
+              "Case-insensitive substring search across the trace summary and serialized body. Use for free-form lookup when the key schema doesn't fit.",
+          },
           since: {
             type: "integer",
             description: "Only return traces with ts > this ms-epoch value.",
@@ -180,6 +185,7 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         | undefined
         | "";
       const keyFilter = optionalString(args, "key");
+      const qFilter = optionalString(args, "q");
       const since = optionalInt(args, "since", 0, Number.MAX_SAFE_INTEGER);
       const limit = optionalInt(args, "limit", 1, 500) ?? 100;
 
@@ -212,6 +218,17 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
       if (keyFilter) {
         const needle = keyFilter;
         filtered = filtered.filter((t) => t.key.includes(needle));
+      }
+      if (qFilter) {
+        const needle = qFilter.toLowerCase();
+        filtered = filtered.filter((t) => {
+          if (t.summary.toLowerCase().includes(needle)) return true;
+          try {
+            return JSON.stringify(t.body).toLowerCase().includes(needle);
+          } catch {
+            return false;
+          }
+        });
       }
 
       filtered.sort((a, b) => b.ts - a.ts);
