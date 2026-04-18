@@ -252,3 +252,83 @@ describe("ctxQueryTraces", () => {
     expect(res.traces[0].traceType).toBe("decision");
   });
 });
+
+describe("ctxQueryTraces — q (text search)", () => {
+  it("matches on summary (case-insensitive)", async () => {
+    seed();
+    const tool = createCtxQueryTracesTool({
+      activityLog,
+      commitIssueLinkLog: linkLog,
+      recipeRunLog: runLog,
+    });
+    const res = parse(await tool.handler({ q: "DENY" }));
+    expect(res.count).toBeGreaterThan(0);
+    for (const t of res.traces) {
+      const hay = JSON.stringify(t).toLowerCase();
+      expect(hay).toContain("deny");
+    }
+  });
+
+  it("matches inside body (serialized JSON)", async () => {
+    linkLog.record({
+      sha: "zzz",
+      ref: "#99",
+      linkType: "closes",
+      resolved: true,
+      workspace: "/ws",
+      subject: "needle-in-body-field",
+      issueState: "OPEN",
+    });
+    const tool = createCtxQueryTracesTool({
+      activityLog: null,
+      commitIssueLinkLog: linkLog,
+      recipeRunLog: null,
+    });
+    const res = parse(await tool.handler({ q: "needle-in-body-field" }));
+    expect(res.count).toBe(1);
+    expect(res.traces[0].key).toBe("zzz:#99");
+  });
+
+  it("returns empty when q matches nothing", async () => {
+    seed();
+    const tool = createCtxQueryTracesTool({
+      activityLog,
+      commitIssueLinkLog: linkLog,
+      recipeRunLog: runLog,
+    });
+    const res = parse(await tool.handler({ q: "xyzzy-not-present" }));
+    expect(res.count).toBe(0);
+    expect(res.traces).toEqual([]);
+  });
+
+  it("combines with traceType and key filters (AND semantics)", async () => {
+    linkLog.record({
+      sha: "match",
+      ref: "#1",
+      linkType: "closes",
+      resolved: true,
+      workspace: "/ws",
+      subject: "pineapple",
+      issueState: "OPEN",
+    });
+    linkLog.record({
+      sha: "nope",
+      ref: "#2",
+      linkType: "closes",
+      resolved: true,
+      workspace: "/ws",
+      subject: "apricot",
+      issueState: "OPEN",
+    });
+    const tool = createCtxQueryTracesTool({
+      activityLog: null,
+      commitIssueLinkLog: linkLog,
+      recipeRunLog: null,
+    });
+    const res = parse(
+      await tool.handler({ traceType: "enrichment", q: "pineapple" }),
+    );
+    expect(res.count).toBe(1);
+    expect(res.traces[0].body.subject).toBe("pineapple");
+  });
+});
