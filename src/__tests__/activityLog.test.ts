@@ -653,3 +653,46 @@ describe("ActivityLog.querySessionLifecycle", () => {
     expect(out[1]?.metadata?.i).toBe(4);
   });
 });
+
+describe("ActivityLog.querySessionTools", () => {
+  it("returns only tool entries matching sessionId", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    log.record("openFile", 10, "success", undefined, "a");
+    log.record("runCommand", 20, "success", undefined, "b");
+    log.record("getDiagnostics", 30, "error", "boom", "a");
+    const out = log.querySessionTools("a");
+    expect(out).toHaveLength(2);
+    expect(out.map((e) => e.tool)).toEqual(["openFile", "getDiagnostics"]);
+    for (const e of out) expect(e.sessionId).toBe("a");
+  });
+
+  it("excludes entries without a sessionId", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    log.record("openFile", 10, "success"); // no sessionId (legacy shape)
+    log.record("runCommand", 20, "success", undefined, "a");
+    const out = log.querySessionTools("a");
+    expect(out).toHaveLength(1);
+    expect(out[0]?.tool).toBe("runCommand");
+  });
+
+  it("returns empty when no match", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    log.record("openFile", 10, "success", undefined, "a");
+    expect(log.querySessionTools("not-there")).toEqual([]);
+  });
+
+  it("respects limit — keeps newest", async () => {
+    const { ActivityLog } = await import("../activityLog.js");
+    const log = new ActivityLog();
+    for (let i = 0; i < 5; i++) {
+      log.record(`tool-${i}`, i * 10, "success", undefined, "s");
+    }
+    const out = log.querySessionTools("s", 2);
+    expect(out).toHaveLength(2);
+    expect(out[0]?.tool).toBe("tool-3");
+    expect(out[1]?.tool).toBe("tool-4");
+  });
+});

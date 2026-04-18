@@ -13,6 +13,7 @@ export interface ActivityEntry {
   durationMs: number;
   status: "success" | "error";
   errorMessage?: string;
+  sessionId?: string;
 }
 
 export interface LifecycleEntry {
