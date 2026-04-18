@@ -185,6 +185,15 @@ export class Server extends EventEmitter<ServerEvents> {
   public analyticsFn:
     | ((windowHours?: number) => Promise<Record<string, unknown>>)
     | null = null;
+  /** Set by bridge to answer GET /traces via ctxQueryTraces over persistent logs. */
+  public tracesFn:
+    | ((query: {
+        traceType?: string;
+        key?: string;
+        since?: number;
+        limit?: number;
+      }) => Promise<Record<string, unknown>>)
+    | null = null;
   /** Set by bridge to handle CC hook notify events via POST /notify */
   public notifyFn:
     | ((
@@ -541,6 +550,46 @@ export class Server extends EventEmitter<ServerEvents> {
             connections: this.wss.clients.size,
             ...(this.healthDataFn?.() ?? {}),
           };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      if (parsedUrl.pathname === "/traces" && req.method === "GET") {
+        try {
+          const q = parsedUrl.searchParams;
+          const sinceStr = q.get("since");
+          const limitStr = q.get("limit");
+          const data = this.tracesFn
+            ? await this.tracesFn({
+                traceType: q.get("traceType") ?? undefined,
+                key: q.get("key") ?? undefined,
+                since:
+                  sinceStr !== null && /^\d+$/.test(sinceStr)
+                    ? Number(sinceStr)
+                    : undefined,
+                limit:
+                  limitStr !== null && /^\d+$/.test(limitStr)
+                    ? Number(limitStr)
+                    : undefined,
+              })
+            : {
+                traces: [],
+                count: 0,
+                sources: {
+                  approval: false,
+                  enrichment: false,
+                  recipe_run: false,
+                },
+                hint: "Trace sources not wired yet.",
+              };
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
         } catch (err) {
