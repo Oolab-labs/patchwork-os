@@ -14,6 +14,7 @@ const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/analytics", label: "Analytics", icon: "\u25CE" },
   { href: "/recipes", label: "Recipes", icon: "\u25C9" },
   { href: "/runs", label: "Runs", icon: "\u29D6" },
+  { href: "/traces", label: "Traces", icon: "\u25C7" },
   { href: "/settings", label: "Settings", icon: "\u2699" },
 ];
 
