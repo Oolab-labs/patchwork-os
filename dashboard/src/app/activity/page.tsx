@@ -3,25 +3,49 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { relTime } from "@/components/time";
 
 interface ActivityEvent {
+  /** "tool" | "lifecycle" */
   kind: string;
+  /** Tool name (only on kind="tool"). */
   tool?: string;
   status?: "success" | "error";
   durationMs?: number;
+  errorMessage?: string;
   /** ISO 8601 timestamp from the bridge (both history + live stream). */
   timestamp?: string;
   /** Derived ms epoch, set by parse. */
   at?: number;
   id?: number;
-  // approval_decision fields (from metadata spread)
-  toolName?: string;
-  decision?: string;
-  reason?: string;
-  permissionMode?: string;
-  specifier?: string;
+  /** Lifecycle-only: the event name (extension_connected, approval_decision, …). */
+  event?: string;
+  /** Lifecycle-only: free-form metadata bag. */
+  metadata?: Record<string, unknown>;
   [k: string]: unknown;
 }
 
+function getLifecycleMeta(e: ActivityEvent) {
+  const m = e.metadata ?? {};
+  return {
+    toolName: typeof m.toolName === "string" ? m.toolName : undefined,
+    decision: typeof m.decision === "string" ? m.decision : undefined,
+    reason: typeof m.reason === "string" ? m.reason : undefined,
+    specifier: typeof m.specifier === "string" ? m.specifier : undefined,
+    sessionId:
+      typeof m.sessionId === "string" ? m.sessionId.slice(0, 8) : undefined,
+    summary: typeof m.summary === "string" ? m.summary : undefined,
+  };
+}
+
 const MAX_EVENTS = 200;
+
+/** Connection-churn events that dominate the log but aren't actionable. */
+const NOISE_EVENTS = new Set([
+  "claude_connected",
+  "claude_disconnected",
+  "extension_connected",
+  "extension_disconnected",
+  "grace_started",
+  "grace_expired",
+]);
 
 function withAt(e: ActivityEvent): ActivityEvent {
   if (typeof e.at === "number") return e;
@@ -38,6 +62,7 @@ export default function ActivityPage() {
   const [connected, setConnected] = useState(false);
   const [err, setErr] = useState<string>();
   const [filter, setFilter] = useState("");
+  const [showNoise, setShowNoise] = useState(false);
   const [, setTick] = useState(0);
   const esRef = useRef<EventSource | null>(null);
 
@@ -105,13 +130,30 @@ export default function ActivityPage() {
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return events;
-    return events.filter((e) => {
+    let out = events;
+    if (!showNoise) {
+      out = out.filter(
+        (e) => !(e.kind === "lifecycle" && NOISE_EVENTS.has(e.event ?? "")),
+      );
+    }
+    if (!q) return out;
+    return out.filter((e) => {
+      const m = getLifecycleMeta(e);
       const hay =
-        `${e.kind} ${e.tool ?? ""} ${e.toolName ?? ""} ${e.status ?? ""} ${e.decision ?? ""} ${e.reason ?? ""}`.toLowerCase();
+        `${e.kind} ${e.event ?? ""} ${e.tool ?? ""} ${m.toolName ?? ""} ${e.status ?? ""} ${m.decision ?? ""} ${m.reason ?? ""}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [events, filter]);
+  }, [events, filter, showNoise]);
+
+  const hiddenCount = useMemo(
+    () =>
+      showNoise
+        ? 0
+        : events.filter(
+            (e) => e.kind === "lifecycle" && NOISE_EVENTS.has(e.event ?? ""),
+          ).length,
+    [events, showNoise],
+  );
 
   return (
     <section>
@@ -136,6 +178,16 @@ export default function ActivityPage() {
           onChange={(e) => setFilter(e.target.value)}
           aria-label="Filter events"
         />
+        <button
+          type="button"
+          onClick={() => setShowNoise((v) => !v)}
+          className={showNoise ? "pill" : "pill muted"}
+          style={{ cursor: "pointer" }}
+          title="Show connect/disconnect/grace lifecycle events — noisy, not actionable"
+        >
+          {showNoise ? "Hide" : "Show"} connection events
+          {!showNoise && hiddenCount > 0 ? ` (${hiddenCount})` : ""}
+        </button>
         <span className="pill muted">
           {filtered.length} / {events.length} events
         </span>
@@ -166,14 +218,48 @@ export default function ActivityPage() {
             </thead>
             <tbody>
               {filtered.map((e, i) => {
-                const isApproval = e.kind === "approval_decision";
-                const toolLabel = isApproval
-                  ? (e.toolName ?? "—")
-                  : (e.tool ?? "—");
-                const specLabel =
-                  isApproval && e.specifier ? ` (${e.specifier})` : "";
+                const isTool = e.kind === "tool";
+                const isLifecycle = e.kind === "lifecycle";
+                const meta = getLifecycleMeta(e);
+                const isApproval =
+                  isLifecycle && e.event === "approval_decision";
+
+                // Kind badge: "tool" | event name for lifecycle
+                const kindLabel = isTool ? "tool" : (e.event ?? e.kind);
+                const kindClass = isApproval
+                  ? meta.decision === "allow"
+                    ? "ok"
+                    : "err"
+                  : isTool
+                    ? e.status === "error"
+                      ? "err"
+                      : "ok"
+                    : "muted";
+
+                // Tool / Event cell — for lifecycle rows with just a
+                // session id, show the session id alone instead of "— (…)".
+                const mainLabel = isTool
+                  ? (e.tool ?? "—")
+                  : isApproval
+                    ? (meta.toolName ?? "—")
+                    : isLifecycle && meta.sessionId
+                      ? `session ${meta.sessionId}`
+                      : "—";
+                const subLabel =
+                  isApproval && meta.specifier ? ` (${meta.specifier})` : "";
+
+                // Duration / reason cell
+                const durationCell =
+                  typeof e.durationMs === "number"
+                    ? `${e.durationMs}ms`
+                    : isApproval && meta.reason
+                      ? meta.reason
+                      : meta.summary
+                        ? meta.summary
+                        : "—";
+
                 return (
-                  <tr key={`${e.at ?? i}-${i}`}>
+                  <tr key={`${e.kind}-${e.id ?? i}-${i}`}>
                     <td
                       className="muted"
                       title={e.at ? new Date(e.at).toISOString() : ""}
@@ -181,30 +267,20 @@ export default function ActivityPage() {
                       {e.at ? relTime(e.at) : "—"}
                     </td>
                     <td>
-                      <span
-                        className={`pill ${isApproval ? (e.decision === "allow" ? "ok" : "err") : "muted"}`}
-                      >
-                        {e.kind}
-                      </span>
+                      <span className={`pill ${kindClass}`}>{kindLabel}</span>
                     </td>
                     <td className="mono">
-                      {toolLabel}
-                      {specLabel && <span className="muted">{specLabel}</span>}
+                      {mainLabel}
+                      {subLabel && <span className="muted">{subLabel}</span>}
                     </td>
-                    <td className="mono muted">
-                      {typeof e.durationMs === "number"
-                        ? `${e.durationMs}ms`
-                        : isApproval && e.reason
-                          ? e.reason
-                          : "—"}
-                    </td>
+                    <td className="mono muted">{durationCell}</td>
                     <td>
                       {isApproval ? (
                         <span
-                          className={`status-cell ${e.decision === "allow" ? "ok" : "err"}`}
+                          className={`status-cell ${meta.decision === "allow" ? "ok" : "err"}`}
                         >
                           <span className="pill-dot" />
-                          {e.decision ?? "—"}
+                          {meta.decision ?? "—"}
                         </span>
                       ) : e.status ? (
                         <span
