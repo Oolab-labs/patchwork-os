@@ -308,6 +308,24 @@ export class ActivityLog {
     return { decision, nearby };
   }
 
+  /**
+   * Return all lifecycle entries whose metadata.sessionId matches. Sorted
+   * by id ascending (oldest first). Used by the dashboard session detail
+   * view to render a per-session event stream.
+   *
+   * Tool entries aren't returned because they don't carry a sessionId —
+   * correlation would require a time-window heuristic, which is best-effort
+   * at best. Callers who need tool activity for a session can cross-reference
+   * by time bounds themselves.
+   */
+  querySessionLifecycle(sessionId: string, limit = 100): LifecycleEntry[] {
+    const matches: LifecycleEntry[] = [];
+    for (const e of this.lifecycleEntries) {
+      if (e.metadata?.sessionId === sessionId) matches.push(e);
+    }
+    return matches.slice(-limit);
+  }
+
   queryTimeline(opts?: { last?: number }): TimelineEntry[] {
     const tools: TimelineEntry[] = this.entries.map((e) => ({
       kind: "tool" as const,

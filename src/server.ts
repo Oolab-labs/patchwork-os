@@ -215,6 +215,14 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
   /** Patchwork: set by bridge to list active agent sessions for the dashboard. */
   public sessionsFn: (() => SessionSummary[]) | null = null;
+  /** Patchwork: set by bridge to answer GET /sessions/:id with per-session event stream + approvals. */
+  public sessionDetailFn:
+    | ((id: string) => {
+        summary: SessionSummary | null;
+        lifecycle: Record<string, unknown>[];
+        approvals: Record<string, unknown>[];
+      })
+    | null = null;
   /** Set by bridge to handle POST /launch-quick-task — invokes launchQuickTask tool in-process. */
   public launchQuickTaskFn:
     | ((
@@ -935,7 +943,31 @@ export class Server extends EventEmitter<ServerEvents> {
         }
         return;
       }
-      if (req.url === "/sessions" && req.method === "GET") {
+      const sessionDetailMatch = /^\/sessions\/([A-Za-z0-9-]+)$/.exec(
+        parsedUrl.pathname,
+      );
+      if (sessionDetailMatch && req.method === "GET") {
+        const id = sessionDetailMatch[1] as string;
+        try {
+          const data = this.sessionDetailFn?.(id);
+          if (!data || !data.summary) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "unknown sessionId" }));
+            return;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      if (parsedUrl.pathname === "/sessions" && req.method === "GET") {
         try {
           if (!this.sessionsFn) {
             res.writeHead(404, { "Content-Type": "application/json" });
