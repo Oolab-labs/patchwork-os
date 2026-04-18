@@ -202,6 +202,7 @@ export class Server extends EventEmitter<ServerEvents> {
         traceType?: string;
         key?: string;
         q?: string;
+        tag?: string;
         since?: number;
         limit?: number;
       }) => Promise<Record<string, unknown>>)
@@ -613,6 +614,7 @@ export class Server extends EventEmitter<ServerEvents> {
                 traceType: q.get("traceType") ?? undefined,
                 key: q.get("key") ?? undefined,
                 q: q.get("q") ?? undefined,
+                tag: q.get("tag") ?? undefined,
                 since:
                   sinceStr !== null && /^\d+$/.test(sinceStr)
                     ? Number(sinceStr)
