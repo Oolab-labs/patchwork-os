@@ -1253,12 +1253,14 @@ export class Bridge {
           }
         : null;
       const lifecycle = this.activityLog.querySessionLifecycle(id, 100);
+      const tools = this.activityLog.querySessionTools(id, 100);
       const approvals = getApprovalQueue()
         .list()
         .filter((a) => a.sessionId === id);
       return {
         summary,
         lifecycle: lifecycle as unknown as Record<string, unknown>[],
+        tools: tools as unknown as Record<string, unknown>[],
         approvals: approvals as unknown as Record<string, unknown>[],
       };
     };

@@ -189,6 +189,7 @@ export class ActivityLog {
     durationMs: number,
     status: "success" | "error",
     errorMessage?: string,
+    sessionId?: string,
   ): void {
     const entry: ActivityEntry = {
       id: this.nextId++,
@@ -197,6 +198,7 @@ export class ActivityLog {
       durationMs,
       status,
       errorMessage,
+      sessionId,
     };
     this.entries.push(entry);
     this._appendToDisk("tool", entry);
@@ -312,16 +314,25 @@ export class ActivityLog {
    * Return all lifecycle entries whose metadata.sessionId matches. Sorted
    * by id ascending (oldest first). Used by the dashboard session detail
    * view to render a per-session event stream.
-   *
-   * Tool entries aren't returned because they don't carry a sessionId —
-   * correlation would require a time-window heuristic, which is best-effort
-   * at best. Callers who need tool activity for a session can cross-reference
-   * by time bounds themselves.
    */
   querySessionLifecycle(sessionId: string, limit = 100): LifecycleEntry[] {
     const matches: LifecycleEntry[] = [];
     for (const e of this.lifecycleEntries) {
       if (e.metadata?.sessionId === sessionId) matches.push(e);
+    }
+    return matches.slice(-limit);
+  }
+
+  /**
+   * Return tool entries recorded under a given sessionId, sorted by id
+   * ascending. Entries persisted before sessionId-on-tool-calls landed
+   * will have `sessionId === undefined` and are excluded — callers who
+   * need historical correlation should cross-reference by time bounds.
+   */
+  querySessionTools(sessionId: string, limit = 100): ActivityEntry[] {
+    const matches: ActivityEntry[] = [];
+    for (const e of this.entries) {
+      if (e.sessionId === sessionId) matches.push(e);
     }
     return matches.slice(-limit);
   }

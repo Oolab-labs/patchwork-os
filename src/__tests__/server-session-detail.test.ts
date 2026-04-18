@@ -18,6 +18,7 @@ async function startServer(
   detailFn?: (id: string) => {
     summary: SessionSummary | null;
     lifecycle: Record<string, unknown>[];
+    tools: Record<string, unknown>[];
     approvals: Record<string, unknown>[];
   },
 ): Promise<void> {
@@ -65,6 +66,7 @@ describe("GET /sessions/:id", () => {
     await startServer(() => ({
       summary: null,
       lifecycle: [],
+      tools: [],
       approvals: [],
     }));
     const { status, body } = await get("/sessions/unknown");
@@ -88,6 +90,16 @@ describe("GET /sessions/:id", () => {
           metadata: { sessionId: id },
         },
       ],
+      tools: [
+        {
+          id: 2,
+          timestamp: "2026-04-18T12:00:01Z",
+          tool: "getBridgeStatus",
+          durationMs: 42,
+          status: "success",
+          sessionId: id,
+        },
+      ],
       approvals: [
         {
           callId: "call-1",
@@ -102,6 +114,9 @@ describe("GET /sessions/:id", () => {
     const parsed = JSON.parse(body);
     expect(parsed.summary.id).toBe("sess-a");
     expect(parsed.lifecycle).toHaveLength(1);
+    expect(parsed.tools).toHaveLength(1);
+    expect(parsed.tools[0].tool).toBe("getBridgeStatus");
+    expect(parsed.tools[0].sessionId).toBe("sess-a");
     expect(parsed.approvals[0].callId).toBe("call-1");
   });
 
@@ -118,6 +133,7 @@ describe("GET /sessions/:id", () => {
     await startServer(() => ({
       summary: null,
       lifecycle: [],
+      tools: [],
       approvals: [],
     }));
     const { status } = await get("/sessions/any", false);
