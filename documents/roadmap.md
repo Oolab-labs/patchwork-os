@@ -4,24 +4,46 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
-## Patchwork Phase 2 — Runtime Approval Gate + Recipes (branch `phase-2-restore`, 2026-04-18)
+## Patchwork Phase 2 — shipped (as of 2026-04-18)
 
-**Shipped on branch, awaiting PR → main:**
+**Oversight infrastructure** (merged to main in PRs #2–#9):
+- **Runtime approval gate** ([src/approvalHttp.ts](../src/approvalHttp.ts)) — dashboard is the UI for CC's "ask" rules. `approvalGate` runtime knob (`off` / `high` / `all`) flipped live from settings. Risk signals (destructive flags, non-HTTPS URLs, path escape) surfaced as badges. Managed settings file enforces admin policy above user/project. Precedence + design: [ADR-0006](../docs/adr/0006-approval-gate-design.md).
+- **CC PreToolUse hook** — `scripts/patchwork-approval-hook.sh` routes native CC tool calls through the bridge gate, not just MCP transport calls.
+- **Recipe system** — YAML/JSON recipes with manual / cron (`@every`) / webhook (`POST /hooks/<name>`) / file-watch triggers. Persistent run-history via `RecipeRunLog` (JSONL at `~/.patchwork/runs.jsonl`, not SQLite). Dashboard `/recipes` + `/recipes/new` composer.
+- **Dashboard surfaces** — `/approvals` with pattern-learning hooks + live streaming, `/analytics`, `/sessions`, `/recipes`, `/runs`, `/metrics`.
+- **`GET /cc-permissions`** — merged rules tagged with origin (`managed` / `project` / `user`) so the UI explains *why* a rule matched.
 
-- **Runtime approval gate** ([src/approvalHttp.ts](../src/approvalHttp.ts)) — dashboard is the UI for CC's "ask" rules. `approvalGate` runtime knob (`off` / `high` / `all`) flipped from settings page, takes effect next request. Risk signals (destructive flags, non-HTTPS URLs, path escape) surfaced as badges. Managed settings file enforces admin policy above user/project. Precedence + design rationale: [ADR-0006](../docs/adr/0006-approval-gate-design.md).
-- **CC PreToolUse hook wiring** — `scripts/patchwork-approval-hook.sh` reads stdin JSON, POSTs to `/approvals`, blocks on bridge decision. Works for native CC tool calls (not just MCP transport).
-- **Recipe system** — YAML/JSON recipes installable via `patchwork recipe install <path>`. Manual, cron (`@every`), webhook (`POST /hooks/<name>`), and file-watch triggers. Persistent run-history audit log (SQLite). Dashboard `/recipes` + `/recipes/new` composer.
-- **Dashboard surfaces** — `/analytics` (decisions over time, per-session), `/sessions` (live session state), `/approvals` with pattern learning hooks + live streaming via `useBridgeFetch` / `useBridgeStream`.
-- **`GET /cc-permissions`** — returns merged rules tagged with origin (`managed` / `project` / `user`) so the UI can explain why a rule matched.
+**Enrichment Engine** (merged in PRs #10–#11):
+- **`enrichCommit`** ([src/tools/enrichCommit.ts](../src/tools/enrichCommit.ts)) — parses `#N` / `GH-N` refs from commit message, fetches each issue via `gh`, classifies close-vs-reference by verb proximity.
+- **`CommitIssueLinkLog`** ([src/commitIssueLinkLog.ts](../src/commitIssueLinkLog.ts)) — JSONL persistence for enrichment results (`~/.patchwork/commit_issue_links.jsonl`); dedup on `(workspace, sha, ref)` unless state changes.
+- **`getCommitsForIssue`** — reverse lookup without re-running `gh`.
+- **`enrichStackTrace`** ([src/tools/enrichStackTrace.ts](../src/tools/enrichStackTrace.ts)) — maps stack frames (Node/Python/browser/generic) to introducing commits via shared `createBlameResolver`.
+- Shared helpers: [src/tools/issueRefs.ts](../src/tools/issueRefs.ts) (`extractIssueRefs`, `classifyIssueLink`), [src/tools/blame-utils.ts](../src/tools/blame-utils.ts).
 
-**Remaining to land Phase 2:**
+## Patchwork Phase 3 moat — shipped (2026-04-18)
 
-1. PR `phase-2-restore` → `main`.
-2. Enrichment Engine (commit → issue linker) — the original strategy-doc Phase 2 item. Current branch is oversight infrastructure; enrichment is still unstarted.
-3. Freshness scoring + dedup across context sources.
-4. Generalize the recipe run-log SQLite schema to a persistent decision-trace store (feeds Phase 3 moat).
+Cross-session memory loop, end-to-end. Merged in PRs #11–#15:
 
-**Coverage/test state on branch:** 3061 bridge tests passing (was 3052). `src/approvalHttp.ts` coverage: 76.6% lines, 78.3% branches, 83.3% funcs — above the 75/70/75 gate.
+| Direction | Surface | Lands in |
+|---|---|---|
+| **Agents write** decisions | `ctxSaveTrace` | `DecisionTraceLog` → `~/.patchwork/decision_traces.jsonl` |
+| System writes decisions | approval gate, `enrichCommit`, recipe runs | activityLog, `CommitIssueLinkLog`, `RecipeRunLog` |
+| **Agents read** (query) | `ctxQueryTraces` (4 traceTypes), `ctxGetTaskContext` | all four logs |
+| **Agents read** (injected) | session-start digest ([recentTracesDigest.ts](../src/tools/recentTracesDigest.ts)) | MCP instructions block on connect |
+| **Humans read** | `/traces` dashboard page | `GET /traces` + dashboard `[...]/page.tsx` |
+
+All four "phantom tools" previously advertised in the MCP handshake (`ctxGetTaskContext`, `ctxQueryTraces`, `ctxSaveTrace`, plus the digest) are now real handlers. Zero drift between what agents are told and what they can actually call.
+
+**Persistence model:** JSONL across all three logs (not SQLite). Each log has its own dedup / retention semantics; `ctxQueryTraces` is the unified reader. Adding SQLite would be a migration, not a rewrite — deferred until query volume demands it.
+
+**Test state (on main):** 3174 bridge tests passing. Lint 0 errors, 55 warnings (all pre-existing in src/vscode-extension). Dashboard excluded from bridge biome config (own toolchain).
+
+## Remaining Patchwork work
+
+1. **Dogfood the agent-read loop.** Instrumentation already emits `bridge_tool_calls_total{tool="ctxSaveTrace"}` etc. via Prometheus. Need real agent sessions to produce usage data; then decide whether instructions need strengthening to nudge agents toward the ctx tools.
+2. **Decision-trace dashboard view.** `/traces` bundles all 4 types; decisions (the agent-authored knowledge base) could use a dedicated tab with search-by-tag. Speculative until usage data warrants.
+3. **Freshness scoring + dedup across context sources.** Deferred research; wait until real duplication pain appears in `contextBundle` / `getCommitsForIssue` output.
+4. **Upstream connectors** (Sentry, Linear) — Phase 1 federation per `docs/platform-strategy.md`. `enrichStackTrace` already composes with *pasted* stacks; Sentry-as-connector is the next natural extension.
 
 ---
 

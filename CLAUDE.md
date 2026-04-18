@@ -361,6 +361,23 @@ Bridge tool substitution rules in `.claude/rules/bridge-tools.md` (loaded above)
 | Change-heavy files | `getGitHotspots` | **[full]** |
 | Scaffold tests | `generateTests` | **[full]** |
 | PR description | `getPRTemplate` | **[full]** |
+| Unified task context (issue/PR/commit) | `ctxGetTaskContext` | **[full]** |
+| Query past decisions (approval/enrichment/recipe/agent) | `ctxQueryTraces` | **[full]** |
+| Record a fix for future sessions | `ctxSaveTrace` | **[full]** |
+| Enrich commit with linked issues | `enrichCommit` | **[full]** |
+| Reverse: commits that touched an issue | `getCommitsForIssue` | **[full]** |
+| Stack frame → introducing commit | `enrichStackTrace` | **[full]** |
+
+### Patchwork context platform — when to call what
+
+The bridge has a built-in cross-session memory layer. **Prefer these over raw `gh` / `git` tools** for task-context lookups:
+
+- **Starting a task?** Call `ctxGetTaskContext(ref)` first. Accepts any ref shape (`#42`, `PR-42`, commit SHA). Returns issue/PR/commit + linked commits + reverse issue links in one call. Fail-soft — missing `gh` / git shows up in `warnings`, never throws.
+- **Fixing a bug?** Pair with `enrichStackTrace(stackTrace)` on the failing trace — maps frames to the commit that likely introduced the bug.
+- **Done resolving?** Call `ctxSaveTrace(ref, problem, solution, tags?)` with a one-line problem + one-line solution. Future sessions see it via the session-start digest and `ctxQueryTraces`.
+- **Debugging oversight?** `ctxQueryTraces({traceType, key, since, limit})` reads across all four stores (approvals, enrichment links, recipe runs, decision traces). The dashboard `/traces` page is the human UI over the same data.
+
+On every session connect, the bridge prepends a digest of the last 12h of decisions to its MCP instructions block (top 5, ≤2 KB). If you see a `RECENT DECISIONS` section in your system prompt, that's live context — use it before re-running `gh`.
 
 ### Dispatch prompts (mobile)
 
