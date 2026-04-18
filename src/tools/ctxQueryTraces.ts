@@ -131,6 +131,11 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
             description:
               "Case-insensitive substring search across the trace summary and serialized body. Use for free-form lookup when the key schema doesn't fit.",
           },
+          tag: {
+            type: "string",
+            description:
+              "Restrict to decision traces carrying this tag (exact match, case-sensitive). Other trace types don't have tags and will be excluded when this filter is set.",
+          },
           since: {
             type: "integer",
             description: "Only return traces with ts > this ms-epoch value.",
@@ -186,6 +191,7 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
         | "";
       const keyFilter = optionalString(args, "key");
       const qFilter = optionalString(args, "q");
+      const tagFilter = optionalString(args, "tag");
       const since = optionalInt(args, "since", 0, Number.MAX_SAFE_INTEGER);
       const limit = optionalInt(args, "limit", 1, 500) ?? 100;
 
@@ -215,6 +221,13 @@ export function createCtxQueryTracesTool(deps: CtxQueryTracesDeps) {
 
       let filtered = pools;
       if (since !== undefined) filtered = filtered.filter((t) => t.ts > since);
+      if (tagFilter) {
+        filtered = filtered.filter((t) => {
+          if (t.traceType !== "decision") return false;
+          const tags = t.body.tags;
+          return Array.isArray(tags) && tags.includes(tagFilter);
+        });
+      }
       if (keyFilter) {
         const needle = keyFilter;
         filtered = filtered.filter((t) => t.key.includes(needle));
