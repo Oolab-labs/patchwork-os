@@ -1,5 +1,7 @@
 "use client";
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
@@ -40,9 +42,31 @@ const validateTraces: ShapeCheck<TracesResponse> = shape(
 );
 
 export default function DecisionsPage() {
-  const [tag, setTag] = useState("");
-  const [keyQuery, setKeyQuery] = useState("");
-  const [textQuery, setTextQuery] = useState("");
+  return (
+    <Suspense>
+      <DecisionsContent />
+    </Suspense>
+  );
+}
+
+function DecisionsContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [tag, setTag] = useState(searchParams.get("tag") ?? "");
+  const [keyQuery, setKeyQuery] = useState(searchParams.get("ref") ?? "");
+  const [textQuery, setTextQuery] = useState(searchParams.get("q") ?? "");
+
+  // Mirror filter state to the URL so links are shareable and the back
+  // button reopens the same view. replaceState (not push) — filters are
+  // transient within one page, no need to pollute history.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (tag.trim()) params.set("tag", tag.trim());
+    if (keyQuery.trim()) params.set("ref", keyQuery.trim());
+    if (textQuery.trim()) params.set("q", textQuery.trim());
+    const qs = params.toString();
+    router.replace(qs ? `/decisions?${qs}` : "/decisions", { scroll: false });
+  }, [tag, keyQuery, textQuery, router]);
 
   const qs = useMemo(() => {
     const params = new URLSearchParams();
@@ -243,16 +267,33 @@ export default function DecisionsPage() {
                   >
                     {b.ref ?? t.key}
                   </span>
-                  <span
+                  <div
                     style={{
                       flex: 1,
+                      display: "flex",
+                      alignItems: "baseline",
+                      justifyContent: "flex-end",
+                      gap: "var(--s-2)",
                       color: "var(--fg-3)",
                       fontSize: 12,
-                      textAlign: "right",
                     }}
                   >
-                    {relTime(t.ts)}
-                  </span>
+                    {typeof b.sessionId === "string" && b.sessionId.length > 0 && (
+                      <Link
+                        href={`/sessions/${b.sessionId}`}
+                        className="pill muted"
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 11,
+                          textDecoration: "none",
+                        }}
+                        title={`session ${b.sessionId}`}
+                      >
+                        {b.sessionId.slice(0, 8)}
+                      </Link>
+                    )}
+                    <span>{relTime(t.ts)}</span>
+                  </div>
                 </div>
                 {b.problem && (
                   <div
