@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StatCard } from "@/components/StatCard";
-import { fmtDuration } from "@/components/time";
+import { fmtDuration, relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 
 interface BridgeHealth {
@@ -20,6 +20,23 @@ interface Overview {
   recentActivity: number;
   uptimeMs: number | null;
   bridgeOk: boolean;
+}
+
+interface DecisionTrace {
+  traceType: "decision";
+  ts: number;
+  key: string;
+  summary: string;
+  body: {
+    ref?: string;
+    problem?: string;
+    solution?: string;
+    tags?: string[];
+  };
+}
+
+interface TracesResponse {
+  traces: DecisionTrace[];
 }
 
 export default function HomePage() {
@@ -73,6 +90,12 @@ export default function HomePage() {
     error: healthError,
     loading: healthLoading,
   } = useBridgeFetch<BridgeHealth>("/api/bridge/health", { intervalMs: 5000 });
+
+  const { data: tracesData } = useBridgeFetch<TracesResponse>(
+    "/api/bridge/traces?traceType=decision&limit=5",
+    { intervalMs: 10000 },
+  );
+  const recentDecisions = tracesData?.traces ?? [];
 
   return (
     <section>
@@ -159,6 +182,94 @@ export default function HomePage() {
           />
         </div>
       ) : null}
+
+      {recentDecisions.length > 0 && (
+        <div className="card" style={{ marginTop: "var(--s-4)" }}>
+          <div className="card-head">
+            <h2>Recent decisions</h2>
+            <Link
+              href="/decisions"
+              className="pill muted"
+              style={{ textDecoration: "none" }}
+            >
+              View all →
+            </Link>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--s-2)",
+            }}
+          >
+            {recentDecisions.map((t) => {
+              const b = t.body;
+              const tags = Array.isArray(b.tags) ? b.tags.slice(0, 3) : [];
+              return (
+                <Link
+                  key={`${t.ts}:${t.key}`}
+                  href="/decisions"
+                  style={{
+                    display: "flex",
+                    gap: "var(--s-3)",
+                    alignItems: "baseline",
+                    padding: "8px 10px",
+                    background: "var(--bg-0)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--r-2)",
+                    textDecoration: "none",
+                    color: "inherit",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                      color: "#a78bfa",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {b.ref ?? t.key}
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      fontSize: 13,
+                      color: "var(--fg-1)",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {b.solution ?? t.summary}
+                  </span>
+                  {tags.length > 0 && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontFamily: "var(--font-mono)",
+                        color: "var(--fg-3)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {tags.join(",")}
+                    </span>
+                  )}
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "var(--fg-3)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {relTime(t.ts)}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-head">
