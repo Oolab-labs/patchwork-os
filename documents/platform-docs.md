@@ -593,3 +593,83 @@ For use without VS Code — see `documents/headless-quickstart.md` for the full 
 - Terminal tools (`createTerminal`, `runInTerminal`, etc.) — these use VS Code shell integration.
 
 **CI pattern:** run the bridge with `--headless` (no extension), configure `typescript-language-server` and `ctags` in the Docker image, and use `getToolCapabilities` in the first step to confirm which fallback paths are active. Full mode is the default; pass `--slim` if you want only IDE-exclusive tools. See `documents/headless-quickstart.md` for Docker and GitHub Actions examples.
+
+## Patchwork Approval Gate
+
+Dashboard-backed UI for Claude Code's `ask` permission rules. Runs at two layers: CC's `PreToolUse` hook (native CC tool calls) and the bridge's MCP transport middleware. Design rationale in [ADR-0006](../docs/adr/0006-approval-gate-design.md).
+
+### HTTP surface
+
+| Route | Purpose |
+|---|---|
+| `POST /approvals` | Request approval. Body: `{ toolName, specifier?, params?, summary?, permissionMode?, sessionId? }`. Returns `{ decision: "allow"|"deny", reason, callId? }`. |
+| `GET /approvals?session=<id>` | List pending approvals, optionally filtered by session. |
+| `POST /approve/:callId` | Human approves a queued call. |
+| `POST /reject/:callId` | Human rejects a queued call. |
+| `GET /cc-permissions` | Returns merged rules (`allow` / `ask` / `deny`) + `workspace` + `attributed` (origin-tagged: `managed` / `project` / `user`). |
+| `POST /hooks/<name>` | Recipe webhook trigger. Dispatches matching recipe. |
+
+### Decision precedence
+
+Every `POST /approvals` resolves via:
+
+1. CC `deny` rule → deny (`reason: cc_deny_rule`).
+2. CC `allow` rule → allow (`reason: cc_allow_rule`).
+3. `permissionMode` short-circuits:
+   - `dontAsk` → deny (`reason: dontAsk_mode`) — no UI to prompt, safer to deny.
+   - `auto` → allow (`reason: auto_mode`) — CC owns escalation.
+   - `plan` + read-only tool → allow (`reason: plan_mode_read`).
+   - `plan` + write tool → deny (`reason: plan_mode_write`).
+4. `approvalGate` setting:
+   - `off` → allow (`reason: gate_off`).
+   - `high` + low-tier tool → allow (`reason: gate_below_threshold`).
+   - otherwise → queue for dashboard, await resolve/reject.
+
+`reason` strings are stable — dashboard filters and analytics depend on them.
+
+### Rule merge (ccPermissions)
+
+Loaded from disk live, merged in CC's documented precedence: **managed > project > user**. `managedSettingsPath` is an admin-writable JSON file; rules there cannot be overridden by lower scopes. This is how an org enforces "never allow `gitPush` to main" across all developers without forking CC.
+
+Glob specifiers (`Bash(npm run *)`) are matched via `evaluateRules` — never reimplement matching inline. Exact tool-name matches (`Read`, `gitPush`) always win over specifier patterns.
+
+### Gate tiers
+
+`approvalGate` is runtime-adjustable from the settings UI; no reconnect required.
+
+| Value | Behavior |
+|---|---|
+| `off` | Dev mode. Bypass queueing; allow everything after rule precedence. |
+| `high` | Queue only high-tier tools (`classifyTool` = `"high"`: writes, network, exec). |
+| `all` | Queue every tool that survives allow/deny short-circuits. |
+
+### Risk signals
+
+High-tier queued items carry `riskSignals` — advisory badges surfaced in the dashboard. Detected patterns:
+
+- **Destructive flags** (Bash/runCommand): `rm -rf`, `--force`, `sudo`, `DROP TABLE`, `TRUNCATE`, shell chaining (`` ` `` / `$()` / `&&` / `||`).
+- **Domain reputation** (WebFetch/sendHttpRequest): non-HTTPS URLs, raw IP hostnames.
+- **Path escape** (Write/Edit/Read): `file_path` resolves outside workspace.
+
+Signals never change the decision — they help the human decide.
+
+### Recipe triggers
+
+Recipes live in `~/.claude-ide-bridge/recipes/` (JSON or YAML). Supported triggers:
+
+- **manual** — run via `patchwork recipe run <name>` CLI.
+- **cron** — `@every 5m` syntax; runs via the recipe scheduler.
+- **webhook** — `POST /hooks/<name>` dispatches matching recipes.
+- **file_watch** — minimatch patterns on workspace files.
+
+Install with `patchwork recipe install <path-to-recipe.yaml>`. Run history persists to SQLite; surfaced in the dashboard `/recipes` page.
+
+### Webhook SSRF defenses
+
+`webhookUrl` (approval-queued notification) enforces:
+
+- HTTPS-only.
+- Bare `localhost` blocked.
+- DNS-resolved IP checked against loopback / RFC-1918 / link-local blocklist.
+- 5s timeout via `AbortController`.
+- Failures logged, never thrown — webhook errors must not block approval flow.

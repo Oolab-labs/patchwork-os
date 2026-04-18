@@ -4,6 +4,27 @@ Development direction and exploration guidance. Living document — update as pr
 
 ---
 
+## Patchwork Phase 2 — Runtime Approval Gate + Recipes (branch `phase-2-restore`, 2026-04-18)
+
+**Shipped on branch, awaiting PR → main:**
+
+- **Runtime approval gate** ([src/approvalHttp.ts](../src/approvalHttp.ts)) — dashboard is the UI for CC's "ask" rules. `approvalGate` runtime knob (`off` / `high` / `all`) flipped from settings page, takes effect next request. Risk signals (destructive flags, non-HTTPS URLs, path escape) surfaced as badges. Managed settings file enforces admin policy above user/project. Precedence + design rationale: [ADR-0006](../docs/adr/0006-approval-gate-design.md).
+- **CC PreToolUse hook wiring** — `scripts/patchwork-approval-hook.sh` reads stdin JSON, POSTs to `/approvals`, blocks on bridge decision. Works for native CC tool calls (not just MCP transport).
+- **Recipe system** — YAML/JSON recipes installable via `patchwork recipe install <path>`. Manual, cron (`@every`), webhook (`POST /hooks/<name>`), and file-watch triggers. Persistent run-history audit log (SQLite). Dashboard `/recipes` + `/recipes/new` composer.
+- **Dashboard surfaces** — `/analytics` (decisions over time, per-session), `/sessions` (live session state), `/approvals` with pattern learning hooks + live streaming via `useBridgeFetch` / `useBridgeStream`.
+- **`GET /cc-permissions`** — returns merged rules tagged with origin (`managed` / `project` / `user`) so the UI can explain why a rule matched.
+
+**Remaining to land Phase 2:**
+
+1. PR `phase-2-restore` → `main`.
+2. Enrichment Engine (commit → issue linker) — the original strategy-doc Phase 2 item. Current branch is oversight infrastructure; enrichment is still unstarted.
+3. Freshness scoring + dedup across context sources.
+4. Generalize the recipe run-log SQLite schema to a persistent decision-trace store (feeds Phase 3 moat).
+
+**Coverage/test state on branch:** 3061 bridge tests passing (was 3052). `src/approvalHttp.ts` coverage: 76.6% lines, 78.3% branches, 83.3% funcs — above the 75/70/75 gate.
+
+---
+
 ## Current State (v2.25.34 / ext v1.3.2 — 2026-04-14)
 
 **v2.25.34 + ext v1.3.2 shipped (2026-04-14) — outputSchema + extension version debugging:**
