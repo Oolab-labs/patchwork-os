@@ -1,3 +1,4 @@
+import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
 import { runGitStdout } from "./git-utils.js";
 import { GH_NOT_AUTHED, isNotAuthed, isNotFound } from "./github/shared.js";
 import { classifyIssueLink, extractIssueRefs } from "./issueRefs.js";
@@ -46,7 +47,10 @@ async function fetchIssue(
   return { ok: false, reason: "error", detail: msg };
 }
 
-export function createEnrichCommitTool(workspace: string) {
+export function createEnrichCommitTool(
+  workspace: string,
+  linkLog?: CommitIssueLinkLog,
+) {
   return {
     schema: {
       name: "enrichCommit",
@@ -151,6 +155,29 @@ export function createEnrichCommitTool(workspace: string) {
 
       for (const r of issueRefs) {
         const linkType = classifyIssueLink(fullMessage, r);
+        const recordLink = (
+          resolved: boolean,
+          issue: Record<string, unknown> | null,
+          reason: string | null,
+        ) => {
+          if (!linkLog || !sha) return;
+          linkLog.record({
+            sha,
+            ref: r,
+            linkType,
+            resolved,
+            workspace,
+            ...(subject && { subject }),
+            ...(typeof issue?.state === "string" && {
+              issueState: issue.state,
+            }),
+            ...(typeof issue?.title === "string" && {
+              issueTitle: issue.title,
+            }),
+            ...(reason !== null && { reason }),
+          });
+        };
+
         if (!ghAvailable) {
           links.push({
             ref: r,
@@ -160,6 +187,7 @@ export function createEnrichCommitTool(workspace: string) {
             reason: "gh_unavailable",
           });
           unresolved += 1;
+          recordLink(false, null, "gh_unavailable");
           continue;
         }
         const num = r.replace(/^#/, "");
@@ -172,16 +200,19 @@ export function createEnrichCommitTool(workspace: string) {
             issue: fetched.issue,
             reason: null,
           });
+          recordLink(true, fetched.issue, null);
         } else {
+          const reason =
+            fetched.reason === "not_authed" ? GH_NOT_AUTHED : fetched.reason;
           links.push({
             ref: r,
             linkType,
             resolved: false,
             issue: null,
-            reason:
-              fetched.reason === "not_authed" ? GH_NOT_AUTHED : fetched.reason,
+            reason,
           });
           unresolved += 1;
+          recordLink(false, null, reason);
         }
       }
 
