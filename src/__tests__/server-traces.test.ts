@@ -19,6 +19,7 @@ async function startServer(
   tracesFn?: (q: {
     traceType?: string;
     key?: string;
+    q?: string;
     since?: number;
     limit?: number;
   }) => Promise<Record<string, unknown>>,
@@ -101,11 +102,12 @@ describe("GET /traces", () => {
       return { traces: [], count: 0, sources: {} };
     });
     await get(
-      "/traces?traceType=enrichment&key=abc&since=1700000000000&limit=25",
+      "/traces?traceType=enrichment&key=abc&q=needle&since=1700000000000&limit=25",
     );
     expect(received[0]).toEqual({
       traceType: "enrichment",
       key: "abc",
+      q: "needle",
       since: 1_700_000_000_000,
       limit: 25,
     });

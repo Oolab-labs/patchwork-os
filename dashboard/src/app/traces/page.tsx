@@ -41,16 +41,18 @@ const TYPE_COLORS: Record<TraceType, string> = {
 export default function TracesPage() {
   const [filter, setFilter] = useState<TraceType | "all">("all");
   const [keyQuery, setKeyQuery] = useState("");
+  const [textQuery, setTextQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const qs = useMemo(() => {
     const params = new URLSearchParams();
     if (filter !== "all") params.set("traceType", filter);
     if (keyQuery.trim()) params.set("key", keyQuery.trim());
+    if (textQuery.trim()) params.set("q", textQuery.trim());
     params.set("limit", "200");
     const s = params.toString();
     return s ? `?${s}` : "";
-  }, [filter, keyQuery]);
+  }, [filter, keyQuery, textQuery]);
 
   const { data, error, loading } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
@@ -138,6 +140,22 @@ export default function TracesPage() {
             color: "var(--fg-0)",
           }}
         />
+        <input
+          type="text"
+          value={textQuery}
+          onChange={(e) => setTextQuery(e.target.value)}
+          placeholder="search summary + body (case-insensitive)"
+          style={{
+            flex: 1,
+            minWidth: 240,
+            padding: "6px 10px",
+            fontSize: 13,
+            background: "var(--bg-2)",
+            border: "1px solid var(--bg-3)",
+            borderRadius: 4,
+            color: "var(--fg-0)",
+          }}
+        />
       </div>
 
       {sources && (
@@ -161,14 +179,14 @@ export default function TracesPage() {
       {!loading && traces.length === 0 && !error ? (
         <div className="empty-state">
           <h3>
-            {filter === "all" && !keyQuery
+            {filter === "all" && !keyQuery && !textQuery
               ? "No traces yet"
               : "No matching traces"}
           </h3>
           <p>
-            {filter === "all" && !keyQuery
+            {filter === "all" && !keyQuery && !textQuery
               ? "Traces will appear once the bridge records approval decisions, enrichment links, or recipe runs."
-              : `No ${filter === "all" ? "traces" : TYPE_LABELS[filter as TraceType].toLowerCase()} traces${keyQuery ? ` matching "${keyQuery}"` : ""}.`}
+              : `No ${filter === "all" ? "traces" : TYPE_LABELS[filter as TraceType].toLowerCase()} traces${keyQuery ? ` with key matching "${keyQuery}"` : ""}${textQuery ? ` containing "${textQuery}"` : ""}.`}
           </p>
         </div>
       ) : (
