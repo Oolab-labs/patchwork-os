@@ -28,7 +28,8 @@
       "!**/vscode-extension/out",
       "!**/coverage",
       "!**/docs",
-      "!**/.claude/worktrees"
+      "!**/.claude/worktrees",
+      "!dashboard/**"
     ]
   },
   "overrides": [
