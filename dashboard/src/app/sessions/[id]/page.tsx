@@ -39,10 +39,20 @@ interface PendingApproval {
   summary?: string;
 }
 
+interface DecisionEntry {
+  seq: number;
+  createdAt: number;
+  ref: string;
+  problem: string;
+  solution: string;
+  tags?: string[];
+}
+
 interface DetailResponse {
   summary: SessionSummary | null;
   lifecycle: LifecycleEntry[];
   tools?: ToolEntry[];
+  decisions?: DecisionEntry[];
   approvals: PendingApproval[];
 }
 
@@ -68,6 +78,7 @@ export default function SessionDetailPage() {
   const approvals = data?.approvals ?? [];
   const lifecycle = data?.lifecycle ?? [];
   const tools = data?.tools ?? [];
+  const decisions = data?.decisions ?? [];
   const stream: StreamRow[] = [
     ...lifecycle.map((entry) => ({ kind: "lifecycle" as const, entry })),
     ...tools.map((entry) => ({ kind: "tool" as const, entry })),
@@ -192,6 +203,81 @@ export default function SessionDetailPage() {
         </div>
       )}
 
+      {decisions.length > 0 && (
+        <div className="card" style={{ marginTop: "var(--s-4)" }}>
+          <div className="card-head">
+            <h2>Decisions saved</h2>
+            <span className="pill muted">{decisions.length}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {decisions.map((d) => {
+              const tags = Array.isArray(d.tags) ? d.tags.slice(0, 3) : [];
+              return (
+                <Link
+                  key={d.seq}
+                  href="/decisions"
+                  style={{
+                    display: "flex",
+                    gap: "var(--s-3)",
+                    alignItems: "baseline",
+                    padding: "8px 10px",
+                    background: "var(--bg-0)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: "var(--r-2)",
+                    textDecoration: "none",
+                    color: "inherit",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                      color: "#a78bfa",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {d.ref}
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      fontSize: 13,
+                      color: "var(--fg-1)",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {d.solution}
+                  </span>
+                  {tags.length > 0 && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontFamily: "var(--font-mono)",
+                        color: "var(--fg-3)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {tags.join(",")}
+                    </span>
+                  )}
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "var(--fg-3)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {relTime(d.createdAt)}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {stream.length > 0 && (
         <div className="card" style={{ marginTop: "var(--s-4)" }}>
           <div className="card-head">
@@ -270,7 +356,10 @@ export default function SessionDetailPage() {
         </div>
       )}
 
-      {summary && stream.length === 0 && approvals.length === 0 && (
+      {summary &&
+        stream.length === 0 &&
+        approvals.length === 0 &&
+        decisions.length === 0 && (
         <div className="empty-state" style={{ marginTop: "var(--s-4)" }}>
           <h3>No recorded activity</h3>
           <p>

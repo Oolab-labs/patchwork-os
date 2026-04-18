@@ -19,6 +19,7 @@ async function startServer(
     summary: SessionSummary | null;
     lifecycle: Record<string, unknown>[];
     tools: Record<string, unknown>[];
+    decisions: Record<string, unknown>[];
     approvals: Record<string, unknown>[];
   },
 ): Promise<void> {
@@ -67,6 +68,7 @@ describe("GET /sessions/:id", () => {
       summary: null,
       lifecycle: [],
       tools: [],
+      decisions: [],
       approvals: [],
     }));
     const { status, body } = await get("/sessions/unknown");
@@ -100,6 +102,18 @@ describe("GET /sessions/:id", () => {
           sessionId: id,
         },
       ],
+      decisions: [
+        {
+          seq: 7,
+          createdAt: 1700000002000,
+          ref: "PR-99",
+          problem: "stale cache",
+          solution: "invalidate on write",
+          workspace: "/ws",
+          sessionId: id,
+          tags: ["cache"],
+        },
+      ],
       approvals: [
         {
           callId: "call-1",
@@ -117,6 +131,9 @@ describe("GET /sessions/:id", () => {
     expect(parsed.tools).toHaveLength(1);
     expect(parsed.tools[0].tool).toBe("getBridgeStatus");
     expect(parsed.tools[0].sessionId).toBe("sess-a");
+    expect(parsed.decisions).toHaveLength(1);
+    expect(parsed.decisions[0].ref).toBe("PR-99");
+    expect(parsed.decisions[0].sessionId).toBe("sess-a");
     expect(parsed.approvals[0].callId).toBe("call-1");
   });
 
@@ -134,6 +151,7 @@ describe("GET /sessions/:id", () => {
       summary: null,
       lifecycle: [],
       tools: [],
+      decisions: [],
       approvals: [],
     }));
     const { status } = await get("/sessions/any", false);

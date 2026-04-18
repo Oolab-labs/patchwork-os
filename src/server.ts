@@ -222,6 +222,7 @@ export class Server extends EventEmitter<ServerEvents> {
         summary: SessionSummary | null;
         lifecycle: Record<string, unknown>[];
         tools: Record<string, unknown>[];
+        decisions: Record<string, unknown>[];
         approvals: Record<string, unknown>[];
       })
     | null = null;
