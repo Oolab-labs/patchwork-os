@@ -655,14 +655,14 @@ Signals never change the decision — they help the human decide.
 
 ### Recipe triggers
 
-Recipes live in `~/.claude-ide-bridge/recipes/` (JSON or YAML). Supported triggers:
+Recipes live in `~/.patchwork/recipes/` (JSON or YAML). Supported triggers:
 
 - **manual** — run via `patchwork recipe run <name>` CLI.
 - **cron** — `@every 5m` syntax; runs via the recipe scheduler.
 - **webhook** — `POST /hooks/<name>` dispatches matching recipes.
 - **file_watch** — minimatch patterns on workspace files.
 
-Install with `patchwork recipe install <path-to-recipe.yaml>`. Run history persists to SQLite; surfaced in the dashboard `/recipes` page.
+Install with `patchwork recipe install <path-to-recipe.yaml>`. Run history persists as JSONL at `~/.patchwork/runs.jsonl` via `RecipeRunLog` (append-only file + bounded in-memory ring); surfaced in the dashboard `/recipes` and `/runs` pages.
 
 ### Webhook SSRF defenses
 
@@ -673,3 +673,60 @@ Install with `patchwork recipe install <path-to-recipe.yaml>`. Run history persi
 - DNS-resolved IP checked against loopback / RFC-1918 / link-local blocklist.
 - 5s timeout via `AbortController`.
 - Failures logged, never thrown — webhook errors must not block approval flow.
+
+## Patchwork Context Platform — Phase 3 Moat
+
+Cross-session memory for agents. Every decision (approval verdict, enrichment link, recipe run, agent-authored fix) is persisted to JSONL and queryable through a single surface. New sessions see a digest of recent decisions automatically in their MCP instructions block — no tool call required.
+
+### Tools
+
+| Tool | Purpose |
+|---|---|
+| `ctxSaveTrace(ref, problem, solution, tags?)` | Agent writes a durable trace after resolving a task. Persists to `DecisionTraceLog`. Required: `ref` (issue/PR/commit/free-text, ≤256 chars), `problem` (≤500 chars), `solution` (≤500 chars). Optional: up to 10 tags × 32 chars each. |
+| `ctxGetTaskContext(ref)` | Unified context for an issue, PR, commit, or error ref. Auto-detects ref type. Composes `gh issue view` / `gh pr view` / `git show` + `CommitIssueLinkLog` reverse lookup. Fail-soft: partial context on missing `gh` / git / log rather than throw. |
+| `ctxQueryTraces({traceType?, key?, since?, limit?})` | Unified query over all four trace stores. `traceType: "approval" \| "enrichment" \| "recipe_run" \| "decision"` (omit for all). Key substring match. Returns `{traces:[{traceType, ts, key, summary, body}], count, sources}`. |
+
+### Persistence
+
+All four stores are JSONL with bounded in-memory rings (no SQLite). Located under `~/.patchwork/`:
+
+| File | Writer | Dedup |
+|---|---|---|
+| `runs.jsonl` | `RecipeRunLog` — recipe/cron/webhook runs | none (every run is a new row) |
+| `commit_issue_links.jsonl` | `CommitIssueLinkLog` — `enrichCommit` output | on `(workspace, sha, ref)` unless `linkType` / `resolved` / `issueState` / `reason` changes |
+| `decision_traces.jsonl` | `DecisionTraceLog` — `ctxSaveTrace` output | none (every agent write is a new trace) |
+| (activityLog lifecycle rows) | approval gate `onDecision` | by seq |
+
+### Session-start digest
+
+On every Claude Code session connect, the bridge refreshes a compact digest of the last 12h of decisions and prepends it to the MCP instructions block:
+
+```
+RECENT DECISIONS (last 12h):
+  • deny gitPush (cc_deny_rule) — 4h ago
+  ⇄ closes #42 (resolved) — fix auth timeout — 2h ago
+  ▸ nightly (cron) → done — 30m ago
+  ★ #42 — base case changed to return 1 when n<=1 — 10m ago
+```
+
+Strictly bounded: 12h window, top 5, 80 chars per summary, 2 KB total byte cap. Refresh is fire-and-forget on connect — if slow or failed, session sees the previous digest (or empty heading). Never blocks session setup.
+
+### HTTP surface
+
+| Route | Purpose |
+|---|---|
+| `GET /traces?traceType=&key=&since=&limit=` | Query wrapper over `ctxQueryTraces` — backs the dashboard `/traces` page. |
+| dashboard `/traces` | Filter tabs (All / Approval / Enrichment / Recipe Run / Decision), key substring search, click-to-expand body JSON. Polls every 3s. |
+
+### Ref-detection heuristics
+
+`ctxGetTaskContext` parses refs with these rules (first match wins):
+
+| Pattern | Type | Examples |
+|---|---|---|
+| `(GH-\|#)?N` (1–5 digits) | `issue` | `#42`, `GH-42`, `42` |
+| `PR-N`, `pull/N`, `pr/N`, `#PRN` | `pull_request` | `PR-7`, `pull/7` |
+| 7–40 hex chars | `commit` | `abc1234`, full SHA |
+| else | `unknown` (warning) | |
+
+Failure modes never throw — the returned `{sources, warnings}` tells the caller what was and wasn't available.
