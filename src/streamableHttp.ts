@@ -283,8 +283,14 @@ export class StreamableHttpHandler {
     private getPluginWatcher: () => PluginWatcher | null = () => null,
     /** Optional: resolves the OAuth scope string for a bearer token, or null for full access. */
     private resolveScopeFn: ((token: string) => string | null) | null = null,
-    /** Optional: instructions string injected into the MCP initialize response. */
-    private instructions: string | null = null,
+    /**
+     * Optional: provider for the instructions string injected into the
+     * MCP initialize response. Called per session so digests stay fresh
+     * across sessions without restarting the bridge.
+     */
+    private instructionsProvider:
+      | (() => Promise<string> | string)
+      | null = null,
   ) {
     // Prune idle sessions every 2 minutes.
     // .unref() prevents this timer from keeping the Node process alive when
@@ -422,7 +428,7 @@ export class StreamableHttpHandler {
           }
         }
       }
-      session = this.createSession(sessionScope, denyTools);
+      session = await this.createSession(sessionScope, denyTools);
       sessionIsNew = true;
       const ccSessionId = req.headers["x-claude-code-session-id"];
       if (typeof ccSessionId === "string" && SESSION_ID_RE.test(ccSessionId)) {
@@ -595,10 +601,10 @@ export class StreamableHttpHandler {
     res.end();
   }
 
-  private createSession(
+  private async createSession(
     scope: string | null = null,
     denyTools: Set<string> = new Set(),
-  ): HttpSession {
+  ): Promise<HttpSession> {
     const id = crypto.randomUUID();
     const session = {
       id,
@@ -635,8 +641,9 @@ export class StreamableHttpHandler {
       transport.setSharedToolRateLimitBucket(this.sharedHttpRateLimitBucket);
     }
     transport.setExtensionConnectedFn(() => this.extensionClient.isConnected());
-    if (this.instructions !== null)
-      transport.setInstructions(this.instructions);
+    if (this.instructionsProvider !== null) {
+      transport.setInstructions(await this.instructionsProvider());
+    }
     if (scope) transport.setSessionScope(scope);
     if (denyTools.size > 0) transport.setDenyTools(denyTools);
     if (this.config.approvalGate !== "off") {
