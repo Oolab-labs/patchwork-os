@@ -1,0 +1,19 @@
+name: gmail-health-check
+description: Verify Gmail connector is working and report inbox stats.
+trigger:
+  type: manual
+steps:
+  - tool: gmail.fetch_unread
+    since: 7d
+    max: 5
+    into: recent
+  - tool: gmail.search
+    query: "is:unread"
+    max: 1
+    into: unread_check
+  - tool: file.write
+    path: ~/.patchwork/inbox/gmail-health-{{date}}.md
+    content: |
+      # Gmail health check — {{date}} {{time}}
+      Unread (last 7d): {{recent.count}}
+      Total unread check: {{unread_check.count}}
