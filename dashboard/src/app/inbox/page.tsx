@@ -202,6 +202,9 @@ export default function InboxPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const selectedRef = useRef<InboxDetail | null>(null);
+  selectedRef.current = selected;
+
   const fetchList = useCallback(async () => {
     try {
       const res = await fetch("/api/inbox");
@@ -209,6 +212,15 @@ export default function InboxPage() {
       const data = (await res.json()) as { items: InboxItem[] };
       setItems(data.items ?? []);
       setErr(undefined);
+      // Auto-refresh detail panel if the selected item was updated
+      const cur = selectedRef.current;
+      if (cur) {
+        const updated = (data.items ?? []).find((i) => i.name === cur.name);
+        if (updated && updated.modifiedAt !== cur.modifiedAt) {
+          const detailRes = await fetch(`/api/inbox/${encodeURIComponent(cur.name)}`);
+          if (detailRes.ok) setSelected(await detailRes.json() as InboxDetail);
+        }
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {

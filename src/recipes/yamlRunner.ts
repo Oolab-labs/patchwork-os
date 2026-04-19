@@ -26,6 +26,7 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
@@ -599,15 +600,18 @@ function parseSinceToGitArg(since: string): string {
 
 function defaultGitLogSince(since: string, workdir?: string): string {
   try {
-    const { execFileSync } = require("node:child_process");
     const sinceArg = parseSinceToGitArg(since);
-    return (
-      execFileSync("git", ["log", "--oneline", `--since=${sinceArg}`], {
+    const result = spawnSync(
+      "git",
+      ["log", "--oneline", `--since=${sinceArg}`],
+      {
         cwd: workdir ?? process.cwd(),
         encoding: "utf-8",
         timeout: 5000,
-      }) as string
-    ).trim();
+      },
+    );
+    if (result.error || result.status !== 0) return "(git log unavailable)";
+    return (result.stdout ?? "").trim();
   } catch {
     return "(git log unavailable)";
   }
@@ -615,21 +619,19 @@ function defaultGitLogSince(since: string, workdir?: string): string {
 
 function defaultGitStaleBranches(days: number, workdir?: string): string {
   try {
-    const { execFileSync } = require("node:child_process");
     const cutoff = new Date(Date.now() - days * 86_400_000)
       .toISOString()
       .slice(0, 10);
-    const branches = (
-      execFileSync(
-        "git",
-        ["branch", "--format=%(refname:short) %(committerdate:short)"],
-        {
-          cwd: workdir ?? process.cwd(),
-          encoding: "utf-8",
-          timeout: 5000,
-        },
-      ) as string
-    ).trim();
+    const r = spawnSync(
+      "git",
+      ["branch", "--format=%(refname:short) %(committerdate:short)"],
+      {
+        cwd: workdir ?? process.cwd(),
+        encoding: "utf-8",
+        timeout: 5000,
+      },
+    );
+    const branches = r.error || r.status !== 0 ? "" : (r.stdout ?? "").trim();
     if (!branches) return "(no local branches)";
     return (
       branches
@@ -651,7 +653,6 @@ export function listYamlRecipes(
   recipesDir: string,
 ): Array<{ name: string; description?: string; trigger: string }> {
   if (!existsSync(recipesDir)) return [];
-  const { readdirSync } = require("node:fs");
   const results: Array<{
     name: string;
     description?: string;
