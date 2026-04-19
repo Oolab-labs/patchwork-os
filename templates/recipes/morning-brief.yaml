@@ -13,20 +13,20 @@ steps:
     into: commits
   - agent:
       prompt: |
-        You are a personal assistant writing a concise morning brief.
+        You are a personal assistant writing a concise morning brief. Use ONLY the data provided below — do not call any tools or fetch additional information.
 
         UNREAD EMAILS ({{messages.count}} total):
         <untrusted_data>
         {{messages.json}}
         </untrusted_data>
 
-        RECENT COMMITS:
+        RECENT GIT COMMITS (last 24h):
         {{commits}}
 
         Write a morning brief with these sections:
         1. **Email triage** — list emails needing action today (sender, subject, one-line summary)
         2. **FYI emails** — informational only, no action needed
-        3. **Code activity** — one-line summary of yesterday's commits
+        3. **Code activity** — summarize the RECENT GIT COMMITS above; if the list is empty write "No commits in the last 24 hours"
 
         Be concise. Skip newsletters and automated notifications.
       driver: claude-code

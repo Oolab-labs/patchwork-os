@@ -225,6 +225,10 @@ export default function InboxPage() {
   }, [fetchList]);
 
   async function selectItem(name: string) {
+    if (selected?.name === name) {
+      setSelected(null);
+      return;
+    }
     setDetailLoading(true);
     try {
       const res = await fetch(`/api/inbox/${encodeURIComponent(name)}`);
@@ -494,16 +498,39 @@ export default function InboxPage() {
                     color: "var(--fg-1)",
                   }}
                 >
-                  {/* File metadata */}
+                  {/* File metadata + close */}
                   <div
                     style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
                       fontSize: 11,
                       color: "var(--fg-3)",
                       marginBottom: 24,
                     }}
                   >
-                    {selected.name} &middot;{" "}
-                    {new Date(selected.modifiedAt).toLocaleString()}
+                    <span style={{ flex: 1 }}>
+                      {selected.name} &middot;{" "}
+                      {new Date(selected.modifiedAt).toLocaleString()}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(null)}
+                      title="Close"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "var(--fg-3)",
+                        fontSize: 16,
+                        lineHeight: 1,
+                        padding: "2px 4px",
+                        borderRadius: 4,
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✕
+                    </button>
                   </div>
                   {/* Rendered markdown */}
                   <div

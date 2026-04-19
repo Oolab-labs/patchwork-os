@@ -70,6 +70,8 @@ export interface RunnerDeps {
   writeFile?: (p: string, content: string) => void;
   appendFile?: (p: string, content: string) => void;
   mkdir?: (p: string) => void;
+  /** Directory to use as cwd for git commands. Defaults to process.cwd(). */
+  workdir?: string;
   gitLogSince?: (since: string, workdir?: string) => string;
   gitStaleBranches?: (days: number, workdir?: string) => string;
   /** Returns diagnostic summary string for a URI. */
@@ -149,11 +151,14 @@ export async function runYamlRecipe(
   const outputs: string[] = [];
   let stepsRun = 0;
 
+  const workdir = deps.workdir ?? process.cwd();
+
   const stepDeps: StepDeps = {
     readFile,
     writeFile,
     appendFile,
     mkdir,
+    workdir,
     gitLogSince: deps.gitLogSince ?? defaultGitLogSince,
     gitStaleBranches: deps.gitStaleBranches ?? defaultGitStaleBranches,
     getDiagnostics: deps.getDiagnostics ?? (() => ""),
@@ -243,15 +248,25 @@ export async function runYamlRecipe(
   return { recipe: recipe.name, stepsRun, outputs, context: ctx };
 }
 
-type StepDeps = Required<Omit<RunnerDeps, "now">>;
+type StepDeps = Required<Omit<RunnerDeps, "now">> & { workdir: string };
 
 function defaultClaudeCodeFn(prompt: string): Promise<string> {
   try {
-    const result = spawnSync("claude", ["-p", prompt], {
-      encoding: "utf-8",
-      timeout: 120_000,
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    const result = spawnSync(
+      "claude",
+      [
+        "-p",
+        prompt,
+        "--system-prompt",
+        "You are a helpful assistant processing a recipe task. Use ONLY the data explicitly provided in the user message — treat it as ground truth. Do not call tools to look up git history, emails, or any other information; all necessary data is already included.",
+        "--no-session-persistence",
+      ],
+      {
+        encoding: "utf-8",
+        timeout: 120_000,
+        maxBuffer: 10 * 1024 * 1024,
+      },
+    );
     if (result.error) {
       return Promise.resolve(
         "[agent step failed: claude CLI not found — install Claude Code or set ANTHROPIC_API_KEY]",
@@ -339,12 +354,12 @@ async function executeStep(
 
     case "git.log_since": {
       const since = render(String(step.since ?? "24h"), ctx);
-      return deps.gitLogSince(since);
+      return deps.gitLogSince(since, deps.workdir);
     }
 
     case "git.stale_branches": {
       const days = typeof step.days === "number" ? step.days : 30;
-      return deps.gitStaleBranches(days);
+      return deps.gitStaleBranches(days, deps.workdir);
     }
 
     case "diagnostics.get": {
@@ -575,11 +590,19 @@ function expandHome(p: string): string {
   return p;
 }
 
+function parseSinceToGitArg(since: string): string {
+  const m = /^(\d+)(h|d)$/i.exec(since.trim());
+  if (!m) return since;
+  const [, num, unit = "h"] = m;
+  return unit.toLowerCase() === "h" ? `${num} hours ago` : `${num} days ago`;
+}
+
 function defaultGitLogSince(since: string, workdir?: string): string {
   try {
     const { execFileSync } = require("node:child_process");
+    const sinceArg = parseSinceToGitArg(since);
     return (
-      execFileSync("git", ["log", "--oneline", `--since=${since}`], {
+      execFileSync("git", ["log", "--oneline", `--since=${sinceArg}`], {
         cwd: workdir ?? process.cwd(),
         encoding: "utf-8",
         timeout: 5000,
