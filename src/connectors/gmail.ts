@@ -205,11 +205,18 @@ export interface ConnectorHandlerResult {
 
 export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
+  const { getStatus: getGitHubStatus } = await import("./github.js");
+  const gh = getGitHubStatus();
   const connectors: ConnectorStatus[] = [
     {
       id: "gmail",
       status: tokens ? "connected" : "disconnected",
       lastSync: tokens ? new Date().toISOString() : undefined,
+    },
+    {
+      id: "github",
+      status: gh.connected ? "connected" : "disconnected",
+      lastSync: gh.connected ? new Date().toISOString() : undefined,
     },
   ];
   return {

@@ -71,6 +71,26 @@ function IconCalendar() {
   );
 }
 
+function IconGitHub() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+      style={{ flexShrink: 0 }}
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10 2a8 8 0 00-2.529 15.591c.4.074.546-.174.546-.386 0-.19-.007-.693-.01-1.36-2.226.483-2.695-1.073-2.695-1.073-.364-.924-.888-1.17-.888-1.17-.726-.496.055-.486.055-.486.803.056 1.226.824 1.226.824.713 1.221 1.872.869 2.328.664.072-.517.279-.869.508-1.069-1.776-.202-3.644-.888-3.644-3.953 0-.873.312-1.587.824-2.147-.083-.202-.357-1.016.078-2.117 0 0 .672-.215 2.2.82a7.67 7.67 0 012-.27c.679.003 1.363.092 2 .27 1.527-1.035 2.198-.82 2.198-.82.436 1.101.162 1.915.08 2.117.513.56.822 1.274.822 2.147 0 3.073-1.871 3.749-3.653 3.947.287.248.543.735.543 1.48 0 1.069-.01 1.932-.01 2.194 0 .214.144.463.55.385A8.001 8.001 0 0010 2z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 function IconSlack() {
   return (
     <svg
@@ -418,6 +438,7 @@ export default function ConnectionsPage() {
   }
 
   const gmailConnector = getConnector("gmail");
+  const githubConnector = getConnector("github");
 
   return (
     <section>
@@ -468,6 +489,21 @@ export default function ConnectionsPage() {
             onDisconnect={() => handleDisconnect("gmail")}
             onTest={() => handleTest("gmail")}
             loading={acting === "gmail"}
+          />
+
+          <ConnectorCard
+            id="github"
+            name="GitHub"
+            description="Read open issues and pull requests. Agents can surface blocking work items and review requests in your morning brief."
+            icon={<IconGitHub />}
+            status={githubConnector.status}
+            lastSync={githubConnector.lastSync}
+            onConnect={() => {
+              window.open("https://cli.github.com", "_blank");
+            }}
+            onDisconnect={() => undefined}
+            onTest={() => handleTest("github")}
+            loading={acting === "github"}
           />
 
           {/* Placeholder cards */}

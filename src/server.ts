@@ -913,6 +913,34 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      if (
+        parsedUrl.pathname === "/connections/github/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { getStatus } = await import("./connectors/github.js");
+          const s = getStatus();
+          if (s.connected) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: true,
+                message: `Connected as ${s.user ?? "unknown"}`,
+              }),
+            );
+          } else {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                message: "Not connected — run: gh auth login",
+              }),
+            );
+          }
+        })();
+        return;
+      }
+
       // ── Inbox routes ────────────────────────────────────────────────────
       if (parsedUrl.pathname === "/inbox" && req.method === "GET") {
         void (async () => {
