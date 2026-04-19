@@ -1,0 +1,15 @@
+name: watch-failing-tests
+description: When tests fail, drop a one-paragraph explanation into the inbox.
+trigger:
+  type: on_test_run
+  filter: failure
+steps:
+  - agent:
+      prompt: |
+        Tests just failed. Runner: {{runner}}. Failed: {{failed}} / {{total}}.
+        Failures: {{failures}}.
+        Write 3 sentences: which test, likely cause, first thing to check.
+      into: summary
+  - tool: file.append
+    path: ~/.patchwork/inbox/test-failures.md
+    content: "\n## {{date}} {{time}}\n{{summary}}\n"

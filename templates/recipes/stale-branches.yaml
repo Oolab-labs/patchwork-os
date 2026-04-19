@@ -1,0 +1,18 @@
+name: stale-branches
+description: Weekly sweep — list local branches with no commits in 30+ days.
+trigger:
+  type: cron
+  at: "0 9 * * MON"
+steps:
+  - tool: git.stale_branches
+    days: 30
+    into: stale
+  - tool: file.write
+    path: ~/.patchwork/inbox/stale-branches-{{date}}.md
+    content: |
+      # Stale branches ({{date}})
+
+      Branches with no activity in 30+ days:
+      {{stale}}
+
+      Review, then delete with: git branch -D <name>

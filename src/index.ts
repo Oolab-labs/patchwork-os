@@ -1,5 +1,24 @@
 #!/usr/bin/env node
 
+// Load .env from repo root if present (connector credentials, etc.).
+// Uses Node 20.6+ native dotenv loader; falls back to manual parse for older Node.
+{
+  const envPath = new URL("../../.env", import.meta.url).pathname;
+  try {
+    const { readFileSync, existsSync } = await import("node:fs");
+    if (existsSync(envPath)) {
+      for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+        const m = /^([A-Z_][A-Z0-9_]*)=(.*)$/.exec(line.trim());
+        if (m && !process.env[m[1]!]) {
+          process.env[m[1]!] = m[2]?.replace(/^["']|["']$/g, "");
+        }
+      }
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
 // Enable V8 compile cache for faster cold-start on repeated restarts (Node 22.8+).
 import nodeModule from "node:module";
 
@@ -96,6 +115,14 @@ async function downloadVsixFromOpenVsx(): Promise<string> {
 // Handle --version flag — print package version and exit.
 if (process.argv[2] === "--version" || process.argv[2] === "-v") {
   console.log(`claude-ide-bridge ${PACKAGE_VERSION}`);
+  process.exit(0);
+}
+
+// Handle patchwork-init subcommand — T2 from docs/install-ux-plan.md.
+// Separate from the bridge-only `init` to preserve back-compat. See ADR-0008.
+if (process.argv[2] === "patchwork-init") {
+  const { runPatchworkInit } = await import("./commands/patchworkInit.js");
+  await runPatchworkInit(process.argv.slice(3));
   process.exit(0);
 }
 
@@ -714,47 +741,114 @@ export function register(ctx) {
   process.exit(0);
 }
 
-// Patchwork: `patchwork recipe run <name>` — POSTs to a running bridge's
-// /recipes/run endpoint to enqueue the recipe via the Claude orchestrator.
+// Patchwork: `patchwork recipe list` — enumerate installed recipes.
+if (process.argv[2] === "recipe" && process.argv[3] === "list") {
+  (async () => {
+    const { listYamlRecipes } = await import("./recipes/yamlRunner.js");
+    const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+    const recipes = listYamlRecipes(recipesDir);
+    if (recipes.length === 0) {
+      process.stdout.write(
+        "No recipes installed. Run `patchwork-os patchwork-init` to install the starter set.\n",
+      );
+    } else {
+      process.stdout.write(`Installed recipes (${recipes.length}):\n\n`);
+      for (const r of recipes) {
+        const desc = r.description ? `  ${r.description}` : "";
+        process.stdout.write(`  ${r.name.padEnd(28)} [${r.trigger}]${desc}\n`);
+      }
+      process.stdout.write(`\nRun a recipe: patchwork-os recipe run <name>\n`);
+    }
+    process.exit(0);
+  })();
+}
+
+// Patchwork: `patchwork recipe run <name>` — runs a recipe locally or via
+// a running bridge's /recipes/run endpoint if one is available.
 if (process.argv[2] === "recipe" && process.argv[3] === "run") {
-  const name = process.argv[4];
+  const args = process.argv.slice(4);
+  const localFlag = args.includes("--local");
+  const name = args.find((a) => !a.startsWith("--"));
   if (!name) {
-    process.stderr.write("Usage: patchwork recipe run <name>\n");
+    process.stderr.write("Usage: patchwork recipe run <name> [--local]\n");
     process.exit(1);
   }
   (async () => {
     try {
+      // Try bridge first (requires --claude-driver subprocess).
       const { findBridgeLock } = await import("./bridgeLockDiscovery.js");
-      const lock = findBridgeLock();
-      if (!lock) {
+      const lock = localFlag ? null : findBridgeLock();
+      if (lock) {
+        const res = await fetch(`http://127.0.0.1:${lock.port}/recipes/run`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${lock.authToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ name }),
+        });
+        const body = (await res.json()) as {
+          ok: boolean;
+          taskId?: string;
+          error?: string;
+        };
+        if (!body.ok) {
+          // Fall through to local YAML runner if bridge doesn't know the recipe.
+          if (!(body.error ?? "").includes("not found")) {
+            process.stderr.write(`Error: ${body.error ?? "unknown"}\n`);
+            process.exit(1);
+            return;
+          }
+          // else: fall through to local runner below
+        } else {
+          process.stdout.write(
+            `  ✓ enqueued recipe "${name}" as task ${(body.taskId ?? "").slice(0, 8)}\n` +
+              "    Watch progress on the dashboard Tasks page or via listClaudeTasks.\n",
+          );
+          process.exit(0);
+          return;
+        }
+      }
+
+      // No bridge — run locally using the YAML runner.
+      const { loadYamlRecipe, runYamlRecipe } = await import(
+        "./recipes/yamlRunner.js"
+      );
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const bundledDir = fileURLToPath(
+        new URL("../templates/recipes", import.meta.url),
+      );
+      const candidates = [
+        path.join(recipesDir, `${name}.yaml`),
+        path.join(recipesDir, `${name}.yml`),
+        path.join(recipesDir, `${name}.json`),
+        path.join(bundledDir, `${name}.yaml`),
+        path.join(bundledDir, `${name}.yml`),
+      ];
+      let recipePath: string | undefined;
+      for (const c of candidates) {
+        if (existsSync(c)) {
+          recipePath = c;
+          break;
+        }
+      }
+      if (!recipePath) {
         process.stderr.write(
-          "Error: no running bridge found under ~/.claude/ide/. Start the bridge with --claude-driver subprocess first.\n",
+          `Error: recipe "${name}" not found in ${recipesDir}\n` +
+            "  Run `patchwork-os recipe list` to see available recipes.\n",
         );
         process.exit(1);
         return;
       }
-      const res = await fetch(`http://127.0.0.1:${lock.port}/recipes/run`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${lock.authToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name }),
-      });
-      const body = (await res.json()) as {
-        ok: boolean;
-        taskId?: string;
-        error?: string;
-      };
-      if (!body.ok) {
-        process.stderr.write(`Error: ${body.error ?? "unknown"}\n`);
-        process.exit(1);
-        return;
+      process.stdout.write(`  Running recipe "${name}" locally…\n`);
+      const recipe = loadYamlRecipe(recipePath);
+      const result = await runYamlRecipe(recipe);
+      process.stdout.write(`  ✓ ${result.stepsRun} step(s) completed\n`);
+      if (result.outputs.length > 0) {
+        process.stdout.write(
+          `  Output written to:\n${result.outputs.map((o: string) => `    ${o}`).join("\n")}\n`,
+        );
       }
-      process.stdout.write(
-        `  ✓ enqueued recipe "${name}" as task ${(body.taskId ?? "").slice(0, 8)}\n` +
-          "    Watch progress on the dashboard Tasks page or via listClaudeTasks.\n",
-      );
       process.exit(0);
     } catch (err) {
       process.stderr.write(
@@ -1652,9 +1746,25 @@ Options:
 }
 
 // F6: "Did you mean?" for unknown CLI subcommands
+// Patchwork: no-args → terminal dashboard (when invoked as patchwork-os or patchwork).
+{
+  const binName = path.basename(process.argv[1] ?? "");
+  const isPatchworkBin =
+    binName === "patchwork-os" ||
+    binName === "patchwork" ||
+    binName === "patchwork.js";
+  if (isPatchworkBin && !process.argv[2]) {
+    (async () => {
+      const { runDashboard } = await import("./commands/dashboard.js");
+      await runDashboard();
+    })();
+  }
+}
+
 {
   const KNOWN_COMMANDS = [
     "init",
+    "patchwork-init",
     "start-all",
     "install-extension",
     "gen-claude-md",
@@ -1666,6 +1776,7 @@ Options:
     "status",
     "shim",
     "recipe",
+    "dashboard",
   ];
   const unknownSub = process.argv[2];
   if (

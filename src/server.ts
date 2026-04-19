@@ -828,6 +828,89 @@ export class Server extends EventEmitter<ServerEvents> {
         });
         return;
       }
+      // ── Gmail / Connections endpoints ───────────────────────────────────────
+      if (parsedUrl.pathname === "/connections" && req.method === "GET") {
+        void (async () => {
+          const { handleConnectionsList } = await import(
+            "./connectors/gmail.js"
+          );
+          const result = await handleConnectionsList();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/gmail/auth" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleGmailAuthRedirect } = await import(
+            "./connectors/gmail.js"
+          );
+          const result = handleGmailAuthRedirect();
+          if (result.redirect) {
+            res.writeHead(302, { Location: result.redirect });
+            res.end();
+          } else {
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          }
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/gmail/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleGmailCallback } = await import("./connectors/gmail.js");
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleGmailCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "text/html",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/gmail" &&
+        req.method === "DELETE"
+      ) {
+        void (async () => {
+          const { handleGmailDisconnect } = await import(
+            "./connectors/gmail.js"
+          );
+          const result = await handleGmailDisconnect();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/gmail/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleGmailTest } = await import("./connectors/gmail.js");
+          const result = await handleGmailTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
       if (parsedUrl.pathname === "/recipes/run" && req.method === "POST") {
         const chunks: Buffer[] = [];
         req.on("data", (c: Buffer) => chunks.push(c));
@@ -954,7 +1037,7 @@ export class Server extends EventEmitter<ServerEvents> {
         const id = sessionDetailMatch[1] as string;
         try {
           const data = this.sessionDetailFn?.(id);
-          if (!data || !data.summary) {
+          if (!data?.summary) {
             res.writeHead(404, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "unknown sessionId" }));
             return;

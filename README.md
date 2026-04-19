@@ -1,63 +1,67 @@
 # Patchwork OS
 
-**One agent. Any model. Works while you're away.**
-
-Patchwork OS is an open-source, proactive personal AI operating system built on
-top of the [Claude IDE Bridge](./README.bridge.md). It stitches tools, models,
-workflows, and automation hooks into a "set it and forget it" AI teammate —
-for coding **and** everyday tasks.
-
-> Status: **Phase 0 — Foundation** (alpha, not yet published)
-
-## Why
-
-Existing AI assistants answer questions. Patchwork OS *does things* while
-you're at your kid's soccer game or asleep:
-
-- **Multi-model from day one** — Claude, OpenAI, Gemini, Grok, local LLMs (Ollama)
-- **Drag-and-drop recipes** — YAML automation anyone can write
-- **Oversight dashboard** — approve/reject high-risk actions from phone
-- **Proven core** — 2,725+ tests, real-time IDE context, 170 built-in tools
-- **100% MIT**
-
-## Quick start (alpha)
+**AI that works while you're away. Runs on your machine. Doesn't lock you in.**
 
 ```bash
-npm install && npm run build
-node dist/index.js --model claude --full
+npx patchwork-os@alpha patchwork-init
 ```
 
-Config lives at `~/.patchwork/config.json`. See [`config.schema.json`](./config.schema.json).
+That one command sets up 5 local recipes, detects Ollama, and drops a terminal dashboard at your fingertips — under 90 seconds on a warm npm cache.
+
+## What it does
+
+Patchwork OS watches for things that matter, acts, and asks before anything risky goes out.
+
+- **A developer's overnight.** Tests fail on a push → a one-paragraph triage note lands in your inbox. You wake up knowing where to look.
+- **A small business's inbox.** New customer questions triaged, follow-ups drafted in your voice. Nothing sends without your nod.
+- **A parent's morning.** Field-trip form flagged, reply drafted to the teacher — done before the first coffee.
+
+## How it works
+
+- **Recipes** — plain YAML files describe what to watch and what to do. Share them like dotfiles. No code required.
+- **Your models, your keys** — Claude, GPT, Gemini, Grok, or local Ollama. Swap anytime. Nothing phones home.
+- **Oversight first** — everything risky lands in `~/.patchwork/inbox/` for your approval before it goes anywhere.
+
+## After init
+
+```bash
+patchwork-os recipe list            # see installed recipes
+patchwork-os recipe run daily-status  # run one now
+patchwork-os                        # open terminal dashboard
+```
+
+The oversight web UI runs at `http://localhost:3100` when the bridge is active.
+
+## 5 starter recipes (no API key needed)
+
+| Recipe | Trigger | What it does |
+|---|---|---|
+| `ambient-journal` | git commit | appends one line to `~/.patchwork/journal/` |
+| `daily-status` | cron 08:00 | morning brief from yesterday's commits |
+| `watch-failing-tests` | test run | drops triage note to inbox on failure |
+| `lint-on-save` | file save | surfaces new TS/JS diagnostics to inbox |
+| `stale-branches` | cron weekly | lists branches older than 30 days |
+
+All 5 write to `~/.patchwork/inbox/` only. Nothing is sent anywhere without your approval.
 
 ## Roadmap
 
-| Phase | Name | Status |
-|---|---|---|
-| 0 | Foundation — rename, config, ModelAdapter | **in progress** |
-| 1 | Multi-model + Dashboard MVP | planned |
-| 2 | Recipe System + non-code workflows | planned |
-| 3 | Security + headless / mobile | planned |
-| 4 | Community + ecosystem | planned |
-| 5 | Optional hosted tier | year 2 |
+| Phase | Status |
+|---|---|
+| Foundation — init, recipes, terminal dashboard | **shipped (W1)** |
+| Connectors — Gmail, calendar, Slack | W2 |
+| Mobile oversight — approve from phone | W3 |
+| Community recipes + ecosystem | Q3 |
 
-Full plan: `../Patchwork_OS_Plan_and_Roadmap.docx`.
+## From source
 
-## Architecture
-
-Patchwork OS **extends** the Claude IDE Bridge, it does not replace it. The
-bridge's MCP server, automation hooks, orchestrator, plugin system, and tool
-library are the substrate. Patchwork adds:
-
-1. `src/adapters/` — `ModelAdapter` interface + per-provider implementations
-2. `src/recipes/` — YAML recipe parser → existing automation DSL *(planned)*
-3. `dashboard/` — Next.js oversight UI *(planned)*
-
-For the underlying bridge docs see [README.bridge.md](./README.bridge.md).
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
+```bash
+git clone https://github.com/Oolab-labs/patchwork-os
+cd patchwork-os
+npm install && npm run build
+node dist/index.js patchwork-init
+```
 
 ## License
 
-MIT © Oolab Labs.
+MIT © Oolab Labs. Built on the [Claude IDE Bridge](./README.bridge.md).

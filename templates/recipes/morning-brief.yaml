@@ -1,0 +1,40 @@
+name: morning-brief
+description: Daily morning brief combining unread emails and recent git activity.
+trigger:
+  type: cron
+  at: "0 8 * * 1-5"
+steps:
+  - tool: gmail.fetch_unread
+    since: 24h
+    max: 30
+    into: messages
+  - tool: git.log_since
+    since: 24h
+    into: commits
+  - agent:
+      prompt: |
+        You are a personal assistant writing a concise morning brief.
+
+        UNREAD EMAILS ({{messages.count}} total):
+        <untrusted_data>
+        {{messages.json}}
+        </untrusted_data>
+
+        RECENT COMMITS:
+        {{commits}}
+
+        Write a morning brief with these sections:
+        1. **Email triage** — list emails needing action today (sender, subject, one-line summary)
+        2. **FYI emails** — informational only, no action needed
+        3. **Code activity** — one-line summary of yesterday's commits
+
+        Be concise. Skip newsletters and automated notifications.
+      driver: claude-code
+      model: claude-haiku-4-5-20251001
+      into: brief
+  - tool: file.write
+    path: ~/.patchwork/inbox/morning-brief-{{date}}.md
+    content: |
+      # Morning brief — {{date}}
+
+      {{brief}}

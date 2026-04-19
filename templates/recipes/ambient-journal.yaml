@@ -1,0 +1,11 @@
+name: ambient-journal
+description: Append a timestamped line to your daily journal whenever a git commit lands.
+trigger:
+  type: git_hook
+  on: post-commit
+steps:
+  - tool: file.append
+    path: ~/.patchwork/journal/{{date}}.md
+    content: "- {{time}}  committed {{hash}} — {{message}}\n"
+output:
+  path: ~/.patchwork/inbox/ambient-journal.md

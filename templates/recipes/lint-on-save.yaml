@@ -1,0 +1,13 @@
+name: lint-on-save
+description: On every save of a .ts/.tsx file, surface new diagnostics to the inbox.
+trigger:
+  type: on_file_save
+  glob: "**/*.{ts,tsx}"
+steps:
+  - tool: diagnostics.get
+    uri: "{{file}}"
+    into: diags
+  - tool: file.append
+    path: ~/.patchwork/inbox/lint.md
+    content: "- {{time}}  {{file}} — {{diags.errors}} errors, {{diags.warnings}} warnings\n"
+    when: "{{diags.errors}} > 0 || {{diags.warnings}} > 0"

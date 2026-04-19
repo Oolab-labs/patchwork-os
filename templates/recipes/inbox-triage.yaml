@@ -1,0 +1,15 @@
+name: inbox-triage
+description: Fetch unread emails from last 24h and write a prioritised triage summary.
+trigger:
+  type: cron
+  at: "0 8 * * 1-5"
+steps:
+  - tool: gmail.fetch_unread
+    since: 24h
+    max: 50
+    into: messages
+  - tool: file.write
+    path: ~/.patchwork/inbox/triage-{{date}}.md
+    content: |
+      # Inbox triage — {{date}} {{time}}
+      Unread messages: {{messages.count}}

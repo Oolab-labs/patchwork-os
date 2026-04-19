@@ -1,0 +1,21 @@
+name: daily-status
+description: Every morning at 08:00, summarize yesterday's commits + today's calendar hints from local files.
+trigger:
+  type: cron
+  at: "0 8 * * *"
+steps:
+  - tool: git.log_since
+    since: "24h"
+    into: commits
+  - tool: file.read
+    path: ~/.patchwork/planned.md
+    into: plan
+    optional: true
+  - agent:
+      prompt: |
+        Write a 5-line morning brief. Yesterday's commits: {{commits}}.
+        Today's plan: {{plan}}.
+      into: brief
+  - tool: file.write
+    path: ~/.patchwork/inbox/daily-status-{{date}}.md
+    content: "{{brief}}\n"
