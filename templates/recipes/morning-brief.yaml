@@ -1,5 +1,5 @@
 name: morning-brief
-description: Daily morning brief combining unread emails and recent git activity.
+description: Daily morning brief combining unread emails, recent git activity, and open GitHub issues.
 trigger:
   type: cron
   at: "0 8 * * 1-5"
@@ -11,6 +11,14 @@ steps:
   - tool: git.log_since
     since: 24h
     into: commits
+  - tool: github.list_issues
+    assignee: "@me"
+    max: 10
+    into: issues
+  - tool: github.list_prs
+    author: "@me"
+    max: 10
+    into: prs
   - agent:
       prompt: |
         You are a personal assistant writing a concise morning brief. Use ONLY the data provided below — do not call any tools or fetch additional information.
@@ -23,10 +31,17 @@ steps:
         RECENT GIT COMMITS (last 24h):
         {{commits}}
 
+        OPEN GITHUB ISSUES (assigned to me):
+        {{issues}}
+
+        OPEN PULL REQUESTS (authored by me):
+        {{prs}}
+
         Write a morning brief with these sections:
         1. **Email triage** — list emails needing action today (sender, subject, one-line summary)
         2. **FYI emails** — informational only, no action needed
         3. **Code activity** — summarize the RECENT GIT COMMITS above; if the list is empty write "No commits in the last 24 hours"
+        4. **GitHub** — list open issues and PRs needing attention; omit this section entirely if both lists are empty
 
         Be concise. Skip newsletters and automated notifications.
       driver: claude-code

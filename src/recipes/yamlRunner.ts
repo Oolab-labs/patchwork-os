@@ -394,6 +394,26 @@ async function executeStep(
       return gmailFetchThread(id, deps);
     }
 
+    case "github.list_issues": {
+      const { listIssues } = await import("../connectors/github.js");
+      const repo = step.repo ? render(String(step.repo), ctx) : undefined;
+      const assignee = step.assignee
+        ? render(String(step.assignee), ctx)
+        : "@me";
+      const limit = typeof step.max === "number" ? step.max : 20;
+      const issues = listIssues({ repo, assignee, limit });
+      return JSON.stringify({ count: issues.length, issues });
+    }
+
+    case "github.list_prs": {
+      const { listPRs } = await import("../connectors/github.js");
+      const repo = step.repo ? render(String(step.repo), ctx) : undefined;
+      const author = step.author ? render(String(step.author), ctx) : "@me";
+      const limit = typeof step.max === "number" ? step.max : 20;
+      const prs = listPRs({ repo, author, limit });
+      return JSON.stringify({ count: prs.length, prs });
+    }
+
     default:
       // Unknown tool — skip, don't throw (forward compat)
       return null;
