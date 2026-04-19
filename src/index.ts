@@ -3,14 +3,15 @@
 // Load .env from repo root if present (connector credentials, etc.).
 // Uses Node 20.6+ native dotenv loader; falls back to manual parse for older Node.
 {
-  const envPath = new URL("../../.env", import.meta.url).pathname;
+  const { fileURLToPath: _fileURLToPath } = await import("node:url");
+  const envPath = _fileURLToPath(new URL("../../.env", import.meta.url));
   try {
     const { readFileSync, existsSync } = await import("node:fs");
     if (existsSync(envPath)) {
       for (const line of readFileSync(envPath, "utf-8").split("\n")) {
         const m = /^([A-Z_][A-Z0-9_]*)=(.*)$/.exec(line.trim());
-        if (m && !process.env[m[1]!]) {
-          process.env[m[1]!] = m[2]?.replace(/^["']|["']$/g, "");
+        if (m?.[1] && !process.env[m[1]]) {
+          process.env[m[1]] = m[2]?.replace(/^["']|["']$/g, "");
         }
       }
     }
@@ -842,7 +843,8 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
       }
       process.stdout.write(`  Running recipe "${name}" locally…\n`);
       const recipe = loadYamlRecipe(recipePath);
-      const result = await runYamlRecipe(recipe);
+      const workdir = lock?.workspace || process.cwd();
+      const result = await runYamlRecipe(recipe, { workdir });
       process.stdout.write(`  ✓ ${result.stepsRun} step(s) completed\n`);
       if (result.outputs.length > 0) {
         process.stdout.write(
