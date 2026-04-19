@@ -1,5 +1,7 @@
 import { EventEmitter } from "node:events";
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import { routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
@@ -910,6 +912,113 @@ export class Server extends EventEmitter<ServerEvents> {
         })();
         return;
       }
+
+      // ── Inbox routes ────────────────────────────────────────────────────
+      if (parsedUrl.pathname === "/inbox" && req.method === "GET") {
+        void (async () => {
+          try {
+            const { readdir, readFile, stat } = await import(
+              "node:fs/promises"
+            );
+            const { existsSync } = await import("node:fs");
+            const inboxDir = path.join(os.homedir(), ".patchwork", "inbox");
+            if (!existsSync(inboxDir)) {
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ items: [] }));
+              return;
+            }
+            const files = (await readdir(inboxDir)).filter((f) =>
+              f.endsWith(".md"),
+            );
+            const items = await Promise.all(
+              files.map(async (name) => {
+                const filePath = path.join(inboxDir, name);
+                const [content, stats] = await Promise.all([
+                  readFile(filePath, "utf8"),
+                  stat(filePath),
+                ]);
+                const stripped = content
+                  .split("\n")
+                  .filter((l) => !l.startsWith("#"))
+                  .join("\n")
+                  .trim();
+                return {
+                  name,
+                  path: filePath,
+                  modifiedAt: stats.mtime.toISOString(),
+                  preview: stripped.slice(0, 200),
+                };
+              }),
+            );
+            items.sort(
+              (a, b) =>
+                new Date(b.modifiedAt).getTime() -
+                new Date(a.modifiedAt).getTime(),
+            );
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ items }));
+          } catch (err) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        })();
+        return;
+      }
+
+      const inboxFileMatch = parsedUrl.pathname?.match(
+        /^\/inbox\/([^/]+\.md)$/,
+      );
+      if (inboxFileMatch && req.method === "GET") {
+        void (async () => {
+          try {
+            const { readFile, stat } = await import("node:fs/promises");
+            const filename = decodeURIComponent(inboxFileMatch[1] ?? "");
+            // Prevent path traversal — filename must not contain directory separators
+            if (filename.includes("/") || filename.includes("\\")) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "Invalid filename" }));
+              return;
+            }
+            const filePath = path.join(
+              os.homedir(),
+              ".patchwork",
+              "inbox",
+              filename,
+            );
+            const [content, stats] = await Promise.all([
+              readFile(filePath, "utf8"),
+              stat(filePath),
+            ]);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                name: filename,
+                content,
+                modifiedAt: stats.mtime.toISOString(),
+              }),
+            );
+          } catch (err: unknown) {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code === "ENOENT") {
+              res.writeHead(404, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "Not found" }));
+            } else {
+              res.writeHead(500, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: err instanceof Error ? err.message : String(err),
+                }),
+              );
+            }
+          }
+        })();
+        return;
+      }
+      // ── End inbox routes ─────────────────────────────────────────────────
 
       if (parsedUrl.pathname === "/recipes/run" && req.method === "POST") {
         const chunks: Buffer[] = [];

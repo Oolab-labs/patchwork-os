@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 const NAV: { href: string; label: string; icon: string }[] = [
   { href: "/", label: "Overview", icon: "\u25A3" },
+  { href: "/inbox", label: "Inbox", icon: "\u2709" },
   { href: "/activity", label: "Activity", icon: "\u2248" },
   { href: "/approvals", label: "Approvals", icon: "\u2713" },
   { href: "/tasks", label: "Tasks", icon: "\u25B8" },
