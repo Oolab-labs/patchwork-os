@@ -29,6 +29,7 @@ import { createCloseAllDiffTabsTool, createCloseTabTool } from "./closeTabs.js";
 import { createGetCodeLensTool } from "./codeLens.js";
 import { createContextBundleTool } from "./contextBundle.js";
 import { createCreateIssueFromAICommentTool } from "./createIssueFromAIComment.js";
+import { createLinearIssueTool } from "./createLinearIssue.js";
 import { createCtxGetTaskContextTool } from "./ctxGetTaskContext.js";
 import { createCtxQueryTracesTool } from "./ctxQueryTraces.js";
 import { createCtxSaveTraceTool } from "./ctxSaveTrace.js";
@@ -659,6 +660,7 @@ export function registerAllTools(
     createEnrichStackTraceTool(workspace),
     createFetchSentryIssueTool(workspace),
     createFetchLinearIssueTool(),
+    createLinearIssueTool(),
     createCtxQueryTracesTool({
       activityLog: activityLog ?? null,
       commitIssueLinkLog: commitIssueLinkLog ?? null,
