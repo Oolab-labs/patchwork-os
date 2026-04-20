@@ -102,6 +102,8 @@ export interface SessionSummary {
   connectedAt: string; // ISO string
   openedFileCount: number;
   pendingApprovals: number;
+  firstTool?: string;
+  remoteAddr?: string;
 }
 
 export class Server extends EventEmitter<ServerEvents> {
@@ -1719,6 +1721,8 @@ export class Server extends EventEmitter<ServerEvents> {
       ws.on("error", (err) => {
         this.logger.error(`WebSocket client error: ${err.message}`);
       });
+      (ws as WebSocket & { remoteAddr?: string }).remoteAddr =
+        req.socket.remoteAddress;
       this.emit("connection", ws);
     });
   }

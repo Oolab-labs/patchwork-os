@@ -8,6 +8,8 @@ interface SessionSummary {
   connectedAt: string;
   openedFileCount: number;
   pendingApprovals: number;
+  firstTool?: string;
+  remoteAddr?: string;
 }
 
 export default function SessionsPage() {
@@ -55,15 +57,20 @@ export default function SessionsPage() {
               style={{ textDecoration: "none", color: "inherit" }}
             >
               <div className="card-head">
-                <h2>
+                <h2 style={{ display: "flex", flexDirection: "column", gap: "var(--s-1)" }}>
+                  <span style={{ fontSize: 14, color: "var(--fg-0)", fontWeight: 600 }}>
+                    {s.firstTool ?? "idle"}
+                  </span>
                   <code
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 14,
-                      color: "var(--fg-0)",
+                      fontSize: 11,
+                      color: "var(--fg-3)",
+                      fontWeight: 400,
                     }}
                   >
                     {s.id.slice(0, 8)}
+                    {s.remoteAddr ? ` · ${s.remoteAddr}` : ""}
                   </code>
                 </h2>
               </div>
