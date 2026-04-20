@@ -90,54 +90,13 @@ function extractIssueId(issueIdOrUrl: string): string {
   throw new Error(`Cannot parse Sentry issue ID from: ${issueIdOrUrl}`);
 }
 
-interface SentryException {
-  type?: string;
-  value?: string;
-  stacktrace?: { frames?: SentryFrame[] };
-}
-interface SentryFrame {
-  filename?: string;
-  absPath?: string;
-  lineNo?: number;
-  colNo?: number;
-  function?: string;
-  module?: string;
-  inApp?: boolean;
-}
-interface SentryEvent {
-  title?: string;
-  entries?: Array<{
-    type: string;
-    data?: { values?: SentryException[]; frames?: SentryFrame[] };
-  }>;
+function extractOrgSlug(issueIdOrUrl: string): string | null {
+  const m = issueIdOrUrl.match(/https?:\/\/([^.]+)\.sentry\.io/);
+  return m ? (m[1] as string) : null;
 }
 
-function eventToStackTrace(event: SentryEvent): string {
-  const exceptions: SentryException[] = [];
-  for (const entry of event.entries ?? []) {
-    if (entry.type === "exception" && Array.isArray(entry.data?.values)) {
-      exceptions.push(...(entry.data?.values ?? []));
-    }
-  }
-  if (exceptions.length === 0) {
-    return `Error: ${event.title ?? "Unknown error"}\n    (no stack frames in Sentry event)`;
-  }
-  const lines: string[] = [];
-  for (const exc of exceptions.reverse()) {
-    lines.push(`${exc.type ?? "Error"}: ${exc.value ?? ""}`);
-    const frames = exc.stacktrace?.frames ?? [];
-    for (const frame of [...frames].reverse()) {
-      const file =
-        frame.absPath ?? frame.filename ?? frame.module ?? "<unknown>";
-      const line = frame.lineNo ?? 0;
-      const col = frame.colNo !== undefined ? `:${frame.colNo}` : "";
-      const fn = frame.function ? ` (${frame.function})` : "";
-      lines.push(
-        `    at ${fn.trim() || "<anonymous>"} (${file}:${line}${col})`,
-      );
-    }
-  }
-  return lines.join("\n");
+function buildSentryIssueUrl(issueId: string, orgSlug: string): string {
+  return `https://${orgSlug}.sentry.io/issues/${issueId}/`;
 }
 
 export async function fetchIssueStackTrace(
@@ -150,28 +109,34 @@ export async function fetchIssueStackTrace(
     );
 
   const issueId = extractIssueId(issueIdOrUrl);
-  const file = loadTokenFile("sentry");
-  const org = file?.profile?.org;
+  const orgSlug =
+    extractOrgSlug(issueIdOrUrl) ?? loadTokenFile("sentry")?.profile?.org;
+  if (!orgSlug)
+    throw new Error(
+      "Cannot determine Sentry org slug. Pass full sentry.io issue URL.",
+    );
 
-  const issueRes = await client().callTool(
-    "get_issue",
-    org ? { issueId, organizationSlug: org } : { issueId },
+  const issueUrl = buildSentryIssueUrl(issueId, orgSlug);
+  const res = await client().callTool(
+    "get_sentry_resource",
+    { url: issueUrl },
     { signal },
   );
-  const issue = McpClient.extractJson<{ title?: string }>(issueRes);
 
-  const eventRes = await client().callTool(
-    "get_event",
-    org
-      ? { issueId, organizationSlug: org, eventId: "latest" }
-      : { issueId, eventId: "latest" },
-    { signal },
-  );
-  const event = McpClient.extractJson<SentryEvent>(eventRes);
-  event.title = event.title ?? issue.title;
+  // get_sentry_resource returns markdown text — extract title and stacktrace
+  const text = (res.content?.[0] as { text?: string } | undefined)?.text ?? "";
+  const titleMatch = text.match(/\*\*Description\*\*:\s*(.+)/);
+  const title = titleMatch
+    ? (titleMatch[1] as string).trim()
+    : `Sentry issue ${issueId}`;
 
-  const stackTrace = eventToStackTrace(event);
-  return { stackTrace, title: event.title ?? issueId, issueId };
+  // Extract stacktrace block
+  const stMatch = text.match(/```\n([\s\S]*?)\n```/);
+  const stackTrace = stMatch
+    ? (stMatch[1] as string).trim()
+    : `Error: ${title}\n    (no stack frames)`;
+
+  return { stackTrace, title, issueId };
 }
 
 // ── HTTP handlers ────────────────────────────────────────────────────────────

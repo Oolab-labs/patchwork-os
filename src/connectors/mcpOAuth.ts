@@ -61,8 +61,16 @@ function defaultRedirectBase(): string {
   ).replace(/\/$/, "");
 }
 
+function defaultBridgeBase(): string {
+  const port = process.env.PATCHWORK_BRIDGE_PORT ?? "3101";
+  return (
+    process.env.PATCHWORK_BRIDGE_URL ?? `http://localhost:${port}`
+  ).replace(/\/$/, "");
+}
+
 export function vendorConfig(vendor: VendorId): VendorConfig {
   const redirectBase = defaultRedirectBase();
+  const bridgeBase = defaultBridgeBase();
   switch (vendor) {
     case "github":
       return {
@@ -86,7 +94,7 @@ export function vendorConfig(vendor: VendorId): VendorConfig {
         registrationEndpoint: "https://mcp.linear.app/register",
         revocationEndpoint: "https://mcp.linear.app/token", // per discovery doc
         scopes: [],
-        redirectUri: `${redirectBase}/connections/linear/callback`,
+        redirectUri: `${bridgeBase}/connections/linear/callback`,
         useDynamicRegistration: true,
         clientName: "Patchwork OS",
       };
@@ -99,7 +107,7 @@ export function vendorConfig(vendor: VendorId): VendorConfig {
         registrationEndpoint: "https://mcp.sentry.dev/oauth/register",
         revocationEndpoint: "https://mcp.sentry.dev/oauth/token",
         scopes: ["org:read", "project:write", "event:write"],
-        redirectUri: `${redirectBase}/connections/sentry/callback`,
+        redirectUri: `${bridgeBase}/connections/sentry/callback`,
         useDynamicRegistration: true,
         clientName: "Patchwork OS",
       };
