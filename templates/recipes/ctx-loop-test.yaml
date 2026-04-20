@@ -1,0 +1,70 @@
+name: ctx-loop-test
+description: |
+  End-to-end test of the agent-read loop. An agent writes a decision trace with
+  ctxSaveTrace, then reads it back with ctxQueryTraces, and confirms the trace
+  appears in the result. Output lands in ~/.patchwork/inbox/ for manual inspection.
+  Run this after deploying a new bridge build to confirm the memory moat is live.
+trigger:
+  type: manual
+steps:
+  - tool: git.log_since
+    since: 1h
+    into: recent_commits
+
+  - agent:
+      prompt: |
+        You are validating the Patchwork cross-session memory loop end-to-end.
+
+        RECENT COMMITS (context only):
+        {{recent_commits}}
+
+        Perform the following steps IN ORDER. Stop immediately if any step fails and
+        report the failure clearly in your output.
+
+        ## Step 1 — Write a trace
+        Call ctxSaveTrace with these exact values:
+          ref: "ctx-loop-test-{{date}}"
+          problem: "Validating that ctxSaveTrace persists traces readable by future sessions"
+          solution: "ctxSaveTrace writes to decision_traces.jsonl; ctxQueryTraces reads it back"
+          tags: ["loop-test", "dogfood"]
+
+        Record the returned `seq` number.
+
+        ## Step 2 — Read it back
+        Call ctxQueryTraces with:
+          traceType: "decision"
+          limit: 5
+
+        Check that the trace you just wrote (ref "ctx-loop-test-{{date}}") appears in
+        the results. If it does, the loop is confirmed closed.
+
+        ## Step 3 — Write your report
+        Output a markdown block in this exact format:
+
+        ```
+        # ctx-loop-test — {{date}} {{time}}
+
+        ## Result: PASS / FAIL
+
+        ### Step 1 — ctxSaveTrace
+        - seq: <returned seq>
+        - ref: ctx-loop-test-{{date}}
+        - Status: OK / ERROR: <message>
+
+        ### Step 2 — ctxQueryTraces
+        - Traces returned: <count>
+        - Test trace found: yes / no
+        - Status: OK / ERROR: <message>
+
+        ### Verdict
+        <one sentence summary>
+        ```
+
+        Output ONLY the markdown block. No preamble.
+      driver: claude-code
+      model: claude-haiku-4-5-20251001
+      into: report
+
+  - tool: file.write
+    path: ~/.patchwork/inbox/ctx-loop-test-{{date}}.md
+    content: "{{report}}\n"

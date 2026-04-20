@@ -55,12 +55,26 @@ All four "phantom tools" previously advertised in the MCP handshake (`ctxGetTask
 
 **Decisions tab** — `/decisions` dashboard page (tag filter, ref search, text search, shareable URLs, 5s polling) — confirmed already live from Phase 3.
 
+## Patchwork alpha.4 — shipped (2026-04-20)
+
+**Write path + connectors:**
+- **`createLinearIssue` MCP tool** ([src/tools/createLinearIssue.ts](../src/tools/createLinearIssue.ts)) — title, description, teamKey (case-insensitive), priority 0–4, label resolution via GraphQL. Returns `{id, identifier, url, state, team}`.
+- **`sentry-to-linear` recipe template** ([templates/recipes/sentry-to-linear.yaml](../templates/recipes/sentry-to-linear.yaml)) — one-shot: fetch Sentry issue → create Linear ticket. Vars: `SENTRY_ISSUE_ID`, `LINEAR_TEAM_KEY`, `LINEAR_PRIORITY`.
+- **Google Calendar connector** ([src/connectors/googleCalendar.ts](../src/connectors/googleCalendar.ts)) — API key + calendar ID auth (no OAuth app required), read-only. `fetchCalendarEvents` MCP tool, `calendar.list_events` recipe step, dashboard card with `KeyModal`. Morning-brief updated with calendar section.
+- **Dashboard connections** — `connect` route for API-key connectors; DELETE/test allowlists expanded to cover linear, sentry, google-calendar.
+
+**UX fixes:**
+- Activity page empty-state when all events are noise-filtered — now shows "N connection events hidden" with explanation.
+- Session cards — show first tool called + client IP instead of bare UUID.
+- Extension "Disconnected" badge — tooltip + "Not connected — see Settings" foot text.
+- Recipe creation form — vars support (name/description/required/default); run-with-vars modal.
+
 ## Remaining Patchwork work
 
-1. **Dogfood the agent-read loop.** Need real agent sessions to produce `ctxSaveTrace` usage data; then decide whether instructions need strengthening to nudge agents toward the ctx tools.
+1. **Dogfood the agent-read loop.** `ctxSaveTrace` usage data needed from real agent sessions. Template recipe `ctx-loop-test` ([templates/recipes/ctx-loop-test.yaml](../templates/recipes/ctx-loop-test.yaml)) exercises the full write→read cycle; run it and check `/traces` to confirm the loop closes. Then decide whether CLAUDE.md nudges need strengthening.
 2. **Freshness scoring + dedup across context sources.** Deferred; wait until real duplication pain appears in `contextBundle` / `getCommitsForIssue` output.
-3. **`createLinearIssue` MCP tool.** Write path for Linear — agents can currently read but not create tickets. Build when a concrete workflow needs it.
-4. **Google Calendar connector.** Currently a placeholder card in the dashboard. Requires OAuth app setup.
+3. **Slack connector.** Placeholder card in dashboard. Monitor channels, surface action items, draft responses.
+4. **Gemini driver parity.** `GeminiSubprocessDriver` shipped but hasn't been dogfooded end-to-end with recipes; validate streaming + tool-use parity against `SubprocessDriver`.
 
 ---
 
