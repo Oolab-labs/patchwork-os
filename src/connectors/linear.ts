@@ -316,7 +316,7 @@ export async function listTeams(signal?: AbortSignal): Promise<LinearTeam[]> {
 export async function listLabels(
   signal?: AbortSignal,
 ): Promise<Array<{ id: string; name: string }>> {
-  const res = await client().callTool("list_labels", {}, { signal });
+  const res = await client().callTool("list_issue_labels", {}, { signal });
   const parsed = McpClient.extractJson<
     | Array<{ id: string; name: string }>
     | {
@@ -329,11 +329,11 @@ export async function listLabels(
 }
 
 export interface CreateIssueInput {
-  teamId: string;
+  team: string; // team name or ID
   title: string;
   description?: string;
   priority?: number;
-  labelIds?: string[];
+  labels?: string[]; // label names or IDs
 }
 
 export async function createIssue(
@@ -347,7 +347,7 @@ export async function createIssue(
   state: { name: string };
 }> {
   const res = await client().callTool(
-    "create_issue",
+    "save_issue",
     input as unknown as Record<string, unknown>,
     { signal },
   );
