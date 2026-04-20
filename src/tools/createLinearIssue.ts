@@ -1,9 +1,4 @@
-import {
-  createIssue,
-  listLabels,
-  listTeams,
-  loadTokens,
-} from "../connectors/linear.js";
+import { createIssue, listTeams, loadTokens } from "../connectors/linear.js";
 import { requireString, successStructured } from "./utils.js";
 
 export function createLinearIssueTool() {
@@ -109,7 +104,7 @@ export function createLinearIssueTool() {
           throw new Error("No teams found in Linear workspace.");
         }
 
-        let teamId: string;
+        let teamName: string;
         let teamLabel: string;
         if (teamKeyArg) {
           const match = teams.find(
@@ -120,36 +115,22 @@ export function createLinearIssueTool() {
               `Team '${teamKeyArg}' not found. Available teams: ${teams.map((t) => t.key).join(", ")}`,
             );
           }
-          teamId = match.id;
-          teamLabel = `${match.name} (${match.key})`;
+          teamName = match.name;
+          teamLabel = match.key ? `${match.name} (${match.key})` : match.name;
         } else {
           const first = teams[0];
           if (!first) throw new Error("No teams found in Linear workspace.");
-          teamId = first.id;
-          teamLabel = `${first.name} (${first.key})`;
-        }
-
-        // Resolve label IDs if provided
-        let labelIds: string[] | undefined;
-        if (labelNames.length > 0) {
-          const allLabels = await listLabels(signal);
-          labelIds = labelNames
-            .map((name) => {
-              const found = allLabels.find(
-                (l) => l.name.toLowerCase() === name.toLowerCase(),
-              );
-              return found?.id;
-            })
-            .filter((id): id is string => id !== undefined);
+          teamName = first.name;
+          teamLabel = first.key ? `${first.name} (${first.key})` : first.name;
         }
 
         const issue = await createIssue(
           {
-            teamId,
+            team: teamName,
             title,
             description,
             priority,
-            labelIds: labelIds && labelIds.length > 0 ? labelIds : undefined,
+            labels: labelNames.length > 0 ? labelNames : undefined,
           },
           signal,
         );
@@ -159,7 +140,7 @@ export function createLinearIssueTool() {
           identifier: issue.identifier,
           title: issue.title,
           url: issue.url,
-          state: issue.state.name,
+          state: issue.state?.name ?? "",
           team: teamLabel,
           linearConnected: true,
         });

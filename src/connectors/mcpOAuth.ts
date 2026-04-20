@@ -49,17 +49,13 @@ export interface VendorConfig {
   useDynamicRegistration: boolean;
   /** If useDynamicRegistration=false, this client_id is used. */
   preregisteredClientId?: string;
+  /** Client secret for pre-registered clients (e.g. GitHub OAuth Apps). */
+  preregisteredClientSecret?: string;
   /** Human-friendly client name for dyn-reg. */
   clientName?: string;
 }
 
 // ── Known vendor configs ─────────────────────────────────────────────────────
-
-function defaultRedirectBase(): string {
-  return (
-    process.env.PATCHWORK_DASHBOARD_URL ?? "http://localhost:3200"
-  ).replace(/\/$/, "");
-}
 
 function defaultBridgeBase(): string {
   const port = process.env.PATCHWORK_BRIDGE_PORT ?? "3101";
@@ -69,7 +65,6 @@ function defaultBridgeBase(): string {
 }
 
 export function vendorConfig(vendor: VendorId): VendorConfig {
-  const redirectBase = defaultRedirectBase();
   const bridgeBase = defaultBridgeBase();
   switch (vendor) {
     case "github":
@@ -80,9 +75,10 @@ export function vendorConfig(vendor: VendorId): VendorConfig {
         tokenEndpoint: "https://github.com/login/oauth/access_token",
         revocationEndpoint: undefined, // GitHub OAuth apps use a different revoke path; best-effort delete only
         scopes: ["repo", "read:org", "read:user"],
-        redirectUri: `${redirectBase}/connections/github/callback`,
+        redirectUri: `${bridgeBase}/connections/github/callback`,
         useDynamicRegistration: false,
         preregisteredClientId: process.env.PATCHWORK_GITHUB_CLIENT_ID ?? "",
+        preregisteredClientSecret: process.env.PATCHWORK_GITHUB_CLIENT_SECRET,
         clientName: "Patchwork OS",
       };
     case "linear":
@@ -242,7 +238,7 @@ export async function startAuthorize(
   gcPending();
 
   let clientId = config.preregisteredClientId ?? "";
-  let clientSecret: string | undefined;
+  let clientSecret: string | undefined = config.preregisteredClientSecret;
 
   if (config.useDynamicRegistration) {
     // Re-use cached registration if available
