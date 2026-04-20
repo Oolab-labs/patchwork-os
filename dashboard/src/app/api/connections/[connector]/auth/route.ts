@@ -3,7 +3,13 @@ import { bridgeFetch } from "@/lib/bridge";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ALLOWED_CONNECTORS = new Set(["gmail"]);
+const ALLOWED_CONNECTORS = new Set([
+  "gmail",
+  "google-calendar",
+  "github",
+  "linear",
+  "sentry",
+]);
 
 export async function GET(
   _req: Request,

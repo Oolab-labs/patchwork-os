@@ -1,34 +1,33 @@
 /**
- * Sentry connector.
+ * Sentry connector — routes through Sentry's official MCP server.
  *
- * Uses Sentry's REST API with an auth token (no OAuth app required).
- * Token stored at ~/.patchwork/tokens/sentry.json (mode 0600).
- * Env vars: SENTRY_AUTH_TOKEN, SENTRY_ORG (optional default org slug).
+ * Endpoint: https://mcp.sentry.dev/mcp
+ * Auth:     OAuth 2.1 w/ PKCE; dynamic client registration (RFC 7591).
  *
- * HTTP routes registered in bridge.ts:
- *   POST   /connections/sentry/connect   — store token + verify
- *   POST   /connections/sentry/test      — verify stored token works
- *   DELETE /connections/sentry           — delete stored token
+ * HTTP routes (wired in src/server.ts):
+ *   GET    /connections/sentry/authorize — returns { url } for popup
+ *   GET    /connections/sentry/callback  — token exchange
+ *   POST   /connections/sentry/test      — ping MCP server
+ *   DELETE /connections/sentry           — revoke + delete token
  *
  * MCP tool: fetchSentryIssue — fetches a Sentry issue/event and returns
  * the stack trace string, ready to pass into enrichStackTrace.
  */
 
+import { McpClient } from "./mcpClient.js";
 import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
+  completeAuthorize,
+  getAccessToken,
+  loadTokenFile,
+  revoke,
+  startAuthorize,
+  vendorConfig,
+} from "./mcpOAuth.js";
 
-const SENTRY_API = "https://sentry.io/api/0";
-const TOKEN_PATH = path.join(homedir(), ".patchwork", "tokens", "sentry.json");
+const SENTRY_MCP_ENDPOINT = "https://mcp.sentry.dev/mcp";
 
 export interface SentryTokens {
-  auth_token: string;
+  auth_token: string; // kept for back-compat
   org?: string;
   connected_at: string;
 }
@@ -40,127 +39,62 @@ export interface ConnectorStatus {
   org?: string;
 }
 
-// ── Token storage ─────────────────────────────────────────────────────────────
+export interface ConnectorHandlerResult {
+  status: number;
+  body: string;
+  contentType?: string;
+  redirect?: string;
+}
+
+// ── MCP client ───────────────────────────────────────────────────────────────
+
+let _client: McpClient | null = null;
+function client(): McpClient {
+  if (!_client) {
+    _client = new McpClient(SENTRY_MCP_ENDPOINT, () =>
+      getAccessToken("sentry"),
+    );
+  }
+  return _client;
+}
+
+// ── Back-compat ──────────────────────────────────────────────────────────────
 
 export function loadTokens(): SentryTokens | null {
-  if (!existsSync(TOKEN_PATH)) return null;
-  try {
-    return JSON.parse(readFileSync(TOKEN_PATH, "utf-8")) as SentryTokens;
-  } catch {
-    return null;
-  }
-}
-
-function saveTokens(tokens: SentryTokens): void {
-  mkdirSync(path.dirname(TOKEN_PATH), { recursive: true, mode: 0o700 });
-  writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2), { mode: 0o600 });
-}
-
-function deleteTokens(): void {
-  if (existsSync(TOKEN_PATH)) unlinkSync(TOKEN_PATH);
+  const file = loadTokenFile("sentry");
+  if (!file) return null;
+  return {
+    auth_token: file.access_token,
+    org: file.profile?.org,
+    connected_at: file.connected_at,
+  };
 }
 
 export function getStatus(): ConnectorStatus {
-  const tokens = loadTokens();
+  const file = loadTokenFile("sentry");
   return {
     id: "sentry",
-    status: tokens ? "connected" : "disconnected",
-    lastSync: tokens?.connected_at,
-    org: tokens?.org,
+    status: file ? "connected" : "disconnected",
+    lastSync: file?.connected_at,
+    org: file?.profile?.org,
   };
 }
 
-// ── API helpers ───────────────────────────────────────────────────────────────
-
-async function sentryGet(
-  path: string,
-  token: string,
-  signal?: AbortSignal,
-): Promise<unknown> {
-  const res = await fetch(`${SENTRY_API}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal,
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Sentry API error ${res.status}: ${body.slice(0, 200)}`);
-  }
-  return res.json();
-}
-
-/** Verify the token and return the authenticated user's identity. */
-async function verifyToken(
-  token: string,
-  signal?: AbortSignal,
-): Promise<{ username: string }> {
-  const data = (await sentryGet("/", token, signal)) as {
-    user?: { username?: string };
-  };
-  return { username: data.user?.username ?? "unknown" };
-}
-
-/**
- * Fetch the latest event for a Sentry issue and extract the stack trace text.
- * issueIdOrUrl accepts:
- *   - A numeric issue ID: "12345"
- *   - A Sentry issue URL: "https://sentry.io/organizations/my-org/issues/12345/"
- */
-export async function fetchIssueStackTrace(
-  issueIdOrUrl: string,
-  signal?: AbortSignal,
-): Promise<{ stackTrace: string; title: string; issueId: string }> {
-  const tokens = loadTokens();
-  if (!tokens)
-    throw new Error(
-      "Sentry not connected. POST /connections/sentry/connect first.",
-    );
-
-  const issueId = extractIssueId(issueIdOrUrl);
-  // Org-scoped endpoint required for self-hosted / team orgs.
-  // Fall back to legacy path if no org stored.
-  const issuePath = tokens.org
-    ? `/organizations/${tokens.org}/issues/${issueId}/`
-    : `/issues/${issueId}/`;
-  const eventPath = tokens.org
-    ? `/organizations/${tokens.org}/issues/${issueId}/events/latest/`
-    : `/issues/${issueId}/events/latest/`;
-
-  // Fetch issue metadata first to get the title
-  const issue = (await sentryGet(issuePath, tokens.auth_token, signal)) as {
-    title?: string;
-  };
-
-  const event = (await sentryGet(
-    eventPath,
-    tokens.auth_token,
-    signal,
-  )) as SentryEvent;
-  event.title = event.title ?? issue.title;
-
-  const stackTrace = eventToStackTrace(event);
-  return { stackTrace, title: event.title ?? issueId, issueId };
-}
+// ── Issue fetch ──────────────────────────────────────────────────────────────
 
 function extractIssueId(issueIdOrUrl: string): string {
-  // URL form: https://sentry.io/organizations/.../issues/12345/
   const urlMatch = issueIdOrUrl.match(/\/issues\/(\d+)/);
   if (urlMatch) return urlMatch[1] as string;
-  // Plain numeric or alphanumeric ID
   const trimmed = issueIdOrUrl.trim();
   if (/^\d+$/.test(trimmed)) return trimmed;
   throw new Error(`Cannot parse Sentry issue ID from: ${issueIdOrUrl}`);
 }
 
-// ── Sentry event → stack trace text ──────────────────────────────────────────
-
 interface SentryException {
   type?: string;
   value?: string;
-  stacktrace?: {
-    frames?: SentryFrame[];
-  };
+  stacktrace?: { frames?: SentryFrame[] };
 }
-
 interface SentryFrame {
   filename?: string;
   absPath?: string;
@@ -170,40 +104,28 @@ interface SentryFrame {
   module?: string;
   inApp?: boolean;
 }
-
 interface SentryEvent {
   title?: string;
   entries?: Array<{
     type: string;
-    data?: {
-      values?: SentryException[];
-      frames?: SentryFrame[];
-    };
+    data?: { values?: SentryException[]; frames?: SentryFrame[] };
   }>;
 }
 
-/**
- * Convert a Sentry event JSON into a stack trace string that parseStackTrace
- * (used by enrichStackTrace) can parse. Uses Node.js-style format.
- */
 function eventToStackTrace(event: SentryEvent): string {
   const exceptions: SentryException[] = [];
-
   for (const entry of event.entries ?? []) {
     if (entry.type === "exception" && Array.isArray(entry.data?.values)) {
       exceptions.push(...(entry.data?.values ?? []));
     }
   }
-
   if (exceptions.length === 0) {
     return `Error: ${event.title ?? "Unknown error"}\n    (no stack frames in Sentry event)`;
   }
-
   const lines: string[] = [];
   for (const exc of exceptions.reverse()) {
     lines.push(`${exc.type ?? "Error"}: ${exc.value ?? ""}`);
     const frames = exc.stacktrace?.frames ?? [];
-    // Sentry stores frames innermost-last; reverse for top-of-stack-first output
     for (const frame of [...frames].reverse()) {
       const file =
         frame.absPath ?? frame.filename ?? frame.module ?? "<unknown>";
@@ -215,46 +137,49 @@ function eventToStackTrace(event: SentryEvent): string {
       );
     }
   }
-
   return lines.join("\n");
 }
 
-// ── HTTP handlers ─────────────────────────────────────────────────────────────
+export async function fetchIssueStackTrace(
+  issueIdOrUrl: string,
+  signal?: AbortSignal,
+): Promise<{ stackTrace: string; title: string; issueId: string }> {
+  if (!loadTokens())
+    throw new Error(
+      "Sentry not connected. GET /connections/sentry/authorize first.",
+    );
 
-export interface ConnectorHandlerResult {
-  status: number;
-  body: string;
-  contentType?: string;
+  const issueId = extractIssueId(issueIdOrUrl);
+  const file = loadTokenFile("sentry");
+  const org = file?.profile?.org;
+
+  const issueRes = await client().callTool(
+    "get_issue",
+    org ? { issueId, organizationSlug: org } : { issueId },
+    { signal },
+  );
+  const issue = McpClient.extractJson<{ title?: string }>(issueRes);
+
+  const eventRes = await client().callTool(
+    "get_event",
+    org
+      ? { issueId, organizationSlug: org, eventId: "latest" }
+      : { issueId, eventId: "latest" },
+    { signal },
+  );
+  const event = McpClient.extractJson<SentryEvent>(eventRes);
+  event.title = event.title ?? issue.title;
+
+  const stackTrace = eventToStackTrace(event);
+  return { stackTrace, title: event.title ?? issueId, issueId };
 }
 
-export async function handleSentryConnect(
-  body: unknown,
-): Promise<ConnectorHandlerResult> {
-  const signal = undefined;
-  const { auth_token, org } = (body ?? {}) as {
-    auth_token?: string;
-    org?: string;
-  };
-  if (!auth_token || typeof auth_token !== "string") {
-    return {
-      status: 400,
-      contentType: "application/json",
-      body: JSON.stringify({ ok: false, error: "auth_token required" }),
-    };
-  }
+// ── HTTP handlers ────────────────────────────────────────────────────────────
+
+export async function handleSentryAuthorize(): Promise<ConnectorHandlerResult> {
   try {
-    const { username } = await verifyToken(auth_token, signal);
-    const tokens: SentryTokens = {
-      auth_token,
-      org: org ?? undefined,
-      connected_at: new Date().toISOString(),
-    };
-    saveTokens(tokens);
-    return {
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ ok: true, username, org: org ?? null }),
-    };
+    const { url } = await startAuthorize(vendorConfig("sentry"));
+    return { status: 302, body: "", redirect: url };
   } catch (err) {
     return {
       status: 400,
@@ -267,10 +192,79 @@ export async function handleSentryConnect(
   }
 }
 
+export async function handleSentryCallback(
+  code: string | null,
+  state: string | null,
+  error: string | null,
+): Promise<ConnectorHandlerResult> {
+  if (error) {
+    return {
+      status: 400,
+      contentType: "text/html",
+      body: `<html><body><h2>Sentry connect failed</h2><pre>${error}</pre></body></html>`,
+    };
+  }
+  if (!code || !state) {
+    return {
+      status: 400,
+      contentType: "text/html",
+      body: `<html><body><h2>Sentry connect failed</h2><pre>missing code/state</pre></body></html>`,
+    };
+  }
+  try {
+    await completeAuthorize(vendorConfig("sentry"), code, state);
+    // Best-effort org capture
+    try {
+      const res = await client().callTool(
+        "list_organizations",
+        {},
+        {
+          timeoutMs: 10_000,
+        },
+      );
+      const orgs = McpClient.extractJson<
+        Array<{ slug?: string }> | { organizations?: Array<{ slug?: string }> }
+      >(res);
+      const first = Array.isArray(orgs)
+        ? orgs[0]
+        : (orgs.organizations ?? [])[0];
+      const org = first?.slug;
+      if (org) {
+        const file = loadTokenFile("sentry");
+        if (file) {
+          const { writeFileSync, mkdirSync } = await import("node:fs");
+          const { homedir } = await import("node:os");
+          const path = await import("node:path");
+          const p = path.join(
+            homedir(),
+            ".patchwork",
+            "tokens",
+            "sentry-mcp.json",
+          );
+          mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
+          file.profile = { ...(file.profile ?? {}), org };
+          writeFileSync(p, JSON.stringify(file, null, 2), { mode: 0o600 });
+        }
+      }
+    } catch {
+      // Profile fetch is best-effort
+    }
+    return {
+      status: 200,
+      contentType: "text/html",
+      body: `<html><body><h2>Sentry connected</h2><script>window.close();</script></body></html>`,
+    };
+  } catch (err) {
+    return {
+      status: 400,
+      contentType: "text/html",
+      body: `<html><body><h2>Sentry connect failed</h2><pre>${err instanceof Error ? err.message : String(err)}</pre></body></html>`,
+    };
+  }
+}
+
 export async function handleSentryTest(): Promise<ConnectorHandlerResult> {
-  const signal = undefined;
-  const tokens = loadTokens();
-  if (!tokens) {
+  if (!loadTokens()) {
     return {
       status: 400,
       contentType: "application/json",
@@ -278,11 +272,11 @@ export async function handleSentryTest(): Promise<ConnectorHandlerResult> {
     };
   }
   try {
-    const { username } = await verifyToken(tokens.auth_token, signal);
+    const ok = await client().ping({ timeoutMs: 10_000 });
     return {
-      status: 200,
+      status: ok ? 200 : 400,
       contentType: "application/json",
-      body: JSON.stringify({ ok: true, username }),
+      body: JSON.stringify({ ok, message: ok ? "connected" : "ping failed" }),
     };
   } catch (err) {
     return {
@@ -296,8 +290,9 @@ export async function handleSentryTest(): Promise<ConnectorHandlerResult> {
   }
 }
 
-export function handleSentryDisconnect(): ConnectorHandlerResult {
-  deleteTokens();
+export async function handleSentryDisconnect(): Promise<ConnectorHandlerResult> {
+  await revoke("sentry");
+  _client = null;
   return {
     status: 200,
     contentType: "application/json",
