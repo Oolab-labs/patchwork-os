@@ -286,8 +286,8 @@ export async function fetchGitHubIssue(
     );
   const { owner, repo, number } = parseIssueRef(ref);
   const res = await client().callTool(
-    "get_issue",
-    { owner, repo, issue_number: number },
+    "issue_read",
+    { owner, repo, issue_number: number, method: "get" },
     { signal },
   );
   const raw = McpClient.extractJson<Record<string, unknown>>(res);
@@ -324,8 +324,8 @@ export async function fetchGitHubPR(
     );
   const { owner, repo, number } = parsePRRef(ref);
   const res = await client().callTool(
-    "get_pull_request",
-    { owner, repo, pullNumber: number },
+    "pull_request_read",
+    { owner, repo, pullNumber: number, method: "get" },
     { signal },
   );
   const raw = McpClient.extractJson<Record<string, unknown>>(res);
