@@ -76,11 +76,14 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
     body,
   });
   const text = await res.text();
+  const upstreamCt = res.headers.get("content-type") ?? "";
+  const ct =
+    upstreamCt.includes("application/json") || upstreamCt === ""
+      ? "application/json"
+      : upstreamCt;
   return new Response(text, {
     status: res.status,
-    headers: {
-      "content-type": res.headers.get("content-type") ?? "application/json",
-    },
+    headers: { "content-type": ct },
   });
 }
 

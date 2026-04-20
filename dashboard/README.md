@@ -9,11 +9,12 @@ over WebSocket (`/stream`) + REST (`/dashboard/data`, `/approvals`,
 ```bash
 cd dashboard
 npm install
-npm run dev   # http://localhost:3100
+npm run dev   # http://localhost:3200
 ```
 
-Expects the bridge on `http://127.0.0.1:<bridge-port>`; the port is read from
-`~/.claude/ide/*.lock`. Set `NEXT_PUBLIC_BRIDGE_PORT=NNNN` to override.
+Expects the bridge on `http://127.0.0.1:<bridge-port>`; the port is auto-discovered from
+`~/.claude/ide/*.lock`. Override by setting `PATCHWORK_BRIDGE_PORT=NNNN` in `.env.local`
+(copy `.env.example` to get started).
 
 ## Status
 

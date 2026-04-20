@@ -186,13 +186,19 @@ function useBridgeStatus(): BridgeStatus {
     const tick = async () => {
       try {
         const res = await fetch("/api/bridge/status");
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const ct = res.headers.get("content-type") ?? "";
+        if (!ct.includes("application/json") && !ct.includes("text/plain")) {
+          throw new Error(`unexpected content-type: ${ct}`);
+        }
         const data = (await res.json()) as Partial<BridgeStatus>;
         if (alive) setStatus({ ok: true, ...data });
       } catch {
         try {
           const res = await fetch("/api/bridge/approvals");
-          if (alive) setStatus({ ok: res.ok });
+          const ct = res.headers.get("content-type") ?? "";
+          if (alive)
+            setStatus({ ok: res.ok && ct.includes("application/json") });
         } catch {
           if (alive) setStatus({ ok: false });
         }

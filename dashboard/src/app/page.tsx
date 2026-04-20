@@ -51,31 +51,51 @@ export default function HomePage() {
   useEffect(() => {
     let alive = true;
     const tick = async () => {
-      const [approvals, tasks, metrics] = await Promise.all([
-        fetch("/api/bridge/approvals")
-          .then((r) => (r.ok ? r.json() : []))
-          .catch(() => []),
-        fetch("/api/bridge/tasks")
-          .then((r) => (r.ok ? r.json() : { tasks: [] }))
-          .catch(() => ({ tasks: [] })),
-        fetch("/api/bridge/metrics")
-          .then((r) => (r.ok ? r.text() : ""))
-          .catch(() => ""),
-      ]);
-      if (!alive) return;
-      const metricsText = metrics as string;
-      const uptime = parseUptimeMs(metricsText);
-      const toolCalls = parseToolCallTotal(metricsText);
-      setData({
-        pendingApprovals: Array.isArray(approvals) ? approvals.length : 0,
-        runningTasks: (tasks.tasks ?? []).filter(
-          (t: { status: string }) =>
-            t.status === "running" || t.status === "pending",
-        ).length,
-        recentActivity: toolCalls,
-        uptimeMs: uptime,
-        bridgeOk: true,
-      });
+      try {
+        const [approvalsRes, tasksRes, metricsRes] = await Promise.all([
+          fetch("/api/bridge/approvals"),
+          fetch("/api/bridge/tasks"),
+          fetch("/api/bridge/metrics"),
+        ]);
+        if (!alive) return;
+        if (!approvalsRes.ok || !tasksRes.ok) {
+          setData({
+            pendingApprovals: 0,
+            runningTasks: 0,
+            recentActivity: 0,
+            uptimeMs: null,
+            bridgeOk: false,
+          });
+          return;
+        }
+        const [approvals, tasks, metricsText] = await Promise.all([
+          approvalsRes.json(),
+          tasksRes.json(),
+          metricsRes.ok ? metricsRes.text() : Promise.resolve(""),
+        ]);
+        if (!alive) return;
+        const uptime = parseUptimeMs(metricsText as string);
+        const toolCalls = parseToolCallTotal(metricsText as string);
+        setData({
+          pendingApprovals: Array.isArray(approvals) ? approvals.length : 0,
+          runningTasks: (tasks.tasks ?? []).filter(
+            (t: { status: string }) =>
+              t.status === "running" || t.status === "pending",
+          ).length,
+          recentActivity: toolCalls,
+          uptimeMs: uptime,
+          bridgeOk: true,
+        });
+      } catch {
+        if (!alive) return;
+        setData({
+          pendingApprovals: 0,
+          runningTasks: 0,
+          recentActivity: 0,
+          uptimeMs: null,
+          bridgeOk: false,
+        });
+      }
     };
     tick();
     const id = setInterval(tick, 5000);
