@@ -518,6 +518,84 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── Connector OAuth callbacks (unauthenticated — browser redirect from vendor) ──
+      if (
+        parsedUrl.pathname === "/connections/github/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleGithubCallback } = await import(
+            "./connectors/github.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleGithubCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/linear/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleLinearCallback } = await import(
+            "./connectors/linear.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleLinearCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/sentry/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleSentryCallback } = await import(
+            "./connectors/sentry.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleSentryCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/google-calendar/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleCalendarCallback } = await import(
+            "./connectors/googleCalendar.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleCalendarCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
       // ── Bearer token authentication ───────────────────────────────────────
       // All other HTTP endpoints require a valid Bearer token.
       // Accepts either:
