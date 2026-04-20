@@ -3,7 +3,7 @@ import "./globals.css";
 import { Shell } from "@/components/Shell";
 
 export const metadata = {
-  title: "Patchwork OS — Oversight",
+  title: "Overview — Patchwork OS",
   description: "Approve, review, replay.",
 };
 

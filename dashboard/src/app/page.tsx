@@ -168,12 +168,21 @@ export default function HomePage() {
             value={
               <span
                 className={`pill ${health.extensionConnected ? "ok" : "err"}`}
+                title={
+                  health.extensionConnected
+                    ? undefined
+                    : "VS Code extension not connected — install claude-ide-bridge extension in VS Code or check Settings"
+                }
               >
                 <span className="pill-dot" />
                 {health.extensionConnected ? "Connected" : "Disconnected"}
               </span>
             }
-            foot={health.extensionVersion ?? "—"}
+            foot={
+              health.extensionConnected
+                ? (health.extensionVersion ?? "—")
+                : "Not connected — see Settings"
+            }
           />
           <StatCard
             label="Connections"

@@ -126,7 +126,7 @@ function DecisionsContent() {
           type="text"
           value={tag}
           onChange={(e) => setTag(e.target.value)}
-          placeholder="filter by tag (exact match)"
+          placeholder="filter by tag"
           style={{
             minWidth: 200,
             padding: "6px 10px",

@@ -1,4 +1,6 @@
 "use client";
+import React from "react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 interface Run {
@@ -20,12 +22,12 @@ type TriggerFilter = "all" | "cron" | "webhook" | "recipe";
 type StatusFilter = "all" | "done" | "error" | "cancelled" | "interrupted";
 
 function fmtWhen(ms: number): string {
-  const d = new Date(ms);
   const diff = Date.now() - ms;
   if (diff < 60_000) return "just now";
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return d.toLocaleString();
+  const days = Math.floor(diff / 86_400_000);
+  return `${days}d ago`;
 }
 
 function fmtDur(ms: number): string {
@@ -140,9 +142,8 @@ export default function RunsPage() {
                 const isExpanded = expanded === r.taskId;
                 const key = r.taskId;
                 return (
-                  <>
+                  <React.Fragment key={key}>
                     <tr
-                      key={key}
                       onClick={() => setExpanded(isExpanded ? null : r.taskId)}
                       style={{ cursor: "pointer" }}
                     >
@@ -159,7 +160,9 @@ export default function RunsPage() {
                         </span>
                       </td>
                       <td className="mono muted">{fmtDur(r.durationMs)}</td>
-                      <td className="mono muted">{r.taskId.slice(0, 8)}</td>
+                      <td className="mono muted">
+                        <Link href="/tasks">{r.taskId.slice(0, 8)}</Link>
+                      </td>
                     </tr>
                     {isExpanded && (
                       <tr key={`${key}-detail`}>
@@ -212,7 +215,7 @@ export default function RunsPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 );
               })}
             </tbody>
