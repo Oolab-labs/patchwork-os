@@ -38,13 +38,29 @@ All four "phantom tools" previously advertised in the MCP handshake (`ctxGetTask
 
 **Test state (on main):** 3174 bridge tests passing. Lint 0 errors, 55 warnings (all pre-existing in src/vscode-extension). Dashboard excluded from bridge biome config (own toolchain).
 
+## Patchwork alpha.3 — shipped (2026-04-20)
+
+**Multi-provider driver abstraction** (`src/drivers/`):
+- `ProviderDriver` interface — provider-neutral abstraction over legacy `IClaudeDriver`
+- `DriverMode`: `subprocess | api | openai | grok | gemini | none`
+- `SubprocessDriver`, `ApiDriver` (Claude), `OpenAIApiDriver`, `GrokApiDriver` (extends OpenAI), `GeminiSubprocessDriver`
+- `ProviderDriverAdapter` bridges new drivers to legacy callers — zero breaking changes
+- `subprocess` + `gemini` support user subscriptions (CLI auth, no API key required)
+
+**Upstream connectors** (Phase 1 federation):
+- **Sentry** — personal auth token, org-scoped REST API, `fetchSentryIssue` MCP tool (stack trace + git blame in one call)
+- **Linear** — personal API key, GraphQL API, `fetchLinearIssue` MCP tool, `linear.list_issues` recipe step, `ctxGetTaskContext` Linear ref resolution (`LIN-42`, `TEAM-123`, full URL)
+
+**Morning-brief integration** — `linear.list_issues` step added to `templates/recipes/morning-brief.yaml`; agent prompt includes a **Linear** section. Validated end-to-end: recipe runs, Linear issues surface in inbox file.
+
+**Decisions tab** — `/decisions` dashboard page (tag filter, ref search, text search, shareable URLs, 5s polling) — confirmed already live from Phase 3.
+
 ## Remaining Patchwork work
 
-1. **Dogfood the agent-read loop.** Instrumentation already emits `bridge_tool_calls_total{tool="ctxSaveTrace"}` etc. via Prometheus. Need real agent sessions to produce usage data; then decide whether instructions need strengthening to nudge agents toward the ctx tools.
-2. **Decision-trace dashboard view.** `/traces` bundles all 4 types; decisions (the agent-authored knowledge base) could use a dedicated tab with search-by-tag. Speculative until usage data warrants.
-3. **Freshness scoring + dedup across context sources.** Deferred research; wait until real duplication pain appears in `contextBundle` / `getCommitsForIssue` output.
-4. **Upstream connectors** (Sentry, Linear) — Phase 1 federation per `docs/platform-strategy.md`. `enrichStackTrace` already composes with *pasted* stacks; Sentry-as-connector is the next natural extension.
-5. **Multi-provider driver abstraction** — Phase 1 item (architecturally adjacent to multi-model work). Target: ships before Phase 2 recipe system. See [`docs/plans/multi-provider-drivers.md`](../docs/plans/multi-provider-drivers.md) (being written in parallel).
+1. **Dogfood the agent-read loop.** Need real agent sessions to produce `ctxSaveTrace` usage data; then decide whether instructions need strengthening to nudge agents toward the ctx tools.
+2. **Freshness scoring + dedup across context sources.** Deferred; wait until real duplication pain appears in `contextBundle` / `getCommitsForIssue` output.
+3. **`createLinearIssue` MCP tool.** Write path for Linear — agents can currently read but not create tickets. Build when a concrete workflow needs it.
+4. **Google Calendar connector.** Currently a placeholder card in the dashboard. Requires OAuth app setup.
 
 ---
 

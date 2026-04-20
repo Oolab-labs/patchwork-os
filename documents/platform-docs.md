@@ -1,6 +1,6 @@
 # Claude IDE Bridge — Platform Documentation
 
-Version **2.42.0** · 170 tools · 72 MCP prompts · 20 automation hooks
+Version **0.2.0-alpha.3** · 170+ tools · 72 MCP prompts · 20 automation hooks · 4 connectors
 
 ---
 
@@ -33,6 +33,8 @@ Version **2.42.0** · 170 tools · 72 MCP prompts · 20 automation hooks
 - [MCP Prompts](#mcp-prompts)
 - [Automation Hooks](#automation-hooks)
 - [Headless / CI Mode](#headless--ci-mode)
+- [Connectors](#connectors)
+- [Model Support](#model-support)
 
 ---
 
@@ -726,10 +728,80 @@ Strictly bounded: 12h window, top 5, 80 chars per summary, 2 KB total byte cap. 
 |---|---|---|
 | `(GH-\|#)?N` (1–5 digits) | `issue` | `#42`, `GH-42`, `42` |
 | `PR-N`, `pull/N`, `pr/N`, `#PRN` | `pull_request` | `PR-7`, `pull/7` |
+| `TEAM-N` (2+ uppercase letters + digits) | `linear_issue` | `LIN-42`, `TEAM-123` |
+| Linear URL (`linear.app/.../issue/ID`) | `linear_issue` | full Linear issue URL |
 | 7–40 hex chars | `commit` | `abc1234`, full SHA |
 | else | `unknown` (warning) | |
 
 Failure modes never throw — the returned `{sources, warnings}` tells the caller what was and wasn't available.
+
+---
+
+## Connectors
+
+Connectors give Patchwork agents authenticated access to external services. Token stored at `~/.patchwork/tokens/<id>.json` (mode 0600). Managed from the dashboard **Connections** page or via HTTP routes.
+
+### Supported connectors
+
+| Connector | Auth | Token env var | MCP tool(s) | Recipe step(s) |
+|---|---|---|---|---|
+| Gmail | OAuth 2.0 (refresh token) | — | — | `gmail.fetch_unread`, `gmail.search`, `gmail.fetch_thread` |
+| GitHub | `gh` CLI auth | — | — | `github.list_issues`, `github.list_prs` |
+| Sentry | Personal auth token | `SENTRY_AUTH_TOKEN` | `fetchSentryIssue` | — |
+| Linear | Personal API key | `LINEAR_API_KEY` | `fetchLinearIssue` | `linear.list_issues` |
+
+### HTTP routes
+
+All connectors share the same route shape:
+
+| Route | Purpose |
+|---|---|
+| `GET /connections` | List status of all connectors (`id`, `status`, `lastSync`) |
+| `POST /connections/<id>/connect` | Store + verify credentials |
+| `POST /connections/<id>/test` | Re-verify stored credentials |
+| `DELETE /connections/<id>` | Revoke + delete stored credentials |
+
+### Sentry connector
+
+Requires a Sentry **personal auth token** with `event:read`, `org:read`, `project:read` scopes.
+
+```bash
+curl -X POST http://localhost:<port>/connections/sentry/connect \
+  -H "Content-Type: application/json" \
+  -d '{"auth_token": "sntryu_...", "org": "my-org-slug"}'
+```
+
+The `org` field is optional but required for org-scoped issue resolution. Without it, only public issue endpoints are used.
+
+**`fetchSentryIssue(issueId)`** — fetches a Sentry issue + latest event, converts the stack trace to Node.js format, then pipes through `enrichStackTrace` for per-frame git blame. Returns: `issueId`, `title`, `stackTrace`, `frames`, `topSuspect`, `confidence`, `sentryConnected`.
+
+Accepts a numeric ID (`"12345"`) or a full Sentry issue URL.
+
+### Linear connector
+
+Requires a Linear **personal API key** from `linear.app/settings/api`.
+
+```bash
+curl -X POST http://localhost:<port>/connections/linear/connect \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "lin_api_..."}'
+```
+
+On connect, the workspace slug is resolved automatically from the token and stored alongside it.
+
+**`fetchLinearIssue(issueId)`** — fetches a Linear issue by identifier or URL. Returns: `id`, `identifier`, `title`, `description`, `state`, `assignee`, `priority`, `priorityLabel`, `url`, `team`, `labels`, `createdAt`, `updatedAt`, `linearConnected`.
+
+**`linear.list_issues` recipe step** — queries issues assigned to the authenticated user. Parameters:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `assignee` | `"@me"` | `"@me"` for current user |
+| `state` | `"started,unstarted"` | Comma-separated Linear state types |
+| `team` | — | Team key filter (e.g. `"LIN"`) |
+| `max` | `20` | Max results |
+| `into` | — | Context key for downstream steps |
+
+**`ctxGetTaskContext` integration** — Linear issue refs (`LIN-42`, `TEAM-123`, or a full Linear URL) are resolved automatically. Response includes a `linearIssue` field with the full issue payload.
 
 ---
 
@@ -739,19 +811,35 @@ Failure modes never throw — the returned `{sources, warnings}` tells the calle
 
 No. Patchwork is model-agnostic by design — that's one of its core differentiators.
 
-### Supported models (via `ModelAdapter`)
+### Provider drivers
 
-| Provider | Models |
+The `--claude-driver` flag selects the provider backend for subprocess orchestration tasks:
+
+| Flag value | Provider | Auth | Subscription support |
+|---|---|---|---|
+| `subprocess` | Claude (default) | Claude Code CLI auth | Yes — Claude Max, Pro |
+| `api` | Claude | `ANTHROPIC_API_KEY` | No |
+| `gemini` | Google Gemini | `gemini auth login` CLI | Yes — Google account |
+| `openai` | OpenAI | `OPENAI_API_KEY` | No |
+| `grok` | xAI Grok | `XAI_API_KEY` | No |
+| `none` | — | — | Orchestration disabled |
+
+**Subscription vs API key:** `subprocess` and `gemini` drivers spawn the provider's CLI, which handles OAuth/subscription auth locally. No API key required if you have an active subscription. `api`, `openai`, and `grok` always require an API key.
+
+**Default model per driver:**
+
+| Driver | Default model |
 |---|---|
-| Anthropic | Claude (all tiers) |
-| OpenAI | GPT-4o, GPT-4, etc. |
-| Google | Gemini |
-| xAI | Grok |
-| Ollama (local) | Llama, Mistral, Qwen, and any locally-hosted model |
+| `subprocess` / `api` | `claude-sonnet-4-6` |
+| `gemini` | `gemini-2.5-flash` |
+| `openai` | `gpt-4o` |
+| `grok` | `grok-2-latest` |
+
+Override with `--model` or per-recipe `model:` field.
 
 ### How model routing works
 
-Each recipe or task specifies which model to use. Models can be mixed within a single workflow — for example: Claude drafts a sensitive email, a cheaper OpenAI model categorizes receipts, and Ollama handles anything that shouldn't leave the machine.
+Each recipe or task specifies which model to use. Models can be mixed within a single workflow — for example: Claude drafts a sensitive email, a cheaper OpenAI model categorizes receipts, and Gemini handles anything that shouldn't leave the Google ecosystem.
 
 ### What is Claude-specific
 
@@ -762,4 +850,4 @@ Each recipe or task specifies which model to use. Models can be mixed within a s
 
 The bridge's orchestration layer requires Claude Code CLI. The work each recipe does — the actual model calls — can be routed to any supported provider.
 
-**Summary:** Claude is the engine room, but recipes, outputs, and model choices are provider-neutral. If you only have an OpenAI key you can still run most recipes; you'd be missing the deep IDE integration that the bridge provides, but the model layer itself is not locked to Anthropic.
+**Summary:** Claude is the engine room, but recipes, outputs, and model choices are provider-neutral. If you only have an OpenAI key or a Gemini subscription you can still run most recipes; you'd be missing the deep IDE integration that the bridge provides, but the model layer itself is not locked to Anthropic.
