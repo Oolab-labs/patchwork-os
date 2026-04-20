@@ -257,6 +257,15 @@ export async function startAuthorize(
       `${config.vendor}: client_id not configured (set PATCHWORK_${config.vendor.toUpperCase()}_CLIENT_ID)`,
     );
   }
+  if (
+    !config.useDynamicRegistration &&
+    config.preregisteredClientSecret === undefined &&
+    config.vendor === "github"
+  ) {
+    throw new Error(
+      "github: client_secret not configured (set PATCHWORK_GITHUB_CLIENT_SECRET)",
+    );
+  }
 
   const verifier = genVerifier();
   const state = base64url(crypto.randomBytes(24));

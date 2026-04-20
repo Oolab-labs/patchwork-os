@@ -169,7 +169,9 @@ export async function listIssues(
     >(res);
     if (Array.isArray(parsed)) return parsed;
     return parsed.issues ?? parsed.nodes ?? [];
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("not connected"))
+      throw err;
     return [];
   }
 }

@@ -80,7 +80,7 @@ export function createLinearIssueTool() {
           team: "",
           linearConnected: false,
           error:
-            "Linear not connected. POST /connections/linear/connect first.",
+            "Linear not connected. GET /connections/linear/authorize first.",
         });
       }
 
