@@ -57,19 +57,39 @@ function gh(args: string[]): { ok: boolean; stdout: string; stderr: string } {
 }
 
 export function getStatus(): { connected: boolean; user?: string } {
-  const r = gh(["auth", "status", "--json", "loggedInAccounts"]);
-  if (!r.ok) return { connected: false };
-  try {
-    const data = JSON.parse(r.stdout) as {
-      loggedInAccounts?: Array<{ user: string }>;
-    };
-    const user = data.loggedInAccounts?.[0]?.user;
-    return { connected: true, user };
-  } catch {
-    // gh auth status without --json on older versions
-    const match = /Logged in to .+ account (\S+)/.exec(r.stdout + r.stderr);
-    return { connected: true, user: match?.[1] };
+  // Try --json hosts (gh ≥ 2.40); fall back to --json loggedInAccounts (older)
+  // then to plain text parsing for very old versions.
+  const r = gh(["auth", "status", "--json", "hosts"]);
+  if (r.ok) {
+    try {
+      const data = JSON.parse(r.stdout) as {
+        hosts?: Record<string, Array<{ login?: string; active?: boolean }>>;
+      };
+      const accounts = Object.values(data.hosts ?? {}).flat();
+      const active = accounts.find((a) => a.active) ?? accounts[0];
+      return { connected: accounts.length > 0, user: active?.login };
+    } catch {
+      return { connected: true };
+    }
   }
+  // Older gh: loggedInAccounts field
+  const r2 = gh(["auth", "status", "--json", "loggedInAccounts"]);
+  if (r2.ok) {
+    try {
+      const data = JSON.parse(r2.stdout) as {
+        loggedInAccounts?: Array<{ user: string }>;
+      };
+      const user = data.loggedInAccounts?.[0]?.user;
+      return { connected: true, user };
+    } catch {
+      return { connected: true };
+    }
+  }
+  // Plain text fallback
+  const r3 = gh(["auth", "status"]);
+  if (!r3.ok) return { connected: false };
+  const match = /Logged in to .+ account (\S+)/.exec(r3.stdout + r3.stderr);
+  return { connected: true, user: match?.[1] };
 }
 
 export function listIssues(opts: ListIssuesOpts = {}): GitHubIssue[] {
