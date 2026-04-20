@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+type FilterCategory = "All" | "Morning Briefs" | "Recipe Outputs" | "Agent Reports";
+
 // ------------------------------------------------------------------ types
 
 interface InboxItem {
@@ -193,6 +195,15 @@ function Spinner() {
 
 // ------------------------------------------------------------------ page
 
+const FILTER_CATEGORIES: FilterCategory[] = ["All", "Morning Briefs", "Recipe Outputs", "Agent Reports"];
+
+function categoryForItem(name: string): Exclude<FilterCategory, "All"> {
+  const lower = name.toLowerCase();
+  if (lower.includes("morning-brief")) return "Morning Briefs";
+  if (lower.includes("recipe") || lower.includes("ctx-loop") || lower.includes("sentry")) return "Recipe Outputs";
+  return "Agent Reports";
+}
+
 export default function InboxPage() {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -200,7 +211,9 @@ export default function InboxPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [err, setErr] = useState<string | undefined>();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<FilterCategory>("All");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const detailRef = useRef<HTMLDivElement | null>(null);
 
   const selectedRef = useRef<InboxDetail | null>(null);
   selectedRef.current = selected;
@@ -235,6 +248,56 @@ export default function InboxPage() {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [fetchList]);
+
+  useEffect(() => {
+    const container = detailRef.current;
+    if (!container || !selected) return;
+
+    const h2s = container.querySelectorAll<HTMLElement>("h2");
+    const cleanup: (() => void)[] = [];
+
+    for (const h2 of h2s) {
+      if (h2.querySelector(".copy-section-btn")) continue;
+      const btn = document.createElement("button");
+      btn.className = "copy-section-btn";
+      btn.type = "button";
+      btn.textContent = "Copy";
+
+      let next = h2.nextElementSibling;
+      const parts: string[] = [];
+      while (next && next.tagName !== "H2" && next.tagName !== "HR") {
+        parts.push(next.textContent ?? "");
+        next = next.nextElementSibling;
+      }
+      const sectionText = parts.join("\n").trim();
+
+      const handler = () => {
+        void navigator.clipboard.writeText(sectionText).then(() => {
+          btn.textContent = "✓ Copied";
+          btn.classList.add("copied");
+          setTimeout(() => {
+            btn.textContent = "Copy";
+            btn.classList.remove("copied");
+          }, 2000);
+        });
+      };
+      btn.addEventListener("click", handler);
+      h2.appendChild(btn);
+      cleanup.push(() => btn.removeEventListener("click", handler));
+    }
+
+    return () => {
+      for (const fn of cleanup) fn();
+      for (const h2 of h2s) {
+        h2.querySelector(".copy-section-btn")?.remove();
+      }
+    };
+  }, [selected]);
+
+  const filteredItems =
+    activeFilter === "All"
+      ? items
+      : items.filter((i) => categoryForItem(i.name) === activeFilter);
 
   async function selectItem(name: string) {
     if (selected?.name === name) {
@@ -363,7 +426,7 @@ export default function InboxPage() {
                       Inbox
                     </span>
                     <span style={{ fontSize: 11, color: "var(--fg-3)" }}>
-                      {items.length} {items.length === 1 ? "item" : "items"}
+                      {filteredItems.length} {filteredItems.length === 1 ? "item" : "items"}
                     </span>
                   </>
                 )}
@@ -387,8 +450,24 @@ export default function InboxPage() {
                 </button>
               </div>
 
+              {/* Filter chips */}
+              {sidebarOpen && (
+                <div className="filter-chips" style={{ padding: "8px 16px 0" }}>
+                  {FILTER_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`filter-chip${activeFilter === cat ? " active" : ""}`}
+                      onClick={() => setActiveFilter(cat)}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Items */}
-              {sidebarOpen && items.map((item) => {
+              {sidebarOpen && filteredItems.map((item) => {
                 const isActive = selected?.name === item.name;
                 const title = slugToTitle(item.name);
                 const shortDate = slugToShortDate(item.name);
@@ -546,6 +625,7 @@ export default function InboxPage() {
                   </div>
                   {/* Rendered markdown */}
                   <div
+                    ref={detailRef}
                     // eslint-disable-next-line react/no-danger
                     dangerouslySetInnerHTML={{
                       __html: renderMarkdown(selected.content),

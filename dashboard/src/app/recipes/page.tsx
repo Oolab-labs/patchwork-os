@@ -34,6 +34,13 @@ interface Recipe {
   path?: string;
   hasPermissions?: boolean;
   vars?: RecipeVar[];
+  lastRun?: number;
+}
+
+interface RunRecord {
+  recipe: string;
+  startedAt: number;
+  status: string;
 }
 
 interface RunModalState {
@@ -219,30 +226,48 @@ function RunModal({
 
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
+  const [runMap, setRunMap] = useState<Map<string, RunRecord>>(new Map());
   const [err, setErr] = useState<string>();
   const [unsupported, setUnsupported] = useState(false);
   const [running, setRunning] = useState<Record<string, string>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState<RunModalState | null>(null);
   const [modalRunning, setModalRunning] = useState(false);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch("/api/bridge/recipes");
-        if (res.status === 404) {
+        const [recipesRes, runsRes] = await Promise.all([
+          fetch("/api/bridge/recipes"),
+          fetch("/api/bridge/runs").catch(() => null),
+        ]);
+        if (recipesRes.status === 404) {
           setUnsupported(true);
           setRecipes([]);
           return;
         }
-        if (!res.ok) throw new Error(`/recipes ${res.status}`);
-        const data = await res.json();
+        if (!recipesRes.ok) throw new Error(`/recipes ${recipesRes.status}`);
+        const data = await recipesRes.json();
         const list: Recipe[] = Array.isArray(data)
           ? data
           : Array.isArray(data?.recipes)
             ? data.recipes
             : [];
         setRecipes(list);
+
+        if (runsRes?.ok) {
+          const runsData = (await runsRes.json()) as { runs?: RunRecord[] };
+          const runs = runsData.runs ?? [];
+          const map = new Map<string, RunRecord>();
+          for (const run of runs) {
+            const existing = map.get(run.recipe);
+            if (!existing || run.startedAt > existing.startedAt) {
+              map.set(run.recipe, run);
+            }
+          }
+          setRunMap(map);
+        }
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
@@ -310,6 +335,20 @@ export default function RecipesPage() {
     await executeRun(name, vars);
   }
 
+  const filteredRecipes = (recipes ?? []).filter((r) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return r.name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q);
+  });
+
+  function recipeStatus(r: Recipe): "idle" | "running" | "failed" {
+    const run = runMap.get(r.name);
+    if (!run) return "idle";
+    if (run.status === "running") return "running";
+    if (run.status === "error" || run.status === "failed") return "failed";
+    return "idle";
+  }
+
   return (
     <section>
       {modal && (
@@ -332,12 +371,23 @@ export default function RecipesPage() {
           style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}
         >
           {recipes && (
-            <span className="pill muted">{recipes.length} installed</span>
+            <span className="pill muted">{filteredRecipes.length} recipes</span>
           )}
           <Link href="/recipes/new" className="btn">
             New recipe
           </Link>
         </div>
+      </div>
+
+      <div style={{ marginBottom: "var(--s-4)" }}>
+        <input
+          type="search"
+          className="input"
+          placeholder="Search recipes…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ maxWidth: 320 }}
+        />
       </div>
 
       {err && <div className="alert-err">Unreachable: {err}</div>}
@@ -367,12 +417,16 @@ export default function RecipesPage() {
                 <th style={{ width: 100 }}>Trigger</th>
                 <th style={{ width: 70 }}>Steps</th>
                 <th>Description</th>
+                <th style={{ width: 100 }}>Last Run</th>
+                <th style={{ width: 90 }}>Status</th>
                 <th style={{ width: 220 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {recipes.map((r, i) => {
+              {filteredRecipes.map((r, i) => {
                 const state = running[r.name];
+                const lastRun = runMap.get(r.name);
+                const status = recipeStatus(r);
                 return (
                   <React.Fragment key={r.id ?? r.name ?? i}>
                     <tr>
@@ -410,6 +464,18 @@ export default function RecipesPage() {
                       <td>
                         {r.description ?? <span className="muted">—</span>}
                       </td>
+                      <td className="muted" style={{ fontSize: 12 }}>
+                        {lastRun ? relTime(lastRun.startedAt) : "—"}
+                      </td>
+                      <td>
+                        {status === "running" ? (
+                          <span className="pill warn">Running</span>
+                        ) : status === "failed" ? (
+                          <span className="pill err">Failed</span>
+                        ) : (
+                          <span className="pill muted">Idle</span>
+                        )}
+                      </td>
                       <td>
                         <div
                           style={{
@@ -439,7 +505,7 @@ export default function RecipesPage() {
                     {expanded.has(r.name) && (
                       <tr key={`${r.id ?? r.name ?? i}-detail`}>
                         <td
-                          colSpan={5}
+                          colSpan={7}
                           style={{
                             padding: "8px 16px 16px",
                             background: "var(--bg-2)",

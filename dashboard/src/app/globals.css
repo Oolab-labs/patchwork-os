@@ -735,6 +735,104 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* -------------------------------------------------- animations */
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.4; }
+}
+
+/* -------------------------------------------------- nav hover glow */
+
+.app-nav-link:hover:not(.is-active) {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* -------------------------------------------------- decision rows */
+
+.decision-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  padding: 8px 12px 8px 0;
+  border-radius: var(--r-2);
+  text-decoration: none;
+  color: inherit;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-0);
+  border-top: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+  transition: background 120ms;
+}
+.decision-row:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+.decision-row-accent { border-left-color: var(--accent); }
+.decision-row-info   { border-left-color: var(--info); }
+.decision-row-warn   { border-left-color: var(--warn); }
+.decision-row-err    { border-left-color: var(--err); }
+
+/* -------------------------------------------------- filter chips */
+
+.filter-chips {
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-3);
+}
+.filter-chip {
+  padding: 3px 10px;
+  border-radius: var(--r-full);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border-default);
+  background: var(--bg-2);
+  color: var(--fg-2);
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+.filter-chip:hover {
+  color: var(--fg-1);
+  border-color: var(--border-strong);
+}
+.filter-chip.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* -------------------------------------------------- copy section button */
+
+.copy-section-btn {
+  margin-left: var(--s-2);
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-1);
+  color: var(--fg-3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms;
+  vertical-align: middle;
+}
+.copy-section-btn:hover {
+  color: var(--fg-1);
+  border-color: var(--border-strong);
+}
+.copy-section-btn.copied {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+h2:hover .copy-section-btn,
+h2 .copy-section-btn:focus {
+  opacity: 1;
+}
+
 /* -------------------------------------------------- responsive */
 
 @media (max-width: 800px) {
