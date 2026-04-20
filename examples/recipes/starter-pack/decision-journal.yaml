@@ -1,0 +1,62 @@
+# Decision journal: capture a decision (context/options/choice/expected outcome); schedule 30-day review.
+name: decision-journal
+version: "1.0.0"
+description: >
+  Log a decision you're making right now. Captures context, options considered,
+  what you chose, and what you expect to happen. Schedules a 30-day and 90-day
+  review to check if you were right — builds calibration over time.
+
+trigger:
+  type: manual
+  inputs:
+    - name: decision
+      type: string
+      required: true
+    - name: stakes
+      type: enum
+      values: ["low", "medium", "high"]
+      default: "medium"
+
+context:
+  - type: env
+    keys: [JOURNAL_PATH]   # default ~/.patchwork/decisions/
+
+steps:
+  - id: elicit
+    agent: true
+    prompt: |
+      User is deciding: {{decision}} (stakes: {{stakes}}).
+      Ask max 4 questions (one at a time) to capture:
+        - Context: what situation triggered this?
+        - Options: what alternatives did they consider?
+        - Choice: what are they picking, and why?
+        - Expected outcome: what does success look like in 30/90 days?
+      Keep questions short. No advice.
+    output: captured
+    risk: low
+    interactive: true
+
+  - id: write_entry
+    agent: false
+    tool: file.write
+    params:
+      path: "{{JOURNAL_PATH}}/{{YYYY-MM-DD}}-{{decision.slug}}.md"
+      content: "{{captured}}"
+    risk: low
+
+  - id: schedule_reviews
+    agent: false
+    tool: scheduler.enqueue
+    params:
+      tasks:
+        - at: "+30d"
+          recipe: "decision-review"
+          args: { entry_path: "{{JOURNAL_PATH}}/{{YYYY-MM-DD}}-{{decision.slug}}.md" }
+        - at: "+90d"
+          recipe: "decision-review"
+          args: { entry_path: "{{JOURNAL_PATH}}/{{YYYY-MM-DD}}-{{decision.slug}}.md" }
+    risk: low
+
+on_error:
+  notify: true
+  retry: 1

@@ -49,6 +49,8 @@ import { createEnrichCommitTool } from "./enrichCommit.js";
 import { createEnrichStackTraceTool } from "./enrichStackTrace.js";
 import { createExplainDiagnosticTool } from "./explainDiagnostic.js";
 import { createExplainSymbolTool } from "./explainSymbol.js";
+import { createFetchLinearIssueTool } from "./fetchLinearIssue.js";
+import { createFetchSentryIssueTool } from "./fetchSentryIssue.js";
 import {
   createCreateFileTool,
   createDeleteFileTool,
@@ -655,6 +657,8 @@ export function registerAllTools(
     createGetPRTemplateTool(workspace),
     createEnrichCommitTool(workspace, commitIssueLinkLog),
     createEnrichStackTraceTool(workspace),
+    createFetchSentryIssueTool(workspace),
+    createFetchLinearIssueTool(),
     createCtxQueryTracesTool({
       activityLog: activityLog ?? null,
       commitIssueLinkLog: commitIssueLinkLog ?? null,

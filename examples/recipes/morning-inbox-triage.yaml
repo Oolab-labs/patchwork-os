@@ -1,0 +1,104 @@
+name: morning-inbox-triage
+version: "1.0.0"
+description: >
+  Overnight: pull inbox, cluster threads, summarize what matters, draft replies.
+  Morning: one screen, one tap to approve. Everything else auto-archived or snoozed.
+
+trigger:
+  type: cron
+  # 04:30 local — done before you wake, fresh when you open laptop
+  schedule: "30 4 * * *"
+
+context:
+  - type: env
+    keys:
+      - INBOX_PROVIDER      # "gmail" | "imap" | "outlook"
+      - INBOX_OAUTH_TOKEN
+      - USER_NAME
+      - USER_ROLE
+  - type: file
+    path: ~/.patchwork/inbox-rules.md   # aspirational: user-written "what matters to me"
+
+steps:
+  - id: fetch
+    agent: false
+    tool: inbox.fetch
+    params:
+      since: "last_run"
+      max: 500
+      folders: ["INBOX"]
+    output: threads
+    risk: low
+
+  - id: cluster
+    agent: true
+    prompt: |
+      Cluster {{threads}} into buckets:
+        - URGENT (named-person ask, deadline <48h, from known-important sender)
+        - REPLY  (personal, expects response, not urgent)
+        - FYI    (newsletter, notification, receipt — read-only)
+        - TRASH  (promo, spam, expired)
+      Use ~/.patchwork/inbox-rules.md as the source of truth for what "matters".
+      Return JSON: { urgent: Thread[], reply: Thread[], fyi: Thread[], trash: Thread[] }
+    tools: [inbox.getThread]
+    output: buckets
+    risk: low
+
+  - id: summarize
+    agent: true
+    prompt: |
+      For {{buckets.urgent}} and {{buckets.reply}}, write:
+        - 1-sentence TL;DR
+        - Who + what they want
+        - Suggested action (reply / schedule / delegate / ignore)
+      Keep total output under 400 words. No hedging.
+    output: digest
+    risk: low
+
+  - id: draft_replies
+    agent: true
+    prompt: |
+      For each thread in {{buckets.reply}}, draft a reply in {{USER_NAME}}'s voice.
+      Match prior thread tone. Max 4 sentences. Do NOT send — stage for approval.
+    tools: [inbox.draftReply]
+    output: drafts
+    risk: medium
+
+  - id: auto_archive
+    agent: false
+    tool: inbox.archive
+    params:
+      threads: "{{buckets.trash}}"
+    risk: medium
+
+  - id: present
+    agent: false
+    tool: dashboard.render
+    params:
+      title: "Morning inbox — {{digest.length}} items need you"
+      sections:
+        - heading: "Urgent"
+          items: "{{buckets.urgent}}"
+          approvals: true
+        - heading: "Drafts ready to send"
+          items: "{{drafts}}"
+          approvals: true
+        - heading: "Handled overnight"
+          items: "{{buckets.trash}}"
+          collapsed: true
+    output: dashboard_url
+    risk: low
+
+  - id: notify
+    agent: false
+    tool: notify.push
+    params:
+      title: "Inbox triaged"
+      body: "{{digest.length}} need you. {{drafts.length}} drafts ready. {{buckets.trash.length}} auto-archived."
+      url: "{{dashboard_url}}"
+    risk: low
+
+on_error:
+  notify: true
+  retry: 1
+  fallback: log_only

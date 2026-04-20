@@ -730,3 +730,36 @@ Strictly bounded: 12h window, top 5, 80 chars per summary, 2 KB total byte cap. 
 | else | `unknown` (warning) | |
 
 Failure modes never throw — the returned `{sources, warnings}` tells the caller what was and wasn't available.
+
+---
+
+## Model Support
+
+**Is Patchwork Claude-only?**
+
+No. Patchwork is model-agnostic by design — that's one of its core differentiators.
+
+### Supported models (via `ModelAdapter`)
+
+| Provider | Models |
+|---|---|
+| Anthropic | Claude (all tiers) |
+| OpenAI | GPT-4o, GPT-4, etc. |
+| Google | Gemini |
+| xAI | Grok |
+| Ollama (local) | Llama, Mistral, Qwen, and any locally-hosted model |
+
+### How model routing works
+
+Each recipe or task specifies which model to use. Models can be mixed within a single workflow — for example: Claude drafts a sensitive email, a cheaper OpenAI model categorizes receipts, and Ollama handles anything that shouldn't leave the machine.
+
+### What is Claude-specific
+
+| Component | Dependency |
+|---|---|
+| `claude-ide-bridge` CLI | Uses Claude Code as the subprocess orchestration driver |
+| MCP protocol | Pioneered by Anthropic, now an open standard — other tools are adopting it |
+
+The bridge's orchestration layer requires Claude Code CLI. The work each recipe does — the actual model calls — can be routed to any supported provider.
+
+**Summary:** Claude is the engine room, but recipes, outputs, and model choices are provider-neutral. If you only have an OpenAI key you can still run most recipes; you'd be missing the deep IDE integration that the bridge provides, but the model layer itself is not locked to Anthropic.

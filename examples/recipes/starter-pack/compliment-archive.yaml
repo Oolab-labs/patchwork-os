@@ -1,0 +1,56 @@
+# Compliment archive: capture genuine praise from messages/reviews, save to a file you can re-read on bad days.
+name: compliment-archive
+version: "1.0.0"
+description: >
+  Passively collects real compliments — from emails, messages, reviews, PR
+  comments — and saves them with source + date. When you type "show me the
+  good stuff" or on rough days detected from calendar, surfaces 3 at random.
+# requires: gmail-mcp, imessage-mcp (optional), slack-mcp (optional)
+
+trigger:
+  type: event
+  on: inbox.new_message
+  # Also fires manual: `patchwork run compliment-archive --show`
+
+context:
+  - type: env
+    keys: [USER_NAME, ARCHIVE_PATH]   # default ~/.patchwork/good-stuff.md
+
+steps:
+  - id: detect
+    agent: true
+    prompt: |
+      Is this message a genuine compliment or expression of appreciation for
+      {{USER_NAME}}? Reject: transactional thanks ("thanks for sending"),
+      form letters, auto-replies. Accept: specific praise, gratitude with
+      context, unsolicited positive feedback.
+      Return JSON: { is_compliment: bool, excerpt, sender, context } or null.
+      Input: {{event.message}}
+    output: hit
+    risk: low
+
+  - id: append
+    agent: false
+    tool: file.append
+    params:
+      path: "{{ARCHIVE_PATH}}"
+      line: |
+        ---
+        {{YYYY-MM-DD}} — from {{hit.sender}}
+        > {{hit.excerpt}}
+        ({{hit.context}})
+    skip_if: "{{hit == null || !hit.is_compliment}}"
+    risk: low
+
+  - id: confirm_silent
+    agent: false
+    tool: log.info
+    params:
+      message: "Archived compliment from {{hit.sender}}"
+    skip_if: "{{hit == null}}"
+    risk: low
+
+on_error:
+  notify: false
+  retry: 1
+  fallback: log_only

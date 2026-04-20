@@ -1,0 +1,61 @@
+# Subscription watchdog: detect recurring charges, flag unused/price-hiked, draft cancel messages.
+name: subscription-watchdog
+version: "1.0.0"
+description: >
+  Monthly audit of recurring charges. Detects subs you haven't used in 60 days,
+  price hikes, and duplicate services. Drafts cancellation emails/links for
+  approval. Always shows total monthly burn at top.
+# requires: gmail-mcp (receipts), optionally plaid-mcp for bank feed
+
+trigger:
+  type: cron
+  schedule: "0 10 1 * *"   # 1st of month, 10:00
+
+context:
+  - type: env
+    keys: [LEDGER_PATH, INBOX_PROVIDER]
+
+steps:
+  - id: detect_subs
+    agent: true
+    prompt: |
+      From {{LEDGER_PATH}} last 90 days, find all recurring charges
+      (same vendor, similar amount, monthly or annual cadence).
+      Return JSON: { vendor, amount, cadence, first_seen, last_seen, trend }
+      where trend = "steady" | "hiked" | "first-time".
+    output: subs
+    risk: low
+
+  - id: usage_check
+    agent: true
+    prompt: |
+      For each sub in {{subs}}, try to detect recent usage:
+        - App on device? Recent login email? Mentioned in notes/calendar?
+      Mark each as: "used", "unused>60d", "unknown".
+    tools: [notes.search, inbox.search]
+    output: usage
+    risk: low
+
+  - id: triage
+    agent: true
+    prompt: |
+      Combine {{subs}} + {{usage}}. Surface:
+        - CANCEL: unused>60d
+        - REVIEW: price hiked >15%
+        - DUPLICATE: two subs, same category
+      Total monthly burn. For each CANCEL, draft message or find cancel URL.
+    output: report
+    risk: medium
+
+  - id: present
+    agent: false
+    tool: dashboard.render
+    params:
+      title: "Subs: ${{report.monthly_total}}/mo — {{report.cancel.length}} to cut"
+      body: "{{report}}"
+      approvals: true
+    risk: low
+
+on_error:
+  notify: true
+  retry: 1

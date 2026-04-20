@@ -8,9 +8,16 @@ vi.mock("../utils.js", async (importOriginal) => {
   return { ...actual, execSafe: vi.fn() };
 });
 
+vi.mock("../../connectors/linear.js", () => ({
+  fetchIssue: vi.fn(),
+}));
+
 import { CommitIssueLinkLog } from "../../commitIssueLinkLog.js";
+import { fetchIssue } from "../../connectors/linear.js";
 import { createCtxGetTaskContextTool } from "../ctxGetTaskContext.js";
 import { execSafe } from "../utils.js";
+
+const mockFetchLinear = vi.mocked(fetchIssue);
 
 const mockExec = vi.mocked(execSafe);
 
@@ -244,6 +251,108 @@ describe("ctxGetTaskContext — commit flow", () => {
     );
     expect(res.commit).toBeNull();
     expect(res.warnings.join(" ")).toMatch(/not found/);
+  });
+});
+
+const MOCK_LINEAR_ISSUE = {
+  id: "abc123",
+  identifier: "LIN-42",
+  title: "Fix null pointer in auth flow",
+  description: "Crashes on login.",
+  state: { name: "In Progress", type: "started" },
+  assignee: { name: "Waweru", email: "w@test.com" },
+  priority: 2,
+  priorityLabel: "High",
+  url: "https://linear.app/patchwork-os/issue/LIN-42",
+  team: { name: "Patchwork", key: "LIN" },
+  labels: { nodes: [{ name: "bug" }] },
+  createdAt: "2026-04-01T00:00:00.000Z",
+  updatedAt: "2026-04-20T00:00:00.000Z",
+};
+
+describe("ctxGetTaskContext — Linear issue flow", () => {
+  beforeEach(() => mockFetchLinear.mockReset());
+
+  it("detects LIN-42 as linear_issue and returns structured data", async () => {
+    mockFetchLinear.mockResolvedValueOnce(MOCK_LINEAR_ISSUE);
+    mockExec
+      .mockResolvedValueOnce(fail("no gh"))
+      .mockResolvedValueOnce(fail("no git"));
+
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "LIN-42",
+      }),
+    );
+    expect(res.refType).toBe("linear_issue");
+    expect(res.linearIssue.identifier).toBe("LIN-42");
+    expect(res.linearIssue.title).toBe("Fix null pointer in auth flow");
+    expect(res.linearIssue.labels).toEqual(["bug"]);
+    expect(res.issue).toBeNull();
+  });
+
+  it("detects TEAM-123 pattern as linear_issue", async () => {
+    mockFetchLinear.mockResolvedValueOnce({
+      ...MOCK_LINEAR_ISSUE,
+      identifier: "TEAM-123",
+    });
+    mockExec
+      .mockResolvedValueOnce(fail("no gh"))
+      .mockResolvedValueOnce(fail("no git"));
+
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "TEAM-123",
+      }),
+    );
+    expect(res.refType).toBe("linear_issue");
+  });
+
+  it("detects Linear URL as linear_issue", async () => {
+    mockFetchLinear.mockResolvedValueOnce(MOCK_LINEAR_ISSUE);
+    mockExec
+      .mockResolvedValueOnce(fail("no gh"))
+      .mockResolvedValueOnce(fail("no git"));
+
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "https://linear.app/patchwork-os/issue/LIN-42/fix-null-pointer",
+      }),
+    );
+    expect(res.refType).toBe("linear_issue");
+    expect(res.linearIssue.identifier).toBe("LIN-42");
+  });
+
+  it("adds warning and returns null linearIssue when not connected", async () => {
+    mockFetchLinear.mockRejectedValueOnce(
+      new Error(
+        "Linear not connected. POST /connections/linear/connect first.",
+      ),
+    );
+    mockExec
+      .mockResolvedValueOnce(fail("no gh"))
+      .mockResolvedValueOnce(fail("no git"));
+
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "LIN-42",
+      }),
+    );
+    expect(res.linearIssue).toBeNull();
+    expect(res.warnings.join(" ")).toMatch(/Linear/);
+  });
+
+  it("does not treat GH-42 as linear_issue", async () => {
+    mockExec
+      .mockResolvedValueOnce(fail("no gh"))
+      .mockResolvedValueOnce(fail("no git"));
+
+    const res = parse(
+      await createCtxGetTaskContextTool({ workspace: WS }).handler({
+        ref: "GH-42",
+      }),
+    );
+    expect(res.refType).toBe("issue");
   });
 });
 

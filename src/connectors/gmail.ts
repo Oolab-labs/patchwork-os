@@ -206,7 +206,11 @@ export interface ConnectorHandlerResult {
 export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
   const { getStatus: getGitHubStatus } = await import("./github.js");
+  const { getStatus: getSentryStatus } = await import("./sentry.js");
+  const { getStatus: getLinearStatus } = await import("./linear.js");
   const gh = getGitHubStatus();
+  const sentry = getSentryStatus();
+  const linear = getLinearStatus();
   const connectors: ConnectorStatus[] = [
     {
       id: "gmail",
@@ -217,6 +221,16 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
       id: "github",
       status: gh.connected ? "connected" : "disconnected",
       lastSync: gh.connected ? new Date().toISOString() : undefined,
+    },
+    {
+      id: "sentry",
+      status: sentry.status,
+      lastSync: sentry.lastSync,
+    },
+    {
+      id: "linear",
+      status: linear.status,
+      lastSync: linear.lastSync,
     },
   ];
   return {

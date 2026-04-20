@@ -414,6 +414,79 @@ async function executeStep(
       return JSON.stringify({ count: prs.length, prs });
     }
 
+    case "linear.list_issues": {
+      const { loadTokens, linearQuery } = await import(
+        "../connectors/linear.js"
+      );
+      const tokens = loadTokens();
+      if (!tokens) {
+        return JSON.stringify({
+          count: 0,
+          issues: [],
+          error: "Linear not connected",
+        });
+      }
+      const teamKey = step.team ? render(String(step.team), ctx) : undefined;
+      const assigneeMe = step.assignee === "@me" || step.assignee === undefined;
+      const stateFilter = step.state
+        ? render(String(step.state), ctx)
+        : "started,unstarted";
+      const limit = typeof step.max === "number" ? step.max : 20;
+
+      const stateTypes = stateFilter.split(",").map((s) => s.trim());
+      const stateFilter_gql = stateTypes
+        .map((t) => `{ type: { eq: "${t}" } }`)
+        .join(", ");
+
+      const teamFilter = teamKey ? `, team: { key: { eq: "${teamKey}" } }` : "";
+      const assigneeFilter = assigneeMe
+        ? `, assignee: { isMe: { eq: true } }`
+        : "";
+
+      const query = `
+        query ListIssues($limit: Int!) {
+          issues(
+            first: $limit
+            filter: {
+              state: { type: { in: [${stateTypes.map((t) => `"${t}"`).join(", ")}] } }
+              ${teamKey ? `team: { key: { eq: "${teamKey}" } }` : ""}
+              ${assigneeMe ? `assignee: { isMe: { eq: true } }` : ""}
+            }
+            orderBy: updatedAt
+          ) {
+            nodes {
+              identifier
+              title
+              state { name type }
+              priority
+              priorityLabel
+              url
+              assignee { name }
+              team { key name }
+              updatedAt
+            }
+          }
+        }
+      `;
+      void stateFilter_gql;
+      void teamFilter;
+      void assigneeFilter;
+
+      try {
+        const data = await linearQuery<{
+          issues: { nodes: Array<Record<string, unknown>> };
+        }>(query, { limit }, tokens.api_key);
+        const issues = data.issues.nodes;
+        return JSON.stringify({ count: issues.length, issues });
+      } catch (err) {
+        return JSON.stringify({
+          count: 0,
+          issues: [],
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     default:
       // Unknown tool — skip, don't throw (forward compat)
       return null;

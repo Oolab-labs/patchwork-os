@@ -941,6 +941,118 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── Sentry connector routes ──────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/sentry/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handleSentryConnect } = await import(
+              "./connectors/sentry.js"
+            );
+            let body: unknown = {};
+            try {
+              body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+            } catch {}
+            const result = await handleSentryConnect(body);
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/sentry/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleSentryTest } = await import("./connectors/sentry.js");
+          const result = await handleSentryTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/sentry" &&
+        req.method === "DELETE"
+      ) {
+        void (async () => {
+          const { handleSentryDisconnect } = await import(
+            "./connectors/sentry.js"
+          );
+          const result = handleSentryDisconnect();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
+      // ── Linear connector routes ─────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/linear/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handleLinearConnect } = await import(
+              "./connectors/linear.js"
+            );
+            let body: unknown = {};
+            try {
+              body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+            } catch {}
+            const result = await handleLinearConnect(body);
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/linear/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleLinearTest } = await import("./connectors/linear.js");
+          const result = await handleLinearTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/linear" &&
+        req.method === "DELETE"
+      ) {
+        void (async () => {
+          const { handleLinearDisconnect } = await import(
+            "./connectors/linear.js"
+          );
+          const result = handleLinearDisconnect();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
       // ── Inbox routes ────────────────────────────────────────────────────
       if (parsedUrl.pathname === "/inbox" && req.method === "GET") {
         void (async () => {

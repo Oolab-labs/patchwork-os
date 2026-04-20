@@ -1,7 +1,18 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../connectors/linear.js", () => ({
+  loadTokens: vi.fn(),
+  linearQuery: vi.fn(),
+}));
+
+import { linearQuery, loadTokens } from "../../connectors/linear.js";
+
+const mockLoadTokens = vi.mocked(loadTokens);
+const mockLinearQuery = vi.mocked(linearQuery);
+
 import {
   type FetchFn,
   listYamlRecipes,
@@ -814,5 +825,141 @@ describe("gmail-health-check recipe end-to-end", () => {
     expect(written["/tmp/gmail-health.md"]).toContain("unread-7d: 2");
     // max:1 means at most 1 result returned for unread_check
     expect(written["/tmp/gmail-health.md"]).toContain("total-unread: 1");
+  });
+});
+
+describe("linear.list_issues step", () => {
+  it("returns issues when connected", async () => {
+    mockLoadTokens.mockReturnValue({
+      api_key: "lin_api_test",
+      workspace: "patchwork-os",
+      connected_at: "2026-01-01T00:00:00.000Z",
+    });
+    mockLinearQuery.mockResolvedValue({
+      issues: {
+        nodes: [
+          {
+            identifier: "LIN-1",
+            title: "Fix auth",
+            state: { name: "In Progress", type: "started" },
+            priority: 2,
+            priorityLabel: "High",
+            url: "https://linear.app/x/issue/LIN-1",
+            assignee: { name: "Waweru" },
+            team: { key: "LIN", name: "Patchwork" },
+            updatedAt: "2026-04-20T00:00:00Z",
+          },
+          {
+            identifier: "LIN-2",
+            title: "Add tests",
+            state: { name: "Todo", type: "unstarted" },
+            priority: 3,
+            priorityLabel: "Medium",
+            url: "https://linear.app/x/issue/LIN-2",
+            assignee: { name: "Waweru" },
+            team: { key: "LIN", name: "Patchwork" },
+            updatedAt: "2026-04-19T00:00:00Z",
+          },
+        ],
+      },
+    });
+
+    const written: Record<string, string> = {};
+    await runYamlRecipe(
+      makeRecipe({
+        steps: [
+          {
+            tool: "linear.list_issues",
+            assignee: "@me",
+            max: 15,
+            into: "linear_issues",
+          },
+          {
+            tool: "file.write",
+            path: "/tmp/linear-out.md",
+            content: "{{linear_issues}}",
+          },
+        ],
+      }),
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+    );
+    const out = JSON.parse(written["/tmp/linear-out.md"] ?? "{}") as {
+      count: number;
+      issues: unknown[];
+    };
+    expect(out.count).toBe(2);
+    expect(out.issues).toHaveLength(2);
+    expect(mockLinearQuery).toHaveBeenCalledWith(
+      expect.stringContaining("issues"),
+      { limit: 15 },
+      "lin_api_test",
+    );
+  });
+
+  it("returns error payload when not connected", async () => {
+    mockLoadTokens.mockReturnValue(null);
+    const written: Record<string, string> = {};
+    await runYamlRecipe(
+      makeRecipe({
+        steps: [
+          { tool: "linear.list_issues", into: "linear_issues" },
+          {
+            tool: "file.write",
+            path: "/tmp/linear-out.md",
+            content: "{{linear_issues}}",
+          },
+        ],
+      }),
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+    );
+    const out = JSON.parse(written["/tmp/linear-out.md"] ?? "{}") as {
+      count: number;
+      error: string;
+    };
+    expect(out.count).toBe(0);
+    expect(out.error).toContain("not connected");
+  });
+
+  it("returns error payload on API failure", async () => {
+    mockLoadTokens.mockReturnValue({
+      api_key: "lin_api_test",
+      connected_at: "2026-01-01T00:00:00.000Z",
+    });
+    mockLinearQuery.mockRejectedValue(new Error("GraphQL error: unauthorized"));
+    const written: Record<string, string> = {};
+    await runYamlRecipe(
+      makeRecipe({
+        steps: [
+          { tool: "linear.list_issues", into: "linear_issues" },
+          {
+            tool: "file.write",
+            path: "/tmp/linear-out.md",
+            content: "{{linear_issues}}",
+          },
+        ],
+      }),
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+    );
+    const out = JSON.parse(written["/tmp/linear-out.md"] ?? "{}") as {
+      count: number;
+      error: string;
+    };
+    expect(out.count).toBe(0);
+    expect(out.error).toContain("unauthorized");
   });
 });

@@ -1,0 +1,68 @@
+# Gift brain: track people you care about + things they've mentioned; surface ideas before birthdays/holidays.
+name: gift-brain
+version: "1.0.0"
+description: >
+  Second brain for gifting. Passively collects mentions ("Sara said she's
+  getting into pottery") from notes/chats. Two weeks before a known date,
+  surfaces 3 gift ideas tied to real things that person said.
+# requires: notes-mcp, contacts-mcp, imessage-mcp (optional)
+
+trigger:
+  type: cron
+  schedule: "0 9 * * *"   # daily 09:00
+
+context:
+  - type: env
+    keys: [USER_NAME]
+  - type: file
+    path: ~/.patchwork/people.md   # list: name, relationship, birthday, notes
+
+steps:
+  - id: scan_mentions
+    agent: true
+    prompt: |
+      Scan recent notes and chats for mentions of anyone in ~/.patchwork/people.md
+      wanting / liking / being into something. Return JSON: { person, mention, date, source }.
+      Last 30 days only.
+    tools: [notes.search, contacts.list]
+    output: signals
+    risk: low
+
+  - id: update_profiles
+    agent: false
+    tool: file.merge_yaml
+    params:
+      path: ~/.patchwork/people.md
+      updates: "{{signals}}"
+    risk: low
+
+  - id: check_upcoming
+    agent: false
+    tool: contacts.upcomingDates
+    params:
+      window_days: 14
+    output: upcoming
+    risk: low
+
+  - id: ideate
+    agent: true
+    prompt: |
+      For each person in {{upcoming}}, propose 3 gift ideas grounded in their
+      entry in ~/.patchwork/people.md. Each idea: <$X budget hint, why it fits,
+      where to get it. No generic "scented candle" filler.
+    output: ideas
+    risk: low
+    skip_if: "{{upcoming.length == 0}}"
+
+  - id: notify
+    agent: false
+    tool: notify.push
+    params:
+      title: "{{upcoming.length}} gift windows coming up"
+      body: "{{ideas.summary}}"
+    skip_if: "{{upcoming.length == 0}}"
+    risk: low
+
+on_error:
+  notify: false
+  retry: 1

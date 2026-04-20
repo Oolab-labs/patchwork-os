@@ -91,6 +91,40 @@ function IconGitHub() {
   );
 }
 
+function IconLinear() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+      style={{ flexShrink: 0 }}
+    >
+      <path
+        d="M3.5 13.207L6.793 16.5l9.207-9.207-3.293-3.293L3.5 13.207z"
+        fill="currentColor"
+        opacity="0.5"
+      />
+      <path
+        d="M3 11.5L8.5 17l-5.5-5.5zM9 3l8 8-8-8z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <path
+        d="M3.293 12.293l4.414 4.414L16.414 8l-4.414-4.414L3.293 12.293z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
 function IconSlack() {
   return (
     <svg
@@ -439,6 +473,7 @@ export default function ConnectionsPage() {
 
   const gmailConnector = getConnector("gmail");
   const githubConnector = getConnector("github");
+  const linearConnector = getConnector("linear");
 
   return (
     <section>
@@ -504,6 +539,19 @@ export default function ConnectionsPage() {
             onDisconnect={() => undefined}
             onTest={() => handleTest("github")}
             loading={acting === "github"}
+          />
+
+          <ConnectorCard
+            id="linear"
+            name="Linear"
+            description="Read and manage issues. Agents can surface blocking work, summarise ticket context, and draft updates."
+            icon={<IconLinear />}
+            status={linearConnector.status}
+            lastSync={linearConnector.lastSync}
+            onConnect={() => handleConnect("linear")}
+            onDisconnect={() => handleDisconnect("linear")}
+            onTest={() => handleTest("linear")}
+            loading={acting === "linear"}
           />
 
           {/* Placeholder cards */}

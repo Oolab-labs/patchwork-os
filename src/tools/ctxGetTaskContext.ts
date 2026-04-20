@@ -1,4 +1,5 @@
 import type { CommitIssueLinkLog } from "../commitIssueLinkLog.js";
+import { fetchIssue } from "../connectors/linear.js";
 import { runGitStdout } from "./git-utils.js";
 import {
   GH_NOT_AUTHED,
@@ -38,7 +39,12 @@ export interface CtxTaskContextDeps {
   commitIssueLinkLog?: CommitIssueLinkLog | null;
 }
 
-export type RefType = "issue" | "pull_request" | "commit" | "unknown";
+export type RefType =
+  | "issue"
+  | "pull_request"
+  | "commit"
+  | "linear_issue"
+  | "unknown";
 
 function detectRefType(raw: string): { type: RefType; id: string } {
   const trimmed = raw.trim();
@@ -47,8 +53,16 @@ function detectRefType(raw: string): { type: RefType; id: string } {
   if (pr?.[1]) return { type: "pull_request", id: pr[1] };
 
   // Issue forms: `#42`, `GH-42`, bare `42` (treat 1-5 digit numbers as issues)
+  // Check GitHub patterns before Linear to avoid `GH-42` matching as Linear
   const issue = trimmed.match(/^(?:GH-|#)?(\d{1,5})$/i);
   if (issue?.[1]) return { type: "issue", id: issue[1] };
+
+  // Linear issue forms: `LIN-42`, `TEAM-123`, or full URL
+  // Must come after GitHub checks since both can have uppercase letter(s)-digits pattern
+  const linearUrl = trimmed.match(/linear\.app\/.+\/issue\/([A-Z]+-\d+)/i);
+  if (linearUrl?.[1]) return { type: "linear_issue", id: linearUrl[1] };
+  const linearId = trimmed.match(/^([A-Z]{2,}-\d+)$/);
+  if (linearId?.[1]) return { type: "linear_issue", id: linearId[1] };
 
   // Commit: 7-40 hex chars
   if (/^[0-9a-f]{7,40}$/i.test(trimmed)) {
@@ -145,7 +159,7 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
           ref: {
             type: "string",
             description:
-              "Issue (`#42` / `GH-42`), PR (`PR-42` / `pull/42`), or commit SHA (7-40 hex). Whitespace-trimmed.",
+              "Issue (`#42` / `GH-42`), PR (`PR-42` / `pull/42`), commit SHA (7-40 hex), or Linear issue (`LIN-42` / `TEAM-123`). Whitespace-trimmed.",
           },
           maxLinkedCommits: {
             type: "integer",
@@ -162,9 +176,16 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
           ref: { type: "string" },
           refType: {
             type: "string",
-            enum: ["issue", "pull_request", "commit", "unknown"],
+            enum: [
+              "issue",
+              "pull_request",
+              "commit",
+              "linear_issue",
+              "unknown",
+            ],
           },
           issue: { type: ["object", "null"] },
+          linearIssue: { type: ["object", "null"] },
           pullRequest: { type: ["object", "null"] },
           commit: { type: ["object", "null"] },
           linkedCommits: { type: "array" },
@@ -208,6 +229,7 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
       };
 
       let issue: Record<string, unknown> | null = null;
+      let linearIssue: Record<string, unknown> | null = null;
       let pullRequest: Record<string, unknown> | null = null;
       let commit: Record<string, unknown> | null = null;
       let linkedCommits: Array<Record<string, unknown>> = [];
@@ -226,6 +248,32 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
           sources,
           warnings,
         });
+      }
+
+      // Linear issue path
+      if (refType === "linear_issue") {
+        try {
+          const li = await fetchIssue(id, signal);
+          linearIssue = {
+            id: li.id,
+            identifier: li.identifier,
+            title: li.title,
+            description: li.description ?? null,
+            state: li.state,
+            assignee: li.assignee ?? null,
+            priority: li.priority,
+            priorityLabel: li.priorityLabel,
+            url: li.url,
+            team: li.team,
+            labels: li.labels.nodes.map((l) => l.name),
+            createdAt: li.createdAt,
+            updatedAt: li.updatedAt,
+          };
+        } catch (err) {
+          warnings.push(
+            `Linear issue ${id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
 
       // Issue path: fetch the issue, then look up linked commits from the
@@ -338,6 +386,7 @@ export function createCtxGetTaskContextTool(deps: CtxTaskContextDeps) {
         ref: rawRef,
         refType,
         issue,
+        linearIssue,
         pullRequest,
         commit,
         linkedCommits,

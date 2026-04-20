@@ -1,0 +1,70 @@
+# Sunday reset: pull week's calendar/inbox/notes, surface loose threads, propose next-week plan.
+name: sunday-reset
+version: "1.0.0"
+description: >
+  Sunday evening ritual. Reviews the week that just happened, spots unfinished
+  threads, pulls up anything you said you'd do, and drafts a loose plan for
+  the week ahead. One screen, approve or edit before it commits to calendar.
+# requires: gmail-mcp, calendar-mcp, notes-mcp
+
+trigger:
+  type: cron
+  # Sunday 18:00 local — early enough to still act on it
+  schedule: "0 18 * * 0"
+
+context:
+  - type: env
+    keys: [USER_NAME, CALENDAR_PROVIDER, INBOX_PROVIDER]
+  - type: file
+    path: ~/.patchwork/values.md   # what the user cares about this quarter
+
+steps:
+  - id: pull_week
+    agent: false
+    tool: calendar.list
+    params:
+      range: "last_7_days"
+    output: past_events
+    risk: low
+
+  - id: pull_inbox_loose_ends
+    agent: false
+    tool: inbox.search
+    params:
+      query: "is:sent after:7d has:question_mark"
+    output: sent_questions
+    risk: low
+
+  - id: pull_notes
+    agent: false
+    tool: notes.list
+    params:
+      since: "last_7_days"
+      includes: ["todo", "follow up", "remember"]
+    output: notes
+    risk: low
+
+  - id: synthesize
+    agent: true
+    prompt: |
+      Using {{past_events}}, {{sent_questions}}, {{notes}}, and ~/.patchwork/values.md:
+      1. Loose threads — things {{USER_NAME}} said they'd do but didn't.
+      2. Week ahead — propose max 3 priorities aligned with values.md.
+      3. Say no — 1-2 things on next week's calendar that don't match priorities.
+      Output markdown under 500 words. No motivational filler.
+    output: plan
+    risk: low
+
+  - id: present
+    agent: false
+    tool: dashboard.render
+    params:
+      title: "Sunday reset — {{plan.priorities.length}} priorities, {{plan.sayNo.length}} to decline"
+      body: "{{plan}}"
+      approvals: true
+    risk: low
+
+on_error:
+  notify: true
+  retry: 1
+  fallback: log_only
