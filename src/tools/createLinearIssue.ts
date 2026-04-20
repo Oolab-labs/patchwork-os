@@ -1,39 +1,10 @@
-import { linearQuery, loadTokens } from "../connectors/linear.js";
+import {
+  createIssue,
+  listLabels,
+  listTeams,
+  loadTokens,
+} from "../connectors/linear.js";
 import { requireString, successStructured } from "./utils.js";
-
-interface CreateIssueResult {
-  issue: {
-    id: string;
-    identifier: string;
-    title: string;
-    url: string;
-    state: { name: string };
-  };
-}
-
-interface TeamsResult {
-  teams: {
-    nodes: Array<{ id: string; key: string; name: string }>;
-  };
-}
-
-const CREATE_ISSUE_MUTATION = `
-  mutation CreateIssue($input: IssueCreateInput!) {
-    issueCreate(input: $input) {
-      issue {
-        id
-        identifier
-        title
-        url
-        state { name }
-      }
-    }
-  }
-`;
-
-const TEAMS_QUERY = `
-  query { teams { nodes { id key name } } }
-`;
 
 export function createLinearIssueTool() {
   return {
@@ -133,13 +104,7 @@ export function createLinearIssueTool() {
 
       try {
         // Resolve team ID
-        const teamsData = await linearQuery<TeamsResult>(
-          TEAMS_QUERY,
-          {},
-          tokens.api_key,
-          signal,
-        );
-        const teams = teamsData.teams.nodes;
+        const teams = await listTeams(signal);
         if (teams.length === 0) {
           throw new Error("No teams found in Linear workspace.");
         }
@@ -167,15 +132,7 @@ export function createLinearIssueTool() {
         // Resolve label IDs if provided
         let labelIds: string[] | undefined;
         if (labelNames.length > 0) {
-          const labelsData = await linearQuery<{
-            issueLabels: { nodes: Array<{ id: string; name: string }> };
-          }>(
-            `query { issueLabels { nodes { id name } } }`,
-            {},
-            tokens.api_key,
-            signal,
-          );
-          const allLabels = labelsData.issueLabels.nodes;
+          const allLabels = await listLabels(signal);
           labelIds = labelNames
             .map((name) => {
               const found = allLabels.find(
@@ -186,22 +143,17 @@ export function createLinearIssueTool() {
             .filter((id): id is string => id !== undefined);
         }
 
-        const input: Record<string, unknown> = {
-          teamId,
-          title,
-        };
-        if (description !== undefined) input.description = description;
-        if (priority !== undefined) input.priority = priority;
-        if (labelIds && labelIds.length > 0) input.labelIds = labelIds;
-
-        const data = await linearQuery<{ issueCreate: CreateIssueResult }>(
-          CREATE_ISSUE_MUTATION,
-          { input },
-          tokens.api_key,
+        const issue = await createIssue(
+          {
+            teamId,
+            title,
+            description,
+            priority,
+            labelIds: labelIds && labelIds.length > 0 ? labelIds : undefined,
+          },
           signal,
         );
 
-        const issue = data.issueCreate.issue;
         return successStructured({
           id: issue.id,
           identifier: issue.identifier,

@@ -916,57 +916,117 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── GitHub MCP connector routes ─────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/github/auth" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleGithubAuthorize } = await import(
+            "./connectors/github.js"
+          );
+          const result = await handleGithubAuthorize();
+          if (result.redirect) {
+            res.writeHead(302, { Location: result.redirect });
+            res.end();
+          } else {
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          }
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/github/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleGithubCallback } = await import(
+            "./connectors/github.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleGithubCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
       if (
         parsedUrl.pathname === "/connections/github/test" &&
         req.method === "POST"
       ) {
         void (async () => {
-          const { getStatus } = await import("./connectors/github.js");
-          const s = getStatus();
-          if (s.connected) {
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                ok: true,
-                message: `Connected as ${s.user ?? "unknown"}`,
-              }),
-            );
-          } else {
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                ok: false,
-                message: "Not connected — run: gh auth login",
-              }),
-            );
-          }
+          const { handleGithubTest } = await import("./connectors/github.js");
+          const result = await handleGithubTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/github" &&
+        req.method === "DELETE"
+      ) {
+        void (async () => {
+          const { handleGithubDisconnect } = await import(
+            "./connectors/github.js"
+          );
+          const result = await handleGithubDisconnect();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
         })();
         return;
       }
 
-      // ── Sentry connector routes ──────────────────────────────────────────
+      // ── Sentry MCP connector routes ─────────────────────────────────────
       if (
-        parsedUrl.pathname === "/connections/sentry/connect" &&
-        req.method === "POST"
+        parsedUrl.pathname === "/connections/sentry/auth" &&
+        req.method === "GET"
       ) {
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("end", () => {
-          void (async () => {
-            const { handleSentryConnect } = await import(
-              "./connectors/sentry.js"
-            );
-            let body: unknown = {};
-            try {
-              body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-            } catch {}
-            const result = await handleSentryConnect(body);
+        void (async () => {
+          const { handleSentryAuthorize } = await import(
+            "./connectors/sentry.js"
+          );
+          const result = await handleSentryAuthorize();
+          if (result.redirect) {
+            res.writeHead(302, { Location: result.redirect });
+            res.end();
+          } else {
             res.writeHead(result.status, {
               "Content-Type": result.contentType ?? "application/json",
             });
             res.end(result.body);
-          })();
-        });
+          }
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/sentry/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleSentryCallback } = await import(
+            "./connectors/sentry.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleSentryCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
         return;
       }
       if (
@@ -991,7 +1051,7 @@ export class Server extends EventEmitter<ServerEvents> {
           const { handleSentryDisconnect } = await import(
             "./connectors/sentry.js"
           );
-          const result = handleSentryDisconnect();
+          const result = await handleSentryDisconnect();
           res.writeHead(result.status, {
             "Content-Type": result.contentType ?? "application/json",
           });
@@ -1000,29 +1060,45 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
-      // ── Linear connector routes ─────────────────────────────────────────
+      // ── Linear MCP connector routes ─────────────────────────────────────
       if (
-        parsedUrl.pathname === "/connections/linear/connect" &&
-        req.method === "POST"
+        parsedUrl.pathname === "/connections/linear/auth" &&
+        req.method === "GET"
       ) {
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("end", () => {
-          void (async () => {
-            const { handleLinearConnect } = await import(
-              "./connectors/linear.js"
-            );
-            let body: unknown = {};
-            try {
-              body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-            } catch {}
-            const result = await handleLinearConnect(body);
+        void (async () => {
+          const { handleLinearAuthorize } = await import(
+            "./connectors/linear.js"
+          );
+          const result = await handleLinearAuthorize();
+          if (result.redirect) {
+            res.writeHead(302, { Location: result.redirect });
+            res.end();
+          } else {
             res.writeHead(result.status, {
               "Content-Type": result.contentType ?? "application/json",
             });
             res.end(result.body);
-          })();
-        });
+          }
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/linear/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleLinearCallback } = await import(
+            "./connectors/linear.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleLinearCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
         return;
       }
       if (
@@ -1047,7 +1123,7 @@ export class Server extends EventEmitter<ServerEvents> {
           const { handleLinearDisconnect } = await import(
             "./connectors/linear.js"
           );
-          const result = handleLinearDisconnect();
+          const result = await handleLinearDisconnect();
           res.writeHead(result.status, {
             "Content-Type": result.contentType ?? "application/json",
           });
@@ -1058,27 +1134,43 @@ export class Server extends EventEmitter<ServerEvents> {
 
       // ── Google Calendar routes ──────────────────────────────────────
       if (
-        parsedUrl.pathname === "/connections/google-calendar/connect" &&
-        req.method === "POST"
+        parsedUrl.pathname === "/connections/google-calendar/auth" &&
+        req.method === "GET"
       ) {
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("end", () => {
-          void (async () => {
-            const { handleCalendarConnect } = await import(
-              "./connectors/googleCalendar.js"
-            );
-            let body: unknown = {};
-            try {
-              body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-            } catch {}
-            const result = await handleCalendarConnect(body);
+        void (async () => {
+          const { handleCalendarAuthRedirect } = await import(
+            "./connectors/googleCalendar.js"
+          );
+          const result = handleCalendarAuthRedirect();
+          if (result.redirect) {
+            res.writeHead(302, { Location: result.redirect });
+            res.end();
+          } else {
             res.writeHead(result.status, {
               "Content-Type": result.contentType ?? "application/json",
             });
             res.end(result.body);
-          })();
-        });
+          }
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/google-calendar/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleCalendarCallback } = await import(
+            "./connectors/googleCalendar.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleCalendarCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
         return;
       }
       if (
@@ -1105,7 +1197,7 @@ export class Server extends EventEmitter<ServerEvents> {
           const { handleCalendarDisconnect } = await import(
             "./connectors/googleCalendar.js"
           );
-          const result = handleCalendarDisconnect();
+          const result = await handleCalendarDisconnect();
           res.writeHead(result.status, {
             "Content-Type": result.contentType ?? "application/json",
           });

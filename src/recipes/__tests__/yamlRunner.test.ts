@@ -5,13 +5,13 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../connectors/linear.js", () => ({
   loadTokens: vi.fn(),
-  linearQuery: vi.fn(),
+  listIssues: vi.fn(),
 }));
 
-import { linearQuery, loadTokens } from "../../connectors/linear.js";
+import { listIssues, loadTokens } from "../../connectors/linear.js";
 
 const mockLoadTokens = vi.mocked(loadTokens);
-const mockLinearQuery = vi.mocked(linearQuery);
+const mockListIssues = vi.mocked(listIssues);
 
 import {
   type FetchFn,
@@ -835,34 +835,10 @@ describe("linear.list_issues step", () => {
       workspace: "patchwork-os",
       connected_at: "2026-01-01T00:00:00.000Z",
     });
-    mockLinearQuery.mockResolvedValue({
-      issues: {
-        nodes: [
-          {
-            identifier: "LIN-1",
-            title: "Fix auth",
-            state: { name: "In Progress", type: "started" },
-            priority: 2,
-            priorityLabel: "High",
-            url: "https://linear.app/x/issue/LIN-1",
-            assignee: { name: "Waweru" },
-            team: { key: "LIN", name: "Patchwork" },
-            updatedAt: "2026-04-20T00:00:00Z",
-          },
-          {
-            identifier: "LIN-2",
-            title: "Add tests",
-            state: { name: "Todo", type: "unstarted" },
-            priority: 3,
-            priorityLabel: "Medium",
-            url: "https://linear.app/x/issue/LIN-2",
-            assignee: { name: "Waweru" },
-            team: { key: "LIN", name: "Patchwork" },
-            updatedAt: "2026-04-19T00:00:00Z",
-          },
-        ],
-      },
-    });
+    mockListIssues.mockResolvedValue([
+      { identifier: "LIN-1", title: "Fix auth" },
+      { identifier: "LIN-2", title: "Add tests" },
+    ]);
 
     const written: Record<string, string> = {};
     await runYamlRecipe(
@@ -894,10 +870,8 @@ describe("linear.list_issues step", () => {
     };
     expect(out.count).toBe(2);
     expect(out.issues).toHaveLength(2);
-    expect(mockLinearQuery).toHaveBeenCalledWith(
-      expect.stringContaining("issues"),
-      { limit: 15 },
-      "lin_api_test",
+    expect(mockListIssues).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 15, assigneeMe: true }),
     );
   });
 
@@ -935,7 +909,7 @@ describe("linear.list_issues step", () => {
       api_key: "lin_api_test",
       connected_at: "2026-01-01T00:00:00.000Z",
     });
-    mockLinearQuery.mockRejectedValue(new Error("GraphQL error: unauthorized"));
+    mockListIssues.mockRejectedValue(new Error("unauthorized"));
     const written: Record<string, string> = {};
     await runYamlRecipe(
       makeRecipe({

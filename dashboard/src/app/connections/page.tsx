@@ -1,14 +1,10 @@
 "use client";
-import { useRef, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 interface ConnectorStatus {
   id: string;
   status: "connected" | "disconnected";
   lastSync?: string;
-}
-
-interface ConnectionsResponse {
-  connectors: ConnectorStatus[];
 }
 
 // Icon components — inline SVG, no external deps
@@ -149,7 +145,6 @@ function IconSlack() {
 // ------------------------------------------------------------------ types
 
 interface ConnectorCardProps {
-  id: string;
   name: string;
   description: string;
   icon: React.ReactNode;
@@ -164,7 +159,6 @@ interface ConnectorCardProps {
 // ------------------------------------------------------------------ card
 
 function ConnectorCard({
-  id,
   name,
   description,
   icon,
@@ -314,157 +308,6 @@ function ConnectorCard({
   );
 }
 
-// ------------------------------------------------------------------ key modal
-
-interface KeyModalProps {
-  title: string;
-  fields: { key: string; label: string; placeholder?: string; required?: boolean }[];
-  onClose: () => void;
-  onSubmit: (values: Record<string, string>) => Promise<void>;
-}
-
-function KeyModal({ title, fields, onClose, onSubmit }: KeyModalProps) {
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(fields.map((f) => [f.key, ""])),
-  );
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState<string>();
-
-  function handleOverlayClick(e: React.MouseEvent) {
-    if (e.target === overlayRef.current) onClose();
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setErr(undefined);
-    try {
-      await onSubmit(values);
-    } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : String(ex));
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div
-      ref={overlayRef}
-      onClick={handleOverlayClick}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-    >
-      <div
-        style={{
-          background: "var(--bg-1)",
-          border: "1px solid var(--border-default)",
-          borderRadius: "var(--r-3)",
-          padding: "var(--s-6)",
-          minWidth: 360,
-          maxWidth: 480,
-          width: "100%",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: "var(--s-4)",
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--fg-0)" }}>
-            {title}
-          </h2>
-          <button
-            type="button"
-            className="btn sm ghost"
-            onClick={onClose}
-            aria-label="Close"
-            style={{ padding: "0 var(--s-2)", fontSize: 16 }}
-          >
-            &#x2715;
-          </button>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
-            {fields.map((f) => (
-              <div key={f.key}>
-                <label
-                  htmlFor={`key-modal-${f.key}`}
-                  style={{
-                    display: "block",
-                    marginBottom: "var(--s-1)",
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: "var(--fg-1)",
-                  }}
-                >
-                  {f.label}
-                  {f.required && <span style={{ color: "var(--err)", marginLeft: 4 }}>*</span>}
-                </label>
-                <input
-                  id={`key-modal-${f.key}`}
-                  type="text"
-                  required={f.required}
-                  value={values[f.key] ?? ""}
-                  placeholder={f.placeholder ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                  style={{
-                    width: "100%",
-                    background: "var(--bg-2)",
-                    border: "1px solid var(--border-default)",
-                    borderRadius: "var(--r-2)",
-                    color: "var(--fg-0)",
-                    fontSize: 13,
-                    padding: "var(--s-2) var(--s-3)",
-                    outline: "none",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-          {err && (
-            <div
-              style={{
-                marginTop: "var(--s-3)",
-                fontSize: 12,
-                color: "var(--err)",
-              }}
-            >
-              {err}
-            </div>
-          )}
-          <div
-            style={{
-              display: "flex",
-              gap: "var(--s-3)",
-              marginTop: "var(--s-5)",
-              justifyContent: "flex-end",
-            }}
-          >
-            <button type="button" className="btn ghost" onClick={onClose} disabled={submitting}>
-              Cancel
-            </button>
-            <button type="submit" className="btn" disabled={submitting}>
-              {submitting ? "Saving…" : "Save"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ placeholder
 
 function PlaceholderCard({
@@ -537,7 +380,7 @@ export default function ConnectionsPage() {
   async function fetchConnectors() {
     try {
       const res = await fetch("/api/connections");
-      if (res.status === 503) {
+      if (res.status >= 500) {
         setBridgeOffline(true);
         setLoading(false);
         return;
@@ -548,6 +391,7 @@ export default function ConnectionsPage() {
       setBridgeOffline(false);
       setErr(undefined);
     } catch (e) {
+      setBridgeOffline(true);
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
@@ -563,9 +407,10 @@ export default function ConnectionsPage() {
   }
 
   function handleConnect(id: string) {
-    // Open the OAuth auth URL in a new tab. The bridge handles the redirect.
-    window.open(`/api/connections/${id}/auth`, "_blank", "noopener");
-    // Poll for status update — the user will complete OAuth in the new tab.
+    // Open the OAuth auth URL. Omit "noopener" so the callback page can
+    // postMessage back to this window. Safe: same-origin popup.
+    window.open(`/api/connections/${id}/auth`, "_blank");
+    // Poll for status update as fallback if postMessage doesn't arrive.
     const poll = setInterval(async () => {
       const res = await fetch("/api/connections").catch(() => null);
       if (!res) return;
@@ -579,9 +424,20 @@ export default function ConnectionsPage() {
         clearInterval(poll);
       }
     }, 3000);
-    // Stop polling after 2 minutes regardless
     setTimeout(() => clearInterval(poll), 120_000);
   }
+
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      if (typeof e.data !== "string") return;
+      const m = /^patchwork:([a-z-]+):connected$/.exec(e.data);
+      if (!m) return;
+      fetchConnectors();
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   async function handleDisconnect(id: string) {
     setActing(id);
@@ -622,49 +478,15 @@ export default function ConnectionsPage() {
     }
   }
 
-  const [keyModal, setKeyModal] = useState<string | null>(null);
-
-  async function handleConnectWithKey(id: string, values: Record<string, string>) {
-    setActing(id);
-    setActionErr(null);
-    try {
-      const res = await fetch(`/api/connections/${id}/connect`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(values),
-      });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || body.ok === false) {
-        setActionErr(body.error ?? `Error ${res.status}`);
-        return;
-      }
-      await fetchConnectors();
-      setKeyModal(null);
-    } catch (e) {
-      setActionErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setActing(null);
-    }
-  }
 
   const gmailConnector = getConnector("gmail");
   const githubConnector = getConnector("github");
   const linearConnector = getConnector("linear");
+  const sentryConnector = getConnector("sentry");
   const calendarConnector = getConnector("google-calendar");
 
   return (
     <section>
-      {keyModal === "google-calendar" && (
-        <KeyModal
-          title="Connect Google Calendar"
-          fields={[
-            { key: "apiKey", label: "Google API Key", placeholder: "AIza…", required: true },
-            { key: "calendarId", label: "Calendar ID", placeholder: "primary or user@gmail.com", required: true },
-          ]}
-          onClose={() => setKeyModal(null)}
-          onSubmit={(values) => handleConnectWithKey("google-calendar", values)}
-        />
-      )}
       <div className="page-head">
         <div>
           <h1>Connections</h1>
@@ -702,7 +524,6 @@ export default function ConnectionsPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {/* Active connectors */}
           <ConnectorCard
-            id="gmail"
             name="Gmail"
             description="Read and triage your inbox. Patchwork agents can summarise threads, draft replies, and label messages."
             icon={<IconEnvelope />}
@@ -715,22 +536,18 @@ export default function ConnectionsPage() {
           />
 
           <ConnectorCard
-            id="github"
             name="GitHub"
-            description="Read open issues and pull requests. Agents can surface blocking work items and review requests in your morning brief."
+            description="Read open issues and pull requests via GitHub's official MCP server. Agents surface blocking work items and review requests."
             icon={<IconGitHub />}
             status={githubConnector.status}
             lastSync={githubConnector.lastSync}
-            onConnect={() => {
-              window.open("https://cli.github.com", "_blank");
-            }}
-            onDisconnect={() => undefined}
+            onConnect={() => handleConnect("github")}
+            onDisconnect={() => handleDisconnect("github")}
             onTest={() => handleTest("github")}
             loading={acting === "github"}
           />
 
           <ConnectorCard
-            id="linear"
             name="Linear"
             description="Read and manage issues. Agents can surface blocking work, summarise ticket context, and draft updates."
             icon={<IconLinear />}
@@ -743,13 +560,24 @@ export default function ConnectionsPage() {
           />
 
           <ConnectorCard
-            id="google-calendar"
+            name="Sentry"
+            description="Read issues and stack traces via Sentry's official MCP server. Agents can surface new errors and trace bugs to the commit that introduced them."
+            icon={<IconEnvelope />}
+            status={sentryConnector.status}
+            lastSync={sentryConnector.lastSync}
+            onConnect={() => handleConnect("sentry")}
+            onDisconnect={() => handleDisconnect("sentry")}
+            onTest={() => handleTest("sentry")}
+            loading={acting === "sentry"}
+          />
+
+          <ConnectorCard
             name="Google Calendar"
             description="View your schedule. Agents can summarise upcoming meetings in your morning brief."
             icon={<IconCalendar />}
             status={calendarConnector.status}
             lastSync={calendarConnector.lastSync}
-            onConnect={() => setKeyModal("google-calendar")}
+            onConnect={() => handleConnect("google-calendar")}
             onDisconnect={() => handleDisconnect("google-calendar")}
             onTest={() => handleTest("google-calendar")}
             loading={acting === "google-calendar"}

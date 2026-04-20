@@ -401,7 +401,7 @@ async function executeStep(
         ? render(String(step.assignee), ctx)
         : "@me";
       const limit = typeof step.max === "number" ? step.max : 20;
-      const issues = listIssues({ repo, assignee, limit });
+      const issues = await listIssues({ repo, assignee, limit });
       return JSON.stringify({ count: issues.length, issues });
     }
 
@@ -410,16 +410,15 @@ async function executeStep(
       const repo = step.repo ? render(String(step.repo), ctx) : undefined;
       const author = step.author ? render(String(step.author), ctx) : "@me";
       const limit = typeof step.max === "number" ? step.max : 20;
-      const prs = listPRs({ repo, author, limit });
+      const prs = await listPRs({ repo, author, limit });
       return JSON.stringify({ count: prs.length, prs });
     }
 
     case "linear.list_issues": {
-      const { loadTokens, linearQuery } = await import(
+      const { loadTokens, listIssues: listLinearIssues } = await import(
         "../connectors/linear.js"
       );
-      const tokens = loadTokens();
-      if (!tokens) {
+      if (!loadTokens()) {
         return JSON.stringify({
           count: 0,
           issues: [],
@@ -432,51 +431,17 @@ async function executeStep(
         ? render(String(step.state), ctx)
         : "started,unstarted";
       const limit = typeof step.max === "number" ? step.max : 20;
-
-      const stateTypes = stateFilter.split(",").map((s) => s.trim());
-      const stateFilter_gql = stateTypes
-        .map((t) => `{ type: { eq: "${t}" } }`)
-        .join(", ");
-
-      const teamFilter = teamKey ? `, team: { key: { eq: "${teamKey}" } }` : "";
-      const assigneeFilter = assigneeMe
-        ? `, assignee: { isMe: { eq: true } }`
-        : "";
-
-      const query = `
-        query ListIssues($limit: Int!) {
-          issues(
-            first: $limit
-            filter: {
-              state: { type: { in: [${stateTypes.map((t) => `"${t}"`).join(", ")}] } }
-              ${teamKey ? `team: { key: { eq: "${teamKey}" } }` : ""}
-              ${assigneeMe ? `assignee: { isMe: { eq: true } }` : ""}
-            }
-            orderBy: updatedAt
-          ) {
-            nodes {
-              identifier
-              title
-              state { name type }
-              priority
-              priorityLabel
-              url
-              assignee { name }
-              team { key name }
-              updatedAt
-            }
-          }
-        }
-      `;
-      void stateFilter_gql;
-      void teamFilter;
-      void assigneeFilter;
-
+      const states = stateFilter
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       try {
-        const data = await linearQuery<{
-          issues: { nodes: Array<Record<string, unknown>> };
-        }>(query, { limit }, tokens.api_key);
-        const issues = data.issues.nodes;
+        const issues = await listLinearIssues({
+          team: teamKey,
+          assigneeMe,
+          states,
+          limit,
+        });
         return JSON.stringify({ count: issues.length, issues });
       } catch (err) {
         return JSON.stringify({
