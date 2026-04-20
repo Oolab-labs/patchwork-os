@@ -153,6 +153,7 @@ export class Server extends EventEmitter<ServerEvents> {
   public runRecipeFn:
     | ((
         name: string,
+        vars?: Record<string, string>,
       ) => Promise<{ ok: boolean; taskId?: string; error?: string }>)
     | null = null;
   /** Patchwork: admin-controlled managed settings path (highest rule precedence). */
@@ -1169,8 +1170,17 @@ export class Server extends EventEmitter<ServerEvents> {
           void (async () => {
             try {
               const body = Buffer.concat(chunks).toString("utf-8");
-              const parsed = JSON.parse(body || "{}") as { name?: string };
+              const parsed = JSON.parse(body || "{}") as {
+                name?: string;
+                vars?: Record<string, string>;
+              };
               const name = parsed.name;
+              const vars =
+                parsed.vars &&
+                typeof parsed.vars === "object" &&
+                !Array.isArray(parsed.vars)
+                  ? (parsed.vars as Record<string, string>)
+                  : undefined;
               if (typeof name !== "string" || !name) {
                 res.writeHead(400, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ ok: false, error: "name required" }));
@@ -1187,7 +1197,7 @@ export class Server extends EventEmitter<ServerEvents> {
                 );
                 return;
               }
-              const result = await this.runRecipeFn(name);
+              const result = await this.runRecipeFn(name, vars);
               res.writeHead(result.ok ? 200 : 400, {
                 "Content-Type": "application/json",
               });

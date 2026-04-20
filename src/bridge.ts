@@ -1303,7 +1303,10 @@ export class Bridge {
         };
       }
     };
-    this.server.runRecipeFn = async (name: string) => {
+    this.server.runRecipeFn = async (
+      name: string,
+      vars?: Record<string, string>,
+    ) => {
       if (!this.orchestrator) {
         return {
           ok: false,
@@ -1320,8 +1323,15 @@ export class Bridge {
         };
       }
       try {
+        let prompt = loaded.prompt;
+        if (vars && Object.keys(vars).length > 0) {
+          const varLines = Object.entries(vars)
+            .map(([k, v]) => `${k}=${v}`)
+            .join("\n");
+          prompt = `Variables:\n${varLines}\n\n${prompt}`;
+        }
         const taskId = this.orchestrator.enqueue({
-          prompt: loaded.prompt,
+          prompt,
           triggerSource: `recipe:${name}`,
         });
         return { ok: true, taskId };

@@ -21,7 +21,13 @@ export interface RecipeDraft {
     path?: string;
     cron?: string;
   };
-  steps: Array<{ id: string; kind: "prompt"; prompt: string }>;
+  steps: Array<{ id: string; agent: boolean; prompt: string }>;
+  vars?: Array<{
+    name: string;
+    description?: string;
+    required?: boolean;
+    default?: string;
+  }>;
 }
 
 export function saveRecipe(
@@ -43,7 +49,12 @@ export function saveRecipe(
       name: safeName,
       description: draft.description,
       trigger: draft.trigger,
-      steps: draft.steps,
+      steps: draft.steps.map((s) => ({
+        id: s.id,
+        agent: s.agent,
+        prompt: s.prompt,
+      })),
+      ...(draft.vars && draft.vars.length > 0 ? { vars: draft.vars } : {}),
       createdAt: Date.now(),
     };
     writeFileSync(candidate, JSON.stringify(payload, null, 2), "utf-8");
@@ -65,6 +76,12 @@ export interface RecipeSummary {
   installedAt: number;
   hasPermissions: boolean;
   source: "user" | "project" | "unknown";
+  vars?: Array<{
+    name: string;
+    description?: string;
+    required?: boolean;
+    default?: string;
+  }>;
 }
 
 export interface ListRecipesResult {
@@ -91,6 +108,12 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         description?: string;
         trigger?: { type?: string };
         steps?: unknown[];
+        vars?: Array<{
+          name: string;
+          description?: string;
+          required?: boolean;
+          default?: string;
+        }>;
       };
       const stat = statSync(fullPath);
       const permsPath = `${fullPath}.permissions.json`;
@@ -122,6 +145,9 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         installedAt: stat.mtimeMs,
         hasPermissions,
         source,
+        ...(Array.isArray(parsed.vars) && parsed.vars.length > 0
+          ? { vars: parsed.vars }
+          : {}),
       });
     } catch {
       // skip malformed recipe file
