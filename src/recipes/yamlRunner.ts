@@ -487,6 +487,26 @@ async function executeStep(
       }
     }
 
+    case "calendar.list_events": {
+      const { listEvents } = await import("../connectors/googleCalendar.js");
+      const daysAhead =
+        typeof step.days_ahead === "number" ? step.days_ahead : 7;
+      const maxResults = typeof step.max === "number" ? step.max : 20;
+      const calendarId = step.calendar_id
+        ? render(String(step.calendar_id), ctx)
+        : undefined;
+      try {
+        const events = await listEvents({ daysAhead, maxResults, calendarId });
+        return JSON.stringify({ count: events.length, events });
+      } catch (err) {
+        return JSON.stringify({
+          count: 0,
+          events: [],
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     default:
       // Unknown tool — skip, don't throw (forward compat)
       return null;

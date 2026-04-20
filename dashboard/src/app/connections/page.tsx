@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 
 interface ConnectorStatus {
   id: string;
@@ -314,6 +314,157 @@ function ConnectorCard({
   );
 }
 
+// ------------------------------------------------------------------ key modal
+
+interface KeyModalProps {
+  title: string;
+  fields: { key: string; label: string; placeholder?: string; required?: boolean }[];
+  onClose: () => void;
+  onSubmit: (values: Record<string, string>) => Promise<void>;
+}
+
+function KeyModal({ title, fields, onClose, onSubmit }: KeyModalProps) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(fields.map((f) => [f.key, ""])),
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string>();
+
+  function handleOverlayClick(e: React.MouseEvent) {
+    if (e.target === overlayRef.current) onClose();
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setErr(undefined);
+    try {
+      await onSubmit(values);
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      ref={overlayRef}
+      onClick={handleOverlayClick}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        style={{
+          background: "var(--bg-1)",
+          border: "1px solid var(--border-default)",
+          borderRadius: "var(--r-3)",
+          padding: "var(--s-6)",
+          minWidth: 360,
+          maxWidth: 480,
+          width: "100%",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "var(--s-4)",
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: "var(--fg-0)" }}>
+            {title}
+          </h2>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={onClose}
+            aria-label="Close"
+            style={{ padding: "0 var(--s-2)", fontSize: 16 }}
+          >
+            &#x2715;
+          </button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
+            {fields.map((f) => (
+              <div key={f.key}>
+                <label
+                  htmlFor={`key-modal-${f.key}`}
+                  style={{
+                    display: "block",
+                    marginBottom: "var(--s-1)",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "var(--fg-1)",
+                  }}
+                >
+                  {f.label}
+                  {f.required && <span style={{ color: "var(--err)", marginLeft: 4 }}>*</span>}
+                </label>
+                <input
+                  id={`key-modal-${f.key}`}
+                  type="text"
+                  required={f.required}
+                  value={values[f.key] ?? ""}
+                  placeholder={f.placeholder ?? ""}
+                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                  style={{
+                    width: "100%",
+                    background: "var(--bg-2)",
+                    border: "1px solid var(--border-default)",
+                    borderRadius: "var(--r-2)",
+                    color: "var(--fg-0)",
+                    fontSize: 13,
+                    padding: "var(--s-2) var(--s-3)",
+                    outline: "none",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          {err && (
+            <div
+              style={{
+                marginTop: "var(--s-3)",
+                fontSize: 12,
+                color: "var(--err)",
+              }}
+            >
+              {err}
+            </div>
+          )}
+          <div
+            style={{
+              display: "flex",
+              gap: "var(--s-3)",
+              marginTop: "var(--s-5)",
+              justifyContent: "flex-end",
+            }}
+          >
+            <button type="button" className="btn ghost" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" className="btn" disabled={submitting}>
+              {submitting ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ placeholder
 
 function PlaceholderCard({
@@ -471,12 +622,49 @@ export default function ConnectionsPage() {
     }
   }
 
+  const [keyModal, setKeyModal] = useState<string | null>(null);
+
+  async function handleConnectWithKey(id: string, values: Record<string, string>) {
+    setActing(id);
+    setActionErr(null);
+    try {
+      const res = await fetch(`/api/connections/${id}/connect`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || body.ok === false) {
+        setActionErr(body.error ?? `Error ${res.status}`);
+        return;
+      }
+      await fetchConnectors();
+      setKeyModal(null);
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActing(null);
+    }
+  }
+
   const gmailConnector = getConnector("gmail");
   const githubConnector = getConnector("github");
   const linearConnector = getConnector("linear");
+  const calendarConnector = getConnector("google-calendar");
 
   return (
     <section>
+      {keyModal === "google-calendar" && (
+        <KeyModal
+          title="Connect Google Calendar"
+          fields={[
+            { key: "apiKey", label: "Google API Key", placeholder: "AIza…", required: true },
+            { key: "calendarId", label: "Calendar ID", placeholder: "primary or user@gmail.com", required: true },
+          ]}
+          onClose={() => setKeyModal(null)}
+          onSubmit={(values) => handleConnectWithKey("google-calendar", values)}
+        />
+      )}
       <div className="page-head">
         <div>
           <h1>Connections</h1>
@@ -554,11 +742,17 @@ export default function ConnectionsPage() {
             loading={acting === "linear"}
           />
 
-          {/* Placeholder cards */}
-          <PlaceholderCard
+          <ConnectorCard
+            id="google-calendar"
             name="Google Calendar"
-            description="View and manage your schedule. Agents can block focus time and summarise upcoming meetings."
+            description="View your schedule. Agents can summarise upcoming meetings in your morning brief."
             icon={<IconCalendar />}
+            status={calendarConnector.status}
+            lastSync={calendarConnector.lastSync}
+            onConnect={() => setKeyModal("google-calendar")}
+            onDisconnect={() => handleDisconnect("google-calendar")}
+            onTest={() => handleTest("google-calendar")}
+            loading={acting === "google-calendar"}
           />
           <PlaceholderCard
             name="Slack"

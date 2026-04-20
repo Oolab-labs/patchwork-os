@@ -208,9 +208,11 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   const { getStatus: getGitHubStatus } = await import("./github.js");
   const { getStatus: getSentryStatus } = await import("./sentry.js");
   const { getStatus: getLinearStatus } = await import("./linear.js");
+  const { getStatus: getCalendarStatus } = await import("./googleCalendar.js");
   const gh = getGitHubStatus();
   const sentry = getSentryStatus();
   const linear = getLinearStatus();
+  const calendar = getCalendarStatus();
   const connectors: ConnectorStatus[] = [
     {
       id: "gmail",
@@ -231,6 +233,11 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
       id: "linear",
       status: linear.status,
       lastSync: linear.lastSync,
+    },
+    {
+      id: "google-calendar",
+      status: calendar.status,
+      lastSync: calendar.lastSync,
     },
   ];
   return {
