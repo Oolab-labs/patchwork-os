@@ -19,6 +19,11 @@ steps:
     author: "@me"
     max: 10
     into: prs
+  - tool: linear.list_issues
+    assignee: "@me"
+    state: "started,unstarted"
+    max: 15
+    into: linear_issues
   - agent:
       prompt: |
         You are a personal assistant writing a concise morning brief. Use ONLY the data provided below — do not call any tools or fetch additional information.
@@ -37,11 +42,15 @@ steps:
         OPEN PULL REQUESTS (authored by me):
         {{prs}}
 
+        LINEAR ISSUES (assigned to me, in progress or unstarted):
+        {{linear_issues}}
+
         Write a morning brief with these sections:
         1. **Email triage** — list emails needing action today (sender, subject, one-line summary)
         2. **FYI emails** — informational only, no action needed
         3. **Code activity** — summarize the RECENT GIT COMMITS above; if the list is empty write "No commits in the last 24 hours"
         4. **GitHub** — list open issues and PRs needing attention; omit this section entirely if both lists are empty
+        5. **Linear** — list in-progress and unstarted issues by priority; omit this section entirely if the list is empty or returned an error
 
         Be concise. Skip newsletters and automated notifications.
       driver: claude-code

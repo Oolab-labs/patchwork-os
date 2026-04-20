@@ -1,0 +1,63 @@
+# Meeting prep: 15 min before meeting, surface prior thread, attendee context, and one question to ask.
+name: meeting-prep
+version: "1.0.0"
+description: >
+  Fires 15 minutes before any calendar event with other humans. Pulls last
+  conversation with those people, relevant docs linked in the invite, and
+  suggests one real question to ask based on what's unresolved.
+# requires: calendar-mcp, gmail-mcp
+
+trigger:
+  type: event
+  on: calendar.upcoming
+  lead_time_minutes: 15
+  filter:
+    has_attendees: true
+
+context:
+  - type: env
+    keys: [USER_NAME]
+
+steps:
+  - id: event_info
+    agent: false
+    tool: calendar.get
+    params: { event_id: "{{event.id}}" }
+    output: meeting
+    risk: low
+
+  - id: prior_threads
+    agent: false
+    tool: inbox.search
+    params:
+      query: "from:({{meeting.attendees}}) OR to:({{meeting.attendees}}) after:30d"
+      limit: 10
+    output: threads
+    risk: low
+
+  - id: synthesize
+    agent: true
+    prompt: |
+      Meeting: {{meeting.title}} with {{meeting.attendees}} at {{meeting.start}}.
+      Agenda/description: {{meeting.description}}
+      Prior threads: {{threads}}
+      Produce:
+        1. 3-line context (what's this about, what's been said)
+        2. One sharp question to ask (something unresolved, not performative)
+        3. If there's a doc link in the invite, pre-fetch summary
+      Under 200 words. No filler.
+    tools: [fetch.url]
+    output: brief
+    risk: low
+
+  - id: push
+    agent: false
+    tool: notify.push
+    params:
+      title: "In 15: {{meeting.title}}"
+      body: "{{brief}}"
+    risk: low
+
+on_error:
+  notify: false
+  retry: 0

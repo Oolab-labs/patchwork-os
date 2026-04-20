@@ -1,0 +1,71 @@
+# Travel prep: 48h before a trip on calendar, assemble itinerary, pack list, auto-reply, notify key contacts.
+name: travel-prep
+version: "1.0.0"
+description: >
+  48 hours before any calendar event tagged "travel" or with flight/hotel
+  confirmation in inbox, assembles one page: flights, hotel, packing list
+  (weather-aware), auto-reply draft, and drafts to people who need to know.
+# requires: gmail-mcp, calendar-mcp, weather-mcp
+
+trigger:
+  type: event
+  on: calendar.upcoming
+  lead_time_hours: 48
+  filter:
+    tags_include: ["travel", "trip"]
+
+context:
+  - type: env
+    keys: [USER_NAME]
+  - type: file
+    path: ~/.patchwork/packing-defaults.md
+
+steps:
+  - id: gather
+    parallel:
+      - tool: inbox.search
+        params: { query: "flight OR hotel OR booking after:30d" }
+        output: bookings
+      - tool: calendar.get
+        params: { event_id: "{{event.id}}" }
+        output: trip
+      - tool: weather.forecast
+        params: { location: "{{event.location}}", days: 7 }
+        output: weather
+    risk: low
+
+  - id: synthesize
+    agent: true
+    prompt: |
+      Trip: {{trip}}. Bookings: {{bookings}}. Weather: {{weather}}.
+      Produce:
+        1. Itinerary (flights, hotel, key times, confirmation numbers)
+        2. Packing list merged from ~/.patchwork/packing-defaults.md + weather
+        3. Auto-reply draft for dates away
+        4. List of people to loop in (from recent threads)
+    output: pack
+    risk: low
+
+  - id: draft_notices
+    agent: true
+    prompt: |
+      Draft a short message to each person in {{pack.people_to_notify}}
+      in {{USER_NAME}}'s voice. Dates, response time, who to reach instead.
+    output: notices
+    risk: medium
+
+  - id: present
+    agent: false
+    tool: dashboard.render
+    params:
+      title: "Trip prep: {{trip.title}}"
+      body: "{{pack}}"
+      sections:
+        - heading: "Notices to send"
+          items: "{{notices}}"
+          approvals: true
+    risk: low
+
+on_error:
+  notify: true
+  retry: 1

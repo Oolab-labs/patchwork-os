@@ -1,0 +1,74 @@
+# Disagreement cooldown: detect heated drafts; hold 30 min; re-present with steel-manned version of other side.
+name: disagreement-cooldown
+version: "1.0.0"
+description: >
+  When you write a reply that flags as heated (sentiment + keyword detection),
+  holds it 30 minutes before sending. Re-presents with: your original, a
+  steel-manned version of the other side, a cooler-tone rewrite. You choose.
+
+trigger:
+  type: event
+  on: inbox.draft_saved
+
+context:
+  - type: env
+    keys: [USER_NAME]
+
+steps:
+  - id: temperature_check
+    agent: true
+    prompt: |
+      Rate heat level of this draft 0-5:
+        0: neutral
+        3: firm but civil
+        5: will regret in 24h
+      Return JSON: { heat: int, flags: [...] }
+      Input: {{event.draft}}
+    output: check
+    risk: low
+
+  - id: hold
+    agent: false
+    tool: queue.delay
+    params:
+      item: "{{event.draft_id}}"
+      delay_minutes: 30
+    skip_if: "{{check.heat < 4}}"
+    risk: high
+
+  - id: steelman
+    agent: true
+    prompt: |
+      Steel-man the other side of this exchange. Strongest version of their
+      point, in one paragraph. Not agreeing — just representing fairly.
+      Input: {{event.draft}}
+    output: steelman
+    skip_if: "{{check.heat < 4}}"
+    risk: low
+
+  - id: cooler_version
+    agent: true
+    prompt: |
+      Rewrite {{event.draft}} keeping all substance and disagreement,
+      removing heat markers in {{check.flags}}. Match {{USER_NAME}}'s voice.
+    output: cooler
+    skip_if: "{{check.heat < 4}}"
+    risk: low
+
+  - id: re_present
+    agent: false
+    tool: dashboard.render
+    params:
+      title: "Held 30 min — still want to send?"
+      body:
+        original: "{{event.draft}}"
+        their_strongest_point: "{{steelman}}"
+        cooler_version: "{{cooler}}"
+      actions: ["send-original", "send-cooler", "edit", "discard"]
+    skip_if: "{{check.heat < 4}}"
+    risk: high
+
+on_error:
+  notify: true
+  retry: 0
+  fallback: log_only   # do NOT auto-send if this recipe fails

@@ -1,0 +1,70 @@
+# Evening shutdown: capture what got done, log open loops, write tomorrow's top-3, silence notifications.
+name: evening-shutdown
+version: "1.0.0"
+description: >
+  End-of-day ritual. Pulls today's completed calendar events + sent messages,
+  asks one question ("what's still open?"), writes tomorrow's top-3, then
+  flips do-not-disturb for the evening.
+
+trigger:
+  type: cron
+  schedule: "0 18 * * 1-5"
+
+context:
+  - type: env
+    keys: [USER_NAME, JOURNAL_PATH]
+
+steps:
+  - id: collect_done
+    agent: false
+    tool: calendar.list
+    params:
+      range: "today"
+      status: "completed"
+    output: done_events
+    risk: low
+
+  - id: summarize_day
+    agent: true
+    prompt: |
+      From {{done_events}} and today's sent messages, write 3-5 bullets
+      on what actually happened. No fluff.
+    tools: [inbox.search]
+    output: recap
+    risk: low
+
+  - id: ask_open_loops
+    agent: true
+    prompt: |
+      Ask {{USER_NAME}}: "What's still open in your head?" — one question,
+      wait for answer. Then ask: "What are the 3 things for tomorrow?"
+    output: loops_and_tomorrow
+    interactive: true
+    risk: low
+
+  - id: write_journal
+    agent: false
+    tool: file.append
+    params:
+      path: "{{JOURNAL_PATH}}/{{YYYY-MM-DD}}.md"
+      content: |
+        ## Done
+        {{recap}}
+        ## Open loops
+        {{loops_and_tomorrow.loops}}
+        ## Tomorrow top-3
+        {{loops_and_tomorrow.tomorrow}}
+    risk: low
+
+  - id: do_not_disturb
+    agent: false
+    tool: system.setDND
+    params:
+      enabled: true
+      until: "07:00 tomorrow"
+    risk: medium
+    requires_approval: true
+
+on_error:
+  notify: true
+  retry: 1

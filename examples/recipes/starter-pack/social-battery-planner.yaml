@@ -1,0 +1,51 @@
+# Social battery planner: score next week's calendar on social load; flag overcommit, suggest recovery.
+name: social-battery-planner
+version: "1.0.0"
+description: >
+  Looks at upcoming calendar, scores each event by social load (solo, small
+  group, large group, performance), flags days over the user's threshold,
+  and suggests recovery slots. Does not cancel — surfaces the shape.
+# requires: calendar-mcp
+
+trigger:
+  type: cron
+  schedule: "0 19 * * 0"   # Sunday 19:00 — for the week ahead
+
+context:
+  - type: env
+    keys: [USER_NAME, DAILY_SOCIAL_BUDGET]   # e.g. "4" (hours), "3" (events)
+  - type: file
+    path: ~/.patchwork/social-profile.md   # user notes: "large groups drain me 2x", etc.
+
+steps:
+  - id: fetch
+    agent: false
+    tool: calendar.list
+    params:
+      range: "next_7_days"
+    output: events
+    risk: low
+
+  - id: score
+    agent: true
+    prompt: |
+      For each event in {{events}}, classify:
+        - type: solo / 1:1 / small-group (2-5) / large-group (6+) / performance (speaking, teaching)
+        - load: 1-5, weighted by ~/.patchwork/social-profile.md
+      Group by day. Flag days where total load > {{DAILY_SOCIAL_BUDGET}}.
+      Return JSON: { by_day: {...}, flags: [...], recovery_suggestions: [...] }
+    output: plan
+    risk: low
+
+  - id: present
+    agent: false
+    tool: dashboard.render
+    params:
+      title: "Week social load — {{plan.flags.length}} heavy days"
+      body: "{{plan}}"
+      approvals: false   # informational, not action
+    risk: low
+
+on_error:
+  notify: false
+  retry: 1

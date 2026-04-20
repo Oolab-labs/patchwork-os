@@ -597,7 +597,7 @@ export function scrubSecrets(text: string): string {
 
 /** Factory: creates the appropriate driver from a config mode string. */
 export function createDriver(
-  mode: "subprocess" | "api" | "none",
+  mode: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none",
   binary: string,
   antBinary: string,
   log: (msg: string) => void,
@@ -606,5 +606,70 @@ export function createDriver(
   if (mode === "subprocess")
     return new SubprocessDriver(binary, antBinary, log);
   if (mode === "api") return new ApiDriver(log);
+  if (mode === "openai" || mode === "grok" || mode === "gemini")
+    return new ProviderDriverAdapter(mode, binary, antBinary, log);
   throw new Error(`Unknown driver mode: ${mode}`);
 }
+
+/**
+ * Adapts ProviderDriver (src/drivers/) to the legacy IClaudeDriver interface.
+ * Bridges the exitCode: number | undefined → number gap by defaulting to 0.
+ * Loaded via dynamic import to keep new provider SDKs as optional peer deps.
+ */
+class ProviderDriverAdapter implements IClaudeDriver {
+  readonly name: string;
+  private inner: import("./drivers/types.js").ProviderDriver | null = null;
+
+  constructor(
+    private readonly mode: "openai" | "grok" | "gemini",
+    private readonly binary: string,
+    private readonly antBinary: string,
+    private readonly log: (msg: string) => void,
+  ) {
+    this.name = mode;
+  }
+
+  private async getInner(): Promise<
+    import("./drivers/types.js").ProviderDriver
+  > {
+    if (this.inner) return this.inner;
+    const { createDriver: newFactory } = await import("./drivers/index.js");
+    const driver = newFactory(
+      this.mode,
+      { binary: this.binary, antBinary: this.antBinary },
+      this.log,
+    );
+    if (!driver) throw new Error(`Driver mode '${this.mode}' returned null`);
+    this.inner = driver;
+    return this.inner;
+  }
+
+  async run(input: ClaudeTaskInput): Promise<ClaudeTaskOutput> {
+    const driver = await this.getInner();
+    const result = await driver.run(input);
+    return {
+      text: result.text,
+      exitCode: result.exitCode ?? (result.errorMessage ? 1 : 0),
+      durationMs: result.durationMs,
+      stderrTail: result.errorMessage,
+      wasAborted: result.wasAborted,
+      startupMs: result.startupMs,
+    };
+  }
+
+  async runOutcome(input: ClaudeTaskInput): Promise<ClaudeTaskOutcome> {
+    return toClaudeTaskOutcome(await this.run(input));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Re-exports from src/drivers/ — canonical home for multi-provider types.
+// Import from "src/drivers/types.js" directly in new code.
+// ---------------------------------------------------------------------------
+export type {
+  ProviderDriver,
+  ProviderTaskInput,
+  ProviderTaskOutcome,
+  ProviderTaskResult,
+} from "./drivers/types.js";
+export { toProviderTaskOutcome } from "./drivers/types.js";

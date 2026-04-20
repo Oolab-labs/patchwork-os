@@ -44,6 +44,27 @@ All four "phantom tools" previously advertised in the MCP handshake (`ctxGetTask
 2. **Decision-trace dashboard view.** `/traces` bundles all 4 types; decisions (the agent-authored knowledge base) could use a dedicated tab with search-by-tag. Speculative until usage data warrants.
 3. **Freshness scoring + dedup across context sources.** Deferred research; wait until real duplication pain appears in `contextBundle` / `getCommitsForIssue` output.
 4. **Upstream connectors** (Sentry, Linear) — Phase 1 federation per `docs/platform-strategy.md`. `enrichStackTrace` already composes with *pasted* stacks; Sentry-as-connector is the next natural extension.
+5. **Multi-provider driver abstraction** — Phase 1 item (architecturally adjacent to multi-model work). Target: ships before Phase 2 recipe system. See [`docs/plans/multi-provider-drivers.md`](../docs/plans/multi-provider-drivers.md) (being written in parallel).
+
+---
+
+## Multi-Provider Driver Support
+
+**Goal:** A weekend contributor can add a new provider (e.g. Gemini, OpenAI, Grok) by implementing one thin interface file — no changes to core bridge, automation, or recipe logic.
+
+**Design principle:** Thin abstraction, provider-neutral. Drivers adapt to a common `ModelDriver` interface; bridge internals never import provider-specific SDKs directly.
+
+**Planned drivers and rough estimates:**
+
+| Provider | Estimate | Notes |
+|---|---|---|
+| Gemini | ~2–3 days | Google AI SDK; streaming + tool-use parity needed |
+| OpenAI | ~3–5 days | Responses API + function calling; highest compat surface |
+| Grok (xAI) | ~1 week | OpenAI-compatible endpoint; auth + rate-limit quirks |
+
+**Timeline:** Phase 1 item — target before Phase 2 recipe system ships.
+
+**Full design:** [`docs/plans/multi-provider-drivers.md`](../docs/plans/multi-provider-drivers.md)
 
 ---
 

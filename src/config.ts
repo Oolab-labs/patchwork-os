@@ -24,7 +24,7 @@ export interface Config {
   activeWorkspaceFolder: string;
   gracePeriodMs: number;
   autoTmux: boolean;
-  claudeDriver: "subprocess" | "api" | "none";
+  claudeDriver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none";
   claudeBinary: string;
   antBinary: string;
   automationEnabled: boolean;
@@ -178,7 +178,7 @@ interface ConfigFile {
   editorCommand?: string;
   ideName?: string;
   autoTmux?: boolean;
-  claudeDriver?: "subprocess" | "api" | "none";
+  claudeDriver?: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none";
   claudeBinary?: string;
   antBinary?: string;
   automationEnabled?: boolean;
@@ -362,8 +362,13 @@ export function parseConfig(argv: string[]): Config {
       ? Math.min(Math.max(rawTtlDays, 1), 90) * 24 * 60 * 60 * 1_000
       : 24 * 60 * 60 * 1_000; // default 24h
   let corsOrigins: string[] = fileConfig.corsOrigins ?? [];
-  let claudeDriver: "subprocess" | "api" | "none" =
-    fileConfig.claudeDriver ?? "none";
+  let claudeDriver:
+    | "subprocess"
+    | "api"
+    | "openai"
+    | "grok"
+    | "gemini"
+    | "none" = fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";
   let antBinary = fileConfig.antBinary ?? "ant";
   let automationEnabled = fileConfig.automationEnabled ?? false;
@@ -512,10 +517,13 @@ export function parseConfig(argv: string[]): Config {
         if (
           driverVal !== "subprocess" &&
           driverVal !== "api" &&
+          driverVal !== "openai" &&
+          driverVal !== "grok" &&
+          driverVal !== "gemini" &&
           driverVal !== "none"
         ) {
           throw new Error(
-            `Invalid --claude-driver value: "${driverVal}". Must be "subprocess", "api", or "none".`,
+            `Invalid --claude-driver value: "${driverVal}". Must be "subprocess", "api", "openai", "grok", "gemini", or "none".`,
           );
         }
         claudeDriver = driverVal;
@@ -711,7 +719,7 @@ Patchwork:
   --managed-settings <path> Admin-controlled settings file (highest rule precedence, cannot be overridden by users)
 
 Automation:
-  --claude-driver <mode>    Enable Claude subprocess driver: "subprocess" | "api" | "none" (default: "none")
+  --claude-driver <mode>    Driver mode: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none" (default: "none")
   --claude-binary <path>    Path to claude binary (default: "claude")
   --automation              Enable event-driven automation hooks (requires --claude-driver != none and --automation-policy)
   --automation-policy <path>  Path to JSON automation policy file

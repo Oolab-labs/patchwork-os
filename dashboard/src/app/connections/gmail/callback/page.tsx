@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function GmailCallbackPage() {
+function GmailCallbackInner() {
   const params = useSearchParams();
   const router = useRouter();
   const called = useRef(false);
@@ -23,7 +23,7 @@ export default function GmailCallbackPage() {
 
     fetch(`/api/connections/gmail/callback?${qs.toString()}`)
       .then((r) => r.json())
-      .then((data: { ok?: boolean; error?: string }) => {
+      .then(() => {
         if (window.opener) {
           window.opener.postMessage("patchwork:gmail:connected", window.location.origin);
           window.close();
@@ -34,13 +34,19 @@ export default function GmailCallbackPage() {
       .catch(() => router.push("/connections"));
   }, [params, router]);
 
+  return <p>Connecting Gmail…</p>;
+}
+
+export default function GmailCallbackPage() {
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "center",
       minHeight: "100vh", background: "#040406", color: "#e0e0e0",
       fontFamily: "system-ui, sans-serif",
     }}>
-      <p>Connecting Gmail…</p>
+      <Suspense fallback={<p>Loading…</p>}>
+        <GmailCallbackInner />
+      </Suspense>
     </div>
   );
 }
