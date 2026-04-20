@@ -1,0 +1,77 @@
+name: sentry-to-linear
+description: |
+  Fetch a Sentry issue, enrich it with git blame, and create a triage-ready
+  Linear ticket. Requires both Sentry and Linear connectors connected.
+  Run ad-hoc or trigger via webhook / automation policy.
+
+# Example manual trigger:
+#   patchwork-os run-recipe sentry-to-linear --var SENTRY_ISSUE_ID=12345678
+#
+# Example automation trigger (add to ~/.patchwork/automation-policy.json):
+#   "onFileSave": { ... }  — or fire from a Sentry webhook handler
+
+trigger:
+  type: manual
+  vars:
+    - name: SENTRY_ISSUE_ID
+      description: "Sentry issue ID or URL (e.g. '12345678' or 'https://sentry.io/...')"
+      required: true
+    - name: LINEAR_TEAM_KEY
+      description: "Linear team key to create the issue in (e.g. 'ENG'). Defaults to first team."
+      required: false
+    - name: LINEAR_PRIORITY
+      description: "Linear priority: 1=urgent, 2=high, 3=medium, 4=low (default: 2)"
+      required: false
+      default: "2"
+
+steps:
+  - agent:
+      prompt: |
+        You are a triage assistant. Your job is to:
+        1. Fetch the Sentry issue using fetchSentryIssue with issueId "{{SENTRY_ISSUE_ID}}"
+        2. Create a Linear issue using createLinearIssue with the data you received
+
+        For the Linear issue:
+        - title: Use the Sentry issue title verbatim
+        - description: Write a structured Markdown body with these sections:
+            ## Error
+            (one-line error type + message from the Sentry title)
+
+            ## Stack trace
+            (the top 5 frames from the stackTrace field, formatted as a code block)
+
+            ## Suspect commit
+            (if topSuspect is present: sha, author, date, subject — otherwise write "No suspect commit identified")
+
+            ## Confidence
+            (the confidence field value + a one-sentence explanation of what it means)
+
+            ## Sentry link
+            (a link back to the Sentry issue — construct from the issueId: https://sentry.io/issues/{{SENTRY_ISSUE_ID}}/)
+
+        - teamKey: "{{LINEAR_TEAM_KEY}}" (pass as-is; if blank the tool picks the first team)
+        - priority: {{LINEAR_PRIORITY}} (as an integer)
+        - labelNames: ["bug"]
+
+        After creating the ticket, respond with ONLY a JSON object:
+        {
+          "sentryIssueId": "<the issueId from fetchSentryIssue>",
+          "sentryTitle": "<the title>",
+          "linearIdentifier": "<e.g. ENG-101>",
+          "linearUrl": "<the url from createLinearIssue>",
+          "confidence": "<high|medium|low>",
+          "suspectCommit": "<sha or null>"
+        }
+
+        If either tool returns an error (sentryConnected: false or linearConnected: false),
+        respond with the same JSON shape but set linearUrl to "" and add an "error" key
+        explaining which connector is not connected.
+      driver: claude-code
+      model: claude-haiku-4-5-20251001
+      into: result
+  - tool: file.write
+    path: ~/.patchwork/inbox/sentry-to-linear-{{date}}.md
+    content: |
+      # Sentry → Linear triage ({{date}})
+
+      {{result}}
