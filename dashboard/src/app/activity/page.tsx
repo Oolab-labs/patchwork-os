@@ -204,6 +204,19 @@ export default function ActivityPage() {
               : "Fetching recent events from the bridge."}
           </p>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state">
+          <h3>
+            {filter
+              ? "No events match that filter"
+              : `${hiddenCount} connection event${hiddenCount === 1 ? "" : "s"} hidden`}
+          </h3>
+          <p>
+            {filter
+              ? "Try a different search term, or clear the filter."
+              : "Connection and grace events are hidden by default. Click \"Show connection events\" to see them."}
+          </p>
+        </div>
       ) : (
         <div className="table-wrap">
           <table className="table">

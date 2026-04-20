@@ -1,4 +1,5 @@
 "use client";
+import React from "react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -147,8 +148,8 @@ export default function RecipesPage() {
               {recipes.map((r, i) => {
                 const state = running[r.name];
                 return (
-                  <>
-                    <tr key={r.id ?? r.name ?? i}>
+                  <React.Fragment key={r.id ?? r.name ?? i}>
+                    <tr>
                       <td className="mono">
                         <button
                           type="button"
@@ -259,7 +260,7 @@ export default function RecipesPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 );
               })}
             </tbody>
