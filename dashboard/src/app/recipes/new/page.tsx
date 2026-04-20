@@ -4,8 +4,15 @@ import { useCallback, useMemo, useState } from "react";
 
 interface Step {
   id: string;
-  kind: "prompt";
+  agent: boolean;
   prompt: string;
+}
+
+interface RecipeVar {
+  name: string;
+  description: string;
+  required: boolean;
+  default: string;
 }
 
 interface TriggerState {
@@ -19,6 +26,7 @@ interface FormState {
   description: string;
   trigger: TriggerState;
   steps: Step[];
+  vars: RecipeVar[];
 }
 
 function makeStepId(index: number): string {
@@ -34,7 +42,8 @@ export default function NewRecipePage() {
     name: "",
     description: "",
     trigger: { type: "manual", path: "", cron: "" },
-    steps: [{ id: "step-1", kind: "prompt", prompt: "" }],
+    steps: [{ id: "step-1", agent: true, prompt: "" }],
+    vars: [],
   });
   const [nameError, setNameError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -81,7 +90,7 @@ export default function NewRecipePage() {
     setForm((f) => {
       const steps = [
         ...f.steps,
-        { id: makeStepId(f.steps.length), kind: "prompt" as const, prompt: "" },
+        { id: makeStepId(f.steps.length), agent: true, prompt: "" },
       ];
       return { ...f, steps };
     });
@@ -107,6 +116,35 @@ export default function NewRecipePage() {
     });
   }, []);
 
+  const addVar = useCallback(() => {
+    setForm((f) => ({
+      ...f,
+      vars: [
+        ...f.vars,
+        { name: "", description: "", required: false, default: "" },
+      ],
+    }));
+  }, []);
+
+  const removeVar = useCallback((index: number) => {
+    setForm((f) => ({
+      ...f,
+      vars: f.vars.filter((_, i) => i !== index),
+    }));
+  }, []);
+
+  const updateVar = useCallback(
+    (index: number, field: keyof RecipeVar, value: string | boolean) => {
+      setForm((f) => ({
+        ...f,
+        vars: f.vars.map((v, i) =>
+          i === index ? { ...v, [field]: value } : v,
+        ),
+      }));
+    },
+    [],
+  );
+
   const previewJson = useMemo(() => {
     const safeName = form.name.toLowerCase().replace(/\s+/g, "-");
     const trigger: Record<string, string> = { type: form.trigger.type };
@@ -116,17 +154,25 @@ export default function NewRecipePage() {
     if (form.trigger.type === "schedule" && form.trigger.cron) {
       trigger.cron = form.trigger.cron;
     }
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: safeName || "(name)",
       ...(form.description ? { description: form.description } : {}),
       trigger,
       steps: form.steps.map((s, i) => ({
         id: s.id || makeStepId(i),
-        kind: s.kind,
+        agent: s.agent,
         prompt: s.prompt || "(empty)",
       })),
-      createdAt: "<timestamp>",
     };
+    if (form.vars.length > 0) {
+      payload.vars = form.vars.map((v) => ({
+        name: v.name || "(name)",
+        ...(v.description ? { description: v.description } : {}),
+        ...(v.required ? { required: true } : {}),
+        ...(v.default ? { default: v.default } : {}),
+      }));
+    }
+    payload.createdAt = "<timestamp>";
     return JSON.stringify(payload, null, 2);
   }, [form]);
 
@@ -147,16 +193,24 @@ export default function NewRecipePage() {
       trigger.cron = form.trigger.cron;
     }
 
-    const body = {
+    const body: Record<string, unknown> = {
       name: form.name,
       ...(form.description ? { description: form.description } : {}),
       trigger,
       steps: form.steps.map((s, i) => ({
         id: s.id || makeStepId(i),
-        kind: s.kind,
+        agent: s.agent,
         prompt: s.prompt,
       })),
     };
+    if (form.vars.length > 0) {
+      body.vars = form.vars.map((v) => ({
+        name: v.name,
+        ...(v.description ? { description: v.description } : {}),
+        ...(v.required ? { required: true } : {}),
+        ...(v.default ? { default: v.default } : {}),
+      }));
+    }
 
     setSaving(true);
     try {
@@ -424,6 +478,170 @@ export default function NewRecipePage() {
               )}
             </div>
 
+            {/* Variables */}
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: "var(--s-3)",
+                }}
+              >
+                <span
+                  style={{ color: "var(--fg-1)", fontSize: 13, fontWeight: 500 }}
+                >
+                  Variables{" "}
+                  <span style={{ color: "var(--fg-3)", fontWeight: 400 }}>
+                    (optional)
+                  </span>
+                </span>
+                <button type="button" className="btn sm" onClick={addVar}>
+                  + Add variable
+                </button>
+              </div>
+
+              {form.vars.length === 0 && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--fg-3)",
+                    padding: "var(--s-2) 0",
+                  }}
+                >
+                  No variables. Add variables that callers must supply at run time (e.g. SENTRY_ISSUE_ID).
+                </div>
+              )}
+
+              {form.vars.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "var(--s-3)",
+                  }}
+                >
+                  {form.vars.map((v, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        background: "var(--bg-2)",
+                        border: "1px solid var(--border-subtle)",
+                        borderRadius: "var(--r-3)",
+                        padding: "var(--s-3) var(--s-4)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "var(--s-2)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 2fr auto",
+                          gap: "var(--s-2)",
+                          alignItems: "center",
+                        }}
+                      >
+                        <input
+                          type="text"
+                          value={v.name}
+                          onChange={(e) => updateVar(i, "name", e.target.value)}
+                          placeholder="VAR_NAME"
+                          aria-label={`Variable ${i + 1} name`}
+                          style={{
+                            background: "var(--bg-1)",
+                            border: "1px solid var(--border-subtle)",
+                            borderRadius: "var(--r-2)",
+                            color: "var(--fg-0)",
+                            fontSize: 13,
+                            padding: "var(--s-2) var(--s-3)",
+                            outline: "none",
+                            fontFamily: "var(--font-mono)",
+                          }}
+                        />
+                        <input
+                          type="text"
+                          value={v.description}
+                          onChange={(e) =>
+                            updateVar(i, "description", e.target.value)
+                          }
+                          placeholder="Description / hint"
+                          aria-label={`Variable ${i + 1} description`}
+                          style={{
+                            background: "var(--bg-1)",
+                            border: "1px solid var(--border-subtle)",
+                            borderRadius: "var(--r-2)",
+                            color: "var(--fg-0)",
+                            fontSize: 13,
+                            padding: "var(--s-2) var(--s-3)",
+                            outline: "none",
+                            fontFamily: "var(--font-sans)",
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn sm ghost"
+                          onClick={() => removeVar(i)}
+                          aria-label={`Remove variable ${i + 1}`}
+                          style={{ color: "var(--err)", padding: "0 var(--s-2)" }}
+                        >
+                          &#x2715;
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "auto 1fr",
+                          gap: "var(--s-3)",
+                          alignItems: "center",
+                        }}
+                      >
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "var(--s-2)",
+                            fontSize: 12,
+                            color: "var(--fg-2)",
+                            cursor: "pointer",
+                            userSelect: "none",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={v.required}
+                            onChange={(e) =>
+                              updateVar(i, "required", e.target.checked)
+                            }
+                          />
+                          Required
+                        </label>
+                        <input
+                          type="text"
+                          value={v.default}
+                          onChange={(e) =>
+                            updateVar(i, "default", e.target.value)
+                          }
+                          placeholder="Default value (optional)"
+                          aria-label={`Variable ${i + 1} default`}
+                          style={{
+                            background: "var(--bg-1)",
+                            border: "1px solid var(--border-subtle)",
+                            borderRadius: "var(--r-2)",
+                            color: "var(--fg-0)",
+                            fontSize: 12,
+                            padding: "var(--s-1) var(--s-3)",
+                            outline: "none",
+                            fontFamily: "var(--font-mono)",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Steps */}
             <div>
               <div
@@ -482,7 +700,7 @@ export default function NewRecipePage() {
                           fontWeight: 500,
                         }}
                       >
-                        Step {i + 1} — Prompt
+                        Step {i + 1} — Agent prompt
                       </label>
                       <div style={{ display: "flex", gap: "var(--s-1)" }}>
                         <button
