@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Full orchestrator for bridge + claude + remote-control.
-# Manages all three in tmux panes with health monitoring.
+# Full orchestrator for bridge + claude + remote-control + dashboard.
+# Manages all processes in tmux panes with health monitoring.
 #
 # Pane layout:
 #   0 — health monitor (orchestrator)
@@ -8,7 +8,8 @@
 #   2 — claude --ide (Claude Code CLI, connects to bridge for IDE tools)
 #   3 — claude remote-control --spawn=session (exposes the workspace to claude.ai;
 #         spawned sessions auto-discover the bridge via ~/.claude/ide/*.lock)
-#   4 — SSH reverse tunnel to VPS (optional, enabled with --vps <user@host:port>)
+#   4 — Patchwork dashboard (Next.js, http://localhost:3200)
+#   5 — SSH reverse tunnel to VPS (optional, enabled with --vps <user@host:port>)
 #         Forwards VPS_PORT on the remote host back to the local bridge port.
 #         Allows claude.ai integrations to use a static VPS URL instead of a
 #         rotating remote-control session URL.
@@ -20,6 +21,8 @@
 # Options:
 #   --workspace <path>    Directory to open in Claude (default: current directory)
 #   --full                Register all ~95 bridge tools (git, terminal, file ops, HTTP, GitHub).
+#   --no-dashboard        Skip starting the Patchwork dashboard (pane 4).
+#   --dashboard-port <N>  Dashboard port (default: 3200).
 #                         Default is slim mode (27 IDE-exclusive tools). Add --full if your
 #                         workflow requires git/terminal/file tools.
 #   --notify <topic>      Push notifications via ntfy.sh when remote-control connects or
@@ -48,6 +51,8 @@ NTFY_TOPIC=""
 IDE_NAME=""
 VPS=""
 FULL_MODE=""
+NO_DASHBOARD=""
+DASHBOARD_PORT="3200"
 AUTOMATION_POLICY=""
 CLAUDE_DRIVER="subprocess"
 BRIDGE_READY_TIMEOUT="${BRIDGE_READY_TIMEOUT:-30}"
@@ -64,6 +69,8 @@ while [[ $# -gt 0 ]]; do
     --ide)               IDE_NAME="$2"; shift 2 ;;
     --vps)               VPS="$2"; shift 2 ;;
     --full)              FULL_MODE="--full"; shift ;;
+    --no-dashboard)      NO_DASHBOARD=1; shift ;;
+    --dashboard-port)    DASHBOARD_PORT="$2"; shift 2 ;;
     --automation-policy) AUTOMATION_POLICY="$2"; shift 2 ;;
     --claude-driver)     CLAUDE_DRIVER="$2"; shift 2 ;;
     *)                   echo "Unknown option: $1" >&2; exit 1 ;;
@@ -90,23 +97,31 @@ fi
 
 # --- Bridge conflict check ---
 # Detect an already-running bridge instance and abort early with a clear message.
-# Iterates lock files safely (no xargs injection); filters to isBridge:true + live PID.
+# Validates: isBridge:true + live PID + process is actually a bridge (not Windsurf reusing PID)
+# by checking whether the lock file's port has an active listener.
 while IFS= read -r lock; do
   [[ -f "$lock" ]] || continue
-  bridge_pid=$(python3 -c "
+  lock_info=$(python3 -c "
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
     if d.get('isBridge') is True:
-        print(d.get('pid', ''))
+        print(d.get('pid', ''), d.get('port', ''))
 except Exception:
     pass
 " "$lock" 2>/dev/null || true)
+  bridge_pid="${lock_info%% *}"
+  bridge_port="${lock_info##* }"
   if [[ -n "$bridge_pid" ]] && kill -0 "$bridge_pid" 2>/dev/null; then
-    echo "Error: bridge already running (PID $bridge_pid, lock: $(basename "$lock"))." >&2
-    echo "       Stop it first: kill $bridge_pid" >&2
-    echo "       Or kill the tmux session: tmux kill-session -t claude-all" >&2
-    exit 1
+    # Cross-check: verify a process is actually listening on the lock's port.
+    # Windsurf may reuse PIDs from stale locks — if nothing listens on that port,
+    # the bridge is not actually running.
+    if [[ -n "$bridge_port" ]] && lsof -i ":${bridge_port}" 2>/dev/null | grep -q LISTEN; then
+      echo "Error: bridge already running (PID $bridge_pid, port $bridge_port, lock: $(basename "$lock"))." >&2
+      echo "       Stop it first: kill $bridge_pid" >&2
+      echo "       Or kill the tmux session: tmux kill-session -t claude-all" >&2
+      exit 1
+    fi
   fi
 done < <(ls ~/.claude/ide/*.lock 2>/dev/null)
 
@@ -141,6 +156,7 @@ echo "=== Claude IDE Bridge Full Orchestrator ==="
 echo "  Ctrl+C in any pane — stops that process"
 echo "  Ctrl+B then D (press Ctrl+B, release, then press D) — detach (keeps running)"
 echo "  tmux kill-session -t $SESSION — stop everything"
+[[ -z "$NO_DASHBOARD" ]] && echo "  Dashboard: http://localhost:${DASHBOARD_PORT}"
 [[ -n "$NTFY_TOPIC" ]] && echo "  Push notifications: ntfy.sh/$NTFY_TOPIC"
 if [[ -z "$FULL_MODE" ]]; then
   echo ""
@@ -276,11 +292,12 @@ while true; do
   sleep \$delay
 done'"
 
-# --- Create additional panes (pane 0 = orchestrator, 1 = bridge, 2 = claude, 3 = remote-control, 4 = ssh tunnel) ---
+# --- Create additional panes (pane 0 = orchestrator, 1 = bridge, 2 = claude, 3 = remote-control, 4 = dashboard, 5 = ssh tunnel) ---
 tmux split-window -v -t "$SESSION"    # pane 1 for bridge
 tmux split-window -v -t "$SESSION"    # pane 2 for claude --ide
 tmux split-window -v -t "$SESSION"    # pane 3 for claude remote-control
-[[ -n "$TUNNEL_CMD" ]] && tmux split-window -v -t "$SESSION"  # pane 4 for ssh tunnel (optional)
+[[ -z "$NO_DASHBOARD" ]] && tmux split-window -v -t "$SESSION"  # pane 4 for dashboard (optional)
+[[ -n "$TUNNEL_CMD" ]] && tmux split-window -v -t "$SESSION"    # pane 5 for ssh tunnel (optional)
 tmux select-layout -t "$SESSION" even-vertical
 
 # --- Helper: wait for a NEW lock file (ignores pre-existing ones) ---
@@ -359,10 +376,20 @@ sleep 3
 # Pane 3: Remote control with auto-restart loop
 tmux send-keys -t "${SESSION}:0.3" "$REMOTE_CMD" Enter
 
-# Pane 4: SSH reverse tunnel (only if --vps was set)
+# Pane 4: Dashboard (only if not --no-dashboard and dashboard dir exists)
+DASHBOARD_DIR="$BRIDGE_DIR/dashboard"
+if [[ -z "$NO_DASHBOARD" ]] && [[ -d "$DASHBOARD_DIR" ]]; then
+  BRIDGE_PORT=$(basename "$LOCK_FILE" .lock)
+  DASHBOARD_CMD="cd $(printf '%q' "$DASHBOARD_DIR") && PATCHWORK_BRIDGE_PORT=${BRIDGE_PORT} npm run dev"
+  notify "Starting dashboard on http://localhost:${DASHBOARD_PORT}"
+  tmux send-keys -t "${SESSION}:0.4" "$DASHBOARD_CMD" Enter
+fi
+
+# Pane 5: SSH reverse tunnel (only if --vps was set)
 if [[ -n "$TUNNEL_CMD" ]]; then
   notify "Starting SSH tunnel to ${VPS}..."
-  tmux send-keys -t "${SESSION}:0.4" "$TUNNEL_CMD" Enter
+  TUNNEL_PANE=$([[ -z "$NO_DASHBOARD" ]] && echo 5 || echo 4)
+  tmux send-keys -t "${SESSION}:0.${TUNNEL_PANE}" "$TUNNEL_CMD" Enter
 fi
 
 # --- Health monitor (runs in pane 0 — the orchestrator pane) ---
@@ -377,10 +404,12 @@ cleanup() {
   tmux send-keys -t "${SESSION}:0.1" C-c 2>/dev/null
   tmux send-keys -t "${SESSION}:0.2" C-c 2>/dev/null
   tmux send-keys -t "${SESSION}:0.3" C-c 2>/dev/null
-  [[ -n "$TUNNEL_CMD" ]] && tmux send-keys -t "${SESSION}:0.4" C-c 2>/dev/null
+  [[ -z "$NO_DASHBOARD" ]] && tmux send-keys -t "${SESSION}:0.4" C-c 2>/dev/null
+  [[ -n "$TUNNEL_CMD" ]] && tmux send-keys -t "${SESSION}:0.${TUNNEL_PANE:-4}" C-c 2>/dev/null
   # Wait up to 5s for panes to exit gracefully, then force-kill
   local panes=(1 2 3)
-  [[ -n "$TUNNEL_CMD" ]] && panes=(1 2 3 4)
+  [[ -z "$NO_DASHBOARD" ]] && panes=(1 2 3 4)
+  [[ -n "$TUNNEL_CMD" ]] && panes=("${panes[@]}" "${TUNNEL_PANE:-4}")
   for _ in $(seq 1 5); do
     sleep 1
     all_idle=true
@@ -396,7 +425,8 @@ cleanup() {
   done
   sleep 1
   local rpanes=(3 2 1)
-  [[ -n "$TUNNEL_CMD" ]] && rpanes=(4 3 2 1)
+  [[ -z "$NO_DASHBOARD" ]] && rpanes=(4 3 2 1)
+  [[ -n "$TUNNEL_CMD" ]] && rpanes=("${TUNNEL_PANE:-4}" "${rpanes[@]}")
   for pane in "${rpanes[@]}"; do
     tmux kill-pane -t "${SESSION}:0.${pane}" 2>/dev/null || true
   done
@@ -413,7 +443,8 @@ while true; do
     tmux send-keys -t "${SESSION}:0.1" C-c
     tmux send-keys -t "${SESSION}:0.2" C-c
     tmux send-keys -t "${SESSION}:0.3" C-c
-    [[ -n "$TUNNEL_CMD" ]] && tmux send-keys -t "${SESSION}:0.4" C-c
+    [[ -z "$NO_DASHBOARD" ]] && tmux send-keys -t "${SESSION}:0.4" C-c
+    [[ -n "$TUNNEL_CMD" ]] && tmux send-keys -t "${SESSION}:0.${TUNNEL_PANE:-4}" C-c
     # Wait for bridge (pane 1) and claude (pane 2) to actually stop
     for _ in $(seq 1 10); do
       pane1_cmd=$(tmux display-message -t "${SESSION}:0.1" -p '#{pane_current_command}' 2>/dev/null || echo "")
@@ -476,9 +507,15 @@ while true; do
     sleep 3
     # Restart remote-control
     tmux send-keys -t "${SESSION}:0.3" "$REMOTE_CMD" Enter
+    # Restart dashboard with updated bridge port
+    if [[ -z "$NO_DASHBOARD" ]] && [[ -d "$DASHBOARD_DIR" ]]; then
+      NEW_BRIDGE_PORT=$(basename "$LOCK_FILE" .lock)
+      DASHBOARD_CMD="cd $(printf '%q' "$DASHBOARD_DIR") && PATCHWORK_BRIDGE_PORT=${NEW_BRIDGE_PORT} npm run dev"
+      tmux send-keys -t "${SESSION}:0.4" "$DASHBOARD_CMD" Enter
+    fi
     # Restart SSH tunnel (port may have changed — tunnel cmd reads lock file dynamically)
     if [[ -n "$TUNNEL_CMD" ]]; then
-      tmux send-keys -t "${SESSION}:0.4" "$TUNNEL_CMD" Enter
+      tmux send-keys -t "${SESSION}:0.${TUNNEL_PANE:-4}" "$TUNNEL_CMD" Enter
     fi
     notify "All processes restarted"
   else

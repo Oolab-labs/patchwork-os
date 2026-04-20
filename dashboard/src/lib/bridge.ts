@@ -13,7 +13,7 @@ interface BridgeLock {
 /**
  * Locate a running Patchwork/bridge instance by scanning lock files under
  * ~/.claude/ide/. Prefers locks with isBridge:true whose PID is alive.
- * Callers can pin a specific port via the PATCHWORK_BRIDGE_PORT env var.
+ * Callers can pin a specific port via PATCHWORK_BRIDGE_PORT in .env.local.
  */
 export function findBridge(): BridgeLock | null {
   const dir = path.join(os.homedir(), ".claude", "ide");
@@ -22,6 +22,11 @@ export function findBridge(): BridgeLock | null {
   const files = fs
     .readdirSync(dir)
     .filter((f) => /^\d+\.lock$/.test(f))
+    .sort((a, b) => {
+      const pa = Number.parseInt(a, 10);
+      const pb = Number.parseInt(b, 10);
+      return pa - pb;
+    })
     .filter((f) => !pinned || f === `${pinned}.lock`);
   for (const f of files) {
     try {
