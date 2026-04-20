@@ -1,17 +1,17 @@
 /**
- * Google Calendar connector.
+ * Google Calendar OAuth 2.0 connector.
  *
- * Uses Google Calendar API v3 with an API key (no OAuth app required).
- * Suitable for personal/public calendars — read-only.
- * Token stored at ~/.patchwork/tokens/google-calendar.json (mode 0600).
- * Env vars: GOOGLE_CALENDAR_API_KEY, GOOGLE_CALENDAR_ID
+ * Handles:
+ *   GET  /connections/google-calendar/auth      — redirect to Google consent screen
+ *   GET  /connections/google-calendar/callback  — exchange code for tokens, store locally
+ *   POST /connections/google-calendar/test      — verify stored token works
+ *   DELETE /connections/google-calendar         — revoke + delete stored token
  *
- * HTTP routes registered in server.ts:
- *   POST   /connections/google-calendar/connect  — store key + calendar ID + verify
- *   POST   /connections/google-calendar/test     — verify stored credentials work
- *   DELETE /connections/google-calendar          — delete stored credentials
+ * Tokens stored at ~/.patchwork/tokens/google-calendar.json (mode 0600).
+ * Client credentials read from env: GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET
  */
 
+import crypto from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -22,6 +22,10 @@ import {
 import { homedir } from "node:os";
 import path from "node:path";
 
+const SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"];
+const REDIRECT_URI = process.env.PATCHWORK_DASHBOARD_URL
+  ? `${process.env.PATCHWORK_DASHBOARD_URL}/connections/google-calendar/callback`
+  : "http://localhost:3200/connections/google-calendar/callback";
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 const TOKEN_PATH = path.join(
   homedir(),
@@ -31,7 +35,11 @@ const TOKEN_PATH = path.join(
 );
 
 export interface CalendarTokens {
-  api_key: string;
+  access_token: string;
+  refresh_token?: string;
+  expiry_date?: number;
+  token_type?: string;
+  scope?: string;
   calendar_id: string;
   connected_at: string;
 }
@@ -59,20 +67,24 @@ export interface ConnectorHandlerResult {
   status: number;
   body: string;
   contentType?: string;
+  redirect?: string;
+}
+
+function clientId(): string {
+  return process.env.GOOGLE_CALENDAR_CLIENT_ID ?? "";
+}
+
+function clientSecret(): string {
+  return process.env.GOOGLE_CALENDAR_CLIENT_SECRET ?? "";
+}
+
+function isConfigured(): boolean {
+  return Boolean(clientId() && clientSecret());
 }
 
 // ── Token storage ─────────────────────────────────────────────────────────────
 
 export function loadTokens(): CalendarTokens | null {
-  const envKey = process.env.GOOGLE_CALENDAR_API_KEY;
-  const envCal = process.env.GOOGLE_CALENDAR_ID;
-  if (envKey && envCal) {
-    return {
-      api_key: envKey,
-      calendar_id: envCal,
-      connected_at: new Date().toISOString(),
-    };
-  }
   if (!existsSync(TOKEN_PATH)) return null;
   try {
     return JSON.parse(readFileSync(TOKEN_PATH, "utf-8")) as CalendarTokens;
@@ -100,16 +112,133 @@ export function getStatus(): ConnectorStatus {
   };
 }
 
+// ── OAuth helpers ─────────────────────────────────────────────────────────────
+
+function buildAuthUrl(state: string): string {
+  const params = new URLSearchParams({
+    client_id: clientId(),
+    redirect_uri: REDIRECT_URI,
+    response_type: "code",
+    scope: SCOPES.join(" "),
+    access_type: "offline",
+    prompt: "consent",
+    state,
+  });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+async function exchangeCode(
+  code: string,
+): Promise<Omit<CalendarTokens, "calendar_id" | "connected_at">> {
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId(),
+      client_secret: clientSecret(),
+      redirect_uri: REDIRECT_URI,
+      grant_type: "authorization_code",
+    }).toString(),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Token exchange failed: ${res.status} ${body}`);
+  }
+  const json = (await res.json()) as {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    token_type?: string;
+    scope?: string;
+  };
+  return {
+    access_token: json.access_token,
+    refresh_token: json.refresh_token,
+    expiry_date: json.expires_in
+      ? Date.now() + json.expires_in * 1000
+      : undefined,
+    token_type: json.token_type,
+    scope: json.scope,
+  };
+}
+
+async function refreshAccessToken(
+  tokens: CalendarTokens,
+): Promise<CalendarTokens> {
+  if (!tokens.refresh_token) throw new Error("No refresh token available");
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      refresh_token: tokens.refresh_token,
+      client_id: clientId(),
+      client_secret: clientSecret(),
+      grant_type: "refresh_token",
+    }).toString(),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Token refresh failed: ${res.status} ${body}`);
+  }
+  const json = (await res.json()) as {
+    access_token: string;
+    expires_in?: number;
+    token_type?: string;
+  };
+  const updated: CalendarTokens = {
+    ...tokens,
+    access_token: json.access_token,
+    expiry_date: json.expires_in
+      ? Date.now() + json.expires_in * 1000
+      : tokens.expiry_date,
+  };
+  saveTokens(updated);
+  return updated;
+}
+
+/** Returns a valid access token, refreshing if needed. */
+export async function getValidAccessToken(): Promise<string> {
+  let tokens = loadTokens();
+  if (!tokens) throw new Error("Google Calendar not connected");
+  const bufferMs = 60_000;
+  if (tokens.expiry_date && Date.now() > tokens.expiry_date - bufferMs) {
+    tokens = await refreshAccessToken(tokens);
+  }
+  return tokens.access_token;
+}
+
+async function revokeToken(token: string): Promise<void> {
+  await fetch(
+    `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
+    { method: "POST" },
+  ).catch(() => {});
+}
+
+// ── State map (in-memory CSRF protection) ────────────────────────────────────
+
+const pendingStates = new Set<string>();
+
+function generateState(): string {
+  const state = crypto.randomBytes(32).toString("hex");
+  pendingStates.add(state);
+  setTimeout(() => pendingStates.delete(state), 10 * 60 * 1000);
+  return state;
+}
+
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 async function calendarGet(
   endpoint: string,
-  apiKey: string,
+  accessToken: string,
   params: Record<string, string> = {},
   signal?: AbortSignal,
 ): Promise<unknown> {
-  const qs = new URLSearchParams({ ...params, key: apiKey });
-  const res = await fetch(`${CALENDAR_API}${endpoint}?${qs}`, { signal });
+  const qs = new URLSearchParams(params);
+  const res = await fetch(`${CALENDAR_API}${endpoint}?${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal,
+  });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(
@@ -119,18 +248,15 @@ async function calendarGet(
   return res.json();
 }
 
-async function verifyCredentials(
-  apiKey: string,
+async function fetchCalendarSummary(
+  accessToken: string,
   calendarId: string,
-  signal?: AbortSignal,
-): Promise<{ summary: string }> {
+): Promise<string> {
   const data = (await calendarGet(
     `/calendars/${encodeURIComponent(calendarId)}`,
-    apiKey,
-    {},
-    signal,
+    accessToken,
   )) as { summary?: string };
-  return { summary: data.summary ?? calendarId };
+  return data.summary ?? calendarId;
 }
 
 // ── Event fetching ────────────────────────────────────────────────────────────
@@ -143,14 +269,9 @@ export async function listEvents(
   } = {},
   signal?: AbortSignal,
 ): Promise<CalendarEvent[]> {
-  const tokens = loadTokens();
-  if (!tokens) {
-    throw new Error(
-      "Google Calendar not connected. POST /connections/google-calendar/connect first.",
-    );
-  }
-
-  const calendarId = opts.calendarId ?? tokens.calendar_id;
+  const accessToken = await getValidAccessToken();
+  const tokens = loadTokens()!;
+  const calendarId = opts.calendarId ?? tokens.calendar_id ?? "primary";
   const daysAhead = Math.min(opts.daysAhead ?? 7, 30);
   const maxResults = Math.min(opts.maxResults ?? 20, 50);
 
@@ -159,7 +280,7 @@ export async function listEvents(
 
   const data = (await calendarGet(
     `/calendars/${encodeURIComponent(calendarId)}/events`,
-    tokens.api_key,
+    accessToken,
     {
       timeMin: now.toISOString(),
       timeMax: end.toISOString(),
@@ -203,28 +324,53 @@ export async function listEvents(
 
 // ── HTTP handlers ─────────────────────────────────────────────────────────────
 
-export async function handleCalendarConnect(
-  body: unknown,
-): Promise<ConnectorHandlerResult> {
-  const { api_key, calendar_id } = (body ?? {}) as {
-    api_key?: string;
-    calendar_id?: string;
-  };
-  if (!api_key || typeof api_key !== "string") {
+export function handleCalendarAuthRedirect(): ConnectorHandlerResult {
+  if (!isConfigured()) {
     return {
       status: 400,
       contentType: "application/json",
-      body: JSON.stringify({ ok: false, error: "api_key required" }),
+      body: JSON.stringify({
+        ok: false,
+        error:
+          "GOOGLE_CALENDAR_CLIENT_ID and GOOGLE_CALENDAR_CLIENT_SECRET env vars not set",
+      }),
     };
   }
-  const calId = calendar_id?.trim() || "primary";
+  const state = generateState();
+  return { status: 302, body: "", redirect: buildAuthUrl(state) };
+}
+
+export async function handleCalendarCallback(
+  code: string | null,
+  state: string | null,
+  error: string | null,
+): Promise<ConnectorHandlerResult> {
+  if (error) {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error }),
+    };
+  }
+  if (!code || !state || !pendingStates.has(state)) {
+    return {
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, error: "Invalid OAuth state" }),
+    };
+  }
+  pendingStates.delete(state);
   try {
-    const { summary } = await verifyCredentials(api_key, calId);
-    saveTokens({
-      api_key,
+    const oauthTokens = await exchangeCode(code);
+    // Default to "primary" calendar; user can update later
+    const calId = "primary";
+    const summary = await fetchCalendarSummary(oauthTokens.access_token, calId);
+    const tokens: CalendarTokens = {
+      ...oauthTokens,
       calendar_id: calId,
       connected_at: new Date().toISOString(),
-    });
+    };
+    saveTokens(tokens);
     return {
       status: 200,
       contentType: "application/json",
@@ -255,10 +401,8 @@ export async function handleCalendarTest(): Promise<ConnectorHandlerResult> {
     };
   }
   try {
-    const { summary } = await verifyCredentials(
-      tokens.api_key,
-      tokens.calendar_id,
-    );
+    const accessToken = await getValidAccessToken();
+    const summary = await fetchCalendarSummary(accessToken, tokens.calendar_id);
     return {
       status: 200,
       contentType: "application/json",
@@ -280,7 +424,9 @@ export async function handleCalendarTest(): Promise<ConnectorHandlerResult> {
   }
 }
 
-export function handleCalendarDisconnect(): ConnectorHandlerResult {
+export async function handleCalendarDisconnect(): Promise<ConnectorHandlerResult> {
+  const tokens = loadTokens();
+  if (tokens?.access_token) await revokeToken(tokens.access_token);
   deleteTokens();
   return {
     status: 200,
