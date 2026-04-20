@@ -4,6 +4,11 @@ description: |
   ctxSaveTrace, then reads it back with ctxQueryTraces, and confirms the trace
   appears in the result. Output lands in ~/.patchwork/inbox/ for manual inspection.
   Run this after deploying a new bridge build to confirm the memory moat is live.
+
+  NOTE: requires --claude-driver subprocess and a running bridge with HTTP port
+  so the agent subprocess has MCP access. Running via `patchwork recipe run`
+  (local yamlRunner) will fail at Step 1 — the local claude -p subprocess has
+  no bridge MCP context. Trigger from the dashboard Recipes page instead.
 trigger:
   type: manual
 steps:
