@@ -4,7 +4,7 @@
 // Uses Node 20.6+ native dotenv loader; falls back to manual parse for older Node.
 {
   const { fileURLToPath: _fileURLToPath } = await import("node:url");
-  const envPath = _fileURLToPath(new URL("../../.env", import.meta.url));
+  const envPath = _fileURLToPath(new URL("../.env", import.meta.url));
   try {
     const { readFileSync, existsSync } = await import("node:fs");
     if (existsSync(envPath)) {
