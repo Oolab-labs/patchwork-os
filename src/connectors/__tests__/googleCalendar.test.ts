@@ -18,25 +18,28 @@ vi.stubGlobal("fetch", mockFetch);
 import * as fs from "node:fs";
 import {
   getStatus,
-  handleCalendarConnect,
+  handleCalendarAuthRedirect,
+  handleCalendarCallback,
   handleCalendarDisconnect,
   handleCalendarTest,
   listEvents,
   loadTokens,
 } from "../googleCalendar.js";
 
-function makeTokenJson(overrides: Record<string, string> = {}) {
+function makeTokenJson(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
-    api_key: "AIzaTest",
+    access_token: "at_test",
+    refresh_token: "rt_test",
+    expiry_date: Date.now() + 60 * 60 * 1000,
     calendar_id: "primary",
     connected_at: "2026-04-20T00:00:00Z",
     ...overrides,
   });
 }
 
-function mockConnected() {
+function mockConnected(overrides: Record<string, unknown> = {}) {
   vi.mocked(fs.existsSync).mockReturnValue(true);
-  vi.mocked(fs.readFileSync).mockReturnValue(makeTokenJson());
+  vi.mocked(fs.readFileSync).mockReturnValue(makeTokenJson(overrides));
 }
 
 function makeEventsResponse(items: unknown[] = []) {
@@ -51,12 +54,14 @@ function makeEventsResponse(items: unknown[] = []) {
 beforeEach(() => {
   vi.mocked(fs.existsSync).mockReturnValue(false);
   mockFetch.mockReset();
-  delete process.env.GOOGLE_CALENDAR_API_KEY;
-  delete process.env.GOOGLE_CALENDAR_ID;
+  process.env.GOOGLE_CALENDAR_CLIENT_ID = "cid";
+  process.env.GOOGLE_CALENDAR_CLIENT_SECRET = "csecret";
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+  delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
 });
 
 // ── getStatus ────────────────────────────────────────────────────────────────
@@ -73,92 +78,98 @@ describe("getStatus", () => {
     expect(s.lastSync).toBe("2026-04-20T00:00:00Z");
     expect(s.calendarId).toBe("primary");
   });
-
-  it("uses env vars when set", () => {
-    process.env.GOOGLE_CALENDAR_API_KEY = "envKey";
-    process.env.GOOGLE_CALENDAR_ID = "env@gmail.com";
-    expect(getStatus().status).toBe("connected");
-  });
 });
 
 // ── loadTokens ───────────────────────────────────────────────────────────────
 
 describe("loadTokens", () => {
-  it("returns null when no file and no env", () => {
+  it("returns null when no file", () => {
     expect(loadTokens()).toBeNull();
   });
 
   it("reads from file when present", () => {
     mockConnected();
     const tok = loadTokens();
-    expect(tok?.api_key).toBe("AIzaTest");
+    expect(tok?.access_token).toBe("at_test");
     expect(tok?.calendar_id).toBe("primary");
-  });
-
-  it("prefers env vars over file", () => {
-    mockConnected();
-    process.env.GOOGLE_CALENDAR_API_KEY = "envKey";
-    process.env.GOOGLE_CALENDAR_ID = "env@cal.com";
-    const tok = loadTokens();
-    expect(tok?.api_key).toBe("envKey");
-    expect(tok?.calendar_id).toBe("env@cal.com");
   });
 });
 
-// ── handleCalendarConnect ────────────────────────────────────────────────────
+// ── handleCalendarAuthRedirect ───────────────────────────────────────────────
 
-describe("handleCalendarConnect", () => {
-  it("returns 400 when api_key missing", async () => {
-    const r = await handleCalendarConnect({});
+describe("handleCalendarAuthRedirect", () => {
+  it("returns 400 when client env vars unset", () => {
+    delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    const r = handleCalendarAuthRedirect();
     expect(r.status).toBe(400);
     expect(JSON.parse(r.body).ok).toBe(false);
   });
 
-  it("saves tokens on success", async () => {
+  it("returns 302 redirect to Google when configured", () => {
+    const r = handleCalendarAuthRedirect();
+    expect(r.status).toBe(302);
+    expect(r.redirect).toMatch(/accounts\.google\.com\/o\/oauth2\/v2\/auth/);
+    expect(r.redirect).toMatch(/client_id=cid/);
+    expect(r.redirect).toMatch(/state=/);
+  });
+});
+
+// ── handleCalendarCallback ───────────────────────────────────────────────────
+
+describe("handleCalendarCallback", () => {
+  it("returns 400 on oauth error param", async () => {
+    const r = await handleCalendarCallback(null, null, "access_denied");
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body).error).toBe("access_denied");
+  });
+
+  it("returns 400 on missing code", async () => {
+    const r = await handleCalendarCallback(null, "somestate", null);
+    expect(r.status).toBe(400);
+  });
+
+  it("returns 400 on unknown state (CSRF)", async () => {
+    const r = await handleCalendarCallback("code123", "unknownstate", null);
+    expect(r.status).toBe(400);
+    expect(JSON.parse(r.body).error).toMatch(/state/i);
+  });
+
+  it("exchanges code + saves tokens on valid state", async () => {
+    // Generate a real state via the auth redirect path
+    const auth = handleCalendarAuthRedirect();
+    const url = new URL(auth.redirect ?? "");
+    const state = url.searchParams.get("state");
+    expect(state).toBeTruthy();
+
+    // Token exchange response
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ({ summary: "My Calendar" }),
+      json: async () => ({
+        access_token: "at_new",
+        refresh_token: "rt_new",
+        expires_in: 3600,
+        token_type: "Bearer",
+        scope: "https://www.googleapis.com/auth/calendar.readonly",
+      }),
+      text: async () => "{}",
+    } as unknown as Response);
+    // Calendar summary lookup
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ summary: "My Cal" }),
       text: async () => "{}",
     } as unknown as Response);
 
-    const r = await handleCalendarConnect({
-      api_key: "AIzaTest",
-      calendar_id: "primary",
-    });
+    const r = await handleCalendarCallback("code123", state, null);
     expect(r.status).toBe(200);
     const body = JSON.parse(r.body);
     expect(body.ok).toBe(true);
-    expect(body.summary).toBe("My Calendar");
+    expect(body.calendarId).toBe("primary");
+    expect(body.summary).toBe("My Cal");
     expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalled();
-  });
-
-  it("returns 400 when API returns error", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 403,
-      text: async () => "forbidden",
-    } as unknown as Response);
-
-    const r = await handleCalendarConnect({
-      api_key: "bad",
-      calendar_id: "primary",
-    });
-    expect(r.status).toBe(400);
-    expect(JSON.parse(r.body).ok).toBe(false);
-  });
-
-  it("defaults calendar_id to primary when empty", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ summary: "Cal" }),
-      text: async () => "{}",
-    } as unknown as Response);
-
-    const r = await handleCalendarConnect({ api_key: "AIza" });
-    expect(r.status).toBe(200);
-    expect(JSON.parse(r.body).calendarId).toBe("primary");
   });
 });
 
@@ -171,7 +182,7 @@ describe("handleCalendarTest", () => {
     expect(JSON.parse(r.body).ok).toBe(false);
   });
 
-  it("returns ok when credentials valid", async () => {
+  it("returns ok when token valid", async () => {
     mockConnected();
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -189,15 +200,21 @@ describe("handleCalendarTest", () => {
 // ── handleCalendarDisconnect ─────────────────────────────────────────────────
 
 describe("handleCalendarDisconnect", () => {
-  it("deletes token file when it exists", () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    const r = handleCalendarDisconnect();
+  it("deletes token file and revokes when it exists", async () => {
+    mockConnected();
+    // Revoke call
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => "{}",
+    } as unknown as Response);
+    const r = await handleCalendarDisconnect();
     expect(r.status).toBe(200);
     expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalled();
   });
 
-  it("returns ok even when no file", () => {
-    const r = handleCalendarDisconnect();
+  it("returns ok even when no file", async () => {
+    const r = await handleCalendarDisconnect();
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body).ok).toBe(true);
   });
