@@ -10,6 +10,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-alpha.4] — 2026-04-20
+
+### Added
+- **`createLinearIssue` MCP tool** — write path for the Linear connector. Accepts `title`, `description`, `teamKey` (case-insensitive, defaults to first team), `priority` (0–4), and `labelNames` (resolved to Linear label IDs). Returns `identifier` + `url`. Linear connector now supports full read + write. 8 tests.
+- **`sentry-to-linear` starter recipe** (`templates/recipes/sentry-to-linear.yaml`) — fetches a Sentry issue with git blame enrichment and creates a triage-ready Linear ticket in one agent step. Demonstrates the Sentry + Linear connector pair. Supports `SENTRY_ISSUE_ID`, `LINEAR_TEAM_KEY`, and `LINEAR_PRIORITY` vars.
+
+### Fixed
+- **Dashboard activity page**: when the noise filter (connection/grace events) hides all loaded events, now shows "N connection events hidden — click Show connection events to see them" instead of an empty table with no explanation.
+- **Dashboard overview**: Extension "Disconnected" badge now shows a hover tooltip and "Not connected — see Settings" foot text instead of a bare red pill.
+
+---
+
+## [0.2.0-alpha.3] — 2026-04-20
+
+### Added
+- **Linear connector** — personal API key auth (no OAuth app required). Token stored at `~/.patchwork/tokens/linear.json`. HTTP routes: `POST /connections/linear/connect`, `POST /connections/linear/test`, `DELETE /connections/linear`. Dashboard connections page wired.
+- **`fetchLinearIssue` MCP tool** — fetch a Linear issue by identifier (`LIN-42`), team-prefixed ID (`TEAM-123`), or full URL. Returns title, description, state, assignee, labels, priority, and team. 7 tests.
+- **`ctxGetTaskContext` Linear integration** — `detectRefType` now recognises `LIN-42` / `TEAM-123` patterns and Linear URLs as `linear_issue` refs. Fetches and merges issue data into unified task context alongside GitHub + commit data. 5 new tests.
+- **`linear.list_issues` recipe step** — `yamlRunner` supports `assignee`, `state`, `team`, `max` params. Morning-brief template updated with a Linear section.
+- **Sentry connector** (`src/connectors/sentry.ts`) + **`fetchSentryIssue` MCP tool** — fetch a Sentry issue and enrich its stack trace with `git blame` to identify the suspect commit. `confidence` field: `high / medium / low`. 45s timeout.
+
+### Fixed
+- **Dashboard per-route page titles** — 14 Next.js route segment `layout.tsx` files added; each page now shows a specific title in the browser tab and PWA (e.g. "Activity — Patchwork OS"). `favicon.ico` added.
+- **Dashboard `runs` page** — missing `key` props, task IDs now link to `/tasks`, dates replaced with relative timestamps.
+- **Dashboard `recipes` page** — missing `key` prop on fragment list.
+- **Automation policy deprecations** — `~/.claude/automation-policy.json` updated: `onPostCompact` → `onCompaction { phase: "post" }`, `onDiagnosticsError` → `onDiagnosticsStateChange { state: "error" }`, `onTestRun.onFailureOnly` → `filter: "failure"`.
+- **`claudeDriver.ts`** — non-null assertion on `newFactory()` result replaced with explicit null check + throw.
+
+### Changed
+- `platform-docs.md` version header → `0.2.0-alpha.3 · 170+ tools · 4 connectors`. New Connectors reference section covering Gmail, GitHub, Sentry, and Linear.
+
+---
+
 ## [2.43.0] — 2026-04-16
 
 ### Changed
