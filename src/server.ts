@@ -1056,6 +1056,64 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── Google Calendar routes ──────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/google-calendar/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handleCalendarConnect } = await import(
+              "./connectors/googleCalendar.js"
+            );
+            let body: unknown = {};
+            try {
+              body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+            } catch {}
+            const result = await handleCalendarConnect(body);
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/google-calendar/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleCalendarTest } = await import(
+            "./connectors/googleCalendar.js"
+          );
+          const result = await handleCalendarTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/google-calendar" &&
+        req.method === "DELETE"
+      ) {
+        void (async () => {
+          const { handleCalendarDisconnect } = await import(
+            "./connectors/googleCalendar.js"
+          );
+          const result = handleCalendarDisconnect();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
       // ── Inbox routes ────────────────────────────────────────────────────
       if (parsedUrl.pathname === "/inbox" && req.method === "GET") {
         void (async () => {
