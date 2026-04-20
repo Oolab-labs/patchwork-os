@@ -131,10 +131,11 @@ export async function fetchIssueStackTrace(
     : `Sentry issue ${issueId}`;
 
   // Extract stacktrace block
-  const stMatch = text.match(/```\n([\s\S]*?)\n```/);
-  const stackTrace = stMatch
-    ? (stMatch[1] as string).trim()
-    : `Error: ${title}\n    (no stack frames)`;
+  const stMatch = text.match(/```(?:\w+)?\n([\s\S]*?)\n```/);
+  if (!stMatch) {
+    throw new Error(`Sentry returned no stack trace for issue ${issueId}`);
+  }
+  const stackTrace = (stMatch[1] as string).trim();
 
   return { stackTrace, title, issueId };
 }
@@ -181,7 +182,7 @@ export async function handleSentryCallback(
     // Best-effort org capture
     try {
       const res = await client().callTool(
-        "list_organizations",
+        "find_organizations",
         {},
         {
           timeoutMs: 10_000,

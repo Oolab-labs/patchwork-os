@@ -1017,25 +1017,6 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
       if (
-        parsedUrl.pathname === "/connections/github/callback" &&
-        req.method === "GET"
-      ) {
-        void (async () => {
-          const { handleGithubCallback } = await import(
-            "./connectors/github.js"
-          );
-          const code = parsedUrl.searchParams.get("code");
-          const state = parsedUrl.searchParams.get("state");
-          const error = parsedUrl.searchParams.get("error");
-          const result = await handleGithubCallback(code, state, error);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        })();
-        return;
-      }
-      if (
         parsedUrl.pathname === "/connections/github/test" &&
         req.method === "POST"
       ) {
