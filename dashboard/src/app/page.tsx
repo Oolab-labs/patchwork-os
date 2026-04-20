@@ -213,38 +213,32 @@ export default function HomePage() {
           >
             {recentDecisions.map((t) => {
               const b = t.body;
+              const ref = b.ref ?? t.key;
               const tags = Array.isArray(b.tags) ? b.tags.slice(0, 3) : [];
+              const colorClass = decisionRowColor(ref, tags);
               return (
                 <Link
                   key={`${t.ts}:${t.key}`}
                   href="/decisions"
-                  style={{
-                    display: "flex",
-                    gap: "var(--s-3)",
-                    alignItems: "baseline",
-                    padding: "8px 10px",
-                    background: "var(--bg-0)",
-                    border: "1px solid var(--border-subtle)",
-                    borderRadius: "var(--r-2)",
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
+                  className={`decision-row ${colorClass}`}
                 >
                   <span
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                      color: "#a78bfa",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--fg-0)",
                       flexShrink: 0,
+                      paddingLeft: "var(--s-3)",
                     }}
                   >
-                    {b.ref ?? t.key}
+                    {ref}
                   </span>
                   <span
                     style={{
                       flex: 1,
-                      fontSize: 13,
-                      color: "var(--fg-1)",
+                      fontSize: 12,
+                      color: "var(--fg-2)",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -253,15 +247,16 @@ export default function HomePage() {
                     {b.solution ?? t.summary}
                   </span>
                   {tags.length > 0 && (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontFamily: "var(--font-mono)",
-                        color: "var(--fg-3)",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {tags.join(",")}
+                    <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      {tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="pill muted"
+                          style={{ fontSize: 10, padding: "1px 6px" }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
                     </span>
                   )}
                   <span
@@ -292,6 +287,14 @@ export default function HomePage() {
       </div>
     </section>
   );
+}
+
+function decisionRowColor(ref: string, tags: string[]): string {
+  if (ref.startsWith("PR-") || ref.startsWith("#")) return "decision-row-info";
+  const allTags = tags.join(" ").toLowerCase();
+  if (allTags.includes("gemini") || allTags.includes("driver")) return "decision-row-warn";
+  if (allTags.includes("bug") || allTags.includes("fix") || allTags.includes("err")) return "decision-row-err";
+  return "decision-row-accent";
 }
 
 function parseUptimeMs(text: string): number | null {
