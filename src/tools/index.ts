@@ -51,6 +51,8 @@ import { createEnrichStackTraceTool } from "./enrichStackTrace.js";
 import { createExplainDiagnosticTool } from "./explainDiagnostic.js";
 import { createExplainSymbolTool } from "./explainSymbol.js";
 import { createFetchCalendarEventsTool } from "./fetchCalendarEvents.js";
+import { createFetchGithubIssueTool } from "./fetchGithubIssue.js";
+import { createFetchGithubPRTool } from "./fetchGithubPR.js";
 import { createFetchLinearIssueTool } from "./fetchLinearIssue.js";
 import { createFetchSentryIssueTool } from "./fetchSentryIssue.js";
 import {
@@ -662,6 +664,8 @@ export function registerAllTools(
     createFetchSentryIssueTool(workspace),
     createFetchLinearIssueTool(),
     createLinearIssueTool(),
+    createFetchGithubIssueTool(),
+    createFetchGithubPRTool(),
     createFetchCalendarEventsTool(),
     createCtxQueryTracesTool({
       activityLog: activityLog ?? null,

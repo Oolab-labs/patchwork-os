@@ -190,6 +190,177 @@ export async function listPRs(opts: ListPRsOpts = {}): Promise<GitHubPR[]> {
   }
 }
 
+// ── Single-item fetchers ─────────────────────────────────────────────────────
+
+export interface GitHubIssueDetail {
+  number: number;
+  title: string;
+  body: string;
+  state: string;
+  url: string;
+  repo: string;
+  author: string;
+  labels: string[];
+  assignees: string[];
+  createdAt: string;
+  updatedAt: string;
+  comments: number;
+}
+
+export interface GitHubPRDetail {
+  number: number;
+  title: string;
+  body: string;
+  state: string;
+  url: string;
+  repo: string;
+  author: string;
+  isDraft: boolean;
+  reviewDecision: string;
+  labels: string[];
+  headBranch: string;
+  baseBranch: string;
+  createdAt: string;
+  updatedAt: string;
+  additions: number;
+  deletions: number;
+}
+
+function parseIssueRef(ref: string): {
+  owner: string;
+  repo: string;
+  number: number;
+} {
+  // https://github.com/owner/repo/issues/42
+  const urlMatch = ref.match(/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/);
+  if (urlMatch) {
+    return {
+      owner: urlMatch[1] as string,
+      repo: urlMatch[2] as string,
+      number: Number(urlMatch[3]),
+    };
+  }
+  // owner/repo#42 or owner/repo/42
+  const shortMatch = ref.match(/^([^/]+)\/([^/#]+)[/#](\d+)$/);
+  if (shortMatch) {
+    return {
+      owner: shortMatch[1] as string,
+      repo: shortMatch[2] as string,
+      number: Number(shortMatch[3]),
+    };
+  }
+  throw new Error(`Cannot parse GitHub issue ref: ${ref}`);
+}
+
+function parsePRRef(ref: string): {
+  owner: string;
+  repo: string;
+  number: number;
+} {
+  const urlMatch = ref.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (urlMatch) {
+    return {
+      owner: urlMatch[1] as string,
+      repo: urlMatch[2] as string,
+      number: Number(urlMatch[3]),
+    };
+  }
+  const shortMatch = ref.match(/^([^/]+)\/([^/#]+)[/#](\d+)$/);
+  if (shortMatch) {
+    return {
+      owner: shortMatch[1] as string,
+      repo: shortMatch[2] as string,
+      number: Number(shortMatch[3]),
+    };
+  }
+  throw new Error(`Cannot parse GitHub PR ref: ${ref}`);
+}
+
+export async function fetchGitHubIssue(
+  ref: string,
+  signal?: AbortSignal,
+): Promise<GitHubIssueDetail> {
+  if (!isConnected("github"))
+    throw new Error(
+      "GitHub not connected. GET /connections/github/auth first.",
+    );
+  const { owner, repo, number } = parseIssueRef(ref);
+  const res = await client().callTool(
+    "get_issue",
+    { owner, repo, issue_number: number },
+    { signal },
+  );
+  const raw = McpClient.extractJson<Record<string, unknown>>(res);
+  return {
+    number: (raw.number as number) ?? number,
+    title: (raw.title as string) ?? "",
+    body: (raw.body as string) ?? "",
+    state: (raw.state as string) ?? "",
+    url: (raw.html_url as string) ?? (raw.url as string) ?? "",
+    repo: `${owner}/${repo}`,
+    author:
+      ((raw.user as Record<string, unknown>)?.login as string) ??
+      (raw.author as string) ??
+      "",
+    labels: ((raw.labels as Array<Record<string, unknown>>) ?? []).map(
+      (l) => (l.name as string) ?? String(l),
+    ),
+    assignees: ((raw.assignees as Array<Record<string, unknown>>) ?? []).map(
+      (a) => (a.login as string) ?? String(a),
+    ),
+    createdAt: (raw.created_at as string) ?? "",
+    updatedAt: (raw.updated_at as string) ?? "",
+    comments: (raw.comments as number) ?? 0,
+  };
+}
+
+export async function fetchGitHubPR(
+  ref: string,
+  signal?: AbortSignal,
+): Promise<GitHubPRDetail> {
+  if (!isConnected("github"))
+    throw new Error(
+      "GitHub not connected. GET /connections/github/auth first.",
+    );
+  const { owner, repo, number } = parsePRRef(ref);
+  const res = await client().callTool(
+    "get_pull_request",
+    { owner, repo, pullNumber: number },
+    { signal },
+  );
+  const raw = McpClient.extractJson<Record<string, unknown>>(res);
+  return {
+    number: (raw.number as number) ?? number,
+    title: (raw.title as string) ?? "",
+    body: (raw.body as string) ?? "",
+    state: (raw.state as string) ?? "",
+    url: (raw.html_url as string) ?? (raw.url as string) ?? "",
+    repo: `${owner}/${repo}`,
+    author:
+      ((raw.user as Record<string, unknown>)?.login as string) ??
+      (raw.author as string) ??
+      "",
+    isDraft: Boolean(raw.draft ?? raw.isDraft ?? false),
+    reviewDecision:
+      (raw.review_decision as string) ?? (raw.reviewDecision as string) ?? "",
+    labels: ((raw.labels as Array<Record<string, unknown>>) ?? []).map(
+      (l) => (l.name as string) ?? String(l),
+    ),
+    headBranch:
+      ((raw.head as Record<string, unknown>)?.ref as string) ??
+      (raw.headRefName as string) ??
+      "",
+    baseBranch:
+      ((raw.base as Record<string, unknown>)?.ref as string) ??
+      (raw.baseRefName as string) ??
+      "",
+    createdAt: (raw.created_at as string) ?? "",
+    updatedAt: (raw.updated_at as string) ?? "",
+    additions: (raw.additions as number) ?? 0,
+    deletions: (raw.deletions as number) ?? 0,
+  };
+}
+
 // ── HTTP handlers ────────────────────────────────────────────────────────────
 
 export async function handleGithubAuthorize(): Promise<ConnectorHandlerResult> {
