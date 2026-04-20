@@ -62,3 +62,6 @@ deps-*.html
 # Playwright MCP session artifacts
 .playwright-mcp/
 session-*.md
+
+# Dogfood / playtest / debug screenshots (ad-hoc, not repo assets)
+/*.png
