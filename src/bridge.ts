@@ -107,6 +107,7 @@ interface AgentSession {
   connectedAt: number;
   /** Cleared to false each heartbeat ping; reset to true on pong. Terminate if still false at next ping. */
   wsAlive: boolean;
+  remoteAddr?: string;
 }
 
 export class Bridge {
@@ -367,6 +368,7 @@ export class Bridge {
         graceTimer: null,
         connectedAt: Date.now(),
         wsAlive: true,
+        remoteAddr: (ws as WebSocket & { remoteAddr?: string }).remoteAddr,
       };
       ws.on("pong", () => {
         session.wsAlive = true;
@@ -1232,14 +1234,19 @@ export class Bridge {
       }) as unknown as Record<string, unknown>[];
     };
     this.server.sessionsFn = () =>
-      [...this.sessions.values()].map((s) => ({
-        id: s.id,
-        connectedAt: new Date(s.connectedAt).toISOString(),
-        openedFileCount: s.openedFiles.size,
-        pendingApprovals: getApprovalQueue()
-          .list()
-          .filter((a) => a.sessionId === s.id).length,
-      }));
+      [...this.sessions.values()].map((s) => {
+        const tools = this.activityLog.querySessionTools(s.id, 1);
+        return {
+          id: s.id,
+          connectedAt: new Date(s.connectedAt).toISOString(),
+          openedFileCount: s.openedFiles.size,
+          pendingApprovals: getApprovalQueue()
+            .list()
+            .filter((a) => a.sessionId === s.id).length,
+          firstTool: tools[0]?.tool,
+          remoteAddr: s.remoteAddr,
+        };
+      });
     this.server.sessionDetailFn = (id: string) => {
       const s = this.sessions.get(id);
       const summary = s
