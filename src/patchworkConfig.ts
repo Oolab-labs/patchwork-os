@@ -25,6 +25,15 @@ export interface PatchworkConfig {
   approvalGate?: "off" | "high" | "all";
   /** Absolute path to a managed settings file (admin-controlled, highest rule precedence). */
   managedSettingsPath?: string;
+  recipes?: {
+    disabled?: string[];
+  };
+  /** AI driver mode — persisted so dashboard changes survive restart. */
+  driver?: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none";
+  /** Notification channel config */
+  notifications?: {
+    slackChannel?: string;
+  };
 }
 
 const DEFAULTS: PatchworkConfig = {

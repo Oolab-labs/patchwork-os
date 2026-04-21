@@ -24,7 +24,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
-const REDIRECT_URI = "http://localhost:3100/connections/gmail/callback";
+const REDIRECT_URI = `http://localhost:${process.env.PATCHWORK_BRIDGE_PORT ?? "3101"}/connections/gmail/callback`;
 const TOKEN_PATH = path.join(homedir(), ".patchwork", "tokens", "gmail.json");
 
 export interface GmailTokens {
@@ -209,10 +209,14 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   const { getStatus: getSentryStatus } = await import("./sentry.js");
   const { getStatus: getLinearStatus } = await import("./linear.js");
   const { getStatus: getCalendarStatus } = await import("./googleCalendar.js");
+  const { isConnected: isSlackConnected, getProfile: getSlackProfile } =
+    await import("./slack.js");
   const gh = getGitHubStatus();
   const sentry = getSentryStatus();
   const linear = getLinearStatus();
   const calendar = getCalendarStatus();
+  const slackConnected = isSlackConnected();
+  const slackProfile = getSlackProfile();
   const connectors: ConnectorStatus[] = [
     {
       id: "gmail",
@@ -238,6 +242,12 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
       id: "google-calendar",
       status: calendar.status,
       lastSync: calendar.lastSync,
+    },
+    {
+      id: "slack",
+      status: slackConnected ? "connected" : "disconnected",
+      lastSync:
+        slackConnected && slackProfile ? new Date().toISOString() : undefined,
     },
   ];
   return {

@@ -11,17 +11,21 @@ import { getApprovalQueue } from "./approvalQueue.js";
 import { AutomationHooks, loadPolicy } from "./automation.js";
 import { loadOrCreateBridgeToken } from "./bridgeToken.js";
 import { repairBridgeToolsRulesIfStale } from "./bridgeToolsRules.js";
-import { createDriver } from "./claudeDriver.js";
 import { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import { CommitIssueLinkLog } from "./commitIssueLinkLog.js";
 import type { Config } from "./config.js";
 import { DecisionTraceLog } from "./decisionTraceLog.js";
+import { createDriver } from "./drivers/index.js";
 import { ExtensionClient } from "./extensionClient.js";
 import { FileLock } from "./fileLock.js";
 import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
 import { Logger } from "./logger.js";
 import { OAuthServerImpl } from "./oauth.js";
+import {
+  loadConfig as loadPatchworkConfig,
+  saveConfig as savePatchworkConfig,
+} from "./patchworkConfig.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
@@ -882,11 +886,10 @@ export class Bridge {
     );
 
     // 2. Initialize Claude driver and orchestrator (if configured)
-    if (this.config.claudeDriver !== "none") {
+    if (this.config.driver !== "none") {
       const driver = createDriver(
-        this.config.claudeDriver,
-        this.config.claudeBinary,
-        this.config.antBinary,
+        this.config.driver,
+        { binary: this.config.claudeBinary, antBinary: this.config.antBinary },
         (msg) => this.logger.info(msg),
       );
       // Patchwork: enrichment link log is useful regardless of orchestrator.
@@ -960,7 +963,7 @@ export class Bridge {
         const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
         this.recipeScheduler = new RecipeScheduler({
           recipesDir,
-          enqueue: (opts) => this.orchestrator!.enqueue(opts),
+          enqueue: (opts) => this.orchestrator?.enqueue(opts),
           logger: this.logger,
         });
         const scheduled = this.recipeScheduler.start();
@@ -1219,6 +1222,30 @@ export class Bridge {
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
       return saveRecipe(recipesDir, draft);
     };
+    this.server.setRecipeEnabledFn = (name: string, enabled: boolean) => {
+      try {
+        const cfg = loadPatchworkConfig();
+        const disabled = new Set<string>(
+          (cfg as { recipes?: { disabled?: string[] } }).recipes?.disabled ??
+            [],
+        );
+        if (enabled) disabled.delete(name);
+        else disabled.add(name);
+        savePatchworkConfig({
+          ...cfg,
+          recipes: {
+            ...(cfg as { recipes?: Record<string, unknown> }).recipes,
+            disabled: [...disabled],
+          },
+        } as Parameters<typeof savePatchworkConfig>[0]);
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    };
     this.server.runsFn = (q) => {
       if (!this.recipeRunLog) return [];
       return this.recipeRunLog.query({
@@ -1382,7 +1409,7 @@ export class Bridge {
           workspace: this.config.workspace,
           approvalGate: this.server.approvalGate,
           fullMode: this.config.fullMode,
-          claudeDriver: this.config.claudeDriver,
+          driver: this.config.driver,
           automationEnabled: this.config.automationEnabled,
           port: this.port,
           webhookUrl: this.server.approvalWebhookUrl ?? null,
@@ -1764,7 +1791,7 @@ export class Bridge {
       try {
         await Promise.race([
           Promise.resolve().then(() =>
-            this.checkpoint!.write(this._buildCheckpoint(this.port)),
+            this.checkpoint?.write(this._buildCheckpoint(this.port)),
           ),
           new Promise<void>((resolve) => setTimeout(resolve, 3000)),
         ]);

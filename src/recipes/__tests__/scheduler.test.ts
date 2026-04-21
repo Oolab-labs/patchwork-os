@@ -12,12 +12,29 @@ describe("parseSchedule", () => {
     ["@every 250ms", 250],
     ["  @every 1m  ", 60_000],
   ])("parses %s → %d ms", (input, expected) => {
-    expect(parseSchedule(input)).toBe(expected);
+    const result = parseSchedule(input);
+    expect(result).not.toBeNull();
+    expect(result?.kind).toBe("interval");
+    expect(
+      (result as { kind: "interval"; intervalMs: number }).intervalMs,
+    ).toBe(expected);
+  });
+
+  it.each([
+    ["0 8 * * 1-5"],
+    ["*/5 * * * *"],
+    ["0 0 * * *"],
+  ])("parses cron5 expression %s", (input) => {
+    const result = parseSchedule(input);
+    expect(result).not.toBeNull();
+    expect(result?.kind).toBe("cron5");
+    expect((result as { kind: "cron5"; expression: string }).expression).toBe(
+      input.trim(),
+    );
   });
 
   it.each([
     "",
-    "*/5 * * * *", // standard cron not yet supported
     "@every 0s",
     "@every -1m",
     "every 5m",
@@ -114,7 +131,7 @@ describe("RecipeScheduler", () => {
   });
 
   it("skips cron recipes with an unsupported schedule string", () => {
-    writeRecipe("bad", { type: "cron", schedule: "*/5 * * * *" });
+    writeRecipe("bad", { type: "cron", schedule: "not-a-schedule" });
     writeRecipe("good", { type: "cron", schedule: "@every 10m" });
     const scheduler = new RecipeScheduler({
       recipesDir: tmp,

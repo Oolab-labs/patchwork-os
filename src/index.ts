@@ -1747,6 +1747,22 @@ Options:
   process.exit(0);
 }
 
+// Handle launchd subcommand — install/uninstall macOS LaunchAgent for auto-start
+if (process.argv[2] === "launchd") {
+  const sub = process.argv[3];
+  if (sub === "install") {
+    const { runLaunchdInstall } = await import("./commands/launchd.js");
+    await runLaunchdInstall(process.argv.slice(4));
+  } else if (sub === "uninstall") {
+    const { runLaunchdUninstall } = await import("./commands/launchd.js");
+    await runLaunchdUninstall(process.argv.slice(4));
+  } else {
+    process.stderr.write("Usage: patchwork-os launchd install|uninstall\n");
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 // F6: "Did you mean?" for unknown CLI subcommands
 // Patchwork: no-args → terminal dashboard (when invoked as patchwork-os or patchwork).
 {
@@ -1779,6 +1795,7 @@ Options:
     "shim",
     "recipe",
     "dashboard",
+    "launchd",
   ];
   const unknownSub = process.argv[2];
   if (

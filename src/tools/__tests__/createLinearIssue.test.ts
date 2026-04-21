@@ -65,7 +65,7 @@ describe("createLinearIssue tool", () => {
     await tool.handler({ title: "Test" });
 
     const args = vi.mocked(createIssue).mock.calls[0]?.[0];
-    expect(args?.teamId).toBe("team-1");
+    expect(args?.team).toBe("Engineering");
   });
 
   it("resolves teamKey case-insensitively", async () => {
@@ -115,7 +115,7 @@ describe("createLinearIssue tool", () => {
     await tool.handler({ title: "Bug fix", labelNames: ["bug"] });
 
     const args = vi.mocked(createIssue).mock.calls[0]?.[0];
-    expect(args?.labelIds).toEqual(["label-bug"]);
+    expect(args?.labels).toEqual(["bug"]);
   });
 
   it("returns notConnected when tokens absent", async () => {

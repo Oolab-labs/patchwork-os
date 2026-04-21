@@ -484,6 +484,7 @@ export default function ConnectionsPage() {
   const linearConnector = getConnector("linear");
   const sentryConnector = getConnector("sentry");
   const calendarConnector = getConnector("google-calendar");
+  const slackConnector = getConnector("slack");
 
   return (
     <section>
@@ -582,10 +583,16 @@ export default function ConnectionsPage() {
             onTest={() => handleTest("google-calendar")}
             loading={acting === "google-calendar"}
           />
-          <PlaceholderCard
+          <ConnectorCard
             name="Slack"
-            description="Monitor channels and threads. Agents can surface action items and draft responses."
+            description="Post messages and list channels. Agents can send summaries, alerts, and notifications to your workspace."
             icon={<IconSlack />}
+            status={slackConnector.status}
+            lastSync={slackConnector.lastSync}
+            onConnect={() => handleConnect("slack")}
+            onDisconnect={() => handleDisconnect("slack")}
+            onTest={() => handleTest("slack")}
+            loading={acting === "slack"}
           />
         </div>
       )}

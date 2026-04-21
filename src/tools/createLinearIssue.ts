@@ -55,6 +55,7 @@ export function createLinearIssueTool() {
           state: { type: "string" },
           team: { type: "string" },
           linearConnected: { type: "boolean" },
+          error: { type: "string" },
         },
         required: [
           "id",

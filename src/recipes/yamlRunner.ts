@@ -85,6 +85,24 @@ export interface RunnerDeps {
   claudeFn?: (prompt: string, model: string) => Promise<string>;
   /** Optional Claude Code CLI caller for agent steps with driver: claude-code. */
   claudeCodeFn?: (prompt: string) => Promise<string>;
+  /**
+   * Optional provider driver invoker for agent steps with driver: openai|grok|gemini.
+   * Dispatches to src/drivers/* under the hood. If not provided, the runner will
+   * lazily construct a driver via createDriver() from drivers/index.js.
+   */
+  providerDriverFn?: (
+    driverName: "openai" | "grok" | "gemini",
+    prompt: string,
+    model: string | undefined,
+  ) => Promise<string>;
+}
+
+export interface StepResult {
+  id: string;
+  tool?: string;
+  status: "ok" | "skipped" | "error";
+  error?: string;
+  durationMs: number;
 }
 
 export interface RunResult {
@@ -92,6 +110,8 @@ export interface RunResult {
   stepsRun: number;
   outputs: string[];
   context: RunContext;
+  stepResults: StepResult[];
+  errorMessage?: string;
 }
 
 export function loadYamlRecipe(filePath: string): YamlRecipe {
@@ -150,7 +170,9 @@ export async function runYamlRecipe(
     ((p: string) => mkdirSync(expandHome(p), { recursive: true }));
 
   const outputs: string[] = [];
+  const stepResults: StepResult[] = [];
   let stepsRun = 0;
+  let runError: string | undefined;
 
   const workdir = deps.workdir ?? process.cwd();
 
@@ -166,6 +188,7 @@ export async function runYamlRecipe(
     fetchFn: deps.fetchFn ?? (globalThis.fetch as FetchFn),
     claudeFn: deps.claudeFn ?? defaultClaudeFn,
     claudeCodeFn: deps.claudeCodeFn ?? defaultClaudeCodeFn,
+    providerDriverFn: deps.providerDriverFn ?? defaultProviderDriverFn,
     getGmailToken:
       deps.getGmailToken ??
       (async () => {
@@ -181,37 +204,103 @@ export async function runYamlRecipe(
       const renderedPrompt = render(agentCfg.prompt, ctx);
       const model = agentCfg.model ?? "claude-haiku-4-5-20251001";
       const intoKey = agentCfg.into ?? "agent_output";
+      const stepId = intoKey;
+      const stepStart = Date.now();
       let agentResult: string;
-      if (agentCfg.driver === "claude-code") {
-        agentResult = await stepDeps.claudeCodeFn(renderedPrompt);
-      } else if (agentCfg.driver === "api") {
-        agentResult = await stepDeps.claudeFn(renderedPrompt, model);
-      } else {
-        // Default driver: use API path. If no ANTHROPIC_API_KEY and caller did not provide a
-        // custom claudeFn (i.e. using the built-in default that returns a skip message), probe
-        // for the claude CLI and fall back automatically.
-        const usingDefaultClaudeFn = deps.claudeFn === undefined;
-        if (!process.env.ANTHROPIC_API_KEY && usingDefaultClaudeFn) {
-          const probe = spawnSync("claude", ["--version"], {
-            encoding: "utf-8",
-            timeout: 5000,
-          });
-          if (!probe.error) {
-            agentResult = await stepDeps.claudeCodeFn(renderedPrompt);
+      try {
+        if (agentCfg.driver === "claude-code") {
+          agentResult = await stepDeps.claudeCodeFn(renderedPrompt);
+        } else if (agentCfg.driver === "api") {
+          agentResult = await stepDeps.claudeFn(renderedPrompt, model);
+        } else if (
+          agentCfg.driver === "openai" ||
+          agentCfg.driver === "grok" ||
+          agentCfg.driver === "gemini"
+        ) {
+          agentResult = await stepDeps.providerDriverFn(
+            agentCfg.driver,
+            renderedPrompt,
+            agentCfg.model,
+          );
+        } else {
+          // Default driver: use API path. If no ANTHROPIC_API_KEY and caller did not provide a
+          // custom claudeFn (i.e. using the built-in default that returns a skip message), probe
+          // for the claude CLI and fall back automatically.
+          const usingDefaultClaudeFn = deps.claudeFn === undefined;
+          if (!process.env.ANTHROPIC_API_KEY && usingDefaultClaudeFn) {
+            const probe = spawnSync("claude", ["--version"], {
+              encoding: "utf-8",
+              timeout: 5000,
+            });
+            if (!probe.error) {
+              agentResult = await stepDeps.claudeCodeFn(renderedPrompt);
+            } else {
+              agentResult = await stepDeps.claudeFn(renderedPrompt, model);
+            }
           } else {
             agentResult = await stepDeps.claudeFn(renderedPrompt, model);
           }
-        } else {
-          agentResult = await stepDeps.claudeFn(renderedPrompt, model);
         }
+        ctx[intoKey] = agentResult;
+        outputs.push(intoKey);
+        stepResults.push({
+          id: stepId,
+          tool: "agent",
+          status: "ok",
+          durationMs: Date.now() - stepStart,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        runError = runError ?? `agent step "${stepId}" failed: ${msg}`;
+        stepResults.push({
+          id: stepId,
+          tool: "agent",
+          status: "error",
+          error: msg,
+          durationMs: Date.now() - stepStart,
+        });
       }
-      ctx[intoKey] = agentResult;
-      outputs.push(intoKey);
       stepsRun++;
       continue;
     }
 
-    const result = await executeStep(step, ctx, stepDeps);
+    const stepStart = Date.now();
+    const stepId = step.into ?? step.tool ?? `step_${stepsRun}`;
+    let result: string | null;
+    try {
+      result = await executeStep(step, ctx, stepDeps);
+      // Detect tool-level errors reported as JSON {ok: false, error: ...}
+      let stepError: string | undefined;
+      if (result !== null) {
+        try {
+          const parsed = JSON.parse(result) as Record<string, unknown>;
+          if (parsed.ok === false && typeof parsed.error === "string") {
+            stepError = parsed.error;
+          }
+        } catch {
+          /* non-JSON result is fine */
+        }
+      }
+      stepResults.push({
+        id: stepId,
+        tool: step.tool,
+        status: result === null ? "skipped" : stepError ? "error" : "ok",
+        error: stepError,
+        durationMs: Date.now() - stepStart,
+      });
+      if (stepError) runError = runError ?? `${step.tool} failed: ${stepError}`;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      runError = runError ?? `${step.tool} failed: ${msg}`;
+      stepResults.push({
+        id: stepId,
+        tool: step.tool,
+        status: "error",
+        error: msg,
+        durationMs: Date.now() - stepStart,
+      });
+      result = null;
+    }
     stepsRun++;
     if (result !== null) {
       if (step.into) {
@@ -246,7 +335,86 @@ export async function runYamlRecipe(
     }
   }
 
-  return { recipe: recipe.name, stepsRun, outputs, context: ctx };
+  // Write to RecipeRunLog so the dashboard Runs page shows this execution
+  try {
+    const { RecipeRunLog } = await import("../runLog.js");
+    const { homedir } = await import("node:os");
+    const logDir = path.join(homedir(), ".patchwork");
+    const log = new RecipeRunLog({ dir: logDir });
+    const trigger = (recipe.trigger as { type?: string })?.type ?? "manual";
+    const createdAt = now.getTime();
+    const doneAt = Date.now();
+    const outputTail = stepResults
+      .map(
+        (s) =>
+          `[${s.status}] ${s.tool ?? s.id}${s.error ? `: ${s.error}` : ""}`,
+      )
+      .join("\n")
+      .slice(0, 2000);
+    log.appendDirect({
+      taskId: `yaml:${recipe.name}:${createdAt}`,
+      recipeName: recipe.name,
+      trigger: (["cron", "webhook", "recipe"].includes(trigger)
+        ? trigger
+        : "recipe") as "cron" | "webhook" | "recipe",
+      status: runError ? "error" : "done",
+      createdAt,
+      startedAt: createdAt,
+      doneAt,
+      durationMs: doneAt - createdAt,
+      outputTail,
+      errorMessage: runError,
+    });
+  } catch {
+    // Non-fatal — run log write failure should never break recipe execution
+  }
+
+  // Notify via Slack if any step failed
+  if (runError) {
+    try {
+      const { isConnected, postMessage } = await import(
+        "../connectors/slack.js"
+      );
+      if (isConnected()) {
+        // Read notification channel from ~/.patchwork/config.json, fallback to first available
+        let notifyChannel = "all-massappealdesigns";
+        try {
+          const cfgPath = path.join(os.homedir(), ".patchwork", "config.json");
+          const cfg = JSON.parse(readFileSync(cfgPath, "utf-8")) as Record<
+            string,
+            unknown
+          >;
+          const notifications = cfg.notifications as
+            | Record<string, unknown>
+            | undefined;
+          if (typeof notifications?.slackChannel === "string") {
+            notifyChannel = notifications.slackChannel;
+          }
+        } catch {
+          /* use default */
+        }
+        const failedSteps = stepResults
+          .filter((s) => s.status === "error")
+          .map((s) => `• ${s.tool ?? s.id}: ${s.error ?? "unknown error"}`)
+          .join("\n");
+        await postMessage(
+          notifyChannel,
+          `⚠️ *Recipe failed: ${recipe.name}*\n\n${failedSteps}\n\n_${new Date().toISOString()}_`,
+        );
+      }
+    } catch {
+      // Non-fatal — notification failure should never mask the original error
+    }
+  }
+
+  return {
+    recipe: recipe.name,
+    stepsRun,
+    outputs,
+    context: ctx,
+    stepResults,
+    errorMessage: runError,
+  };
 }
 
 type StepDeps = Required<Omit<RunnerDeps, "now">> & { workdir: string };
@@ -283,6 +451,52 @@ function defaultClaudeCodeFn(prompt: string): Promise<string> {
     return Promise.resolve(
       `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`,
     );
+  }
+}
+
+// Cache provider drivers across steps within a single recipe process.
+const providerDriverCache = new Map<
+  string,
+  import("../drivers/types.js").ProviderDriver
+>();
+
+async function defaultProviderDriverFn(
+  driverName: "openai" | "grok" | "gemini",
+  prompt: string,
+  model: string | undefined,
+): Promise<string> {
+  try {
+    let driver = providerDriverCache.get(driverName);
+    if (!driver) {
+      const { createDriver } = await import("../drivers/index.js");
+      const d = createDriver(
+        driverName,
+        { binary: "claude", antBinary: "ant" },
+        () => {},
+      );
+      if (!d) return `[agent step failed: ${driverName} driver returned null]`;
+      driver = d;
+      providerDriverCache.set(driverName, driver);
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const result = await driver.run({
+        prompt,
+        workspace: process.cwd(),
+        timeoutMs: 120_000,
+        signal: controller.signal,
+        model,
+      });
+      if (result.errorMessage) {
+        return `[agent step failed: ${result.errorMessage}]`;
+      }
+      return result.text;
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (err) {
+    return `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`;
   }
 }
 
@@ -467,6 +681,35 @@ async function executeStep(
         return JSON.stringify({
           count: 0,
           events: [],
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    case "slack.post_message": {
+      const { postMessage, loadTokens: loadSlackTokens } = await import(
+        "../connectors/slack.js"
+      );
+      if (!loadSlackTokens()) {
+        return JSON.stringify({ ok: false, error: "Slack not connected" });
+      }
+      const channel = step.channel
+        ? render(String(step.channel), ctx)
+        : "general";
+      const text = step.text ? render(String(step.text), ctx) : "";
+      const threadTs = step.thread_ts
+        ? render(String(step.thread_ts), ctx)
+        : undefined;
+      try {
+        const result = await postMessage(channel, text, threadTs ?? undefined);
+        return JSON.stringify({
+          ok: true,
+          ts: result.ts,
+          channel: result.channel,
+        });
+      } catch (err) {
+        return JSON.stringify({
+          ok: false,
           error: err instanceof Error ? err.message : String(err),
         });
       }

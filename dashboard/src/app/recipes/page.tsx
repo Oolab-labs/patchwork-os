@@ -33,6 +33,7 @@ interface Recipe {
   stepCount?: number;
   path?: string;
   hasPermissions?: boolean;
+  enabled?: boolean;
   vars?: RecipeVar[];
   lastRun?: number;
 }
@@ -235,47 +236,48 @@ export default function RecipesPage() {
   const [modalRunning, setModalRunning] = useState(false);
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [recipesRes, runsRes] = await Promise.all([
-          fetch("/api/bridge/recipes"),
-          fetch("/api/bridge/runs").catch(() => null),
-        ]);
-        if (recipesRes.status === 404) {
-          setUnsupported(true);
-          setRecipes([]);
-          return;
-        }
-        if (!recipesRes.ok) throw new Error(`/recipes ${recipesRes.status}`);
-        const data = await recipesRes.json();
-        const list: Recipe[] = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.recipes)
-            ? data.recipes
-            : [];
-        setRecipes(list);
-
-        if (runsRes?.ok) {
-          const runsData = (await runsRes.json()) as { runs?: RunRecord[] };
-          const runs = runsData.runs ?? [];
-          const map = new Map<string, RunRecord>();
-          for (const run of runs) {
-            const existing = map.get(run.recipe);
-            if (!existing || run.startedAt > existing.startedAt) {
-              map.set(run.recipe, run);
-            }
-          }
-          setRunMap(map);
-        }
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
+  const load = React.useCallback(async () => {
+    try {
+      const [recipesRes, runsRes] = await Promise.all([
+        fetch("/api/bridge/recipes"),
+        fetch("/api/bridge/runs").catch(() => null),
+      ]);
+      if (recipesRes.status === 404) {
+        setUnsupported(true);
+        setRecipes([]);
+        return;
       }
-    };
-    load();
-    const id = setInterval(load, 5000);
-    return () => clearInterval(id);
+      if (!recipesRes.ok) throw new Error(`/recipes ${recipesRes.status}`);
+      const data = await recipesRes.json();
+      const list: Recipe[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.recipes)
+          ? data.recipes
+          : [];
+      setRecipes(list);
+
+      if (runsRes?.ok) {
+        const runsData = (await runsRes.json()) as { runs?: RunRecord[] };
+        const runs = runsData.runs ?? [];
+        const map = new Map<string, RunRecord>();
+        for (const run of runs) {
+          const existing = map.get(run.recipe);
+          if (!existing || run.startedAt > existing.startedAt) {
+            map.set(run.recipe, run);
+          }
+        }
+        setRunMap(map);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+    const id = setInterval(() => void load(), 5000);
+    return () => clearInterval(id);
+  }, [load]);
 
   async function executeRun(name: string, vars?: Record<string, string>) {
     setRunning((p) => ({ ...p, [name]: "running…" }));
@@ -468,7 +470,9 @@ export default function RecipesPage() {
                         {lastRun ? relTime(lastRun.startedAt) : "—"}
                       </td>
                       <td>
-                        {status === "running" ? (
+                        {r.enabled === false ? (
+                          <span className="pill muted">Disabled</span>
+                        ) : status === "running" ? (
                           <span className="pill warn">Running</span>
                         ) : status === "failed" ? (
                           <span className="pill err">Failed</span>
@@ -488,8 +492,36 @@ export default function RecipesPage() {
                             type="button"
                             className="btn"
                             onClick={() => handleRunClick(r)}
+                            disabled={r.enabled === false}
                           >
                             Run{r.vars && r.vars.length > 0 ? "…" : ""}
+                          </button>
+                          <button
+                            type="button"
+                            className="text-xs px-2 py-1 rounded border border-gray-600 hover:bg-gray-700"
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              border: "1px solid var(--border-default)",
+                              background: "none",
+                              cursor: "pointer",
+                              color: "var(--fg-2)",
+                            }}
+                            title={r.enabled === false ? "Enable recipe" : "Disable recipe"}
+                            onClick={async () => {
+                              await fetch(
+                                `/api/bridge/recipes/${encodeURIComponent(r.name)}`,
+                                {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ enabled: r.enabled === false }),
+                                },
+                              );
+                              void load();
+                            }}
+                          >
+                            {r.enabled === false ? "Enable" : "Disable"}
                           </button>
                           {state && (
                             <span
