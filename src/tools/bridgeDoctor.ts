@@ -462,11 +462,11 @@ async function checkCircuitBreaker(
 }
 
 async function checkClaudeDriver(config: Config): Promise<CheckResult> {
-  if (config.claudeDriver !== "subprocess") {
+  if (config.driver !== "subprocess") {
     return {
       name: "Claude Driver",
       status: "skip",
-      detail: "Claude driver not set to subprocess",
+      detail: "AI driver not set to subprocess",
     };
   }
   const binary = config.claudeBinary || "claude";

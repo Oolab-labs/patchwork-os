@@ -703,3 +703,218 @@ export function createGithubPostPRReviewTool(workspace: string) {
     timeoutMs: 30_000,
   };
 }
+
+export function createGithubApprovePRTool(workspace: string) {
+  return {
+    schema: {
+      name: "githubApprovePR",
+      description:
+        "Approve a GitHub pull request. Optionally include a review comment body.",
+      annotations: { destructiveHint: false, openWorldHint: true },
+      inputSchema: {
+        type: "object" as const,
+        required: ["prNumber"],
+        properties: {
+          prNumber: {
+            type: "integer",
+            description: "Pull request number",
+          },
+          body: {
+            type: "string",
+            description: "Optional approval comment body.",
+          },
+          repo: {
+            type: "string",
+            description:
+              "Repo in owner/repo format. Defaults to workspace repo.",
+          },
+        },
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          reviewId: { type: ["integer", "null"] },
+          url: { type: "string" },
+        },
+        required: ["reviewId", "url"],
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      const prNumber = requireInt(args, "prNumber", 1);
+      const body = optionalString(args, "body", 65_535) ?? "";
+      const repoArg = optionalString(args, "repo", 256);
+
+      const repo = await resolveRepo(workspace, repoArg, signal);
+      if (!repo) {
+        return error(
+          "Could not determine repository. Pass 'repo' as owner/repo or run from inside a git repository.",
+        );
+      }
+
+      const result = await execSafe(
+        "gh",
+        [
+          "api",
+          `repos/${repo}/pulls/${prNumber}/reviews`,
+          "-X",
+          "POST",
+          "--input",
+          "-",
+          "--",
+        ],
+        {
+          cwd: workspace,
+          signal,
+          timeout: 30_000,
+          stdin: JSON.stringify({ body, event: "APPROVE" }),
+        },
+      );
+
+      if (result.exitCode !== 0) {
+        const msg = result.stderr.trim() || result.stdout.trim();
+        if (isNotFound(msg)) return error(GH_NOT_FOUND);
+        if (isNotAuthed(msg)) return error(`${GH_NOT_AUTHED}\n${msg}`);
+        return error(`Failed to approve PR: ${msg}`);
+      }
+
+      let reviewData: Record<string, unknown> = {};
+      try {
+        reviewData = JSON.parse(result.stdout.trim()) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        /* non-fatal */
+      }
+
+      return successStructured({
+        reviewId: reviewData.id ?? null,
+        url:
+          reviewData.html_url ?? `https://github.com/${repo}/pull/${prNumber}`,
+      });
+    },
+    timeoutMs: 30_000,
+  };
+}
+
+export function createGithubMergePRTool(workspace: string) {
+  return {
+    schema: {
+      name: "githubMergePR",
+      description:
+        "Merge a GitHub pull request. Supports squash, rebase, or merge commit strategies.",
+      annotations: { destructiveHint: true, openWorldHint: true },
+      inputSchema: {
+        type: "object" as const,
+        required: ["prNumber"],
+        properties: {
+          prNumber: {
+            type: "integer",
+            description: "Pull request number",
+          },
+          mergeMethod: {
+            type: "string",
+            enum: ["merge", "squash", "rebase"],
+            description: "Merge strategy. Default: merge.",
+          },
+          commitTitle: {
+            type: "string",
+            description: "Title for the merge commit (merge/squash only).",
+          },
+          commitMessage: {
+            type: "string",
+            description: "Message for the merge commit (merge/squash only).",
+          },
+          repo: {
+            type: "string",
+            description:
+              "Repo in owner/repo format. Defaults to workspace repo.",
+          },
+        },
+        additionalProperties: false as const,
+      },
+      outputSchema: {
+        type: "object" as const,
+        properties: {
+          merged: { type: "boolean" },
+          sha: { type: "string" },
+          message: { type: "string" },
+        },
+        required: ["merged", "sha", "message"],
+      },
+    },
+    handler: async (args: Record<string, unknown>, signal?: AbortSignal) => {
+      const prNumber = requireInt(args, "prNumber", 1);
+      const mergeMethod = optionalString(args, "mergeMethod", 16) ?? "merge";
+      const commitTitle = optionalString(args, "commitTitle", 256);
+      const commitMessage = optionalString(args, "commitMessage", 65_535);
+      const repoArg = optionalString(args, "repo", 256);
+
+      if (!["merge", "squash", "rebase"].includes(mergeMethod)) {
+        return error(
+          `Invalid mergeMethod "${mergeMethod}". Must be merge, squash, or rebase.`,
+        );
+      }
+
+      const repo = await resolveRepo(workspace, repoArg, signal);
+      if (!repo) {
+        return error(
+          "Could not determine repository. Pass 'repo' as owner/repo or run from inside a git repository.",
+        );
+      }
+
+      const payload: Record<string, unknown> = { merge_method: mergeMethod };
+      if (commitTitle) payload.commit_title = commitTitle;
+      if (commitMessage) payload.commit_message = commitMessage;
+
+      const result = await execSafe(
+        "gh",
+        [
+          "api",
+          `repos/${repo}/pulls/${prNumber}/merge`,
+          "-X",
+          "PUT",
+          "--input",
+          "-",
+          "--",
+        ],
+        {
+          cwd: workspace,
+          signal,
+          timeout: 30_000,
+          stdin: JSON.stringify(payload),
+        },
+      );
+
+      if (result.exitCode !== 0) {
+        const msg = result.stderr.trim() || result.stdout.trim();
+        if (isNotFound(msg)) return error(GH_NOT_FOUND);
+        if (isNotAuthed(msg)) return error(`${GH_NOT_AUTHED}\n${msg}`);
+        if (
+          msg.includes("405") ||
+          msg.toLowerCase().includes("not mergeable")
+        ) {
+          return error(
+            `PR is not mergeable. It may have conflicts or required checks are pending.\n${msg}`,
+          );
+        }
+        return error(`Failed to merge PR: ${msg}`);
+      }
+
+      let mergeData: Record<string, unknown> = {};
+      try {
+        mergeData = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
+      } catch {
+        /* non-fatal */
+      }
+
+      return successStructured({
+        merged: (mergeData.merged as boolean) ?? true,
+        sha: (mergeData.sha as string) ?? "",
+        message: (mergeData.message as string) ?? "Merged",
+      });
+    },
+    timeoutMs: 30_000,
+  };
+}

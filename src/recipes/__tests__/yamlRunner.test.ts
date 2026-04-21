@@ -183,11 +183,13 @@ describe("runYamlRecipe — file.read", () => {
     await expect(runYamlRecipe(recipe, noop())).resolves.not.toThrow();
   });
 
-  it("non-optional throws on missing file", async () => {
+  it("non-optional sets errorMessage on missing file", async () => {
     const recipe = makeRecipe({
       steps: [{ tool: "file.read", path: "/nonexistent", into: "data" }],
     });
-    await expect(runYamlRecipe(recipe, noop())).rejects.toThrow();
+    const result = await runYamlRecipe(recipe, noop());
+    expect(result.errorMessage).toMatch(/could not read/);
+    expect(result.stepResults[0].status).toBe("error");
   });
 });
 

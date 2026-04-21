@@ -11,6 +11,7 @@ import {
   createGetActivityLogTool,
   createWatchActivityLogTool,
 } from "./activityLog.js";
+import { createAddLinearCommentTool } from "./addLinearComment.js";
 import { createAuditDependenciesTool } from "./auditDependencies.js";
 import {
   createBatchFindImplementationsTool,
@@ -55,6 +56,7 @@ import { createFetchGithubIssueTool } from "./fetchGithubIssue.js";
 import { createFetchGithubPRTool } from "./fetchGithubPR.js";
 import { createFetchLinearIssueTool } from "./fetchLinearIssue.js";
 import { createFetchSentryIssueTool } from "./fetchSentryIssue.js";
+import { createFetchSlackProfileTool } from "./fetchSlackProfile.js";
 import {
   createCreateFileTool,
   createDeleteFileTool,
@@ -77,6 +79,7 @@ import { createGetChangeImpactTool } from "./getChangeImpact.js";
 import { createGetClaudeTaskStatusTool } from "./getClaudeTaskStatus.js";
 import { createGetCodeCoverageTool } from "./getCodeCoverage.js";
 import { createGetCommitsForIssueTool } from "./getCommitsForIssue.js";
+import { createGetConnectorStatusTool } from "./getConnectorStatus.js";
 import {
   createGetCurrentSelectionTool,
   createGetLatestSelectionTool,
@@ -109,6 +112,7 @@ import {
   createGetDiffBetweenRefsTool,
 } from "./gitHistory.js";
 import {
+  createGithubApprovePRTool,
   createGithubCommentIssueTool,
   createGithubCreateIssueTool,
   createGithubCreatePRTool,
@@ -118,6 +122,7 @@ import {
   createGithubListIssuesTool,
   createGithubListPRsTool,
   createGithubListRunsTool,
+  createGithubMergePRTool,
   createGithubPostPRReviewTool,
   createGithubViewPRTool,
 } from "./github/index.js";
@@ -190,6 +195,8 @@ import { createSelectionRangesTool } from "./selectionRanges.js";
 import { createGetSemanticTokensTool } from "./semanticTokens.js";
 import { createSetActiveWorkspaceFolderTool } from "./setActiveWorkspaceFolder.js";
 import { createSignatureHelpTool } from "./signatureHelp.js";
+import { createSlackListChannelsTool } from "./slackListChannels.js";
+import { createSlackPostMessageTool } from "./slackPostMessage.js";
 import { createSpawnWorkspaceTool } from "./spawnWorkspace.js";
 import {
   createCreateTerminalTool,
@@ -202,6 +209,7 @@ import {
 import { createTestTraceToSourceTool } from "./testTraceToSource.js";
 import { createTransactionTools } from "./transaction.js";
 import { createGetTypeHierarchyTool } from "./typeHierarchy.js";
+import { createUpdateLinearIssueTool } from "./updateLinearIssue.js";
 import {
   createExecuteVSCodeCommandTool,
   createListVSCodeCommandsTool,
@@ -664,8 +672,14 @@ export function registerAllTools(
     createFetchSentryIssueTool(workspace),
     createFetchLinearIssueTool(),
     createLinearIssueTool(),
+    createUpdateLinearIssueTool(),
+    createAddLinearCommentTool(),
     createFetchGithubIssueTool(),
     createFetchGithubPRTool(),
+    createGetConnectorStatusTool(),
+    createSlackPostMessageTool(),
+    createSlackListChannelsTool(),
+    createFetchSlackProfileTool(),
     createFetchCalendarEventsTool(),
     createCtxQueryTracesTool({
       activityLog: activityLog ?? null,
@@ -709,6 +723,8 @@ export function registerAllTools(
           createGithubGetRunLogsTool(workspace, config.githubDefaultRepo),
           createGithubGetPRDiffTool(workspace),
           createGithubPostPRReviewTool(workspace),
+          createGithubApprovePRTool(workspace),
+          createGithubMergePRTool(workspace),
           createGetAICommentsTool(extensionClient),
           createCreateIssueFromAICommentTool(
             workspace,

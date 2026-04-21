@@ -9,9 +9,11 @@ export {
   createGithubListIssuesTool,
 } from "./issues.js";
 export {
+  createGithubApprovePRTool,
   createGithubCreatePRTool,
   createGithubGetPRDiffTool,
   createGithubListPRsTool,
+  createGithubMergePRTool,
   createGithubPostPRReviewTool,
   createGithubViewPRTool,
 } from "./pr.js";

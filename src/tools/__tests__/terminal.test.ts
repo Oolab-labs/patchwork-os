@@ -284,7 +284,9 @@ describe("runInTerminal - metacharacter blocking", () => {
   }
 
   it("blocks tilde home-dir expansion", async () => {
-    const tool = createRunInTerminalTool(mockRunInTerminalClient(), ["cat"]);
+    const tool = createRunInTerminalTool("/tmp", mockRunInTerminalClient(), [
+      "cat",
+    ]);
     const result = (await tool.handler({
       command: "cat ~/.ssh/id_rsa",
     })) as any;
@@ -293,7 +295,9 @@ describe("runInTerminal - metacharacter blocking", () => {
   });
 
   it("blocks carriage return", async () => {
-    const tool = createRunInTerminalTool(mockRunInTerminalClient(), ["echo"]);
+    const tool = createRunInTerminalTool("/tmp", mockRunInTerminalClient(), [
+      "echo",
+    ]);
     const result = (await tool.handler({ command: "echo hi\r" })) as any;
     expect(result.isError).toBe(true);
   });

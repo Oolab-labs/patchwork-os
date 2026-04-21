@@ -71,6 +71,7 @@ export class RecipeRunLog {
   private seq = 0;
   private readonly file: string;
   private readonly memoryCap: number;
+  private lastFileSize = 0;
   private readonly now: () => number;
 
   constructor(private readonly opts: RunLogOptions) {
@@ -85,6 +86,11 @@ export class RecipeRunLog {
       );
     }
     this.loadExisting();
+    try {
+      this.lastFileSize = statSync(this.file).size;
+    } catch {
+      /* file may not exist */
+    }
   }
 
   /**
@@ -96,7 +102,7 @@ export class RecipeRunLog {
   ): { trigger: RunTrigger; recipeName: string } | null {
     if (!triggerSource) return null;
     const m = /^(cron|webhook|recipe):(.+)$/.exec(triggerSource);
-    if (!m || !m[1] || !m[2]) return null;
+    if (!m?.[1] || !m[2]) return null;
     return { trigger: m[1] as RunTrigger, recipeName: m[2] };
   }
 
@@ -153,6 +159,7 @@ export class RecipeRunLog {
   }
 
   query(q: RunQuery = {}): RecipeRun[] {
+    this.syncFromDisk();
     let out = this.runs;
     if (q.trigger) out = out.filter((r) => r.trigger === q.trigger);
     if (q.status) out = out.filter((r) => r.status === q.status);
@@ -172,6 +179,16 @@ export class RecipeRunLog {
     return this.runs.length;
   }
 
+  /** Write a run directly (e.g. from yamlRunner which has no orchestrator task). */
+  appendDirect(run: Omit<RecipeRun, "seq">): void {
+    const seq = ++this.seq;
+    const full: RecipeRun = { ...run, seq };
+    mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
+    this.append(full);
+    this.runs.push(full);
+    if (this.runs.length > this.memoryCap) this.runs.shift();
+  }
+
   private append(run: RecipeRun): void {
     try {
       appendFileSync(this.file, `${JSON.stringify(run)}\n`, { mode: 0o600 });
@@ -179,6 +196,33 @@ export class RecipeRunLog {
       this.opts.logger?.warn?.(
         `[runlog] append failed: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  /** Incrementally read any new lines appended to the file since last load. */
+  private syncFromDisk(): void {
+    try {
+      const size = statSync(this.file).size;
+      if (size <= this.lastFileSize) return;
+      const raw = readFileSync(this.file, "utf-8");
+      const lines = raw.split("\n");
+      for (const line of lines) {
+        if (!line) continue;
+        try {
+          const parsed = JSON.parse(line) as RecipeRun;
+          if (typeof parsed.seq !== "number") continue;
+          if (parsed.seq > this.seq) {
+            this.seq = parsed.seq;
+            this.runs.push(parsed);
+            if (this.runs.length > this.memoryCap) this.runs.shift();
+          }
+        } catch {
+          /* skip malformed */
+        }
+      }
+      this.lastFileSize = size;
+    } catch {
+      /* file may not exist yet */
     }
   }
 

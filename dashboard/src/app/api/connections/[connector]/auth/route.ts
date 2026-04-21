@@ -9,6 +9,7 @@ const ALLOWED_CONNECTORS = new Set([
   "github",
   "linear",
   "sentry",
+  "slack",
 ]);
 
 export async function GET(

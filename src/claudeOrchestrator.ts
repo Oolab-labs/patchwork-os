@@ -8,7 +8,7 @@ function getConfigDir(): string {
   return process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
 }
 
-import type { IClaudeDriver } from "./claudeDriver.js";
+import type { IClaudeDriver } from "./drivers/types.js";
 
 export type TaskStatus =
   | "pending"
@@ -396,12 +396,14 @@ export class ClaudeOrchestrator {
         timeoutMs: task.timeoutMs,
         signal: controller.signal,
         model: task.model,
-        effort: task.effort,
-        fallbackModel: task.fallbackModel,
-        maxBudgetUsd: task.maxBudgetUsd,
         startupTimeoutMs: task.startupTimeoutMs,
         systemPrompt: task.systemPrompt,
-        useAnt: task.useAnt,
+        providerOptions: {
+          effort: task.effort,
+          fallbackModel: task.fallbackModel,
+          maxBudgetUsd: task.maxBudgetUsd,
+          useAnt: task.useAnt,
+        },
         onChunk: (chunk: string) => {
           // Per-task streaming callback (e.g. for MCP notifications/progress)
           this.taskCallbacks.get(id)?.(chunk);
@@ -426,10 +428,15 @@ export class ClaudeOrchestrator {
         task.output = result.text;
       } else {
         task.output = result.text;
-        task.stderrTail = result.stderrTail;
-        task.status = result.exitCode === 0 ? "done" : "error";
-        if (result.exitCode !== 0) {
-          task.errorMessage = `Process exited with code ${result.exitCode}`;
+        task.stderrTail = result.stderrTail ?? result.errorMessage;
+        const hasError =
+          result.errorMessage !== undefined ||
+          (result.exitCode !== undefined && result.exitCode !== 0);
+        task.status = hasError ? "error" : "done";
+        if (hasError) {
+          task.errorMessage =
+            result.errorMessage ??
+            `Process exited with code ${result.exitCode}`;
         }
       }
     } catch (err) {

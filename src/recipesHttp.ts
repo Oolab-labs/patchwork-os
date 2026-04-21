@@ -6,6 +6,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
+import { loadConfig } from "./patchworkConfig.js";
 
 /**
  * Patchwork recipes HTTP surface — reads installed recipes from disk so the
@@ -76,6 +78,7 @@ export interface RecipeSummary {
   installedAt: number;
   hasPermissions: boolean;
   source: "user" | "project" | "unknown";
+  enabled: boolean;
   vars?: Array<{
     name: string;
     description?: string;
@@ -97,13 +100,20 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
     return { recipesDir, recipes: [] };
   }
 
+  const cfg = loadConfig();
+  const disabledSet = new Set<string>(
+    (cfg as { recipes?: { disabled?: string[] } }).recipes?.disabled ?? [],
+  );
+
   const recipes: RecipeSummary[] = [];
   for (const f of entries) {
-    if (!f.endsWith(".json") || f.endsWith(".permissions.json")) continue;
+    const isYaml = f.endsWith(".yaml") || f.endsWith(".yml");
+    const isJson = f.endsWith(".json") && !f.endsWith(".permissions.json");
+    if (!isYaml && !isJson) continue;
     const fullPath = path.join(recipesDir, f);
     try {
       const raw = readFileSync(fullPath, "utf-8");
-      const parsed = JSON.parse(raw) as {
+      const parsed = (isYaml ? parseYaml(raw) : JSON.parse(raw)) as {
         name?: string;
         description?: string;
         trigger?: { type?: string };
@@ -136,8 +146,10 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
       } else {
         source = "unknown";
       }
+      const ext = isYaml ? (f.endsWith(".yml") ? ".yml" : ".yaml") : ".json";
+      const parsedName = parsed.name ?? path.basename(f, ext);
       recipes.push({
-        name: parsed.name ?? path.basename(f, ".json"),
+        name: parsedName,
         description: parsed.description,
         trigger: parsed.trigger?.type,
         stepCount: Array.isArray(parsed.steps) ? parsed.steps.length : 0,
@@ -145,6 +157,7 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         installedAt: stat.mtimeMs,
         hasPermissions,
         source,
+        enabled: !disabledSet.has(parsedName),
         ...(Array.isArray(parsed.vars) && parsed.vars.length > 0
           ? { vars: parsed.vars }
           : {}),

@@ -338,45 +338,68 @@ export interface CreateIssueInput {
   labels?: string[]; // label names or IDs
 }
 
-export async function createIssue(
-  input: CreateIssueInput,
-  signal?: AbortSignal,
-): Promise<{
+export interface UpdateIssueInput {
+  id: string; // issue identifier e.g. "ENG-42" or UUID
+  title?: string;
+  description?: string;
+  priority?: number;
+  state?: string; // state name e.g. "In Progress", "Done"
+  assignee?: string; // assignee name or email
+  labels?: string[];
+}
+
+type SaveIssueResult = {
   id: string;
   identifier: string;
   title: string;
   url: string;
-  state: { name: string };
-}> {
+  state?: { name: string };
+};
+
+async function callSaveIssue(
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<SaveIssueResult> {
+  const res = await client().callTool("save_issue", args, { signal });
+  const parsed = McpClient.extractJson<
+    SaveIssueResult | { issue: SaveIssueResult }
+  >(res);
+  return (
+    (parsed as { issue?: SaveIssueResult }).issue ?? (parsed as SaveIssueResult)
+  );
+}
+
+export async function createIssue(
+  input: CreateIssueInput,
+  signal?: AbortSignal,
+): Promise<SaveIssueResult> {
+  return callSaveIssue(input as unknown as Record<string, unknown>, signal);
+}
+
+export async function updateIssue(
+  input: UpdateIssueInput,
+  signal?: AbortSignal,
+): Promise<SaveIssueResult> {
+  return callSaveIssue(input as unknown as Record<string, unknown>, signal);
+}
+
+export async function addComment(
+  issueId: string,
+  body: string,
+  signal?: AbortSignal,
+): Promise<{ id: string; body: string; url?: string }> {
+  const id = extractIssueId(issueId);
   const res = await client().callTool(
-    "save_issue",
-    input as unknown as Record<string, unknown>,
+    "create_comment",
+    { issueId: id, body },
     { signal },
   );
   const parsed = McpClient.extractJson<
-    | {
-        id: string;
-        identifier: string;
-        title: string;
-        url: string;
-        state: { name: string };
-      }
-    | {
-        issue: {
-          id: string;
-          identifier: string;
-          title: string;
-          url: string;
-          state: { name: string };
-        };
-      }
+    | { id: string; body: string; url?: string }
+    | { comment: { id: string; body: string; url?: string } }
   >(res);
-  const issue = (parsed as { issue?: typeof parsed }).issue ?? parsed;
-  return issue as {
-    id: string;
-    identifier: string;
-    title: string;
-    url: string;
-    state: { name: string };
-  };
+  return (
+    (parsed as { comment?: { id: string; body: string; url?: string } })
+      .comment ?? (parsed as { id: string; body: string; url?: string })
+  );
 }

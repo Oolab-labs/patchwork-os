@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createGithubApprovePRTool,
   createGithubGetPRDiffTool,
+  createGithubMergePRTool,
   createGithubPostPRReviewTool,
 } from "../github/pr.js";
 
@@ -465,5 +467,221 @@ describe("githubPostPRReview", () => {
   it("requires prNumber and body", async () => {
     await expect(tool.handler({ body: "review" })).rejects.toThrow(/prNumber/);
     await expect(tool.handler({ prNumber: 1 })).rejects.toThrow(/body/);
+  });
+});
+
+// ── githubApprovePR ───────────────────────────────────────────────────────────
+
+describe("githubApprovePR", () => {
+  const tool = createGithubApprovePRTool(workspace);
+
+  it("approves PR and returns reviewId and url", async () => {
+    mockExecSafe
+      .mockResolvedValueOnce({
+        stdout: "org/repo",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 5,
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          id: 99,
+          html_url: "https://github.com/org/repo/pull/7#pullrequestreview-99",
+        }),
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 10,
+      });
+
+    const result = await tool.handler({ prNumber: 7 });
+    expect(result.isError).toBeUndefined();
+    const data = parse(result) as Record<string, unknown>;
+    expect(data.reviewId).toBe(99);
+    expect(data.url).toContain("github.com");
+  });
+
+  it("sends APPROVE event to GitHub API", async () => {
+    mockExecSafe
+      .mockResolvedValueOnce({
+        stdout: "org/repo",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 5,
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          id: 1,
+          html_url: "https://github.com/org/repo/pull/7",
+        }),
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 10,
+      });
+
+    await tool.handler({ prNumber: 7, body: "LGTM" });
+    const call = mockExecSafe.mock.calls[1];
+    expect(call?.[2]?.stdin).toContain('"APPROVE"');
+    expect(call?.[2]?.stdin).toContain("LGTM");
+  });
+
+  it("returns isError on API failure", async () => {
+    mockExecSafe
+      .mockResolvedValueOnce({
+        stdout: "org/repo",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 5,
+      })
+      .mockResolvedValueOnce({
+        stdout: "",
+        stderr: "HTTP 422: validation failed",
+        exitCode: 1,
+        timedOut: false,
+        durationMs: 10,
+      });
+
+    const result = await tool.handler({ prNumber: 7 });
+    expect(result.isError).toBe(true);
+    expect(parse(result)).toMatch(/Failed to approve/);
+  });
+
+  it("returns isError when repo cannot be resolved", async () => {
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: "",
+      stderr: "not a git repo",
+      exitCode: 1,
+      timedOut: false,
+      durationMs: 5,
+    });
+
+    const result = await tool.handler({ prNumber: 7 });
+    expect(result.isError).toBe(true);
+    expect(parse(result)).toMatch(/repository/i);
+  });
+
+  it("requires prNumber", async () => {
+    await expect(tool.handler({})).rejects.toThrow(/prNumber/);
+  });
+
+  it("has correct schema name and required fields", () => {
+    expect(tool.schema.name).toBe("githubApprovePR");
+    expect(tool.schema.inputSchema.required).toContain("prNumber");
+    expect(tool.schema.outputSchema.required).toContain("reviewId");
+    expect(tool.schema.outputSchema.required).toContain("url");
+  });
+});
+
+// ── githubMergePR ─────────────────────────────────────────────────────────────
+
+describe("githubMergePR", () => {
+  const tool = createGithubMergePRTool(workspace);
+
+  it("merges PR and returns merged/sha/message", async () => {
+    mockExecSafe
+      .mockResolvedValueOnce({
+        stdout: "org/repo",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 5,
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          merged: true,
+          sha: "abc123",
+          message: "Pull request successfully merged",
+        }),
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 15,
+      });
+
+    const result = await tool.handler({ prNumber: 7 });
+    expect(result.isError).toBeUndefined();
+    const data = parse(result) as Record<string, unknown>;
+    expect(data.merged).toBe(true);
+    expect(data.sha).toBe("abc123");
+  });
+
+  it("passes mergeMethod to API", async () => {
+    mockExecSafe
+      .mockResolvedValueOnce({
+        stdout: "org/repo",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 5,
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          merged: true,
+          sha: "def456",
+          message: "Squashed",
+        }),
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 15,
+      });
+
+    await tool.handler({ prNumber: 7, mergeMethod: "squash" });
+    const call = mockExecSafe.mock.calls[1];
+    expect(call?.[2]?.stdin).toContain('"squash"');
+  });
+
+  it("returns isError when PR is not mergeable", async () => {
+    mockExecSafe
+      .mockResolvedValueOnce({
+        stdout: "org/repo",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        durationMs: 5,
+      })
+      .mockResolvedValueOnce({
+        stdout: "",
+        stderr: "HTTP 405: not mergeable",
+        exitCode: 1,
+        timedOut: false,
+        durationMs: 10,
+      });
+
+    const result = await tool.handler({ prNumber: 7 });
+    expect(result.isError).toBe(true);
+    expect(parse(result)).toMatch(/not mergeable/i);
+  });
+
+  it("rejects invalid mergeMethod", async () => {
+    mockExecSafe.mockResolvedValueOnce({
+      stdout: "org/repo",
+      stderr: "",
+      exitCode: 0,
+      timedOut: false,
+      durationMs: 5,
+    });
+
+    const result = await tool.handler({
+      prNumber: 7,
+      mergeMethod: "fast-forward",
+    });
+    expect(result.isError).toBe(true);
+    expect(parse(result)).toMatch(/invalid mergemethod/i);
+  });
+
+  it("requires prNumber", async () => {
+    await expect(tool.handler({})).rejects.toThrow(/prNumber/);
+  });
+
+  it("has correct schema name and required fields", () => {
+    expect(tool.schema.name).toBe("githubMergePR");
+    expect(tool.schema.inputSchema.required).toContain("prNumber");
+    expect(tool.schema.outputSchema.required).toContain("merged");
+    expect(tool.schema.outputSchema.required).toContain("sha");
   });
 });

@@ -11,6 +11,7 @@ import type { Logger } from "./logger.js";
 import type { OAuthServer } from "./oauth.js";
 import {
   loadConfig as loadPatchworkConfig,
+  type PatchworkConfig,
   defaultConfigPath as patchworkConfigPath,
   saveConfig as savePatchworkConfig,
 } from "./patchworkConfig.js";
@@ -242,6 +243,10 @@ export class Server extends EventEmitter<ServerEvents> {
         error?: string;
         code?: string;
       }>)
+    | null = null;
+
+  public setRecipeEnabledFn:
+    | ((name: string, enabled: boolean) => { ok: boolean; error?: string })
     | null = null;
 
   /**
@@ -590,6 +595,42 @@ export class Server extends EventEmitter<ServerEvents> {
           const result = await handleCalendarCallback(code, state, error);
           res.writeHead(result.status, {
             "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/slack/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleSlackCallback } = await import("./connectors/slack.js");
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleSlackCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/gmail/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleGmailCallback } = await import("./connectors/gmail.js");
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleGmailCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "text/html",
           });
           res.end(result.body);
         })();
@@ -947,23 +988,6 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
       if (
-        parsedUrl.pathname === "/connections/gmail/callback" &&
-        req.method === "GET"
-      ) {
-        void (async () => {
-          const { handleGmailCallback } = await import("./connectors/gmail.js");
-          const code = parsedUrl.searchParams.get("code");
-          const state = parsedUrl.searchParams.get("state");
-          const error = parsedUrl.searchParams.get("error");
-          const result = await handleGmailCallback(code, state, error);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "text/html",
-          });
-          res.end(result.body);
-        })();
-        return;
-      }
-      if (
         parsedUrl.pathname === "/connections/gmail" &&
         req.method === "DELETE"
       ) {
@@ -1188,6 +1212,52 @@ export class Server extends EventEmitter<ServerEvents> {
           });
           res.end(result.body);
         })();
+        return;
+      }
+
+      // ── Slack connector routes ──────────────────────────────────────
+      if (
+        (parsedUrl.pathname === "/connections/slack/auth" ||
+          parsedUrl.pathname === "/connections/slack/authorize") &&
+        req.method === "GET"
+      ) {
+        const { handleSlackAuthorize } = await import("./connectors/slack.js");
+        const result = handleSlackAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/slack/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleSlackTest } = await import("./connectors/slack.js");
+          const result = await handleSlackTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/slack" &&
+        req.method === "DELETE"
+      ) {
+        const { handleSlackDisconnect } = await import("./connectors/slack.js");
+        const result = handleSlackDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
         return;
       }
 
@@ -1485,6 +1555,43 @@ export class Server extends EventEmitter<ServerEvents> {
         });
         return;
       }
+      const recipePatchMatch = /^\/recipes\/([^/]+)$/.exec(parsedUrl.pathname);
+      if (recipePatchMatch && req.method === "PATCH") {
+        const name = decodeURIComponent(recipePatchMatch[1]!);
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          try {
+            const body = JSON.parse(
+              Buffer.concat(chunks).toString("utf-8"),
+            ) as { enabled?: boolean };
+            if (typeof body.enabled !== "boolean") {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "enabled (boolean) required",
+                }),
+              );
+              return;
+            }
+            if (!this.setRecipeEnabledFn) {
+              res.writeHead(503, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ ok: false, error: "Not available" }));
+              return;
+            }
+            const result = this.setRecipeEnabledFn(name, body.enabled);
+            res.writeHead(result.ok ? 200 : 400, {
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify(result));
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+          }
+        });
+        return;
+      }
       if (req.url === "/recipes" && req.method === "GET") {
         try {
           const data = this.recipesFn?.() ?? { recipesDir: null, recipes: [] };
@@ -1551,7 +1658,12 @@ export class Server extends EventEmitter<ServerEvents> {
           try {
             const body = JSON.parse(
               Buffer.concat(chunks).toString("utf-8"),
-            ) as { webhookUrl?: string; approvalGate?: string };
+            ) as {
+              webhookUrl?: string;
+              approvalGate?: string;
+              driver?: string;
+              apiKey?: { provider: string; key: string };
+            };
             const raw = body.webhookUrl?.trim() ?? "";
             if (raw !== "" && !/^https:\/\/.+/.test(raw)) {
               res.writeHead(400, { "Content-Type": "application/json" });
@@ -1585,10 +1697,48 @@ export class Server extends EventEmitter<ServerEvents> {
               cfg.approvalGate = gateRaw as "off" | "high" | "all";
               this.approvalGate = gateRaw as "off" | "high" | "all";
             }
+            const driverRaw = body.driver;
+            if (driverRaw !== undefined) {
+              const validDrivers = [
+                "subprocess",
+                "api",
+                "openai",
+                "grok",
+                "gemini",
+                "none",
+              ];
+              if (!validDrivers.includes(driverRaw)) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    error: `driver must be one of: ${validDrivers.join(", ")}`,
+                  }),
+                );
+                return;
+              }
+              cfg.driver = driverRaw as PatchworkConfig["driver"];
+            }
+            if (body.apiKey) {
+              const { provider, key } = body.apiKey;
+              const validProviders = ["anthropic", "openai", "google", "xai"];
+              if (
+                !validProviders.includes(provider) ||
+                typeof key !== "string"
+              ) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({ error: "Invalid apiKey provider or key" }),
+                );
+                return;
+              }
+              cfg.apiKeys = { ...cfg.apiKeys, [provider]: key || undefined };
+            }
             savePatchworkConfig(cfg, configPath);
             this.approvalWebhookUrl = raw || undefined;
+            const restartRequired =
+              driverRaw !== undefined || body.apiKey !== undefined;
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ok: true }));
+            res.end(JSON.stringify({ ok: true, restartRequired }));
           } catch (err) {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(

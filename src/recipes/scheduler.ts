@@ -1,14 +1,18 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import cron from "node-cron";
+import { parse as parseYaml } from "yaml";
 import type { Logger } from "../logger.js";
+import { loadConfig } from "../patchworkConfig.js";
 import { loadRecipePrompt } from "../recipesHttp.js";
 
 /**
- * RecipeScheduler — runs cron-triggered recipes on a simple interval.
+ * RecipeScheduler — runs cron-triggered recipes on a simple interval or
+ * standard 5-field cron expression.
  *
- * Phase-0 scope supports the `@every Ns|Nm|Nh` schedule form, which is
- * enough to demonstrate "works while you're away" without pulling in a full
- * cron dependency. Standard 5-field expressions can be added later.
+ * Supported schedule forms:
+ *   @every Ns|Nm|Nh  — simple interval (setInterval-based)
+ *   <5-field cron>   — standard cron expression (node-cron-based)
  *
  * Scheduler is a pure consumer of the recipes-on-disk contract and an
  * injected enqueue fn, so it's trivial to unit test without the orchestrator.
@@ -24,6 +28,8 @@ export interface ScheduledRecipe {
   schedule: string;
   intervalMs: number;
   timer: ReturnType<typeof setInterval>;
+  /** Present only for cron5-kind recipes. */
+  cronJob?: cron.ScheduledTask;
 }
 
 export interface SchedulerOptions {
@@ -48,48 +54,114 @@ export class RecipeScheduler {
 
   start(): ScheduledRecipe[] {
     this.stop();
+
+    // Load disabled list from config
+    let disabled: Set<string> = new Set();
+    try {
+      const cfg = loadConfig();
+      if (cfg.recipes?.disabled) {
+        disabled = new Set(cfg.recipes.disabled);
+      }
+    } catch {
+      // non-fatal — proceed with empty disabled set
+    }
+
     let entries: string[];
     try {
       entries = readdirSync(this.opts.recipesDir);
     } catch {
       return [];
     }
+
     for (const f of entries) {
-      if (!f.endsWith(".json") || f.endsWith(".permissions.json")) continue;
+      const isJson = f.endsWith(".json") && !f.endsWith(".permissions.json");
+      const isYaml = f.endsWith(".yaml") || f.endsWith(".yml");
+      if (!isJson && !isYaml) continue;
+
       const fullPath = path.join(this.opts.recipesDir, f);
       try {
-        const raw = readFileSync(fullPath, "utf-8");
-        const parsed = JSON.parse(raw) as {
-          name?: string;
-          trigger?: { type?: string; schedule?: string };
-        };
-        if (parsed.trigger?.type !== "cron") continue;
-        if (
-          !parsed.trigger.schedule ||
-          typeof parsed.trigger.schedule !== "string"
-        )
-          continue;
-        const intervalMs = parseSchedule(parsed.trigger.schedule);
-        if (intervalMs === null) {
-          this.opts.logger?.warn?.(
-            `[scheduler] ignoring recipe "${parsed.name ?? f}" — unsupported schedule "${parsed.trigger.schedule}" (use @every Ns|Nm|Nh)`,
+        let name: string;
+        let schedule: string | undefined;
+
+        if (isJson) {
+          const raw = readFileSync(fullPath, "utf-8");
+          const parsed = JSON.parse(raw) as {
+            name?: string;
+            trigger?: { type?: string; schedule?: string };
+          };
+          if (parsed.trigger?.type !== "cron") continue;
+          if (
+            !parsed.trigger.schedule ||
+            typeof parsed.trigger.schedule !== "string"
+          )
+            continue;
+          schedule = parsed.trigger.schedule;
+          name = parsed.name ?? path.basename(f, ".json");
+        } else {
+          // YAML
+          const raw = readFileSync(fullPath, "utf-8");
+          const parsed = parseYaml(raw) as {
+            name?: string;
+            trigger?: { type?: string; at?: string; schedule?: string };
+          };
+          if (parsed.trigger?.type !== "cron") continue;
+          schedule = parsed.trigger.at ?? parsed.trigger.schedule;
+          if (!schedule || typeof schedule !== "string") continue;
+          name =
+            parsed.name ?? path.basename(f, isYaml ? path.extname(f) : ".yaml");
+        }
+
+        // Apply disabled filter
+        if (disabled.has(name)) {
+          this.opts.logger?.info?.(
+            `[scheduler] skipping disabled recipe "${name}"`,
           );
           continue;
         }
-        const name = parsed.name ?? path.basename(f, ".json");
-        const timer = this.setIntervalFn(() => {
-          this.fire(name);
-        }, intervalMs);
-        if (typeof timer === "object" && "unref" in timer) timer.unref();
-        this.scheduled.push({
-          name,
-          schedule: parsed.trigger.schedule,
-          intervalMs,
-          timer,
-        });
-        this.opts.logger?.info?.(
-          `[scheduler] "${name}" scheduled every ${intervalMs}ms (${parsed.trigger.schedule})`,
-        );
+
+        const parsed2 = parseSchedule(schedule);
+        if (parsed2 === null) {
+          this.opts.logger?.warn?.(
+            `[scheduler] ignoring recipe "${name}" — unsupported schedule "${schedule}" (use @every Ns|Nm|Nh or a 5-field cron expression)`,
+          );
+          continue;
+        }
+
+        if (parsed2.kind === "interval") {
+          const intervalMs = parsed2.intervalMs;
+          const timer = this.setIntervalFn(() => {
+            this.fire(name);
+          }, intervalMs);
+          if (typeof timer === "object" && "unref" in timer) timer.unref();
+          this.scheduled.push({
+            name,
+            schedule,
+            intervalMs,
+            timer,
+          });
+          this.opts.logger?.info?.(
+            `[scheduler] "${name}" scheduled every ${intervalMs}ms (${schedule})`,
+          );
+        } else {
+          // cron5
+          const cronJob = cron.schedule(parsed2.expression, () => {
+            this.fire(name);
+          });
+          // Store a sentinel timer so the ScheduledRecipe shape stays stable
+          const dummyTimer = this.setIntervalFn(() => {}, 2_147_483_647);
+          if (typeof dummyTimer === "object" && "unref" in dummyTimer)
+            dummyTimer.unref();
+          this.scheduled.push({
+            name,
+            schedule,
+            intervalMs: 0,
+            timer: dummyTimer,
+            cronJob,
+          });
+          this.opts.logger?.info?.(
+            `[scheduler] "${name}" scheduled with cron expression "${schedule}"`,
+          );
+        }
       } catch {
         // skip malformed recipe
       }
@@ -99,13 +171,22 @@ export class RecipeScheduler {
 
   stop(): void {
     for (const entry of this.scheduled) {
-      this.clearIntervalFn(entry.timer);
+      if (entry.cronJob) {
+        entry.cronJob.stop();
+      } else {
+        this.clearIntervalFn(entry.timer);
+      }
     }
     this.scheduled = [];
   }
 
-  list(): ReadonlyArray<Omit<ScheduledRecipe, "timer">> {
-    return this.scheduled.map(({ timer: _t, ...rest }) => rest);
+  restart(): void {
+    this.stop();
+    this.start();
+  }
+
+  list(): ReadonlyArray<Omit<ScheduledRecipe, "timer" | "cronJob">> {
+    return this.scheduled.map(({ timer: _t, cronJob: _c, ...rest }) => rest);
   }
 
   /** Test hook: dispatch a recipe immediately without waiting for the interval. */
@@ -135,21 +216,37 @@ export class RecipeScheduler {
   }
 }
 
-/** Parse @every forms into milliseconds. Returns null for unsupported schedules. */
-export function parseSchedule(schedule: string): number | null {
+type ParsedSchedule =
+  | { kind: "interval"; intervalMs: number }
+  | { kind: "cron5"; expression: string };
+
+/** Parse @every forms into milliseconds, or detect a 5-field cron expression. Returns null for unsupported schedules. */
+export function parseSchedule(schedule: string): ParsedSchedule | null {
   const trimmed = schedule.trim();
+
+  // @every Ns|Nm|Nh
   const m = /^@every\s+(\d+)\s*(ms|s|m|h)$/i.exec(trimmed);
-  if (!m) return null;
-  const n = Number.parseInt(m[1]!, 10);
-  const unit = m[2]!.toLowerCase();
-  if (!Number.isFinite(n) || n <= 0) return null;
-  const multiplier =
-    unit === "ms"
-      ? 1
-      : unit === "s"
-        ? 1000
-        : unit === "m"
-          ? 60_000
-          : 60 * 60_000;
-  return n * multiplier;
+  if (m) {
+    const n = Number.parseInt(m[1]!, 10);
+    const unit = m[2]?.toLowerCase();
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const multiplier =
+      unit === "ms"
+        ? 1
+        : unit === "s"
+          ? 1000
+          : unit === "m"
+            ? 60_000
+            : 60 * 60_000;
+    return { kind: "interval", intervalMs: n * multiplier };
+  }
+
+  // 5-field cron expression (e.g. "0 8 * * 1-5")
+  if (/^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/.test(trimmed)) {
+    if (cron.validate(trimmed)) {
+      return { kind: "cron5", expression: trimmed };
+    }
+  }
+
+  return null;
 }

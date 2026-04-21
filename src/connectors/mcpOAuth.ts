@@ -406,9 +406,17 @@ async function refreshIfNeeded(
   config: VendorConfig,
   file: McpTokenFile,
 ): Promise<McpTokenFile> {
-  const buffer = 60_000;
+  const buffer = 300_000; // 5-minute buffer — avoid mid-call expiry
   if (!file.expires_at || Date.now() < file.expires_at - buffer) return file;
-  if (!file.refresh_token) return file; // some vendors don't issue refresh tokens
+  if (!file.refresh_token) {
+    // No refresh token — token is expired and can't be renewed automatically
+    if (file.expires_at && Date.now() >= file.expires_at) {
+      throw new Error(
+        `${file.vendor}: token expired. Re-authorize via GET /connections/${file.vendor}/authorize`,
+      );
+    }
+    return file;
+  }
   if (!config.tokenEndpoint) return file;
 
   const body = new URLSearchParams({
@@ -427,8 +435,9 @@ async function refreshIfNeeded(
     body: body.toString(),
   });
   if (!res.ok) {
-    // Leave file as-is; caller will get 401 on next API call and re-auth
-    return file;
+    throw new Error(
+      `${file.vendor}: token refresh failed (${res.status}). Re-authorize via GET /connections/${file.vendor}/authorize`,
+    );
   }
   const json = (await res.json()) as {
     access_token: string;
@@ -445,6 +454,38 @@ async function refreshIfNeeded(
   };
   saveTokenFile(updated);
   return updated;
+}
+
+export interface ConnectorStatus {
+  vendor: VendorId;
+  connected: boolean;
+  expiresAt?: number;
+  expiresInMs?: number;
+  needsReauth: boolean;
+  profile?: Record<string, string>;
+}
+
+export function getConnectorStatus(vendor: VendorId): ConnectorStatus {
+  const file = loadTokenFile(vendor);
+  if (!file) return { vendor, connected: false, needsReauth: false };
+  const now = Date.now();
+  const expiresAt = file.expires_at;
+  const expiresInMs = expiresAt ? expiresAt - now : undefined;
+  const needsReauth =
+    !file.refresh_token && expiresAt !== undefined && now >= expiresAt;
+  return {
+    vendor,
+    connected: true,
+    expiresAt,
+    expiresInMs,
+    needsReauth,
+    profile: file.profile,
+  };
+}
+
+export function getAllConnectorStatuses(): ConnectorStatus[] {
+  const vendors: VendorId[] = ["github", "linear", "sentry"];
+  return vendors.map(getConnectorStatus);
 }
 
 export async function getAccessToken(vendor: VendorId): Promise<string> {

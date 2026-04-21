@@ -1,6 +1,6 @@
 {
   "name": "patchwork-os",
-  "version": "0.2.0-alpha.4",
+  "version": "0.2.0-alpha.18",
   "description": "Patchwork OS — proactive, multi-model AI teammate built on the Claude IDE Bridge. One agent, any model, works while you're away.",
   "type": "module",
   "main": "dist/index.js",
@@ -95,12 +95,14 @@
     "@opentelemetry/semantic-conventions": "^1.40.0",
     "ajv": "^8.18.0",
     "minimatch": "^10.0.0",
+    "node-cron": "^3.0.3",
     "ws": "^8.18.0",
     "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
     "@types/node": "^22.0.0",
+    "@types/node-cron": "^3.0.11",
     "@types/ws": "^8.5.0",
     "@vitest/coverage-v8": "^3.0.0",
     "@vscode/ripgrep": "^1.17.1",

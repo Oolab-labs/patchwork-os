@@ -73,5 +73,5 @@ export async function bridgeFetch(
   const url = `http://127.0.0.1:${lock.port}${pathname}`;
   const headers = new Headers(init?.headers);
   headers.set("Authorization", `Bearer ${lock.authToken}`);
-  return fetch(url, { ...init, headers });
+  return fetch(url, { ...init, headers, cache: "no-store" });
 }
