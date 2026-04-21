@@ -963,7 +963,7 @@ export class Bridge {
         const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
         this.recipeScheduler = new RecipeScheduler({
           recipesDir,
-          enqueue: (opts) => this.orchestrator?.enqueue(opts),
+          enqueue: (opts) => this.orchestrator?.enqueue(opts) ?? "",
           logger: this.logger,
         });
         const scheduled = this.recipeScheduler.start();
