@@ -196,7 +196,7 @@ for (const [f] of fileToNames) {
   // Match tool-level description fields (not property-level ones).
   // A tool description sits directly inside the schema object at ~6 spaces indent.
   const re =
-    /description:\s*([\s\S]{1,800}?)(?=,\s*\n\s+(?:annotations|inputSchema|extensionRequired|name:|outputSchema)|,\s*\n\s+[a-z])/g;
+    /^\s{6}description:\s*([\s\S]{1,800}?)(?=,\s*\n\s+(?:annotations|inputSchema|extensionRequired|name:|outputSchema)|,\s*\n\s+[a-z])/gm;
   let m;
   while ((m = re.exec(src)) !== null) {
     const raw = m[1].trim();
