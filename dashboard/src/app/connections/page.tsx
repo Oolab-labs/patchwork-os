@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface ConnectorStatus {
   id: string;
@@ -497,6 +497,16 @@ export default function ConnectionsPage() {
   }
 
 
+  const hasAnyConnected = connectors.some(
+    (c) => c.status === "connected" || c.status === "needs_reauth",
+  );
+
+  const connectorGridRef = useRef<HTMLDivElement>(null);
+
+  function handleAddConnection() {
+    connectorGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   const gmailConnector = getConnector("gmail");
   const githubConnector = getConnector("github");
   const linearConnector = getConnector("linear");
@@ -513,6 +523,16 @@ export default function ConnectionsPage() {
             Connect your accounts so Patchwork agents can read and act on your behalf.
           </div>
         </div>
+        {!loading && !bridgeOffline && hasAnyConnected && (
+          <button
+            type="button"
+            className="btn sm primary"
+            onClick={handleAddConnection}
+            aria-controls="connector-grid"
+          >
+            Add connection
+          </button>
+        )}
       </div>
 
       {err && (
@@ -540,7 +560,33 @@ export default function ConnectionsPage() {
           <p>Loading…</p>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <>
+          {!hasAnyConnected && (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "var(--s-8) var(--s-6)",
+                marginBottom: "var(--s-6)",
+              }}
+            >
+              <p style={{ color: "var(--fg-2)", fontSize: 14, marginBottom: "var(--s-4)" }}>
+                No connections yet. Choose a provider below to get started.
+              </p>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={handleAddConnection}
+                aria-controls="connector-grid"
+              >
+                Add connection
+              </button>
+            </div>
+          )}
+          <div
+            id="connector-grid"
+            ref={connectorGridRef}
+            style={{ display: "flex", flexDirection: "column", gap: 12 }}
+          >
           {/* Active connectors */}
           <ConnectorCard
             name="Gmail"
@@ -612,7 +658,8 @@ export default function ConnectionsPage() {
             onTest={() => handleTest("slack")}
             loading={acting === "slack"}
           />
-        </div>
+          </div>
+        </>
       )}
     </section>
   );
