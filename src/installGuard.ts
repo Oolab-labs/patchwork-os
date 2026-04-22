@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 
+export const PATCHWORK_PACKAGE_NAME = "patchwork-os";
+
 export interface SymlinkInstallInfo {
   /** Logical package root path in the global node_modules slot. */
   logicalRoot: string;
@@ -36,7 +38,7 @@ export function detectWorkspaceSymlinkInstall(): SymlinkInstallInfo | null {
     const globalRoot = result.stdout.trim();
     if (!globalRoot) return null;
 
-    const logicalRoot = path.join(globalRoot, "patchwork-os");
+    const logicalRoot = path.join(globalRoot, PATCHWORK_PACKAGE_NAME);
 
     // Check if the slot is a symlink (not a real directory copy).
     const stat = lstatSync(logicalRoot);
@@ -52,5 +54,5 @@ export function detectWorkspaceSymlinkInstall(): SymlinkInstallInfo | null {
 
 /** Human-readable install fix instructions. */
 export const SYMLINK_INSTALL_FIX =
-  "  Fix: npm pack && npm install -g patchwork-os-*.tgz\n" +
-  "  Or install from the registry: npm install -g patchwork-os\n";
+  `  Fix: npm pack && npm install -g ${PATCHWORK_PACKAGE_NAME}-*.tgz\n` +
+  `  Or install from the registry: npm install -g ${PATCHWORK_PACKAGE_NAME}\n`;

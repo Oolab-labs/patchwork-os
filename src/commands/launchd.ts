@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   detectWorkspaceSymlinkInstall,
+  PATCHWORK_PACKAGE_NAME,
   SYMLINK_INSTALL_FIX,
 } from "../installGuard.js";
 
@@ -47,16 +48,16 @@ export async function runLaunchdInstall(_argv: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Refuse to register a LaunchAgent when the binary is a workspace symlink.
-  // launchctl runs in a sandbox that cannot follow symlinks into ~/Documents,
-  // causing a silent EPERM at service startup.
+  // Refuse to register a LaunchAgent when a symlinked global install is detected.
+  // launchctl can hit EPERM when the macOS sandbox follows that link into
+  // workspace directories such as ~/Documents.
   const symlinkInfo = detectWorkspaceSymlinkInstall();
   if (symlinkInfo) {
     process.stderr.write(
-      "\nError: cannot install LaunchAgent — patchwork-os is linked to a workspace directory.\n" +
+      `\nError: cannot install LaunchAgent — detected a symlinked global ${PATCHWORK_PACKAGE_NAME} install.\n` +
         `  Logical root: ${symlinkInfo.logicalRoot}\n` +
         `  Real path:    ${symlinkInfo.realRoot}\n\n` +
-        "  The macOS sandbox will deny access to workspace files under ~/Documents,\n" +
+        "  The macOS sandbox can deny access to workspace files under ~/Documents,\n" +
         "  causing EPERM when launchctl starts the bridge.\n\n" +
         SYMLINK_INSTALL_FIX +
         "  Then re-run: patchwork-os launchd install\n\n",

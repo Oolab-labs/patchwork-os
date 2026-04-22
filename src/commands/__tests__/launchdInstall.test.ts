@@ -4,12 +4,17 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const { PATCHWORK_PACKAGE_NAME } = vi.hoisted(() => ({
+  PATCHWORK_PACKAGE_NAME: "patchwork-os",
+}));
+
 // Mock installGuard before importing the command under test.
 vi.mock("../../installGuard.js", () => ({
+  PATCHWORK_PACKAGE_NAME,
   detectWorkspaceSymlinkInstall: vi.fn(),
   SYMLINK_INSTALL_FIX:
-    "  Fix: npm pack && npm install -g patchwork-os-*.tgz\n" +
-    "  Or install from the registry: npm install -g patchwork-os\n",
+    `  Fix: npm pack && npm install -g ${PATCHWORK_PACKAGE_NAME}-*.tgz\n` +
+    `  Or install from the registry: npm install -g ${PATCHWORK_PACKAGE_NAME}\n`,
 }));
 
 // Mock all platform-specific side effects so the test is safe on Linux/CI.
@@ -69,7 +74,7 @@ describe("runLaunchdInstall — symlink guard", () => {
 
     const exitSpy = vi
       .spyOn(process, "exit")
-      .mockImplementation((_code?: number | string) => {
+      .mockImplementation((_code?: number | string | null) => {
         throw new Error("process.exit");
       });
 
@@ -77,8 +82,12 @@ describe("runLaunchdInstall — symlink guard", () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     const output = stderrChunks.join("");
-    expect(output).toContain("linked to a workspace directory");
-    expect(output).toContain("/opt/homebrew/lib/node_modules/patchwork-os");
+    expect(output).toContain(
+      `detected a symlinked global ${PATCHWORK_PACKAGE_NAME} install`,
+    );
+    expect(output).toContain(
+      `/opt/homebrew/lib/node_modules/${PATCHWORK_PACKAGE_NAME}`,
+    );
     expect(output).toContain(
       "/Users/wesh/Documents/Anthropic Workspace/Patchwork OS",
     );
