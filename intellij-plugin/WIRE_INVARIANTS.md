@@ -18,24 +18,24 @@ All methods use the `extension/` namespace. There is no `editor/` or `workspace/
 | `extension/openFile` | Full impl | params: `{ file: string, line?: number }` |
 | `extension/isDirty` | Full impl | params: `{ file: string }` |
 | `extension/getWorkspaceFolders` | Full impl | no params |
-| `extension/getDiagnostics` | Partial (errors only) | params: `{ file?: string }` |
+| `extension/getDiagnostics` | Full impl | params: `{ file?: string }` |
 | `extension/readClipboard` | Full impl | no params |
 | `extension/writeClipboard` | Full impl | params: `{ text: string }` |
-| `extension/saveFile` | Stub | params: `{ file: string }` |
-| `extension/closeTab` | Stub | params: `{ file: string }` |
+| `extension/saveFile` | Full impl | params: `{ file: string }` |
+| `extension/closeTab` | Full impl | params: `{ file: string }` |
 | `extension/getAIComments` | Stub | |
-| `extension/createFile` | Stub | params: `{ filePath, content?, isDirectory?, overwrite?, openAfterCreate? }` |
-| `extension/deleteFile` | Stub | params: `{ filePath, recursive?, useTrash? }` |
-| `extension/renameFile` | Stub | params: `{ oldPath, newPath, overwrite? }` |
-| `extension/editText` | Stub | |
-| `extension/replaceBlock` | Stub | |
-| `extension/listTerminals` | Stub | |
-| `extension/getTerminalOutput` | Stub | |
-| `extension/createTerminal` | Stub | |
-| `extension/disposeTerminal` | Stub | |
-| `extension/sendTerminalCommand` | Stub | |
-| `extension/executeInTerminal` | Stub | |
-| `extension/waitForTerminalOutput` | Stub | |
+| `extension/createFile` | Full impl | params: `{ filePath, content?, isDirectory?, overwrite?, openAfterCreate? }` |
+| `extension/deleteFile` | Full impl | params: `{ filePath, recursive?, useTrash? }` |
+| `extension/renameFile` | Full impl | params: `{ oldPath, newPath, overwrite? }` |
+| `extension/editText` | Full impl | |
+| `extension/replaceBlock` | Full impl | |
+| `extension/listTerminals` | Full impl | |
+| `extension/getTerminalOutput` | Full impl (capability stub) | always `{available:false}` — IJ API limitation |
+| `extension/createTerminal` | Full impl | |
+| `extension/disposeTerminal` | Full impl | |
+| `extension/sendTerminalCommand` | Full impl | |
+| `extension/executeInTerminal` | Full impl | runs via GeneralCommandLine, not in a tab |
+| `extension/waitForTerminalOutput` | Full impl (capability stub) | always `{matched:false}` — IJ API limitation |
 | `extension/formatDocument` | Stub | params: `{ file: string }` |
 | `extension/fixAllLintErrors` | Stub | params: `{ file: string }` |
 | `extension/organizeImports` | Stub | params: `{ file: string }` |
@@ -132,6 +132,91 @@ or `{ "written": false, "error": "description" }`. Text > 1 MB returns JSON-RPC 
 **`extension/getDiagnostics` — two shapes:**
 - File-scoped (`file` param present): plain array of diagnostic objects, 1-based line/column.
 - Workspace-scoped (no `file` param): `{ "diagnostics": [{ "file": "...", "diagnostics": [...] }], "truncated": false }`. Cap at 500 total; set `truncated: true` when hit.
+
+**`extension/saveFile` shape:**
+```json
+true
+```
+Returns a bare JSON boolean `true` on success (same as `extension/openFile`). Returns `{ "success": false, "error": "..." }` for null project, file not open in editor, or untitled buffer.
+
+**`extension/closeTab` shape:**
+```json
+{ "success": true, "promptedToSave": false }
+```
+`promptedToSave` reflects whether the document had unsaved changes at close time. Returns `{ "success": false, "error": "Tab not found" }` if file not open.
+
+**`extension/createFile` shape:**
+```json
+{ "success": true, "filePath": "/abs/path", "isDirectory": false, "created": true }
+```
+`created: false` when file already exists and `overwrite: false` (default). `openAfterCreate` defaults to `true`.
+
+**`extension/deleteFile` shape:**
+```json
+{ "success": true, "filePath": "/abs/path" }
+```
+Non-recursive delete of non-empty directory returns `{ "success": false, "error": "..." }`.
+
+**`extension/renameFile` shape:**
+```json
+{ "success": true, "oldPath": "...", "newPath": "..." }
+```
+
+**`extension/editText` shape:**
+```json
+{ "success": true, "editCount": 3, "saved": false }
+```
+`save` param defaults to `false`. All edits are pre-validated in `runReadAction` before the write action is opened — if any offset is out of range, the entire request fails with no partial mutations. Wire coordinates are 1-based; converted to 0-based internally.
+
+**`extension/replaceBlock` shape:**
+```json
+{ "success": true, "saved": true, "source": "intellij-buffer" }
+```
+`save` param defaults to `true` (differs from `editText`). `source` is `"intellij-buffer"` (VS Code returns `"vscode-buffer"`). Exact error texts on failure:
+- Not found: `"oldContent not found in file — verify the exact text including whitespace and line endings"`
+- Ambiguous: `"oldContent matches N locations — add more surrounding context to make it unique"`
+
+**`extension/listTerminals` shape:**
+```json
+{ "terminals": [{ "name": "Terminal", "index": 0, "isActive": false, "hasOutputCapture": false }], "count": 1, "outputCaptureAvailable": false }
+```
+`outputCaptureAvailable` is always `false` — IJ terminal plugin has no public output buffer API. `isActive` is always `false` — no reliable activeTerminal API in IJ.
+
+**`extension/createTerminal` shape:**
+```json
+{ "success": true, "name": "Terminal", "index": 0 }
+```
+Uses `TerminalView.createLocalShellWidget(cwd, name)` via reflection (falls back to `createNewSession` on older IJ). `show` param defaults to `true`.
+
+**`extension/disposeTerminal` shape:**
+```json
+{ "success": true, "terminalName": "my-term" }
+```
+Not-found returns: `{ "success": false, "error": "Terminal not found...", "availableTerminals": ["..."] }`.
+
+**`extension/sendTerminalCommand` shape:**
+```json
+{ "success": true, "terminalName": "my-term" }
+```
+Metacharacter validation rejects `[;&|` + `$()<>{}!\\\n\r]`. `addNewline` defaults to `true`. Not-found returns `availableTerminals` array same as `disposeTerminal`.
+
+**`extension/getTerminalOutput` shape (IJ limitation):**
+```json
+{ "available": false, "error": "Terminal output capture is not available in the JetBrains plugin..." }
+```
+IJ terminal API has no public output buffer. Always returns `available: false`. Callers should use `executeInTerminal` for output capture.
+
+**`extension/waitForTerminalOutput` shape (IJ limitation):**
+```json
+{ "matched": false, "error": "Terminal output capture is not available in the JetBrains plugin..." }
+```
+Same limitation as `getTerminalOutput`. `pattern` param is validated (non-empty string required) but cannot be matched.
+
+**`extension/executeInTerminal` shape:**
+```json
+{ "success": true, "exitCode": 0, "output": "hello\n" }
+```
+Runs via `GeneralCommandLine(/bin/sh -c <command>)` — not in a visible terminal tab. Output capped at 512 KB (`truncated: true` when hit). ANSI escape codes stripped. `timeoutMs` clamped to 1000–300000 ms (default 30000). Timeout response: `{ "success": false, "error": "Command timed out after Xms", "timedOut": true, "output": "<partial output>" }`. Metacharacter validation same as `sendTerminalCommand` **except** newlines — newlines tested separately before metachar check with error `"Command must not contain newlines"`.
 
 ---
 
