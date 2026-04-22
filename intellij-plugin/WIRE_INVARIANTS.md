@@ -161,6 +161,17 @@ These rules are JetBrains-specific (VS Code is single-workspace). All handlers s
 
 All values sourced from `vscode-extension/src/constants.ts` and `vscode-extension/src/connection.ts`.
 
+**WebSocket auth header:** `x-claude-ide-extension: <authToken>` (confirmed `connection.ts` line 320). The field name `x-claude-code-ide-authorization` is **wrong** — it does not authenticate.
+
+**Lock file selection** (matches `lockfiles.ts`):
+1. List all `*.lock` files in `${CLAUDE_CONFIG_DIR:-~/.claude}/ide/`
+2. Sort by `mtime` descending (newest first)
+3. For each: parse JSON, require `isBridge: true`, valid `port`, non-empty `authToken`
+4. Check `startedAt` freshness: drop if `now - startedAt > 24h`
+5. Check PID liveness: `ProcessHandle.of(pid).isPresent`; treat `SecurityException` as alive
+6. Prefer candidate whose `workspace` field (canonical) matches the active project path
+7. Fall back to first remaining candidate
+
 | Constant | Value | Source |
 |---|---|---|
 | `RECONNECT_BASE_DELAY` | 1000 ms | `constants.ts` |
@@ -168,14 +179,19 @@ All values sourced from `vscode-extension/src/constants.ts` and `vscode-extensio
 | `HANDLER_TIMEOUT` | 30000 ms | `constants.ts` |
 | WebSocket open timeout | 30000 ms | `connection.ts` |
 | Bridge unresponsive timeout | 120000 ms | `connection.ts` |
-| Heartbeat interval | 45000 ms | `connection.ts` |
+| Heartbeat check interval | 45000 ms | `connection.ts` |
 | Notification buffer cap | 20 items | `connection.ts` |
 
 **Reconnect backoff formula:** `jitteredDelay = round(500 + random() * currentDelay)`, then `currentDelay = min(currentDelay * 2, 30000)`. Resets to `RECONNECT_BASE_DELAY` on successful connect.
 
 **Generation guard:** Each `connect()` call increments a monotonic integer `generation`. Every async callback captures `gen = this.generation` at creation time and silently returns without acting if `gen !== this.generation` when it fires. Required — prevents stale reconnect callbacks from corrupting new connection state.
 
-**Heartbeat / liveness:** Bridge sends WebSocket ping frames every 45 s. Plugin must respond with pong (standard WebSocket behavior). Plugin forces reconnect after 120 s of no pings.
+**Heartbeat / liveness:** Liveness is tracked via **WebSocket ping frames from the bridge**, not JSON messages. Bridge sends ping frames ~every 30s. Plugin must:
+- Override `onWebsocketPing` (Java-WebSocket), record `lastBridgePingMs = now`, then call `super` to send the pong frame
+- Check every 45s: if `now - lastBridgePingMs > 120s`, close socket and reconnect
+- Do NOT use `onMessage` timestamps for liveness — idle connections send no JSON but the bridge keeps pinging
+
+**Active project snapshot:** Capture `val project = activeProject` in `onMessage` **before** `scheduler.submit {}`. The submit delay allows a focus switch to change `activeProject`; the snapshot pins the project to the moment the request arrived.
 
 **Notification replay on reconnect:** On successful reconnect, flush buffered notifications in order before processing new messages. Buffer cap 20 items; drop oldest when full. Buffered methods: `extension/diagnosticsChanged`, `extension/fileChanged`, `extension/aiCommentsChanged`, `extension/lspReady`.
 
