@@ -95,28 +95,39 @@ class BridgeService {
         handlerRegistry.register("extension/waitForTerminalOutput", com.patchwork.bridge.handlers.WaitForTerminalOutputHandler())
         handlerRegistry.register("extension/executeInTerminal", com.patchwork.bridge.handlers.ExecuteInTerminalHandler())
 
+        // LSP handlers
+        handlerRegistry.register("extension/goToDefinition", com.patchwork.bridge.handlers.GoToDefinitionHandler())
+        handlerRegistry.register("extension/findReferences", com.patchwork.bridge.handlers.FindReferencesHandler())
+        handlerRegistry.register("extension/findImplementations", com.patchwork.bridge.handlers.FindImplementationsHandler())
+        handlerRegistry.register("extension/goToTypeDefinition", com.patchwork.bridge.handlers.GoToTypeDefinitionHandler())
+        handlerRegistry.register("extension/goToDeclaration", com.patchwork.bridge.handlers.GoToDeclarationHandler())
+        handlerRegistry.register("extension/getHover", com.patchwork.bridge.handlers.GetHoverHandler())
+        handlerRegistry.register("extension/getCodeActions", com.patchwork.bridge.handlers.GetCodeActionsHandler())
+        handlerRegistry.register("extension/applyCodeAction", com.patchwork.bridge.handlers.ApplyCodeActionHandler())
+        handlerRegistry.register("extension/previewCodeAction", com.patchwork.bridge.handlers.PreviewCodeActionHandler())
+        handlerRegistry.register("extension/renameSymbol", com.patchwork.bridge.handlers.RenameSymbolHandler())
+        handlerRegistry.register("extension/searchSymbols", com.patchwork.bridge.handlers.SearchSymbolsHandler())
+        handlerRegistry.register("extension/getDocumentSymbols", com.patchwork.bridge.handlers.GetDocumentSymbolsHandler())
+        handlerRegistry.register("extension/getCallHierarchy", com.patchwork.bridge.handlers.GetCallHierarchyHandler())
+        handlerRegistry.register("extension/prepareRename", com.patchwork.bridge.handlers.PrepareRenameHandler())
+        handlerRegistry.register("extension/formatRange", com.patchwork.bridge.handlers.FormatRangeHandler())
+        handlerRegistry.register("extension/signatureHelp", com.patchwork.bridge.handlers.SignatureHelpHandler())
+        handlerRegistry.register("extension/foldingRanges", com.patchwork.bridge.handlers.FoldingRangesHandler())
+        handlerRegistry.register("extension/selectionRanges", com.patchwork.bridge.handlers.SelectionRangesHandler())
+
+        // Debug handlers
+        handlerRegistry.register("extension/getDebugState", com.patchwork.bridge.handlers.GetDebugStateHandler())
+        handlerRegistry.register("extension/evaluateInDebugger", com.patchwork.bridge.handlers.EvaluateInDebuggerHandler())
+        handlerRegistry.register("extension/setDebugBreakpoints", com.patchwork.bridge.handlers.SetDebugBreakpointsHandler())
+        handlerRegistry.register("extension/startDebugging", com.patchwork.bridge.handlers.StartDebuggingHandler())
+        handlerRegistry.register("extension/stopDebugging", com.patchwork.bridge.handlers.StopDebuggingHandler())
+
         // Tier 1 stubs: known methods, not yet implemented
         val stubs = listOf(
             "extension/getAIComments",
             "extension/formatDocument",
             "extension/fixAllLintErrors",
             "extension/organizeImports",
-            "extension/goToDefinition",
-            "extension/findReferences",
-            "extension/findImplementations",
-            "extension/goToTypeDefinition",
-            "extension/goToDeclaration",
-            "extension/getHover",
-            "extension/getCodeActions",
-            "extension/applyCodeAction",
-            "extension/previewCodeAction",
-            "extension/renameSymbol",
-            "extension/searchSymbols",
-            "extension/prepareRename",
-            "extension/formatRange",
-            "extension/signatureHelp",
-            "extension/foldingRanges",
-            "extension/selectionRanges",
             "extension/watchFiles",
             "extension/unwatchFiles",
             "extension/captureScreenshot",
@@ -131,13 +142,6 @@ class BridgeService {
             "extension/getSemanticTokens",
             "extension/getCodeLens",
             "extension/getDocumentLinks",
-            "extension/getDocumentSymbols",
-            "extension/getCallHierarchy",
-            "extension/getDebugState",
-            "extension/evaluateInDebugger",
-            "extension/setDebugBreakpoints",
-            "extension/startDebugging",
-            "extension/stopDebugging",
             "extension/setDecorations",
             "extension/clearDecorations"
         )
