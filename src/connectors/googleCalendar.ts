@@ -42,11 +42,14 @@ export interface CalendarTokens {
   scope?: string;
   calendar_id: string;
   connected_at: string;
+  /** Stored at auth time so refresh works even if env vars are absent. */
+  _client_id?: string;
+  _client_secret?: string;
 }
 
 export interface ConnectorStatus {
   id: string;
-  status: "connected" | "disconnected";
+  status: "connected" | "disconnected" | "needs_reauth";
   lastSync?: string;
   calendarId?: string;
 }
@@ -104,11 +107,19 @@ function deleteTokens(): void {
 
 export function getStatus(): ConnectorStatus {
   const tokens = loadTokens();
+  if (!tokens) return { id: "google-calendar", status: "disconnected" };
+  const expired =
+    tokens.expiry_date !== undefined && Date.now() > tokens.expiry_date;
+  const hasCredentials = Boolean(
+    (process.env.GOOGLE_CALENDAR_CLIENT_ID || tokens._client_id) &&
+      (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || tokens._client_secret),
+  );
+  const status = expired && !hasCredentials ? "needs_reauth" : "connected";
   return {
     id: "google-calendar",
-    status: tokens ? "connected" : "disconnected",
-    lastSync: tokens?.connected_at,
-    calendarId: tokens?.calendar_id,
+    status,
+    lastSync: tokens.connected_at,
+    calendarId: tokens.calendar_id,
   };
 }
 
@@ -160,6 +171,8 @@ async function exchangeCode(
       : undefined,
     token_type: json.token_type,
     scope: json.scope,
+    _client_id: clientId() || undefined,
+    _client_secret: clientSecret() || undefined,
   };
 }
 
@@ -167,13 +180,19 @@ async function refreshAccessToken(
   tokens: CalendarTokens,
 ): Promise<CalendarTokens> {
   if (!tokens.refresh_token) throw new Error("No refresh token available");
+  const id = clientId() || tokens._client_id || "";
+  const secret = clientSecret() || tokens._client_secret || "";
+  if (!id || !secret)
+    throw new Error(
+      "Google Calendar client credentials not available — reconnect the Google Calendar connector",
+    );
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       refresh_token: tokens.refresh_token,
-      client_id: clientId(),
-      client_secret: clientSecret(),
+      client_id: id,
+      client_secret: secret,
       grant_type: "refresh_token",
     }).toString(),
   });
@@ -270,8 +289,8 @@ export async function listEvents(
   signal?: AbortSignal,
 ): Promise<CalendarEvent[]> {
   const accessToken = await getValidAccessToken();
-  const tokens = loadTokens()!;
-  const calendarId = opts.calendarId ?? tokens.calendar_id ?? "primary";
+  const tokens = loadTokens();
+  const calendarId = opts.calendarId ?? tokens?.calendar_id ?? "primary";
   const daysAhead = Math.min(opts.daysAhead ?? 7, 30);
   const maxResults = Math.min(opts.maxResults ?? 20, 50);
 

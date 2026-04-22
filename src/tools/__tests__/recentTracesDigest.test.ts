@@ -96,7 +96,6 @@ describe("buildRecentTracesDigest", () => {
     });
     // Simulate the link being 15h old by overriding the recorded `createdAt`
     // via in-memory mutation (simplest route; query uses the field directly).
-    // biome-ignore lint/suspicious/noExplicitAny: internal test access
     (linkLog as any).links[0].createdAt = now - 15 * 60 * 60 * 1000;
 
     const lines = await buildRecentTracesDigest(
@@ -152,7 +151,6 @@ describe("buildRecentTracesDigest", () => {
       resolved: true,
       workspace: "/ws",
     });
-    // biome-ignore lint/suspicious/noExplicitAny: internal test access
     (linkLog as any).links[0].createdAt = now - 2 * 60 * 60 * 1000;
 
     const lines = await buildRecentTracesDigest(
@@ -178,9 +176,7 @@ describe("buildRecentTracesDigest", () => {
       resolved: true,
       workspace: "/ws",
     });
-    // biome-ignore lint/suspicious/noExplicitAny: internal test access
     (linkLog as any).links[0].createdAt = now - 3 * 60 * 60 * 1000;
-    // biome-ignore lint/suspicious/noExplicitAny: internal test access
     (linkLog as any).links[1].createdAt = now - 1 * 60 * 60 * 1000;
 
     const lines = await buildRecentTracesDigest(

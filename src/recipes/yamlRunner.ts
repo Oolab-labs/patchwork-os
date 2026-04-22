@@ -114,6 +114,15 @@ export interface RunResult {
   errorMessage?: string;
 }
 
+// Strip tool-call narration some models (e.g. Gemini) prepend before the markdown block.
+function stripLeadingNarration(text: string): string {
+  const lines = text.split("\n");
+  const firstMarkdown = lines.findIndex((l) =>
+    /^(#|>|`|\||[-*+] |\d+\. |\*\*)/.test(l.trimStart()),
+  );
+  return firstMarkdown > 0 ? lines.slice(firstMarkdown).join("\n") : text;
+}
+
 export function loadYamlRecipe(filePath: string): YamlRecipe {
   const text = readFileSync(filePath, "utf-8");
   const raw = parseYaml(text) as unknown;
@@ -241,14 +250,25 @@ export async function runYamlRecipe(
             agentResult = await stepDeps.claudeFn(renderedPrompt, model);
           }
         }
-        ctx[intoKey] = agentResult;
-        outputs.push(intoKey);
-        stepResults.push({
-          id: stepId,
-          tool: "agent",
-          status: "ok",
-          durationMs: Date.now() - stepStart,
-        });
+        if (agentResult.startsWith("[agent step failed:")) {
+          runError = runError ?? agentResult;
+          stepResults.push({
+            id: stepId,
+            tool: "agent",
+            status: "error",
+            error: agentResult,
+            durationMs: Date.now() - stepStart,
+          });
+        } else {
+          ctx[intoKey] = stripLeadingNarration(agentResult);
+          outputs.push(intoKey);
+          stepResults.push({
+            id: stepId,
+            tool: "agent",
+            status: "ok",
+            durationMs: Date.now() - stepStart,
+          });
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         runError = runError ?? `agent step "${stepId}" failed: ${msg}`;
@@ -479,17 +499,21 @@ async function defaultProviderDriverFn(
       providerDriverCache.set(driverName, driver);
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000);
+    const timeoutMs = 300_000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const result = await driver.run({
         prompt,
         workspace: process.cwd(),
-        timeoutMs: 120_000,
+        timeoutMs,
         signal: controller.signal,
         model,
       });
       if (result.errorMessage) {
         return `[agent step failed: ${result.errorMessage}]`;
+      }
+      if (!result.text) {
+        return `[agent step failed: ${driverName} returned empty output (possible timeout or auth error)]`;
       }
       return result.text;
     } finally {
@@ -794,6 +818,14 @@ interface GmailThreadResult {
   error?: string;
 }
 
+function cleanSnippet(raw: string): string {
+  return raw
+    .replace(/­|​|‌|‍|‎|‏|‪|‫|‬|‭|‮|⁠|﻿|͏/g, "")
+    .replace(/(\s)\s+/g, "$1")
+    .trim()
+    .slice(0, 200);
+}
+
 function sinceToGmailQuery(since: string): string {
   // "24h" → "1d", "7d" → "7d", "1h" → "1d" (round up)
   const m = /^(\d+)(h|d)$/.exec(since.trim().toLowerCase());
@@ -857,7 +889,7 @@ async function gmailSearch(
           subject: getHeader(hdrs, "Subject"),
           from: getHeader(hdrs, "From"),
           date: getHeader(hdrs, "Date"),
-          snippet: detail.snippet ?? "",
+          snippet: cleanSnippet(detail.snippet ?? ""),
         };
       }),
     );

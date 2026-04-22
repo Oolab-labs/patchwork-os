@@ -743,7 +743,6 @@ describe("_buildTasksPayload: triggerSource is included", () => {
     // Force shared prefix by moving id2 under a synthetic colliding key.
     const shared = id1.slice(0, 8);
     const synthetic = `${shared}${"f".repeat(28)}`;
-    // biome-ignore lint/suspicious/noExplicitAny: test-only map access
     const tasksMap: Map<string, any> = (orch as any).tasks;
     const t2 = tasksMap.get(id2)!;
     tasksMap.delete(id2);
@@ -772,7 +771,6 @@ describe("_buildTasksPayload: triggerSource is included", () => {
     await new Promise((r) => setImmediate(r));
     const shared = id1.slice(0, 8);
     const synthetic = `${shared}${"f".repeat(28)}`;
-    // biome-ignore lint/suspicious/noExplicitAny: test-only map access
     const tasksMap: Map<string, any> = (orch as any).tasks;
     const t2 = tasksMap.get(id2)!;
     tasksMap.delete(id2);
