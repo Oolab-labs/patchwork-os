@@ -676,6 +676,27 @@ Install with `patchwork recipe install <path-to-recipe.yaml>`. Run history persi
 - 5s timeout via `AbortController`.
 - Failures logged, never thrown — webhook errors must not block approval flow.
 
+### Mobile push notifications (phone-path approvals)
+
+When `pushServiceUrl` is configured, the bridge dispatches a push notification alongside the webhook after queuing a call. The push relay (`services/push-relay/`) receives the payload, looks up the user's FCM/APNS device tokens, and sends the notification.
+
+**Configuration** (runtime-mutable via `POST /settings`, no restart):
+
+| Setting | Env var | Description |
+|---|---|---|
+| `pushServiceUrl` | `PATCHWORK_PUSH_URL` | HTTPS URL of push relay (e.g. `https://notify.patchwork.dev`) |
+| `pushServiceToken` | `PATCHWORK_PUSH_TOKEN` | Bearer token for relay auth |
+| `pushServiceBaseUrl` | `PATCHWORK_PUSH_BASE_URL` | Public HTTPS URL of this bridge (phone calls back here) |
+
+**Phone-path auth:** each queued call gets a per-callId `approvalToken` (256-bit hex, single-use, timing-safe) delivered in the push payload. The phone POSTs to `POST /approve/:callId` or `POST /reject/:callId` with an `x-approval-token` header — no bridge bearer token needed. Token expires with the queue TTL (default 5 min).
+
+**Invariants:**
+- `approvalToken` is never returned by `GET /approvals` — only via push.
+- Push dispatch is fire-and-forget and never delays the approval flow.
+- Feature is fully opt-in: no behavior change when `pushServiceUrl` is absent.
+
+Setup guide: [docs/mobile-oversight.md](../docs/mobile-oversight.md). Architecture: [docs/adr/0006-approval-gate-design.md](../docs/adr/0006-approval-gate-design.md) (amended).
+
 ## Patchwork Context Platform — Phase 3 Moat
 
 Cross-session memory for agents. Every decision (approval verdict, enrichment link, recipe run, agent-authored fix) is persisted to JSONL and queryable through a single surface. New sessions see a digest of recent decisions automatically in their MCP instructions block — no tool call required.
