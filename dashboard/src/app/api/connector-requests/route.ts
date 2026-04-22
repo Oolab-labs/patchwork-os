@@ -55,15 +55,23 @@ export async function POST(req: Request): Promise<Response> {
 
     let existing: ConnectorRequest[] = [];
     if (fs.existsSync(file)) {
+      const raw = fs.readFileSync(file, "utf8");
+      let parsed: unknown;
       try {
-        const raw = fs.readFileSync(file, "utf8");
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          existing = parsed as ConnectorRequest[];
-        }
+        parsed = JSON.parse(raw);
       } catch {
-        // malformed — start fresh
+        return NextResponse.json(
+          { ok: false, error: "connector-requests.json is malformed — fix or delete it and retry" },
+          { status: 500 },
+        );
       }
+      if (!Array.isArray(parsed)) {
+        return NextResponse.json(
+          { ok: false, error: "connector-requests.json has unexpected format — expected an array" },
+          { status: 500 },
+        );
+      }
+      existing = parsed as ConnectorRequest[];
     }
 
     existing.push(entry);
