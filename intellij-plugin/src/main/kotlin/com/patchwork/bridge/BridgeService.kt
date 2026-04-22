@@ -205,9 +205,10 @@ class BridgeService {
             val token = json.get("authToken")?.asString?.takeIf { it.isNotEmpty() } ?: return null
             val workspace = json.get("workspace")?.asString ?: ""
 
-            // startedAt freshness: drop if older than 24h (matches lockfiles.ts)
-            val startedAt = json.get("startedAt")?.asLong ?: 0L
-            if (startedAt > 0 && System.currentTimeMillis() - startedAt > LOCK_MAX_AGE_MS) return null
+            // startedAt freshness: missing/non-numeric → 0 → rejected (matches lockfiles.ts:
+            // "typeof content.startedAt === 'number' ? content.startedAt : 0" then ageMs > 24h check)
+            val startedAt = json.get("startedAt")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L
+            if (System.currentTimeMillis() - startedAt > LOCK_MAX_AGE_MS) return null
 
             if (!isPidAlive(pid)) return null
             LockFile(port, pid, token, workspace, f.lastModified())
