@@ -588,9 +588,127 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+
+          <MobileNotificationsCard />
         </>
       )}
     </section>
+  );
+}
+
+function MobileNotificationsCard() {
+  const [status, setStatus] = useState<"idle" | "subscribing" | "subscribed" | "unsubscribing" | "unsupported">("idle");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setStatus("unsupported");
+      return;
+    }
+    navigator.serviceWorker.getRegistration("/").then(async (reg) => {
+      if (!reg) return;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) setStatus("subscribed");
+    }).catch(() => {});
+  }, []);
+
+  async function handleSubscribe() {
+    setStatus("subscribing");
+    setMsg(null);
+    try {
+      const { subscribeToPush, registerServiceWorker } = await import("@/lib/pushSubscription");
+      await registerServiceWorker();
+      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+      if (!vapidKey) {
+        setMsg({ ok: false, text: "NEXT_PUBLIC_VAPID_PUBLIC_KEY not set — contact your bridge admin." });
+        setStatus("idle");
+        return;
+      }
+      const ok = await subscribeToPush(vapidKey);
+      setStatus(ok ? "subscribed" : "idle");
+      setMsg(ok ? { ok: true, text: "Subscribed. You'll receive push notifications on this device." } : { ok: false, text: "Subscription failed — check Notification permission in browser settings." });
+    } catch (err) {
+      setStatus("idle");
+      setMsg({ ok: false, text: String(err) });
+    }
+  }
+
+  async function handleUnsubscribe() {
+    setStatus("unsubscribing");
+    setMsg(null);
+    try {
+      const { unsubscribeFromPush } = await import("@/lib/pushSubscription");
+      await unsubscribeFromPush();
+      setStatus("idle");
+      setMsg({ ok: true, text: "Unsubscribed." });
+    } catch (err) {
+      setStatus("subscribed");
+      setMsg({ ok: false, text: String(err) });
+    }
+  }
+
+  async function handleTest() {
+    setMsg(null);
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" });
+      const data = await res.json() as Record<string, unknown>;
+      setMsg(res.ok ? { ok: true, text: `Test sent (${data.sent ?? 0} delivered).` } : { ok: false, text: JSON.stringify(data) });
+    } catch (err) {
+      setMsg({ ok: false, text: String(err) });
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">
+        <h2>Mobile notifications</h2>
+      </div>
+      <div style={{ padding: "0 16px 16px" }}>
+        <p style={{ fontSize: 13, color: "var(--fg-2)", marginBottom: 12 }}>
+          Install this page as a PWA and receive push notifications when tool calls need your approval.
+        </p>
+        {status === "unsupported" ? (
+          <p style={{ fontSize: 13, color: "var(--fg-3)" }}>Push notifications are not supported in this browser.</p>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {status !== "subscribed" ? (
+              <button
+                type="button"
+                onClick={handleSubscribe}
+                disabled={status === "subscribing"}
+                style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--r-2)", padding: "8px 16px", fontSize: 13, cursor: status === "subscribing" ? "not-allowed" : "pointer", minHeight: 44 }}
+              >
+                {status === "subscribing" ? "Subscribing…" : "Enable push notifications"}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleTest}
+                  style={{ background: "var(--bg-2)", color: "var(--fg-0)", border: "1px solid var(--border)", borderRadius: "var(--r-2)", padding: "8px 16px", fontSize: 13, cursor: "pointer", minHeight: 44 }}
+                >
+                  Test notification
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUnsubscribe}
+                  disabled={status === "unsubscribing"}
+                  style={{ background: "transparent", color: "var(--fg-3)", border: "none", fontSize: 13, cursor: "pointer", minHeight: 44 }}
+                >
+                  {status === "unsubscribing" ? "Removing…" : "Remove this device"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {msg && (
+          <p style={{ fontSize: 12, marginTop: 8, color: msg.ok ? "var(--ok)" : "var(--err)" }}>
+            {msg.text}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
