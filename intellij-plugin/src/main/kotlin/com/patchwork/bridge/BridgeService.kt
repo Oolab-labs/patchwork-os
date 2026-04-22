@@ -85,12 +85,12 @@ class BridgeService {
         handlerRegistry.register("extension/createFile", com.patchwork.bridge.handlers.CreateFileHandler())
         handlerRegistry.register("extension/deleteFile", com.patchwork.bridge.handlers.DeleteFileHandler())
         handlerRegistry.register("extension/renameFile", com.patchwork.bridge.handlers.RenameFileHandler())
+        handlerRegistry.register("extension/editText", com.patchwork.bridge.handlers.EditTextHandler())
+        handlerRegistry.register("extension/replaceBlock", com.patchwork.bridge.handlers.ReplaceBlockHandler())
 
         // Tier 1 stubs: known methods, not yet implemented
         val stubs = listOf(
             "extension/getAIComments",
-            "extension/editText",
-            "extension/replaceBlock",
             "extension/listTerminals",
             "extension/getTerminalOutput",
             "extension/createTerminal",
