@@ -57,6 +57,12 @@ export interface Config {
   wsPingIntervalMs: number;
   /** LSP hover verbosity. "minimal" strips documentation, keeping only type signatures (~60% smaller). */
   lspVerbosity: "minimal" | "normal" | "verbose";
+  /** Recipe chaining: max concurrent steps executing in parallel. Default 4. */
+  recipeMaxConcurrency: number;
+  /** Recipe chaining: max nesting depth for nested recipes. Default 3, max 5. */
+  recipeMaxDepth: number;
+  /** Recipe chaining: dry-run mode (validate only, don't execute). Default false. */
+  recipeDryRun: boolean;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -996,5 +1002,8 @@ Environment Variables:
     githubDefaultRepo,
     wsPingIntervalMs: 10_000,
     lspVerbosity,
+    recipeMaxConcurrency: 4,
+    recipeMaxDepth: 3,
+    recipeDryRun: false,
   };
 }

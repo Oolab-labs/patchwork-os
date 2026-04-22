@@ -1,12 +1,14 @@
 # Claude IDE Bridge
 
+> **Patchwork OS alpha (`0.2.0-alpha.21`)** — this extension is the VS Code side of [Patchwork OS](https://github.com/Oolab-labs/patchwork-os), an AI platform that watches for things that matter, acts, and asks before anything risky goes out.
+
 Give Claude Code real-time visibility into your editor. Claude sees your open files, diagnostics, terminal output, and editor state — and can act on all of it.
 
 Fix a bug from your phone. Let Claude run your tests and commit the result. Ask Claude what lint errors are in your workspace without copy-pasting anything. This extension makes all of that work.
 
 ## How It Works
 
-This extension is the VS Code side of [claude-ide-bridge](https://github.com/Oolab-labs/claude-ide-bridge), an MCP server that connects Claude Code to your IDE over WebSockets. The extension streams live editor state to the bridge; Claude Code reads and acts on it through 136+ MCP tools.
+This extension is the VS Code side of [Patchwork OS](https://github.com/Oolab-labs/patchwork-os) (formerly `claude-ide-bridge`), an MCP server that connects Claude Code to your IDE over WebSockets. The extension streams live editor state to the bridge; Claude Code reads and acts on it through 170+ MCP tools.
 
 When this extension is installed, **the bridge is installed and started automatically** — no terminal commands required to get going.
 
@@ -55,8 +57,13 @@ Once connected, Claude has full IDE context and can act on it without you descri
 - **Format, lint, and organize imports** — code quality tools wired to your IDE's language servers.
 - **Capture a screenshot** — Claude can see what your editor looks like.
 - **Watch files for changes** — register file watchers and react to saves.
+- **Spawn background Claude tasks** — `runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks` for headless orchestration.
+- **Quick-task presets** — `launchQuickTask` with presets: `fixErrors`, `refactorFile`, `addTests`, `explainCode`, `optimizePerf`, `runTests`, `resumeLastCancelled`.
+- **Edit transactions** — `beginTransaction`, `stageEdit`, `commitTransaction`, `rollbackTransaction` for atomic multi-file edits.
+- **Coverage tracing** — `getCodeCoverage` + lcov/json-summary parsing.
+- **Environment health** — `bridgeDoctor` verifies extension, git, linter, test runner, lock file, and GitHub CLI with actionable suggestions.
 
-Tools that require the extension (~50 of 136+) are automatically hidden from Claude when the extension is not connected. When reconnected, they reappear.
+The bridge starts in **full mode by default** (~170 tools). Pass `--slim` to restrict to the IDE-only surface (~50 tools). Tools that require the extension are automatically hidden when the extension is disconnected and reappear on reconnect.
 
 ## Requirements
 
@@ -72,6 +79,17 @@ Tools that require the extension (~50 of 136+) are automatically hidden from Cla
 | `Claude IDE Bridge: Copy Connection Info` | Copy bridge URL and token to clipboard |
 | `Claude IDE Bridge: Start Bridge` | Manually start the bridge for this workspace |
 | `Claude IDE Bridge: Install / Upgrade Bridge` | Install or upgrade the bridge via npm |
+| `Claude IDE Bridge: Refresh Analytics` | Refresh the analytics sidebar panel |
+
+## Analytics Panel
+
+The extension contributes a **Claude Bridge** panel in the VS Code activity bar. It shows:
+
+- Live active tasks with output overlay and Resume/Cancel controls
+- Quick-task preset buttons (Fix Errors, Add Tests, Explain Code, etc.)
+- Health score (0–100), p95 tool latency, and connection quality
+- Recent task history with handoff note preview
+- Continue from last handoff
 
 ## Configuration
 
@@ -82,6 +100,7 @@ Tools that require the extension (~50 of 136+) are automatically hidden from Cla
 | `claudeIdeBridge.autoInstallBridge` | `true` | Auto-install/upgrade the bridge via npm if not found or outdated |
 | `claudeIdeBridge.logLevel` | `info` | Log verbosity: `info`, `debug`, or `warn` |
 | `claudeIdeBridge.lockFileDir` | _(empty)_ | Override lock file directory (default: `~/.claude/ide/`). Useful for multi-bridge setups. |
+| `claudeIdeBridge.port` | `0` | Port for the bridge to listen on. `0` = auto-select. Set a fixed port ≥ 1024 (e.g. `55000`) when running multiple IDEs simultaneously. |
 
 ## After Restarting or Updating the Bridge
 
@@ -121,35 +140,48 @@ The bridge supports event-driven automation that fires Claude tasks in response 
 
 | Trigger | When it fires |
 |---------|--------------|
-| `onDiagnosticsError` | VS Code reports new errors/warnings for a file |
+| `onDiagnosticsStateChange` | VS Code reports new errors/warnings for a file |
 | `onFileSave` | A matching file is explicitly saved |
 | `onFileChanged` | Any buffer edit on a matching file |
-| `onTestRun` | `runTests` completes (optionally failures-only) |
+| `onTestRun` | `runTests` completes (filter: `"failure"` for failures-only) |
 | `onGitCommit` | `gitCommit` tool succeeds |
 | `onGitPush` | `gitPush` tool succeeds |
 | `onBranchCheckout` | Git branch is created or switched |
 | `onPullRequest` | A pull request event occurs |
-| `onPostCompact` | Claude compacts its context |
+| `onCompaction` | Claude compacts its context (phase: `"pre"` or `"post"`) |
 | `onInstructionsLoaded` | Claude loads CLAUDE.md at session start |
+| `onDebugSessionStart` | A VS Code debug session starts |
 
-See the [bridge README](https://github.com/Oolab-labs/claude-ide-bridge#claude-orchestration--automation) for full policy file syntax and placeholder reference.
+See the [Patchwork OS docs](https://github.com/Oolab-labs/patchwork-os#automation-hooks) for full policy file syntax, placeholder reference, and nonce injection for prompt-injection defense.
 
 ## Claude Orchestration
 
-When started with `--claude-driver subprocess`, the bridge can spawn Claude Code subprocesses as background tasks. Tools available: `runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`, `resumeClaudeTask`. Output streams to the **Claude IDE Bridge** output channel in real time.
+When started with `--claude-driver subprocess`, the bridge can spawn Claude Code subprocesses as background tasks. Tools: `runClaudeTask`, `getClaudeTaskStatus`, `cancelClaudeTask`, `listClaudeTasks`, `resumeClaudeTask`. Output streams to the **Claude IDE Bridge** output channel in real time.
+
+The headless CLI also exposes `start-task "<description>"`, `quick-task <preset>`, and `continue-handoff` as subcommands, sharing the same dispatch path as MCP clients and the sidebar.
+
+## Mobile Oversight (alpha)
+
+Approve or reject risky Claude actions from your phone. Install the Patchwork OS dashboard as a PWA (iOS/Android), subscribe to push notifications in **Settings → Mobile notifications**, and inline Approve/Reject actions appear directly in your notification tray. Requires a [push-relay service](https://github.com/Oolab-labs/patchwork-os/tree/main/services/push-relay) deployment.
+
+## JetBrains
+
+A companion IntelliJ plugin (v1.0.0) is available on the JetBrains Marketplace. It covers 49 handlers: core tools, PSI-based LSP (goto, references, hover, rename, symbols, format), XDebugger integration, and code style tools.
 
 ## Links
 
-- [GitHub](https://github.com/Oolab-labs/claude-ide-bridge)
-- [npm (bridge)](https://www.npmjs.com/package/claude-ide-bridge)
-- [Issues](https://github.com/Oolab-labs/claude-ide-bridge/issues)
+- [GitHub](https://github.com/Oolab-labs/patchwork-os)
+- [npm](https://www.npmjs.com/package/patchwork-os)
+- [Issues](https://github.com/Oolab-labs/patchwork-os/issues)
 
 ## Version & Compatibility
 
 | | |
 |---|---|
-| Extension version | 1.0.20 |
-| Bridge package | `claude-ide-bridge` (npm) |
+| Extension version | 1.4.9 |
+| Patchwork OS version | `0.2.0-alpha.21` |
+| Bridge package | `patchwork-os` (npm, also `claude-ide-bridge`) |
 | VS Code requirement | 1.93+ |
 | Compatible editors | VS Code, Cursor, Windsurf, Google Antigravity |
 | Node.js requirement | 20+ (for bridge auto-install) |
+| Test suite | 3471 tests (all passing) |
