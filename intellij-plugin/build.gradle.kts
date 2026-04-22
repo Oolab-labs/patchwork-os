@@ -1,4 +1,4 @@
-import org.jetbrains.intellij.platform.gradle.TestFrameworkType // needed for testFramework(TestFrameworkType.Platform)
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     id("java")
@@ -21,7 +21,7 @@ dependencies {
         intellijIdeaCommunity("2024.1")
         pluginVerifier()
         zipSigner()
-        testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.JUnit5)
     }
 
     // WebSocket client
@@ -31,6 +31,8 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // IJ test framework's JUnit5TestSessionListener needs JUnit 4 on classpath
+    testRuntimeOnly("junit:junit:4.13.2")
 }
 
 intellijPlatform {
