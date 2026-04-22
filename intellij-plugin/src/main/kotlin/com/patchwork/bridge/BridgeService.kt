@@ -82,13 +82,13 @@ class BridgeService {
         handlerRegistry.register("extension/getDiagnostics", com.patchwork.bridge.handlers.GetDiagnosticsHandler())
         handlerRegistry.register("extension/saveFile", com.patchwork.bridge.handlers.SaveFileHandler())
         handlerRegistry.register("extension/closeTab", com.patchwork.bridge.handlers.CloseTabHandler())
+        handlerRegistry.register("extension/createFile", com.patchwork.bridge.handlers.CreateFileHandler())
+        handlerRegistry.register("extension/deleteFile", com.patchwork.bridge.handlers.DeleteFileHandler())
+        handlerRegistry.register("extension/renameFile", com.patchwork.bridge.handlers.RenameFileHandler())
 
         // Tier 1 stubs: known methods, not yet implemented
         val stubs = listOf(
             "extension/getAIComments",
-            "extension/createFile",
-            "extension/deleteFile",
-            "extension/renameFile",
             "extension/editText",
             "extension/replaceBlock",
             "extension/listTerminals",
