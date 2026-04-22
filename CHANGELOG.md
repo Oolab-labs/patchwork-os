@@ -10,6 +10,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-alpha.21] — 2026-04-22
+
+### Added
+
+- **Mobile oversight MVP** — full queue → push → phone-approve flow:
+  - `approvalQueue`: per-callId `approvalToken` (256-bit hex, `crypto.randomBytes(32)`). Single-use, timing-safe (`timingSafeEqual`). Only generated when push is configured — zero overhead for local-only users.
+  - `approvalHttp`: `x-approval-token` header accepted on `POST /approve/:callId` and `POST /reject/:callId` as an alternative to the bridge bearer token (phone path). `dispatchPushNotification` fire-and-forget alongside existing webhook dispatch; reuses SSRF guard, 5 s timeout, never throws.
+  - `server`: bearer-auth bypass for phone-path requests carrying `x-approval-token`; push config (`pushServiceUrl`, `pushServiceToken`, `pushServiceBaseUrl`) settable at runtime via `POST /settings` (no restart needed).
+  - **Push relay service** (`services/push-relay/`) — standalone Node.js/Express service:
+    - `InMemoryRegistry` (dev/test) + `RedisRegistry` (production, 10-device cap, oldest-evict).
+    - FCM dispatcher via `firebase-admin` (Android), APNS dispatcher via `@parse/node-apn` (iOS). Per-device error isolation — one bad token doesn't block others.
+    - Bearer auth middleware (`EnvTokenStore`, timing-safe). Routes: `POST /push`, `POST /devices/register`, `DELETE /devices/:token`, `GET /devices/count`, `POST /push/test`.
+    - `services/push-relay/.env.example` covering all config options.
+  - **PWA dashboard** — install Patchwork on iOS/Android home screen:
+    - `dashboard/public/sw.js`: service worker with install/activate/fetch caching, `push` event handler (shows notification with inline Approve/Reject actions), `notificationclick` handler (inline approve/reject via fetch, or opens `/approvals?highlight=<callId>`).
+    - `dashboard/src/app/manifest.json`: Web App Manifest (standalone display, icons, approvals shortcut).
+    - Root layout: manifest link, `theme-color`, `apple-touch-icon`, inline SW registration snippet.
+    - `src/lib/pushSubscription.ts`: `subscribeToPush`, `unsubscribeFromPush`, `getPushSubscriptionStatus` helpers.
+    - Settings page: **Mobile notifications** card (subscribe/test/remove, min 44 px tap targets).
+    - Next.js API routes: `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `POST /api/push/test`.
+  - `dashboard/.env.example`: `PUSH_RELAY_URL`, `PUSH_RELAY_TOKEN`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`.
+  - `.env.vps.example`: `PATCHWORK_PUSH_URL/TOKEN/BASE_URL`.
+  - `docs/mobile-oversight.md`: full setup guide (relay deploy, FCM/APNS, bridge config, PWA install on iOS/Android, subscribe flow, troubleshooting, security notes).
+  - `docs/adr/0006`: amendment documenting push notification path, approval token design, phone-path bearer bypass, and invariants.
+
+- **JetBrains IntelliJ plugin v1.0.0** — submitted to JetBrains Marketplace:
+  - 49 real handlers: 23 core, 18 LSP (PSI-based: goto, references, hover, rename, symbols, folding, selection ranges, format range), 5 debug (XDebugger, breakpoints, evaluate, start/stop), 3 code style (formatDocument, organizeImports, fixAllLintErrors).
+  - 18 stubs returning `{ success: false, error: "Not implemented" }` for VS Code-specific APIs with no IJ equivalent.
+  - `intellij-plugin/MARKETPLACE.md`: handler coverage table, platform limitations, IJ vs VS Code behavior diff, publishing checklist.
+  - `intellij-plugin/WIRE_INVARIANTS.md`: all 49 handlers documented with wire shapes and IJ-specific behaviour.
+  - Plugin signed and submitted; first-publish JetBrains review in progress.
+
+### Tests
+
+- 7 new `approvalQueue` tests: token generation, hex length, valid/invalid/single-use/unknown-callId, not in list.
+- 6 new `approvalHttp` tests: phone-path approve/reject, wrong token → 401, single-use, push dispatch payload, non-HTTPS push blocked.
+- 3 E2E tests (`mobileOversight.e2e.test.ts`): full approve flow, reject flow, wrong-token blocked.
+- 9 relay unit tests: auth, device CRUD, push dispatch payload, fire-and-forget.
+- Total: **3471 tests** (all passing).
+
+---
+
 ## [0.2.0-alpha.19] — 2026-04-22
 
 ### Added
