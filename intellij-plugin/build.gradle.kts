@@ -40,6 +40,11 @@ intellijPlatform {
         id = providers.gradleProperty("pluginId").get()
         name = "Patchwork Bridge"
         version = providers.gradleProperty("pluginVersion").get()
+
+        ideaVersion {
+            sinceBuild = providers.gradleProperty("pluginSinceBuild").get()
+            untilBuild = provider { null } // open-ended — tracks latest
+        }
     }
 
     signing {

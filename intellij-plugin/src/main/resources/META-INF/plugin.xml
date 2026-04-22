@@ -1,11 +1,62 @@
 <idea-plugin>
     <id>com.patchwork.bridge</id>
     <name>Patchwork Bridge</name>
-    <vendor>Patchwork</vendor>
+    <vendor url="https://patchwork.sh">Patchwork</vendor>
 
     <description><![CDATA[
-        Connects IntelliJ IDEA to the Patchwork OS bridge, enabling Claude Code MCP integration.
+<h2>Patchwork Bridge for JetBrains IDEs</h2>
+
+<p>Connects IntelliJ IDEA (and other JetBrains IDEs) to the
+<a href="https://patchwork.sh">Patchwork OS bridge</a>, giving Claude Code and
+other AI assistants live access to your IDE state over the MCP protocol.</p>
+
+<h3>What this plugin does</h3>
+
+<p>Once installed, your running Patchwork bridge can ask IntelliJ to:</p>
+
+<ul>
+  <li><b>Read editor state</b> — current selection, open files, file content, dirty state</li>
+  <li><b>Navigate</b> — go to definition, declaration, type definition, find references and implementations</li>
+  <li><b>Inspect</b> — hover documentation, document symbols, call hierarchy, workspace symbol search</li>
+  <li><b>Edit</b> — apply text edits, replace blocks, create/rename/delete files</li>
+  <li><b>Refactor</b> — rename symbols, prepare rename, format document, organize imports, fix lint errors</li>
+  <li><b>Diagnostics</b> — read errors and warnings across the workspace or per file</li>
+  <li><b>Terminal</b> — list, create, dispose terminals; send commands; run and capture command output</li>
+  <li><b>Debug</b> — read debug state, set breakpoints, evaluate expressions, start/stop sessions</li>
+  <li><b>Clipboard</b> — read and write the system clipboard</li>
+</ul>
+
+<p>49 handlers in total. Wire-compatible with the VS Code companion extension — the same
+Claude Code MCP tools work against both IDEs without any AI-side changes.</p>
+
+<h3>Requirements</h3>
+
+<ul>
+  <li>Patchwork bridge running locally (<code>patchwork start</code> or <code>npm start</code>)</li>
+  <li>IntelliJ IDEA 2024.1 or later (Community or Ultimate). Also works in Android Studio, GoLand, PyCharm, Rider, RubyMine, WebStorm — any 2024.1+ JetBrains IDE.</li>
+</ul>
+
+<h3>How it works</h3>
+
+<p>The plugin reads the bridge lock file at <code>~/.claude/ide/&lt;port&gt;.lock</code>,
+opens a WebSocket to the local bridge process, and handles JSON-RPC 2.0 requests.
+No data leaves your machine. No cloud accounts required.</p>
+
+<h3>Protocol version</h3>
+<p><code>1.1.0</code> — compatible with Patchwork bridge v0.2.0-alpha.18 and later.</p>
     ]]></description>
+
+    <change-notes><![CDATA[
+<h3>1.0.0 — 2026-04-22</h3>
+<p>Initial release. 49 real handlers across five groups:</p>
+<ul>
+  <li><b>Core (23)</b>: selection, open files, file content, open/save/close, create/delete/rename, editText, replaceBlock, clipboard, diagnostics, workspace folders, isDirty</li>
+  <li><b>LSP (18)</b>: goToDefinition/Declaration/TypeDefinition, findReferences/Implementations, getHover, getCodeActions, renameSymbol, searchSymbols, getDocumentSymbols, getCallHierarchy, prepareRename, formatRange, signatureHelp, foldingRanges, selectionRanges</li>
+  <li><b>Debug (5)</b>: getDebugState, evaluateInDebugger, setDebugBreakpoints, startDebugging, stopDebugging</li>
+  <li><b>Terminal (7)</b>: listTerminals, createTerminal, disposeTerminal, sendTerminalCommand, getTerminalOutput, waitForTerminalOutput, executeInTerminal</li>
+  <li><b>Code style (3)</b>: formatDocument, organizeImports, fixAllLintErrors</li>
+</ul>
+    ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
     <depends optional="true" config-file="terminal-features.xml">org.jetbrains.plugins.terminal</depends>
