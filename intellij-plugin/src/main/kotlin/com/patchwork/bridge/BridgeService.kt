@@ -24,7 +24,7 @@ class BridgeService {
 
     companion object {
         private val LOG = Logger.getInstance(BridgeService::class.java)
-        const val PLUGIN_VERSION = "0.1.0"
+        const val PLUGIN_VERSION = "1.0.0"
         const val EXTENSION_PROTOCOL_VERSION = "1.1.0"
 
         // Auth header name — confirmed from vscode-extension/src/connection.ts line 320
@@ -115,6 +115,11 @@ class BridgeService {
         handlerRegistry.register("extension/foldingRanges", com.patchwork.bridge.handlers.FoldingRangesHandler())
         handlerRegistry.register("extension/selectionRanges", com.patchwork.bridge.handlers.SelectionRangesHandler())
 
+        // Code style handlers
+        handlerRegistry.register("extension/formatDocument", com.patchwork.bridge.handlers.FormatDocumentHandler())
+        handlerRegistry.register("extension/organizeImports", com.patchwork.bridge.handlers.OrganizeImportsHandler())
+        handlerRegistry.register("extension/fixAllLintErrors", com.patchwork.bridge.handlers.FixAllLintErrorsHandler())
+
         // Debug handlers
         handlerRegistry.register("extension/getDebugState", com.patchwork.bridge.handlers.GetDebugStateHandler())
         handlerRegistry.register("extension/evaluateInDebugger", com.patchwork.bridge.handlers.EvaluateInDebuggerHandler())
@@ -125,9 +130,6 @@ class BridgeService {
         // Tier 1 stubs: known methods, not yet implemented
         val stubs = listOf(
             "extension/getAIComments",
-            "extension/formatDocument",
-            "extension/fixAllLintErrors",
-            "extension/organizeImports",
             "extension/watchFiles",
             "extension/unwatchFiles",
             "extension/captureScreenshot",
