@@ -504,7 +504,15 @@ export default function ConnectionsPage() {
   const connectorGridRef = useRef<HTMLDivElement>(null);
 
   function handleAddConnection() {
-    connectorGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const firstBtn = connectorGridRef.current?.querySelector<HTMLButtonElement>(
+      "button:not([disabled])",
+    );
+    if (firstBtn) {
+      firstBtn.focus();
+      firstBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } else {
+      connectorGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   const gmailConnector = getConnector("gmail");
