@@ -16,24 +16,26 @@ object WorkspaceGuard {
      * Throws WorkspaceViolationException if outside.
      */
     fun assertInWorkspace(filePath: String, project: Project) {
+        val roots = ProjectRootManager.getInstance(project).contentRoots.map { java.io.File(it.path) }
+        if (!isInsideRoots(filePath, roots)) throw WorkspaceViolationException(filePath)
+    }
+
+    /**
+     * Pure containment check — testable without a real IntelliJ Project.
+     * Resolves symlinks via toRealPath() before comparing canonical path prefixes.
+     * A trailing separator is appended to the root string to prevent prefix collisions
+     * (e.g. /tmp/foo should not match /tmp/foobar).
+     */
+    fun isInsideRoots(filePath: String, roots: List<java.io.File>): Boolean {
         val canonical = try {
-            Files.readSymbolicLink(Paths.get(filePath)).toString()
+            Paths.get(filePath).toRealPath().toString()
         } catch (_: Exception) {
-            try {
-                Paths.get(filePath).toRealPath().toString()
-            } catch (_: Exception) {
-                filePath
-            }
+            filePath
         }
-
-        val roots = ProjectRootManager.getInstance(project).contentRoots
-        val inWorkspace = roots.any { root ->
+        return roots.any { root ->
             val rootReal = try { Paths.get(root.path).toRealPath().toString() } catch (_: Exception) { root.path }
-            canonical.startsWith(rootReal)
-        }
-
-        if (!inWorkspace) {
-            throw WorkspaceViolationException(filePath)
+            val rootWithSep = if (rootReal.endsWith(java.io.File.separator)) rootReal else rootReal + java.io.File.separator
+            canonical == rootReal || canonical.startsWith(rootWithSep)
         }
     }
 }
