@@ -21,6 +21,7 @@ export interface Config {
   commandTimeout: number;
   maxResultSize: number;
   vscodeCommandAllowlist: string[];
+  configFilePath?: string | null;
   activeWorkspaceFolder: string;
   gracePeriodMs: number;
   autoTmux: boolean;
@@ -294,6 +295,48 @@ export function loadConfigFile(configPath?: string): Partial<ConfigFile> {
     }
   }
   return {};
+}
+
+export function resolveBridgeConfigFilePath(configPath?: string): string {
+  if (configPath) return configPath;
+  if (process.env.CLAUDE_IDE_BRIDGE_CONFIG) {
+    return process.env.CLAUDE_IDE_BRIDGE_CONFIG;
+  }
+  const cwdConfigPath = path.join(
+    process.cwd(),
+    "claude-ide-bridge.config.json",
+  );
+  if (fs.existsSync(cwdConfigPath)) return cwdConfigPath;
+  const claudeDir =
+    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
+  return path.join(claudeDir, "ide", "config.json");
+}
+
+export function saveBridgeConfigDriver(
+  driver: Config["driver"],
+  configPath?: string,
+): string {
+  const targetPath = resolveBridgeConfigFilePath(configPath);
+  let parsed: Record<string, unknown> = {};
+  if (fs.existsSync(targetPath)) {
+    const raw = fs.readFileSync(targetPath, "utf-8");
+    const candidate = JSON.parse(raw) as unknown;
+    if (
+      typeof candidate !== "object" ||
+      candidate === null ||
+      Array.isArray(candidate)
+    ) {
+      throw new Error(`Bridge config file ${targetPath} is not a JSON object`);
+    }
+    parsed = candidate as Record<string, unknown>;
+  }
+  delete parsed.claudeDriver;
+  parsed.driver = driver;
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.writeFileSync(targetPath, JSON.stringify(parsed, null, 2), {
+    mode: 0o600,
+  });
+  return targetPath;
 }
 
 function requireArg(args: string[], i: number, flag: string): string {
@@ -923,6 +966,7 @@ Environment Variables:
     commandTimeout,
     maxResultSize,
     vscodeCommandAllowlist,
+    configFilePath: configFilePath ?? null,
     activeWorkspaceFolder: workspace,
     gracePeriodMs,
     autoTmux,

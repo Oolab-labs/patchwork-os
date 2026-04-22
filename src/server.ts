@@ -5,6 +5,7 @@ import path from "node:path";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
 import { routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
+import { saveBridgeConfigDriver } from "./config.js";
 import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import type { Logger } from "./logger.js";
@@ -159,6 +160,8 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
   /** Patchwork: admin-controlled managed settings path (highest rule precedence). */
   public managedSettingsPath: string | undefined = undefined;
+  /** Effective bridge config path to update when dashboard saves driver changes. */
+  public bridgeConfigPath: string | undefined = undefined;
   /** Patchwork: live approval gate level — mutated by POST /settings, read by bridge per-session setup. */
   public approvalGate: "off" | "high" | "all" = "off";
   /** Patchwork: outbound webhook URL for approval notifications (from dashboard.webhookUrl in config). */
@@ -1664,8 +1667,11 @@ export class Server extends EventEmitter<ServerEvents> {
               driver?: string;
               apiKey?: { provider: string; key: string };
             };
-            const raw = body.webhookUrl?.trim() ?? "";
-            if (raw !== "" && !/^https:\/\/.+/.test(raw)) {
+            const hasWebhookUpdate = body.webhookUrl !== undefined;
+            const raw = hasWebhookUpdate
+              ? (body.webhookUrl?.trim() ?? "")
+              : undefined;
+            if (raw !== undefined && raw !== "" && !/^https:\/\/.+/.test(raw)) {
               res.writeHead(400, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ error: "webhookUrl must be HTTPS" }));
               return;
@@ -1691,7 +1697,9 @@ export class Server extends EventEmitter<ServerEvents> {
               port: cfg.dashboard?.port ?? 3000,
               requireApproval: cfg.dashboard?.requireApproval ?? ["high"],
               pushNotifications: cfg.dashboard?.pushNotifications ?? false,
-              webhookUrl: raw || undefined,
+              webhookUrl: hasWebhookUpdate
+                ? raw || undefined
+                : cfg.dashboard?.webhookUrl,
             };
             if (gateRaw !== undefined) {
               cfg.approvalGate = gateRaw as "off" | "high" | "all";
@@ -1716,7 +1724,11 @@ export class Server extends EventEmitter<ServerEvents> {
                 );
                 return;
               }
-              cfg.driver = driverRaw as PatchworkConfig["driver"];
+              const driver = driverRaw as NonNullable<
+                PatchworkConfig["driver"]
+              >;
+              cfg.driver = driver;
+              saveBridgeConfigDriver(driver, this.bridgeConfigPath);
             }
             if (body.apiKey) {
               const { provider, key } = body.apiKey;
@@ -1734,7 +1746,9 @@ export class Server extends EventEmitter<ServerEvents> {
               cfg.apiKeys = { ...cfg.apiKeys, [provider]: key || undefined };
             }
             savePatchworkConfig(cfg, configPath);
-            this.approvalWebhookUrl = raw || undefined;
+            if (hasWebhookUpdate) {
+              this.approvalWebhookUrl = raw || undefined;
+            }
             const restartRequired =
               driverRaw !== undefined || body.apiKey !== undefined;
             res.writeHead(200, { "Content-Type": "application/json" });
