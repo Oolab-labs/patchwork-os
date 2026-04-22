@@ -1,3 +1,12 @@
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process", () => ({
@@ -10,6 +19,7 @@ import {
   findEditor,
   ideNameFromEditor,
   parseConfig,
+  saveBridgeConfigDriver,
 } from "../config.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
@@ -231,6 +241,12 @@ describe("parseConfig flags", () => {
     );
   });
 
+  it("retains explicit --config path on the parsed config", () => {
+    expect(cfg("--config", "/tmp/custom-bridge.json").configFilePath).toBe(
+      "/tmp/custom-bridge.json",
+    );
+  });
+
   it("adds plugin path from --plugin", () => {
     expect(cfg("--plugin", "/path/to/my-plugin").plugins).toContain(
       "/path/to/my-plugin",
@@ -367,5 +383,69 @@ describe("parseConfig expanded VPS extras", () => {
     ]) {
       expect(config.commandAllowlist).toContain(cmd);
     }
+  });
+});
+
+describe("saveBridgeConfigDriver", () => {
+  const originalCwd = process.cwd();
+  const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const originalBridgeConfig = process.env.CLAUDE_IDE_BRIDGE_CONFIG;
+  let tempDir: string | null = null;
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    if (originalClaudeConfigDir === undefined)
+      delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = originalClaudeConfigDir;
+    if (originalBridgeConfig === undefined)
+      delete process.env.CLAUDE_IDE_BRIDGE_CONFIG;
+    else process.env.CLAUDE_IDE_BRIDGE_CONFIG = originalBridgeConfig;
+    if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+    tempDir = null;
+  });
+
+  it("writes driver to ~/.claude/ide/config.json when no higher-priority config exists", () => {
+    tempDir = mkdtempSync(path.join(tmpdir(), "patchwork-config-"));
+    const workspace = path.join(tempDir, "workspace");
+    const claudeDir = path.join(tempDir, "claude");
+    const target = path.join(claudeDir, "ide", "config.json");
+    mkdirSync(workspace, { recursive: true });
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(
+      target,
+      JSON.stringify({ port: 4747, claudeDriver: "subprocess" }, null, 2),
+    );
+    process.chdir(workspace);
+    process.env.CLAUDE_CONFIG_DIR = claudeDir;
+    delete process.env.CLAUDE_IDE_BRIDGE_CONFIG;
+
+    const savedPath = saveBridgeConfigDriver("gemini");
+
+    expect(savedPath).toBe(target);
+    expect(JSON.parse(readFileSync(savedPath, "utf-8"))).toEqual({
+      port: 4747,
+      driver: "gemini",
+    });
+  });
+
+  it("writes driver to an explicit config path and preserves unrelated keys", () => {
+    tempDir = mkdtempSync(path.join(tmpdir(), "patchwork-config-"));
+    const customPath = path.join(tempDir, "custom-bridge.json");
+    writeFileSync(
+      customPath,
+      JSON.stringify(
+        { bindAddress: "127.0.0.1", claudeDriver: "subprocess" },
+        null,
+        2,
+      ),
+    );
+
+    const savedPath = saveBridgeConfigDriver("openai", customPath);
+
+    expect(savedPath).toBe(customPath);
+    expect(JSON.parse(readFileSync(savedPath, "utf-8"))).toEqual({
+      bindAddress: "127.0.0.1",
+      driver: "openai",
+    });
   });
 });
