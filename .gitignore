@@ -28,6 +28,9 @@ skills-lock.json
 .mcp.json
 memory/
 
+# Gemini CLI local config (machine-specific)
+.gemini/
+
 # macOS
 .DS_Store
 claude-ide-bridge.config.json

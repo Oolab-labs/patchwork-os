@@ -25,14 +25,16 @@ Patchwork OS watches for things that matter, acts, and asks before anything risk
 ## After init
 
 ```bash
-patchwork-os recipe list            # see installed recipes
-patchwork-os recipe run daily-status  # run one now
-patchwork-os                        # open terminal dashboard
+patchwork-os recipe list                    # see installed recipes
+patchwork-os recipe run daily-status      # run one now
+patchwork-os recipe run morning-brief --local  # run with local LLM
+patchwork-os tools list                   # browse all 140+ tools
+patchwork-os                              # open terminal dashboard
 ```
 
-The oversight web UI runs at `http://localhost:3100` when the bridge is active.
+The oversight web UI runs at `http://localhost:3100` when the bridge is active. The dashboard shows live sessions, pending approvals, recent recipe runs, and analytics.
 
-## 5 starter recipes (no API key needed)
+## Starter recipes (no external API keys needed)
 
 | Recipe | Trigger | What it does |
 |---|---|---|
@@ -41,17 +43,29 @@ The oversight web UI runs at `http://localhost:3100` when the bridge is active.
 | `watch-failing-tests` | test run | drops triage note to inbox on failure |
 | `lint-on-save` | file save | surfaces new TS/JS diagnostics to inbox |
 | `stale-branches` | cron weekly | lists branches older than 30 days |
+| `morning-brief` | cron 08:00 | commits + Linear issues + Calendar events |
+| `sentry-to-linear` | manual | Sentry issue → Linear ticket (one-shot) |
 
-All 5 write to `~/.patchwork/inbox/` only. Nothing is sent anywhere without your approval.
+Local recipes write to `~/.patchwork/inbox/` only. Connectors (Linear, Sentry, etc.) require API keys and approval-gated writes.
 
-## Roadmap
+## What's working today
 
-| Phase | Status |
+| Feature | Status |
 |---|---|
-| Foundation — init, recipes, terminal dashboard | **shipped (W1)** |
-| Connectors — Gmail, calendar, Slack | W2 |
-| Mobile oversight — approve from phone | W3 |
-| Community recipes + ecosystem | Q3 |
+| `patchwork-init` — one-command setup | **shipped** |
+| Terminal dashboard (`patchwork-os`) | **shipped** |
+| Web oversight UI (approvals, sessions, recipes) | **shipped** |
+| Recipe runner (YAML, cron, manual, webhook) | **shipped** |
+| Multi-provider LLM (Claude, Gemini, OpenAI, Grok, Ollama) | **shipped** |
+| Linear connector (read + approval-gated write) | **shipped** |
+| Sentry connector (fetch issues, stack traces) | **shipped** |
+| Google Calendar connector (read-only) | **shipped** |
+| Slack connector (post messages, list channels) | **shipped** |
+| 140+ MCP tools (LSP, git, tests, diagnostics) | **shipped** |
+| Cross-session memory (traces, handoff notes) | **shipped** |
+| Gmail connector | W2 |
+| Mobile oversight PWA | W3 |
+| Community recipe marketplace | Q3 |
 
 ## Install
 
