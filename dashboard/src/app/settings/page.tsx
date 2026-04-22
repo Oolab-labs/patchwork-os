@@ -320,9 +320,8 @@ export default function SettingsPage() {
                 }}
               >
                 Which AI provider to use for agent steps in recipes and
-                orchestrated tasks. Changes are saved to{" "}
-                <code>~/.patchwork/config.json</code> and take effect after
-                restarting the bridge.
+                orchestrated tasks. Changes are saved to the authoritative
+                bridge config file and take effect after restarting the bridge.
               </p>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
