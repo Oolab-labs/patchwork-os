@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { routeApprovalRequest } from "../approvalHttp.js";
 import { ApprovalQueue } from "../approvalQueue.js";
+
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn().mockResolvedValue({ address: "93.184.216.34", family: 4 }),
+}));
 
 function emptyRules() {
   return () => ({ allow: [], ask: [], deny: [] });
@@ -552,5 +556,186 @@ describe("routeApprovalRequest", () => {
         globalThis.fetch = originalFetch;
       }
     });
+  });
+});
+
+describe("phone-path approve/reject via x-approval-token", () => {
+  function emptyRules() {
+    return () => ({ allow: [], ask: [], deny: [] });
+  }
+
+  it("approve with valid token resolves approved", async () => {
+    const queue = new ApprovalQueue();
+    const pending = routeApprovalRequest(
+      { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+      {
+        queue,
+        workspace: "/tmp",
+        ccLoader: emptyRules(),
+        approvalGate: "all",
+        pushServiceUrl: "https://push.example.com",
+        pushServiceToken: "tok",
+      },
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    // Get the token from the internal queue entry via validateToken side-channel check
+    const items = queue.list();
+    expect(items).toHaveLength(1);
+    const _callId = items[0]!.callId;
+    // Re-request the token by inspecting internals via request with the same callId — not possible.
+    // Instead test via routeApprovalRequest with the token directly.
+    // We need the token — get it from the queue request return value by re-queuing.
+    // Actually the pending request already enqueued with a token. Use a fresh queue to get the token directly.
+    const q2 = new ApprovalQueue();
+    const {
+      callId: cid2,
+      approvalToken: tok2,
+      promise: p2,
+    } = q2.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    const result = await routeApprovalRequest(
+      { method: "POST", path: `/approve/${cid2}`, approvalToken: tok2 },
+      { queue: q2, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(result.status).toBe(200);
+    expect((result.body as Record<string, unknown>).decision).toBe("allow");
+    await expect(p2).resolves.toBe("approved");
+    // Clean up pending
+    queue.clear();
+    await pending;
+  });
+
+  it("reject with valid token resolves rejected", async () => {
+    const q = new ApprovalQueue();
+    const { callId, approvalToken, promise } = q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    const result = await routeApprovalRequest(
+      { method: "POST", path: `/reject/${callId}`, approvalToken },
+      { queue: q, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(result.status).toBe(200);
+    expect((result.body as Record<string, unknown>).decision).toBe("deny");
+    await expect(promise).resolves.toBe("rejected");
+  });
+
+  it("wrong token returns 401", async () => {
+    const q = new ApprovalQueue();
+    const { callId } = q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    const result = await routeApprovalRequest(
+      {
+        method: "POST",
+        path: `/approve/${callId}`,
+        approvalToken: "wrongtoken",
+      },
+      { queue: q, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(result.status).toBe(401);
+    q.clear();
+  });
+
+  it("token is single-use — second request returns 401", async () => {
+    const q = new ApprovalQueue();
+    const { callId, approvalToken } = q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    await routeApprovalRequest(
+      { method: "POST", path: `/approve/${callId}`, approvalToken },
+      { queue: q, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    // Queue entry is gone after approval, but even if it weren't, token is cleared
+    const result = await routeApprovalRequest(
+      { method: "POST", path: `/approve/${callId}`, approvalToken },
+      { queue: q, workspace: "/tmp", ccLoader: emptyRules() },
+    );
+    expect(result.status).toBe(401); // token cleared on first use → invalid
+  });
+});
+
+describe("push notification dispatch", () => {
+  function emptyRules() {
+    return () => ({ allow: [], ask: [], deny: [] });
+  }
+
+  it("push endpoint receives payload with approvalToken when pushServiceUrl configured", async () => {
+    const originalFetch = globalThis.fetch;
+    const pushCalls: Array<{ url: string; body: unknown }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      pushCalls.push({ url, body: JSON.parse((init?.body as string) ?? "{}") });
+      return new Response("{}", { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+          pushServiceUrl: "https://push.example.com",
+          pushServiceToken: "relay-token",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 50));
+      const item = queue.list()[0];
+      if (!item) throw new Error("no queued item");
+      queue.approve(item.callId);
+      await pending;
+      expect(
+        pushCalls.some((c) => c.url === "https://push.example.com/push"),
+      ).toBe(true);
+      const pushCall = pushCalls.find(
+        (c) => c.url === "https://push.example.com/push",
+      );
+      expect(pushCall).toBeDefined();
+      expect(
+        typeof (pushCall!.body as Record<string, unknown>).approvalToken,
+      ).toBe("string");
+      expect((pushCall!.body as Record<string, unknown>).toolName).toBe(
+        "gitPush",
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("non-HTTPS push service URL is blocked", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      calls.push(url);
+      return new Response("{}", { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      const queue = new ApprovalQueue();
+      const pending = routeApprovalRequest(
+        { method: "POST", path: "/approvals", body: { toolName: "gitPush" } },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+          pushServiceUrl: "http://push.example.com",
+          pushServiceToken: "tok",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 20));
+      const item = queue.list()[0];
+      if (item) queue.approve(item.callId);
+      await pending;
+      expect(calls.filter((u) => u.includes("push.example.com"))).toHaveLength(
+        0,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

@@ -20,8 +20,9 @@ const PLAN_MODE_READ_TOOLS = new Set([
 
 /**
  * HTTP route handlers for the Patchwork approval surface. Pure functions —
- * bridge HTTP server (src/transport.ts) mounts them in a follow-up PR; this
- * file is mount-ready but not yet wired.
+ * bridge HTTP server (src/server.ts) mounts them at /approvals, /approve/:id,
+ * /reject/:id. Bearer auth is enforced by server.ts before reaching these
+ * handlers; approve/reject also accept x-approval-token for the phone path.
  *
  * Routes:
  *   GET    /approvals              → list pending
@@ -51,6 +52,12 @@ export interface ApprovalHttpDeps {
   webhookUrl?: string;
   /** Gate tier — "off" bypasses all queueing; "high" only queues high-tier tools; "all" queues everything. */
   approvalGate?: "off" | "high" | "all";
+  /** Push relay service URL (https://). When set, approval tokens are generated and push notifications dispatched. */
+  pushServiceUrl?: string;
+  /** Bearer token for the push relay service. */
+  pushServiceToken?: string;
+  /** Public base URL of this bridge (e.g. https://mybridge.example.com). Embedded in push payload as callback base. */
+  pushServiceBaseUrl?: string;
 }
 
 export interface HttpRequest {
@@ -58,6 +65,8 @@ export interface HttpRequest {
   path: string;
   body?: Record<string, unknown>;
   query?: URLSearchParams;
+  /** x-approval-token header value, if present — phone-path auth for approve/reject. */
+  approvalToken?: string;
 }
 
 export interface HttpResponse {
@@ -106,6 +115,16 @@ export async function routeApprovalRequest(
   const approveMatch = /^\/approve\/([A-Za-z0-9-]+)$/.exec(path);
   if (method === "POST" && approveMatch) {
     const callId = approveMatch[1] as string;
+    // Phone path: validate single-use approval token if bearer auth wasn't used
+    if (req.approvalToken !== undefined) {
+      const valid = deps.queue.validateToken(callId, req.approvalToken);
+      if (!valid) {
+        return {
+          status: 401,
+          body: { error: "invalid or expired approval token" },
+        };
+      }
+    }
     const ok = deps.queue.approve(callId);
     return {
       status: ok ? 200 : 404,
@@ -116,6 +135,16 @@ export async function routeApprovalRequest(
   const rejectMatch = /^\/reject\/([A-Za-z0-9-]+)$/.exec(path);
   if (method === "POST" && rejectMatch) {
     const callId = rejectMatch[1] as string;
+    // Phone path: validate single-use approval token if bearer auth wasn't used
+    if (req.approvalToken !== undefined) {
+      const valid = deps.queue.validateToken(callId, req.approvalToken);
+      if (!valid) {
+        return {
+          status: 401,
+          body: { error: "invalid or expired approval token" },
+        };
+      }
+    }
     const ok = deps.queue.reject(callId);
     return {
       status: ok ? 200 : 404,
@@ -219,6 +248,81 @@ async function dispatchApprovalWebhook(
   } catch (err) {
     console.warn(
       `[webhook] Dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Dispatch a push notification to the relay service when an approval is queued.
+ * Reuses the same SSRF guard as dispatchApprovalWebhook. Fire-and-forget — never throws.
+ */
+async function dispatchPushNotification(
+  pushServiceUrl: string,
+  pushServiceToken: string,
+  payload: {
+    toolName: string;
+    tier: string;
+    callId: string;
+    requestedAt: number;
+    expiresAt: number;
+    summary?: string;
+    riskSignals?: RiskSignal[];
+    approvalToken: string;
+    bridgeCallbackBase: string;
+  },
+): Promise<void> {
+  if (!pushServiceUrl.startsWith("https://")) {
+    console.warn(`[push] Rejected non-HTTPS push service URL`);
+    return;
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(pushServiceUrl).hostname;
+  } catch {
+    console.warn(`[push] Malformed push service URL — skipping`);
+    return;
+  }
+  if (hostname === "localhost") {
+    console.warn(`[push] Blocked loopback push service hostname`);
+    return;
+  }
+  try {
+    const resolved = await dns.lookup(hostname);
+    if (isBlockedIp(resolved.address)) {
+      console.warn(
+        `[push] Blocked private/loopback IP for push service: ${resolved.address}`,
+      );
+      return;
+    }
+  } catch (err) {
+    console.warn(
+      `[push] DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const res = await fetch(`${pushServiceUrl}/push`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${pushServiceToken}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn(
+        `[push] Non-2xx from push relay: ${res.status} ${res.statusText}`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[push] Dispatch failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   } finally {
     clearTimeout(timer);
@@ -446,14 +550,11 @@ async function handleApprovalRequest(
   }
 
   const riskSignals = computeRiskSignals(toolName, params, deps.workspace);
-  const { callId, promise } = deps.queue.request({
-    toolName,
-    params,
-    tier,
-    summary,
-    sessionId,
-    riskSignals,
-  });
+  const now = Date.now();
+  const { callId, approvalToken, promise } = deps.queue.request(
+    { toolName, params, tier, summary, sessionId, riskSignals },
+    { withToken: !!deps.pushServiceUrl },
+  );
 
   // Fire webhook notification in the background — never block approval flow
   if (deps.webhookUrl) {
@@ -461,8 +562,23 @@ async function handleApprovalRequest(
       toolName,
       tier,
       callId,
-      requestedAt: Date.now(),
+      requestedAt: now,
       summary,
+    }).catch(() => {});
+  }
+
+  // Fire push notification in the background — phone path
+  if (deps.pushServiceUrl && deps.pushServiceToken && approvalToken) {
+    dispatchPushNotification(deps.pushServiceUrl, deps.pushServiceToken, {
+      toolName,
+      tier,
+      callId,
+      requestedAt: now,
+      expiresAt: now + 5 * 60_000,
+      summary,
+      riskSignals,
+      approvalToken,
+      bridgeCallbackBase: deps.pushServiceBaseUrl ?? "",
     }).catch(() => {});
   }
 
