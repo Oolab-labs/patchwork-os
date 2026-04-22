@@ -704,7 +704,7 @@ export default function ConnectionsPage() {
           <ConnectorCard
             name="Sentry"
             description="Read issues and stack traces via Sentry's official MCP server. Agents can surface new errors and trace bugs to the commit that introduced them."
-            icon={<IconEnvelope />}
+            icon={<IconSentry />}
             status={sentryConnector.status}
             lastSync={sentryConnector.lastSync}
             onConnect={() => handleConnect("sentry")}
