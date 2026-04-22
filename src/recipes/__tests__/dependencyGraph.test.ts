@@ -120,6 +120,42 @@ describe("executeWithDependencies", () => {
     expect(completed).toEqual(["x"]);
   });
 
+  it("skips dependent steps when upstream fails (C1)", async () => {
+    const g = buildDependencyGraph([
+      { id: "a" },
+      { id: "b", awaits: ["a"] },
+      { id: "c", awaits: ["b"] },
+    ]);
+    const executed: string[] = [];
+    const results = await executeWithDependencies(
+      g,
+      async (id) => {
+        executed.push(id);
+        if (id === "a") throw new Error("upstream failure");
+      },
+      { maxConcurrency: 4 },
+    );
+    expect(executed).toEqual(["a"]);
+    expect(results.get("a")?.success).toBe(false);
+    expect(results.get("b")?.success).toBe(false);
+    expect(results.get("b")?.error?.message).toMatch(/upstream/);
+    expect(results.get("c")?.success).toBe(false);
+  });
+
+  it("fires onStepComplete with error for failed step (W1)", async () => {
+    const g = buildDependencyGraph([{ id: "bad" }]);
+    const errors: (Error | undefined)[] = [];
+    await executeWithDependencies(
+      g,
+      async () => {
+        throw new Error("oops");
+      },
+      { maxConcurrency: 1, onStepComplete: (_, err) => errors.push(err) },
+    );
+    expect(errors[0]).toBeInstanceOf(Error);
+    expect(errors[0]?.message).toBe("oops");
+  });
+
   it("throws on cyclic graph", async () => {
     const g = buildDependencyGraph([
       { id: "a", awaits: ["b"] },

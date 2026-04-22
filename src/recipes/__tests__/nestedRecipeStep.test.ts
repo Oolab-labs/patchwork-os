@@ -92,23 +92,23 @@ describe("validateNestedRecipe", () => {
     expect(r.valid).toBe(true);
   });
 
-  it("fails when depth equals max", () => {
+  it("passes when depth equals max (maxDepth:3 allows depth 0→1→2→3)", () => {
     const r = validateNestedRecipe(baseConfig, {
       ...baseContext,
       currentDepth: 3,
       recipeMaxDepth: 3,
     });
-    expect(r.valid).toBe(false);
-    expect(r.error).toMatch(/depth limit/);
+    expect(r.valid).toBe(true);
   });
 
   it("fails when depth exceeds max", () => {
     const r = validateNestedRecipe(baseConfig, {
       ...baseContext,
-      currentDepth: 5,
+      currentDepth: 4,
       recipeMaxDepth: 3,
     });
     expect(r.valid).toBe(false);
+    expect(r.error).toMatch(/depth limit/);
   });
 
   it("fails when recipe name is empty string", () => {
@@ -120,7 +120,7 @@ describe("validateNestedRecipe", () => {
   it("includes step id and recipe name in depth error", () => {
     const r = validateNestedRecipe(
       { ...baseConfig, id: "my-step", recipe: "child" },
-      { ...baseContext, currentDepth: 3, recipeMaxDepth: 3 },
+      { ...baseContext, currentDepth: 4, recipeMaxDepth: 3 },
     );
     expect(r.error).toContain("my-step");
     expect(r.error).toContain("child");
@@ -215,7 +215,7 @@ describe("mockNestedRecipe", () => {
   it("fails on depth exceeded", async () => {
     const r = await mockNestedRecipe(baseConfig, {
       ...baseContext,
-      currentDepth: 3,
+      currentDepth: 4,
       recipeMaxDepth: 3,
       dryRun: true,
     });

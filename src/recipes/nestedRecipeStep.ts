@@ -67,7 +67,7 @@ export function validateNestedRecipe(
   config: NestedRecipeConfig,
   context: NestedRecipeContext,
 ): { valid: boolean; error?: string } {
-  if (context.currentDepth >= context.recipeMaxDepth) {
+  if (context.currentDepth > context.recipeMaxDepth) {
     return {
       valid: false,
       error:

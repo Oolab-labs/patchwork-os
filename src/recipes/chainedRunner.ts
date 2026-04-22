@@ -102,9 +102,23 @@ export function resolveStepTemplates(
   const resolved: Record<string, unknown> = {};
   const errors: TemplateError[] = [];
 
+  // W3: keys that are recipe metadata, not tool params
+  const STEP_META_KEYS = new Set([
+    "id",
+    "tool",
+    "agent",
+    "recipe",
+    "awaits",
+    "when",
+    "output",
+    "risk",
+    "optional",
+    "vars",
+  ]);
+
   // Resolve tool params
   for (const [key, value] of Object.entries(step)) {
-    if (key === "id" || key === "tool" || key === "agent" || key === "recipe") {
+    if (STEP_META_KEYS.has(key)) {
       continue;
     }
     if (typeof value === "string" && value.includes("{{")) {
