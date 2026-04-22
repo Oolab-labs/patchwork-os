@@ -10,6 +10,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-alpha.19] — 2026-04-22
+
+### Added
+- **OAuth credential persistence** — `_client_id` / `_client_secret` stored in Gmail and Google Calendar token files at auth time. Token refresh now works after bridge restarts when env vars are absent.
+- **`needs_reauth` connector status** — surfaced in dashboard when token is expired and credentials are unavailable or `refresh_token` is missing. Prevents silent fetch failures.
+- **`PATCHWORK_TOKEN_DIR` env var** — overrides token storage directory for both Gmail and Google Calendar connectors (testability + custom paths).
+
+### Fixed
+- **Scheduler YAML bug** — `RecipeScheduler.fire()` was silently dropping YAML recipes ("file disappeared"). Now routes `.yaml`/`.yml` through `runYaml` callback. Root cause of degraded Apr 20–21 morning briefs.
+- **Gemini driver hang** — `cwd` changed from workspace path to `homedir()`. Workspace `.gemini/settings.json` was loading a shim → subprocess hung without TTY.
+- **Gemini driver timeout** — provider timeout raised 120 s → 300 s; empty output now returns an error string instead of silent success.
+- **XSS in OAuth callback page** — `title` and `message` parameters in `callbackHtml` are now HTML-escaped. Google OAuth `error` param could inject arbitrary HTML.
+- **`defaultProviderDriverFn` exit-code ignored** — non-zero Gemini exit with partial output was treated as success. Now checks `exitCode` explicitly.
+- **Orphan processes on abort** — added `child.unref()` after detached Gemini spawn to prevent forked sub-processes becoming orphans on `AbortSignal` fire.
+- **Relative `contextFiles` paths** — paths passed to `--include-directories` are now resolved against `input.workspace`, not `homedir()`.
+- **`chmod` race on token files** — `chmodSync(path, 0o600)` added after `writeFileSync` for Gmail tokens, Google Calendar tokens, and `~/.gemini/settings.json` to enforce permissions on pre-existing files.
+- **Scheduler / `bridgeMcp` race** — `recipeScheduler.start()` deferred to after `this.port` is set, so the first cron fire sees a valid port in the `bridgeMcp` callback.
+- **`googleCalendar` ignored `PATCHWORK_TOKEN_DIR`** — `TOKEN_PATH` was a module-level constant evaluated at import time. Replaced with `getTokenPath()` function matching Gmail's pattern.
+
+### Changed
+- **`stripLeadingNarration()`** in YAML runner strips Gemini tool-call narration prepended before markdown output.
+- **`cleanSnippet()`** in YAML runner strips Unicode zero-width / bidi-control characters from Gmail snippets and caps at 200 chars.
+- **morning-brief recipe** — removed `model: gemini-2.0-flash` override (model unavailable on this account; uses default).
+- **Lint hygiene** — removed 10 stale `biome-ignore` suppressions; deleted `loop_test.mjs` + `save_trace.mjs` (contained hardcoded auth tokens); updated tool count `124+` → `170+` in `use-cases.md`.
+
+---
+
 ## [0.2.0-alpha.4] — 2026-04-20
 
 ### Added
