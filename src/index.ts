@@ -50,9 +50,31 @@ import {
   repairBridgeToolsRulesIfStale,
 } from "./bridgeToolsRules.js";
 import { findEditor, parseConfig } from "./config.js";
+import {
+  detectWorkspaceSymlinkInstall,
+  SYMLINK_INSTALL_FIX,
+} from "./installGuard.js";
 import { PACKAGE_VERSION, semverGt } from "./version.js";
 
 const __dirnameTop = path.dirname(fileURLToPath(import.meta.url));
+
+// Warn when running from a workspace symlink install (`npm install -g .`).
+// launchctl / sandbox environments cannot follow the symlink → EPERM.
+// Warn only — do not crash interactive or dev flows.
+{
+  const _symlinkInfo = detectWorkspaceSymlinkInstall();
+  if (_symlinkInfo) {
+    process.stderr.write(
+      "\n⚠️  patchwork-os is running from a workspace symlink install.\n" +
+        `   Logical root: ${_symlinkInfo.logicalRoot}\n` +
+        `   Real path:    ${_symlinkInfo.realRoot}\n\n` +
+        "   Running as a LaunchAgent will fail with EPERM — the macOS sandbox\n" +
+        "   cannot access workspace files under ~/Documents.\n\n" +
+        SYMLINK_INSTALL_FIX +
+        "\n",
+    );
+  }
+}
 
 const OPEN_VSX_PUBLISHER = "oolab-labs";
 const OPEN_VSX_NAME = "claude-ide-bridge-extension";

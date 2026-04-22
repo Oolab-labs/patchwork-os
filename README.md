@@ -53,13 +53,24 @@ All 5 write to `~/.patchwork/inbox/` only. Nothing is sent anywhere without your
 | Mobile oversight — approve from phone | W3 |
 | Community recipes + ecosystem | Q3 |
 
-## From source
+## Install
 
+**From the registry (recommended):**
+```bash
+npm install -g patchwork-os
+patchwork-os patchwork-init
+```
+
+**From a local build (development / CI):**
 ```bash
 git clone https://github.com/Oolab-labs/patchwork-os
 cd patchwork-os
 npm install && npm run build
-node dist/index.js patchwork-init
+# Use npm pack to create a real copy — do NOT use `npm install -g .`
+# That creates a symlink which breaks the macOS LaunchAgent (EPERM at startup).
+npm pack
+npm install -g patchwork-os-*.tgz
+patchwork-os patchwork-init
 ```
 
 ## License
