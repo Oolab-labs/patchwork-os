@@ -14,6 +14,7 @@
 
 import crypto from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -78,6 +79,7 @@ function saveTokens(tokens: GmailTokens): void {
   const tokenPath = getTokenPath();
   mkdirSync(path.dirname(tokenPath), { recursive: true, mode: 0o700 });
   writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+  chmodSync(tokenPath, 0o600);
 }
 
 function deleteTokens(): void {
@@ -230,7 +232,8 @@ function gmailStatus(tokens: GmailTokens | null): ConnectorStatus["status"] {
     (process.env.GMAIL_CLIENT_ID || tokens._client_id) &&
       (process.env.GMAIL_CLIENT_SECRET || tokens._client_secret),
   );
-  return expired && !hasCredentials ? "needs_reauth" : "connected";
+  const canRefresh = Boolean(tokens.refresh_token) && hasCredentials;
+  return expired && !canRefresh ? "needs_reauth" : "connected";
 }
 
 export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
@@ -389,14 +392,24 @@ export async function handleGmailDisconnect(): Promise<ConnectorHandlerResult> {
 
 // ── Callback HTML ─────────────────────────────────────────────────────────────
 
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function callbackHtml(
   title: string,
   message: string,
   success: boolean,
 ): string {
   const color = success ? "#b8ff57" : "#ff5555";
+  const t = escHtml(title);
+  const m = escHtml(message);
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<title>${title} — Patchwork OS</title>
+<title>${t} — Patchwork OS</title>
 <style>
   body { background: #040406; color: #e0e0e0; font-family: system-ui, sans-serif;
     display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
@@ -408,8 +421,8 @@ function callbackHtml(
 </style>
 </head>
 <body><div class="card">
-  <h1>${title}</h1>
-  <p>${message}</p>
+  <h1>${t}</h1>
+  <p>${m}</p>
   <br><a href="javascript:window.close()">Close this tab</a>
 </div>
 <script>

@@ -13,6 +13,7 @@
 
 import crypto from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -27,12 +28,12 @@ const REDIRECT_URI = process.env.PATCHWORK_DASHBOARD_URL
   ? `${process.env.PATCHWORK_DASHBOARD_URL}/connections/google-calendar/callback`
   : "http://localhost:3200/connections/google-calendar/callback";
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
-const TOKEN_PATH = path.join(
-  homedir(),
-  ".patchwork",
-  "tokens",
-  "google-calendar.json",
-);
+function getTokenPath() {
+  const dir =
+    process.env.PATCHWORK_TOKEN_DIR ??
+    path.join(homedir(), ".patchwork", "tokens");
+  return path.join(dir, "google-calendar.json");
+}
 
 export interface CalendarTokens {
   access_token: string;
@@ -88,21 +89,25 @@ function isConfigured(): boolean {
 // ── Token storage ─────────────────────────────────────────────────────────────
 
 export function loadTokens(): CalendarTokens | null {
-  if (!existsSync(TOKEN_PATH)) return null;
+  const tokenPath = getTokenPath();
+  if (!existsSync(tokenPath)) return null;
   try {
-    return JSON.parse(readFileSync(TOKEN_PATH, "utf-8")) as CalendarTokens;
+    return JSON.parse(readFileSync(tokenPath, "utf-8")) as CalendarTokens;
   } catch {
     return null;
   }
 }
 
 function saveTokens(tokens: CalendarTokens): void {
-  mkdirSync(path.dirname(TOKEN_PATH), { recursive: true, mode: 0o700 });
-  writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+  const tokenPath = getTokenPath();
+  mkdirSync(path.dirname(tokenPath), { recursive: true, mode: 0o700 });
+  writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+  chmodSync(tokenPath, 0o600);
 }
 
 function deleteTokens(): void {
-  if (existsSync(TOKEN_PATH)) unlinkSync(TOKEN_PATH);
+  const tokenPath = getTokenPath();
+  if (existsSync(tokenPath)) unlinkSync(tokenPath);
 }
 
 export function getStatus(): ConnectorStatus {
@@ -114,7 +119,8 @@ export function getStatus(): ConnectorStatus {
     (process.env.GOOGLE_CALENDAR_CLIENT_ID || tokens._client_id) &&
       (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || tokens._client_secret),
   );
-  const status = expired && !hasCredentials ? "needs_reauth" : "connected";
+  const canRefresh = Boolean(tokens.refresh_token) && hasCredentials;
+  const status = expired && !canRefresh ? "needs_reauth" : "connected";
   return {
     id: "google-calendar",
     status,
