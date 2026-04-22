@@ -61,8 +61,7 @@ steps:
         6. **Linear** — list in-progress and unstarted issues by priority; omit this section entirely if the list is empty or returned an error
 
         Be concise. Skip newsletters and automated notifications.
-      driver: claude-code
-      model: claude-haiku-4-5-20251001
+      driver: gemini
       into: brief
   - tool: file.write
     path: ~/.patchwork/inbox/morning-brief-{{date}}.md

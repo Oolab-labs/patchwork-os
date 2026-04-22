@@ -16,6 +16,8 @@ export type DriverMode =
 export interface DriverFactoryOpts {
   binary: string;
   antBinary: string;
+  /** Returns bridge HTTP MCP endpoint + auth token at run time (port may not be known at construction). */
+  bridgeMcp?: () => { url: string; authToken: string } | undefined;
 }
 
 /**
@@ -37,6 +39,7 @@ export function createDriver(
     return new GeminiSubprocessDriver(
       opts.binary === "claude" ? "gemini" : opts.binary,
       log,
+      opts.bridgeMcp,
     );
   throw new Error(`Unknown driver mode: ${mode}`);
 }

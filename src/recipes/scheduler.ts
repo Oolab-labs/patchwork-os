@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import cron from "node-cron";
 import { parse as parseYaml } from "yaml";
@@ -23,6 +23,8 @@ export type SchedulerEnqueue = (opts: {
   triggerSource: string;
 }) => string;
 
+export type SchedulerRunYaml = (name: string) => Promise<void>;
+
 export interface ScheduledRecipe {
   name: string;
   schedule: string;
@@ -35,6 +37,8 @@ export interface ScheduledRecipe {
 export interface SchedulerOptions {
   recipesDir: string;
   enqueue: SchedulerEnqueue;
+  /** Called for YAML recipes instead of enqueue. */
+  runYaml?: SchedulerRunYaml;
   logger?: Logger;
   /** Override for tests — defaults to setInterval. */
   setInterval?: typeof setInterval;
@@ -195,6 +199,30 @@ export class RecipeScheduler {
   }
 
   private fire(name: string): void {
+    // YAML recipe — delegate to runYaml if provided
+    const yamlPath = existsSync(path.join(this.opts.recipesDir, `${name}.yaml`))
+      ? path.join(this.opts.recipesDir, `${name}.yaml`)
+      : existsSync(path.join(this.opts.recipesDir, `${name}.yml`))
+        ? path.join(this.opts.recipesDir, `${name}.yml`)
+        : null;
+
+    if (yamlPath) {
+      if (!this.opts.runYaml) {
+        this.opts.logger?.warn?.(
+          `[scheduler] skipped "${name}" — YAML recipe requires runYaml callback (start bridge with --claude-driver)`,
+        );
+        return;
+      }
+      this.opts.runYaml(name).catch((err) => {
+        this.opts.logger?.warn?.(
+          `[scheduler] YAML recipe "${name}" failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+      this.opts.logger?.info?.(`[scheduler] fired YAML recipe "${name}"`);
+      return;
+    }
+
+    // JSON recipe — legacy path
     const loaded = loadRecipePrompt(this.opts.recipesDir, name);
     if (!loaded) {
       this.opts.logger?.warn?.(

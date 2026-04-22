@@ -889,7 +889,20 @@ export class Bridge {
     if (this.config.driver !== "none") {
       const driver = createDriver(
         this.config.driver,
-        { binary: this.config.claudeBinary, antBinary: this.config.antBinary },
+        {
+          binary: this.config.claudeBinary,
+          antBinary: this.config.antBinary,
+          bridgeMcp:
+            this.config.driver === "gemini"
+              ? () =>
+                  this.port > 0
+                    ? {
+                        url: `http://127.0.0.1:${this.port}/mcp`,
+                        authToken: this.authToken,
+                      }
+                    : undefined
+              : undefined,
+        },
         (msg) => this.logger.info(msg),
       );
       // Patchwork: enrichment link log is useful regardless of orchestrator.
@@ -964,6 +977,12 @@ export class Bridge {
         this.recipeScheduler = new RecipeScheduler({
           recipesDir,
           enqueue: (opts) => this.orchestrator?.enqueue(opts) ?? "",
+          runYaml: async (name) => {
+            const result = await this.server.runRecipeFn?.(name);
+            if (result && !result.ok) {
+              throw new Error(result.error ?? "unknown error");
+            }
+          },
           logger: this.logger,
         });
         const scheduled = this.recipeScheduler.start();
@@ -1342,25 +1361,76 @@ export class Bridge {
         };
       }
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+
+      // Try JSON recipe first (legacy path: enqueue prompt as a task).
       const loaded = loadRecipePrompt(recipesDir, name);
-      if (!loaded) {
+      if (loaded) {
+        try {
+          let prompt = loaded.prompt;
+          if (vars && Object.keys(vars).length > 0) {
+            const varLines = Object.entries(vars)
+              .map(([k, v]) => `${k}=${v}`)
+              .join("\n");
+            prompt = `Variables:\n${varLines}\n\n${prompt}`;
+          }
+          const taskId = this.orchestrator.enqueue({
+            prompt,
+            triggerSource: `recipe:${name}`,
+          });
+          return { ok: true, taskId };
+        } catch (err) {
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      }
+
+      // Fall through to YAML runner for .yaml/.yml recipes.
+      const { loadYamlRecipe, runYamlRecipe } = await import(
+        "./recipes/yamlRunner.js"
+      );
+      const ymlCandidates = [
+        path.join(recipesDir, `${name}.yaml`),
+        path.join(recipesDir, `${name}.yml`),
+      ];
+      const ymlPath = ymlCandidates.find((p) => fs.existsSync(p));
+      if (!ymlPath) {
         return {
           ok: false,
           error: `Recipe "${name}" not found in ${recipesDir}`,
         };
       }
-      try {
-        let prompt = loaded.prompt;
-        if (vars && Object.keys(vars).length > 0) {
-          const varLines = Object.entries(vars)
-            .map(([k, v]) => `${k}=${v}`)
-            .join("\n");
-          prompt = `Variables:\n${varLines}\n\n${prompt}`;
-        }
-        const taskId = this.orchestrator.enqueue({
+
+      // Build claudeCodeFn that goes through the orchestrator driver.
+      const orch = this.orchestrator;
+      const claudeCodeFn = async (prompt: string): Promise<string> => {
+        const task = await orch.runAndWait({
           prompt,
-          triggerSource: `recipe:${name}`,
+          triggerSource: `recipe:${name}:agent`,
+          timeoutMs: 600_000,
         });
+        return task.output ?? task.errorMessage ?? "";
+      };
+
+      try {
+        const recipe = loadYamlRecipe(ymlPath);
+        const taskId = `yaml-recipe-${name}-${Date.now()}`;
+        // Run in background — caller gets taskId immediately.
+        runYamlRecipe(recipe, {
+          workdir: this.config.workspace,
+          claudeCodeFn,
+        })
+          .then((result) => {
+            this.logger.info?.(
+              `[recipe] "${name}" finished: ${result.stepsRun} steps`,
+            );
+          })
+          .catch((err: unknown) => {
+            this.logger.warn?.(
+              `[recipe] "${name}" error: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
         return { ok: true, taskId };
       } catch (err) {
         return {

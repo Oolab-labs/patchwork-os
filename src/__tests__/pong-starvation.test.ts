@@ -43,7 +43,6 @@ async function connectNoAutoPong(
       /* swallow */
     });
     ws.once("open", () => {
-      // biome-ignore lint/suspicious/noExplicitAny: override for test isolation
       (ws as any).pong = () => {};
       resolve(ws);
     });
@@ -149,7 +148,7 @@ describe("pong starvation — disconnect-reason logging", () => {
   });
 
   it("logs '4 missed pongs' warn and 'disconnectReason=pong_timeout' info", async () => {
-    const ws = await connectNoAutoPong(port, authToken);
+    const _ws = await connectNoAutoPong(port, authToken);
 
     // Wait for termination (5 intervals + slack)
     await waitForClientsSize(server, 0, 2000);

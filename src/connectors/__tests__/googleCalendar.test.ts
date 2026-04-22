@@ -71,12 +71,35 @@ describe("getStatus", () => {
     expect(getStatus().status).toBe("disconnected");
   });
 
-  it("returns connected when token file exists", () => {
+  it("returns connected when token file exists and not expired", () => {
     mockConnected();
     const s = getStatus();
     expect(s.status).toBe("connected");
     expect(s.lastSync).toBe("2026-04-20T00:00:00Z");
     expect(s.calendarId).toBe("primary");
+  });
+
+  it("returns needs_reauth when token expired and no credentials available", () => {
+    delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    mockConnected({ expiry_date: Date.now() - 1000 });
+    expect(getStatus().status).toBe("needs_reauth");
+  });
+
+  it("returns connected when token expired but env vars present", () => {
+    mockConnected({ expiry_date: Date.now() - 1000 });
+    expect(getStatus().status).toBe("connected");
+  });
+
+  it("returns connected when token expired but stored credentials present", () => {
+    delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    mockConnected({
+      expiry_date: Date.now() - 1000,
+      _client_id: "stored_cid",
+      _client_secret: "stored_csecret",
+    });
+    expect(getStatus().status).toBe("connected");
   });
 });
 
@@ -280,5 +303,44 @@ describe("listEvents", () => {
       expect.stringContaining("other%40gmail.com"),
       expect.anything(),
     );
+  });
+
+  it("refreshes expired token using stored _client_id/_client_secret when env vars absent", async () => {
+    // Simulate env vars absent at refresh time
+    delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+
+    // Token is expired but has stored credentials
+    mockConnected({
+      expiry_date: Date.now() - 1000,
+      _client_id: "stored_cid",
+      _client_secret: "stored_csecret",
+    });
+
+    // Refresh response
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ access_token: "at_refreshed", expires_in: 3600 }),
+      text: async () => "{}",
+    } as unknown as Response);
+    // Events response after refresh
+    mockFetch.mockResolvedValueOnce(makeEventsResponse([]));
+
+    const events = await listEvents();
+    expect(events).toEqual([]);
+
+    // Confirm refresh used stored credentials, not env vars
+    const refreshCall = mockFetch.mock.calls[0];
+    const body = new URLSearchParams(refreshCall[1].body as string);
+    expect(body.get("client_id")).toBe("stored_cid");
+    expect(body.get("client_secret")).toBe("stored_csecret");
+  });
+
+  it("throws a clear error when token expired and no credentials available", async () => {
+    delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
+    delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+    mockConnected({ expiry_date: Date.now() - 1000 });
+    await expect(listEvents()).rejects.toThrow("reconnect");
   });
 });

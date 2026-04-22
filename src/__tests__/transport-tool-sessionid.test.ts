@@ -30,7 +30,6 @@ function findActivityLogRecordCalls(src: string): string[] {
   const starter = /activityLog\??\.record\(/g;
   const calls: string[] = [];
   let m: RegExpExecArray | null;
-  // biome-ignore lint/suspicious/noAssignInExpressions: canonical regex loop idiom
   while ((m = starter.exec(src)) !== null) {
     let depth = 1;
     let i = m.index + m[0].length;

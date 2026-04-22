@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DecisionTraceLog } from "../../decisionTraceLog.js";
+import { createCtxQueryTracesTool } from "../ctxQueryTraces.js";
 import { createCtxSaveTraceTool } from "../ctxSaveTrace.js";
 
 let dir: string;
@@ -83,5 +84,43 @@ describe("ctxSaveTrace", () => {
     const tool = createCtxSaveTraceTool("/my/workspace", log);
     await tool.handler({ ref: "#1", problem: "p", solution: "s" });
     expect(log.query()[0]?.workspace).toBe("/my/workspace");
+  });
+});
+
+describe("ctxSaveTrace → ctxQueryTraces roundtrip (agent-read loop)", () => {
+  it("trace written by ctxSaveTrace is immediately readable via ctxQueryTraces", async () => {
+    const saveTool = createCtxSaveTraceTool(WS, log);
+    const queryTool = createCtxQueryTracesTool({
+      activityLog: null,
+      commitIssueLinkLog: null,
+      recipeRunLog: null,
+      decisionTraceLog: log,
+    });
+
+    // Step 1 — write
+    const saveRes = JSON.parse(
+      (
+        await saveTool.handler({
+          ref: "ctx-loop-test-2026-04-22",
+          problem:
+            "Validating that ctxSaveTrace persists traces readable by future sessions",
+          solution:
+            "ctxSaveTrace writes to decision_traces.jsonl; ctxQueryTraces reads it back",
+          tags: ["loop-test", "dogfood"],
+        })
+      ).content[0]?.text ?? "{}",
+    );
+    expect(saveRes.seq).toBe(1);
+    expect(saveRes.ref).toBe("ctx-loop-test-2026-04-22");
+
+    // Step 2 — read back
+    const queryRes = JSON.parse(
+      (await queryTool.handler({ traceType: "decision", limit: 5 })).content[0]
+        ?.text ?? "{}",
+    );
+    expect(queryRes.count).toBe(1);
+    const trace = queryRes.traces[0];
+    expect(trace.key).toBe("ctx-loop-test-2026-04-22");
+    expect(trace.body.tags).toEqual(["loop-test", "dogfood"]);
   });
 });

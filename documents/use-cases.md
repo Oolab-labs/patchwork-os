@@ -8,7 +8,7 @@ Real-world workflows that showcase what the bridge makes possible. Each workflow
 
 | Capability | Claude IDE Bridge | Cursor | GitHub Copilot | Cody | Aider |
 |------------|:-:|:-:|:-:|:-:|:-:|
-| Bidirectional IDE control (read + write) | 124+ tools | Chat only | Chat only | Chat only | CLI only |
+| Bidirectional IDE control (read + write) | 170+ tools | Chat only | Chat only | Chat only | CLI only |
 | Git + GitHub full loop (commit → PR → CI) | 15 tools | No | No | No | Partial |
 | Programmatic debugging (breakpoints, eval) | 5 tools | No | No | No | No |
 | Terminal orchestration (create, run, wait) | 7 tools | No | No | No | No |

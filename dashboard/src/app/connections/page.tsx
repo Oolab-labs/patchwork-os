@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 interface ConnectorStatus {
   id: string;
-  status: "connected" | "disconnected";
+  status: "connected" | "disconnected" | "needs_reauth";
   lastSync?: string;
 }
 
@@ -148,7 +148,7 @@ interface ConnectorCardProps {
   name: string;
   description: string;
   icon: React.ReactNode;
-  status: "connected" | "disconnected";
+  status: "connected" | "disconnected" | "needs_reauth";
   lastSync?: string;
   onConnect: () => void;
   onDisconnect: () => void;
@@ -224,11 +224,19 @@ function ConnectorCard({
             <span style={{ fontWeight: 600, fontSize: 14, color: "var(--fg-0)" }}>
               {name}
             </span>
-            <span className={`pill ${status === "connected" ? "ok" : "muted"}`}>
+            <span
+              className={`pill ${status === "connected" ? "ok" : status === "needs_reauth" ? "warn" : "muted"}`}
+              title={status === "needs_reauth" ? "Token expired — reconnect to restore access" : undefined}
+            >
               {status === "connected" ? (
                 <>
                   <span className="pill-dot" />
                   Connected
+                </>
+              ) : status === "needs_reauth" ? (
+                <>
+                  <span className="pill-dot" />
+                  Reconnect required
                 </>
               ) : (
                 "Not connected"
@@ -271,6 +279,16 @@ function ConnectorCard({
                 {loading ? "…" : "Disconnect"}
               </button>
             </>
+          ) : status === "needs_reauth" ? (
+            <button
+              type="button"
+              className="btn sm warn"
+              onClick={onConnect}
+              disabled={loading}
+              aria-label={`Reconnect ${name}`}
+            >
+              {loading ? "…" : "Reconnect"}
+            </button>
           ) : (
             <button
               type="button"

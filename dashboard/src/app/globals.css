@@ -418,6 +418,15 @@ button {
   background: var(--err-soft);
   border-color: var(--err);
 }
+.btn.warn {
+  background: transparent;
+  border-color: #78350f;
+  color: var(--warn);
+}
+.btn.warn:hover {
+  background: var(--warn-soft);
+  border-color: var(--warn);
+}
 .btn.ghost {
   background: transparent;
 }

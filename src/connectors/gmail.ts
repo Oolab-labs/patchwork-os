@@ -25,7 +25,12 @@ import path from "node:path";
 
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
 const REDIRECT_URI = `http://localhost:${process.env.PATCHWORK_BRIDGE_PORT ?? "3101"}/connections/gmail/callback`;
-const TOKEN_PATH = path.join(homedir(), ".patchwork", "tokens", "gmail.json");
+function getTokenPath() {
+  const dir =
+    process.env.PATCHWORK_TOKEN_DIR ??
+    path.join(homedir(), ".patchwork", "tokens");
+  return path.join(dir, "gmail.json");
+}
 
 export interface GmailTokens {
   access_token: string;
@@ -33,11 +38,14 @@ export interface GmailTokens {
   expiry_date?: number;
   token_type?: string;
   scope?: string;
+  /** Stored at auth time so refresh works even if env vars are absent. */
+  _client_id?: string;
+  _client_secret?: string;
 }
 
 export interface ConnectorStatus {
   id: string;
-  status: "connected" | "disconnected";
+  status: "connected" | "disconnected" | "needs_reauth";
   lastSync?: string;
   email?: string;
 }
@@ -57,21 +65,24 @@ function isConfigured(): boolean {
 // ── Token storage ─────────────────────────────────────────────────────────────
 
 export function loadTokens(): GmailTokens | null {
-  if (!existsSync(TOKEN_PATH)) return null;
+  const tokenPath = getTokenPath();
+  if (!existsSync(tokenPath)) return null;
   try {
-    return JSON.parse(readFileSync(TOKEN_PATH, "utf-8")) as GmailTokens;
+    return JSON.parse(readFileSync(tokenPath, "utf-8")) as GmailTokens;
   } catch {
     return null;
   }
 }
 
 function saveTokens(tokens: GmailTokens): void {
-  mkdirSync(path.dirname(TOKEN_PATH), { recursive: true, mode: 0o700 });
-  writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+  const tokenPath = getTokenPath();
+  mkdirSync(path.dirname(tokenPath), { recursive: true, mode: 0o700 });
+  writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
 }
 
 function deleteTokens(): void {
-  if (existsSync(TOKEN_PATH)) unlinkSync(TOKEN_PATH);
+  const tokenPath = getTokenPath();
+  if (existsSync(tokenPath)) unlinkSync(tokenPath);
 }
 
 // ── OAuth helpers ─────────────────────────────────────────────────────────────
@@ -120,18 +131,26 @@ async function exchangeCode(code: string): Promise<GmailTokens> {
       : undefined,
     token_type: json.token_type,
     scope: json.scope,
+    _client_id: clientId() || undefined,
+    _client_secret: clientSecret() || undefined,
   };
 }
 
 async function refreshAccessToken(tokens: GmailTokens): Promise<GmailTokens> {
   if (!tokens.refresh_token) throw new Error("No refresh token available");
+  const id = clientId() || tokens._client_id || "";
+  const secret = clientSecret() || tokens._client_secret || "";
+  if (!id || !secret)
+    throw new Error(
+      "Gmail client credentials not available — reconnect the Gmail connector",
+    );
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       refresh_token: tokens.refresh_token,
-      client_id: clientId(),
-      client_secret: clientSecret(),
+      client_id: id,
+      client_secret: secret,
       grant_type: "refresh_token",
     }).toString(),
   });
@@ -203,6 +222,17 @@ export interface ConnectorHandlerResult {
   redirect?: string;
 }
 
+function gmailStatus(tokens: GmailTokens | null): ConnectorStatus["status"] {
+  if (!tokens) return "disconnected";
+  const expired =
+    tokens.expiry_date !== undefined && Date.now() > tokens.expiry_date;
+  const hasCredentials = Boolean(
+    (process.env.GMAIL_CLIENT_ID || tokens._client_id) &&
+      (process.env.GMAIL_CLIENT_SECRET || tokens._client_secret),
+  );
+  return expired && !hasCredentials ? "needs_reauth" : "connected";
+}
+
 export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   const tokens = loadTokens();
   const { getStatus: getGitHubStatus } = await import("./github.js");
@@ -220,7 +250,7 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   const connectors: ConnectorStatus[] = [
     {
       id: "gmail",
-      status: tokens ? "connected" : "disconnected",
+      status: gmailStatus(tokens),
       lastSync: tokens ? new Date().toISOString() : undefined,
     },
     {

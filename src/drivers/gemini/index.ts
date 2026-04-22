@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { sanitizeEnv } from "../claude/envSanitizer.js";
 import { splitLines } from "../claude/streamParser.js";
 import type {
@@ -44,12 +47,47 @@ export class GeminiSubprocessDriver implements ProviderDriver {
   constructor(
     private readonly binary: string,
     private readonly log: (msg: string) => void,
+    private readonly bridgeMcp?: () =>
+      | { url: string; authToken: string }
+      | undefined,
   ) {}
 
   async run(input: ProviderTaskInput): Promise<ProviderTaskResult> {
     const opts = input.providerOptions ?? {};
     const approvalMode =
       typeof opts.approvalMode === "string" ? opts.approvalMode : "yolo";
+
+    // Inject bridge MCP into ~/.gemini/settings.json before spawning so the
+    // subprocess can call bridge tools. Gemini CLI reads settings.json at startup.
+    const mcp = this.bridgeMcp?.();
+    if (mcp) {
+      const settingsFile = join(homedir(), ".gemini", "settings.json");
+      try {
+        let settings: Record<string, unknown> = {};
+        if (existsSync(settingsFile)) {
+          settings = JSON.parse(readFileSync(settingsFile, "utf-8")) as Record<
+            string,
+            unknown
+          >;
+        }
+        const mcpServers = (settings.mcpServers ?? {}) as Record<
+          string,
+          unknown
+        >;
+        mcpServers["claude-ide-bridge"] = {
+          url: mcp.url,
+          headers: { Authorization: `Bearer ${mcp.authToken}` },
+        };
+        settings.mcpServers = mcpServers;
+        writeFileSync(settingsFile, JSON.stringify(settings, null, 2), {
+          mode: 0o600,
+        });
+      } catch (err) {
+        this.log(
+          `[GeminiSubprocessDriver] WARN: could not update ~/.gemini/settings.json: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     const args = [
       "-p",
@@ -81,7 +119,7 @@ export class GeminiSubprocessDriver implements ProviderDriver {
     );
 
     const child = spawn(this.binary, args, {
-      cwd: input.workspace,
+      cwd: homedir(),
       env,
       signal: input.signal,
       stdio: ["ignore", "pipe", "pipe"],

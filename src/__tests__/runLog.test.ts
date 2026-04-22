@@ -182,7 +182,6 @@ describe("RecipeRunLog.record", () => {
       doneAt: 2,
       durationMs: 1,
     };
-    // biome-ignore lint/suspicious/noExplicitAny: test fixture
     require("node:fs").writeFileSync(
       file,
       `not-json\n${JSON.stringify(good)}\n`,
