@@ -87,17 +87,17 @@ class BridgeService {
         handlerRegistry.register("extension/renameFile", com.patchwork.bridge.handlers.RenameFileHandler())
         handlerRegistry.register("extension/editText", com.patchwork.bridge.handlers.EditTextHandler())
         handlerRegistry.register("extension/replaceBlock", com.patchwork.bridge.handlers.ReplaceBlockHandler())
+        handlerRegistry.register("extension/listTerminals", com.patchwork.bridge.handlers.ListTerminalsHandler())
+        handlerRegistry.register("extension/createTerminal", com.patchwork.bridge.handlers.CreateTerminalHandler())
+        handlerRegistry.register("extension/disposeTerminal", com.patchwork.bridge.handlers.DisposeTerminalHandler())
+        handlerRegistry.register("extension/sendTerminalCommand", com.patchwork.bridge.handlers.SendTerminalCommandHandler())
+        handlerRegistry.register("extension/getTerminalOutput", com.patchwork.bridge.handlers.GetTerminalOutputHandler())
+        handlerRegistry.register("extension/waitForTerminalOutput", com.patchwork.bridge.handlers.WaitForTerminalOutputHandler())
+        handlerRegistry.register("extension/executeInTerminal", com.patchwork.bridge.handlers.ExecuteInTerminalHandler())
 
         // Tier 1 stubs: known methods, not yet implemented
         val stubs = listOf(
             "extension/getAIComments",
-            "extension/listTerminals",
-            "extension/getTerminalOutput",
-            "extension/createTerminal",
-            "extension/disposeTerminal",
-            "extension/sendTerminalCommand",
-            "extension/executeInTerminal",
-            "extension/waitForTerminalOutput",
             "extension/formatDocument",
             "extension/fixAllLintErrors",
             "extension/organizeImports",
