@@ -79,10 +79,10 @@ class BridgeService {
         handlerRegistry.register("extension/openFile", com.patchwork.bridge.handlers.OpenFileHandler())
         handlerRegistry.register("extension/readClipboard", com.patchwork.bridge.handlers.ReadClipboardHandler())
         handlerRegistry.register("extension/writeClipboard", com.patchwork.bridge.handlers.WriteClipboardHandler())
+        handlerRegistry.register("extension/getDiagnostics", com.patchwork.bridge.handlers.GetDiagnosticsHandler())
 
         // Tier 1 stubs: known methods, not yet implemented
         val stubs = listOf(
-            "extension/getDiagnostics",
             "extension/saveFile",
             "extension/closeTab",
             "extension/getAIComments",
