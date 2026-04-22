@@ -181,7 +181,7 @@ export async function getValidAccessToken(): Promise<string> {
   let tokens = loadTokens();
   if (!tokens) throw new Error("Gmail not connected");
   const bufferMs = 60_000;
-  if (tokens.expiry_date && Date.now() > tokens.expiry_date - bufferMs) {
+  if (!tokens.expiry_date || Date.now() > tokens.expiry_date - bufferMs) {
     tokens = await refreshAccessToken(tokens);
   }
   return tokens.access_token;
@@ -226,8 +226,7 @@ export interface ConnectorHandlerResult {
 
 function gmailStatus(tokens: GmailTokens | null): ConnectorStatus["status"] {
   if (!tokens) return "disconnected";
-  const expired =
-    tokens.expiry_date !== undefined && Date.now() > tokens.expiry_date;
+  const expired = !tokens.expiry_date || Date.now() > tokens.expiry_date;
   const hasCredentials = Boolean(
     (process.env.GMAIL_CLIENT_ID || tokens._client_id) &&
       (process.env.GMAIL_CLIENT_SECRET || tokens._client_secret),

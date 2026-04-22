@@ -125,8 +125,10 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       env,
       signal: input.signal,
       stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
     });
+    // unref() so the bridge can exit without waiting for the subprocess,
+    // but keep detached=false so the subprocess dies cleanly with the bridge
+    // rather than getting SIGPIPE when the pipe closes mid-run.
     child.unref();
 
     let lineBuf = "";
