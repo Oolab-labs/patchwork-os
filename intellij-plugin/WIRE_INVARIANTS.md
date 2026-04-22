@@ -181,17 +181,16 @@ All values sourced from `vscode-extension/src/constants.ts` and `vscode-extensio
 
 **`extension/hello` on connect:** Must be the first message sent after WebSocket open, before any other notifications.
 ```json
-{ "extensionVersion": "1.1.0", "packageVersion": "<plugin-version>", "ideVersion": "<IJ-build-string>" }
+{ "extensionVersion": "1.1.0", "packageVersion": "<plugin-version>" }
 ```
-> ⚠️ **[UNCONFIRMED]** The field name `ideVersion` (replacing VS Code's `vscodeVersion`) must be verified against the bridge before coding. The bridge may ignore this field entirely, or it may validate it. Check `src/server.ts` hello handler before shipping.
+The bridge reads only `extensionVersion` (major-version check) and `packageVersion` (stored for logging). All other fields — including VS Code's `vscodeVersion` — are ignored. The JetBrains plugin may include an `ideVersion` field for diagnostics but must not rely on it being read.
 
 ---
 
 ## 5. `extension/lspReady` Exact Contract
 
 - **Wire method:** `extension/lspReady` (notification — no `id`, no response)
-- **Trigger (JetBrains):** `DumbService.getInstance(project).runWhenSmart { ... }` per project on index completion
-  > ⚠️ **[UNCONFIRMED]** Confirm `DumbService.runWhenSmart` is the correct hook vs `DumbModeListener.exitDumbMode` — behaviour differs for already-smart projects at startup.
+- **Trigger (JetBrains):** Subscribe to `DaemonCodeAnalyzer.DaemonListener` via `project.messageBus.connect()`. On `daemonFinished(fileEditor)`, derive the language for the finished file and mark it ready — mirroring VS Code's `onDidChangeDiagnostics` pattern. Also start a 30 s fallback timer per project on connect; when it fires, send `lspReady` for all languages found in currently open files that haven't been marked ready yet. This handles projects with no diagnostics where the daemon may not fire prominently.
 - **Language ID derivation:** Enumerate `FileEditorManager.getInstance(project).openFiles`, call `LanguageUtil.getFileLanguage(vFile)?.id?.lowercase()`, filter nulls, deduplicate into a `Set<String>`. Emit one notification per unique language.
 - **Params shape:** `{ "languageId": "kotlin", "timestamp": <epoch-ms> }` — one notification per language, not batched.
 - **Deduplication:** Each language sent at most once per session. Track in a `readyLanguages: MutableSet<String>`.
