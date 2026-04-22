@@ -123,3 +123,68 @@ describe("ApprovalQueue", () => {
     await expect(promise).resolves.toBe("expired");
   });
 });
+
+describe("ApprovalQueue — approval tokens", () => {
+  it("no token by default", () => {
+    const q = new ApprovalQueue();
+    const { approvalToken } = q.request({
+      toolName: "gitPush",
+      params: {},
+      tier: "high",
+    });
+    expect(approvalToken).toBeUndefined();
+  });
+
+  it("generates token when withToken: true", () => {
+    const q = new ApprovalQueue();
+    const { approvalToken } = q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    expect(typeof approvalToken).toBe("string");
+    expect(approvalToken!.length).toBe(64); // 32 bytes hex
+  });
+
+  it("validateToken returns true for correct token", () => {
+    const q = new ApprovalQueue();
+    const { callId, approvalToken } = q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    expect(q.validateToken(callId, approvalToken!)).toBe(true);
+  });
+
+  it("validateToken is single-use — second call returns false", () => {
+    const q = new ApprovalQueue();
+    const { callId, approvalToken } = q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    q.validateToken(callId, approvalToken!);
+    expect(q.validateToken(callId, approvalToken!)).toBe(false);
+  });
+
+  it("validateToken rejects wrong token", () => {
+    const q = new ApprovalQueue();
+    const { callId } = q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    expect(q.validateToken(callId, "deadbeef".repeat(8))).toBe(false);
+  });
+
+  it("validateToken returns false for unknown callId", () => {
+    const q = new ApprovalQueue();
+    expect(q.validateToken("no-such-id", "anytoken")).toBe(false);
+  });
+
+  it("token not exposed in list()", () => {
+    const q = new ApprovalQueue();
+    q.request(
+      { toolName: "gitPush", params: {}, tier: "high" },
+      { withToken: true },
+    );
+    const item = q.list()[0]!;
+    expect((item as Record<string, unknown>).approvalToken).toBeUndefined();
+  });
+});

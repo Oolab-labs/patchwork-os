@@ -166,6 +166,12 @@ export class Server extends EventEmitter<ServerEvents> {
   public approvalGate: "off" | "high" | "all" = "off";
   /** Patchwork: outbound webhook URL for approval notifications (from dashboard.webhookUrl in config). */
   public approvalWebhookUrl: string | undefined = undefined;
+  /** Patchwork: push relay service URL — when set, per-callId approval tokens are generated. */
+  public pushServiceUrl: string | undefined = undefined;
+  /** Patchwork: bearer token for the push relay service. */
+  public pushServiceToken: string | undefined = undefined;
+  /** Patchwork: public base URL of this bridge, embedded in push payloads as callback base. */
+  public pushServiceBaseUrl: string | undefined = undefined;
   /** Patchwork: approval decision audit callback wired to activityLog.recordEvent. */
   public onApprovalDecision:
     | ((event: string, meta: Record<string, unknown>) => void)
@@ -659,8 +665,14 @@ export class Server extends EventEmitter<ServerEvents> {
         !isStaticToken && this.oauthServer
           ? this.oauthServer.resolveBearerToken(bearer)
           : null;
+      // Phone-path: approve/reject with x-approval-token bypass bearer check.
+      // The token itself is validated inside routeApprovalRequest via queue.validateToken.
+      const isPhoneApprovalPath =
+        req.method === "POST" &&
+        /^\/(approve|reject)\/[A-Za-z0-9-]+$/.test(parsedUrl.pathname) &&
+        !!req.headers["x-approval-token"];
       // oauthResolved is the bridge token if the OAuth token is valid; null otherwise
-      if (!isStaticToken && !oauthResolved) {
+      if (!isStaticToken && !oauthResolved && !isPhoneApprovalPath) {
         // RFC 6750: only include error= when a token was actually presented but invalid
         const tokenPresented = bearer.length > 0;
         const wwwAuth =
@@ -1666,6 +1678,9 @@ export class Server extends EventEmitter<ServerEvents> {
               approvalGate?: string;
               driver?: string;
               apiKey?: { provider: string; key: string };
+              pushServiceUrl?: string;
+              pushServiceToken?: string;
+              pushServiceBaseUrl?: string;
             };
             const hasWebhookUpdate = body.webhookUrl !== undefined;
             const raw = hasWebhookUpdate
@@ -1748,6 +1763,24 @@ export class Server extends EventEmitter<ServerEvents> {
             savePatchworkConfig(cfg, configPath);
             if (hasWebhookUpdate) {
               this.approvalWebhookUrl = raw || undefined;
+            }
+            if (body.pushServiceUrl !== undefined) {
+              const pushUrl = body.pushServiceUrl.trim();
+              if (pushUrl && !pushUrl.startsWith("https://")) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({ error: "pushServiceUrl must be HTTPS" }),
+                );
+                return;
+              }
+              this.pushServiceUrl = pushUrl || undefined;
+            }
+            if (body.pushServiceToken !== undefined) {
+              this.pushServiceToken = body.pushServiceToken.trim() || undefined;
+            }
+            if (body.pushServiceBaseUrl !== undefined) {
+              this.pushServiceBaseUrl =
+                body.pushServiceBaseUrl.trim() || undefined;
             }
             const restartRequired =
               driverRaw !== undefined || body.apiKey !== undefined;
@@ -1854,6 +1887,9 @@ export class Server extends EventEmitter<ServerEvents> {
                 path: parsedUrl.pathname,
                 body: parsedBody,
                 query: parsedUrl.searchParams,
+                approvalToken: req.headers["x-approval-token"] as
+                  | string
+                  | undefined,
               },
               {
                 queue: getApprovalQueue(),
@@ -1862,6 +1898,9 @@ export class Server extends EventEmitter<ServerEvents> {
                 onDecision: this.onApprovalDecision,
                 webhookUrl: this.approvalWebhookUrl,
                 approvalGate: this.approvalGate,
+                pushServiceUrl: this.pushServiceUrl,
+                pushServiceToken: this.pushServiceToken,
+                pushServiceBaseUrl: this.pushServiceBaseUrl,
               },
             );
             res.writeHead(result.status, {

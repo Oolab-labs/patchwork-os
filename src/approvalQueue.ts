@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { RiskTier } from "./riskTier.js";
 
 /**
@@ -28,6 +28,8 @@ export interface PendingApproval {
   sessionId?: string;
   summary?: string;
   riskSignals?: RiskSignal[];
+  /** 256-bit hex token for phone-path approve/reject. Only present when push is configured. */
+  approvalToken?: string;
 }
 
 export type ApprovalDecision = "approved" | "rejected" | "expired";
@@ -45,12 +47,19 @@ export class ApprovalQueue {
     this.ttlMs = opts.ttlMs ?? 5 * 60_000;
   }
 
-  request(input: Omit<PendingApproval, "callId" | "requestedAt">): {
+  request(
+    input: Omit<PendingApproval, "callId" | "requestedAt">,
+    opts: { withToken?: boolean } = {},
+  ): {
     callId: string;
+    approvalToken?: string;
     promise: Promise<ApprovalDecision>;
   } {
     const callId = randomUUID();
     const requestedAt = Date.now();
+    const approvalToken = opts.withToken
+      ? randomBytes(32).toString("hex")
+      : undefined;
     let resolveFn!: (d: ApprovalDecision) => void;
     const promise = new Promise<ApprovalDecision>((res) => {
       resolveFn = res;
@@ -68,9 +77,26 @@ export class ApprovalQueue {
       requestedAt,
       resolve: resolveFn,
       timer,
+      approvalToken,
       ...input,
     });
-    return { callId, promise };
+    return { callId, approvalToken, promise };
+  }
+
+  /**
+   * Validate a phone-path approval token for the given callId.
+   * Tokens are single-use: deleted from the entry after first check regardless of outcome.
+   * Returns true only if the token matches. Uses timing-safe comparison.
+   */
+  validateToken(callId: string, token: string): boolean {
+    const entry = this.entries.get(callId);
+    if (!entry?.approvalToken) return false;
+    const expected = Buffer.from(entry.approvalToken, "utf8");
+    const provided = Buffer.from(token, "utf8");
+    // Clear token immediately — single-use regardless of outcome
+    entry.approvalToken = undefined;
+    if (expected.length !== provided.length) return false;
+    return timingSafeEqual(expected, provided);
   }
 
   approve(callId: string): boolean {
@@ -91,6 +117,7 @@ export class ApprovalQueue {
       sessionId: e.sessionId,
       summary: e.summary,
       riskSignals: e.riskSignals,
+      // approvalToken intentionally omitted from list — never expose to untrusted callers
     }));
   }
 
