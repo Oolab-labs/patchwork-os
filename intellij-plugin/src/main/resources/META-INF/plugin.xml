@@ -8,6 +8,7 @@
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends optional="true" config-file="terminal-features.xml">org.jetbrains.plugins.terminal</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <applicationService
