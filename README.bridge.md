@@ -40,6 +40,12 @@ claude --ide
 
 > **Updating?** Use `npm install -g claude-ide-bridge@latest` — `npm update -g` may lag the registry cache after a new release.
 
+> **macOS LaunchAgent users:** always install from the registry (`npm install -g patchwork-os`) or
+> from a tarball (`npm pack && npm install -g patchwork-os-*.tgz`).
+> Running `npm install -g .` from a repo checkout creates a symlink — the macOS sandbox
+> cannot follow it, causing EPERM when launchctl starts the bridge.
+> `patchwork-os launchd install` will refuse to proceed and print fix instructions.
+
 After `init`, type `/mcp` in Claude Code to confirm the bridge is connected. Type `/ide` to see open files, diagnostics, and editor state.
 
 > **One bridge per workspace.** Each project runs its own bridge instance on its own port. Start a separate `claude-ide-bridge --watch` in each directory.

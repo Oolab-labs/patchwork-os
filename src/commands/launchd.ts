@@ -3,6 +3,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  detectWorkspaceSymlinkInstall,
+  SYMLINK_INSTALL_FIX,
+} from "../installGuard.js";
 
 const PLIST_LABEL = "co.patchwork-os.bridge";
 const PLIST_DEST = path.join(
@@ -40,6 +44,23 @@ function binaryPath(): string {
 export async function runLaunchdInstall(_argv: string[]): Promise<void> {
   if (process.platform !== "darwin") {
     process.stderr.write("launchd is only available on macOS\n");
+    process.exit(1);
+  }
+
+  // Refuse to register a LaunchAgent when the binary is a workspace symlink.
+  // launchctl runs in a sandbox that cannot follow symlinks into ~/Documents,
+  // causing a silent EPERM at service startup.
+  const symlinkInfo = detectWorkspaceSymlinkInstall();
+  if (symlinkInfo) {
+    process.stderr.write(
+      "\nError: cannot install LaunchAgent — patchwork-os is linked to a workspace directory.\n" +
+        `  Logical root: ${symlinkInfo.logicalRoot}\n` +
+        `  Real path:    ${symlinkInfo.realRoot}\n\n` +
+        "  The macOS sandbox will deny access to workspace files under ~/Documents,\n" +
+        "  causing EPERM when launchctl starts the bridge.\n\n" +
+        SYMLINK_INSTALL_FIX +
+        "  Then re-run: patchwork-os launchd install\n\n",
+    );
     process.exit(1);
   }
 
