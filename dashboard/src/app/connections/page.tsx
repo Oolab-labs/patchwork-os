@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import AddConnectionModal from "./AddConnectionModal";
 
 interface ConnectorStatus {
   id: string;
@@ -131,9 +132,9 @@ function IconSlack() {
       aria-hidden="true"
       style={{ flexShrink: 0 }}
     >
-      <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
+      {/* Hash / pound — universally associated with Slack channels */}
       <path
-        d="M7 10h6M10 7v6"
+        d="M7 3v14M13 3v14M3 7h14M3 13h14"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
@@ -141,6 +142,86 @@ function IconSlack() {
     </svg>
   );
 }
+
+function IconSentry() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+      style={{ flexShrink: 0 }}
+    >
+      {/* Sentry-style diagonal eye/shield shape */}
+      <path
+        d="M10 2L2 16h6.5M10 2l8 14h-6.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 16a8 8 0 008-8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+// ------------------------------------------------------------------ providers
+
+const PROVIDERS: {
+  id: string;
+  name: string;
+  description: string;
+  icon: React.ComponentType;
+}[] = [
+  {
+    id: "gmail",
+    name: "Gmail",
+    description:
+      "Read and triage your inbox. Patchwork agents can summarise threads, draft replies, and label messages.",
+    icon: IconEnvelope,
+  },
+  {
+    id: "github",
+    name: "GitHub",
+    description:
+      "Read open issues and pull requests via GitHub's official MCP server. Agents surface blocking work items and review requests.",
+    icon: IconGitHub,
+  },
+  {
+    id: "linear",
+    name: "Linear",
+    description:
+      "Read and manage issues. Agents can surface blocking work, summarise ticket context, and draft updates.",
+    icon: IconLinear,
+  },
+  {
+    id: "sentry",
+    name: "Sentry",
+    description:
+      "Read issues and stack traces via Sentry's official MCP server. Agents can surface new errors and trace bugs to the commit that introduced them.",
+    icon: IconSentry,
+  },
+  {
+    id: "google-calendar",
+    name: "Google Calendar",
+    description:
+      "View your schedule. Agents can summarise upcoming meetings in your morning brief.",
+    icon: IconCalendar,
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    description:
+      "Post messages and list channels. Agents can send summaries, alerts, and notifications to your workspace.",
+    icon: IconSlack,
+  },
+];
 
 // ------------------------------------------------------------------ types
 
@@ -501,18 +582,10 @@ export default function ConnectionsPage() {
     (c) => c.status === "connected" || c.status === "needs_reauth",
   );
 
-  const connectorGridRef = useRef<HTMLDivElement>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   function handleAddConnection() {
-    const firstBtn = connectorGridRef.current?.querySelector<HTMLButtonElement>(
-      "button:not([disabled])",
-    );
-    if (firstBtn) {
-      firstBtn.focus();
-      firstBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    } else {
-      connectorGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    setModalOpen(true);
   }
 
   const gmailConnector = getConnector("gmail");
@@ -536,7 +609,6 @@ export default function ConnectionsPage() {
             type="button"
             className="btn sm primary"
             onClick={handleAddConnection}
-            aria-controls="connector-grid"
           >
             Add connection
           </button>
@@ -578,21 +650,18 @@ export default function ConnectionsPage() {
               }}
             >
               <p style={{ color: "var(--fg-2)", fontSize: 14, marginBottom: "var(--s-4)" }}>
-                No connections yet. Choose a provider below to get started.
+                No connections yet. Add one to get started.
               </p>
               <button
                 type="button"
                 className="btn primary"
                 onClick={handleAddConnection}
-                aria-controls="connector-grid"
               >
                 Add connection
               </button>
             </div>
           )}
           <div
-            id="connector-grid"
-            ref={connectorGridRef}
             style={{ display: "flex", flexDirection: "column", gap: 12 }}
           >
           {/* Active connectors */}
@@ -669,6 +738,14 @@ export default function ConnectionsPage() {
           </div>
         </>
       )}
+      <AddConnectionModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        connectors={connectors}
+        acting={acting}
+        onConnect={handleConnect}
+        providers={PROVIDERS}
+      />
     </section>
   );
 }
