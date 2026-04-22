@@ -1017,6 +1017,50 @@ function defaultGitStaleBranches(days: number, workdir?: string): string {
   }
 }
 
+/**
+ * Dispatch a loaded recipe to the appropriate runner.
+ *
+ * Recipes with `trigger.type: "chained"` are routed to the ChainedRecipeRunner
+ * (parallel execution, template variables, nested recipes, dry-run).
+ * All other recipes use the existing synchronous yamlRunner path.
+ *
+ * `chainedDeps` is only required when the recipe is chained; omit for simple recipes.
+ */
+export async function dispatchRecipe(
+  recipe: YamlRecipe,
+  deps: RunnerDeps & {
+    chainedDeps?: import("./chainedRunner.js").ExecutionDeps;
+    chainedOptions?: Partial<import("./chainedRunner.js").RunOptions>;
+  },
+  seedContext: RunContext = {},
+): Promise<RunResult | import("./chainedRunner.js").ChainedRunResult> {
+  const triggerType = (recipe.trigger as unknown as Record<string, unknown>)
+    ?.type;
+  if (triggerType === "chained") {
+    const { runChainedRecipe } = await import("./chainedRunner.js");
+    const chainedRecipe =
+      recipe as unknown as import("./chainedRunner.js").ChainedRecipe;
+    const options: import("./chainedRunner.js").RunOptions = {
+      env: { ...process.env, ...seedContext } as Record<
+        string,
+        string | undefined
+      >,
+      maxConcurrency: chainedRecipe.maxConcurrency ?? 4,
+      maxDepth: chainedRecipe.maxDepth ?? 3,
+      dryRun: deps.chainedOptions?.dryRun ?? false,
+      onStepStart: deps.chainedOptions?.onStepStart,
+      onStepComplete: deps.chainedOptions?.onStepComplete,
+    };
+    if (!deps.chainedDeps) {
+      throw new Error(
+        "chainedDeps required for chained recipes (provide executeTool, executeAgent, loadNestedRecipe)",
+      );
+    }
+    return runChainedRecipe(chainedRecipe, options, deps.chainedDeps);
+  }
+  return runYamlRecipe(recipe, deps, seedContext);
+}
+
 /** List all YAML recipes in a directory. Returns names. */
 export function listYamlRecipes(
   recipesDir: string,
