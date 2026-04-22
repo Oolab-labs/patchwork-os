@@ -109,3 +109,49 @@ Signals are advisory — they don't change the decision, they help the human dec
 - Every new permission-mode branch must emit via `onDecision` with a stable `reason` string. Dashboard filters and analytics depend on these.
 - Every response body on `/approvals` POST must include `{ decision, reason }`. New branches without `reason` break the audit log.
 - Glob rules must be evaluated through `evaluateRules` — never re-implement matching inline.
+
+## Amendment: Mobile / Phone-Path Approval (2026-04-22)
+
+The existing gate queues calls and surfaces them in the **desktop dashboard**. A parallel
+phone path has been added so approvals can be acted on from a mobile device without the
+bridge token.
+
+### Push notification path
+
+After a call is queued, `handleApprovalRequest` now fires a second background task
+(`dispatchPushNotification`) parallel to the existing webhook dispatch:
+
+```
+queue entry created
+  ├── dispatchApprovalWebhook (existing — generic HTTP webhook)
+  └── dispatchPushNotification (new — push relay for FCM/APNS)
+        POST ${PATCHWORK_PUSH_URL}/push  {callId, toolName, tier, approvalToken, …}
+```
+
+The push relay (`services/push-relay/`) receives the payload, looks up the user's
+registered FCM/APNS device tokens, and sends a notification within seconds.
+
+### Per-callId approval tokens
+
+To allow the phone to call back without the bridge bearer token, each queued entry
+gains an optional `approvalToken` (256-bit hex, `crypto.randomBytes(32)`):
+
+- Only generated when `pushServiceUrl` is configured (zero overhead for local-only users).
+- Delivered in the push notification payload.
+- Single-use: cleared from the queue entry after first validation, regardless of outcome.
+- Validated with `crypto.timingSafeEqual` (timing-safe).
+- Expires when the queue entry expires (default 5 min TTL).
+
+### Phone-path bearer bypass
+
+`POST /approve/:callId` and `POST /reject/:callId` in `src/server.ts` normally require the
+`Authorization: Bearer <bridge-token>` header. When an `x-approval-token` header is present
+on these two paths, bearer auth is skipped and token validation is delegated to
+`ApprovalQueue.validateToken()`. The decision resolution path is otherwise identical.
+
+### Invariants
+
+- `approvalToken` is **never** returned by `GET /approvals` — only delivered via the push relay.
+- The push notification call is fire-and-forget: it never delays or blocks the approval flow.
+- Disabling `pushServiceUrl` at runtime drops token generation for new requests immediately.
+- Phone-path tokens and bridge tokens are independent — compromise of one does not affect the other.
