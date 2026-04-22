@@ -371,6 +371,25 @@ export function parseConfig(argv: string[]): Config {
       '[patchwork-os] Warning: "claudeDriver" in config is deprecated — rename to "driver".',
     );
   }
+  const VALID_DRIVER_MODES = [
+    "subprocess",
+    "api",
+    "openai",
+    "grok",
+    "gemini",
+    "none",
+  ] as const;
+  const rawFileDriver = (fileConfig as Record<string, unknown>).driver;
+  if (
+    rawFileDriver !== undefined &&
+    !VALID_DRIVER_MODES.includes(
+      rawFileDriver as (typeof VALID_DRIVER_MODES)[number],
+    )
+  ) {
+    console.warn(
+      `[patchwork-os] Warning: Unknown driver value "${rawFileDriver}" in config file — falling back to "none". Valid values: ${VALID_DRIVER_MODES.join(", ")}.`,
+    );
+  }
   let driver: "subprocess" | "api" | "openai" | "grok" | "gemini" | "none" =
     fileConfig.driver ?? fileConfig.claudeDriver ?? "none";
   let claudeBinary = fileConfig.claudeBinary ?? "claude";

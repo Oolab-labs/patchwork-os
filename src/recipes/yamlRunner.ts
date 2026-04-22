@@ -260,14 +260,27 @@ export async function runYamlRecipe(
             durationMs: Date.now() - stepStart,
           });
         } else {
-          ctx[intoKey] = stripLeadingNarration(agentResult);
-          outputs.push(intoKey);
-          stepResults.push({
-            id: stepId,
-            tool: "agent",
-            status: "ok",
-            durationMs: Date.now() - stepStart,
-          });
+          const stripped = stripLeadingNarration(agentResult);
+          if (!stripped.trim()) {
+            const errMsg = `[agent step failed: ${agentCfg.driver ?? "agent"} returned only narration or whitespace — no content]`;
+            runError = runError ?? errMsg;
+            stepResults.push({
+              id: stepId,
+              tool: "agent",
+              status: "error",
+              error: errMsg,
+              durationMs: Date.now() - stepStart,
+            });
+          } else {
+            ctx[intoKey] = stripped;
+            outputs.push(intoKey);
+            stepResults.push({
+              id: stepId,
+              tool: "agent",
+              status: "ok",
+              durationMs: Date.now() - stepStart,
+            });
+          }
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -500,12 +513,14 @@ async function defaultProviderDriverFn(
     }
     const controller = new AbortController();
     const timeoutMs = 300_000;
+    const startupTimeoutMs = 30_000;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const result = await driver.run({
         prompt,
         workspace: process.cwd(),
         timeoutMs,
+        startupTimeoutMs,
         signal: controller.signal,
         model,
       });

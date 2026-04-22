@@ -113,8 +113,7 @@ function deleteTokens(): void {
 export function getStatus(): ConnectorStatus {
   const tokens = loadTokens();
   if (!tokens) return { id: "google-calendar", status: "disconnected" };
-  const expired =
-    tokens.expiry_date !== undefined && Date.now() > tokens.expiry_date;
+  const expired = !tokens.expiry_date || Date.now() > tokens.expiry_date;
   const hasCredentials = Boolean(
     (process.env.GOOGLE_CALENDAR_CLIENT_ID || tokens._client_id) &&
       (process.env.GOOGLE_CALENDAR_CLIENT_SECRET || tokens._client_secret),
@@ -227,7 +226,7 @@ export async function getValidAccessToken(): Promise<string> {
   let tokens = loadTokens();
   if (!tokens) throw new Error("Google Calendar not connected");
   const bufferMs = 60_000;
-  if (tokens.expiry_date && Date.now() > tokens.expiry_date - bufferMs) {
+  if (!tokens.expiry_date || Date.now() > tokens.expiry_date - bufferMs) {
     tokens = await refreshAccessToken(tokens);
   }
   return tokens.access_token;
