@@ -17,5 +17,8 @@
         <projectService
             serviceInterface="com.patchwork.bridge.ProjectBridgeService"
             serviceImplementation="com.patchwork.bridge.ProjectBridgeService"/>
+
+        <postStartupActivity
+            implementation="com.patchwork.bridge.BridgeStartupActivity"/>
     </extensions>
 </idea-plugin>
