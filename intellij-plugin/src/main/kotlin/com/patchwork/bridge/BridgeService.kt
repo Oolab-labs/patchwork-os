@@ -10,9 +10,6 @@ import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
 import java.io.File
 import java.net.URI
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
@@ -29,6 +26,18 @@ class BridgeService {
         private val LOG = Logger.getInstance(BridgeService::class.java)
         const val PLUGIN_VERSION = "0.1.0"
         const val EXTENSION_PROTOCOL_VERSION = "1.1.0"
+
+        // Auth header name — confirmed from vscode-extension/src/connection.ts line 320
+        private const val AUTH_HEADER = "x-claude-ide-extension"
+
+        // Heartbeat: bridge pings every 30s; we check every 45s; declare dead after 120s
+        // Matches vscode-extension/src/connection.ts heartbeatTimer interval (45s) and
+        // lastBridgePong threshold (120s).
+        private const val HEARTBEAT_INTERVAL_MS = 45_000L
+        private const val LIVENESS_TIMEOUT_MS = 120_000L
+
+        // Lock file: drop if startedAt is older than 24h (matches lockfiles.ts line 68)
+        private const val LOCK_MAX_AGE_MS = 24L * 60 * 60 * 1000
 
         fun getInstance(): BridgeService =
             ApplicationManager.getApplication().getService(BridgeService::class.java)
@@ -51,8 +60,9 @@ class BridgeService {
     @field:Volatile
     private var reconnectDelay = 1000L
 
+    // Tracks time of last bridge ping frame received (not JSON message)
     @field:Volatile
-    private var lastMessageTime = System.currentTimeMillis()
+    private var lastBridgePingMs = System.currentTimeMillis()
 
     private var heartbeatFuture: ScheduledFuture<*>? = null
     private var reconnectFuture: ScheduledFuture<*>? = null
@@ -60,12 +70,12 @@ class BridgeService {
     private val handlerRegistry = HandlerRegistry()
 
     init {
-        // Register handlers
+        // Register real handlers
         handlerRegistry.register("extension/getSelection", com.patchwork.bridge.handlers.SelectionHandler())
         handlerRegistry.register("extension/getOpenFiles", com.patchwork.bridge.handlers.OpenFilesHandler())
         handlerRegistry.register("extension/getWorkspaceFolders", com.patchwork.bridge.handlers.WorkspaceFoldersHandler())
 
-        // Register stubs for all known-unimplemented methods (Tier 1)
+        // Tier 1 stubs: known methods, not yet implemented
         val stubs = listOf(
             "extension/getFileContent",
             "extension/openFile",
@@ -131,12 +141,10 @@ class BridgeService {
             "extension/setDecorations",
             "extension/clearDecorations"
         )
-        val stubHandler = StubHandler()
-        for (method in stubs) {
-            handlerRegistry.register(method, stubHandler)
-        }
+        val stub = StubHandler()
+        for (method in stubs) handlerRegistry.register(method, stub)
 
-        // Start connection on first project open — deferred so IDE is ready
+        // Deferred start — IDE services must be ready before we read lock files
         scheduler.schedule({ connect() }, 2, TimeUnit.SECONDS)
     }
 
@@ -146,41 +154,74 @@ class BridgeService {
 
     // ---------------------------------------------------------------------------
     // Lock file discovery
+    // Matches lockfiles.ts: sort by mtime desc, check isBridge + PID liveness +
+    // startedAt freshness (24h), prefer workspace match.
     // ---------------------------------------------------------------------------
 
-    private data class LockFile(val port: Int, val pid: Long, val authToken: String, val workspace: String)
+    internal data class LockFile(
+        val port: Int,
+        val pid: Long,
+        val authToken: String,
+        val workspace: String,
+        val mtimeMs: Long
+    )
 
-    private fun discoverLockFile(): LockFile? {
+    internal fun discoverLockFile(workspaceHint: String? = activeProject?.basePath): LockFile? {
         val configDir = System.getenv("CLAUDE_CONFIG_DIR")?.let { File(it) }
             ?: File(System.getProperty("user.home"), ".claude")
         val ideDir = File(configDir, "ide")
         if (!ideDir.isDirectory) return null
 
-        val lockFiles = ideDir.listFiles { f -> f.name.endsWith(".lock") } ?: return null
+        val files = ideDir.listFiles { f -> f.name.endsWith(".lock") } ?: return null
 
-        return lockFiles.mapNotNull { f ->
-            try {
-                val json = gson.fromJson(f.readText(), JsonObject::class.java)
-                val isBridge = json.get("isBridge")?.asBoolean ?: false
-                if (!isBridge) return@mapNotNull null
-                val port = f.nameWithoutExtension.toIntOrNull() ?: return@mapNotNull null
-                val pid = json.get("pid")?.asLong ?: return@mapNotNull null
-                val token = json.get("authToken")?.asString ?: return@mapNotNull null
-                val workspace = json.get("workspace")?.asString ?: ""
-                if (!isPidAlive(pid)) return@mapNotNull null
-                LockFile(port, pid, token, workspace)
-            } catch (e: Exception) {
-                LOG.warn("Failed to parse lock file ${f.name}: ${e.message}")
-                null
+        // Sort newest first (mtime descending) — matches lockfiles.ts line 35
+        val sorted = files.sortedByDescending { it.lastModified() }
+
+        val candidates = sorted.mapNotNull { f ->
+            parseLockFile(f) ?: return@mapNotNull null
+        }
+
+        if (candidates.isEmpty()) return null
+
+        // Prefer candidate whose workspace matches the active project
+        if (workspaceHint != null) {
+            val hint = File(workspaceHint).canonicalPath
+            val match = candidates.firstOrNull { c ->
+                c.workspace.isNotEmpty() && File(c.workspace).canonicalPath == hint
             }
-        }.maxByOrNull { it.port }
+            if (match != null) return match
+        }
+
+        // Fall back to newest valid candidate
+        return candidates.first()
+    }
+
+    private fun parseLockFile(f: File): LockFile? {
+        return try {
+            val json = gson.fromJson(f.readText(), JsonObject::class.java)
+            if (json.get("isBridge")?.asBoolean != true) return null
+            val port = f.nameWithoutExtension.toIntOrNull() ?: return null
+            val pid = json.get("pid")?.asLong ?: return null
+            val token = json.get("authToken")?.asString?.takeIf { it.isNotEmpty() } ?: return null
+            val workspace = json.get("workspace")?.asString ?: ""
+
+            // startedAt freshness: drop if older than 24h (matches lockfiles.ts)
+            val startedAt = json.get("startedAt")?.asLong ?: 0L
+            if (startedAt > 0 && System.currentTimeMillis() - startedAt > LOCK_MAX_AGE_MS) return null
+
+            if (!isPidAlive(pid)) return null
+            LockFile(port, pid, token, workspace, f.lastModified())
+        } catch (e: Exception) {
+            LOG.warn("Failed to parse lock file ${f.name}: ${e.message}")
+            null
+        }
     }
 
     private fun isPidAlive(pid: Long): Boolean {
         return try {
             ProcessHandle.of(pid).isPresent
         } catch (_: SecurityException) {
-            true // treat as alive if we can't check
+            true // EPERM → treat as alive
         }
     }
 
@@ -198,28 +239,44 @@ class BridgeService {
         }
 
         val uri = URI("ws://127.0.0.1:${lock.port}")
-        val headers = mapOf("x-claude-code-ide-authorization" to lock.authToken)
+        // Fix #1: correct auth header name (was x-claude-code-ide-authorization)
+        val headers = mapOf(AUTH_HEADER to lock.authToken)
 
-        val client = object : WebSocketClient(uri, org.java_websocket.drafts.Draft_6455(), headers, 30000) {
+        val client = object : WebSocketClient(uri, org.java_websocket.drafts.Draft_6455(), headers, 30_000) {
             override fun onOpen(handshake: ServerHandshake) {
                 if (gen != this@BridgeService.generation.get()) return
                 LOG.info("Bridge WebSocket connected (port=${lock.port})")
-                lastMessageTime = System.currentTimeMillis()
+                // Seed liveness so watchdog doesn't immediately fire
+                lastBridgePingMs = System.currentTimeMillis()
                 reconnectDelay = 1000L
                 sendHello()
-                startHeartbeatWatchdog(gen)
+                startHeartbeat(gen)
             }
 
             override fun onMessage(message: String) {
                 if (gen != this@BridgeService.generation.get()) return
-                lastMessageTime = System.currentTimeMillis()
-                handleIncomingMessage(message)
+                // Fix #4: snapshot activeProject at receipt time, before scheduler delay
+                val projectAtReceipt = activeProject
+                scheduler.submit {
+                    MessageDispatcher(handlerRegistry, gson).dispatch(message, projectAtReceipt) { response ->
+                        if (response != null) sendRaw(response)
+                    }
+                }
+            }
+
+            // Fix #2: liveness is driven by bridge ping frames, not JSON messages.
+            // Java-WebSocket calls onWebsocketPing; we override it to refresh the timestamp
+            // and let the default implementation send the pong frame.
+            override fun onWebsocketPing(conn: org.java_websocket.WebSocket, f: org.java_websocket.framing.Framedata) {
+                if (gen != this@BridgeService.generation.get()) return
+                lastBridgePingMs = System.currentTimeMillis()
+                super.onWebsocketPing(conn, f) // sends the pong
             }
 
             override fun onClose(code: Int, reason: String, remote: Boolean) {
                 if (gen != this@BridgeService.generation.get()) return
                 LOG.info("Bridge WebSocket closed: code=$code reason=$reason remote=$remote")
-                cancelHeartbeatWatchdog()
+                cancelHeartbeat()
                 scheduleReconnect(gen)
             }
 
@@ -242,81 +299,68 @@ class BridgeService {
         val ideVersion = try {
             com.intellij.openapi.application.ApplicationInfo.getInstance().build.toString()
         } catch (_: Exception) { "unknown" }
-
-        val hello = JsonObject().apply {
+        sendNotification("extension/hello", JsonObject().apply {
             addProperty("extensionVersion", EXTENSION_PROTOCOL_VERSION)
             addProperty("packageVersion", PLUGIN_VERSION)
             addProperty("ideVersion", ideVersion)
-        }
-        sendNotification("extension/hello", hello)
+        })
     }
 
     fun sendNotification(method: String, params: JsonObject) {
-        val msg = JsonObject().apply {
+        sendRaw(gson.toJson(JsonObject().apply {
             addProperty("jsonrpc", "2.0")
             addProperty("method", method)
             add("params", params)
-        }
-        sendRaw(gson.toJson(msg))
+        }))
     }
 
     fun sendRaw(text: String) {
         val client = ws ?: return
         if (client.isOpen) {
-            try {
-                client.send(text)
-            } catch (e: Exception) {
-                LOG.warn("sendRaw failed: ${e.message}")
-            }
-        }
-    }
-
-    private fun handleIncomingMessage(message: String) {
-        scheduler.submit {
-            MessageDispatcher(handlerRegistry, gson).dispatch(message, activeProject) { response ->
-                if (response != null) sendRaw(response)
-            }
+            try { client.send(text) } catch (e: Exception) { LOG.warn("sendRaw failed: ${e.message}") }
         }
     }
 
     // ---------------------------------------------------------------------------
-    // Reconnect backoff
+    // Heartbeat: 45s check interval, 120s no-ping → reconnect
+    // Matches vscode-extension/src/connection.ts heartbeatTimer (45s) + lastBridgePong (120s)
+    // ---------------------------------------------------------------------------
+
+    private fun startHeartbeat(gen: Int) {
+        cancelHeartbeat()
+        heartbeatFuture = scheduler.scheduleAtFixedRate({
+            if (gen != this.generation.get()) return@scheduleAtFixedRate
+            val elapsed = System.currentTimeMillis() - lastBridgePingMs
+            if (elapsed > LIVENESS_TIMEOUT_MS) {
+                LOG.warn("No bridge ping for ${elapsed}ms, forcing reconnect")
+                ws?.close()
+            }
+        }, HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS)
+    }
+
+    private fun cancelHeartbeat() {
+        heartbeatFuture?.cancel(false)
+        heartbeatFuture = null
+    }
+
+    // ---------------------------------------------------------------------------
+    // Reconnect backoff: jitter=round(500 + rnd*delay), cap=30s
+    // Matches vscode-extension/src/connection.ts
     // ---------------------------------------------------------------------------
 
     private fun scheduleReconnect(gen: Int) {
         val delay = (500 + Random.nextDouble() * reconnectDelay).roundToLong()
-        reconnectDelay = min(reconnectDelay * 2, 30000L)
+        reconnectDelay = min(reconnectDelay * 2, 30_000L)
         LOG.info("Reconnecting in ${delay}ms (gen=$gen)")
         reconnectFuture = scheduler.schedule({
             if (gen == this.generation.get()) connect()
         }, delay, TimeUnit.MILLISECONDS)
     }
 
-    // ---------------------------------------------------------------------------
-    // Heartbeat watchdog (120s no-message → reconnect)
-    // ---------------------------------------------------------------------------
-
-    private fun startHeartbeatWatchdog(gen: Int) {
-        cancelHeartbeatWatchdog()
-        heartbeatFuture = scheduler.scheduleAtFixedRate({
-            if (gen != this.generation.get()) return@scheduleAtFixedRate
-            val elapsed = System.currentTimeMillis() - lastMessageTime
-            if (elapsed > 120_000) {
-                LOG.warn("No message for ${elapsed}ms, forcing reconnect")
-                ws?.close()
-            }
-        }, 30, 30, TimeUnit.SECONDS)
-    }
-
-    private fun cancelHeartbeatWatchdog() {
-        heartbeatFuture?.cancel(false)
-        heartbeatFuture = null
-    }
-
     fun dispose() {
-        cancelHeartbeatWatchdog()
+        cancelHeartbeat()
         reconnectFuture?.cancel(false)
-        generation.incrementAndGet() // prevent any pending callbacks from acting
+        generation.incrementAndGet()
         ws?.close()
         scheduler.shutdownNow()
     }
