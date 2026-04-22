@@ -128,6 +128,7 @@ export async function executeWithDependencies(
 
   const results = new Map<string, { success: boolean; error?: Error }>();
   const completed = new Set<string>();
+  const failed = new Set<string>(); // C1: track which completed steps failed
   const inProgress = new Set<string>();
   // Store resolver functions to signal when steps complete
   const resolvers = new Map<string, Array<() => void>>();
@@ -157,8 +158,22 @@ export async function executeWithDependencies(
     const deps = waitingFor.get(stepId) ?? [];
     const unresolved = deps.filter((d) => !completed.has(d));
     if (unresolved.length > 0) {
-      // Wait for dependencies
       await Promise.all(unresolved.map(waitForStep));
+    }
+
+    // C1: skip if any upstream dependency failed
+    const failedDep = deps.find((d) => failed.has(d));
+    if (failedDep) {
+      const err = new Error(`Skipped: upstream step "${failedDep}" failed`);
+      results.set(stepId, { success: false, error: err });
+      completed.add(stepId);
+      failed.add(stepId);
+      options.onStepComplete?.(stepId, err);
+      // Unblock any steps waiting on this one
+      const waiting = resolvers.get(stepId) ?? [];
+      for (const resolve of waiting) resolve();
+      resolvers.delete(stepId);
+      return;
     }
 
     inProgress.add(stepId);
@@ -173,6 +188,7 @@ export async function executeWithDependencies(
       stepErr = error instanceof Error ? error : new Error(String(error));
       results.set(stepId, { success: false, error: stepErr });
       completed.add(stepId);
+      failed.add(stepId); // C1: record failure so dependents are skipped
     } finally {
       options.onStepComplete?.(stepId, stepErr);
       inProgress.delete(stepId);
@@ -194,10 +210,16 @@ export async function executeWithDependencies(
       // Start new steps if under concurrency limit
       while (executing.length < options.maxConcurrency && queue.length > 0) {
         const stepId = queue.shift()!;
-        const promise = runStep(stepId).then(() => {
-          executing.splice(executing.indexOf(promise), 1);
+        // C2: push before attaching .then() so indexOf is never -1
+        let resolveSlot!: () => void;
+        const slot = new Promise<void>((r) => {
+          resolveSlot = r;
         });
-        executing.push(promise);
+        executing.push(slot);
+        runStep(stepId).then(() => {
+          executing.splice(executing.indexOf(slot), 1);
+          resolveSlot();
+        });
       }
 
       if (executing.length > 0) {

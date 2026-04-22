@@ -302,6 +302,64 @@ describe("runChainedRecipe", () => {
     expect(result.errorMessage).toMatch(/failed/);
   });
 
+  it("skips dependent steps when upstream fails (C1)", async () => {
+    const executed: string[] = [];
+    const failDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockImplementation(async (tool: string) => {
+        executed.push(tool);
+        if (tool === "fail-tool") throw new Error("upstream boom");
+      }),
+    };
+    const recipe: ChainedRecipe = {
+      name: "r",
+      steps: [
+        { id: "a", tool: "fail-tool" },
+        { id: "b", tool: "ok-tool", awaits: ["a"] },
+      ],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, failDeps);
+    expect(executed).toEqual(["fail-tool"]);
+    expect(result.success).toBe(false);
+  });
+
+  it("does not pass step metadata keys to executeTool (W3)", async () => {
+    const capturedParams: Record<string, unknown>[] = [];
+    const captureDeps = {
+      ...noopDeps,
+      executeTool: vi
+        .fn()
+        .mockImplementation(
+          async (_: string, params: Record<string, unknown>) => {
+            capturedParams.push(params);
+          },
+        ),
+    };
+    const recipe: ChainedRecipe = {
+      name: "r",
+      steps: [
+        {
+          id: "s",
+          tool: "t",
+          awaits: [],
+          optional: true,
+          risk: "high",
+          output: "out",
+          when: "true",
+          myParam: "val",
+        },
+      ],
+    };
+    await runChainedRecipe(recipe, baseOptions, captureDeps);
+    const params = capturedParams[0] ?? {};
+    expect(params).not.toHaveProperty("awaits");
+    expect(params).not.toHaveProperty("optional");
+    expect(params).not.toHaveProperty("risk");
+    expect(params).not.toHaveProperty("when");
+    expect(params).not.toHaveProperty("output");
+    expect(params.myParam).toBe("val");
+  });
+
   it("rejects cyclic dependency graph", async () => {
     const recipe: ChainedRecipe = {
       name: "r",
