@@ -25,10 +25,12 @@ function makeChild(stdoutLines: string[], exitCode = 0) {
     stdout: typeof stdout;
     stderr: typeof stderr;
     kill: () => void;
+    unref: () => void;
   };
   child.stdout = stdout;
   child.stderr = stderr;
   child.kill = () => child.emit("close", 1);
+  child.unref = () => {};
 
   vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
 
@@ -160,10 +162,12 @@ describe("GeminiSubprocessDriver", () => {
       stdout: typeof stdout;
       stderr: typeof stderr;
       kill: () => void;
+      unref: () => void;
     };
     child.stdout = stdout;
     child.stderr = stderr;
     child.kill = () => {};
+    child.unref = () => {};
     vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
 
     setTimeout(() => {

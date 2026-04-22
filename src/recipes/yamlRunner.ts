@@ -509,8 +509,9 @@ async function defaultProviderDriverFn(
         signal: controller.signal,
         model,
       });
-      if (result.errorMessage) {
-        return `[agent step failed: ${result.errorMessage}]`;
+      if (result.exitCode !== undefined && result.exitCode !== 0) {
+        const detail = result.stderrTail ?? result.text ?? "";
+        return `[agent step failed: ${driverName} exited ${result.exitCode}${detail ? ` — ${detail.slice(0, 200)}` : ""}]`;
       }
       if (!result.text) {
         return `[agent step failed: ${driverName} returned empty output (possible timeout or auth error)]`;

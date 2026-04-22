@@ -985,12 +985,8 @@ export class Bridge {
           },
           logger: this.logger,
         });
-        const scheduled = this.recipeScheduler.start();
-        if (scheduled.length > 0) {
-          this.logger.info(
-            `[patchwork] scheduled ${scheduled.length} cron recipe${scheduled.length === 1 ? "" : "s"}`,
-          );
-        }
+        // scheduler.start() deferred to after this.port is set (see below)
+        // so bridgeMcp callback has a valid port when first cron fires.
       }
     }
 
@@ -1615,6 +1611,16 @@ export class Bridge {
       throw err;
     }
     this.port = port;
+
+    // 4a-deferred. Start recipe scheduler now that port is known (bridgeMcp needs a valid port).
+    if (this.recipeScheduler) {
+      const scheduled = this.recipeScheduler.start();
+      if (scheduled.length > 0) {
+        this.logger.info(
+          `[patchwork] scheduled ${scheduled.length} cron recipe${scheduled.length === 1 ? "" : "s"}`,
+        );
+      }
+    }
 
     // 4b. Start WebSocket keepalive heartbeat (keeps MCP session alive during long idle periods)
     this._startWsHeartbeat();

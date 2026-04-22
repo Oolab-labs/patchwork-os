@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { sanitizeEnv } from "../claude/envSanitizer.js";
 import { splitLines } from "../claude/streamParser.js";
 import type {
@@ -82,6 +82,7 @@ export class GeminiSubprocessDriver implements ProviderDriver {
         writeFileSync(settingsFile, JSON.stringify(settings, null, 2), {
           mode: 0o600,
         });
+        chmodSync(settingsFile, 0o600);
       } catch (err) {
         this.log(
           `[GeminiSubprocessDriver] WARN: could not update ~/.gemini/settings.json: ${err instanceof Error ? err.message : String(err)}`,
@@ -98,10 +99,11 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       approvalMode,
     ];
     if (input.model) args.push("-m", input.model);
-    // contextFiles: pass as --include-directories for directory paths
+    // contextFiles: pass as --include-directories; normalize relative paths against workspace
     for (const f of input.contextFiles ?? []) {
       if (typeof f === "string" && f.length > 0 && !f.startsWith("-")) {
-        args.push("--include-directories", f);
+        const abs = isAbsolute(f) ? f : resolve(input.workspace, f);
+        args.push("--include-directories", abs);
       }
     }
 
@@ -125,6 +127,7 @@ export class GeminiSubprocessDriver implements ProviderDriver {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
     });
+    child.unref();
 
     let lineBuf = "";
     let accumulated = "";
