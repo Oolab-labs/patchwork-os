@@ -167,7 +167,7 @@ All values sourced from `vscode-extension/src/constants.ts` and `vscode-extensio
 1. List all `*.lock` files in `${CLAUDE_CONFIG_DIR:-~/.claude}/ide/`
 2. Sort by `mtime` descending (newest first)
 3. For each: parse JSON, require `isBridge: true`, valid `port`, non-empty `authToken`
-4. Check `startedAt` freshness: drop if `now - startedAt > 24h`
+4. Check `startedAt` freshness: missing or non-numeric `startedAt` → treat as `0` (epoch) → `now - 0 > 24h` → rejected. Drop if `now - startedAt > 24h`.
 5. Check PID liveness: `ProcessHandle.of(pid).isPresent`; treat `SecurityException` as alive
 6. Prefer candidate whose `workspace` field (canonical) matches the active project path
 7. Fall back to first remaining candidate
