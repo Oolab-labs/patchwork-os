@@ -1,0 +1,21 @@
+<idea-plugin>
+    <id>com.patchwork.bridge</id>
+    <name>Patchwork Bridge</name>
+    <vendor>Patchwork</vendor>
+
+    <description><![CDATA[
+        Connects IntelliJ IDEA to the Patchwork OS bridge, enabling Claude Code MCP integration.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService
+            serviceInterface="com.patchwork.bridge.BridgeService"
+            serviceImplementation="com.patchwork.bridge.BridgeService"/>
+
+        <projectService
+            serviceInterface="com.patchwork.bridge.ProjectBridgeService"
+            serviceImplementation="com.patchwork.bridge.ProjectBridgeService"/>
+    </extensions>
+</idea-plugin>
