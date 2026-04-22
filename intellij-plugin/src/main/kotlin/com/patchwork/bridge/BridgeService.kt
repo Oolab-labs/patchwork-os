@@ -62,14 +62,14 @@ class BridgeService {
     init {
         // Register handlers
         handlerRegistry.register("extension/getSelection", com.patchwork.bridge.handlers.SelectionHandler())
+        handlerRegistry.register("extension/getOpenFiles", com.patchwork.bridge.handlers.OpenFilesHandler())
+        handlerRegistry.register("extension/getWorkspaceFolders", com.patchwork.bridge.handlers.WorkspaceFoldersHandler())
 
         // Register stubs for all known-unimplemented methods (Tier 1)
         val stubs = listOf(
-            "extension/getOpenFiles",
             "extension/getFileContent",
             "extension/openFile",
             "extension/isDirty",
-            "extension/getWorkspaceFolders",
             "extension/getDiagnostics",
             "extension/readClipboard",
             "extension/writeClipboard",
