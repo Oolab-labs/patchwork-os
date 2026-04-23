@@ -3,6 +3,9 @@ package com.patchwork.bridge.handlers
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
+import com.intellij.codeInsight.intention.IntentionAction
+import com.intellij.codeInspection.LocalQuickFix
+import com.intellij.codeInspection.LocalQuickFixOnPsiElement
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
@@ -122,22 +125,20 @@ class FixAllLintErrorsHandler : BridgeHandler {
 
                 com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
                     // Collect all available quick fixes via DaemonCodeAnalyzer highlights
-                    val highlights = com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
-                        .getHighlights(doc, null, project)
+                    val highlights = collectDaemonHighlights(project, doc)
 
                     for (info in highlights) {
-                        if (info == null) continue
                         // Only auto-fixable (has exactly one fix, or has a "fix all" fix)
-                        val fixes = info.quickFixActionRanges ?: continue
-                        for (fixRange in fixes) {
-                            val fix = fixRange?.first?.action ?: continue
+                        val fixes = highlightQuickFixActions(info)
+                        for (fix in fixes) {
+                            val action = fix as? IntentionAction ?: continue
                             // Only apply fixes that are universally safe (implement BatchQuickFix or have "Fix all" in text)
-                            val name = fix.text
+                            val name = action.text
                             if (!name.contains("Fix all", ignoreCase = true) &&
-                                fix !is com.intellij.codeInspection.LocalQuickFixOnPsiElement &&
-                                fix !is com.intellij.codeInspection.LocalQuickFix) continue
+                                action !is LocalQuickFixOnPsiElement &&
+                                action !is LocalQuickFix) continue
                             try {
-                                fix.invoke(project, null, psiFile)
+                                action.invoke(project, null, psiFile)
                                 appliedCount++
                             } catch (_: Exception) {}
                         }
