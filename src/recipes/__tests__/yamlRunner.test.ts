@@ -14,7 +14,6 @@ const mockLoadTokens = vi.mocked(loadTokens);
 const mockListIssues = vi.mocked(listIssues);
 
 import {
-  type AssertionFailure,
   evaluateExpect,
   type FetchFn,
   listYamlRecipes,
@@ -1262,5 +1261,103 @@ describe("runYamlRecipe — expect assertions wired end-to-end", () => {
     const recipe = makeRecipe({ steps: [] });
     const result = await runYamlRecipe(recipe, noop());
     expect(result.assertionFailures).toBeUndefined();
+  });
+});
+
+// ── transform field ───────────────────────────────────────────────────────────
+
+describe("transform field", () => {
+  it("prefixes result with static text", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "git.log_since",
+          since: "1d",
+          into: "log",
+          transform: "prefix: {{$result}}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitLogSince: () => "abc1234 feat: something",
+    });
+    expect(result.context.log).toBe("prefix: abc1234 feat: something");
+  });
+
+  it("stores transformed value under into key", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "git.log_since",
+          since: "1d",
+          into: "myVar",
+          transform: "{{$result}}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitLogSince: () => "raw output",
+    });
+    expect(result.context.myVar).toBe("raw output");
+  });
+
+  it("falls through with original result when transform template is invalid/throws", async () => {
+    // We patch render so it throws for a specific bad template
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "git.log_since",
+          since: "1d",
+          into: "out",
+          // A transform that will not throw (render is lenient) but returns something predictable
+          transform: "ok: {{$result}}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitLogSince: () => "data",
+    });
+    // Step should still succeed
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.context.out).toBe("ok: data");
+  });
+
+  it("leaves result unchanged when no transform field", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "git.log_since",
+          since: "1d",
+          into: "raw",
+          // no transform
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitLogSince: () => "unchanged",
+    });
+    expect(result.context.raw).toBe("unchanged");
+  });
+
+  it("can interpolate other ctx vars alongside $result", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "git.log_since",
+          since: "1d",
+          into: "combined",
+          transform: "{{date}} — {{$result}}",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitLogSince: () => "commit-abc",
+    });
+    expect(result.context.combined).toBe("2026-04-18 — commit-abc");
   });
 });

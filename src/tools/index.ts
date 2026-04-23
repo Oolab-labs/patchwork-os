@@ -112,6 +112,7 @@ import {
   createGetDiffBetweenRefsTool,
 } from "./gitHistory.js";
 import {
+  createGithubActionsTool,
   createGithubApprovePRTool,
   createGithubCommentIssueTool,
   createGithubCreateIssueTool,
@@ -119,11 +120,13 @@ import {
   createGithubGetIssueTool,
   createGithubGetPRDiffTool,
   createGithubGetRunLogsTool,
+  createGithubIssueTool,
   createGithubListIssuesTool,
   createGithubListPRsTool,
   createGithubListRunsTool,
   createGithubMergePRTool,
   createGithubPostPRReviewTool,
+  createGithubPRTool,
   createGithubViewPRTool,
 } from "./github/index.js";
 import {
@@ -725,6 +728,16 @@ export function registerAllTools(
           createGithubPostPRReviewTool(workspace),
           createGithubApprovePRTool(workspace),
           createGithubMergePRTool(workspace),
+          // Composite intent-based tools
+          createGithubPRTool(
+            workspace,
+            automationHooks
+              ? (r) => automationHooks.handlePullRequest(r)
+              : undefined,
+            config.githubDefaultRepo,
+          ),
+          createGithubIssueTool(workspace),
+          createGithubActionsTool(workspace, config.githubDefaultRepo),
           createGetAICommentsTool(extensionClient),
           createCreateIssueFromAICommentTool(
             workspace,
@@ -896,6 +909,9 @@ export const TOOL_CATEGORIES: Record<string, string[]> = {
   githubGetRunLogs: ["github"],
   githubGetPRDiff: ["github"],
   githubPostPRReview: ["github"],
+  githubPR: ["github"],
+  githubIssue: ["github"],
+  githubActions: ["github"],
   getPRTemplate: ["github"],
   enrichCommit: ["github"],
   getCommitsForIssue: ["github"],

@@ -119,6 +119,64 @@ export function clearRegistry(): void {
 }
 
 /**
+ * Register tools from a loaded plugin into the recipe tool registry.
+ *
+ * Plugin tools use a flat `name` (e.g. "myPrefix_doThing") rather than the
+ * "namespace.action" convention used by built-in tools. We derive a namespace
+ * from the tool name prefix and wrap the plugin handler so it satisfies
+ * ToolExecute.
+ *
+ * Rules:
+ *  - If a tool with the same ID is already registered, skip it (built-ins win).
+ *  - Errors in individual tool registration are swallowed — other tools proceed.
+ */
+export function registerPluginTools(
+  tools: Array<{
+    name: string;
+    handler: (...args: unknown[]) => Promise<unknown>;
+    schema: unknown;
+  }>,
+): number {
+  let registered = 0;
+  for (const t of tools) {
+    if (!t.name || hasTool(t.name)) continue;
+    try {
+      // Derive namespace from tool name: everything before the first underscore,
+      // or the full name if there is no underscore.
+      const underscoreIdx = t.name.indexOf("_");
+      const namespace =
+        underscoreIdx > 0 ? t.name.slice(0, underscoreIdx) : t.name;
+
+      const execute: ToolExecute = async (context) => {
+        const result = await t.handler(context.params);
+        if (result === null || result === undefined) return null;
+        return typeof result === "string" ? result : JSON.stringify(result);
+      };
+
+      registerTool({
+        id: t.name,
+        namespace,
+        description:
+          ((t.schema as Record<string, unknown> | null)?.description as
+            | string
+            | undefined) ?? `Plugin tool: ${t.name}`,
+        paramsSchema:
+          (t.schema as Record<string, unknown> | null)?.inputSchema ?? {},
+        outputSchema: {},
+        riskDefault: "low",
+        isWrite: false,
+        execute,
+      });
+      registered++;
+    } catch {
+      // skip — duplicate guard in registerTool already throws, but hasTool above
+      // guards against that. Any other unexpected error is non-fatal.
+    }
+  }
+  return registered;
+}
+
+/**
  * Returns true if the given tool id is a registered connector-backed tool.
  * Drives fixture-backed mocking decisions.
  */

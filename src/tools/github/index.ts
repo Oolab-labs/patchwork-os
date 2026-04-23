@@ -3,6 +3,11 @@ export {
   createGithubListRunsTool,
 } from "./actions.js";
 export {
+  createGithubActionsTool,
+  createGithubIssueTool,
+  createGithubPRTool,
+} from "./composite.js";
+export {
   createGithubCommentIssueTool,
   createGithubCreateIssueTool,
   createGithubGetIssueTool,

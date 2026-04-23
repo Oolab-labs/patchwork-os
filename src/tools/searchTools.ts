@@ -9,7 +9,7 @@ export function createSearchToolsTool(transport: McpTransport) {
     schema: {
       name: "searchTools",
       description:
-        "Find available tools by keyword or category. Use before browsing tools/list to avoid loading all schemas.",
+        "Find available tools by keyword or category. Use before browsing tools/list to avoid loading all schemas. In --lazy-tools mode, tool schemas are not included in the initial tool list — call this tool first to find the tool name, then use tools/schema to get the full input schema.",
       annotations: { readOnlyHint: true },
       cache_control: { type: "ephemeral" as const },
       inputSchema: {

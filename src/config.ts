@@ -63,6 +63,8 @@ export interface Config {
   recipeMaxDepth: number;
   /** Recipe chaining: dry-run mode (validate only, don't execute). Default false. */
   recipeDryRun: boolean;
+  /** Lazy-tools mode: tools/list omits inputSchema; clients call tools/schema before tools/call. Default false. */
+  lazyTools: boolean;
 }
 
 const DEFAULT_ALLOWLIST = [
@@ -485,6 +487,7 @@ export function parseConfig(argv: string[]): Config {
   const plugins: string[] = [...(fileConfig.plugins ?? [])];
   let auditLogPath: string | null = null;
   let fullMode = fileConfig.fullMode ?? true;
+  let lazyTools = false;
   let maxSessions: number = fileConfig.maxSessions ?? 5;
   if (
     fileConfig.maxSessions !== undefined &&
@@ -692,6 +695,9 @@ export function parseConfig(argv: string[]): Config {
       case "--slim":
         fullMode = false;
         break;
+      case "--lazy-tools":
+        lazyTools = true;
+        break;
       case "--max-sessions": {
         const msStr = requireArg(args, ++i, "--max-sessions");
         const ms = Number.parseInt(msStr, 10);
@@ -796,6 +802,7 @@ Options:
   --lsp-verbosity <level>   Hover/LSP output verbosity: "minimal" (type sig only, ~60% smaller),
                             "normal" (default), "verbose" (all fields)
   --slim                    Register only the ~60 IDE-exclusive tools (LSP, debugger, editor state).
+  --lazy-tools              Strip inputSchema from tools/list responses. Clients call tools/schema before tools/call. Reduces token usage ~85% in tool-heavy workflows. Default: off.
                             Default is full mode (~140 tools: adds git, terminal, file ops, HTTP, GitHub).
   --full                    (default — flag retained for backward compatibility) Explicitly request full tool set.
   --vps                     VPS/headless mode: expands allowlist with curl, systemctl, docker, tar, dig, openssl, etc.
@@ -1005,5 +1012,6 @@ Environment Variables:
     recipeMaxConcurrency: 4,
     recipeMaxDepth: 3,
     recipeDryRun: false,
+    lazyTools,
   };
 }
