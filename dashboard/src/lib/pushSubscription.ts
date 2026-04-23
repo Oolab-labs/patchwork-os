@@ -36,7 +36,7 @@ export async function subscribeToPush(vapidPublicKey: string): Promise<boolean> 
   try {
     subscription = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
     });
   } catch (err) {
     console.error("[pwa] Push subscription failed:", err);

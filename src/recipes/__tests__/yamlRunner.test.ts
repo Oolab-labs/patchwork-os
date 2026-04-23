@@ -34,9 +34,12 @@ function makeRecipe(overrides: Partial<YamlRecipe> = {}): YamlRecipe {
   };
 }
 
+const tmpLogDir = mkdtempSync(path.join(os.tmpdir(), "yamlrunner-test-"));
+
 function noop(): RunnerDeps {
   return {
     now: () => new Date("2026-04-18T08:00:00Z"),
+    logDir: tmpLogDir,
     readFile: () => {
       throw new Error("not found");
     },

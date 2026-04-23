@@ -139,12 +139,12 @@ export default function RunsPage() {
             </thead>
             <tbody>
               {runs.map((r) => {
-                const isExpanded = expanded === r.taskId;
-                const key = r.taskId;
+                const isExpanded = expanded === String(r.seq);
+                const key = String(r.seq);
                 return (
                   <React.Fragment key={key}>
                     <tr
-                      onClick={() => setExpanded(isExpanded ? null : r.taskId)}
+                      onClick={() => setExpanded(isExpanded ? null : String(r.seq))}
                       style={{ cursor: "pointer" }}
                     >
                       <td className="mono muted">{fmtWhen(r.doneAt)}</td>

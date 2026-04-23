@@ -1384,7 +1384,7 @@ export class Bridge {
       }
 
       // Fall through to YAML runner for .yaml/.yml recipes.
-      const { loadYamlRecipe, runYamlRecipe } = await import(
+      const { loadYamlRecipe, dispatchRecipe, buildChainedDeps } = await import(
         "./recipes/yamlRunner.js"
       );
       const ymlCandidates = [
@@ -1413,15 +1413,21 @@ export class Bridge {
       try {
         const recipe = loadYamlRecipe(ymlPath);
         const taskId = `yaml-recipe-${name}-${Date.now()}`;
-        // Run in background — caller gets taskId immediately.
-        runYamlRecipe(recipe, {
+        const runnerDeps = {
           workdir: this.config.workspace,
           claudeCodeFn,
+        };
+        // Run in background — caller gets taskId immediately.
+        dispatchRecipe(recipe, {
+          ...runnerDeps,
+          chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
         })
           .then((result) => {
-            this.logger.info?.(
-              `[recipe] "${name}" finished: ${result.stepsRun} steps`,
-            );
+            const steps =
+              "stepsRun" in result
+                ? result.stepsRun
+                : (result.summary?.total ?? "?");
+            this.logger.info?.(`[recipe] "${name}" finished: ${steps} steps`);
           })
           .catch((err: unknown) => {
             this.logger.warn?.(

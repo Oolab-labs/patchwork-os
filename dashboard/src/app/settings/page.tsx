@@ -672,7 +672,7 @@ function MobileNotificationsCard() {
           <p style={{ fontSize: 13, color: "var(--fg-3)" }}>Push notifications are not supported in this browser.</p>
         ) : (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {status !== "subscribed" ? (
+            {status !== "subscribed" && status !== "unsubscribing" ? (
               <button
                 type="button"
                 onClick={handleSubscribe}
