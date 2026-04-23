@@ -86,6 +86,7 @@ const TIER_MAP: Record<string, RiskTier> = {
   gitCheckout: "medium",
 
   // ── high: remote state, destructive, or side-effect externally ────────────
+  Bash: "high",
   gitCommit: "high",
   gitPush: "high",
   gitPull: "high",
