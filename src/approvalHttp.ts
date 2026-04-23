@@ -190,6 +190,7 @@ async function dispatchApprovalWebhook(
     tier: string;
     callId: string;
     requestedAt: number;
+    expiresAt: number;
     summary?: string;
   },
 ): Promise<void> {
@@ -237,7 +238,11 @@ async function dispatchApprovalWebhook(
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...payload,
+        requestedAt: new Date(payload.requestedAt).toISOString(),
+        expiresAt: new Date(payload.expiresAt).toISOString(),
+      }),
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -563,6 +568,7 @@ async function handleApprovalRequest(
       tier,
       callId,
       requestedAt: now,
+      expiresAt: now + 5 * 60_000,
       summary,
     }).catch(() => {});
   }

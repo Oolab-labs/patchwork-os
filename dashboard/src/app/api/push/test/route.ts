@@ -1,25 +1,36 @@
 import { NextResponse } from "next/server";
+import webpush from "web-push";
+import { getSubscriptions } from "@/lib/pushStore";
 
-const RELAY_URL = process.env.PUSH_RELAY_URL;
-const RELAY_TOKEN = process.env.PUSH_RELAY_TOKEN;
+const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY ?? "";
+const vapidSubject = process.env.VAPID_SUBJECT ?? "mailto:admin@example.com";
 
 export async function POST() {
-  if (!RELAY_URL || !RELAY_TOKEN) {
-    return NextResponse.json({ error: "Push relay not configured" }, { status: 503 });
+  if (!vapidPublicKey || !vapidPrivateKey) {
+    return NextResponse.json({ error: "VAPID keys not configured" }, { status: 503 });
   }
 
-  try {
-    const res = await fetch(`${RELAY_URL}/push/test`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${RELAY_TOKEN}`,
-      },
-      body: "{}",
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 502 });
+  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
+
+  const subs = getSubscriptions();
+  if (subs.length === 0) {
+    return NextResponse.json({ error: "No subscriptions registered" }, { status: 404 });
   }
+
+  const payload = JSON.stringify({
+    toolName: "Bash",
+    tier: "high",
+    callId: "test-" + Date.now(),
+    summary: "Test notification from Patchwork",
+    requestedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+  });
+
+  const results = await Promise.allSettled(
+    subs.map((sub) => webpush.sendNotification(sub, payload)),
+  );
+
+  const sent = results.filter((r) => r.status === "fulfilled").length;
+  return NextResponse.json({ ok: true, sent, total: subs.length });
 }
