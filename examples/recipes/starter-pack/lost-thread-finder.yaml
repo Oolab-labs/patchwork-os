@@ -20,7 +20,7 @@ steps:
     agent: false
     tool: inbox.search
     params:
-      query: 'from:me after:30d ("I\'ll get back" OR "let me check" OR "I\'ll send" OR "by next week" OR "by Friday")'
+      query: "from:me after:30d (\"I'll get back\" OR \"let me check\" OR \"I'll send\" OR \"by next week\" OR \"by Friday\")"
     output: promises
     risk: low
 

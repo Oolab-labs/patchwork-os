@@ -14,6 +14,13 @@ import path from "node:path";
 const testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-test-"));
 process.env.CLAUDE_CONFIG_DIR = testConfigDir;
 
+// Force file-backed token storage in tests so `security add-generic-password`
+// is never shelled out — avoids the macOS "Keychain Not Found" prompt when
+// test workers run in an exec context that can't see the login keychain.
+// Also isolates tests from the user's real keychain entries.
+process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+process.env.PATCHWORK_HOME = testConfigDir;
+
 // Clean up the temp dir when the worker exits.
 process.on("exit", () => {
   try {

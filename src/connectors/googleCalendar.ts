@@ -12,16 +12,14 @@
  */
 
 import crypto from "node:crypto";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import {
+  deleteSecretJsonSync,
+  getSecretJsonSync,
+  storeSecretJsonSync,
+} from "./tokenStorage.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"];
 const REDIRECT_URI = process.env.PATCHWORK_DASHBOARD_URL
@@ -89,25 +87,44 @@ function isConfigured(): boolean {
 // ── Token storage ─────────────────────────────────────────────────────────────
 
 export function loadTokens(): CalendarTokens | null {
+  const secureTokens = getSecretJsonSync<CalendarTokens>("google-calendar");
+  if (secureTokens) {
+    return secureTokens;
+  }
+
   const tokenPath = getTokenPath();
   if (!existsSync(tokenPath)) return null;
   try {
-    return JSON.parse(readFileSync(tokenPath, "utf-8")) as CalendarTokens;
+    const tokens = JSON.parse(
+      readFileSync(tokenPath, "utf-8"),
+    ) as CalendarTokens;
+    saveTokens(tokens);
+    return tokens;
   } catch {
     return null;
   }
 }
 
 function saveTokens(tokens: CalendarTokens): void {
+  storeSecretJsonSync("google-calendar", tokens);
+
   const tokenPath = getTokenPath();
-  mkdirSync(path.dirname(tokenPath), { recursive: true, mode: 0o700 });
-  writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
-  chmodSync(tokenPath, 0o600);
+  if (existsSync(tokenPath)) {
+    try {
+      unlinkSync(tokenPath);
+    } catch {}
+  }
 }
 
 function deleteTokens(): void {
+  deleteSecretJsonSync("google-calendar");
+
   const tokenPath = getTokenPath();
-  if (existsSync(tokenPath)) unlinkSync(tokenPath);
+  if (existsSync(tokenPath)) {
+    try {
+      unlinkSync(tokenPath);
+    } catch {}
+  }
 }
 
 export function getStatus(): ConnectorStatus {

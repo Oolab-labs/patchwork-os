@@ -17,6 +17,14 @@ import type { Logger } from "./logger.js";
 export type RunTrigger = "cron" | "webhook" | "recipe";
 export type RunStatus = "done" | "error" | "cancelled" | "interrupted";
 
+export interface RunStepResult {
+  id: string;
+  tool?: string;
+  status: "ok" | "skipped" | "error";
+  error?: string;
+  durationMs: number;
+}
+
 export interface RecipeRun {
   /** Monotonic sequence id within the process — stable for pagination. */
   seq: number;
@@ -42,6 +50,15 @@ export interface RecipeRun {
   errorMessage?: string;
   /** Duration ms = doneAt - (startedAt ?? createdAt). */
   durationMs: number;
+  /** Per-step execution results — present when run via yamlRunner or chainedRunner. */
+  stepResults?: RunStepResult[];
+  /** Assertion failures from the recipe's expect block — present when assertions fail. */
+  assertionFailures?: Array<{
+    assertion: string;
+    expected: unknown;
+    actual: unknown;
+    message: string;
+  }>;
 }
 
 const MAX_OUTPUT_TAIL = 2_000;
@@ -172,6 +189,12 @@ export class RecipeRunLog {
     out = [...out].sort((a, b) => b.seq - a.seq);
     const limit = Math.min(Math.max(q.limit ?? 100, 1), 500);
     return out.slice(0, limit);
+  }
+
+  /** Return a single run by its monotonic seq, or null if not found. */
+  getBySeq(seq: number): RecipeRun | null {
+    this.syncFromDisk();
+    return this.runs.find((r) => r.seq === seq) ?? null;
   }
 
   /** Test/inspection helper — current in-memory size. */

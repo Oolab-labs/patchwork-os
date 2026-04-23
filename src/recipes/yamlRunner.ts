@@ -33,6 +33,17 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { captureFixture } from "../connectors/fixtureRecorder.js";
+import { normalizeRecipeForRuntime } from "./legacyRecipeCompat.js";
+
+// Import tool registry and trigger tool self-registration
+import {
+  applyToolOutputContext,
+  executeTool,
+  getTool,
+  hasTool,
+} from "./toolRegistry.js";
+import "./tools/index.js";
 
 export interface YamlStep {
   tool?: string;
@@ -50,11 +61,94 @@ export interface YamlTrigger {
   filter?: string;
 }
 
+export interface YamlRecipeExpect {
+  stepsRun?: number;
+  outputs?: string[];
+  errorMessage?: string | null;
+  context?: Record<string, string>;
+}
+
+export interface AssertionFailure {
+  assertion: string;
+  expected: unknown;
+  actual: unknown;
+  message: string;
+}
+
+export function evaluateExpect(
+  result: Pick<RunResult, "stepsRun" | "outputs" | "context" | "errorMessage">,
+  expect: YamlRecipeExpect,
+): AssertionFailure[] {
+  const failures: AssertionFailure[] = [];
+
+  if (expect.stepsRun !== undefined && result.stepsRun !== expect.stepsRun) {
+    failures.push({
+      assertion: "stepsRun",
+      expected: expect.stepsRun,
+      actual: result.stepsRun,
+      message: `Expected stepsRun=${expect.stepsRun}, got ${result.stepsRun}`,
+    });
+  }
+
+  if (expect.errorMessage !== undefined) {
+    const expected = expect.errorMessage ?? null;
+    const actual = result.errorMessage ?? null;
+    if (expected !== actual) {
+      failures.push({
+        assertion: "errorMessage",
+        expected,
+        actual,
+        message:
+          expected === null
+            ? `Expected clean run (no error), got: ${actual}`
+            : `Expected error "${expected}", got: ${actual === null ? "(none)" : actual}`,
+      });
+    }
+  }
+
+  if (expect.outputs !== undefined) {
+    for (const key of expect.outputs) {
+      if (!result.outputs.includes(key)) {
+        failures.push({
+          assertion: "outputs",
+          expected: key,
+          actual: result.outputs,
+          message: `Expected output key "${key}" not found in [${result.outputs.join(", ")}]`,
+        });
+      }
+    }
+  }
+
+  if (expect.context !== undefined) {
+    for (const [key, expectedVal] of Object.entries(expect.context)) {
+      const actual = result.context[key];
+      if (actual === undefined) {
+        failures.push({
+          assertion: `context.${key}`,
+          expected: expectedVal,
+          actual: undefined,
+          message: `Expected context key "${key}" to equal "${expectedVal}", but key is missing`,
+        });
+      } else if (!actual.includes(expectedVal)) {
+        failures.push({
+          assertion: `context.${key}`,
+          expected: expectedVal,
+          actual,
+          message: `Expected context["${key}"] to contain "${expectedVal}", got "${actual}"`,
+        });
+      }
+    }
+  }
+
+  return failures;
+}
+
 export interface YamlRecipe {
   name: string;
   description?: string;
   trigger: YamlTrigger;
   steps: YamlStep[];
+  expect?: YamlRecipeExpect;
   output?: { path: string };
 }
 
@@ -64,6 +158,13 @@ export type FetchFn = (
   url: string,
   init?: { headers?: Record<string, string> },
 ) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
+
+export interface MockToolConnector {
+  invoke<TOutput = unknown>(
+    operation: string,
+    input?: unknown,
+  ): Promise<TOutput>;
+}
 
 export interface RunnerDeps {
   now?: () => Date;
@@ -97,14 +198,12 @@ export interface RunnerDeps {
     prompt: string,
     model: string | undefined,
   ) => Promise<string>;
-}
-
-export interface StepResult {
-  id: string;
-  tool?: string;
-  status: "ok" | "skipped" | "error";
-  error?: string;
-  durationMs: number;
+  /** Mock connector replays used by `patchwork recipe test`. */
+  mockConnectors?: Partial<Record<string, MockToolConnector>>;
+  /** Directory to store recorded connector fixtures for `patchwork recipe record`. */
+  recordFixturesDir?: string;
+  /** Suppress run logs / notifications for mocked recipe test execution. */
+  testMode?: boolean;
 }
 
 export interface RunResult {
@@ -114,7 +213,25 @@ export interface RunResult {
   context: RunContext;
   stepResults: StepResult[];
   errorMessage?: string;
+  assertionFailures?: AssertionFailure[];
 }
+
+export type StepResult = {
+  id: string;
+  tool?: string;
+  status: "ok" | "skipped" | "error";
+  error?: string;
+  durationMs: number;
+};
+
+export type StepDeps = Required<
+  Omit<RunnerDeps, "now" | "logDir" | "recordFixturesDir">
+> & {
+  workdir: string;
+  logDir?: string;
+  recordFixturesDir?: string;
+  testMode: boolean;
+};
 
 // Strip tool-call narration some models (e.g. Gemini) prepend before the markdown block.
 function stripLeadingNarration(text: string): string {
@@ -132,10 +249,11 @@ export function loadYamlRecipe(filePath: string): YamlRecipe {
 }
 
 export function validateYamlRecipe(raw: unknown): YamlRecipe {
-  if (typeof raw !== "object" || raw === null) {
+  const normalized = normalizeRecipeForRuntime(raw);
+  if (typeof normalized !== "object" || normalized === null) {
     throw new Error("recipe must be an object");
   }
-  const r = raw as Record<string, unknown>;
+  const r = normalized as Record<string, unknown>;
   if (typeof r.name !== "string" || !r.name) {
     throw new Error("recipe.name required");
   }
@@ -299,28 +417,8 @@ export async function runYamlRecipe(
     if (result !== null) {
       if (step.into) {
         ctx[step.into] = result;
-        // For Gmail steps, also expose flat dot-notation keys for render()
-        const isGmailStep =
-          step.tool === "gmail.fetch_unread" ||
-          step.tool === "gmail.search" ||
-          step.tool === "gmail.fetch_thread";
-        if (isGmailStep) {
-          try {
-            const parsed = JSON.parse(result) as Record<string, unknown>;
-            for (const [k, v] of Object.entries(parsed)) {
-              if (typeof v === "string" || typeof v === "number") {
-                ctx[`${step.into}.${k}`] = String(v);
-              }
-            }
-            // Also expose messages array as JSON string for agent prompts
-            if (Array.isArray((parsed as { messages?: unknown }).messages)) {
-              ctx[`${step.into}.json`] = JSON.stringify(
-                (parsed as { messages: unknown[] }).messages,
-              );
-            }
-          } catch {
-            // non-JSON result, skip
-          }
+        if (step.tool) {
+          applyToolOutputContext(step.tool, step.into, result, ctx);
         }
       }
       if (step.tool === "file.write" || step.tool === "file.append") {
@@ -329,42 +427,60 @@ export async function runYamlRecipe(
     }
   }
 
-  // Write to RecipeRunLog so the dashboard Runs page shows this execution
-  try {
-    const { RecipeRunLog } = await import("../runLog.js");
-    const { homedir } = await import("node:os");
-    const resolvedLogDir = deps.logDir ?? path.join(homedir(), ".patchwork");
-    const log = new RecipeRunLog({ dir: resolvedLogDir });
-    const trigger = (recipe.trigger as { type?: string })?.type ?? "manual";
-    const createdAt = now.getTime();
-    const doneAt = Date.now();
-    const outputTail = stepResults
-      .map(
-        (s) =>
-          `[${s.status}] ${s.tool ?? s.id}${s.error ? `: ${s.error}` : ""}`,
+  // Evaluate expect block before persisting so failures are stored in the run log
+  const assertionFailures = recipe.expect
+    ? evaluateExpect(
+        { stepsRun, outputs, context: ctx, errorMessage: runError },
+        recipe.expect,
       )
-      .join("\n")
-      .slice(0, 2000);
-    log.appendDirect({
-      taskId: `yaml:${recipe.name}:${createdAt}`,
-      recipeName: recipe.name,
-      trigger: (["cron", "webhook", "recipe"].includes(trigger)
-        ? trigger
-        : "recipe") as "cron" | "webhook" | "recipe",
-      status: runError ? "error" : "done",
-      createdAt,
-      startedAt: createdAt,
-      doneAt,
-      durationMs: doneAt - createdAt,
-      outputTail,
-      errorMessage: runError,
-    });
-  } catch {
-    // Non-fatal — run log write failure should never break recipe execution
+    : [];
+
+  // Write to RecipeRunLog so the dashboard Runs page shows this execution
+  if (!stepDeps.testMode) {
+    try {
+      const { RecipeRunLog } = await import("../runLog.js");
+      const { homedir } = await import("node:os");
+      const resolvedLogDir = deps.logDir ?? path.join(homedir(), ".patchwork");
+      const log = new RecipeRunLog({ dir: resolvedLogDir });
+      const trigger = (recipe.trigger as { type?: string })?.type ?? "manual";
+      const createdAt = now.getTime();
+      const doneAt = Date.now();
+      const outputTail = stepResults
+        .map(
+          (s) =>
+            `[${s.status}] ${s.tool ?? s.id}${s.error ? `: ${s.error}` : ""}`,
+        )
+        .join("\n")
+        .slice(0, 2000);
+      log.appendDirect({
+        taskId: `yaml:${recipe.name}:${createdAt}`,
+        recipeName: recipe.name,
+        trigger: (["cron", "webhook", "recipe"].includes(trigger)
+          ? trigger
+          : "recipe") as "cron" | "webhook" | "recipe",
+        status: runError ? "error" : "done",
+        createdAt,
+        startedAt: createdAt,
+        doneAt,
+        durationMs: doneAt - createdAt,
+        outputTail,
+        errorMessage: runError,
+        stepResults: stepResults.map((s) => ({
+          id: s.id,
+          tool: s.tool,
+          status: s.status,
+          error: s.error,
+          durationMs: s.durationMs,
+        })),
+        ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
+      });
+    } catch {
+      // Non-fatal — run log write failure should never break recipe execution
+    }
   }
 
   // Notify via Slack if any step failed
-  if (runError) {
+  if (runError && !stepDeps.testMode) {
     try {
       const { isConnected, postMessage } = await import(
         "../connectors/slack.js"
@@ -408,13 +524,127 @@ export async function runYamlRecipe(
     context: ctx,
     stepResults,
     errorMessage: runError,
+    ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
   };
 }
 
-type StepDeps = Required<Omit<RunnerDeps, "now" | "logDir">> & {
-  workdir: string;
-  logDir?: string;
-};
+export async function executeStep(
+  step: YamlStep,
+  ctx: RunContext,
+  deps: StepDeps,
+): Promise<string | null> {
+  const toolId = step.tool;
+  if (!toolId) {
+    return null;
+  }
+
+  // Check if tool is registered in the new registry
+  if (hasTool(toolId)) {
+    const tool = getTool(toolId);
+    // Build params with template rendering for string values
+    const params: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(step)) {
+      if (key === "tool" || key === "agent" || key === "into") continue;
+      if (typeof value === "string") {
+        params[key] = render(value, ctx);
+      } else {
+        params[key] = value;
+      }
+    }
+
+    // Check if mock connector is available for this tool
+    if (deps.mockConnectors && deps.mockConnectors[toolId]) {
+      return deps.mockConnectors[toolId].invoke("execute", params);
+    }
+
+    if (
+      tool &&
+      deps.recordFixturesDir &&
+      tool.namespace !== "file" &&
+      tool.namespace !== "git" &&
+      tool.namespace !== "diagnostics"
+    ) {
+      return captureFixture(
+        path.join(deps.recordFixturesDir, `${tool.namespace}.json`),
+        tool.namespace,
+        toolId.split(".")[1] ?? toolId,
+        params,
+        async () => executeTool(toolId, { params, step, ctx, deps }),
+      );
+    }
+
+    return executeTool(toolId, { params, step, ctx, deps });
+  }
+
+  // Unknown tool — skip, don't throw (forward compat)
+  return null;
+}
+
+/** Minimal `{{ expr }}` renderer — replaces against flat context map. */
+export function render(template: string, ctx: RunContext): string {
+  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr) => {
+    const key = expr.trim();
+    return Object.hasOwn(ctx, key) ? (ctx[key] ?? "") : "";
+  });
+}
+
+function expandHome(p: string): string {
+  if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
+
+function parseSinceToGitArg(since: string): string {
+  const m = /^(\d+)(h|d)$/i.exec(since.trim());
+  if (!m) return since;
+  const [, num, unit = "h"] = m;
+  return unit.toLowerCase() === "h" ? `${num} hours ago` : `${num} days ago`;
+}
+
+function defaultGitLogSince(since: string, workdir?: string): string {
+  try {
+    const sinceArg = parseSinceToGitArg(since);
+    const result = spawnSync(
+      "git",
+      ["log", "--oneline", `--since=${sinceArg}`],
+      {
+        cwd: workdir ?? process.cwd(),
+        encoding: "utf-8",
+        timeout: 5000,
+      },
+    );
+    if (result.error || result.status !== 0) return "(git log unavailable)";
+    return (result.stdout ?? "").trim();
+  } catch {
+    return "(git log unavailable)";
+  }
+}
+
+function defaultGitStaleBranches(days: number, workdir?: string): string {
+  try {
+    const cutoff = new Date(Date.now() - days * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const r = spawnSync(
+      "git",
+      [
+        "branch",
+        "--no-column",
+        "--sort=-committerdate",
+        "--format=%(refname:short)",
+        `--since=${cutoff}`,
+      ],
+      {
+        cwd: workdir ?? process.cwd(),
+        encoding: "utf-8",
+        timeout: 5000,
+      },
+    );
+    if (r.error || r.status !== 0) return "(git branches unavailable)";
+    return (r.stdout ?? "").trim();
+  } catch {
+    return "(git branches unavailable)";
+  }
+}
 
 /** Resolve all RunnerDeps to concrete StepDeps with production defaults filled in. */
 function resolveStepDeps(deps: RunnerDeps): StepDeps {
@@ -447,6 +677,8 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
     claudeFn: deps.claudeFn ?? defaultClaudeFn,
     claudeCodeFn: deps.claudeCodeFn ?? defaultClaudeCodeFn,
     providerDriverFn: deps.providerDriverFn ?? defaultProviderDriverFn,
+    mockConnectors: deps.mockConnectors ?? {},
+    recordFixturesDir: deps.recordFixturesDir,
     getGmailToken:
       deps.getGmailToken ??
       (async () => {
@@ -454,6 +686,7 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
         return getValidAccessToken();
       }),
     logDir: deps.logDir,
+    testMode: deps.testMode ?? false,
   };
 }
 
@@ -577,448 +810,6 @@ async function defaultClaudeFn(prompt: string, model: string): Promise<string> {
     return data.content?.[0]?.text ?? "[agent step failed: empty response]";
   } catch (err) {
     return `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`;
-  }
-}
-
-async function executeStep(
-  step: YamlStep,
-  ctx: RunContext,
-  deps: StepDeps,
-): Promise<string | null> {
-  switch (step.tool) {
-    case "file.read": {
-      const p = render(step.path as string, ctx);
-      try {
-        return deps.readFile(p);
-      } catch {
-        if (step.optional) return "";
-        throw new Error(`file.read: could not read ${p}`);
-      }
-    }
-
-    case "file.write": {
-      const p = render(step.path as string, ctx);
-      const content = render(step.content as string, ctx);
-      deps.writeFile(p, content);
-      return content;
-    }
-
-    case "file.append": {
-      const p = render(step.path as string, ctx);
-      const content = render(step.content as string, ctx);
-      const when = step.when as string | undefined;
-      if (when && !evalWhen(when, ctx)) return null;
-      deps.appendFile(p, content);
-      return content;
-    }
-
-    case "git.log_since": {
-      const since = render(String(step.since ?? "24h"), ctx);
-      return deps.gitLogSince(since, deps.workdir);
-    }
-
-    case "git.stale_branches": {
-      const days = typeof step.days === "number" ? step.days : 30;
-      return deps.gitStaleBranches(days, deps.workdir);
-    }
-
-    case "diagnostics.get": {
-      const uri = render(String(step.uri ?? ""), ctx);
-      return deps.getDiagnostics(uri);
-    }
-
-    case "gmail.fetch_unread": {
-      const since = render(String(step.since ?? "24h"), ctx);
-      const MAX_GMAIL_RESULTS = 50;
-      const max = Math.min(
-        typeof step.max === "number" ? step.max : 20,
-        MAX_GMAIL_RESULTS,
-      );
-      const query = `is:unread newer_than:${sinceToGmailQuery(since)}`;
-      return gmailSearch(query, max, deps);
-    }
-
-    case "gmail.search": {
-      const query = render(String(step.query ?? ""), ctx);
-      const MAX_GMAIL_RESULTS = 50;
-      const max = Math.min(
-        typeof step.max === "number" ? step.max : 10,
-        MAX_GMAIL_RESULTS,
-      );
-      return gmailSearch(query, max, deps);
-    }
-
-    case "gmail.fetch_thread": {
-      const id = render(String(step.id ?? ""), ctx);
-      return gmailFetchThread(id, deps);
-    }
-
-    case "github.list_issues": {
-      const { listIssues } = await import("../connectors/github.js");
-      const repo = step.repo ? render(String(step.repo), ctx) : undefined;
-      const assignee = step.assignee
-        ? render(String(step.assignee), ctx)
-        : "@me";
-      const limit = typeof step.max === "number" ? step.max : 20;
-      const issues = await listIssues({ repo, assignee, limit });
-      return JSON.stringify({ count: issues.length, issues });
-    }
-
-    case "github.list_prs": {
-      const { listPRs } = await import("../connectors/github.js");
-      const repo = step.repo ? render(String(step.repo), ctx) : undefined;
-      const author = step.author ? render(String(step.author), ctx) : "@me";
-      const limit = typeof step.max === "number" ? step.max : 20;
-      const prs = await listPRs({ repo, author, limit });
-      return JSON.stringify({ count: prs.length, prs });
-    }
-
-    case "linear.list_issues": {
-      const { loadTokens, listIssues: listLinearIssues } = await import(
-        "../connectors/linear.js"
-      );
-      if (!loadTokens()) {
-        return JSON.stringify({
-          count: 0,
-          issues: [],
-          error: "Linear not connected",
-        });
-      }
-      const teamKey = step.team ? render(String(step.team), ctx) : undefined;
-      const assigneeMe = step.assignee === "@me" || step.assignee === undefined;
-      const stateFilter = step.state
-        ? render(String(step.state), ctx)
-        : "started,unstarted";
-      const limit = typeof step.max === "number" ? step.max : 20;
-      const states = stateFilter
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      try {
-        const issues = await listLinearIssues({
-          team: teamKey,
-          assigneeMe,
-          states,
-          limit,
-        });
-        return JSON.stringify({ count: issues.length, issues });
-      } catch (err) {
-        return JSON.stringify({
-          count: 0,
-          issues: [],
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    case "calendar.list_events": {
-      const { listEvents } = await import("../connectors/googleCalendar.js");
-      const daysAhead =
-        typeof step.days_ahead === "number" ? step.days_ahead : 7;
-      const maxResults = typeof step.max === "number" ? step.max : 20;
-      const calendarId = step.calendar_id
-        ? render(String(step.calendar_id), ctx)
-        : undefined;
-      try {
-        const events = await listEvents({ daysAhead, maxResults, calendarId });
-        return JSON.stringify({ count: events.length, events });
-      } catch (err) {
-        return JSON.stringify({
-          count: 0,
-          events: [],
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    case "slack.post_message": {
-      const { postMessage, loadTokens: loadSlackTokens } = await import(
-        "../connectors/slack.js"
-      );
-      if (!loadSlackTokens()) {
-        return JSON.stringify({ ok: false, error: "Slack not connected" });
-      }
-      const channel = step.channel
-        ? render(String(step.channel), ctx)
-        : "general";
-      const text = step.text ? render(String(step.text), ctx) : "";
-      const threadTs = step.thread_ts
-        ? render(String(step.thread_ts), ctx)
-        : undefined;
-      try {
-        const result = await postMessage(channel, text, threadTs ?? undefined);
-        return JSON.stringify({
-          ok: true,
-          ts: result.ts,
-          channel: result.channel,
-        });
-      } catch (err) {
-        return JSON.stringify({
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-
-    default:
-      // Unknown tool — skip, don't throw (forward compat)
-      return null;
-  }
-}
-
-/** Minimal `{{ expr }}` renderer — replaces against flat context map. */
-export function render(template: string, ctx: RunContext): string {
-  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr: string) => {
-    const key = expr.trim();
-    return Object.hasOwn(ctx, key) ? (ctx[key] ?? "") : "";
-  });
-}
-
-/**
- * Evaluate simple `N > 0 || M > 0` guards after template rendering.
- * Supports: numeric literals, >, <, >=, <=, ==, !=, ||, &&, !.
- * Returns true (run step) for anything it can't parse.
- */
-function evalWhen(when: string, ctx: RunContext): boolean {
-  try {
-    const expanded = render(when, ctx).trim();
-    // Only handle the `N op M` and `expr || expr` / `expr && expr` patterns.
-    const orParts = expanded.split("||");
-    if (orParts.length > 1) {
-      return orParts.some((p) => evalWhen(p.trim(), {}));
-    }
-    const andParts = expanded.split("&&");
-    if (andParts.length > 1) {
-      return andParts.every((p) => evalWhen(p.trim(), {}));
-    }
-    const m = /^(-?[\d.]+)\s*(>|<|>=|<=|==|!=)\s*(-?[\d.]+)$/.exec(expanded);
-    if (!m) return true;
-    const [, lhs, op, rhs] = m;
-    const l = Number(lhs);
-    const r = Number(rhs);
-    switch (op) {
-      case ">":
-        return l > r;
-      case "<":
-        return l < r;
-      case ">=":
-        return l >= r;
-      case "<=":
-        return l <= r;
-      case "==":
-        return l === r;
-      case "!=":
-        return l !== r;
-      default:
-        return true;
-    }
-  } catch {
-    return true;
-  }
-}
-
-// ── Gmail helpers ─────────────────────────────────────────────────────────────
-
-interface GmailMessageSummary {
-  id: string;
-  subject: string;
-  from: string;
-  date: string;
-  snippet: string;
-}
-
-interface GmailResult {
-  count: number;
-  messages: GmailMessageSummary[];
-  error?: string;
-}
-
-interface GmailThreadResult {
-  subject: string;
-  messages: Array<{ from: string; date: string; body_snippet: string }>;
-  error?: string;
-}
-
-function cleanSnippet(raw: string): string {
-  return raw
-    .replace(/­|​|‌|‍|‎|‏|‪|‫|‬|‭|‮|⁠|﻿|͏/g, "")
-    .replace(/(\s)\s+/g, "$1")
-    .trim()
-    .slice(0, 200);
-}
-
-function sinceToGmailQuery(since: string): string {
-  // "24h" → "1d", "7d" → "7d", "1h" → "1d" (round up)
-  const m = /^(\d+)(h|d)$/.exec(since.trim().toLowerCase());
-  if (!m) return "1d";
-  const [, num, unit] = m;
-  if (unit === "d") return `${num}d`;
-  // hours → round up to days (min 1d)
-  const days = Math.max(1, Math.ceil(Number(num) / 24));
-  return `${days}d`;
-}
-
-function getHeader(
-  headers: Array<{ name: string; value: string }>,
-  name: string,
-): string {
-  return (
-    headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ??
-    ""
-  );
-}
-
-async function gmailSearch(
-  query: string,
-  max: number,
-  deps: StepDeps,
-): Promise<string> {
-  const errorResult = (msg: string): string =>
-    JSON.stringify({ count: 0, messages: [], error: msg });
-  let token: string;
-  try {
-    token = await deps.getGmailToken();
-  } catch {
-    return errorResult("Gmail not connected");
-  }
-  try {
-    const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${max}`;
-    const listRes = await deps.fetchFn(listUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!listRes.ok) return errorResult("Gmail API error");
-    const listJson = (await listRes.json()) as {
-      messages?: Array<{ id: string; threadId: string }>;
-    };
-    const ids = listJson.messages ?? [];
-    const messages = await Promise.all(
-      ids.slice(0, max).map(async (m) => {
-        const detailUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=Subject,From,Date`;
-        const detailRes = await deps.fetchFn(detailUrl, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!detailRes.ok)
-          return { id: m.id, subject: "", from: "", date: "", snippet: "" };
-        const detail = (await detailRes.json()) as {
-          id: string;
-          snippet?: string;
-          payload?: { headers?: Array<{ name: string; value: string }> };
-        };
-        const hdrs = detail.payload?.headers ?? [];
-        return {
-          id: detail.id,
-          subject: getHeader(hdrs, "Subject"),
-          from: getHeader(hdrs, "From"),
-          date: getHeader(hdrs, "Date"),
-          snippet: cleanSnippet(detail.snippet ?? ""),
-        };
-      }),
-    );
-    const result: GmailResult = { count: messages.length, messages };
-    return JSON.stringify(result);
-  } catch {
-    return errorResult("Gmail fetch failed");
-  }
-}
-
-async function gmailFetchThread(id: string, deps: StepDeps): Promise<string> {
-  const errorResult = (msg: string): string =>
-    JSON.stringify({ subject: "", messages: [], error: msg });
-  let token: string;
-  try {
-    token = await deps.getGmailToken();
-  } catch {
-    return errorResult("Gmail not connected");
-  }
-  try {
-    const url = `https://gmail.googleapis.com/gmail/v1/users/me/threads/${id}?format=metadata&metadataHeaders=Subject,From,Date`;
-    const res = await deps.fetchFn(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return errorResult("Gmail API error");
-    const thread = (await res.json()) as {
-      messages?: Array<{
-        snippet?: string;
-        payload?: { headers?: Array<{ name: string; value: string }> };
-      }>;
-    };
-    const msgs = thread.messages ?? [];
-    const firstHdrs = msgs[0]?.payload?.headers ?? [];
-    const subject = getHeader(firstHdrs, "Subject");
-    const messages = msgs.map((m) => {
-      const hdrs = m.payload?.headers ?? [];
-      return {
-        from: getHeader(hdrs, "From"),
-        date: getHeader(hdrs, "Date"),
-        body_snippet: m.snippet ?? "",
-      };
-    });
-    const result: GmailThreadResult = { subject, messages };
-    return JSON.stringify(result);
-  } catch {
-    return errorResult("Gmail fetch failed");
-  }
-}
-
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
-  return p;
-}
-
-function parseSinceToGitArg(since: string): string {
-  const m = /^(\d+)(h|d)$/i.exec(since.trim());
-  if (!m) return since;
-  const [, num, unit = "h"] = m;
-  return unit.toLowerCase() === "h" ? `${num} hours ago` : `${num} days ago`;
-}
-
-function defaultGitLogSince(since: string, workdir?: string): string {
-  try {
-    const sinceArg = parseSinceToGitArg(since);
-    const result = spawnSync(
-      "git",
-      ["log", "--oneline", `--since=${sinceArg}`],
-      {
-        cwd: workdir ?? process.cwd(),
-        encoding: "utf-8",
-        timeout: 5000,
-      },
-    );
-    if (result.error || result.status !== 0) return "(git log unavailable)";
-    return (result.stdout ?? "").trim();
-  } catch {
-    return "(git log unavailable)";
-  }
-}
-
-function defaultGitStaleBranches(days: number, workdir?: string): string {
-  try {
-    const cutoff = new Date(Date.now() - days * 86_400_000)
-      .toISOString()
-      .slice(0, 10);
-    const r = spawnSync(
-      "git",
-      ["branch", "--format=%(refname:short) %(committerdate:short)"],
-      {
-        cwd: workdir ?? process.cwd(),
-        encoding: "utf-8",
-        timeout: 5000,
-      },
-    );
-    const branches = r.error || r.status !== 0 ? "" : (r.stdout ?? "").trim();
-    if (!branches) return "(no local branches)";
-    return (
-      branches
-        .split("\n")
-        .filter((line) => {
-          const parts = line.trim().split(/\s+/);
-          const dateStr = parts[1];
-          return dateStr && dateStr < cutoff;
-        })
-        .join("\n") || "(none older than 30 days)"
-    );
-  } catch {
-    return "(git unavailable)";
   }
 }
 

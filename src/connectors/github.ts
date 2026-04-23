@@ -22,6 +22,7 @@ import {
   loadTokenFile,
   revoke,
   startAuthorize,
+  updateTokenProfile,
   vendorConfig,
 } from "./mcpOAuth.js";
 
@@ -427,21 +428,7 @@ export async function handleGithubCallback(
         const u = (await res.json()) as { login?: string };
         login = u.login ?? "";
         if (login) {
-          const file = loadTokenFile("github");
-          if (file) {
-            const { writeFileSync, mkdirSync } = await import("node:fs");
-            const { homedir } = await import("node:os");
-            const path = await import("node:path");
-            const p = path.join(
-              homedir(),
-              ".patchwork",
-              "tokens",
-              "github-mcp.json",
-            );
-            mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
-            file.profile = { ...(file.profile ?? {}), login };
-            writeFileSync(p, JSON.stringify(file, null, 2), { mode: 0o600 });
-          }
+          updateTokenProfile("github", { login });
         }
       }
     } catch {

@@ -13,16 +13,14 @@
  */
 
 import crypto from "node:crypto";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import {
+  deleteSecretJsonSync,
+  getSecretJsonSync,
+  storeSecretJsonSync,
+} from "./tokenStorage.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
 const REDIRECT_URI = `http://localhost:${process.env.PATCHWORK_BRIDGE_PORT ?? "3101"}/connections/gmail/callback`;
@@ -66,25 +64,42 @@ function isConfigured(): boolean {
 // ── Token storage ─────────────────────────────────────────────────────────────
 
 export function loadTokens(): GmailTokens | null {
+  const secureTokens = getSecretJsonSync<GmailTokens>("gmail");
+  if (secureTokens) {
+    return secureTokens;
+  }
+
   const tokenPath = getTokenPath();
   if (!existsSync(tokenPath)) return null;
   try {
-    return JSON.parse(readFileSync(tokenPath, "utf-8")) as GmailTokens;
+    const tokens = JSON.parse(readFileSync(tokenPath, "utf-8")) as GmailTokens;
+    saveTokens(tokens);
+    return tokens;
   } catch {
     return null;
   }
 }
 
 function saveTokens(tokens: GmailTokens): void {
+  storeSecretJsonSync("gmail", tokens);
+
   const tokenPath = getTokenPath();
-  mkdirSync(path.dirname(tokenPath), { recursive: true, mode: 0o700 });
-  writeFileSync(tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
-  chmodSync(tokenPath, 0o600);
+  if (existsSync(tokenPath)) {
+    try {
+      unlinkSync(tokenPath);
+    } catch {}
+  }
 }
 
 function deleteTokens(): void {
+  deleteSecretJsonSync("gmail");
+
   const tokenPath = getTokenPath();
-  if (existsSync(tokenPath)) unlinkSync(tokenPath);
+  if (existsSync(tokenPath)) {
+    try {
+      unlinkSync(tokenPath);
+    } catch {}
+  }
 }
 
 // ── OAuth helpers ─────────────────────────────────────────────────────────────

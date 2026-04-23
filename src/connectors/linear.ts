@@ -21,6 +21,7 @@ import {
   loadTokenFile,
   revoke,
   startAuthorize,
+  updateTokenProfile,
   vendorConfig,
 } from "./mcpOAuth.js";
 
@@ -228,21 +229,7 @@ export async function handleLinearCallback(
       const workspace =
         viewer.organization?.urlKey ?? viewer.organization?.name ?? "";
       if (workspace) {
-        const file = loadTokenFile("linear");
-        if (file) {
-          const { writeFileSync, mkdirSync } = await import("node:fs");
-          const { homedir } = await import("node:os");
-          const path = await import("node:path");
-          const p = path.join(
-            homedir(),
-            ".patchwork",
-            "tokens",
-            "linear-mcp.json",
-          );
-          mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
-          file.profile = { ...(file.profile ?? {}), workspace };
-          writeFileSync(p, JSON.stringify(file, null, 2), { mode: 0o600 });
-        }
+        updateTokenProfile("linear", { workspace });
       }
     } catch {
       // Profile fetch is best-effort
