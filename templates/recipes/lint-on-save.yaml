@@ -9,5 +9,4 @@ steps:
     into: diags
   - tool: file.append
     path: ~/.patchwork/inbox/lint.md
-    content: "- {{time}}  {{file}} — {{diags.errors}} errors, {{diags.warnings}} warnings\n"
-    when: "{{diags.errors}} > 0 || {{diags.warnings}} > 0"
+    content: "- {{time}}  {{file}} — {{diags}}\n"

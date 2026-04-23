@@ -140,6 +140,7 @@ export function primaryValue(
   switch (hookType) {
     case "onFileSave":
     case "onFileChanged":
+    case "onRecipeSave":
     case "onDiagnosticsError":
     case "onDiagnosticsCleared":
       return eventData.file ?? "";

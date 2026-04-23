@@ -64,6 +64,8 @@ function cooldownKey(hookType: HookType, condition?: string): string {
       return "debugstart";
     case "onDebugSessionEnd":
       return "debugend";
+    case "onRecipeSave":
+      return `recipesave:${condition ?? "*"}`;
   }
 }
 
@@ -289,6 +291,34 @@ export function parsePolicy(
       p.cooldownMs,
       p.condition,
       p.patterns,
+      undefined,
+      p.model ?? defaultModel,
+      p.effort ?? defaultEffort,
+      defaultSystemPrompt,
+    );
+    if (!result.ok) return result;
+    push(result);
+  }
+
+  // onRecipeSave — fires when a .yaml recipe file is saved
+  if (policy.onRecipeSave?.enabled) {
+    const p = policy.onRecipeSave;
+    // Inject default preflight prompt when no explicit prompt is configured
+    const defaultedSrc: typeof p =
+      p.prompt === undefined && p.promptName === undefined
+        ? {
+            ...p,
+            prompt:
+              'A recipe file was saved: {{file}}\n\nRun `patchwork recipe preflight {{file}}` and report any issues. If there are no issues, reply with a single line: "Recipe OK".',
+          }
+        : p;
+    const result = buildHook(
+      "onRecipeSave",
+      defaultedSrc,
+      true,
+      p.cooldownMs ?? 10_000,
+      undefined,
+      undefined,
       undefined,
       p.model ?? defaultModel,
       p.effort ?? defaultEffort,

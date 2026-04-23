@@ -10,6 +10,150 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-alpha.25] — 2026-04-23
+
+### Added
+
+- **Confluence connector** (`src/connectors/confluence.ts`) — Wave 2 provider #2. Completes the Atlassian trifecta (Jira ✅ alpha.22, Notion ✅ alpha.23, Confluence ✅ alpha.25). Read/write Confluence pages via Atlassian REST API v2:
+  - Auth: `CONFLUENCE_API_TOKEN` + `CONFLUENCE_EMAIL` + `CONFLUENCE_INSTANCE_URL` env vars (CI/headless) or stored token via `getSecretJsonSync("confluence")`. Basic auth with `email:token` — same credential shape as Jira.
+  - **Read tools** (`confluence.getPage`, `confluence.search`, `confluence.listSpaces`) — `riskDefault: "low"`, `isWrite: false`.
+  - **Write tools** (`confluence.createPage`, `confluence.appendToPage`) — `riskDefault: "medium"`, `isWrite: true`, guarded by `assertWriteAllowed()`. `appendToPage` fetches current version, appends storage-format XHTML, and PUTs with incremented version number.
+  - HTTP handlers wired in `src/server.ts`: `POST /connections/confluence/connect` (token + email + instanceUrl verify against `/wiki/api/v2/spaces`), `POST /connections/confluence/test`, `DELETE /connections/confluence`.
+  - Extends `BaseConnector` for unified auth, retry, rate-limit, and error normalization.
+  - 13 tests in `src/connectors/__tests__/confluence.test.ts` (token helpers, healthCheck, connect handlers, disconnect).
+
+- **`onRecipeSave` automation hook** — fires when any `.yaml` or `.yml` file is saved. Runs recipe preflight automatically and delivers a Claude task with any issues found:
+  - Added `"onRecipeSave"` to `HookType` union (`src/fp/automationProgram.ts`).
+  - Parser case in `src/fp/policyParser.ts` — default prompt injected when no explicit `prompt`/`promptName` configured: runs `patchwork recipe preflight {{file}}` and reports issues.
+  - Cooldown key: `recipesave:*` (per-file, default 10 000 ms).
+  - `handleFileSaved` in `src/automation.ts` branches on `.yaml`/`.yml` extension and calls `_runInterpreter("onRecipeSave", { file })`.
+  - `OnRecipeSavePolicy` interface + `onRecipeSave` field on `AutomationPolicy` + full validation (enabled check, cooldownMs range enforcement, optional prompt/promptName).
+  - Surfaced in `AutomationHooks.getStatus()` and `getStats()`.
+  - 5 new tests in `src/fp/__tests__/policyParser.test.ts` (explicit prompt, default prompt injection, disabled skip, named prompt, cooldown key).
+
+  **Minimal policy to enable:**
+  ```json
+  "onRecipeSave": {
+    "enabled": true,
+    "cooldownMs": 10000
+  }
+  ```
+  No `prompt` needed — default prompt runs preflight and reports issues. Override with `prompt` or `promptName` for custom behavior.
+
+### Tests
+
+- `src/connectors/__tests__/confluence.test.ts` — 13 new tests.
+- `src/fp/__tests__/policyParser.test.ts` — 5 new `onRecipeSave` tests.
+- **Total: 3731 tests** (all passing).
+
+---
+
+## [0.2.0-alpha.24] — 2026-04-23
+
+### Added
+
+- **`patchwork recipe fmt --watch`** — completes the watch-mode trilogy. Reformats (or checks) a recipe on every save with the same debounce/requeue/SIGINT semantics as `preflight --watch` and `test --watch`:
+  - `patchwork recipe fmt <file.yaml> --watch` — reformats in-place on each save, prints a timestamped header.
+  - `patchwork recipe fmt <file.yaml> --watch --check` — reports `changed`/`unchanged` without writing, useful for live CI-style feedback while authoring.
+  - `runFmtWatch(options)` exported from `src/commands/recipe.ts` for library consumers (editor extensions).
+  - Usage string updated to include `[--watch]`.
+
+### Watch-mode trilogy complete
+
+All three authoring subcommands now have `--watch` mode and an exported library function:
+
+| Subcommand | Watch flag | Exported fn | Purpose |
+|---|---|---|---|
+| `recipe preflight` | `--watch` | `runPreflightWatch` | Registry validation + template-ref lint on save |
+| `recipe test` | `--watch` | `runTestWatch` | Mock-connector run + `expect` assertions on save |
+| `recipe fmt` | `--watch` | `runFmtWatch` | Format/normalize + optional check-only on save |
+
+### Tests
+
+- `src/commands/__tests__/recipe.test.ts` — 3 new tests: `runFmtWatch` fires `onResult` on save (already-formatted result), re-runs on second save, `check: true` detects unformatted key order.
+- **Total: 3713 tests** (all passing).
+
+---
+
+## [0.2.0-alpha.23] — 2026-04-23
+
+### Added
+
+- **Notion connector** (`src/connectors/notion.ts`) — Wave 2 provider #1. Read/write Notion databases and pages via the Notion API v1:
+  - Auth: `NOTION_TOKEN` env var (CI/headless) or stored token via `getSecretJsonSync("notion")`.
+  - **Read tools** (`notion.queryDatabase`, `notion.getPage`, `notion.search`) — `riskDefault: "low"`, `isWrite: false`.
+  - **Write tools** (`notion.createPage`, `notion.appendBlock`) — `riskDefault: "medium"`, `isWrite: true`, guarded by `assertWriteAllowed()`.
+  - HTTP handlers wired in `src/server.ts`: `POST /connections/notion/connect` (token paste + `/users/me` verify), `POST /connections/notion/test`, `DELETE /connections/notion`.
+  - Dashboard connections page — Notion card with token-paste modal (internal integrations use `secret_...` tokens, not OAuth redirect).
+  - `normalizeId()` helper converts hyphenated/unhyphenated UUID formats transparently.
+  - Extends `BaseConnector` for unified auth, retry, rate-limit, and error normalization.
+
+- **`expect` block assertions** (`src/recipes/yamlRunner.ts`) — recipe `expect` fields are now evaluated at runtime after every run:
+  - `evaluateExpect(result, expect)` — pure exported function returning `AssertionFailure[]`. Four assertion types:
+    - `stepsRun` — exact step count.
+    - `errorMessage` — exact match or `null` for a clean run.
+    - `outputs` — membership check (order-independent).
+    - `context` — substring check (flexible for agent output that varies).
+  - `RunResult.assertionFailures?` — populated only on failure; absent when all pass or no `expect` block. Zero overhead.
+  - Assertion failures persisted to `RecipeRun` in the JSONL run log — visible in historical runs.
+  - `runTest` unified: removed duplicate `assertRecipeExpectations`; `RecipeTestResult.assertionFailures` exposed for programmatic consumers.
+
+- **`patchwork recipe test --watch`** — watch mode for the test subcommand, same debounce/requeue/SIGINT semantics as `preflight --watch`:
+  - `runTestWatch(options)` exported from `src/commands/recipe.ts` for library consumers.
+  - Prints a timestamped header on each re-run.
+  - `--fixtures <dir>` flag forwarded to each re-run.
+
+- **`into` chaining validation** — three new static checks in `validateTemplateReferences` (lint + preflight path):
+  - **Builtin shadow** (`error`) — `into: date` shadows a built-in context key.
+  - **Duplicate `into` key** (`warning`) — two steps writing to the same key.
+  - **Chained agent `into` bug fixed** — `registerStepContextKeys` previously skipped registering agent `into` keys in chained recipes, causing false-positive "Unknown template reference" lint errors. Fixed.
+  - `resolveStepIntoKey()` internal helper centralises per-step `into` resolution.
+  - `PreflightIssueCode` extended with `"into-shadows-builtin"` and `"into-duplicate"`.
+
+### Dashboard
+
+- **Assertion failures panel** (`/runs/[seq]`) — red-bordered card above the step list when a run has `assertionFailures`. Each row shows assertion name pill, human message, and `expected`/`actual` in mono.
+- **Header badge** — "N assertions failed" pill in `err` color next to the run status badge.
+- **Runs list indicator** (`/runs`) — "done" runs with assertion failures render with `err`-colored status badge plus compact `N assert` pill. Expanding a row shows a red bullet list of messages.
+
+### Tests
+
+- `src/connectors/__tests__/notion.test.ts` — 12 new tests: token helpers, round-trip storage, mocked `queryDatabase` UUID normalisation, `handleNotionConnect`/`Test`/`Disconnect` handlers.
+- `src/recipes/__tests__/yamlRunner.test.ts` — 17 new tests: all four `evaluateExpect` assertion types (pass + fail), multi-assertion collection, end-to-end wiring through `runYamlRecipe`.
+- `src/commands/__tests__/recipe.test.ts` — 9 new tests: `into` shadow/duplicate/chained-agent-fix, `runTest` structured `assertionFailures`, `runTestWatch` fires on save (pass + failure + re-run).
+- **Total: 3710 tests** (all passing).
+
+---
+
+## [0.2.0-alpha.22] — 2026-04-23
+
+### Added
+
+- **Recipe JSON Schema HTTP serving** — bridge now serves generated schemas over HTTP at unauthenticated `GET /schemas/*` endpoints (handled before bearer auth, no secrets):
+  - `GET /schemas/recipe.v1.json` — top-level recipe schema (tool params, chaining fields, trigger types)
+  - `GET /schemas/dry-run-plan.v1.json` — stable contract for dry-run execution plan JSON
+  - `GET /schemas/tools/<namespace>.json` — per-namespace tool parameter schemas
+  - `GET /schemas/` or `GET /schemas/index.json` — index listing all available schemas with URLs
+  - Content-Type `application/schema+json`, 60 s `Cache-Control`; tool registry imported lazily on first request (zero startup cost for slim-mode bridges)
+  - Unlocks YAML-LSP autocomplete in any editor: point `yaml-language-server: $schema=http://localhost:<port>/schemas/recipe.v1.json` at a running bridge
+
+- **`isConnector` flag on tool registry entries** — `ToolMetadata` now carries `isConnector?: boolean`. Set to `true` on all connector-backed tools (Jira, Gmail, Slack, GitHub, etc.) so dry-run plan, schema generation, and dashboard badges can distinguish connector calls from pure-compute steps without string-matching tool names.
+
+- **Stable `DryRunPlan` JSON contract** (`src/recipes/schemaGenerator.ts`) — dry-run execution plan now has a versioned schema (`schemaVersion: 1`) with stable field names: `steps[].id`, `steps[].tool`, `steps[].risk`, `steps[].isWrite`, `steps[].isConnector`, `steps[].resolvedParams`, `steps[].condition`, `parallelGroups`, `dependencies`, `maxDepth`. Dashboard and external consumers can parse this reliably going forward.
+
+- **`patchwork recipe preflight [--watch]`** — new CLI subcommand that validates a recipe against the live tool registry without executing it:
+  - One-shot: `patchwork recipe preflight my-recipe.yaml` — prints issues (unresolved tools, missing required params, template ref errors) and exits 0/1.
+  - Watch mode: `patchwork recipe preflight my-recipe.yaml --watch` — re-runs preflight on every save (300 ms debounce, one queued rerun) and prints fresh results. SIGINT stops cleanly.
+  - `--json` flag emits structured `PreflightResult` JSON for CI integration.
+  - `runPreflightWatch(options)` exported as library function for future editor extensions (VS Code recipe companion) to import directly.
+
+### Tests
+
+- `src/__tests__/server-schemas.test.ts` — 5 new integration tests: recipe schema 200, dry-run plan schema 200 + `schemaVersion` field, per-namespace tool schema, index listing, 404 on unknown name
+- `src/commands/__tests__/recipe.test.ts` — 1 new regression: `runPreflightWatch` fires `onResult` exactly once on save with correct issue codes for an unregistered tool
+
+---
+
 ## [0.2.0-alpha.21] — 2026-04-22
 
 ### Added

@@ -20,6 +20,12 @@
     "cooldownMs": 10000
   },
 
+  "onRecipeSave": {
+    "enabled": false,
+    "_comment": "Fires when any .yaml/.yml file is saved. No prompt needed — default runs patchwork recipe preflight and reports issues. Enable when authoring recipes.",
+    "cooldownMs": 10000
+  },
+
   "onDiagnosticsError": {
     "enabled": true,
     "minSeverity": "error",

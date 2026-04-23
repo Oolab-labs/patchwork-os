@@ -204,4 +204,105 @@ describe("parsePolicy", () => {
       expect(top.key).toBe("save:**/*.ts");
     }
   });
+
+  describe("onRecipeSave", () => {
+    it("parses enabled hook with explicit prompt", () => {
+      const policy = minPolicy({
+        onRecipeSave: {
+          enabled: true,
+          cooldownMs: 15_000,
+          prompt: "recipe saved: {{file}}",
+        },
+      });
+      const result = parsePolicy(policy);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(1);
+      const top = result.value[0];
+      expect(top._tag).toBe("WithCooldown");
+      if (top._tag === "WithCooldown") {
+        expect(top.cooldownMs).toBe(15_000);
+        expect(top.key).toBe("recipesave:*");
+        if (top.program._tag === "Hook") {
+          expect(top.program.hookType).toBe("onRecipeSave");
+          const src = top.program.promptSource;
+          expect(src.kind).toBe("inline");
+          if (src.kind === "inline") {
+            expect(src.prompt).toBe("recipe saved: {{file}}");
+          }
+        }
+      }
+    });
+
+    it("injects default preflight prompt when no prompt specified", () => {
+      const policy = minPolicy({
+        onRecipeSave: {
+          enabled: true,
+          cooldownMs: 10_000,
+        },
+      });
+      const result = parsePolicy(policy);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toHaveLength(1);
+      const top = result.value[0];
+      if (top._tag === "WithCooldown" && top.program._tag === "Hook") {
+        const src = top.program.promptSource;
+        expect(src.kind).toBe("inline");
+        if (src.kind === "inline") {
+          expect(src.prompt).toContain("preflight");
+          expect(src.prompt).toContain("{{file}}");
+        }
+      }
+    });
+
+    it("applies default cooldown of 10 000 ms when cooldownMs absent", () => {
+      const policy = minPolicy({
+        onRecipeSave: {
+          enabled: true,
+          cooldownMs: 10_000,
+        },
+      });
+      const result = parsePolicy(policy);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const top = result.value[0];
+      if (top._tag === "WithCooldown") {
+        expect(top.cooldownMs).toBe(10_000);
+      }
+    });
+
+    it("skips disabled onRecipeSave", () => {
+      const policy = minPolicy({
+        onRecipeSave: {
+          enabled: false,
+          cooldownMs: 10_000,
+        },
+      });
+      const result = parsePolicy(policy);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toHaveLength(0);
+    });
+
+    it("accepts promptName instead of inline prompt", () => {
+      const policy = minPolicy({
+        onRecipeSave: {
+          enabled: true,
+          cooldownMs: 10_000,
+          promptName: "project-status",
+        },
+      });
+      const result = parsePolicy(policy);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const top = result.value[0];
+      if (top._tag === "WithCooldown" && top.program._tag === "Hook") {
+        const src = top.program.promptSource;
+        expect(src.kind).toBe("named");
+        if (src.kind === "named") {
+          expect(src.promptName).toBe("project-status");
+        }
+      }
+    });
+  });
 });
