@@ -6,10 +6,11 @@ import com.google.gson.JsonObject
 import com.intellij.execution.ProgramRunnerUtil
 import com.intellij.execution.RunManager
 import com.intellij.execution.executors.DefaultDebugExecutor
-import com.intellij.execution.runners.ExecutionEnvironmentBuilder
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.xdebugger.XExpression
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.XDebuggerUtil
 import com.intellij.xdebugger.breakpoints.XBreakpointProperties
@@ -20,7 +21,6 @@ import com.intellij.xdebugger.frame.XValue
 import com.intellij.xdebugger.frame.XValueNode
 import com.intellij.xdebugger.frame.XValuePlace
 import com.intellij.xdebugger.frame.presentation.XValuePresentation
-import com.intellij.xdebugger.impl.breakpoints.XExpressionImpl
 import com.patchwork.bridge.BridgeHandler
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -33,13 +33,38 @@ import javax.swing.Icon
 private fun currentSession(project: Project) =
     XDebuggerManager.getInstance(project).currentSession
 
+private fun createDebuggerExpression(text: String): XExpression? {
+    return try {
+        val util = XDebuggerUtil.getInstance()
+        val method = util.javaClass.methods.firstOrNull {
+            it.name == "createExpression" && (it.parameterCount == 1 || it.parameterCount == 4)
+        } ?: return null
+
+        val expression = when (method.parameterCount) {
+            1 -> method.invoke(util, text)
+            4 -> {
+                val evaluationModeClass = Class.forName("com.intellij.xdebugger.evaluation.EvaluationMode")
+                val expressionMode = evaluationModeClass.enumConstants
+                    ?.firstOrNull { (it as? Enum<*>)?.name == "EXPRESSION" }
+                    ?: return null
+                method.invoke(util, text, null, null, expressionMode)
+            }
+            else -> null
+        }
+
+        expression as? XExpression
+    } catch (_: Exception) {
+        null
+    }
+}
+
 private fun allBreakpointsJson(project: Project): JsonArray {
     val arr = JsonArray()
     try {
         XDebuggerManager.getInstance(project).breakpointManager.allBreakpoints.forEach { bp ->
             if (bp is XLineBreakpoint<*>) {
                 arr.add(JsonObject().apply {
-                    addProperty("file", bp.presentableFilePath)
+                    addProperty("file", VfsUtilCore.urlToPath(bp.fileUrl))
                     addProperty("line", bp.line + 1)
                     addProperty("enabled", bp.isEnabled)
                     val cond = try { bp.conditionExpression?.expression } catch (_: Exception) { null }
@@ -49,37 +74,6 @@ private fun allBreakpointsJson(project: Project): JsonArray {
         }
     } catch (_: Exception) {}
     return arr
-}
-
-/** Minimal XValueNode that captures the string value from computePresentation. */
-private class CaptureNode : XValueNode {
-    var type: String? = null
-    var value: String? = null
-
-    override fun isObsolete() = false
-    override fun setFullValueEvaluator(evaluator: com.intellij.xdebugger.frame.XFullValueEvaluator) {}
-
-    override fun setPresentation(icon: Icon?, type: String?, value: String, hasChildren: Boolean) {
-        this.type = type
-        this.value = value
-    }
-
-    override fun setPresentation(icon: Icon?, presentation: XValuePresentation, hasChildren: Boolean) {
-        this.type = presentation.type
-        val sb = StringBuilder()
-        presentation.renderValue(object : XValuePresentation.XValueTextRenderer {
-            override fun renderValue(value: String) { sb.append(value) }
-            override fun renderValue(value: String, key: com.intellij.openapi.editor.colors.TextAttributesKey) { sb.append(value) }
-            override fun renderStringValue(value: String) { sb.append('"').append(value).append('"') }
-            override fun renderStringValue(value: String, additionalSpecialCharsToHighlight: String?, maxLength: Int) { sb.append('"').append(value).append('"') }
-            override fun renderNumericValue(value: String) { sb.append(value) }
-            override fun renderKeywordValue(value: String) { sb.append(value) }
-            override fun renderComment(comment: String) {}
-            override fun renderSpecialSymbol(symbol: String) { sb.append(symbol) }
-            override fun renderError(error: String) { sb.append("<error: $error>") }
-        })
-        this.value = sb.toString()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -122,13 +116,13 @@ class GetDebugStateHandler : BridgeHandler {
                             addProperty("index", i)
                             addProperty("name", frame.toString())
                             if (src != null) {
-                                addProperty("file", src.file.path)
+                                addProperty("file", VfsUtilCore.urlToPath(src.file.url))
                                 addProperty("line", src.line + 1)
                             }
                         })
                         if (i == 0 && src != null) {
                             pausedAtObj = JsonObject().apply {
-                                addProperty("file", src.file.path)
+                                addProperty("file", VfsUtilCore.urlToPath(src.file.url))
                                 addProperty("line", src.line + 1)
                             }
                         }
@@ -177,21 +171,40 @@ class EvaluateInDebuggerHandler : BridgeHandler {
         var errorMsg: String? = null
 
         val srcPos = session.currentStackFrame?.sourcePosition
-        evaluator.evaluate(expression, object : XDebuggerEvaluator.XEvaluationCallback {
-            override fun evaluated(result: XValue) {
-                val node = CaptureNode()
-                result.computePresentation(node, XValuePlace.TOOLTIP)
-                // computePresentation may be async — wait briefly for it
-                Thread.sleep(200)
-                capturedValue = node.value ?: result.toString()
-                capturedType = node.type
-                latch.countDown()
-            }
-            override fun errorOccurred(errorMessage: String) {
-                errorMsg = errorMessage
-                latch.countDown()
-            }
-        }, srcPos)
+        val evaluationExpression = createDebuggerExpression(expression)
+        if (evaluationExpression != null) {
+            evaluator.evaluate(evaluationExpression, object : XDebuggerEvaluator.XEvaluationCallback {
+                override fun evaluated(result: XValue) {
+                    val node = CaptureNode()
+                    result.computePresentation(node, XValuePlace.TOOLTIP)
+                    // computePresentation may be async — wait briefly for it
+                    Thread.sleep(200)
+                    capturedValue = node.value ?: result.toString()
+                    capturedType = node.type
+                    latch.countDown()
+                }
+                override fun errorOccurred(errorMessage: String) {
+                    errorMsg = errorMessage
+                    latch.countDown()
+                }
+            }, srcPos)
+        } else {
+            evaluator.evaluate(expression, object : XDebuggerEvaluator.XEvaluationCallback {
+                override fun evaluated(result: XValue) {
+                    val node = CaptureNode()
+                    result.computePresentation(node, XValuePlace.TOOLTIP)
+                    // computePresentation may be async — wait briefly for it
+                    Thread.sleep(200)
+                    capturedValue = node.value ?: result.toString()
+                    capturedType = node.type
+                    latch.countDown()
+                }
+                override fun errorOccurred(errorMessage: String) {
+                    errorMsg = errorMessage
+                    latch.countDown()
+                }
+            }, srcPos)
+        }
 
         latch.await(8, TimeUnit.SECONDS)
 
@@ -255,7 +268,10 @@ class SetDebugBreakpointsHandler : BridgeHandler {
 
                     val bp = bpMgr.addLineBreakpoint(type, vf.url, line - 1, null)
                     if (condition != null) {
-                        bp.conditionExpression = XExpressionImpl.fromText(condition)
+                        val expression = createDebuggerExpression(condition)
+                        if (expression != null) {
+                            bp.conditionExpression = expression
+                        }
                     }
                     setCount++
                 }
@@ -297,7 +313,7 @@ class StartDebuggingHandler : BridgeHandler {
                         ?: run { errorMsg = "No run configurations available"; return@invokeAndWait }
                 }
                 val executor = DefaultDebugExecutor.getDebugExecutorInstance()
-                ProgramRunnerUtil.executeConfiguration(project, setting, executor)
+                ProgramRunnerUtil.executeConfiguration(setting, executor)
                 started = true
             } catch (e: Exception) {
                 errorMsg = e.message ?: "Failed to start debugging"

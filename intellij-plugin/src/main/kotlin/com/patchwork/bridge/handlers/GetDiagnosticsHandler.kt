@@ -3,11 +3,7 @@ package com.patchwork.bridge.handlers
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
-import com.intellij.codeInsight.daemon.impl.HighlightInfo
-import com.intellij.codeInsight.daemon.impl.HighlightInfoType
-import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -92,49 +88,15 @@ class GetDiagnosticsHandler : BridgeHandler {
         try {
             ApplicationManager.getApplication().runReadAction {
                 val document = FileDocumentManager.getInstance().getDocument(vf) ?: return@runReadAction
-                val highlights = com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
-                    .getHighlights(document, null, project)
-                if (highlights != null) {
-                    for (info in highlights) {
-                        val obj = highlightToJson(info, document) ?: continue
-                        array.add(obj)
-                    }
+                val highlights = collectDaemonHighlights(project, document)
+                for (info in highlights) {
+                    val obj = highlightToJson(info, document) ?: continue
+                    array.add(obj)
                 }
             }
         } catch (_: Exception) {
             // File not indexed or daemon not available — return empty
         }
         return array
-    }
-
-    private fun highlightToJson(info: HighlightInfo, document: Document): JsonObject? {
-        val severity = when {
-            info.severity == HighlightSeverity.ERROR -> "error"
-            info.severity == HighlightSeverity.WARNING -> "warning"
-            info.severity == HighlightSeverity.WEAK_WARNING -> "warning"
-            info.severity == HighlightSeverity.INFORMATION -> "information"
-            info.severity == HighlightSeverity.TEXT_ATTRIBUTES -> "hint"
-            else -> return null // skip non-diagnostic highlights (e.g. syntax coloring)
-        }
-
-        val startOffset = info.startOffset
-        val endOffset = info.endOffset
-        if (startOffset < 0 || startOffset > document.textLength) return null
-
-        val startLine = document.getLineNumber(startOffset)
-        val startLineStart = document.getLineStartOffset(startLine)
-        val endLine = if (endOffset <= document.textLength) document.getLineNumber(endOffset) else startLine
-        val endLineStart = document.getLineStartOffset(endLine)
-
-        return JsonObject().apply {
-            addProperty("message", info.description ?: "")
-            addProperty("severity", severity)
-            addProperty("line", startLine + 1)
-            addProperty("column", startOffset - startLineStart + 1)
-            addProperty("endLine", endLine + 1)
-            addProperty("endColumn", endOffset - endLineStart + 1)
-            addProperty("source", info.type.toString())
-            addProperty("code", info.problemGroup?.toString() ?: "")
-        }
     }
 }

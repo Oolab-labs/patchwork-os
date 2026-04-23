@@ -393,16 +393,20 @@ class RenameSymbolHandler : BridgeHandler {
         var applyError: String? = null
         val affectedMap = mutableMapOf<String, Int>()
 
+        ReadAction.compute<Unit, Exception> {
+            ReferencesSearch.search(target, GlobalSearchScope.projectScope(project)).findAll().forEach { reference ->
+                val path = reference.element.containingFile?.virtualFile?.path ?: return@forEach
+                affectedMap[path] = (affectedMap[path] ?: 0) + 1
+            }
+            val targetPath = target.containingFile?.virtualFile?.path
+            if (targetPath != null && targetPath !in affectedMap) {
+                affectedMap[targetPath] = 1
+            }
+        }
+
         ApplicationManager.getApplication().invokeAndWait {
             try {
-                val processor = RenameProcessor(project, target, newName, false, false)
-                val usages = processor.findUsages()
-                // Count by file
-                for (usage in usages) {
-                    val path = usage.virtualFile?.path ?: continue
-                    affectedMap[path] = (affectedMap[path] ?: 0) + 1
-                }
-                processor.executeEx(usages)
+                RenameProcessor(project, target, newName, false, false).run()
             } catch (e: Exception) {
                 applyError = e.message ?: "Rename failed"
             }
