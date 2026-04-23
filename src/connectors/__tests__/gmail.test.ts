@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,13 +9,17 @@ beforeEach(() => {
   tmp = mkdtempSync(path.join(os.tmpdir(), "patchwork-gmail-"));
   process.env.GMAIL_CLIENT_ID = "test-client-id";
   process.env.GMAIL_CLIENT_SECRET = "test-client-secret";
+  process.env.PATCHWORK_HOME = tmp;
   process.env.PATCHWORK_TOKEN_DIR = path.join(tmp, "tokens");
+  process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
 });
 afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
   delete process.env.GMAIL_CLIENT_ID;
   delete process.env.GMAIL_CLIENT_SECRET;
+  delete process.env.PATCHWORK_HOME;
   delete process.env.PATCHWORK_TOKEN_DIR;
+  delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
   vi.restoreAllMocks();
 });
 
@@ -30,6 +34,28 @@ function writeTestTokens(dir: string, tokens: object) {
     { mode: 0o600 },
   );
 }
+
+describe("loadTokens", () => {
+  it("migrates a legacy gmail token file into secure storage on read", async () => {
+    const legacyTokens = {
+      access_token: "legacy-access",
+      refresh_token: "legacy-refresh",
+      expiry_date: Date.now() + 60 * 60 * 1000,
+      _client_id: "stored-cid",
+      _client_secret: "stored-csecret",
+    };
+
+    writeTestTokens(tmp, legacyTokens);
+
+    const { loadTokens } = await import("../gmail.js");
+
+    expect(loadTokens()).toEqual(legacyTokens);
+    expect(existsSync(path.join(tmp, "tokens", "gmail.json"))).toBe(false);
+    expect(existsSync(path.join(tmp, "tokens", "patchwork-os.gmail.enc"))).toBe(
+      true,
+    );
+  });
+});
 
 describe("handleConnectionsList", () => {
   it("returns disconnected when no token file exists", async () => {

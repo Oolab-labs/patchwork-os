@@ -12,10 +12,14 @@
  *   Falls back to an ephemeral UUID on any read/write error.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  getSecretJsonSync,
+  storeSecretJsonSync,
+} from "./connectors/tokenStorage.js";
 
 /**
  * Validate that the resolved configDir is within the user's home directory.
@@ -44,6 +48,53 @@ interface BridgeTokenFile {
   createdAt: number;
 }
 
+function bridgeTokenProvider(configDir: string): string {
+  const digest = createHash("sha256")
+    .update(path.resolve(configDir))
+    .digest("hex")
+    .slice(0, 24);
+  return `bridge-token-${digest}`;
+}
+
+function normalizeTokenFile(value: unknown): BridgeTokenFile | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const token = (value as { token?: unknown }).token;
+  if (typeof token !== "string" || !/^[0-9a-f-]{36}$/.test(token)) {
+    return null;
+  }
+
+  const createdAt = (value as { createdAt?: unknown }).createdAt;
+  return {
+    token,
+    createdAt: typeof createdAt === "number" ? createdAt : Date.now(),
+  };
+}
+
+function readStoredToken(configDir: string): BridgeTokenFile | null {
+  return normalizeTokenFile(
+    getSecretJsonSync<BridgeTokenFile>(bridgeTokenProvider(configDir)),
+  );
+}
+
+function readLegacyTokenFile(filePath: string): BridgeTokenFile | null {
+  try {
+    return normalizeTokenFile(JSON.parse(fs.readFileSync(filePath, "utf8")));
+  } catch {
+    return null;
+  }
+}
+
+function warnIfTokenIsOld(createdAt: number): void {
+  if (Date.now() - createdAt > MAX_AGE_MS) {
+    console.warn(
+      "[claude-ide-bridge] Bridge token is >90 days old — consider rotating by deleting ~/.claude/ide/bridge-token.json or using --fixed-token",
+    );
+  }
+}
+
 function ensureGitignore(ideDir: string): void {
   try {
     const gitignorePath = path.join(ideDir, ".gitignore");
@@ -68,12 +119,19 @@ function ensureGitignore(ideDir: string): void {
   }
 }
 
-function writeTokenFile(filePath: string, token: string): void {
-  const tmpPath = `${filePath}.tmp`;
-  const data: BridgeTokenFile = { token, createdAt: Date.now() };
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), { mode: 0o600 });
-  fs.renameSync(tmpPath, filePath);
-  fs.chmodSync(filePath, 0o600);
+function writeTokenFile(
+  configDir: string,
+  filePath: string,
+  token: string,
+  createdAt = Date.now(),
+): void {
+  storeSecretJsonSync(bridgeTokenProvider(configDir), { token, createdAt });
+
+  if (fs.existsSync(filePath)) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch {}
+  }
 }
 
 /**
@@ -100,30 +158,28 @@ export function loadOrCreateBridgeToken(configDir: string): string {
     }
     ensureGitignore(ideDir);
 
-    // Try to read an existing token
+    const stored = readStoredToken(resolvedConfigDir);
+    if (stored) {
+      warnIfTokenIsOld(stored.createdAt);
+      return stored.token;
+    }
+
     if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, "utf8");
-      const parsed = JSON.parse(raw) as BridgeTokenFile;
-      if (
-        typeof parsed.token === "string" &&
-        /^[0-9a-f-]{36}$/.test(parsed.token)
-      ) {
-        // Warn if the token is older than 90 days (but don't auto-rotate)
-        if (
-          typeof parsed.createdAt === "number" &&
-          Date.now() - parsed.createdAt > MAX_AGE_MS
-        ) {
-          console.warn(
-            "[claude-ide-bridge] Bridge token is >90 days old — consider rotating by deleting ~/.claude/ide/bridge-token.json or using --fixed-token",
-          );
-        }
+      const parsed = readLegacyTokenFile(filePath);
+      if (parsed) {
+        writeTokenFile(
+          resolvedConfigDir,
+          filePath,
+          parsed.token,
+          parsed.createdAt,
+        );
+        warnIfTokenIsOld(parsed.createdAt);
         return parsed.token;
       }
     }
 
-    // No valid token on disk — create one
     const token = randomUUID();
-    writeTokenFile(filePath, token);
+    writeTokenFile(resolvedConfigDir, filePath, token);
     return token;
   } catch {
     // On any error, fall back to an ephemeral in-memory UUID (never block startup)

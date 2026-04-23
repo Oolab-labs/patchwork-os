@@ -1,3 +1,5 @@
+import os from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -57,12 +59,19 @@ beforeEach(() => {
   mockFetch.mockReset();
   process.env.GOOGLE_CALENDAR_CLIENT_ID = "cid";
   process.env.GOOGLE_CALENDAR_CLIENT_SECRET = "csecret";
+  process.env.PATCHWORK_HOME = join(
+    os.tmpdir(),
+    `patchwork-calendar-${Date.now()}`,
+  );
+  process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.GOOGLE_CALENDAR_CLIENT_ID;
   delete process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+  delete process.env.PATCHWORK_HOME;
+  delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
 });
 
 // ── getStatus ────────────────────────────────────────────────────────────────
@@ -116,6 +125,14 @@ describe("loadTokens", () => {
     const tok = loadTokens();
     expect(tok?.access_token).toBe("at_test");
     expect(tok?.calendar_id).toBe("primary");
+  });
+
+  it("migrates a legacy calendar token file into secure storage on read", () => {
+    mockConnected();
+    const tok = loadTokens();
+    expect(tok?.access_token).toBe("at_test");
+    expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalled();
+    expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalled();
   });
 });
 

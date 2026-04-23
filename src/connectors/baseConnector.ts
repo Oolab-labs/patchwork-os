@@ -3,6 +3,8 @@
  *
  * Provides:
  *   - Unified authentication flow (token refresh, expiry handling)
+ *   - Secure token storage via OS keychain/DPAPI/Secret Service
+ *   - OAuth 2.0 refresh token flow
  *   - Rate limiting with exponential backoff
  *   - Error normalization to ConnectorError type
  *   - Health check endpoint
@@ -46,6 +48,13 @@ export interface RateLimitState {
   backoffMs: number;
 }
 
+export interface OAuthConfig {
+  clientId: string;
+  clientSecret?: string;
+  tokenEndpoint: string;
+  scopes?: string[];
+}
+
 export abstract class BaseConnector {
   protected auth: AuthContext | null = null;
   protected rateLimit: RateLimitState = {
@@ -53,14 +62,117 @@ export abstract class BaseConnector {
     resetAt: new Date(Date.now() + 60000),
     backoffMs: 0,
   };
+  protected oauthConfig: OAuthConfig | null = null;
 
   abstract readonly providerName: string;
 
   /**
+   * OAuth configuration for token refresh.
+   * Subclasses should set this in their constructor for refresh to work.
+   */
+  protected abstract getOAuthConfig(): OAuthConfig | null;
+
+  /**
    * Authenticate with the provider. Implemented by subclass.
-   * Base class handles token refresh on expiry.
+   * Base class handles token refresh on expiry and secure storage.
    */
   abstract authenticate(): Promise<AuthContext>;
+
+  /**
+   * Load stored tokens from secure storage.
+   * Call this in subclass constructor or connect method.
+   */
+  async loadStoredTokens(): Promise<boolean> {
+    const { getTokens } = await import("./tokenStorage.js");
+    const stored = await getTokens(this.providerName);
+    if (stored) {
+      this.auth = {
+        token: stored.accessToken,
+        refreshToken: stored.refreshToken,
+        expiresAt: stored.expiresAt ? new Date(stored.expiresAt) : undefined,
+        scopes: stored.scopes,
+      };
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Save current tokens to secure storage.
+   */
+  async saveTokens(): Promise<void> {
+    if (!this.auth) return;
+    const { storeTokens } = await import("./tokenStorage.js");
+    await storeTokens(this.providerName, {
+      accessToken: this.auth.token,
+      refreshToken: this.auth.refreshToken,
+      expiresAt: this.auth.expiresAt?.toISOString(),
+      scopes: this.auth.scopes,
+    });
+  }
+
+  /**
+   * Clear stored tokens (logout/disconnect).
+   */
+  async clearTokens(): Promise<void> {
+    const { deleteTokens } = await import("./tokenStorage.js");
+    await deleteTokens(this.providerName);
+    this.auth = null;
+  }
+
+  /**
+   * Perform OAuth 2.0 token refresh.
+   * Subclasses can override for provider-specific refresh flows.
+   */
+  protected async refreshToken(): Promise<AuthContext | null> {
+    if (!this.auth?.refreshToken) return null;
+
+    const config = this.getOAuthConfig();
+    if (!config) return null;
+
+    try {
+      const params = new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: this.auth.refreshToken,
+        client_id: config.clientId,
+        ...(config.clientSecret ? { client_secret: config.clientSecret } : {}),
+      });
+
+      const response = await fetch(config.tokenEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Token refresh failed: ${response.status}`);
+      }
+
+      const data = (await response.json()) as {
+        access_token: string;
+        refresh_token?: string;
+        expires_in?: number;
+        scope?: string;
+      };
+
+      const newAuth: AuthContext = {
+        token: data.access_token,
+        refreshToken: data.refresh_token ?? this.auth.refreshToken,
+        expiresAt: data.expires_in
+          ? new Date(Date.now() + data.expires_in * 1000)
+          : undefined,
+        scopes: data.scope?.split(" ") ?? this.auth.scopes,
+      };
+
+      this.auth = newAuth;
+      await this.saveTokens();
+      return newAuth;
+    } catch (err) {
+      // Refresh failed - clear tokens to force re-auth
+      await this.clearTokens();
+      return null;
+    }
+  }
 
   /**
    * Health check — validates token is valid without side effects.
@@ -89,14 +201,28 @@ export abstract class BaseConnector {
   ): Promise<{ data: T } | { error: ConnectorError }> {
     const { retries = 2, retryDelayMs = 1000 } = options;
 
-    // Ensure auth
+    // Ensure auth - try refresh first, then fall back to full auth
     if (!this.auth || this.isTokenExpired()) {
-      try {
-        this.auth = await this.authenticate();
-      } catch (err) {
-        return {
-          error: this.normalizeError(err),
-        };
+      // Try OAuth refresh if we have a refresh token
+      if (this.auth?.refreshToken) {
+        const refreshed = await this.refreshToken();
+        if (refreshed) {
+          this.auth = refreshed;
+        } else {
+          // Refresh failed, fall back to full auth
+          try {
+            this.auth = await this.authenticate();
+          } catch (err) {
+            return { error: this.normalizeError(err) };
+          }
+        }
+      } else {
+        // No refresh token, do full auth
+        try {
+          this.auth = await this.authenticate();
+        } catch (err) {
+          return { error: this.normalizeError(err) };
+        }
       }
     }
 
@@ -122,8 +248,16 @@ export abstract class BaseConnector {
         const delay = retryDelayMs * 2 ** attempt + Math.random() * 500;
         await sleep(delay);
 
-        // Token might have expired mid-call
+        // Token might have expired mid-call - try refresh first
         if (normalized.code === "auth_expired") {
+          if (this.auth?.refreshToken) {
+            const refreshed = await this.refreshToken();
+            if (refreshed) {
+              this.auth = refreshed;
+              continue; // Retry with new token
+            }
+          }
+          // Refresh failed or no refresh token, try full auth
           try {
             this.auth = await this.authenticate();
           } catch {

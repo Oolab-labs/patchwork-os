@@ -78,7 +78,7 @@
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "postinstall": "node scripts/postinstall.mjs || true",
-    "prepublishOnly": "npm run build && node dist/index.js --help | grep -q issuer-url",
+    "prepublishOnly": "npm run build && node dist/index.js --help | grep -q issuer-url && node scripts/publish-schemas.mjs",
     "smoke": "node smoke-test-v2.mjs",
     "remote": "bash scripts/start-remote.sh",
     "vps": "bash scripts/start-vps.sh",

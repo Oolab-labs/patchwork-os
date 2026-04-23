@@ -3,6 +3,11 @@ import React from "react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+interface AssertionFailure {
+  assertion: string;
+  message: string;
+}
+
 interface Run {
   seq: number;
   taskId: string;
@@ -16,6 +21,7 @@ interface Run {
   model?: string;
   outputTail?: string;
   errorMessage?: string;
+  assertionFailures?: AssertionFailure[];
 }
 
 type TriggerFilter = "all" | "cron" | "webhook" | "recipe";
@@ -148,16 +154,28 @@ export default function RunsPage() {
                       style={{ cursor: "pointer" }}
                     >
                       <td className="mono muted">{fmtWhen(r.doneAt)}</td>
-                      <td className="mono">{r.recipeName}</td>
+                      <td className="mono">
+                        <Link
+                          href={`/runs/${r.seq}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {r.recipeName}
+                        </Link>
+                      </td>
                       <td>
                         <span className="pill muted">{r.trigger}</span>
                       </td>
-                      <td>
+                      <td style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
                         <span
-                          className={`status-cell ${r.status === "done" ? "ok" : "err"}`}
+                          className={`status-cell ${r.status === "done" && !(r.assertionFailures?.length) ? "ok" : "err"}`}
                         >
                           {r.status}
                         </span>
+                        {r.assertionFailures && r.assertionFailures.length > 0 && (
+                          <span className="pill err" style={{ fontSize: 10 }}>
+                            {r.assertionFailures.length} assert
+                          </span>
+                        )}
                       </td>
                       <td className="mono muted">{fmtDur(r.durationMs)}</td>
                       <td className="mono muted">
@@ -194,6 +212,21 @@ export default function RunsPage() {
                                 >
                                   {r.errorMessage}
                                 </pre>
+                              </div>
+                            )}
+                            {r.assertionFailures && r.assertionFailures.length > 0 && (
+                              <div style={{ marginTop: 8 }}>
+                                <strong style={{ color: "var(--err)" }}>
+                                  Assertion failures ({r.assertionFailures.length}):
+                                </strong>
+                                <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>
+                                  {r.assertionFailures.map((f, i) => (
+                                    <li key={i} style={{ fontSize: 12, color: "var(--err)", marginTop: 2 }}>
+                                      <span className="mono" style={{ fontWeight: 600 }}>{f.assertion}</span>
+                                      {" — "}{f.message}
+                                    </li>
+                                  ))}
+                                </ul>
                               </div>
                             )}
                             {r.outputTail && (

@@ -21,6 +21,7 @@ import {
   loadTokenFile,
   revoke,
   startAuthorize,
+  updateTokenProfile,
   vendorConfig,
 } from "./mcpOAuth.js";
 
@@ -196,21 +197,7 @@ export async function handleSentryCallback(
         : (orgs.organizations ?? [])[0];
       const org = first?.slug;
       if (org) {
-        const file = loadTokenFile("sentry");
-        if (file) {
-          const { writeFileSync, mkdirSync } = await import("node:fs");
-          const { homedir } = await import("node:os");
-          const path = await import("node:path");
-          const p = path.join(
-            homedir(),
-            ".patchwork",
-            "tokens",
-            "sentry-mcp.json",
-          );
-          mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
-          file.profile = { ...(file.profile ?? {}), org };
-          writeFileSync(p, JSON.stringify(file, null, 2), { mode: 0o600 });
-        }
+        updateTokenProfile("sentry", { org });
       }
     } catch {
       // Profile fetch is best-effort

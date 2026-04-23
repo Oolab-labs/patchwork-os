@@ -444,6 +444,7 @@ export function generateExecutionPlan(recipe: ChainedRecipe): {
     dependencies: string[];
     condition?: string;
     risk: "low" | "medium" | "high";
+    optional?: boolean;
   }>;
   parallelGroups: string[][];
   maxDepth: number;
@@ -476,6 +477,7 @@ export function generateExecutionPlan(recipe: ChainedRecipe): {
       dependencies: s.awaits ?? [],
       condition: s.when,
       risk: s.risk ?? "low",
+      optional: s.optional,
     })),
     parallelGroups: levels,
     maxDepth: recipe.maxDepth ?? 3,

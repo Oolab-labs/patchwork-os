@@ -22,6 +22,11 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import {
+  deleteSecretJsonSync,
+  getSecretJsonSync,
+  storeSecretJsonSync,
+} from "./tokenStorage.js";
 
 const SLACK_AUTH_URL = "https://slack.com/oauth/v2/authorize";
 const SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
@@ -31,13 +36,20 @@ const SCOPES = [
   "channels:history",
   "users:read",
 ].join(",");
-const TOKEN_PATH = path.join(homedir(), ".patchwork", "tokens", "slack.json");
-const STATE_PATH = path.join(
-  homedir(),
-  ".patchwork",
-  "tokens",
-  "slack-state.json",
-);
+
+function getPatchworkTokensDir(): string {
+  const patchworkHome =
+    process.env.PATCHWORK_HOME ?? path.join(homedir(), ".patchwork");
+  return path.join(patchworkHome, "tokens");
+}
+
+function getLegacyTokenPath(): string {
+  return path.join(getPatchworkTokensDir(), "slack.json");
+}
+
+function getStatePath(): string {
+  return path.join(getPatchworkTokensDir(), "slack-state.json");
+}
 
 export interface SlackTokenFile {
   access_token: string; // bot token (xoxb-...)
@@ -75,22 +87,49 @@ function redirectUri(): string {
 // ── Token storage ─────────────────────────────────────────────────────────────
 
 export function loadTokens(): SlackTokenFile | null {
-  if (!existsSync(TOKEN_PATH)) return null;
+  const secureTokens = getSecretJsonSync<SlackTokenFile>("slack");
+  if (secureTokens) {
+    return secureTokens;
+  }
+
+  const legacyTokenPath = getLegacyTokenPath();
+  if (!existsSync(legacyTokenPath)) return null;
   try {
-    return JSON.parse(readFileSync(TOKEN_PATH, "utf-8")) as SlackTokenFile;
+    const tokens = JSON.parse(
+      readFileSync(legacyTokenPath, "utf-8"),
+    ) as SlackTokenFile;
+    saveTokens(tokens);
+    return tokens;
   } catch {
     return null;
   }
 }
 
 function saveTokens(file: SlackTokenFile): void {
-  mkdirSync(path.dirname(TOKEN_PATH), { recursive: true, mode: 0o700 });
-  writeFileSync(TOKEN_PATH, JSON.stringify(file, null, 2), { mode: 0o600 });
+  storeSecretJsonSync("slack", file);
+
+  const legacyTokenPath = getLegacyTokenPath();
+  if (existsSync(legacyTokenPath)) {
+    try {
+      unlinkSync(legacyTokenPath);
+    } catch {}
+  }
 }
 
 function deleteTokens(): void {
-  if (existsSync(TOKEN_PATH)) unlinkSync(TOKEN_PATH);
-  if (existsSync(STATE_PATH)) unlinkSync(STATE_PATH);
+  deleteSecretJsonSync("slack");
+  const legacyTokenPath = getLegacyTokenPath();
+  if (existsSync(legacyTokenPath)) {
+    try {
+      unlinkSync(legacyTokenPath);
+    } catch {}
+  }
+  const statePath = getStatePath();
+  if (existsSync(statePath)) {
+    try {
+      unlinkSync(statePath);
+    } catch {}
+  }
 }
 
 export function isConnected(): boolean {
@@ -100,20 +139,22 @@ export function isConnected(): boolean {
 // ── State (CSRF) ──────────────────────────────────────────────────────────────
 
 function saveState(state: string): void {
-  mkdirSync(path.dirname(STATE_PATH), { recursive: true, mode: 0o700 });
-  writeFileSync(STATE_PATH, JSON.stringify({ state, ts: Date.now() }), {
+  const statePath = getStatePath();
+  mkdirSync(path.dirname(statePath), { recursive: true, mode: 0o700 });
+  writeFileSync(statePath, JSON.stringify({ state, ts: Date.now() }), {
     mode: 0o600,
   });
 }
 
 function consumeState(): string | null {
-  if (!existsSync(STATE_PATH)) return null;
+  const statePath = getStatePath();
+  if (!existsSync(statePath)) return null;
   try {
-    const { state, ts } = JSON.parse(readFileSync(STATE_PATH, "utf-8")) as {
+    const { state, ts } = JSON.parse(readFileSync(statePath, "utf-8")) as {
       state: string;
       ts: number;
     };
-    unlinkSync(STATE_PATH);
+    unlinkSync(statePath);
     if (Date.now() - ts > 10 * 60 * 1000) return null; // 10-min TTL
     return state;
   } catch {

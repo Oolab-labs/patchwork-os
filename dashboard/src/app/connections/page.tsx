@@ -171,6 +171,23 @@ function IconSentry() {
   );
 }
 
+function IconNotion() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+      style={{ flexShrink: 0 }}
+    >
+      {/* Simplified Notion "N" mark */}
+      <rect x="3" y="2" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M7 6l6 8M7 6h3M13 14h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // ------------------------------------------------------------------ providers
 
 const PROVIDERS: {
@@ -220,6 +237,13 @@ const PROVIDERS: {
     description:
       "Post messages and list channels. Agents can send summaries, alerts, and notifications to your workspace.",
     icon: IconSlack,
+  },
+  {
+    id: "notion",
+    name: "Notion",
+    description:
+      "Query databases, read pages, and create content. Agents can sync issues, append meeting notes, and search your knowledge base.",
+    icon: IconNotion,
   },
 ];
 
@@ -475,6 +499,11 @@ export default function ConnectionsPage() {
   const [acting, setActing] = useState<string | null>(null);
   // inline action error
   const [actionErr, setActionErr] = useState<string | null>(null);
+  // Notion token-paste modal state
+  const [notionModalOpen, setNotionModalOpen] = useState(false);
+  const [notionToken, setNotionToken] = useState("");
+  const [notionConnecting, setNotionConnecting] = useState(false);
+  const [notionErr, setNotionErr] = useState<string | null>(null);
 
   async function fetchConnectors() {
     try {
@@ -505,7 +534,40 @@ export default function ConnectionsPage() {
     return connectors.find((c) => c.id === id) ?? { id, status: "disconnected" };
   }
 
+  async function handleNotionConnect() {
+    if (!notionToken.startsWith("secret_")) {
+      setNotionErr('Token must start with "secret_" — find it in Notion → Settings → Connections → Your integrations');
+      return;
+    }
+    setNotionConnecting(true);
+    setNotionErr(null);
+    try {
+      const res = await fetch("/api/connections/notion/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: notionToken }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        setNotionErr(body.error ?? `Error ${res.status}`);
+        return;
+      }
+      setNotionToken("");
+      setNotionModalOpen(false);
+      await fetchConnectors();
+    } catch (e) {
+      setNotionErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setNotionConnecting(false);
+    }
+  }
+
   function handleConnect(id: string) {
+    if (id === "notion") {
+      setNotionModalOpen(true);
+      setNotionErr(null);
+      return;
+    }
     // Open the OAuth auth URL. Omit "noopener" so the callback page can
     // postMessage back to this window. Safe: same-origin popup.
     window.open(`/api/connections/${id}/auth`, "_blank");
@@ -735,9 +797,84 @@ export default function ConnectionsPage() {
             onTest={() => handleTest("slack")}
             loading={acting === "slack"}
           />
+          <ConnectorCard
+            name="Notion"
+            description="Query databases, read pages, and create content. Agents can sync issues, append meeting notes, and search your knowledge base."
+            icon={<IconNotion />}
+            status={getConnector("notion").status}
+            lastSync={getConnector("notion").lastSync}
+            onConnect={() => handleConnect("notion")}
+            onDisconnect={() => handleDisconnect("notion")}
+            onTest={() => handleTest("notion")}
+            loading={acting === "notion"}
+          />
           </div>
         </>
       )}
+
+      {/* Notion token-paste modal */}
+      {notionModalOpen && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 50,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setNotionModalOpen(false); setNotionToken(""); setNotionErr(null); } }}
+        >
+          <div
+            className="card"
+            style={{ width: "100%", maxWidth: 420, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <IconNotion />
+              <strong style={{ fontSize: 15 }}>Connect Notion</strong>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--fg-2)", margin: 0 }}>
+              Create an internal integration at{" "}
+              <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+                notion.so/my-integrations
+              </a>
+              , copy the integration token, and paste it below.
+              Then share your databases/pages with the integration inside Notion.
+            </p>
+            <input
+              type="password"
+              autoFocus
+              placeholder="secret_..."
+              value={notionToken}
+              onChange={(e) => setNotionToken(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleNotionConnect(); }}
+              style={{
+                fontFamily: "var(--font-mono)", fontSize: 13,
+                padding: "8px 12px", borderRadius: 6,
+                border: "1px solid var(--border-subtle)",
+                background: "var(--bg-0)", color: "var(--fg-1)",
+                width: "100%", boxSizing: "border-box",
+              }}
+            />
+            {notionErr && (
+              <div className="alert-err" style={{ fontSize: 12 }}>{notionErr}</div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => { setNotionModalOpen(false); setNotionToken(""); setNotionErr(null); }}
+                style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleNotionConnect()}
+                disabled={notionConnecting || !notionToken}
+                style={{ padding: "6px 16px", fontSize: 13, cursor: notionConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !notionToken ? 0.5 : 1 }}
+              >
+                {notionConnecting ? "Connecting…" : "Connect"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <AddConnectionModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}

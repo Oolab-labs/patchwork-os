@@ -3,6 +3,9 @@
  * when env vars are absent — reproducing the production bug where refreshes
  * failed silently if the bridge was restarted without credentials in env.
  */
+
+import os from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -41,11 +44,18 @@ beforeEach(() => {
   mockFetch.mockReset();
   process.env.GMAIL_CLIENT_ID = "env_cid";
   process.env.GMAIL_CLIENT_SECRET = "env_csecret";
+  process.env.PATCHWORK_HOME = join(
+    os.tmpdir(),
+    `patchwork-gmail-refresh-${Date.now()}`,
+  );
+  process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
 });
 
 afterEach(() => {
   delete process.env.GMAIL_CLIENT_ID;
   delete process.env.GMAIL_CLIENT_SECRET;
+  delete process.env.PATCHWORK_HOME;
+  delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
   vi.restoreAllMocks();
 });
 

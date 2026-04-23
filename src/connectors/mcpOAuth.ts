@@ -18,15 +18,14 @@
  */
 
 import crypto from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import {
+  deleteSecretJsonSync,
+  getSecretJsonSync,
+  storeSecretJsonSync,
+} from "./tokenStorage.js";
 
 // ── Config types ─────────────────────────────────────────────────────────────
 
@@ -129,25 +128,58 @@ function tokenPath(vendor: VendorId): string {
   return path.join(homedir(), ".patchwork", "tokens", `${vendor}-mcp.json`);
 }
 
+function tokenStorageProvider(vendor: VendorId): string {
+  return `${vendor}-mcp`;
+}
+
 export function loadTokenFile(vendor: VendorId): McpTokenFile | null {
+  const secure = getSecretJsonSync<McpTokenFile>(tokenStorageProvider(vendor));
+  if (secure) {
+    return secure;
+  }
+
   const p = tokenPath(vendor);
   if (!existsSync(p)) return null;
   try {
-    return JSON.parse(readFileSync(p, "utf-8")) as McpTokenFile;
+    const legacy = JSON.parse(readFileSync(p, "utf-8")) as McpTokenFile;
+    saveTokenFile(legacy);
+    return legacy;
   } catch {
     return null;
   }
 }
 
 function saveTokenFile(file: McpTokenFile): void {
+  storeSecretJsonSync(tokenStorageProvider(file.vendor), file);
+
   const p = tokenPath(file.vendor);
-  mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
-  writeFileSync(p, JSON.stringify(file, null, 2), { mode: 0o600 });
+  if (existsSync(p)) {
+    try {
+      unlinkSync(p);
+    } catch {}
+  }
 }
 
 function deleteTokenFile(vendor: VendorId): void {
+  deleteSecretJsonSync(tokenStorageProvider(vendor));
+
   const p = tokenPath(vendor);
   if (existsSync(p)) unlinkSync(p);
+}
+
+export function updateTokenProfile(
+  vendor: VendorId,
+  profile: Record<string, string>,
+): void {
+  const file = loadTokenFile(vendor);
+  if (!file) {
+    return;
+  }
+
+  saveTokenFile({
+    ...file,
+    profile: { ...(file.profile ?? {}), ...profile },
+  });
 }
 
 // ── PKCE helpers ─────────────────────────────────────────────────────────────

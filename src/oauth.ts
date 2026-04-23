@@ -24,6 +24,10 @@ import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { URL } from "node:url";
+import {
+  getSecretJsonSync,
+  storeSecretJsonSync,
+} from "./connectors/tokenStorage.js";
 import { timingSafeStringEqual } from "./crypto.js";
 
 // ── Public interface (consumed by server.ts) ──────────────────────────────────
@@ -54,6 +58,14 @@ interface AccessToken {
   clientId: string;
   scope: string;
   expiresAt: number;
+}
+
+interface PersistedTokenSnapshot {
+  version: number;
+  tokens: Record<
+    string,
+    { clientId: string; scope: string; expiresAt: number }
+  >;
 }
 
 // ── CIMD SSRF guard ───────────────────────────────────────────────────────────
@@ -89,6 +101,15 @@ const TOKEN_TTL_MS = 24 * 60 * 60 * 1_000; // 24 hours
 const CLIENT_TTL_MS = 7 * 24 * 60 * 60 * 1_000; // 7 days — GC registered clients after a week
 const DEFAULT_SCOPE = "mcp";
 const SUPPORTED_SCOPES = ["mcp"];
+
+function oauthTokenStorageProvider(configDir: string): string {
+  const hash = crypto
+    .createHash("sha256")
+    .update(configDir)
+    .digest("hex")
+    .slice(0, 24);
+  return `oauth-server-${hash}`;
+}
 
 // ── OAuthServerImpl ───────────────────────────────────────────────────────────
 
@@ -128,8 +149,9 @@ export class OAuthServerImpl implements OAuthServer {
   private static readonly CIMD_CACHE_TTL_MS = 5 * 60 * 1_000; // 5 min
   private static readonly CIMD_MAX_BYTES = 8_192; // 8 KB max for metadata doc
 
-  /** Path to the persisted token file; null when persistence is disabled. */
+  /** Legacy file path for migration; null when persistence is disabled. */
   private readonly tokenStorePath: string | null;
+  private readonly tokenStoreProvider: string | null;
   private readonly tokenTtlMs: number;
   /**
    * Tokens loaded from disk on startup: SHA-256(token) → AccessToken.
@@ -147,6 +169,9 @@ export class OAuthServerImpl implements OAuthServer {
     this.bridgeToken = bridgeToken;
     this.issuerUrl = issuerUrl.replace(/\/$/, "");
     this.tokenTtlMs = opts?.tokenTtlMs ?? TOKEN_TTL_MS;
+    this.tokenStoreProvider = opts?.configDir
+      ? oauthTokenStorageProvider(opts.configDir)
+      : null;
     this.tokenStorePath = opts?.configDir
       ? path.join(opts.configDir, "ide", "oauth-tokens.json")
       : null;
@@ -664,17 +689,46 @@ export class OAuthServerImpl implements OAuthServer {
     return crypto.createHash("sha256").update(token).digest("hex");
   }
 
-  private loadTokens(): void {
-    if (!this.tokenStorePath) return;
+  private readPersistedTokenSnapshot(): PersistedTokenSnapshot | null {
+    if (!this.tokenStoreProvider) return null;
+
+    const secure = getSecretJsonSync<PersistedTokenSnapshot>(
+      this.tokenStoreProvider,
+    );
+    if (secure) {
+      return secure;
+    }
+
+    if (!this.tokenStorePath) return null;
+
     try {
-      const raw = fs.readFileSync(this.tokenStorePath, "utf8");
-      const parsed = JSON.parse(raw) as {
-        version: number;
-        tokens: Record<
-          string,
-          { clientId: string; scope: string; expiresAt: number }
-        >;
-      };
+      const legacy = JSON.parse(
+        fs.readFileSync(this.tokenStorePath, "utf8"),
+      ) as PersistedTokenSnapshot;
+      this.writePersistedTokenSnapshot(legacy);
+      return legacy;
+    } catch {
+      return null;
+    }
+  }
+
+  private writePersistedTokenSnapshot(snapshot: PersistedTokenSnapshot): void {
+    if (!this.tokenStoreProvider) return;
+
+    storeSecretJsonSync(this.tokenStoreProvider, snapshot);
+
+    if (this.tokenStorePath && fs.existsSync(this.tokenStorePath)) {
+      try {
+        fs.unlinkSync(this.tokenStorePath);
+      } catch {}
+    }
+  }
+
+  private loadTokens(): void {
+    if (!this.tokenStoreProvider) return;
+    try {
+      const parsed = this.readPersistedTokenSnapshot();
+      if (!parsed) return;
       if (parsed.version !== 1 || typeof parsed.tokens !== "object") return;
       const entries = Object.entries(parsed.tokens);
       // Cap: refuse to load a file with suspiciously many entries to prevent DoS
@@ -717,7 +771,7 @@ export class OAuthServerImpl implements OAuthServer {
   }
 
   private persistTokens(): void {
-    if (!this.tokenStorePath) return;
+    if (!this.tokenStoreProvider) return;
     try {
       const now = Date.now();
       const tokens: Record<
@@ -750,20 +804,14 @@ export class OAuthServerImpl implements OAuthServer {
           };
         }
       }
-      const data = JSON.stringify({ version: 1, tokens }, null, 2);
-      const tmpPath = `${this.tokenStorePath}.tmp`;
-      const dir = path.dirname(this.tokenStorePath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(tmpPath, data, { mode: 0o600 });
-      fs.renameSync(tmpPath, this.tokenStorePath);
-      fs.chmodSync(this.tokenStorePath, 0o600);
+      this.writePersistedTokenSnapshot({ version: 1, tokens });
     } catch {
       // Best-effort — never block operation
     }
   }
 
   private schedulePersist(): void {
-    if (!this.tokenStorePath) return;
+    if (!this.tokenStoreProvider) return;
     if (this.persistTimer !== null) clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;

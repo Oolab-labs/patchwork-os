@@ -7,12 +7,16 @@
  * Extends BaseConnector for unified auth, retry, error handling.
  */
 
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 import {
   type AuthContext,
   BaseConnector,
   type ConnectorError,
   type ConnectorStatus,
 } from "./baseConnector.js";
+import { getSecretJsonSync, storeSecretJsonSync } from "./tokenStorage.js";
 
 export interface JiraTokens {
   accessToken: string; // OAuth or API token
@@ -72,6 +76,10 @@ const JIRA_SERVER_API = "/rest/api/2";
 export class JiraConnector extends BaseConnector {
   readonly providerName = "jira";
   private tokens: JiraTokens | null = null;
+
+  protected getOAuthConfig() {
+    return null;
+  }
 
   async authenticate(): Promise<AuthContext> {
     // Try loading from file first
@@ -421,11 +429,11 @@ export class JiraConnector extends BaseConnector {
 
 // ── Token persistence ────────────────────────────────────────────────────────
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
-
-const TOKEN_PATH = path.join(homedir(), ".patchwork", "tokens", "jira.json");
+function getLegacyTokenPath(): string {
+  const patchworkHome =
+    process.env.PATCHWORK_HOME ?? path.join(homedir(), ".patchwork");
+  return path.join(patchworkHome, "tokens", "jira.json");
+}
 
 export function loadTokens(): JiraTokens | null {
   // Environment variable override
@@ -441,10 +449,19 @@ export function loadTokens(): JiraTokens | null {
     };
   }
 
-  if (!existsSync(TOKEN_PATH)) return null;
+  const secure = getSecretJsonSync<JiraTokens>("jira");
+  if (secure) {
+    return secure;
+  }
+
+  const legacyTokenPath = getLegacyTokenPath();
+  if (!existsSync(legacyTokenPath)) return null;
 
   try {
-    const data = JSON.parse(readFileSync(TOKEN_PATH, "utf-8")) as JiraTokens;
+    const data = JSON.parse(
+      readFileSync(legacyTokenPath, "utf-8"),
+    ) as JiraTokens;
+    saveTokens(data);
     return data;
   } catch {
     return null;
@@ -452,11 +469,14 @@ export function loadTokens(): JiraTokens | null {
 }
 
 export function saveTokens(tokens: JiraTokens): void {
-  const dir = path.dirname(TOKEN_PATH);
-  if (!existsSync(dir)) {
-    import("node:fs").then((fs) => fs.mkdirSync(dir, { recursive: true }));
+  storeSecretJsonSync("jira", tokens);
+
+  const legacyTokenPath = getLegacyTokenPath();
+  if (existsSync(legacyTokenPath)) {
+    try {
+      unlinkSync(legacyTokenPath);
+    } catch {}
   }
-  writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
 }
 
 // ── Singleton instance ───────────────────────────────────────────────────────

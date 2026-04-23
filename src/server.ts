@@ -151,6 +151,13 @@ export class Server extends EventEmitter<ServerEvents> {
         after?: number;
       }) => Record<string, unknown>[])
     | null = null;
+  /** Patchwork: set by bridge to fetch a single run by seq for the detail page. */
+  public runDetailFn: ((seq: number) => Record<string, unknown> | null) | null =
+    null;
+  /** Patchwork: set by bridge to generate a dry-run plan for a recipe by name. */
+  public runPlanFn:
+    | ((recipeName: string) => Promise<Record<string, unknown>>)
+    | null = null;
   /** Patchwork: set by bridge to launch a named recipe via the orchestrator. */
   public runRecipeFn:
     | ((
@@ -643,6 +650,59 @@ export class Server extends EventEmitter<ServerEvents> {
           });
           res.end(result.body);
         })();
+        return;
+      }
+
+      // ── /schemas/* — unauthenticated registry-derived JSON Schemas ────────
+      // Serves recipe.v1.json, dry-run-plan.v1.json, tools/<ns>.json so YAML-LSP
+      // editors can resolve `$schema:` headers against a running bridge. No
+      // secrets — schemas are generated from the tool registry.
+      if (parsedUrl.pathname?.startsWith("/schemas/") && req.method === "GET") {
+        try {
+          await import("./recipes/tools/index.js");
+          const { generateSchemaSet } = await import(
+            "./recipes/schemaGenerator.js"
+          );
+          const schemas = generateSchemaSet();
+          const rest = parsedUrl.pathname.slice("/schemas/".length);
+          let body: unknown;
+
+          if (rest === "recipe.v1.json") {
+            body = schemas.recipe;
+          } else if (rest === "dry-run-plan.v1.json") {
+            body = schemas.dryRunPlan;
+          } else if (rest.startsWith("tools/") && rest.endsWith(".json")) {
+            const ns = rest.slice("tools/".length, -".json".length);
+            body = schemas.namespaces[ns];
+          } else if (rest === "" || rest === "index.json") {
+            body = {
+              recipe: "/schemas/recipe.v1.json",
+              dryRunPlan: "/schemas/dry-run-plan.v1.json",
+              tools: Object.keys(schemas.namespaces).map(
+                (ns) => `/schemas/tools/${ns}.json`,
+              ),
+            };
+          }
+
+          if (body === undefined) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: `schema not found: ${rest}` }));
+            return;
+          }
+
+          res.writeHead(200, {
+            "Content-Type": "application/schema+json",
+            "Cache-Control": "public, max-age=60",
+          });
+          res.end(JSON.stringify(body, null, 2));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
         return;
       }
 
@@ -1276,6 +1336,164 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── Notion routes ──────────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/notion/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handleNotionConnect } = await import(
+              "./connectors/notion.js"
+            );
+            const result = await handleNotionConnect(
+              Buffer.concat(chunks).toString("utf-8"),
+            );
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/notion/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleNotionTest } = await import("./connectors/notion.js");
+          const result = await handleNotionTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/notion" &&
+        req.method === "DELETE"
+      ) {
+        const { handleNotionDisconnect } = await import(
+          "./connectors/notion.js"
+        );
+        const result = handleNotionDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
+      // ── Confluence routes ───────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/confluence/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handleConfluenceConnect } = await import(
+              "./connectors/confluence.js"
+            );
+            const result = await handleConfluenceConnect(
+              Buffer.concat(chunks).toString("utf-8"),
+            );
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/confluence/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleConfluenceTest } = await import(
+            "./connectors/confluence.js"
+          );
+          const result = await handleConfluenceTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/confluence" &&
+        req.method === "DELETE"
+      ) {
+        const { handleConfluenceDisconnect } = await import(
+          "./connectors/confluence.js"
+        );
+        const result = handleConfluenceDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
+      // ── Zendesk routes ──────────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/zendesk/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handleZendeskConnect } = await import(
+              "./connectors/zendesk.js"
+            );
+            const result = await handleZendeskConnect(
+              Buffer.concat(chunks).toString("utf-8"),
+            );
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/zendesk/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleZendeskTest } = await import("./connectors/zendesk.js");
+          const result = await handleZendeskTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/zendesk" &&
+        req.method === "DELETE"
+      ) {
+        const { handleZendeskDisconnect } = await import(
+          "./connectors/zendesk.js"
+        );
+        const result = handleZendeskDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
       // ── Google Calendar routes ──────────────────────────────────────
       if (
         parsedUrl.pathname === "/connections/google-calendar/auth" &&
@@ -1533,6 +1751,64 @@ export class Server extends EventEmitter<ServerEvents> {
               error: err instanceof Error ? err.message : String(err),
             }),
           );
+        }
+        return;
+      }
+      // GET /runs/:seq — single run detail (includes stepResults if present)
+      const runDetailMatch =
+        req.method === "GET"
+          ? /^\/runs\/(\d+)$/.exec(parsedUrl.pathname)
+          : null;
+      if (runDetailMatch?.[1]) {
+        const seq = Number.parseInt(runDetailMatch[1], 10);
+        try {
+          const run = this.runDetailFn?.(seq) ?? null;
+          if (!run) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "not_found" }));
+          } else {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ run }));
+          }
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      // GET /runs/:seq/plan — dry-run plan for the recipe that produced this run
+      const runPlanMatch =
+        req.method === "GET"
+          ? /^\/runs\/(\d+)\/plan$/.exec(parsedUrl.pathname)
+          : null;
+      if (runPlanMatch?.[1]) {
+        const seq = Number.parseInt(runPlanMatch[1], 10);
+        try {
+          const run = this.runDetailFn?.(seq) ?? null;
+          if (!run) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "run_not_found" }));
+            return;
+          }
+          if (!this.runPlanFn) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "plan_unavailable" }));
+            return;
+          }
+          const recipeName = run["recipeName"] as string;
+          const plan = await this.runPlanFn(recipeName);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ plan }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const status =
+            msg.includes("not found") || msg.includes("ENOENT") ? 404 : 500;
+          res.writeHead(status, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: msg }));
         }
         return;
       }

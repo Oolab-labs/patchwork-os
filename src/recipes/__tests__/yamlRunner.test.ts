@@ -14,6 +14,8 @@ const mockLoadTokens = vi.mocked(loadTokens);
 const mockListIssues = vi.mocked(listIssues);
 
 import {
+  type AssertionFailure,
+  evaluateExpect,
   type FetchFn,
   listYamlRecipes,
   type RunnerDeps,
@@ -87,6 +89,64 @@ describe("validateYamlRecipe", () => {
       validateYamlRecipe({ name: "x", trigger: { type: "manual" }, steps: [] }),
     ).toThrow("steps");
   });
+
+  it("normalizes legacy runtime-safe recipe shapes", () => {
+    const recipe = validateYamlRecipe({
+      name: "legacy-runtime",
+      trigger: { type: "cron", schedule: "0 6 * * *" },
+      steps: [
+        {
+          tool: "file.append",
+          params: {
+            path: "/tmp/out.md",
+            line: "hello",
+          },
+          output: "saved",
+        },
+        {
+          agent: true,
+          prompt: "Summarize {{saved}}",
+          output: "summary",
+        },
+        {
+          id: "parallel_fetch",
+          parallel: [
+            {
+              tool: "notify.push",
+              params: { title: "x" },
+              output: "notified",
+            },
+          ],
+        },
+      ],
+    }) as unknown as Record<string, unknown>;
+
+    expect((recipe.trigger as Record<string, unknown>).at).toBe("0 6 * * *");
+    expect(recipe.steps).toMatchObject([
+      {
+        tool: "file.append",
+        path: "/tmp/out.md",
+        content: "hello",
+        into: "saved",
+      },
+      {
+        agent: {
+          prompt: "Summarize {{saved}}",
+          into: "summary",
+        },
+      },
+      {
+        id: "parallel_fetch",
+        parallel: [
+          {
+            tool: "notify.push",
+            title: "x",
+            into: "notified",
+          },
+        ],
+      },
+    ]);
+  });
 });
 
 // ── runYamlRecipe ─────────────────────────────────────────────────────────────
@@ -112,6 +172,35 @@ describe("runYamlRecipe — file.write", () => {
     expect(result.stepsRun).toBe(1);
     expect(Object.keys(written)).toHaveLength(1);
     expect(Object.values(written)[0]).toContain("2026-04-18");
+  });
+
+  it("exposes structured output fields from registry metadata in context", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: "/tmp/meta.md",
+          content: "hello",
+          into: "saved",
+        },
+        {
+          tool: "file.write",
+          path: "/tmp/out.md",
+          content: "{{saved.path}} ({{saved.bytesWritten}})",
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+
+    expect(result.context["saved.path"]).toBe("/tmp/meta.md");
+    expect(result.context["saved.bytesWritten"]).toBe("5");
+    expect(written["/tmp/out.md"]).toBe("/tmp/meta.md (5)");
   });
 });
 
@@ -940,5 +1029,238 @@ describe("linear.list_issues step", () => {
     };
     expect(out.count).toBe(0);
     expect(out.error).toContain("unauthorized");
+  });
+});
+
+// ── evaluateExpect ─────────────────────────────────────────────────────────────
+
+describe("evaluateExpect — stepsRun", () => {
+  const base = {
+    stepsRun: 2,
+    outputs: [],
+    context: {},
+    errorMessage: undefined,
+  };
+
+  it("passes when stepsRun matches", () => {
+    expect(evaluateExpect(base, { stepsRun: 2 })).toHaveLength(0);
+  });
+
+  it("fails when stepsRun differs", () => {
+    const failures = evaluateExpect(base, { stepsRun: 3 });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.assertion).toBe("stepsRun");
+    expect(failures[0]!.actual).toBe(2);
+    expect(failures[0]!.expected).toBe(3);
+  });
+});
+
+describe("evaluateExpect — errorMessage", () => {
+  it("passes when errorMessage is null and run is clean", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: [],
+      context: {},
+      errorMessage: undefined,
+    };
+    expect(evaluateExpect(base, { errorMessage: null })).toHaveLength(0);
+  });
+
+  it("fails when expecting null but run errored", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: [],
+      context: {},
+      errorMessage: "boom",
+    };
+    const failures = evaluateExpect(base, { errorMessage: null });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.message).toContain("boom");
+  });
+
+  it("passes when expected error matches actual", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: [],
+      context: {},
+      errorMessage: "file not found",
+    };
+    expect(
+      evaluateExpect(base, { errorMessage: "file not found" }),
+    ).toHaveLength(0);
+  });
+
+  it("fails when expected error differs from actual", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: [],
+      context: {},
+      errorMessage: "timeout",
+    };
+    const failures = evaluateExpect(base, { errorMessage: "file not found" });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.assertion).toBe("errorMessage");
+  });
+
+  it("skips errorMessage check when field absent from expect", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: [],
+      context: {},
+      errorMessage: "something",
+    };
+    expect(evaluateExpect(base, {})).toHaveLength(0);
+  });
+});
+
+describe("evaluateExpect — outputs", () => {
+  it("passes when all expected output keys are present", () => {
+    const base = {
+      stepsRun: 2,
+      outputs: ["summary", "report"],
+      context: {},
+      errorMessage: undefined,
+    };
+    expect(
+      evaluateExpect(base, { outputs: ["summary", "report"] }),
+    ).toHaveLength(0);
+  });
+
+  it("fails for each missing output key", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: ["summary"],
+      context: {},
+      errorMessage: undefined,
+    };
+    const failures = evaluateExpect(base, { outputs: ["summary", "report"] });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.assertion).toBe("outputs");
+    expect(failures[0]!.expected).toBe("report");
+  });
+});
+
+describe("evaluateExpect — context", () => {
+  it("passes when context values contain expected strings", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: [],
+      context: { greeting: "hello world" },
+      errorMessage: undefined,
+    };
+    expect(
+      evaluateExpect(base, { context: { greeting: "hello" } }),
+    ).toHaveLength(0);
+  });
+
+  it("fails when context key is missing", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: [],
+      context: {},
+      errorMessage: undefined,
+    };
+    const failures = evaluateExpect(base, { context: { greeting: "hello" } });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.assertion).toBe("context.greeting");
+    expect(failures[0]!.message).toContain("missing");
+  });
+
+  it("fails when context value does not contain expected substring", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: [],
+      context: { greeting: "goodbye" },
+      errorMessage: undefined,
+    };
+    const failures = evaluateExpect(base, { context: { greeting: "hello" } });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.message).toContain("contain");
+  });
+});
+
+describe("evaluateExpect — multiple assertions", () => {
+  it("collects all failures in one call", () => {
+    const base = {
+      stepsRun: 1,
+      outputs: [],
+      context: {},
+      errorMessage: undefined,
+    };
+    const failures = evaluateExpect(base, {
+      stepsRun: 3,
+      outputs: ["report"],
+      context: { key: "value" },
+    });
+    expect(failures.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("returns empty array when all assertions pass", () => {
+    const base = {
+      stepsRun: 2,
+      outputs: ["out"],
+      context: { key: "expected value" },
+      errorMessage: undefined,
+    };
+    expect(
+      evaluateExpect(base, {
+        stepsRun: 2,
+        outputs: ["out"],
+        context: { key: "expected" },
+      }),
+    ).toHaveLength(0);
+  });
+});
+
+describe("runYamlRecipe — expect assertions wired end-to-end", () => {
+  it("returns assertionFailures when expect block fails", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: "/tmp/x.txt",
+          content: "hello",
+          into: "saved",
+        },
+      ],
+      expect: { stepsRun: 99, outputs: ["missing-key"] },
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.assertionFailures).toBeDefined();
+    expect(result.assertionFailures!.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("returns no assertionFailures when expect block passes", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.write",
+          path: "/tmp/y.txt",
+          content: "hi",
+          into: "saved",
+        },
+      ],
+      expect: { stepsRun: 1, outputs: ["/tmp/y.txt"], errorMessage: null },
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(result.assertionFailures).toBeUndefined();
+  });
+
+  it("omits assertionFailures when no expect block", async () => {
+    const recipe = makeRecipe({ steps: [] });
+    const result = await runYamlRecipe(recipe, noop());
+    expect(result.assertionFailures).toBeUndefined();
   });
 });

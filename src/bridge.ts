@@ -1276,6 +1276,20 @@ export class Bridge {
         ...(q.after !== undefined && { after: q.after }),
       }) as unknown as Record<string, unknown>[];
     };
+    this.server.runDetailFn = (seq) => {
+      if (!this.recipeRunLog) return null;
+      return this.recipeRunLog.getBySeq(seq) as unknown as Record<
+        string,
+        unknown
+      > | null;
+    };
+    this.server.runPlanFn = async (recipeName) => {
+      const { runRecipeDryPlan } = await import("./commands/recipe.js");
+      return (await runRecipeDryPlan(recipeName)) as unknown as Record<
+        string,
+        unknown
+      >;
+    };
     this.server.sessionsFn = () =>
       [...this.sessions.values()].map((s) => {
         const tools = this.activityLog.querySessionTools(s.id, 1);

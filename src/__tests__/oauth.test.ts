@@ -720,6 +720,8 @@ describe("OAuthServerImpl — token persistence", () => {
   let tmpDir: string;
 
   afterEach(() => {
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
     if (tmpDir) {
       try {
         fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -731,7 +733,18 @@ describe("OAuthServerImpl — token persistence", () => {
 
   function makeTmpDir() {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "oauth-test-"));
+    process.env.PATCHWORK_HOME = tmpDir;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
     return tmpDir;
+  }
+
+  function tokenStoreFilePath(oauth: OAuthServerImpl): string {
+    const provider = (oauth as unknown as { tokenStoreProvider: string | null })
+      .tokenStoreProvider;
+    if (!provider) {
+      throw new Error("missing token storage provider");
+    }
+    return path.join(tmpDir, "tokens", `patchwork-os.${provider}.enc`);
   }
 
   async function issueTokenWithDir(
@@ -810,15 +823,50 @@ describe("OAuthServerImpl — token persistence", () => {
     oauth.destroy();
   });
 
-  it("token store file has 0o600 permissions", async () => {
+  it("token snapshot is persisted through file-backed secure storage with 0o600 permissions", async () => {
     const configDir = makeTmpDir();
-    await issueTokenWithDir(configDir);
-    const tokenFile = path.join(configDir, "ide", "oauth-tokens.json");
+    const { oauth } = await issueTokenWithDir(configDir);
+    const tokenFile = tokenStoreFilePath(oauth);
     const stat = fs.statSync(tokenFile);
     expect(stat.mode & 0o777).toBe(0o600);
+    oauth.destroy();
+  });
+
+  it("migrates a legacy oauth-tokens.json snapshot into secure storage on startup", () => {
+    const configDir = makeTmpDir();
+    const legacyDir = path.join(configDir, "ide");
+    const token = "legacy-oauth-token";
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(legacyDir, "oauth-tokens.json"),
+      JSON.stringify({
+        version: 1,
+        tokens: {
+          [tokenHash]: {
+            clientId: CLIENT_ID,
+            scope: "mcp",
+            expiresAt: Date.now() + 60_000,
+          },
+        },
+      }),
+      { mode: 0o600 },
+    );
+
+    const oauth = makeOAuth({ configDir });
+
+    expect(oauth.resolveBearerToken(token)).toBe(BRIDGE_TOKEN);
+    expect(fs.existsSync(path.join(legacyDir, "oauth-tokens.json"))).toBe(
+      false,
+    );
+    expect(fs.existsSync(tokenStoreFilePath(oauth))).toBe(true);
+    oauth.destroy();
   });
 
   it("no persistence when configDir is not provided", async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "oauth-test-"));
+    process.env.PATCHWORK_HOME = tmpDir;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
     const oauth = makeOAuthWithClient();
     const { code, verifier } = await issueCode(oauth);
     const { data } = await issueToken(oauth, code, verifier);
@@ -826,7 +874,6 @@ describe("OAuthServerImpl — token persistence", () => {
     // Should resolve in-memory fine
     expect(oauth.resolveBearerToken(token)).toBe(BRIDGE_TOKEN);
     oauth.destroy();
-    // No file written
-    // (no assertion needed — just verifying no crash)
+    expect(fs.existsSync(path.join(tmpDir, "tokens"))).toBe(false);
   });
 });
