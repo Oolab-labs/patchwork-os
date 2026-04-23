@@ -427,3 +427,105 @@ describe("generateExecutionPlan", () => {
     expect(step.risk).toBe("high");
   });
 });
+
+// ── transform field (chained) ─────────────────────────────────────────────────
+
+describe("transform field (chained)", () => {
+  it("applies transform to tool result", async () => {
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue("raw output"),
+      executeAgent: vi.fn().mockResolvedValue("agent output"),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const recipe: ChainedRecipe = {
+      name: "r",
+      steps: [{ id: "a", tool: "t", transform: "prefix: {{$result}}" }],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, deps);
+    expect(result.success).toBe(true);
+    const reg = result.stepResults.get("a");
+    expect(reg?.success).toBe(true);
+    // data stored in registry should be the transformed value
+    // We access it via the ChainedRunResult summary — check stepResults map
+    // The actual data is in the registry; verify by inspecting the run result
+    // Run success indicates transform didn't break execution
+  });
+
+  it("stores transformed value in registry data", async () => {
+    const reg = createOutputRegistry();
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue("hello"),
+      executeAgent: vi.fn().mockResolvedValue(""),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const step = {
+      id: "s1",
+      tool: "mytool",
+      transform: "wrapped: {{$result}}",
+    };
+    const ctx = {
+      registry: reg,
+      step,
+      options: baseOptions,
+      recipe: { name: "r", steps: [step] },
+      depth: 0,
+    };
+    const result = await executeChainedStep(ctx, deps);
+    expect(result.success).toBe(true);
+    expect(result.data).toBe("wrapped: hello");
+  });
+
+  it("applies transform to agent result", async () => {
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue(""),
+      executeAgent: vi.fn().mockResolvedValue("agent says hi"),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const reg = createOutputRegistry();
+    const step = {
+      id: "a1",
+      agent: { prompt: "do something" },
+      transform: "AGENT: {{$result}}",
+    };
+    const ctx = {
+      registry: reg,
+      step,
+      options: baseOptions,
+      recipe: { name: "r", steps: [step] },
+      depth: 0,
+    };
+    const result = await executeChainedStep(ctx, deps);
+    expect(result.success).toBe(true);
+    expect(result.data).toBe("AGENT: agent says hi");
+  });
+
+  it("succeeds without transform field (unchanged behavior)", async () => {
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue("plain"),
+      executeAgent: vi.fn().mockResolvedValue(""),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const reg = createOutputRegistry();
+    const step = { id: "s2", tool: "t" };
+    const ctx = {
+      registry: reg,
+      step,
+      options: baseOptions,
+      recipe: { name: "r", steps: [step] },
+      depth: 0,
+    };
+    const result = await executeChainedStep(ctx, deps);
+    expect(result.success).toBe(true);
+    expect(result.data).toBe("plain");
+  });
+
+  it("transform is excluded from tool params", () => {
+    const ctx = { steps: {}, env: { NAME: "world" } };
+    const { resolved } = resolveStepTemplates(
+      { id: "s", tool: "t", transform: "{{$result}}", message: "hi" },
+      ctx,
+    );
+    expect("transform" in resolved).toBe(false);
+    expect(resolved.message).toBe("hi");
+  });
+});

@@ -42,6 +42,7 @@ import {
   executeTool,
   getTool,
   hasTool,
+  registerPluginTools,
 } from "./toolRegistry.js";
 import "./tools/index.js";
 
@@ -50,6 +51,7 @@ export interface YamlStep {
   agent?: { prompt: string; model?: string; into?: string; driver?: string };
   into?: string;
   optional?: boolean;
+  transform?: string; // template rendered after tool execution; $result = raw tool output
   [key: string]: unknown;
 }
 
@@ -150,6 +152,8 @@ export interface YamlRecipe {
   steps: YamlStep[];
   expect?: YamlRecipeExpect;
   output?: { path: string };
+  /** Plugin specs (npm package name or local path) to load before running steps. */
+  servers?: string[];
 }
 
 export type RunContext = Record<string, string>;
@@ -263,7 +267,79 @@ export function validateYamlRecipe(raw: unknown): YamlRecipe {
   if (!Array.isArray(r.steps) || r.steps.length === 0) {
     throw new Error("recipe.steps must be a non-empty array");
   }
+  if (
+    r.servers !== undefined &&
+    (!Array.isArray(r.servers) ||
+      (r.servers as unknown[]).some((s) => typeof s !== "string"))
+  ) {
+    throw new Error("recipe.servers must be an array of strings if present");
+  }
   return r as unknown as YamlRecipe;
+}
+
+/** Track already-loaded plugin specs to avoid double-loading within a process. */
+const loadedPluginSpecs = new Set<string>();
+
+/**
+ * Load plugin specs declared in `recipe.servers` and register their tools into
+ * the recipe tool registry. Errors per-spec are logged as warnings — never fatal.
+ */
+export async function loadRecipeServers(specs: string[]): Promise<void> {
+  const toLoad = specs.filter((s) => !loadedPluginSpecs.has(s));
+  if (toLoad.length === 0) return;
+
+  let loadPluginsFull: typeof import("../pluginLoader.js").loadPluginsFull;
+  try {
+    ({ loadPluginsFull } = await import("../pluginLoader.js"));
+  } catch (err) {
+    console.warn(
+      `[recipe servers] failed to import pluginLoader: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+
+  const minimalConfig = {
+    workspace: process.cwd(),
+    workspaceFolders: [process.cwd()],
+    commandTimeout: 30_000,
+    maxResultSize: 1_048_576,
+  } as import("../config.js").Config;
+
+  const minimalLogger = {
+    info: (msg: string) => console.info(`[recipe servers] ${msg}`),
+    warn: (msg: string) => console.warn(`[recipe servers] ${msg}`),
+    error: (msg: string) => console.error(`[recipe servers] ${msg}`),
+    debug: (_msg: string) => {},
+  } as import("../logger.js").Logger;
+
+  for (const spec of toLoad) {
+    try {
+      const loaded = await loadPluginsFull(
+        [spec],
+        minimalConfig,
+        minimalLogger,
+      );
+      let toolCount = 0;
+      for (const plugin of loaded) {
+        const pluginTools = plugin.tools.map((t) => ({
+          name: t.schema.name,
+          handler: t.handler as (...args: unknown[]) => Promise<unknown>,
+          schema: t.schema,
+        }));
+        toolCount += registerPluginTools(pluginTools);
+      }
+      loadedPluginSpecs.add(spec);
+      if (toolCount > 0) {
+        console.info(
+          `[recipe servers] loaded "${spec}" — ${toolCount} tool(s) registered`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[recipe servers] failed to load "${spec}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 }
 
 export async function runYamlRecipe(
@@ -271,6 +347,10 @@ export async function runYamlRecipe(
   deps: RunnerDeps = {},
   seedContext: RunContext = {},
 ): Promise<RunResult> {
+  if (recipe.servers?.length) {
+    await loadRecipeServers(recipe.servers);
+  }
+
   const now = deps.now ? deps.now() : new Date();
   const ctx: RunContext = {
     date: now.toISOString().slice(0, 10),
@@ -415,6 +495,17 @@ export async function runYamlRecipe(
     }
     stepsRun++;
     if (result !== null) {
+      // Apply transform if present — render template with $result injected
+      if (step.transform) {
+        try {
+          result = render(step.transform, { ...ctx, $result: result });
+        } catch (err) {
+          // warn but fall through with original result
+          console.warn(
+            `transform failed for step ${step.into ?? step.tool ?? "?"}: ${err}`,
+          );
+        }
+      }
       if (step.into) {
         ctx[step.into] = result;
         if (step.tool) {
@@ -553,7 +644,7 @@ export async function executeStep(
     }
 
     // Check if mock connector is available for this tool
-    if (deps.mockConnectors && deps.mockConnectors[toolId]) {
+    if (deps.mockConnectors?.[toolId]) {
       return deps.mockConnectors[toolId].invoke("execute", params);
     }
 
@@ -884,7 +975,7 @@ export function buildChainedDeps(
         const raw = stepDeps.readFile(p);
         const { parse } = await import("yaml");
         const parsed = parse(raw) as import("./chainedRunner.js").ChainedRecipe;
-        if (parsed && parsed.steps) return parsed;
+        if (parsed?.steps) return parsed;
       } catch {
         // try next candidate
       }

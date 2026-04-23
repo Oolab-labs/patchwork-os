@@ -141,6 +141,11 @@ function generateRecipeSchema(
       enum: ["low", "medium", "high"],
       description: "Risk level for this step",
     },
+    transform: {
+      type: "string",
+      description:
+        "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions.",
+    },
   };
   const toolRefs = Object.keys(namespaceSchemas).map((ns) => ({
     allOf: [

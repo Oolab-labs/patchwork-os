@@ -24,6 +24,7 @@ export function createGithubListRunsTool(
     schema: {
       name: "githubListRuns",
       description:
+        "[Deprecated: use githubActions instead] " +
         "List GitHub Actions workflow runs. Use to check CI status after a push. " +
         "Pass the run ID (databaseId) to githubGetRunLogs to retrieve failure details.",
       annotations: { readOnlyHint: true },
@@ -133,6 +134,7 @@ export function createGithubGetRunLogsTool(
     schema: {
       name: "githubGetRunLogs",
       description:
+        "[Deprecated: use githubActions instead] " +
         "Get logs from a GitHub Actions workflow run. By default returns only the failed steps' logs. " +
         "Pass the databaseId from githubListRuns as the runId.",
       annotations: { readOnlyHint: true },

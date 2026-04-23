@@ -289,6 +289,7 @@ export class Bridge {
       transport.sessionId = sessionId;
       transport.setActivityLog(this.activityLog);
       transport.setToolRateLimit(this.config.toolRateLimit);
+      if (this.config.lazyTools) transport.setLazyTools(true);
       if (this.server.approvalGate !== "off") {
         this.logger.info(
           `[patchwork] approval gate active: ${this.server.approvalGate} tier(s) require dashboard approval`,

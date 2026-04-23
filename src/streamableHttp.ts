@@ -630,6 +630,7 @@ export class StreamableHttpHandler {
     };
     transport.setActivityLog(this.activityLog);
     transport.setToolRateLimit(this.config.toolRateLimit);
+    if (this.config.lazyTools) transport.setLazyTools(true);
     // Share one rate-limit bucket across all HTTP sessions to prevent bypass via cycling.
     if (this.config.toolRateLimit > 0) {
       if (!this.sharedHttpRateLimitBucket) {

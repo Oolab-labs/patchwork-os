@@ -51,6 +51,7 @@ export function createGithubCreatePRTool(
     schema: {
       name: "githubCreatePR",
       description:
+        "[Deprecated: use githubPR instead] " +
         "Create a GitHub pull request using gh CLI. Uses commit messages as description if body is omitted (--fill). " +
         "Returns the PR URL and number.",
       annotations: { destructiveHint: true },
@@ -170,6 +171,7 @@ export function createGithubListPRsTool(workspace: string) {
     schema: {
       name: "githubListPRs",
       description:
+        "[Deprecated: use githubPR instead] " +
         "List pull requests for the current GitHub repository using the GitHub CLI (gh). " +
         "Requires gh to be installed and authenticated.",
       annotations: { readOnlyHint: true },
@@ -273,6 +275,7 @@ export function createGithubViewPRTool(workspace: string) {
     schema: {
       name: "githubViewPR",
       description:
+        "[Deprecated: use githubPR instead] " +
         "View details of a GitHub pull request using the GitHub CLI (gh). " +
         "Omit number to view the PR for the current branch. " +
         "Requires gh to be installed and authenticated.",
@@ -360,6 +363,7 @@ export function createGithubGetPRDiffTool(workspace: string) {
     schema: {
       name: "githubGetPRDiff",
       description:
+        "[Deprecated: use githubPR instead] " +
         "Fetch the full diff and metadata for a GitHub pull request. " +
         "Returns title, branch info, per-file diffs, and unified diff text. Diffs over 256 KB are truncated.",
       annotations: { readOnlyHint: true, openWorldHint: true },
@@ -497,6 +501,7 @@ export function createGithubPostPRReviewTool(workspace: string) {
     schema: {
       name: "githubPostPRReview",
       description:
+        "[Deprecated: use githubPR instead] " +
         "Post a code review on a GitHub pull request. Inline comments MUST target lines in the diff (use githubGetPRDiff first). " +
         "event: COMMENT (non-blocking), REQUEST_CHANGES. Approving PRs is not supported.",
       annotations: { destructiveHint: false, openWorldHint: true },
@@ -709,6 +714,7 @@ export function createGithubApprovePRTool(workspace: string) {
     schema: {
       name: "githubApprovePR",
       description:
+        "[Deprecated: use githubPR instead] " +
         "Approve a GitHub pull request. Optionally include a review comment body.",
       annotations: { destructiveHint: false, openWorldHint: true },
       inputSchema: {
@@ -803,6 +809,7 @@ export function createGithubMergePRTool(workspace: string) {
     schema: {
       name: "githubMergePR",
       description:
+        "[Deprecated: use githubPR instead] " +
         "Merge a GitHub pull request. Supports squash, rebase, or merge commit strategies.",
       annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {

@@ -2,6 +2,8 @@
 
 Version **0.2.0-alpha.3** · 170+ tools · 72 MCP prompts · 20 automation hooks · 4 connectors
 
+> **Deployment model:** Remote deployment (VPS + reverse proxy, systemd service, `--bind 0.0.0.0 --issuer-url <https-url>`) is a first-class, production-ready pattern and is the recommended architecture for team or cloud access. Local mode (`127.0.0.1`, no `--issuer-url`) is for individual development.
+
 ---
 
 ## Table of Contents
@@ -760,7 +762,9 @@ Failure modes never throw — the returned `{sources, warnings}` tells the calle
 
 ## Connectors
 
-Connectors give Patchwork agents authenticated access to external services. Token stored at `~/.patchwork/tokens/<id>.json` (mode 0600). Managed from the dashboard **Connections** page or via HTTP routes.
+Connectors give Patchwork agents authenticated access to external services. OAuth tokens are stored in the platform-native secret vault (Keychain on macOS, DPAPI on Windows, Secret Service on Linux) with an encrypted-file fallback at `~/.patchwork/tokens/<id>.enc` (mode 0600). Tokens auto-refresh on 401 via `baseConnector.refreshToken()` — no manual re-authorization needed until the refresh token itself expires. Managed from the dashboard **Connections** page or via HTTP routes.
+
+> **Important distinction:** the bridge's *own* OAuth server (clients connecting TO the bridge) does not issue refresh tokens — those clients re-authorize after the 24-hour access-token TTL. The above auto-refresh applies only to *connector* tokens (the bridge connecting OUT to external services like Gmail, Linear, etc.).
 
 ### Supported connectors
 
@@ -872,3 +876,13 @@ Each recipe or task specifies which model to use. Models can be mixed within a s
 The bridge's orchestration layer requires Claude Code CLI. The work each recipe does — the actual model calls — can be routed to any supported provider.
 
 **Summary:** Claude is the engine room, but recipes, outputs, and model choices are provider-neutral. If you only have an OpenAI key or a Gemini subscription you can still run most recipes; you'd be missing the deep IDE integration that the bridge provides, but the model layer itself is not locked to Anthropic.
+
+---
+
+## Not Yet Implemented
+
+Honest capability gaps as of the current release:
+
+- **Programmatic tool calling / code sandboxes** — Tool results are returned raw to the model. Processing results in isolated sandboxes before returning them (to reduce token usage on complex workflows) is not yet implemented.
+- **Form-mode elicitation** — Tools that need missing parameters return `isError: true` with instructions to re-invoke with the required fields. URL-mode (OAuth redirects) is supported; interactive form prompts inside the MCP flow are not.
+- **Full deferred tool loading** — `searchTools` returns tool metadata without full schemas, partially reducing context load. The 85%-token-reduction pattern (load full schemas only on demand at call time) is not yet implemented; all registered tool schemas are sent to the model at session start.

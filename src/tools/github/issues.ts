@@ -18,6 +18,7 @@ export function createGithubListIssuesTool(workspace: string) {
     schema: {
       name: "githubListIssues",
       description:
+        "[Deprecated: use githubIssue instead] " +
         "List issues for the current GitHub repository using the GitHub CLI (gh). " +
         "Requires gh to be installed and authenticated.",
       annotations: { readOnlyHint: true },
@@ -135,6 +136,7 @@ export function createGithubGetIssueTool(workspace: string) {
     schema: {
       name: "githubGetIssue",
       description:
+        "[Deprecated: use githubIssue instead] " +
         "View full details of a GitHub issue including body and comments. " +
         "Requires gh to be installed and authenticated.",
       annotations: { readOnlyHint: true },
@@ -215,6 +217,7 @@ export function createGithubCreateIssueTool(workspace: string) {
     schema: {
       name: "githubCreateIssue",
       description:
+        "[Deprecated: use githubIssue instead] " +
         "Create a GitHub issue using the GitHub CLI (gh). " +
         "Requires gh to be installed and authenticated. Returns the issue URL and number.",
       annotations: { destructiveHint: true },
@@ -303,6 +306,7 @@ export function createGithubCommentIssueTool(workspace: string) {
     schema: {
       name: "githubCommentIssue",
       description:
+        "[Deprecated: use githubIssue instead] " +
         "Add a comment to a GitHub issue using the GitHub CLI (gh). " +
         "Requires gh to be installed and authenticated. Returns the comment URL.",
       annotations: { destructiveHint: true },

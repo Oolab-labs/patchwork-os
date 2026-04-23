@@ -152,7 +152,8 @@ For remote deployments where claude.ai custom connectors need authenticated acce
 
 - **Activation**: `--issuer-url <public-https-url>` activates OAuth 2.0. `--cors-origin <origin>` (repeatable) sets `Access-Control-Allow-Origin` on all responses.
 - **Endpoints**: `/.well-known/oauth-authorization-server` (RFC 8414), `/.well-known/oauth-protected-resource` (RFC 9396), `/oauth/register` (RFC 7591 dynamic client registration), `/oauth/authorize` (approval page), `/oauth/token`, `/oauth/revoke` (RFC 7009).
-- **Design**: PKCE S256 mandatory. Auth codes single-use, 5-min TTL. Access tokens opaque base64url, 24-hour TTL. No refresh tokens — clients re-authorize.
+- **Design**: PKCE S256 mandatory. Auth codes single-use, 5-min TTL. Access tokens opaque base64url, 24-hour TTL. No refresh tokens — clients connecting TO the bridge re-authorize on expiry. Note: connector tokens (bridge connecting OUT to external services) DO use refresh tokens and auto-refresh on 401 via `baseConnector.refreshToken()`.
+- **CIMD**: if `client_id` is an `https://` URL, bridge fetches the Client ID Metadata Document (RFC draft) to discover `redirect_uris`; 5-min cache, 8 KB max, SSRF-guarded.
 - **Bridge token**: resource owner credential. Entered in `/oauth/authorize` approval page. All string comparisons timing-safe.
 - **CORS env var**: `CLAUDE_IDE_BRIDGE_CORS_ORIGINS=https://claude.ai,https://other.example.com` (comma-separated alternative to `--cors-origin`).
 - **Never** commit bridge token, `--fixed-token` values, real domain names, `--issuer-url` values, or `--cors-origin` values to version control.

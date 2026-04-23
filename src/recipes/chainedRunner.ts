@@ -37,6 +37,7 @@ export interface ChainedStep {
   output?: string; // alias for into
   risk?: "low" | "medium" | "high";
   optional?: boolean;
+  transform?: string; // template rendered after tool execution; $result = raw tool output
   [key: string]: unknown;
 }
 
@@ -46,6 +47,8 @@ export interface ChainedRecipe {
   steps: ChainedStep[];
   maxConcurrency?: number;
   maxDepth?: number;
+  /** Plugin specs (npm package name or local path) to load before running steps. */
+  servers?: string[];
 }
 
 export interface RunOptions {
@@ -114,6 +117,7 @@ export function resolveStepTemplates(
     "risk",
     "optional",
     "vars",
+    "transform",
   ]);
 
   // Resolve tool params
@@ -225,6 +229,29 @@ export async function executeChainedStep(
     };
   }
 
+  /** Flat `{{ key }}` renderer for transform strings — mirrors yamlRunner.render */
+  function applyTransform(
+    template: string,
+    rawResult: unknown,
+    ctx: TemplateContext,
+  ): unknown {
+    const resultStr =
+      typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult);
+    const flatCtx: Record<string, string> = { $result: resultStr };
+    // Expose env keys as flat vars too
+    for (const [k, v] of Object.entries(ctx.env)) {
+      if (v !== undefined) flatCtx[k] = v;
+    }
+    try {
+      return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr) => {
+        const key = expr.trim();
+        return Object.hasOwn(flatCtx, key) ? (flatCtx[key] ?? "") : "";
+      });
+    } catch {
+      return rawResult;
+    }
+  }
+
   // Execute based on step type
   try {
     if (step.recipe) {
@@ -310,15 +337,29 @@ export async function executeChainedStep(
     } else if (step.agent) {
       // Agent step
       const prompt = (resolved.agentPrompt as string) ?? step.agent.prompt;
-      const result = await deps.executeAgent(
+      let result: unknown = await deps.executeAgent(
         prompt,
         step.agent.model,
         step.agent.driver,
       );
+      if (step.transform) {
+        try {
+          result = applyTransform(step.transform, result, templateContext);
+        } catch (err) {
+          console.warn(`transform failed for step ${step.id}: ${err}`);
+        }
+      }
       return { success: true, data: result };
     } else if (step.tool) {
       // Tool step
-      const result = await deps.executeTool(step.tool, resolved);
+      let result: unknown = await deps.executeTool(step.tool, resolved);
+      if (step.transform) {
+        try {
+          result = applyTransform(step.transform, result, templateContext);
+        } catch (err) {
+          console.warn(`transform failed for step ${step.id}: ${err}`);
+        }
+      }
       return { success: true, data: result };
     } else {
       return { success: false, error: "Step has no tool, agent, or recipe" };
@@ -349,6 +390,17 @@ export async function runChainedRecipe(
   existingRegistry?: OutputRegistry,
   depth = 0,
 ): Promise<ChainedRunResult> {
+  // Load plugin servers declared in the recipe before executing any steps.
+  // Only done at the top-level call (depth 0) to avoid redundant loads in nested recipes.
+  if (depth === 0 && recipe.servers?.length) {
+    try {
+      const { loadRecipeServers } = await import("./yamlRunner.js");
+      await loadRecipeServers(recipe.servers);
+    } catch {
+      // Non-fatal — if yamlRunner import fails, proceed without plugins
+    }
+  }
+
   const registry = existingRegistry ?? createOutputRegistry();
 
   // Build dependency graph

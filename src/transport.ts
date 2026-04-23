@@ -148,8 +148,12 @@ export class McpTransport {
   private readonly ajv = new Ajv({ strict: false, allErrors: true });
   private readonly schemaValidators = new Map<string, ValidateFunction>();
   private readonly outputValidators = new Map<string, ValidateFunction>();
-  /** Cached wire-schema array for tools/list. Invalidated on any tool registration change. */
+  /** Cached wire-schema array for tools/list (full mode). Invalidated on any tool registration change. */
   private wireSchemaCache: unknown[] | null = null;
+  /** Cached wire-schema array for tools/list in lazy mode (inputSchema stripped). */
+  private wireSchemaCacheLazy: unknown[] | null = null;
+  /** When true, tools/list omits inputSchema. Clients must call tools/schema before tools/call. */
+  private lazyTools = false;
   /** Per-session tool-call rate limit (calls/minute). 0 = disabled. */
   private toolRateLimit = 60;
   /**
@@ -203,6 +207,11 @@ export class McpTransport {
    */
   setDenyTools(tools: Set<string>): void {
     this.denyTools = tools;
+  }
+
+  /** Enable lazy-tools mode: tools/list omits inputSchema; clients use tools/schema to fetch it. */
+  setLazyTools(enabled: boolean): void {
+    this.lazyTools = enabled;
   }
 
   /** Configure per-session tool call rate limiting (calls/minute, 0 = disabled). */
@@ -416,6 +425,7 @@ export class McpTransport {
     this.schemaValidators.delete(schema.name);
     this.outputValidators.delete(schema.name);
     this.wireSchemaCache = null;
+    this.wireSchemaCacheLazy = null;
     this.tools.set(schema.name, {
       schema,
       handler,
@@ -428,6 +438,7 @@ export class McpTransport {
     this.schemaValidators.delete(name);
     this.outputValidators.delete(name);
     this.wireSchemaCache = null;
+    this.wireSchemaCacheLazy = null;
     return this.tools.delete(name);
   }
 
@@ -442,7 +453,10 @@ export class McpTransport {
         count++;
       }
     }
-    if (count > 0) this.wireSchemaCache = null;
+    if (count > 0) {
+      this.wireSchemaCache = null;
+      this.wireSchemaCacheLazy = null;
+    }
     return count;
   }
 
@@ -509,6 +523,7 @@ export class McpTransport {
     }
     // Invalidate wire cache — categories are stripped but getToolSchemas reads them
     this.wireSchemaCache = null;
+    this.wireSchemaCacheLazy = null;
   }
 
   /** Returns all registered tool schemas — used by searchTools for keyword/category discovery. */
@@ -800,23 +815,49 @@ export class McpTransport {
               };
               break;
             }
-            if (!this.wireSchemaCache) {
-              this.wireSchemaCache = Array.from(this.tools.values()).map(
-                (t) => {
-                  // Strip internal-only fields before sending on the wire.
-                  // cache_control is intentionally NOT stripped — it passes through to clients.
-                  const {
-                    extensionRequired: _ext,
-                    timeoutMs: _timeout,
-                    categories: _cat,
-                    outputSchema: _outputSchema,
-                    ...wireSchema
-                  } = t.schema;
-                  return wireSchema;
-                },
-              );
+            if (this.lazyTools) {
+              // Lazy mode: strip inputSchema from wire response.
+              // Clients must call tools/schema to fetch the full schema before tools/call.
+              if (!this.wireSchemaCacheLazy) {
+                this.wireSchemaCacheLazy = Array.from(this.tools.values()).map(
+                  (t) => {
+                    // Strip internal-only fields AND inputSchema in lazy mode.
+                    // cache_control is intentionally NOT stripped — it passes through to clients.
+                    const {
+                      extensionRequired: _ext,
+                      timeoutMs: _timeout,
+                      categories: _cat,
+                      outputSchema: _outputSchema,
+                      inputSchema: _inputSchema,
+                      ...wireSchema
+                    } = t.schema;
+                    return wireSchema;
+                  },
+                );
+              }
+            } else {
+              if (!this.wireSchemaCache) {
+                this.wireSchemaCache = Array.from(this.tools.values()).map(
+                  (t) => {
+                    // Strip internal-only fields before sending on the wire.
+                    // cache_control is intentionally NOT stripped — it passes through to clients.
+                    const {
+                      extensionRequired: _ext,
+                      timeoutMs: _timeout,
+                      categories: _cat,
+                      outputSchema: _outputSchema,
+                      ...wireSchema
+                    } = t.schema;
+                    return wireSchema;
+                  },
+                );
+              }
             }
-            const allTools = this.wireSchemaCache;
+            const allTools = this.lazyTools
+              ? // biome-ignore lint/style/noNonNullAssertion: built above
+                this.wireSchemaCacheLazy!
+              : // biome-ignore lint/style/noNonNullAssertion: built above
+                this.wireSchemaCache!;
 
             // Parse cursor (opaque base64-encoded decimal offset)
             const listParams = msg.params as { cursor?: unknown } | undefined;
@@ -851,6 +892,49 @@ export class McpTransport {
               result: {
                 tools: page,
                 ...(nextCursor !== undefined && { nextCursor }),
+              },
+            };
+            break;
+          }
+
+          case "tools/schema": {
+            // Fetch full schema for a single tool by name.
+            // Always available regardless of lazyTools mode.
+            // Schema validation uses in-memory schema regardless of lazyTools mode.
+            const schemaParams = msg.params as { name?: unknown } | undefined;
+            if (typeof schemaParams?.name !== "string" || !schemaParams.name) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.INVALID_PARAMS,
+                  message: 'Missing required param: "name"',
+                },
+              };
+              break;
+            }
+            const toolEntry = this.tools.get(schemaParams.name);
+            if (!toolEntry) {
+              response = {
+                jsonrpc: "2.0",
+                id: msg.id,
+                error: {
+                  code: ErrorCodes.METHOD_NOT_FOUND,
+                  message: `Tool not found: ${schemaParams.name}`,
+                },
+              };
+              break;
+            }
+            response = {
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: {
+                name: toolEntry.schema.name,
+                description: toolEntry.schema.description,
+                inputSchema: toolEntry.schema.inputSchema,
+                ...(toolEntry.schema.outputSchema !== undefined && {
+                  outputSchema: toolEntry.schema.outputSchema,
+                }),
               },
             };
             break;
@@ -1099,7 +1183,8 @@ export class McpTransport {
                   string,
                   unknown
                 >;
-                // AJV structural validation
+                // Schema validation uses in-memory schema regardless of lazyTools mode.
+                // AJV compiles from tool.schema.inputSchema, not from the wire response.
                 const validate = this.getValidator(params.name);
                 if (validate && !validate(toolArgs)) {
                   this.callCount++;
