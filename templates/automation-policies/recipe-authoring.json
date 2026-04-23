@@ -1,0 +1,25 @@
+{
+  "_comment": "recipe-authoring — runs preflight automatically when a .yaml recipe file is saved. Closes the authoring inner loop: edit → save → instant validation feedback via Claude task.",
+  "_usage": "Copy to automation-policy.json. Requires --automation --automation-policy <path> --claude-driver subprocess",
+
+  "automationSystemPrompt": "Recipe lint bot. ≤10 lines. No preamble. List issues with file:line if available. End with 'Recipe OK' when clean.",
+
+  "onRecipeSave": {
+    "enabled": true,
+    "cooldownMs": 10000
+  },
+
+  "onFileSave": {
+    "enabled": false,
+    "_comment": "Disabled — onRecipeSave handles .yaml files. Enable this for non-recipe YAML if needed.",
+    "patterns": ["**/*.yaml", "**/*.yml"],
+    "cooldownMs": 10000,
+    "prompt": "{{file}} saved. getDiagnostics → report issues ≤5 lines."
+  },
+
+  "onGitCommit": {
+    "enabled": true,
+    "cooldownMs": 15000,
+    "prompt": "Committed recipes on {{branch}}: {{files}}\nFor each modified .yaml file: run preflight and report any issues. If all pass, reply 'All recipes OK'."
+  }
+}

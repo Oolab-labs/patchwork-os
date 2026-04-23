@@ -27,7 +27,8 @@ export type HookType =
   | "onPermissionDenied"
   | "onTaskSuccess"
   | "onDebugSessionStart"
-  | "onDebugSessionEnd";
+  | "onDebugSessionEnd"
+  | "onRecipeSave";
 
 // ── Prompt source ─────────────────────────────────────────────────────────────
 

@@ -119,6 +119,17 @@ export interface OnFileChangedPolicy extends PromptSource {
   cooldownMs: number;
 }
 
+/**
+ * Fired when a `.yaml` recipe file is saved.
+ * Placeholder: {{file}} — the saved recipe path.
+ * Default prompt (when no explicit prompt/promptName) runs recipe preflight and reports issues.
+ */
+export interface OnRecipeSavePolicy extends PromptSource {
+  enabled: boolean;
+  /** Minimum ms between triggers per file (default 10 000). Enforced minimum: 5000. */
+  cooldownMs: number;
+}
+
 export interface OnPreCompactPolicy extends PromptSource {
   enabled: boolean;
   /**
@@ -451,6 +462,12 @@ export interface AutomationPolicy {
   onFileSave?: OnFileSavePolicy;
   /** Fired by Claude Code 2.1.83+ FileChanged hook — reacts to any file edit, not just explicit saves. */
   onFileChanged?: OnFileChangedPolicy;
+  /**
+   * Fired when a `.yaml` recipe file is saved.
+   * Runs recipe preflight automatically and reports issues as a Claude task.
+   * Placeholder: {{file}}.
+   */
+  onRecipeSave?: OnRecipeSavePolicy;
   /** Fired by Claude Code 2.1.83+ CwdChanged hook — fires when CC's working directory changes. */
   onCwdChanged?: OnCwdChangedPolicy;
   /**
@@ -1051,6 +1068,29 @@ export function loadPolicy(filePath: string): AutomationPolicy {
     fc.cooldownMs = Math.max(fc.cooldownMs, MIN_COOLDOWN_MS);
   }
 
+  // Validate onRecipeSave
+  if (policy.onRecipeSave !== undefined) {
+    const rs = policy.onRecipeSave;
+    if (typeof rs !== "object" || rs === null) {
+      throw new Error(`"onRecipeSave" must be an object`);
+    }
+    if (typeof rs.enabled !== "boolean") {
+      throw new Error(`"onRecipeSave.enabled" must be a boolean`);
+    }
+    // cooldownMs is optional; default applied at parse time
+    if (rs.cooldownMs !== undefined) {
+      expectType(rs.cooldownMs, "number", "onRecipeSave.cooldownMs");
+      if (!Number.isFinite(rs.cooldownMs as number)) {
+        throw new Error(`"onRecipeSave.cooldownMs" must be a finite number`);
+      }
+      rs.cooldownMs = Math.max(rs.cooldownMs, MIN_COOLDOWN_MS);
+    }
+    // prompt/promptName optional — default prompt used when absent
+    if (rs.prompt !== undefined || rs.promptName !== undefined) {
+      validatePromptSource("onRecipeSave", rs);
+    }
+  }
+
   // Validate onInstructionsLoaded (special: cooldownMs optional, min 5000)
   if (policy.onInstructionsLoaded !== undefined) {
     const il = policy.onInstructionsLoaded;
@@ -1419,6 +1459,12 @@ export class AutomationHooks {
     this._lastRunPromise = this._runInterpreter("onFileSave", {
       file: normalizedFile,
     });
+    // Also fire onRecipeSave for .yaml files
+    if (normalizedFile.endsWith(".yaml") || normalizedFile.endsWith(".yml")) {
+      this._lastRunPromise = this._runInterpreter("onRecipeSave", {
+        file: normalizedFile,
+      });
+    }
   }
 
   /**
@@ -1637,6 +1683,7 @@ export class AutomationHooks {
     onGitPull: { enabled: boolean; cooldownMs: number } | null;
     onDebugSessionEnd: { enabled: boolean; cooldownMs: number } | null;
     onDebugSessionStart: { enabled: boolean; cooldownMs: number } | null;
+    onRecipeSave: { enabled: boolean; cooldownMs: number } | null;
     unwiredEnabledHooks: string[];
     defaultModel: string;
     maxTasksPerHour: number;
@@ -1773,6 +1820,12 @@ export class AutomationHooks {
             cooldownMs: p.onDebugSessionStart.cooldownMs,
           }
         : null,
+      onRecipeSave: p.onRecipeSave
+        ? {
+            enabled: p.onRecipeSave.enabled,
+            cooldownMs: p.onRecipeSave.cooldownMs ?? 10_000,
+          }
+        : null,
       unwiredEnabledHooks,
       defaultModel: p.defaultModel ?? "claude-haiku-4-5-20251001",
       maxTasksPerHour: p.maxTasksPerHour ?? 20,
@@ -1814,6 +1867,7 @@ export class AutomationHooks {
       "onTaskSuccess",
       "onDebugSessionStart",
       "onDebugSessionEnd",
+      "onRecipeSave",
     ] as const;
     const hooksEnabled = hookKeys.filter((k) => {
       const hook = this.policy[k] as { enabled?: boolean } | undefined;

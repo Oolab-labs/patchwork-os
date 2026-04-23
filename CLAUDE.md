@@ -186,6 +186,7 @@ Event-driven hooks that trigger Claude tasks automatically.
   - `onDiagnosticsStateChange` (v2.43.0+) — unified diagnostics hook. `state: "error"` fires on new error/warning diagnostics (`{{file}}`, `{{diagnostics}}`, severity filter). `state: "cleared"` fires when errors/warnings drop to zero (`{{file}}`). Replaces deprecated `onDiagnosticsError` + `onDiagnosticsCleared`.
   - `onFileSave` — matching files saved. Minimatch glob patterns. Placeholder: `{{file}}`.
   - `onFileChanged` — matching files changed (buffer change, not save). Minimatch glob patterns. Placeholder: `{{file}}`.
+  - `onRecipeSave` — fires when any `.yaml`/`.yml` file is saved. Placeholder: `{{file}}`. Default prompt (when no `prompt`/`promptName`) runs `patchwork recipe preflight {{file}}` and reports issues as a Claude task. Override with explicit prompt for custom behavior. Cooldown key: per-file, default 10 000 ms.
   - `onCompaction` (v2.43.0+) — unified hook. `phase: "pre"` fires before compaction (snapshot state); `phase: "post"` fires after (re-inject IDE state). Replaces the now-deprecated `onPreCompact` + `onPostCompact` pair; legacy names still work but emit a deprecation warning. Removed no earlier than v2.46 + 30 days.
   - `onInstructionsLoaded` — fires at session start. Injects bridge status summary.
   - `onGitCommit` — fires after successful `gitCommit`. Placeholders: `{{hash}}`, `{{branch}}`, `{{message}}`, `{{count}}`, `{{files}}`.
