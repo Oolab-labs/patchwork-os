@@ -40,6 +40,7 @@ interface Recipe {
 
 interface RunRecord {
   recipe: string;
+  recipeName?: string;
   startedAt: number;
   status: string;
 }
@@ -261,12 +262,27 @@ export default function RecipesPage() {
         const runs = runsData.runs ?? [];
         const map = new Map<string, RunRecord>();
         for (const run of runs) {
-          const existing = map.get(run.recipe);
+          // recipeName may have ":agent" suffix from orchestrator — strip it for matching
+          const key = (run.recipeName ?? run.recipe ?? "").replace(/:agent$/, "");
+          const existing = map.get(key);
           if (!existing || run.startedAt > existing.startedAt) {
-            map.set(run.recipe, run);
+            map.set(key, run);
           }
         }
         setRunMap(map);
+        // Clear "queued …" / "running…" badges for recipes whose latest run has settled
+        setRunning((prev) => {
+          const next = { ...prev };
+          let changed = false;
+          for (const name of Object.keys(next)) {
+            const latest = map.get(name);
+            if (latest && latest.status !== "running") {
+              delete next[name];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -430,7 +446,7 @@ export default function RecipesPage() {
                 const lastRun = runMap.get(r.name);
                 const status = recipeStatus(r);
                 return (
-                  <React.Fragment key={r.id ?? r.name ?? i}>
+                  <React.Fragment key={r.path ?? r.id ?? `${r.name}:${i}`}>
                     <tr>
                       <td className="mono">
                         <button
@@ -535,7 +551,7 @@ export default function RecipesPage() {
                       </td>
                     </tr>
                     {expanded.has(r.name) && (
-                      <tr key={`${r.id ?? r.name ?? i}-detail`}>
+                      <tr key={`${r.path ?? r.id ?? `${r.name}:${i}`}-detail`}>
                         <td
                           colSpan={7}
                           style={{

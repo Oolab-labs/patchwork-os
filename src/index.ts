@@ -835,7 +835,7 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
       }
 
       // No bridge — run locally using the YAML runner.
-      const { loadYamlRecipe, runYamlRecipe } = await import(
+      const { loadYamlRecipe, dispatchRecipe, buildChainedDeps } = await import(
         "./recipes/yamlRunner.js"
       );
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
@@ -867,9 +867,16 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
       process.stdout.write(`  Running recipe "${name}" locally…\n`);
       const recipe = loadYamlRecipe(recipePath);
       const workdir = lock?.workspace || process.cwd();
-      const result = await runYamlRecipe(recipe, { workdir });
-      process.stdout.write(`  ✓ ${result.stepsRun} step(s) completed\n`);
-      if (result.outputs.length > 0) {
+      const runnerDeps = { workdir };
+      const result = await dispatchRecipe(recipe, {
+        ...runnerDeps,
+        chainedDeps: buildChainedDeps(runnerDeps),
+      });
+      const steps =
+        "stepsRun" in result ? result.stepsRun : (result.summary?.total ?? "?");
+      const ok = "stepsRun" in result ? !result.errorMessage : result.success;
+      process.stdout.write(`  ${ok ? "✓" : "✗"} ${steps} step(s) completed\n`);
+      if ("outputs" in result && result.outputs.length > 0) {
         process.stdout.write(
           `  Output written to:\n${result.outputs.map((o: string) => `    ${o}`).join("\n")}\n`,
         );

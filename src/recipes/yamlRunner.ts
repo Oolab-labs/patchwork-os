@@ -81,6 +81,8 @@ export interface RunnerDeps {
   fetchFn?: FetchFn;
   /** Optional token resolver for Gmail. Defaults to getValidAccessToken(). */
   getGmailToken?: () => Promise<string>;
+  /** Override the ~/.patchwork dir used by RecipeRunLog. Useful for tests. */
+  logDir?: string;
   /** Optional Anthropic API caller for agent steps. Defaults to fetch-based impl. */
   claudeFn?: (prompt: string, model: string) => Promise<string>;
   /** Optional Claude Code CLI caller for agent steps with driver: claude-code. */
@@ -158,53 +160,12 @@ export async function runYamlRecipe(
     ...seedContext,
   };
 
-  const readFile =
-    deps.readFile ?? ((p: string) => readFileSync(expandHome(p), "utf-8"));
-  const writeFile =
-    deps.writeFile ??
-    ((p: string, content: string) => {
-      const abs = expandHome(p);
-      mkdirSync(path.dirname(abs), { recursive: true });
-      writeFileSync(abs, content);
-    });
-  const appendFile =
-    deps.appendFile ??
-    ((p: string, content: string) => {
-      const abs = expandHome(p);
-      mkdirSync(path.dirname(abs), { recursive: true });
-      appendFileSync(abs, content);
-    });
-  const mkdir =
-    deps.mkdir ??
-    ((p: string) => mkdirSync(expandHome(p), { recursive: true }));
+  const stepDeps = resolveStepDeps(deps);
 
   const outputs: string[] = [];
   const stepResults: StepResult[] = [];
   let stepsRun = 0;
   let runError: string | undefined;
-
-  const workdir = deps.workdir ?? process.cwd();
-
-  const stepDeps: StepDeps = {
-    readFile,
-    writeFile,
-    appendFile,
-    mkdir,
-    workdir,
-    gitLogSince: deps.gitLogSince ?? defaultGitLogSince,
-    gitStaleBranches: deps.gitStaleBranches ?? defaultGitStaleBranches,
-    getDiagnostics: deps.getDiagnostics ?? (() => ""),
-    fetchFn: deps.fetchFn ?? (globalThis.fetch as FetchFn),
-    claudeFn: deps.claudeFn ?? defaultClaudeFn,
-    claudeCodeFn: deps.claudeCodeFn ?? defaultClaudeCodeFn,
-    providerDriverFn: deps.providerDriverFn ?? defaultProviderDriverFn,
-    getGmailToken:
-      deps.getGmailToken ??
-      (async () => {
-        const { getValidAccessToken } = await import("../connectors/gmail.js");
-        return getValidAccessToken();
-      }),
-  };
 
   for (const step of recipe.steps) {
     // Handle agent steps separately
@@ -372,8 +333,8 @@ export async function runYamlRecipe(
   try {
     const { RecipeRunLog } = await import("../runLog.js");
     const { homedir } = await import("node:os");
-    const logDir = path.join(homedir(), ".patchwork");
-    const log = new RecipeRunLog({ dir: logDir });
+    const resolvedLogDir = deps.logDir ?? path.join(homedir(), ".patchwork");
+    const log = new RecipeRunLog({ dir: resolvedLogDir });
     const trigger = (recipe.trigger as { type?: string })?.type ?? "manual";
     const createdAt = now.getTime();
     const doneAt = Date.now();
@@ -450,7 +411,51 @@ export async function runYamlRecipe(
   };
 }
 
-type StepDeps = Required<Omit<RunnerDeps, "now">> & { workdir: string };
+type StepDeps = Required<Omit<RunnerDeps, "now" | "logDir">> & {
+  workdir: string;
+  logDir?: string;
+};
+
+/** Resolve all RunnerDeps to concrete StepDeps with production defaults filled in. */
+function resolveStepDeps(deps: RunnerDeps): StepDeps {
+  const workdir = deps.workdir ?? process.cwd();
+  return {
+    readFile:
+      deps.readFile ?? ((p: string) => readFileSync(expandHome(p), "utf-8")),
+    writeFile:
+      deps.writeFile ??
+      ((p: string, content: string) => {
+        const abs = expandHome(p);
+        mkdirSync(path.dirname(abs), { recursive: true });
+        writeFileSync(abs, content);
+      }),
+    appendFile:
+      deps.appendFile ??
+      ((p: string, content: string) => {
+        const abs = expandHome(p);
+        mkdirSync(path.dirname(abs), { recursive: true });
+        appendFileSync(abs, content);
+      }),
+    mkdir:
+      deps.mkdir ??
+      ((p: string) => mkdirSync(expandHome(p), { recursive: true })),
+    workdir,
+    gitLogSince: deps.gitLogSince ?? defaultGitLogSince,
+    gitStaleBranches: deps.gitStaleBranches ?? defaultGitStaleBranches,
+    getDiagnostics: deps.getDiagnostics ?? (() => ""),
+    fetchFn: deps.fetchFn ?? (globalThis.fetch as FetchFn),
+    claudeFn: deps.claudeFn ?? defaultClaudeFn,
+    claudeCodeFn: deps.claudeCodeFn ?? defaultClaudeCodeFn,
+    providerDriverFn: deps.providerDriverFn ?? defaultProviderDriverFn,
+    getGmailToken:
+      deps.getGmailToken ??
+      (async () => {
+        const { getValidAccessToken } = await import("../connectors/gmail.js");
+        return getValidAccessToken();
+      }),
+    logDir: deps.logDir,
+  };
+}
 
 function defaultClaudeCodeFn(prompt: string): Promise<string> {
   try {
@@ -1018,6 +1023,88 @@ function defaultGitStaleBranches(days: number, workdir?: string): string {
 }
 
 /**
+ * Build ExecutionDeps for ChainedRecipeRunner backed by the yamlRunner step
+ * handlers. This lets chained recipes use the same tool set (file.*, git.*,
+ * gmail.*, github.*, linear.*, diagnostics.*) as simple YAML recipes.
+ *
+ * Pass the result as `chainedDeps` when calling `dispatchRecipe` or
+ * `runChainedRecipe` so that `executeTool` is properly wired.
+ */
+export function buildChainedDeps(
+  runnerDeps: RunnerDeps,
+  claudeCodeFnOverride?: (prompt: string) => Promise<string>,
+): import("./chainedRunner.js").ExecutionDeps {
+  const stepDeps = resolveStepDeps(runnerDeps);
+
+  const executeTool = async (
+    tool: string,
+    params: Record<string, unknown>,
+  ): Promise<unknown> => {
+    // Construct a YamlStep-compatible object so we can reuse executeStep.
+    const step: YamlStep = { tool, ...params };
+    // executeStep uses a RunContext for {{}} rendering — by the time executeTool
+    // is called the chained runner has already resolved templates, so we pass
+    // an empty context (no double-rendering).
+    const result = await executeStep(step, {}, stepDeps);
+    return result ?? "";
+  };
+
+  const executeAgent = async (
+    prompt: string,
+    model?: string,
+    driver?: string,
+  ): Promise<string> => {
+    const claudeCodeFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
+    if (driver === "claude-code") {
+      return claudeCodeFn(prompt);
+    }
+    if (driver === "claude" || driver === "anthropic") {
+      return stepDeps.claudeFn(prompt, model ?? "claude-haiku-4-5-20251001");
+    }
+    if (driver === "openai" || driver === "grok" || driver === "gemini") {
+      return stepDeps.providerDriverFn(driver, prompt, model);
+    }
+    // No driver specified — mirror runYamlRecipe fallback logic:
+    // prefer API if key is set, otherwise probe for claude CLI.
+    const usingDefaultClaudeFn = runnerDeps.claudeFn === undefined;
+    if (!process.env.ANTHROPIC_API_KEY && usingDefaultClaudeFn) {
+      const probe = spawnSync("claude", ["--version"], {
+        encoding: "utf-8",
+        timeout: 5000,
+      });
+      if (!probe.error) {
+        return claudeCodeFn(prompt);
+      }
+    }
+    return stepDeps.claudeFn(prompt, model ?? "claude-haiku-4-5-20251001");
+  };
+
+  const loadNestedRecipe = async (
+    name: string,
+  ): Promise<import("./chainedRunner.js").ChainedRecipe | null> => {
+    const { homedir } = await import("node:os");
+    const recipesDir = path.join(homedir(), ".patchwork", "recipes");
+    const candidates = [
+      path.join(recipesDir, `${name}.yaml`),
+      path.join(recipesDir, `${name}.yml`),
+    ];
+    for (const p of candidates) {
+      try {
+        const raw = stepDeps.readFile(p);
+        const { parse } = await import("yaml");
+        const parsed = parse(raw) as import("./chainedRunner.js").ChainedRecipe;
+        if (parsed && parsed.steps) return parsed;
+      } catch {
+        // try next candidate
+      }
+    }
+    return null;
+  };
+
+  return { executeTool, executeAgent, loadNestedRecipe };
+}
+
+/**
  * Dispatch a loaded recipe to the appropriate runner.
  *
  * Recipes with `trigger.type: "chained"` are routed to the ChainedRecipeRunner
@@ -1040,11 +1127,14 @@ export async function dispatchRecipe(
     const { runChainedRecipe } = await import("./chainedRunner.js");
     const chainedRecipe =
       recipe as unknown as import("./chainedRunner.js").ChainedRecipe;
+    const now = deps.now ? deps.now() : new Date();
     const options: import("./chainedRunner.js").RunOptions = {
-      env: { ...process.env, ...seedContext } as Record<
-        string,
-        string | undefined
-      >,
+      env: {
+        ...process.env,
+        DATE: now.toISOString().slice(0, 10),
+        TIME: now.toTimeString().slice(0, 5),
+        ...seedContext,
+      } as Record<string, string | undefined>,
       maxConcurrency: chainedRecipe.maxConcurrency ?? 4,
       maxDepth: chainedRecipe.maxDepth ?? 3,
       dryRun: deps.chainedOptions?.dryRun ?? false,
