@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
 
 interface RiskSignal {
@@ -43,6 +43,8 @@ interface CcRules {
   attributed?: AttributedPermissionRules;
 }
 
+type RiskFilter = "all" | "low" | "medium" | "high";
+
 const API = "/api/bridge";
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 
@@ -76,6 +78,376 @@ function primaryParam(
 
 const SUGGESTION_MIN_APPROVED = 3;
 
+// --- CountdownTimer component ---
+
+function CountdownTimer({ expiresAt }: { expiresAt: number }) {
+  const [remaining, setRemaining] = useState(() =>
+    Math.max(0, expiresAt - Date.now()),
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setRemaining(Math.max(0, expiresAt - Date.now()));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  if (remaining === 0) {
+    return (
+      <span
+        className="countdown urgent"
+        style={{ color: "var(--err)", fontWeight: 600 }}
+        title="Expired"
+      >
+        Expired
+      </span>
+    );
+  }
+
+  const totalSecs = Math.floor(remaining / 1000);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  const urgent = remaining < 60_000;
+  const label =
+    mins > 0
+      ? `${mins}m ${secs}s remaining`
+      : `${secs}s remaining`;
+
+  return (
+    <span
+      className={`countdown${urgent ? " urgent" : ""}`}
+      style={
+        urgent
+          ? {
+              color: "var(--err)",
+              animation: "pulse-dot 1s ease-in-out infinite",
+            }
+          : undefined
+      }
+      title={`Expires at ${new Date(expiresAt).toLocaleTimeString()}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+// --- EmptyState component ---
+
+function EmptyState({
+  riskFilter,
+  onClearFilter,
+}: {
+  riskFilter: RiskFilter;
+  onClearFilter: () => void;
+}) {
+  const isFiltered = riskFilter !== "all";
+
+  return (
+    <div
+      className="empty-state"
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--s-3)" }}
+    >
+      <span
+        style={{
+          fontSize: 48,
+          lineHeight: 1,
+          color: "var(--ok)",
+          display: "block",
+        }}
+        aria-hidden="true"
+      >
+        ✓
+      </span>
+      <h3 style={{ color: "var(--fg-0)" }}>All caught up!</h3>
+      {isFiltered ? (
+        <>
+          <p>No {riskFilter} risk approvals pending.</p>
+          <button
+            type="button"
+            className="btn sm ghost"
+            onClick={onClearFilter}
+            style={{ color: "var(--accent)", borderColor: "var(--accent)" }}
+          >
+            Clear filter
+          </button>
+        </>
+      ) : (
+        <p>No pending approvals. All tool calls handled by policy or already decided.</p>
+      )}
+    </div>
+  );
+}
+
+// --- Spinner ---
+
+function Spinner() {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        width: 14,
+        height: 14,
+        border: "2px solid currentColor",
+        borderTopColor: "transparent",
+        borderRadius: "50%",
+        animation: "spin 0.6s linear infinite",
+        verticalAlign: "middle",
+      }}
+      aria-hidden="true"
+    />
+  );
+}
+
+// --- ApprovalCard ---
+
+interface ApprovalCardProps {
+  p: Pending;
+  rules: CcRules | null;
+  isExpanded: boolean;
+  onToggleExpand: (callId: string) => void;
+  onDecide: (callId: string, decision: "approve" | "reject") => Promise<void>;
+  isSelected: boolean;
+  onToggleSelect: (callId: string) => void;
+  fadingOut: boolean;
+}
+
+function ApprovalCard({
+  p,
+  rules,
+  isExpanded,
+  onToggleExpand,
+  onDecide,
+  isSelected,
+  onToggleSelect,
+  fadingOut,
+}: ApprovalCardProps) {
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const expires = p.expiresAt ?? p.requestedAt + DEFAULT_TTL_MS;
+  const primary = primaryParam(p.toolName, p.params);
+  const hasParams = p.params && Object.keys(p.params).length > 0;
+  const match = matchRule(p.toolName, rules);
+
+  async function handleDecide(decision: "approve" | "reject") {
+    setActionError(null);
+    if (decision === "approve") setApproving(true);
+    else setRejecting(true);
+    try {
+      await onDecide(p.callId, decision);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+      setApproving(false);
+      setRejecting(false);
+    }
+  }
+
+  return (
+    <article
+      className="approval"
+      style={{
+        opacity: fadingOut ? 0 : 1,
+        transform: fadingOut ? "translateY(-4px)" : "translateY(0)",
+        transition: "opacity 300ms ease, transform 300ms ease",
+      }}
+    >
+      <div className="approval-head">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onToggleSelect(p.callId)}
+          aria-label={`Select ${p.toolName} approval`}
+          style={{ cursor: "pointer", accentColor: "var(--accent)", flexShrink: 0 }}
+        />
+        <h3>{p.toolName}</h3>
+        <span className={`pill ${tierClass(p.tier)}`}>
+          {p.tier} risk
+        </span>
+        {match && (
+          <span className={`pill ${ruleClass(match)}`}>
+            CC: {match}
+          </span>
+        )}
+        {p.sessionId && (
+          <span
+            className="pill muted"
+            title={`Session: ${p.sessionId}`}
+          >
+            session {p.sessionId.slice(0, 8)}
+          </span>
+        )}
+        <span className="approval-spacer" />
+        <CountdownTimer expiresAt={expires} />
+      </div>
+
+      {p.summary && <p className="approval-summary">{p.summary}</p>}
+
+      {p.riskSignals && p.riskSignals.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            marginTop: 6,
+          }}
+        >
+          {p.riskSignals.map((s) => (
+            <span
+              key={`${s.kind}-${s.label}`}
+              className={`pill ${s.severity === "high" ? "err" : s.severity === "medium" ? "warn" : "muted"}`}
+              title={s.kind}
+            >
+              {s.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {primary && (
+        <div className="approval-primary">
+          <span className="approval-primary-label">
+            {primaryLabel(p.toolName)}
+          </span>
+          <code className="approval-primary-value">{primary}</code>
+        </div>
+      )}
+
+      {hasParams && (
+        <div className="approval-params-wrap">
+          <button
+            type="button"
+            className="approval-params-toggle"
+            onClick={() => onToggleExpand(p.callId)}
+            aria-expanded={isExpanded}
+          >
+            {isExpanded ? "▾" : "▸"} Full params
+            {!isExpanded && p.params && (
+              <span className="muted" style={{ marginLeft: 6 }}>
+                {Object.keys(p.params).join(", ")}
+              </span>
+            )}
+          </button>
+          {isExpanded && (
+            <pre className="approval-params-json">
+              {safeStringify(p.params)}
+            </pre>
+          )}
+        </div>
+      )}
+
+      <div className="approval-actions">
+        <button
+          type="button"
+          className="btn success"
+          onClick={() => handleDecide("approve")}
+          disabled={approving || rejecting}
+          aria-label={`Approve ${p.toolName}`}
+        >
+          {approving ? <Spinner /> : null}
+          {approving ? " Approving…" : "Approve"}
+        </button>
+        <button
+          type="button"
+          className="btn danger"
+          onClick={() => handleDecide("reject")}
+          disabled={approving || rejecting}
+          aria-label={`Reject ${p.toolName}`}
+        >
+          {rejecting ? <Spinner /> : null}
+          {rejecting ? " Rejecting…" : "Reject"}
+        </button>
+        <Link
+          href={`/approvals/${p.callId}`}
+          className="btn sm ghost"
+          style={{ textDecoration: "none" }}
+        >
+          Details →
+        </Link>
+        <span className="approval-spacer" />
+        <span className="pill muted" title={p.callId}>
+          {p.callId.slice(0, 8)}
+        </span>
+      </div>
+
+      {actionError && (
+        <div
+          className="alert-err"
+          style={{ marginTop: "var(--s-3)", marginBottom: 0 }}
+          role="alert"
+        >
+          {actionError}
+        </div>
+      )}
+    </article>
+  );
+}
+
+// --- BatchActionBar ---
+
+function BatchActionBar({
+  selectedCount,
+  onBatchApprove,
+  onBatchReject,
+  batchApproving,
+  batchRejecting,
+}: {
+  selectedCount: number;
+  onBatchApprove: () => void;
+  onBatchReject: () => void;
+  batchApproving: boolean;
+  batchRejecting: boolean;
+}) {
+  if (selectedCount === 0) return null;
+
+  return (
+    <div
+      style={{
+        position: "sticky",
+        bottom: "var(--s-6)",
+        zIndex: 10,
+        display: "flex",
+        gap: "var(--s-3)",
+        alignItems: "center",
+        background: "var(--bg-2)",
+        border: "1px solid var(--border-strong)",
+        borderRadius: "var(--r-3)",
+        padding: "var(--s-3) var(--s-4)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        marginTop: "var(--s-4)",
+        animation: "fade-in 200ms ease",
+      }}
+      role="toolbar"
+      aria-label="Batch actions"
+    >
+      <span style={{ fontSize: 13, color: "var(--fg-1)", fontWeight: 500 }}>
+        {selectedCount} selected
+      </span>
+      <span className="approval-spacer" />
+      <button
+        type="button"
+        className="btn success"
+        onClick={onBatchApprove}
+        disabled={batchApproving || batchRejecting}
+      >
+        {batchApproving ? <Spinner /> : null}
+        {batchApproving ? " Approving…" : `Approve selected (${selectedCount})`}
+      </button>
+      <button
+        type="button"
+        className="btn danger"
+        onClick={onBatchReject}
+        disabled={batchApproving || batchRejecting}
+      >
+        {batchRejecting ? <Spinner /> : null}
+        {batchRejecting ? " Rejecting…" : `Reject selected (${selectedCount})`}
+      </button>
+    </div>
+  );
+}
+
+// --- Page ---
+
 export default function ApprovalsPage() {
   return (
     <Suspense>
@@ -93,9 +465,13 @@ function ApprovalsContent() {
   const [rules, setRules] = useState<CcRules | null>(null);
   const [err, setErr] = useState<string>();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [, setTick] = useState(0);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [fadingOut, setFadingOut] = useState<Set<string>>(new Set());
+  const [batchApproving, setBatchApproving] = useState(false);
+  const [batchRejecting, setBatchRejecting] = useState(false);
   const { patterns, clearPatterns } = useApprovalPatterns();
 
   useEffect(() => {
@@ -119,19 +495,36 @@ function ApprovalsContent() {
     return () => clearInterval(id);
   }, [sessionFilter]);
 
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+  // Fade-out then remove
+  function removeWithFade(callId: string) {
+    setFadingOut((prev) => new Set([...prev, callId]));
+    setTimeout(() => {
+      setPending((prev) => prev.filter((p) => p.callId !== callId));
+      setFadingOut((prev) => {
+        const next = new Set(prev);
+        next.delete(callId);
+        return next;
+      });
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(callId);
+        return next;
+      });
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        next.delete(callId);
+        return next;
+      });
+    }, 320);
+  }
 
   async function decide(callId: string, decision: "approve" | "reject") {
-    await fetch(`${API}/${decision}/${callId}`, { method: "POST" });
-    setPending((prev) => prev.filter((p) => p.callId !== callId));
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.delete(callId);
-      return next;
-    });
+    const res = await fetch(`${API}/${decision}/${callId}`, { method: "POST" });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`${decision} failed: ${text || res.status}`);
+    }
+    removeWithFade(callId);
   }
 
   function toggleExpand(callId: string) {
@@ -141,6 +534,58 @@ function ApprovalsContent() {
       else next.add(callId);
       return next;
     });
+  }
+
+  function toggleSelect(callId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(callId)) next.delete(callId);
+      else next.add(callId);
+      return next;
+    });
+  }
+
+  const filtered = pending.filter(
+    (p) => riskFilter === "all" || p.tier === riskFilter,
+  );
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((p) => selected.has(p.callId));
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const p of filtered) next.delete(p.callId);
+        return next;
+      });
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const p of filtered) next.add(p.callId);
+        return next;
+      });
+    }
+  }
+
+  const selectedInView = filtered.filter((p) => selected.has(p.callId));
+
+  async function batchDecide(decision: "approve" | "reject") {
+    const ids = selectedInView.map((p) => p.callId);
+    if (decision === "approve") setBatchApproving(true);
+    else setBatchRejecting(true);
+    try {
+      await Promise.all(
+        ids.map((id) =>
+          fetch(`${API}/${decision}/${id}`, { method: "POST" }).then(() =>
+            removeWithFade(id),
+          ),
+        ),
+      );
+    } finally {
+      setBatchApproving(false);
+      setBatchRejecting(false);
+    }
   }
 
   const dismissSuggestion = useCallback((toolName: string) => {
@@ -162,8 +607,29 @@ function ApprovalsContent() {
       !dismissed.has(toolName),
   );
 
+  // Count per tier for filter buttons
+  const counts: Record<RiskFilter, number> = {
+    all: pending.length,
+    low: pending.filter((p) => p.tier === "low").length,
+    medium: pending.filter((p) => p.tier === "medium").length,
+    high: pending.filter((p) => p.tier === "high").length,
+  };
+
+  const FILTERS: { label: string; value: RiskFilter }[] = [
+    { label: "All", value: "all" },
+    { label: "Low", value: "low" },
+    { label: "Medium", value: "medium" },
+    { label: "High", value: "high" },
+  ];
+
   return (
     <section>
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+
       <div className="page-head">
         <div>
           <h1>Approvals</h1>
@@ -174,6 +640,21 @@ function ApprovalsContent() {
         <span className={`pill ${pending.length > 0 ? "warn" : "muted"}`}>
           {pending.length} pending
         </span>
+      </div>
+
+      {/* Risk filter buttons */}
+      <div className="filter-chips" style={{ marginBottom: "var(--s-4)" }}>
+        {FILTERS.map((f) => (
+          <button
+            key={f.value}
+            type="button"
+            className={`filter-chip${riskFilter === f.value ? " active" : ""}`}
+            onClick={() => setRiskFilter(f.value)}
+            aria-pressed={riskFilter === f.value}
+          >
+            {f.label} ({counts[f.value]})
+          </button>
+        ))}
       </div>
 
       {err && <div className="alert-err">Unreachable: {err}</div>}
@@ -211,137 +692,61 @@ function ApprovalsContent() {
         </div>
       )}
 
-      {pending.length === 0 && !err ? (
-        <div className="empty-state">
-          <h3>Nothing waiting</h3>
-          <p>All tool calls have been handled by policy or already decided.</p>
-        </div>
+      {filtered.length === 0 && !err ? (
+        <EmptyState
+          riskFilter={riskFilter}
+          onClearFilter={() => setRiskFilter("all")}
+        />
       ) : (
-        <div className="approval-list">
-          {pending.map((p) => {
-            const match = matchRule(p.toolName, rules);
-            const expires = p.expiresAt ?? p.requestedAt + DEFAULT_TTL_MS;
-            const remaining = Math.max(0, expires - Date.now());
-            const urgent = remaining < 60_000;
-            const primary = primaryParam(p.toolName, p.params);
-            const hasParams = p.params && Object.keys(p.params).length > 0;
-            const isExpanded = expanded.has(p.callId);
+        <>
+          {/* Select-all header row */}
+          {filtered.length > 1 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--s-3)",
+                marginBottom: "var(--s-2)",
+                padding: "0 var(--s-2)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={toggleSelectAll}
+                aria-label="Select all approvals"
+                style={{ cursor: "pointer", accentColor: "var(--accent)" }}
+              />
+              <span style={{ fontSize: 12, color: "var(--fg-2)" }}>
+                Select all
+              </span>
+            </div>
+          )}
 
-            return (
-              <article key={p.callId} className="approval">
-                <div className="approval-head">
-                  <h3>{p.toolName}</h3>
-                  <span className={`pill ${tierClass(p.tier)}`}>
-                    {p.tier} risk
-                  </span>
-                  {match && (
-                    <span className={`pill ${ruleClass(match)}`}>
-                      CC: {match}
-                    </span>
-                  )}
-                  {p.sessionId && (
-                    <span
-                      className="pill muted"
-                      title={`Session: ${p.sessionId}`}
-                    >
-                      session {p.sessionId.slice(0, 8)}
-                    </span>
-                  )}
-                  <span className="approval-spacer" />
-                  <span
-                    className={`countdown${urgent ? " urgent" : ""}`}
-                    title={`Expires at ${new Date(expires).toLocaleTimeString()}`}
-                  >
-                    {formatCountdown(remaining)}
-                  </span>
-                </div>
+          <div className="approval-list">
+            {filtered.map((p) => (
+              <ApprovalCard
+                key={p.callId}
+                p={p}
+                rules={rules}
+                isExpanded={expanded.has(p.callId)}
+                onToggleExpand={toggleExpand}
+                onDecide={decide}
+                isSelected={selected.has(p.callId)}
+                onToggleSelect={toggleSelect}
+                fadingOut={fadingOut.has(p.callId)}
+              />
+            ))}
+          </div>
 
-                {p.summary && <p className="approval-summary">{p.summary}</p>}
-
-                {p.riskSignals && p.riskSignals.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 6,
-                      flexWrap: "wrap",
-                      marginTop: 6,
-                    }}
-                  >
-                    {p.riskSignals.map((s) => (
-                      <span
-                        key={`${s.kind}-${s.label}`}
-                        className={`pill ${s.severity === "high" ? "err" : s.severity === "medium" ? "warn" : "muted"}`}
-                        title={s.kind}
-                      >
-                        {s.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {primary && (
-                  <div className="approval-primary">
-                    <span className="approval-primary-label">
-                      {primaryLabel(p.toolName)}
-                    </span>
-                    <code className="approval-primary-value">{primary}</code>
-                  </div>
-                )}
-
-                {hasParams && (
-                  <div className="approval-params-wrap">
-                    <button
-                      type="button"
-                      className="approval-params-toggle"
-                      onClick={() => toggleExpand(p.callId)}
-                      aria-expanded={isExpanded}
-                    >
-                      {isExpanded ? "▾" : "▸"} Full params
-                      {!isExpanded && p.params && (
-                        <span className="muted" style={{ marginLeft: 6 }}>
-                          {Object.keys(p.params).join(", ")}
-                        </span>
-                      )}
-                    </button>
-                    {isExpanded && (
-                      <pre className="approval-params-json">
-                        {safeStringify(p.params)}
-                      </pre>
-                    )}
-                  </div>
-                )}
-
-                <div className="approval-actions">
-                  <button
-                    type="button"
-                    className="btn success"
-                    onClick={() => decide(p.callId, "approve")}
-                  >
-                    Approve
-                  </button>
-                  <button
-                    type="button"
-                    className="btn danger"
-                    onClick={() => decide(p.callId, "reject")}
-                  >
-                    Reject
-                  </button>
-                  <Link
-                    href={`/approvals/${p.callId}`}
-                    className="btn sm ghost"
-                    style={{ textDecoration: "none" }}
-                  >
-                    Details →
-                  </Link>
-                  <span className="approval-spacer" />
-                  <span className="pill muted" title={p.callId}>
-                    {p.callId.slice(0, 8)}
-                  </span>
-                </div>
-              </article>
-            );
-          })}
-        </div>
+          <BatchActionBar
+            selectedCount={selectedInView.length}
+            onBatchApprove={() => batchDecide("approve")}
+            onBatchReject={() => batchDecide("reject")}
+            batchApproving={batchApproving}
+            batchRejecting={batchRejecting}
+          />
+        </>
       )}
 
       {suggestions.length > 0 && (
@@ -497,8 +902,6 @@ function RuleRow({
   items: string[];
   attributed?: AttributedRule[];
 }) {
-  // Build a fast lookup: pattern → source (first occurrence wins, matching
-  // loadCcPermissionsAttributed priority order).
   const sourceMap = new Map<string, RuleSource>();
   if (attributed) {
     for (const r of attributed) {
@@ -590,13 +993,6 @@ function ruleClass(kind: "deny" | "ask" | "allow"): string {
 
 function tierClass(t: string): string {
   return t === "high" ? "err" : t === "medium" ? "warn" : "ok";
-}
-
-function formatCountdown(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const rs = s % 60;
-  return `${m}:${rs.toString().padStart(2, "0")}`;
 }
 
 function safeStringify(v: unknown): string {

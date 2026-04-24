@@ -686,7 +686,7 @@ function MobileNotificationsCard() {
                 <button
                   type="button"
                   onClick={handleTest}
-                  style={{ background: "var(--bg-2)", color: "var(--fg-0)", border: "1px solid var(--border)", borderRadius: "var(--r-2)", padding: "8px 16px", fontSize: 13, cursor: "pointer", minHeight: 44 }}
+                  style={{ background: "var(--bg-2)", color: "var(--fg-0)", border: "1px solid var(--border-default)", borderRadius: "var(--r-2)", padding: "8px 16px", fontSize: 13, cursor: "pointer", minHeight: 44 }}
                 >
                   Test notification
                 </button>

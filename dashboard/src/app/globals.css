@@ -23,9 +23,23 @@
   --fg-3: #5a6170;
 
   /* color — brand / accent */
-  --accent: #7c8cff;
-  --accent-soft: #7c8cff22;
-  --accent-strong: #a8b4ff;
+  --accent: #d87757;
+  --accent-hover: #c9684a;
+  --accent-rgb: 216, 119, 87;
+  --accent-soft: rgba(216, 119, 87, 0.12);
+  --accent-strong: #e8956e;
+
+  /* glass */
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-blur: 60px;
+
+  /* card */
+  --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+
+  /* layout tokens */
+  --radius: 12px;
+  --transition: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* color — semantic */
   --ok: #34d399;
@@ -192,13 +206,15 @@ button {
   min-height: 36px;
 }
 .app-nav-link:hover {
-  background: var(--bg-hover);
+  background: var(--glass-bg);
   color: var(--fg-0);
   text-decoration: none;
 }
 .app-nav-link.is-active {
-  background: var(--bg-3);
+  background: var(--glass-bg);
   color: var(--fg-0);
+  border-left: 2px solid var(--accent);
+  padding-left: calc(var(--s-3) - 2px);
 }
 .app-nav-link-icon {
   width: 16px;
@@ -751,10 +767,131 @@ button {
   50% { transform: scale(1.4); opacity: 0.4; }
 }
 
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* -------------------------------------------------- btn-primary */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: 36px;
+  padding: 0 var(--s-4);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: background 200ms var(--transition), transform 150ms var(--transition),
+    box-shadow 200ms var(--transition);
+}
+.btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  opacity: 0;
+  transition: opacity 200ms;
+}
+.btn-primary:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.35);
+}
+.btn-primary:hover::before {
+  opacity: 1;
+  animation: shimmer 800ms var(--transition) infinite;
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+
 /* -------------------------------------------------- nav hover glow */
 
 .app-nav-link:hover:not(.is-active) {
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 rgba(var(--accent-rgb), 0.5);
+}
+
+/* -------------------------------------------------- glass card */
+
+.glass-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--card-shadow);
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 200ms var(--transition),
+    box-shadow 200ms var(--transition),
+    border-color 200ms var(--transition);
+}
+.glass-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  background: radial-gradient(
+    circle at 50% 0%,
+    rgba(var(--accent-rgb), 0.06),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 250ms var(--transition);
+  pointer-events: none;
+}
+.glass-card.glass-card--hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.glass-card.glass-card--hover:hover::after {
+  opacity: 1;
+}
+
+/* -------------------------------------------------- bridge status pill */
+
+.bridge-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--r-full);
+  font-size: 11.5px;
+  font-weight: 500;
+  background: rgba(52, 211, 153, 0.08);
+  color: var(--ok);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  white-space: nowrap;
+}
+.bridge-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: pulse-dot 2s ease-in-out infinite;
+  flex-shrink: 0;
 }
 
 /* -------------------------------------------------- decision rows */
@@ -878,4 +1015,58 @@ h2 .copy-section-btn:focus {
   .btn {
     min-height: 44px;
   }
+}
+
+/* -------------------------------------------------- marketplace */
+
+.marketplace-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-4);
+}
+
+@media (max-width: 1024px) {
+  .marketplace-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .marketplace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.template-card {
+  padding: var(--s-5);
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+}
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  font-size: 10.5px;
+  font-weight: 500;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border: 1px solid rgba(var(--accent-rgb), 0.18);
+  white-space: nowrap;
+}
+
+.connector-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 6px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  letter-spacing: 0;
 }

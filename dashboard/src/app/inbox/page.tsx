@@ -70,10 +70,12 @@ function escapeHtml(s: string): string {
 }
 
 function renderMarkdown(text: string): string {
-  // Strip script/iframe tags first (security)
+  // Strip script/iframe tags and dangerous attributes first (security)
   let safe = text
     .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "");
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/\s+on\w+="[^"]*"/gi, "")
+    .replace(/href="javascript:[^"]*"/gi, 'href="#"');
 
   const lines = safe.split("\n");
   const html: string[] = [];
