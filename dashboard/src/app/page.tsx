@@ -73,6 +73,22 @@ interface ActivityEvent {
   [k: string]: unknown;
 }
 
+interface ActivationSummary {
+  installedAt: number;
+  firstRecipeRunAt: number | null;
+  timeToFirstRecipeRunMs: number | null;
+  recipeRunsTotal: number;
+  recipeRunsLast7Days: number;
+  activeDaysLast7: number;
+  approvalCompletionRate: number | null;
+  approvalsPrompted: number;
+  approvalsCompleted: number;
+}
+
+interface ActivationMetricsResponse {
+  summary: ActivationSummary;
+}
+
 // ---------------------------------------------------------------------------
 // Provider icon helpers
 // ---------------------------------------------------------------------------
@@ -553,6 +569,44 @@ function parseToolCallTotal(text: string): number {
   return Math.round(total);
 }
 
+function fmtActivationDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes}m ${totalSeconds % 60}s`;
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) return `${totalHours}h ${totalMinutes % 60}m`;
+  const totalDays = Math.floor(totalHours / 24);
+  return `${totalDays}d ${totalHours % 24}h`;
+}
+
+function formatApprovalCompletionRate(rate: number | null): string | undefined {
+  if (rate == null) return undefined;
+  return `${Math.round(rate * 100)}% approvals`;
+}
+
+function activationCardValue(
+  summary: ActivationSummary | null | undefined,
+  unsupported: boolean,
+): string {
+  if (unsupported) return "Unavailable";
+  if (!summary) return "—";
+  if (summary.timeToFirstRecipeRunMs == null) return "Not yet";
+  return fmtActivationDuration(summary.timeToFirstRecipeRunMs);
+}
+
+function activationCardFoot(
+  summary: ActivationSummary | null | undefined,
+  unsupported: boolean,
+): string {
+  if (unsupported) return "Requires a newer bridge · local only";
+  if (!summary) return "Local-only activation metrics";
+  if (summary.firstRecipeRunAt == null) {
+    return "Run your first recipe to start tracking · local only";
+  }
+  return `${summary.recipeRunsLast7Days} runs in 7d · ${summary.activeDaysLast7} active days · local only`;
+}
+
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
@@ -642,11 +696,21 @@ export default function HomePage() {
   const { data: health } = useBridgeFetch<BridgeHealth>("/api/bridge/health", {
     intervalMs: 5000,
   });
+  const {
+    data: activationMetrics,
+    loading: activationLoading,
+    unsupported: activationUnsupported,
+  } = useBridgeFetch<ActivationMetricsResponse>("/api/bridge/activation-metrics", {
+    intervalMs: 5000,
+    unsupportedValue: null,
+  });
 
   const greet = greeting();
   const recipeCount = data.activeRecipes;
   const pendingCount = data.pendingApprovals;
   const toolCalls = data.recentActivity;
+  const activationSummary = activationMetrics?.summary ?? null;
+  const statLoading = overviewLoading || activationLoading;
 
   return (
     <section>
@@ -852,8 +916,9 @@ export default function HomePage() {
       {/* Stat row                                                              */}
       {/* ------------------------------------------------------------------ */}
       <div className="stat-grid" style={{ marginBottom: "var(--s-6)" }}>
-        {overviewLoading ? (
+        {statLoading ? (
           <>
+            <SkeletonStatCard />
             <SkeletonStatCard />
             <SkeletonStatCard />
             <SkeletonStatCard />
@@ -881,6 +946,19 @@ export default function HomePage() {
               icon={
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(var(--orange-rgb), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orange)" }}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+              }
+            />
+            <StatCard
+              label="First success"
+              value={activationCardValue(activationSummary, activationUnsupported)}
+              delta={formatApprovalCompletionRate(
+                activationSummary?.approvalCompletionRate ?? null,
+              )}
+              foot={activationCardFoot(activationSummary, activationUnsupported)}
+              icon={
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(29,91,214,0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--info)" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l2.6 5.26L20 9l-4 3.9.94 5.5L12 15.77 7.06 18.4 8 12.9 4 9l5.4-.74L12 3z"/></svg>
                 </div>
               }
             />
