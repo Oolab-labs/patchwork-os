@@ -76,13 +76,23 @@ if [ -d "$REMOTE_DIR/public" ]; then
   echo "public dir in place"
 fi
 
-# Write .env.local with real secrets
-cat > "$REMOTE_DIR/.env.local" <<'ENV'
+# Write .env.local — secrets must be set via environment before running this script:
+#   PATCHWORK_BRIDGE_TOKEN, DASHBOARD_PASSWORD
+# PATCHWORK_BRIDGE_TOKEN is the bridge auth token (from: patchwork print-token)
+# DASHBOARD_PASSWORD protects the dashboard UI (leave blank to disable auth)
+if [ -f "$REMOTE_DIR/.env.local" ]; then
+  echo ".env.local already exists on VPS — preserving (delete manually to reset)"
+else
+  cat > "$REMOTE_DIR/.env.local" <<ENV
+NEXT_PUBLIC_BASE_PATH=/dashboard
 PATCHWORK_BRIDGE_URL=https://patchworkos.com
-PATCHWORK_BRIDGE_TOKEN=3dd1c289-05f8-414d-8c71-f4e2dd878831
+PATCHWORK_BRIDGE_TOKEN=${PATCHWORK_BRIDGE_TOKEN:-REPLACE_ME}
 VAPID_SUBJECT=mailto:support@gigsecure.co.ke
+DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
 ENV
-chmod 600 "$REMOTE_DIR/.env.local"
+  chmod 600 "$REMOTE_DIR/.env.local"
+  echo "Wrote .env.local — review and update secrets if placeholders remain"
+fi
 
 # Install PM2 if missing
 which pm2 || npm install -g pm2
