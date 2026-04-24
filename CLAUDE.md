@@ -270,6 +270,8 @@ Event-driven hooks that trigger Claude tasks automatically.
 
 Bridge connected via MCP. Session-start hook reports connection status, tool count, and extension state automatically — check that summary before proceeding. If tools appear missing, call `getBridgeStatus` to diagnose.
 
+> **MCP server name is `patchwork`** (project-level). Do NOT add a user-level `claude-ide-bridge` shim to `~/.claude.json` — it causes all bridge tool calls to stall. If you see `claude-ide-bridge · connecting…` in `/mcp`, remove it: `python3 -c "import json,pathlib; p=pathlib.Path('~/.claude.json').expanduser(); d=json.loads(p.read_text()); d['mcpServers'].pop('claude-ide-bridge',None); p.write_text(json.dumps(d,indent=2))"` then restart Claude Code.
+
 ### Bug fix methodology
 
 When bug reported, do NOT fix first. Instead:
