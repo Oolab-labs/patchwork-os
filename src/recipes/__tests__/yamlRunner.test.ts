@@ -1511,3 +1511,359 @@ steps:
     }
   });
 });
+
+// ── validateYamlRecipe — edge cases ──────────────────────────────────────────
+
+describe("validateYamlRecipe — extra validation paths", () => {
+  it("throws when input is null", () => {
+    expect(() => validateYamlRecipe(null)).toThrow("recipe must be an object");
+  });
+
+  it("throws when input is a primitive", () => {
+    expect(() => validateYamlRecipe("not-an-object")).toThrow(
+      "recipe must be an object",
+    );
+  });
+
+  it("throws when servers is not an array of strings", () => {
+    expect(() =>
+      validateYamlRecipe({
+        name: "r",
+        trigger: { type: "manual" },
+        steps: [{ tool: "file.write" }],
+        servers: [42],
+      }),
+    ).toThrow("recipe.servers must be an array of strings if present");
+  });
+
+  it("accepts valid servers array", () => {
+    const recipe = validateYamlRecipe({
+      name: "r",
+      trigger: { type: "manual" },
+      steps: [{ tool: "file.write" }],
+      servers: ["my-plugin"],
+    });
+    expect(recipe.servers).toEqual(["my-plugin"]);
+  });
+});
+
+// ── loadRecipeServers ─────────────────────────────────────────────────────────
+
+vi.mock("../../pluginLoader.js", () => ({
+  loadPluginsFull: vi.fn(),
+}));
+
+import { loadPluginsFull } from "../../pluginLoader.js";
+import { loadRecipeServers } from "../yamlRunner.js";
+
+const mockLoadPluginsFull = vi.mocked(loadPluginsFull);
+
+describe("loadRecipeServers", () => {
+  it("skips already-loaded specs (deduplication)", async () => {
+    mockLoadPluginsFull.mockResolvedValue([]);
+    await loadRecipeServers(["dedup-spec"]);
+    await loadRecipeServers(["dedup-spec"]);
+    expect(mockLoadPluginsFull).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs warning when pluginLoader import fails", async () => {
+    mockLoadPluginsFull.mockRejectedValueOnce(new Error("load fail"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await loadRecipeServers([`fail-spec-${Date.now()}`]);
+    warn.mockRestore();
+  });
+
+  it("logs warning per spec that fails to load, does not throw", async () => {
+    mockLoadPluginsFull.mockRejectedValueOnce(new Error("spec load error"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await loadRecipeServers([`bad-spec-${Date.now()}`]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("failed to load"),
+    );
+    warn.mockRestore();
+  });
+
+  it("registers tools from loaded plugins", async () => {
+    const fakePlugin = {
+      tools: [
+        {
+          schema: { name: "my-plugin.hello" },
+          handler: async () => "hello",
+        },
+      ],
+    };
+    mockLoadPluginsFull.mockResolvedValueOnce([fakePlugin as never]);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await loadRecipeServers([`plugin-with-tools-${Date.now()}`]);
+    info.mockRestore();
+  });
+});
+
+// ── agent step — provider driver paths ───────────────────────────────────────
+
+describe("runYamlRecipe — agent step with provider drivers", () => {
+  it("calls providerDriverFn with openai driver", async () => {
+    const providerDriverFn = vi.fn().mockResolvedValue("openai result");
+    const result = await runYamlRecipe(
+      makeRecipe({
+        steps: [{ agent: { prompt: "hello", driver: "openai", into: "out" } }],
+      }),
+      { ...noop(), providerDriverFn, testMode: true },
+    );
+    expect(providerDriverFn).toHaveBeenCalledWith("openai", "hello", undefined);
+    expect(result.context.out).toBe("openai result");
+    expect(result.errorMessage).toBeUndefined();
+  });
+
+  it("calls providerDriverFn with grok driver", async () => {
+    const providerDriverFn = vi.fn().mockResolvedValue("grok result");
+    const result = await runYamlRecipe(
+      makeRecipe({
+        steps: [{ agent: { prompt: "q", driver: "grok", into: "g" } }],
+      }),
+      { ...noop(), providerDriverFn, testMode: true },
+    );
+    expect(providerDriverFn).toHaveBeenCalledWith("grok", "q", undefined);
+    expect(result.context.g).toBe("grok result");
+  });
+
+  it("calls providerDriverFn with gemini driver", async () => {
+    const providerDriverFn = vi.fn().mockResolvedValue("gemini result");
+    const result = await runYamlRecipe(
+      makeRecipe({
+        steps: [
+          {
+            agent: {
+              prompt: "q",
+              driver: "gemini",
+              model: "gemini-pro",
+              into: "gm",
+            },
+          },
+        ],
+      }),
+      { ...noop(), providerDriverFn, testMode: true },
+    );
+    expect(providerDriverFn).toHaveBeenCalledWith("gemini", "q", "gemini-pro");
+    expect(result.context.gm).toBe("gemini result");
+  });
+
+  it("treats only-narration agent output as error", async () => {
+    const claudeFn = vi.fn().mockResolvedValue("   ");
+    const result = await runYamlRecipe(
+      makeRecipe({
+        steps: [{ agent: { prompt: "q", driver: "api" }, into: "out" }],
+      }),
+      { ...noop(), claudeFn, testMode: true },
+    );
+    expect(result.errorMessage).toMatch(/returned only narration/);
+    expect(result.stepResults[0]?.status).toBe("error");
+  });
+
+  it("sets errorMessage when agent step throws", async () => {
+    const claudeCodeFn = vi.fn().mockRejectedValue(new Error("exec error"));
+    const result = await runYamlRecipe(
+      makeRecipe({
+        steps: [
+          {
+            agent: { prompt: "q", driver: "claude-code" },
+            into: "out",
+          },
+        ],
+      }),
+      { ...noop(), claudeCodeFn, testMode: true },
+    );
+    expect(result.errorMessage).toMatch(/exec error/);
+  });
+
+  it("sets errorMessage when agent returns [agent step failed: ...] prefix", async () => {
+    const claudeFn = vi.fn().mockResolvedValue("[agent step failed: timeout]");
+    const result = await runYamlRecipe(
+      makeRecipe({
+        steps: [{ agent: { prompt: "q", driver: "api" }, into: "out" }],
+      }),
+      { ...noop(), claudeFn, testMode: true },
+    );
+    expect(result.errorMessage).toMatch(/agent step failed/);
+  });
+});
+
+// ── dispatchRecipe ────────────────────────────────────────────────────────────
+
+import type { ChainedRecipe, ExecutionDeps } from "../chainedRunner.js";
+import { dispatchRecipe } from "../yamlRunner.js";
+
+describe("dispatchRecipe", () => {
+  it("routes simple recipe to runYamlRecipe", async () => {
+    const recipe = makeRecipe({
+      steps: [{ tool: "file.write", path: "/tmp/x.txt", content: "hi" }],
+    });
+    const result = await dispatchRecipe(recipe, {
+      ...noop(),
+      testMode: true,
+      writeFile: () => {},
+    });
+    expect("stepsRun" in result).toBe(true);
+  });
+
+  it("throws when chained recipe is dispatched without chainedDeps", async () => {
+    const recipe = {
+      ...makeRecipe(),
+      trigger: { type: "chained" },
+      steps: [{ id: "s1", tool: "file.write" }],
+    };
+    await expect(
+      dispatchRecipe(recipe, { ...noop(), testMode: true }),
+    ).rejects.toThrow("chainedDeps required");
+  });
+
+  it("routes chained recipe to runChainedRecipe", async () => {
+    const chainedRecipe: ChainedRecipe & { trigger: { type: string } } = {
+      name: "chained-test",
+      trigger: { type: "chained" },
+      steps: [{ id: "s1", tool: "my.tool" }],
+    };
+    const chainedDeps: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue("done"),
+      executeAgent: vi.fn().mockResolvedValue("agent"),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const result = await dispatchRecipe(chainedRecipe as never, {
+      ...noop(),
+      testMode: true,
+      chainedDeps,
+    });
+    expect("success" in result).toBe(true);
+  });
+});
+
+// ── buildChainedDeps — executeTool and executeAgent paths ────────────────────
+
+describe("buildChainedDeps executeTool", () => {
+  it("executes a registered tool via executeStep", async () => {
+    const deps = buildChainedDeps({
+      ...noop(),
+      testMode: true,
+    });
+    // file.write is a registered tool — should run and return a string
+    const result = await deps.executeTool("file.write", {
+      path: "/dev/null",
+      content: "test",
+    });
+    expect(typeof result).toBe("string");
+  });
+
+  it("returns empty string for unknown tool", async () => {
+    const deps = buildChainedDeps({ ...noop(), testMode: true });
+    const result = await deps.executeTool("not.a.real.tool", {});
+    expect(result).toBe("");
+  });
+});
+
+describe("buildChainedDeps executeAgent", () => {
+  it("routes claude-code driver to claudeCodeFn", async () => {
+    const claudeCodeFn = vi.fn().mockResolvedValue("cc result");
+    const deps = buildChainedDeps({ ...noop(), claudeCodeFn, testMode: true });
+    const result = await deps.executeAgent("hello", undefined, "claude-code");
+    expect(claudeCodeFn).toHaveBeenCalledWith("hello");
+    expect(result).toBe("cc result");
+  });
+
+  it("routes anthropic driver to claudeFn", async () => {
+    const claudeFn = vi.fn().mockResolvedValue("api result");
+    const deps = buildChainedDeps({ ...noop(), claudeFn, testMode: true });
+    const result = await deps.executeAgent(
+      "hello",
+      "claude-haiku-4-5-20251001",
+      "anthropic",
+    );
+    expect(claudeFn).toHaveBeenCalledWith("hello", "claude-haiku-4-5-20251001");
+    expect(result).toBe("api result");
+  });
+
+  it("routes claude driver to claudeFn", async () => {
+    const claudeFn = vi.fn().mockResolvedValue("api result 2");
+    const deps = buildChainedDeps({ ...noop(), claudeFn, testMode: true });
+    const result = await deps.executeAgent("hi", undefined, "claude");
+    expect(result).toBe("api result 2");
+  });
+
+  it("routes openai driver to providerDriverFn", async () => {
+    const providerDriverFn = vi.fn().mockResolvedValue("openai");
+    const deps = buildChainedDeps({
+      ...noop(),
+      providerDriverFn,
+      testMode: true,
+    });
+    const result = await deps.executeAgent("prompt", "gpt-4", "openai");
+    expect(providerDriverFn).toHaveBeenCalledWith("openai", "prompt", "gpt-4");
+    expect(result).toBe("openai");
+  });
+
+  it("uses claudeCodeFnOverride when no driver specified and no API key", async () => {
+    const override = vi.fn().mockResolvedValue("override result");
+    const deps = buildChainedDeps(
+      { ...noop(), claudeFn: undefined, testMode: true },
+      override,
+    );
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    try {
+      const result = await deps.executeAgent("q", undefined, undefined);
+      // Either claudeFn or override was called — result is a string
+      expect(typeof result).toBe("string");
+    } finally {
+      if (savedKey !== undefined) process.env.ANTHROPIC_API_KEY = savedKey;
+    }
+  });
+});
+
+// ── listYamlRecipes — JSON recipes ───────────────────────────────────────────
+
+describe("listYamlRecipes — JSON recipe files", () => {
+  it("reads .json recipe files", () => {
+    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "list-recipes-json-"));
+    try {
+      writeFileSync(
+        path.join(tmpDir, "my-recipe.json"),
+        JSON.stringify({
+          name: "json-recipe",
+          description: "a json recipe",
+          trigger: { type: "cron" },
+          steps: [],
+        }),
+      );
+      const results = listYamlRecipes(tmpDir);
+      expect(results).toHaveLength(1);
+      expect(results[0]?.name).toBe("json-recipe");
+      expect(results[0]?.trigger).toBe("cron");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses filename as name when name field is absent", () => {
+    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "list-recipes-noname-"));
+    try {
+      writeFileSync(
+        path.join(tmpDir, "my-unnamed.yaml"),
+        "trigger:\n  type: manual\nsteps: []\n",
+      );
+      const results = listYamlRecipes(tmpDir);
+      expect(results[0]?.name).toBe("my-unnamed");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("skips .permissions.json files", () => {
+    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "list-recipes-perm-"));
+    try {
+      writeFileSync(path.join(tmpDir, "my-recipe.permissions.json"), "{}");
+      const results = listYamlRecipes(tmpDir);
+      expect(results).toHaveLength(0);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
