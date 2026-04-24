@@ -130,7 +130,7 @@ function greeting(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Activity feed (client component — needs its own interval)
+// Activity feed helpers
 // ---------------------------------------------------------------------------
 
 function withAt(e: ActivityEvent): ActivityEvent {
@@ -177,6 +177,10 @@ function activityDescription(e: ActivityEvent): string {
   return "";
 }
 
+// ---------------------------------------------------------------------------
+// ActivityFeed
+// ---------------------------------------------------------------------------
+
 function ActivityFeed() {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [updateCount, setUpdateCount] = useState(0);
@@ -184,7 +188,9 @@ function ActivityFeed() {
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -206,7 +212,7 @@ function ActivityFeed() {
   }, []);
 
   return (
-    <div className="glass-card glass-card--hover" style={{ display: "flex", flexDirection: "column" }}>
+    <div className="card" style={{ display: "flex", flexDirection: "column", padding: "20px 22px" }}>
       {/* header */}
       <div
         style={{
@@ -214,10 +220,11 @@ function ActivityFeed() {
           alignItems: "center",
           gap: "var(--s-2)",
           marginBottom: "var(--s-4)",
-          flexWrap: "wrap",
         }}
       >
-        <h2 style={{ fontSize: 15, flex: 1, margin: 0 }}>Bridge activity</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 700, flex: 1, margin: 0, color: "var(--ink-0)" }}>
+          Live activity
+        </h2>
         <span
           style={{
             display: "inline-flex",
@@ -231,11 +238,12 @@ function ActivityFeed() {
           <span
             aria-hidden="true"
             style={{
-              width: 6,
-              height: 6,
+              width: 7,
+              height: 7,
               borderRadius: "50%",
               background: "var(--ok)",
               display: "inline-block",
+              boxShadow: "0 0 0 2px rgba(var(--ok-rgb, 34,197,94), 0.25)",
             }}
           />
           live
@@ -258,7 +266,7 @@ function ActivityFeed() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "var(--fg-3)",
+            color: "var(--ink-2)",
             fontSize: 13,
             padding: "var(--s-8) 0",
           }}
@@ -266,12 +274,13 @@ function ActivityFeed() {
           No recent activity
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {events.map((e, i) => {
             const label = activityLabel(e);
             const desc = activityDescription(e);
             const ts = e.at ?? Date.now();
             const borderColor = activityBorderColor(e);
+            const isErr = e.status === "error";
             return (
               <div
                 // biome-ignore lint/suspicious/noArrayIndexKey: stable short list
@@ -280,19 +289,19 @@ function ActivityFeed() {
                   display: "flex",
                   alignItems: "center",
                   gap: "var(--s-3)",
-                  padding: "6px var(--s-3)",
-                  borderRadius: "var(--r-2)",
-                  borderLeft: `2px solid ${borderColor}`,
-                  background: "rgba(255,255,255,0.02)",
+                  padding: "7px 10px 7px 8px",
+                  borderRadius: "var(--r-s)",
+                  borderLeft: `3px solid ${borderColor}`,
+                  background: i % 2 === 0 ? "rgba(0,0,0,0.015)" : "transparent",
                   minWidth: 0,
                 }}
               >
-                <ProviderIcon name={label} size={24} />
+                <ProviderIcon name={label} size={22} />
                 <span
                   style={{
                     fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    color: "var(--fg-0)",
+                    fontSize: 11.5,
+                    color: "var(--ink-0)",
                     flex: 1,
                     minWidth: 0,
                     overflow: "hidden",
@@ -304,20 +313,13 @@ function ActivityFeed() {
                 </span>
                 {desc && (
                   <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--fg-3)",
-                      flexShrink: 0,
-                      maxWidth: 100,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
+                    className={isErr ? "pill err" : "pill ok"}
+                    style={{ fontSize: 10, flexShrink: 0 }}
                   >
                     {desc}
                   </span>
                 )}
-                <span style={{ fontSize: 11, color: "var(--fg-3)", flexShrink: 0 }}>
+                <span style={{ fontSize: 11, color: "var(--ink-2)", flexShrink: 0, marginLeft: 4 }}>
                   {relTime(ts)}
                 </span>
               </div>
@@ -330,7 +332,7 @@ function ActivityFeed() {
 }
 
 // ---------------------------------------------------------------------------
-// MilestoneCard — progress toward the current usage milestone
+// MilestoneCard
 // ---------------------------------------------------------------------------
 
 interface MilestoneCardProps {
@@ -340,7 +342,6 @@ interface MilestoneCardProps {
 }
 
 function MilestoneCard({ approvals, recipes, toolCalls }: MilestoneCardProps) {
-  // Derive which milestone is active from real data
   const hasApprovals = approvals.length > 0 || toolCalls > 0;
   const hasRecipes = recipes.length > 0;
 
@@ -375,23 +376,23 @@ function MilestoneCard({ approvals, recipes, toolCalls }: MilestoneCardProps) {
     <div className="glass-card glass-card--hover" style={{ padding: "20px 22px" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
         <div>
-          <div style={{ fontSize: 11, color: "var(--fg-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2 }}>
-            Current milestone
+          <div style={{ fontSize: 10, color: "var(--ink-2)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>
+            Milestone
           </div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fg-0)" }}>{title}</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--ink-0)" }}>{title}</div>
         </div>
-        <span className="pill muted" style={{ fontSize: 11 }}>In progress</span>
+        <span className="pill muted" style={{ fontSize: 10 }}>In progress</span>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 12, color: "var(--fg-2)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 11.5, color: "var(--ink-2)" }}>
         <span>{doneCount} of {items.length} complete</span>
-        <span style={{ fontFamily: "var(--font-mono)" }}>{pct}%</span>
+        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>{pct}%</span>
       </div>
       <div className="progress" style={{ marginBottom: 16 }}>
         <div className="progress-fill" style={{ width: `${pct}%` }} />
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         {items.map((it, i) => (
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: stable static list
@@ -399,18 +400,18 @@ function MilestoneCard({ approvals, recipes, toolCalls }: MilestoneCardProps) {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 9,
-              fontSize: 12.5,
-              color: it.done ? "var(--fg-3)" : "var(--fg-0)",
+              gap: 10,
+              fontSize: 12,
+              color: it.done ? "var(--ink-2)" : "var(--ink-0)",
               textDecoration: it.done ? "line-through" : "none",
             }}
           >
             <span
               style={{
-                width: 14,
-                height: 14,
+                width: 15,
+                height: 15,
                 borderRadius: "50%",
-                border: it.done ? "none" : "1.5px solid var(--border)",
+                border: it.done ? "none" : "1.5px solid var(--line-2)",
                 background: it.done ? "var(--accent)" : "transparent",
                 display: "flex",
                 alignItems: "center",
@@ -431,7 +432,7 @@ function MilestoneCard({ approvals, recipes, toolCalls }: MilestoneCardProps) {
 }
 
 // ---------------------------------------------------------------------------
-// ProviderDeliveryCard — connected providers + wave breakdown
+// ProviderDeliveryCard
 // ---------------------------------------------------------------------------
 
 interface ProviderDeliveryCardProps {
@@ -444,40 +445,40 @@ function ProviderDeliveryCard({ connectedCount }: ProviderDeliveryCardProps) {
   const waves = [
     { label: "Wave 1", sublabel: "shipped", n: connectedCount, total: 8, color: "var(--ok)", bg: "var(--ok-soft, var(--recess))" },
     { label: "Wave 2", sublabel: "core (planned)", n: 0, total: 8, color: "var(--accent)", bg: "var(--accent-soft, var(--recess))" },
-    { label: "Wave 3", sublabel: "expand (roadmap)", n: 0, total: 16, color: "var(--fg-3)", bg: "var(--recess)" },
+    { label: "Wave 3", sublabel: "expand (roadmap)", n: 0, total: 16, color: "var(--ink-3)", bg: "var(--recess)" },
   ];
 
   return (
     <div className="glass-card glass-card--hover" style={{ padding: "20px 22px" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
         <div>
-          <div style={{ fontSize: 11, color: "var(--fg-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2 }}>
-            Provider delivery
+          <div style={{ fontSize: 10, color: "var(--ink-2)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>
+            Providers
           </div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fg-0)" }}>
-            {connectedCount} of 32 connected
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--ink-0)" }}>
+            {connectedCount} connected
           </div>
         </div>
-        <Link href="/connectors" className="btn sm ghost" style={{ textDecoration: "none", fontSize: 12 }}>
-          + Connect
+        <Link href="/connectors" className="btn sm ghost" style={{ textDecoration: "none", fontSize: 11 }}>
+          + Connect more
         </Link>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6, marginBottom: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 7, marginBottom: 16 }}>
         {WAVE_PROVIDERS.map((p) => (
           <ProviderIcon key={p} name={p} size={28} />
         ))}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
         {waves.map((w) => (
           <div key={w.label}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
-              <span style={{ color: "var(--fg-1)", fontWeight: 500 }}>
-                {w.label} ·{" "}
-                <span style={{ color: "var(--fg-3)", fontWeight: 400 }}>{w.sublabel}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 11.5 }}>
+              <span style={{ color: "var(--ink-1)", fontWeight: 500 }}>
+                {w.label}{" "}
+                <span style={{ color: "var(--ink-2)", fontWeight: 400 }}>· {w.sublabel}</span>
               </span>
-              <span style={{ color: "var(--fg-2)", fontFamily: "var(--font-mono)" }}>
+              <span style={{ color: "var(--ink-2)", fontFamily: "var(--font-mono)" }}>
                 {w.n}/{w.total}
               </span>
             </div>
@@ -492,6 +493,58 @@ function ProviderDeliveryCard({ connectedCount }: ProviderDeliveryCardProps) {
       </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Inline approve button
+// ---------------------------------------------------------------------------
+
+function ApproveBtnInline({ callId }: { callId: string }) {
+  const [done, setDone] = useState(false);
+  if (done) {
+    return (
+      <span className="pill ok" style={{ fontSize: 11 }}>
+        Approved
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="btn sm success"
+      style={{ minHeight: 26 }}
+      onClick={async () => {
+        await fetch(apiPath(`/api/bridge/approve/${callId}`), { method: "POST" });
+        setDone(true);
+      }}
+    >
+      Approve
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Metric parsers
+// ---------------------------------------------------------------------------
+
+function parseUptimeMs(text: string): number | null {
+  if (!text) return null;
+  const m = text.match(/^bridge_uptime_seconds\s+(\d+(?:\.\d+)?)/m);
+  if (m) return Math.round(Number.parseFloat(m[1]) * 1000);
+  return null;
+}
+
+function parseToolCallTotal(text: string): number {
+  if (!text) return 0;
+  let total = 0;
+  for (const line of text.split("\n")) {
+    if (!line || line.startsWith("#")) continue;
+    const m = line.match(
+      /^bridge_tool_calls_total(?:\{[^}]*\})?\s+(\d+(?:\.\d+)?)/,
+    );
+    if (m) total += Number.parseFloat(m[1]);
+  }
+  return Math.round(total);
 }
 
 // ---------------------------------------------------------------------------
@@ -547,17 +600,14 @@ export default function HomePage() {
           ? recipesData
           : (recipesData as { recipes?: Recipe[] }).recipes ?? [];
 
-        // providerCount: count connectors with status "connected"
         const connectorList: { name: string; status: string }[] = Array.isArray(connectorsData)
           ? connectorsData
           : (connectorsData as { connectors?: { name: string; status: string }[] }).connectors ?? [];
         setProviderCount(connectorList.filter((c) => c.status === "connected").length);
 
-        // toolCallDelta: diff from previous poll
         const prev = prevToolCallsRef.current;
-        const delta = prev !== undefined && toolCalls >= prev
-          ? `+${toolCalls - prev}`
-          : undefined;
+        const delta =
+          prev !== undefined && toolCalls >= prev ? `+${toolCalls - prev}` : undefined;
         prevToolCallsRef.current = toolCalls;
 
         setApprovals(Array.isArray(approvalsData) ? approvalsData : []);
@@ -593,46 +643,190 @@ export default function HomePage() {
   const greet = greeting();
   const recipeCount = data.activeRecipes;
   const pendingCount = data.pendingApprovals;
+  const toolCalls = data.recentActivity;
 
   return (
     <section>
       {/* ------------------------------------------------------------------ */}
-      {/* Greeting header                                                      */}
+      {/* Hero status bar                                                       */}
       {/* ------------------------------------------------------------------ */}
-      <div className="page-head">
-        <div>
-          <h1>
-            {greet}, <span style={{ color: "var(--accent-strong)" }}>mr.</span>
-          </h1>
-          <div className="page-head-sub">
-            Patchwork OS is running{" "}
-            <strong style={{ color: "var(--fg-1)" }}>{recipeCount}</strong>{" "}
-            recipe{recipeCount !== 1 ? "s" : ""} across{" "}
-            <strong style={{ color: "var(--fg-1)" }}>{providerCount}</strong>{" "}
-            provider{providerCount !== 1 ? "s" : ""}.{" "}
-            {pendingCount > 0 ? (
-              <>
-                <Link href="/approvals" style={{ color: "var(--warn)" }}>
-                  {pendingCount} tool call{pendingCount !== 1 ? "s" : ""} need
-                  {pendingCount === 1 ? "s" : ""} your approval.
-                </Link>
-              </>
-            ) : (
-              "No tool calls need your approval."
-            )}
+      <div
+        className="card"
+        style={{
+          position: "relative",
+          overflow: "hidden",
+          padding: "24px 28px",
+          marginBottom: "var(--s-6)",
+          borderLeft: "3px solid var(--orange)",
+        }}
+      >
+        {/* Radial glow accent */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            right: 0,
+            background: `radial-gradient(ellipse 55% 100% at 100% 50%, rgba(var(--orange-rgb), 0.08) 0%, transparent 70%)`,
+            pointerEvents: "none",
+          }}
+        />
+
+        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: "var(--s-6)", flexWrap: "wrap" }}>
+          {/* Greeting + bridge status */}
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 24,
+                fontWeight: 800,
+                color: "var(--ink-0)",
+                lineHeight: 1.1,
+              }}
+            >
+              {greet}
+            </h1>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 6,
+                fontSize: 13,
+                color: "var(--ink-2)",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: data.bridgeOk ? "var(--ok)" : "var(--err)",
+                  display: "inline-block",
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontWeight: 500, color: data.bridgeOk ? "var(--ok)" : "var(--err)" }}>
+                {data.bridgeOk ? "Bridge connected" : "Bridge offline"}
+              </span>
+              {data.uptimeMs != null && (
+                <span style={{ color: "var(--ink-3)" }}>
+                  · up {fmtDuration(data.uptimeMs)}
+                </span>
+              )}
+            </div>
           </div>
+
+          {/* Inline key numbers */}
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-4)", flexWrap: "wrap" }}>
+            <div style={{ textAlign: "center" }}>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--ink-0)",
+                  lineHeight: 1,
+                }}
+              >
+                {toolCalls}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Tool calls
+              </div>
+            </div>
+
+            <div
+              aria-hidden="true"
+              style={{ width: 1, height: 32, background: "var(--line-2)" }}
+            />
+
+            <div style={{ textAlign: "center" }}>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--ink-0)",
+                  lineHeight: 1,
+                }}
+              >
+                {recipeCount}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Recipes
+              </div>
+            </div>
+
+            <div
+              aria-hidden="true"
+              style={{ width: 1, height: 32, background: "var(--line-2)" }}
+            />
+
+            <div style={{ textAlign: "center" }}>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  fontFamily: "var(--font-mono)",
+                  color: pendingCount > 0 ? "var(--warn)" : "var(--ink-0)",
+                  lineHeight: 1,
+                }}
+              >
+                {pendingCount}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Pending
+              </div>
+            </div>
+          </div>
+
+          {/* CTA if pending */}
+          {pendingCount > 0 && (
+            <Link
+              href="/approvals"
+              className="btn primary"
+              style={{
+                textDecoration: "none",
+                background: "var(--orange)",
+                border: "none",
+                fontSize: 13,
+                fontWeight: 700,
+                flexShrink: 0,
+              }}
+            >
+              {pendingCount} awaiting approval →
+            </Link>
+          )}
         </div>
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Stat cards                                                           */}
+      {/* Stat row                                                              */}
       {/* ------------------------------------------------------------------ */}
-      <div className="stat-grid">
+      <div className="stat-grid" style={{ marginBottom: "var(--s-6)" }}>
         <StatCard
           label="Bridge uptime"
           value={data.uptimeMs != null ? fmtDuration(data.uptimeMs) : "—"}
           foot="Since last restart"
           href="/metrics"
+          icon={
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: "rgba(34,197,94,0.12)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+              }}
+            >
+              ⬡
+            </div>
+          }
         />
         <StatCard
           label="Tool calls today"
@@ -640,44 +834,92 @@ export default function HomePage() {
           delta={data.toolCallDelta}
           foot="Total this session"
           href="/activity"
+          icon={
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: "rgba(var(--orange-rgb), 0.12)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+              }}
+            >
+              ⚡
+            </div>
+          }
         />
         <StatCard
           label="Pending approvals"
           value={data.pendingApprovals}
           foot={data.pendingApprovals === 0 ? "All clear" : "Awaiting decision"}
           href="/approvals"
+          icon={
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: "rgba(245,158,11,0.12)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+              }}
+            >
+              ◎
+            </div>
+          }
         />
         <StatCard
           label="Active recipes"
           value={data.activeRecipes}
           foot="Automation recipes enabled"
           href="/recipes"
+          icon={
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: "rgba(139,92,246,0.12)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+              }}
+            >
+              ◈
+            </div>
+          }
         />
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* 2-column main grid                                                   */}
+      {/* 2-column main area                                                    */}
       {/* ------------------------------------------------------------------ */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1.1fr 1fr",
+          gridTemplateColumns: "minmax(0, 1.45fr) minmax(0, 1fr)",
           gap: "var(--s-4)",
           marginBottom: "var(--s-6)",
         }}
       >
-        {/* Left — Pending approvals preview */}
-        <div className="glass-card glass-card--hover" style={{ display: "flex", flexDirection: "column" }}>
+        {/* Left — Approvals queue */}
+        <div className="card" style={{ display: "flex", flexDirection: "column", padding: "20px 22px" }}>
+          {/* header */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "var(--s-2)",
+              gap: "var(--s-3)",
               marginBottom: "var(--s-4)",
-              flexWrap: "wrap",
             }}
           >
-            <h2 style={{ fontSize: 15, flex: 1, margin: 0 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, flex: 1, margin: 0, color: "var(--ink-0)" }}>
               Pending approvals
             </h2>
             {pendingCount > 0 && (
@@ -699,23 +941,38 @@ export default function HomePage() {
               style={{
                 flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                flexDirection: "column",
                 gap: "var(--s-2)",
                 color: "var(--ok)",
-                fontSize: 13,
-                padding: "var(--s-8) 0",
+                padding: "var(--s-10) 0",
               }}
             >
-              <span style={{ fontSize: 20 }}>✓</span>
-              All caught up!
+              <span
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  background: "rgba(34,197,94,0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 22,
+                }}
+              >
+                ✓
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>All clear</span>
+              <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Nothing needs your approval</span>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
-              {approvals.slice(0, 3).map((p) => {
+              {approvals.slice(0, 4).map((p) => {
                 const ns = p.toolName.split(".")[0] ?? p.toolName;
                 const recipeName = p.summary ?? ns;
+                const tierClass =
+                  p.tier === "high" ? "err" : p.tier === "medium" ? "warn" : "muted";
                 return (
                   <div
                     key={p.callId}
@@ -723,19 +980,19 @@ export default function HomePage() {
                       display: "flex",
                       alignItems: "center",
                       gap: "var(--s-3)",
-                      padding: "var(--s-3) var(--s-3)",
-                      background: "rgba(255,255,255,0.02)",
-                      borderRadius: "var(--r-2)",
+                      padding: "10px 12px",
+                      background: "var(--recess)",
+                      borderRadius: "var(--r-m)",
                       flexWrap: "wrap",
                     }}
                   >
-                    <ProviderIcon name={p.toolName} size={28} />
+                    <ProviderIcon name={p.toolName} size={30} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
                           fontFamily: "var(--font-mono)",
                           fontSize: 12,
-                          color: "var(--fg-0)",
+                          color: "var(--ink-0)",
                           fontWeight: 600,
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -747,20 +1004,17 @@ export default function HomePage() {
                       <div
                         style={{
                           fontSize: 11,
-                          color: "var(--fg-3)",
+                          color: "var(--ink-2)",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
-                          marginTop: 1,
+                          marginTop: 2,
                         }}
                       >
-                        {recipeName}
+                        {recipeName} · {relTime(p.requestedAt)}
                       </div>
                     </div>
-                    <span
-                      className={`pill ${p.tier === "high" ? "err" : p.tier === "medium" ? "warn" : "muted"}`}
-                      style={{ fontSize: 10 }}
-                    >
+                    <span className={`pill ${tierClass}`} style={{ fontSize: 10, flexShrink: 0 }}>
                       {p.tier}
                     </span>
                     <div style={{ display: "flex", gap: "var(--s-2)", flexShrink: 0 }}>
@@ -776,182 +1030,143 @@ export default function HomePage() {
                   </div>
                 );
               })}
-              {approvals.length > 3 && (
+              {approvals.length > 4 && (
                 <div
                   style={{
                     textAlign: "center",
                     fontSize: 12,
-                    color: "var(--fg-3)",
+                    color: "var(--ink-2)",
                     paddingTop: "var(--s-2)",
                   }}
                 >
-                  + {approvals.length - 3} more —{" "}
-                  <Link href="/approvals">see all</Link>
+                  + {approvals.length - 4} more —{" "}
+                  <Link href="/approvals" style={{ color: "var(--accent)" }}>
+                    see all
+                  </Link>
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {/* Right — Bridge activity feed */}
+        {/* Right — Live activity */}
         <ActivityFeed />
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Bottom grid — Milestone + Provider delivery                          */}
+      {/* 3-column bottom section                                               */}
       {/* ------------------------------------------------------------------ */}
-      <section className="overview-bottom-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: "var(--s-6)" }}>
-        <MilestoneCard approvals={approvals} recipes={recipes} toolCalls={data.recentActivity} />
-        <ProviderDeliveryCard connectedCount={providerCount} />
-      </section>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Active recipes section                                               */}
-      {/* ------------------------------------------------------------------ */}
-      {recipes.length > 0 && (
-        <div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--s-3)",
-              marginBottom: "var(--s-4)",
-            }}
-          >
-            <h2 style={{ margin: 0, fontSize: 16 }}>Active recipes</h2>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gap: "var(--s-4)",
+          marginBottom: "var(--s-6)",
+        }}
+      >
+        {/* Card A — Active recipes */}
+        <div className="glass-card glass-card--hover" style={{ padding: "20px 22px", display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", marginBottom: "var(--s-4)" }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, flex: 1, margin: 0, color: "var(--ink-0)" }}>
+              Active recipes
+            </h2>
             <Link
               href="/recipes"
               className="pill muted"
-              style={{ fontSize: 11, textDecoration: "none", marginLeft: "auto" }}
+              style={{ fontSize: 11, textDecoration: "none" }}
             >
-              View all recipes →
+              View all →
             </Link>
           </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-              gap: "var(--s-4)",
-            }}
-          >
-            {recipes.map((r, i) => {
-              const isRunning = r.enabled !== false;
-              const lastRunText = r.lastRun ? relTime(r.lastRun) : "never";
-              return (
-                <div
-                  // biome-ignore lint/suspicious/noArrayIndexKey: stable short list
-                  key={r.id ?? i}
-                  className="glass-card glass-card--hover"
-                  style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}
-                >
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--s-2)" }}>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 600,
-                        color: "var(--fg-0)",
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {r.name}
-                    </div>
-                    <span className={`pill ${isRunning ? "ok" : "muted"}`} style={{ fontSize: 10, flexShrink: 0 }}>
-                      {isRunning ? "Running" : "Idle"}
-                    </span>
-                  </div>
-                  {r.description && (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "var(--fg-3)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {r.description}
-                    </div>
-                  )}
+
+          {recipes.length === 0 ? (
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--ink-2)",
+                fontSize: 12,
+                padding: "var(--s-6) 0",
+              }}
+            >
+              No recipes configured
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)", flex: 1 }}>
+              {recipes.slice(0, 4).map((r, i) => {
+                const isRunning = r.enabled !== false;
+                const lastRunText = r.lastRun ? relTime(r.lastRun) : "never";
+                return (
                   <div
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable short list
+                    key={r.id ?? i}
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: "var(--s-2)",
-                      marginTop: "auto",
-                      paddingTop: "var(--s-2)",
+                      gap: "var(--s-3)",
+                      padding: "8px 10px",
+                      borderRadius: "var(--r-s)",
+                      background: "rgba(0,0,0,0.02)",
                     }}
                   >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          color: "var(--ink-0)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {r.name}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 1 }}>
+                        last run {lastRunText}
+                      </div>
+                    </div>
                     {r.trigger && (
-                      <span className="pill muted" style={{ fontSize: 10 }}>
+                      <span className="pill muted" style={{ fontSize: 9, flexShrink: 0 }}>
                         {r.trigger}
                       </span>
                     )}
-                    <span style={{ fontSize: 11, color: "var(--fg-3)", marginLeft: "auto" }}>
-                      last run {lastRunText}
+                    <span
+                      className={`pill ${isRunning ? "ok" : "muted"}`}
+                      style={{ fontSize: 9, flexShrink: 0 }}
+                    >
+                      {isRunning ? "on" : "off"}
                     </span>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
+
+          <div
+            style={{
+              marginTop: "var(--s-3)",
+              paddingTop: "var(--s-3)",
+              borderTop: "1px solid var(--line-3)",
+            }}
+          >
+            <Link
+              href="/recipes"
+              style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}
+            >
+              Manage recipes →
+            </Link>
           </div>
         </div>
-      )}
+
+        {/* Card B — Connected providers */}
+        <ProviderDeliveryCard connectedCount={providerCount} />
+
+        {/* Card C — Milestone tracker */}
+        <MilestoneCard approvals={approvals} recipes={recipes} toolCalls={toolCalls} />
+      </div>
     </section>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Inline approve button (needs its own state)
-// ---------------------------------------------------------------------------
-
-function ApproveBtnInline({ callId }: { callId: string }) {
-  const [done, setDone] = useState(false);
-  if (done) {
-    return (
-      <span className="pill ok" style={{ fontSize: 11 }}>
-        Approved
-      </span>
-    );
-  }
-  return (
-    <button
-      type="button"
-      className="btn sm success"
-      style={{ minHeight: 26 }}
-      onClick={async () => {
-        await fetch(apiPath(`/api/bridge/approve/${callId}`), { method: "POST" });
-        setDone(true);
-      }}
-    >
-      Approve
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Metric parsers (unchanged from original)
-// ---------------------------------------------------------------------------
-
-function parseUptimeMs(text: string): number | null {
-  if (!text) return null;
-  const m = text.match(/^bridge_uptime_seconds\s+(\d+(?:\.\d+)?)/m);
-  if (m) return Math.round(Number.parseFloat(m[1]) * 1000);
-  return null;
-}
-
-function parseToolCallTotal(text: string): number {
-  if (!text) return 0;
-  let total = 0;
-  for (const line of text.split("\n")) {
-    if (!line || line.startsWith("#")) continue;
-    const m = line.match(
-      /^bridge_tool_calls_total(?:\{[^}]*\})?\s+(\d+(?:\.\d+)?)/,
-    );
-    if (m) total += Number.parseFloat(m[1]);
-  }
-  return Math.round(total);
 }
