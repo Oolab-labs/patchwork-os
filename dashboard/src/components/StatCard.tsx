@@ -1,37 +1,151 @@
 import Link from "next/link";
 import type React from "react";
+import { GlassCard } from "./GlassCard";
 
 interface StatCardProps {
   label: string;
   value: React.ReactNode;
+  /** Optional +/- delta string e.g. "+12%" or "-3". Positive → green, negative → red. */
+  delta?: string;
+  /** Optional icon rendered in top-right corner */
+  icon?: React.ReactNode;
   foot?: React.ReactNode;
   href?: string;
   className?: string;
 }
 
+function DeltaBadge({ delta }: { delta: string }) {
+  const isPositive = delta.startsWith("+");
+  const isNegative = delta.startsWith("-");
+  const color = isPositive
+    ? "var(--ok)"
+    : isNegative
+      ? "var(--err)"
+      : "var(--fg-2)";
+  const arrow = isPositive ? "↑" : isNegative ? "↓" : "";
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 2,
+        fontSize: 11,
+        fontWeight: 600,
+        color,
+        background: isPositive
+          ? "var(--ok-soft)"
+          : isNegative
+            ? "var(--err-soft)"
+            : "var(--bg-2)",
+        borderRadius: "var(--r-full)",
+        padding: "1px 6px",
+        marginLeft: 6,
+        verticalAlign: "middle",
+        lineHeight: 1.6,
+      }}
+    >
+      {arrow && <span aria-hidden="true">{arrow}</span>}
+      {delta.replace(/^[+-]/, (m) => m)}
+    </span>
+  );
+}
+
+function CardInner({
+  label,
+  value,
+  delta,
+  icon,
+  foot,
+}: Omit<StatCardProps, "href" | "className">) {
+  return (
+    <>
+      {/* top row: label + optional icon */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          marginBottom: "var(--s-3)",
+        }}
+      >
+        <div className="stat-card-label">{label}</div>
+        {icon && (
+          <span
+            aria-hidden="true"
+            style={{
+              color: "var(--fg-3)",
+              opacity: 0.5,
+              display: "inline-flex",
+            }}
+          >
+            {icon}
+          </span>
+        )}
+      </div>
+
+      {/* value + delta */}
+      <div
+        style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap" }}
+      >
+        <div className="stat-card-value">{value}</div>
+        {delta && <DeltaBadge delta={delta} />}
+      </div>
+
+      {/* foot */}
+      {foot != null && (
+        <div className="stat-card-foot" style={{ marginTop: "var(--s-2)" }}>
+          {foot}
+        </div>
+      )}
+
+      {/* sparkline placeholder — filled by parent or future chart layer */}
+      <div
+        aria-hidden="true"
+        style={{
+          marginTop: "var(--s-3)",
+          height: 32,
+          borderRadius: "var(--r-1)",
+          background:
+            "linear-gradient(90deg, rgba(var(--accent-rgb),0.06) 0%, transparent 100%)",
+        }}
+      />
+    </>
+  );
+}
+
 export function StatCard({
   label,
   value,
+  delta,
+  icon,
   foot,
   href,
   className,
 }: StatCardProps) {
-  const cls = `stat-card${className ? ` ${className}` : ""}`;
   const inner = (
-    <>
-      <div className="stat-card-label">{label}</div>
-      <div className="stat-card-value">{value}</div>
-      {foot != null && <div className="stat-card-foot">{foot}</div>}
-    </>
+    <CardInner
+      label={label}
+      value={value}
+      delta={delta}
+      icon={icon}
+      foot={foot}
+    />
   );
 
   if (href) {
     return (
-      <Link className={cls} href={href}>
-        {inner}
+      <Link href={href} style={{ display: "block", textDecoration: "none", color: "inherit" }}>
+        <GlassCard className={`stat-card ${className ?? ""}`.trim()}>
+          {inner}
+        </GlassCard>
       </Link>
     );
   }
 
-  return <div className={cls}>{inner}</div>;
+  return (
+    <GlassCard className={`stat-card ${className ?? ""}`.trim()}>
+      {inner}
+    </GlassCard>
+  );
 }

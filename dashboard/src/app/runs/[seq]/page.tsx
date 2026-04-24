@@ -417,7 +417,6 @@ export default function RunDetailPage() {
     fontSize: 12,
     fontWeight: 500,
     cursor: "pointer",
-    borderBottom: tab === t ? "2px solid var(--fg-1)" : "2px solid transparent",
     color: tab === t ? "var(--fg-1)" : "var(--fg-2)",
     background: "none",
     border: "none",

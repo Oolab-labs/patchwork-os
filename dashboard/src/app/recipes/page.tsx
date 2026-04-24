@@ -2,6 +2,40 @@
 import React from "react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
+
+// Tool prefix → connector name mapping
+const TOOL_PREFIX_MAP: Record<string, string> = {
+  slack_: "slack",
+  github_: "github",
+  jira_: "jira",
+  linear_: "linear",
+  gmail_: "gmail",
+  calendar_: "googleCalendar",
+  intercom_: "intercom",
+  hubspot_: "hubspot",
+  datadog_: "datadog",
+  stripe_: "stripe",
+  sentry_: "sentry",
+};
+
+function detectConnectors(recipes: Recipe[]): string[] {
+  const found = new Set<string>();
+  for (const recipe of recipes) {
+    // Inspect steps via the raw recipe fields we have. The bridge returns
+    // stepCount but not step details, so we scan the name/description for
+    // tool mentions as a best-effort heuristic. Full step data would require
+    // a separate fetch per recipe; for now we match any known prefix in name
+    // + description text to avoid an N+1 request pattern.
+    const haystack = `${recipe.name} ${recipe.description ?? ""}`.toLowerCase();
+    for (const [prefix, connector] of Object.entries(TOOL_PREFIX_MAP)) {
+      if (haystack.includes(prefix)) {
+        found.add(connector);
+      }
+    }
+  }
+  return Array.from(found).sort();
+}
 
 function relTime(ms: number): string {
   const diff = Date.now() - ms;
@@ -514,15 +548,10 @@ export default function RecipesPage() {
                           </button>
                           <button
                             type="button"
-                            className="text-xs px-2 py-1 rounded border border-gray-600 hover:bg-gray-700"
+                            className="btn sm ghost"
                             style={{
                               fontSize: 11,
                               padding: "2px 8px",
-                              borderRadius: 4,
-                              border: "1px solid var(--border-default)",
-                              background: "none",
-                              cursor: "pointer",
-                              color: "var(--fg-2)",
                             }}
                             title={r.enabled === false ? "Enable recipe" : "Disable recipe"}
                             onClick={async () => {
@@ -636,6 +665,10 @@ export default function RecipesPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {recipes && recipes.length > 0 && (
+        <ConnectorHealthPanel connectors={detectConnectors(recipes)} />
       )}
     </section>
   );

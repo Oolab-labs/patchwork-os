@@ -133,6 +133,18 @@ function IconPlug() {
   );
 }
 
+function IconStore() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9h18l-1.5 9a2 2 0 0 1-2 1.5H6.5a2 2 0 0 1-2-1.5L3 9z" />
+      <path d="M3 9l2-5h14l2 5" />
+      <path d="M12 4v5" />
+      <path d="M8 9v2a2 2 0 0 0 4 0V9" />
+      <path d="M12 11a2 2 0 0 0 4 0V9" />
+    </svg>
+  );
+}
+
 function IconSettings() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -154,6 +166,7 @@ const NAV: { href: string; label: string; icon: ReactNode }[] = [
   { href: "/metrics", label: "Metrics", icon: <IconBarChart2 /> },
   { href: "/analytics", label: "Analytics", icon: <IconTrendingUp /> },
   { href: "/recipes", label: "Recipes", icon: <IconBookOpen /> },
+  { href: "/recipes/marketplace", label: "Marketplace", icon: <IconStore /> },
   { href: "/runs", label: "Runs", icon: <IconPlayCircle /> },
   { href: "/traces", label: "Traces", icon: <IconGitBranch /> },
   { href: "/decisions", label: "Decisions", icon: <IconLightbulb /> },
@@ -263,8 +276,13 @@ export function Shell({ children }: { children: ReactNode }) {
 }
 
 function pageTitle(pathname: string): string {
-  const entry = NAV.find((n) =>
+  // Pick the most-specific (longest) matching nav entry
+  const matches = NAV.filter((n) =>
     n.href === "/" ? pathname === "/" : pathname.startsWith(n.href),
+  );
+  const entry = matches.reduce<(typeof NAV)[0] | undefined>(
+    (best, n) => (!best || n.href.length > best.href.length ? n : best),
+    undefined,
   );
   return entry?.label ?? "Patchwork";
 }
@@ -286,11 +304,8 @@ function BridgePill({ status }: { status: BridgeStatus }) {
   const label = port ? `Connected · :${port}` : "Connected to bridge";
 
   return (
-    <span className="pill ok" title={tooltip}>
-      <span
-        className="pill-dot"
-        style={{ animation: "pulse-dot 2s ease-in-out infinite" }}
-      />
+    <span className="bridge-status-pill" title={tooltip}>
+      <span className="bridge-status-dot" />
       {label}
     </span>
   );
