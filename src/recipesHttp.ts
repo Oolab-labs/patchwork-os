@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -8,6 +9,7 @@ import {
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { loadConfig } from "./patchworkConfig.js";
+import { validateRecipeDefinition } from "./recipes/validation.js";
 
 /**
  * Patchwork recipes HTTP surface — reads installed recipes from disk so the
@@ -19,9 +21,10 @@ export interface RecipeDraft {
   name: string;
   description?: string;
   trigger: {
-    type: "manual" | "webhook" | "schedule";
+    type: "manual" | "webhook" | "schedule" | "cron";
     path?: string;
     cron?: string;
+    schedule?: string;
   };
   steps: Array<{ id: string; agent: boolean; prompt: string }>;
   vars?: Array<{
@@ -30,6 +33,115 @@ export interface RecipeDraft {
     required?: boolean;
     default?: string;
   }>;
+}
+
+function normalizeRecipeDraftTrigger(
+  trigger: RecipeDraft["trigger"],
+): Record<string, string> {
+  if (trigger.type === "schedule" || trigger.type === "cron") {
+    const schedule =
+      typeof trigger.schedule === "string" && trigger.schedule.trim()
+        ? trigger.schedule.trim()
+        : typeof trigger.cron === "string" && trigger.cron.trim()
+          ? trigger.cron.trim()
+          : "";
+
+    return {
+      type: "cron",
+      ...(schedule ? { schedule } : {}),
+    };
+  }
+
+  if (trigger.type === "webhook") {
+    const pathValue =
+      typeof trigger.path === "string" ? trigger.path.trim() : "";
+    return {
+      type: "webhook",
+      ...(pathValue ? { path: pathValue } : {}),
+    };
+  }
+
+  return { type: "manual" };
+}
+
+function validateRecipeDraft(draft: RecipeDraft): string | null {
+  if (!draft || typeof draft !== "object") {
+    return "Invalid recipe draft";
+  }
+
+  if (!draft.trigger || typeof draft.trigger !== "object") {
+    return "trigger required";
+  }
+
+  if (
+    draft.trigger.type !== "manual" &&
+    draft.trigger.type !== "webhook" &&
+    draft.trigger.type !== "schedule" &&
+    draft.trigger.type !== "cron"
+  ) {
+    return "Invalid trigger type";
+  }
+
+  const normalizedTrigger = normalizeRecipeDraftTrigger(draft.trigger);
+  if (normalizedTrigger.type === "webhook") {
+    if (
+      typeof normalizedTrigger.path !== "string" ||
+      !normalizedTrigger.path.startsWith("/")
+    ) {
+      return "webhook trigger requires a path starting with /";
+    }
+  }
+
+  if (normalizedTrigger.type === "cron") {
+    if (
+      typeof normalizedTrigger.schedule !== "string" ||
+      !normalizedTrigger.schedule.trim()
+    ) {
+      return "cron trigger requires a schedule";
+    }
+  }
+
+  if (!Array.isArray(draft.steps) || draft.steps.length === 0) {
+    return "Recipe must have at least one step";
+  }
+
+  const stepIds = new Set<string>();
+  for (let i = 0; i < draft.steps.length; i++) {
+    const step = draft.steps[i];
+    const index = i + 1;
+    const id = typeof step?.id === "string" ? step.id.trim() : "";
+    if (!id) {
+      return `Step ${index} is missing an id`;
+    }
+    if (stepIds.has(id)) {
+      return `Step ${index} has a duplicate id`;
+    }
+    stepIds.add(id);
+    if (typeof step?.prompt !== "string" || !step.prompt.trim()) {
+      return `Step ${index} is missing a prompt`;
+    }
+  }
+
+  if (draft.vars !== undefined) {
+    if (!Array.isArray(draft.vars)) {
+      return "vars must be an array";
+    }
+    const varNames = new Set<string>();
+    for (let i = 0; i < draft.vars.length; i++) {
+      const item = draft.vars[i];
+      const index = i + 1;
+      const name = typeof item?.name === "string" ? item.name.trim() : "";
+      if (!name) {
+        return `Variable ${index} is missing a name`;
+      }
+      if (varNames.has(name)) {
+        return `Variable ${index} has a duplicate name`;
+      }
+      varNames.add(name);
+    }
+  }
+
+  return null;
 }
 
 export function saveRecipe(
@@ -45,21 +157,168 @@ export function saveRecipe(
   if (!candidate.startsWith(base + path.sep)) {
     return { ok: false, error: "Invalid path" };
   }
+  const validationError = validateRecipeDraft(draft);
+  if (validationError) {
+    return { ok: false, error: validationError };
+  }
   try {
     mkdirSync(recipesDir, { recursive: true });
     const payload = {
       name: safeName,
       description: draft.description,
-      trigger: draft.trigger,
+      trigger: normalizeRecipeDraftTrigger(draft.trigger),
       steps: draft.steps.map((s) => ({
-        id: s.id,
+        id: s.id.trim(),
         agent: s.agent,
         prompt: s.prompt,
       })),
-      ...(draft.vars && draft.vars.length > 0 ? { vars: draft.vars } : {}),
+      ...(draft.vars && draft.vars.length > 0
+        ? {
+            vars: draft.vars.map((item) => ({
+              ...item,
+              name: item.name.trim(),
+            })),
+          }
+        : {}),
       createdAt: Date.now(),
     };
+    const deepValidation = validateRecipeDefinition(payload);
+    const deepError = deepValidation.issues.find(
+      (issue) =>
+        issue.level === "error" &&
+        issue.message.startsWith("Step ") &&
+        issue.message.includes("Unknown template reference"),
+    );
+    if (deepError) {
+      return { ok: false, error: deepError.message };
+    }
     writeFileSync(candidate, JSON.stringify(payload, null, 2), "utf-8");
+    return { ok: true, path: candidate };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export interface RecipeContentResult {
+  content: string;
+  path: string;
+}
+
+function resolveJsonRecipePathByName(
+  recipesDir: string,
+  safeName: string,
+): string | null {
+  const candidate = path.resolve(recipesDir, `${safeName}.json`);
+  const base = path.resolve(recipesDir);
+  if (!candidate.startsWith(base + path.sep)) return null;
+  if (existsSync(candidate)) return candidate;
+
+  try {
+    for (const entry of readdirSync(recipesDir)) {
+      if (!entry.endsWith(".json") || entry.endsWith(".permissions.json")) {
+        continue;
+      }
+      const entryPath = path.join(recipesDir, entry);
+      try {
+        const entryRaw = readFileSync(entryPath, "utf-8");
+        const entryParsed = JSON.parse(entryRaw) as { name?: string };
+        if (entryParsed.name?.toLowerCase() !== safeName) {
+          continue;
+        }
+        return entryPath;
+      } catch {
+        // skip malformed candidate
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+export function loadRecipeContent(
+  recipesDir: string,
+  name: string,
+): RecipeContentResult | null {
+  const safeName = name.toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) return null;
+
+  const yamlPath = findYamlRecipePath(recipesDir, safeName);
+  if (yamlPath) {
+    try {
+      return {
+        content: readFileSync(yamlPath, "utf-8"),
+        path: yamlPath,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const jsonPath = resolveJsonRecipePathByName(recipesDir, safeName);
+  if (!jsonPath) {
+    return null;
+  }
+
+  try {
+    return {
+      content: readFileSync(jsonPath, "utf-8"),
+      path: jsonPath,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function saveRecipeContent(
+  recipesDir: string,
+  name: string,
+  content: string,
+): { ok: boolean; path?: string; error?: string } {
+  const safeName = name.toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) {
+    return { ok: false, error: "Invalid recipe name" };
+  }
+  if (!content.trim()) {
+    return { ok: false, error: "Recipe content is required" };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(content) as unknown;
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const validation = validateRecipeDefinition(parsed);
+  const validationError = validation.issues.find(
+    (issue) => issue.level === "error",
+  );
+  if (validationError) {
+    return { ok: false, error: validationError.message };
+  }
+
+  try {
+    mkdirSync(recipesDir, { recursive: true });
+    const base = path.resolve(recipesDir);
+    const candidate =
+      findYamlRecipePath(recipesDir, safeName) ??
+      path.resolve(recipesDir, `${safeName}.yaml`);
+    if (!candidate.startsWith(base + path.sep)) {
+      return { ok: false, error: "Invalid path" };
+    }
+    writeFileSync(
+      candidate,
+      content.endsWith("\n") ? content : `${content}\n`,
+      "utf-8",
+    );
     return { ok: true, path: candidate };
   } catch (err) {
     return {
@@ -90,6 +349,13 @@ export interface RecipeSummary {
 export interface ListRecipesResult {
   recipesDir: string;
   recipes: RecipeSummary[];
+}
+
+export interface WebhookRecipeMatch {
+  name: string;
+  path: string;
+  filePath: string;
+  format: "json" | "yaml";
 }
 
 export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
@@ -171,6 +437,50 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
   return { recipesDir, recipes };
 }
 
+export function findYamlRecipePath(
+  recipesDir: string,
+  name: string,
+): string | null {
+  const safeName = name.toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) return null;
+
+  const base = path.resolve(recipesDir);
+  const candidates = [
+    path.resolve(recipesDir, `${safeName}.yaml`),
+    path.resolve(recipesDir, `${safeName}.yml`),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate.startsWith(base + path.sep)) return null;
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  let entries: string[];
+  try {
+    entries = readdirSync(recipesDir);
+  } catch {
+    return null;
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith(".yaml") && !entry.endsWith(".yml")) continue;
+    const entryPath = path.join(recipesDir, entry);
+    try {
+      const entryRaw = readFileSync(entryPath, "utf-8");
+      const entryParsed = parseYaml(entryRaw) as { name?: string };
+      if (entryParsed.name?.toLowerCase() !== safeName) {
+        continue;
+      }
+      return entryPath;
+    } catch {
+      // skip malformed candidate
+    }
+  }
+
+  return null;
+}
+
 /**
  * Scan recipes and return the first webhook-triggered recipe whose
  * trigger.path matches the requested path. Returns null on miss.
@@ -179,7 +489,7 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
 export function findWebhookRecipe(
   recipesDir: string,
   requestPath: string,
-): { name: string; path: string } | null {
+): WebhookRecipeMatch | null {
   let entries: string[];
   try {
     entries = readdirSync(recipesDir);
@@ -187,18 +497,23 @@ export function findWebhookRecipe(
     return null;
   }
   for (const f of entries) {
-    if (!f.endsWith(".json") || f.endsWith(".permissions.json")) continue;
+    const isYaml = f.endsWith(".yaml") || f.endsWith(".yml");
+    const isJson = f.endsWith(".json") && !f.endsWith(".permissions.json");
+    if (!isYaml && !isJson) continue;
     try {
-      const raw = readFileSync(path.join(recipesDir, f), "utf-8");
-      const parsed = JSON.parse(raw) as {
+      const filePath = path.join(recipesDir, f);
+      const raw = readFileSync(filePath, "utf-8");
+      const parsed = (isYaml ? parseYaml(raw) : JSON.parse(raw)) as {
         name?: string;
         trigger?: { type?: string; path?: string };
       };
       if (parsed.trigger?.type !== "webhook") continue;
       if (parsed.trigger.path === requestPath) {
         return {
-          name: parsed.name ?? path.basename(f, ".json"),
+          name: parsed.name ?? path.basename(f, path.extname(f)),
           path: requestPath,
+          filePath,
+          format: isYaml ? "yaml" : "json",
         };
       }
     } catch {
@@ -220,13 +535,14 @@ export function loadRecipePrompt(
   const safeName = name.toLowerCase();
   if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) return null;
 
-  const candidate = path.resolve(recipesDir, `${safeName}.json`);
-  const base = path.resolve(recipesDir);
-  if (!candidate.startsWith(base + path.sep)) return null;
+  const recipePath = resolveJsonRecipePathByName(recipesDir, safeName);
+  if (!recipePath) {
+    return null;
+  }
 
   let raw: string;
   try {
-    raw = readFileSync(candidate, "utf-8");
+    raw = readFileSync(recipePath, "utf-8");
   } catch {
     return null;
   }
@@ -263,7 +579,7 @@ export function loadRecipePrompt(
   lines.push(
     "\nWhen finished, print a one-line summary prefixed with 'RECIPE DONE:'.",
   );
-  return { prompt: lines.join("\n"), path: candidate };
+  return { prompt: lines.join("\n"), path: recipePath };
 }
 
 /**

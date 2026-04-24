@@ -1,10 +1,10 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import cron from "node-cron";
 import { parse as parseYaml } from "yaml";
 import type { Logger } from "../logger.js";
 import { loadConfig } from "../patchworkConfig.js";
-import { loadRecipePrompt } from "../recipesHttp.js";
+import { findYamlRecipePath, loadRecipePrompt } from "../recipesHttp.js";
 
 /**
  * RecipeScheduler — runs cron-triggered recipes on a simple interval or
@@ -200,11 +200,7 @@ export class RecipeScheduler {
 
   private fire(name: string): void {
     // YAML recipe — delegate to runYaml if provided
-    const yamlPath = existsSync(path.join(this.opts.recipesDir, `${name}.yaml`))
-      ? path.join(this.opts.recipesDir, `${name}.yaml`)
-      : existsSync(path.join(this.opts.recipesDir, `${name}.yml`))
-        ? path.join(this.opts.recipesDir, `${name}.yml`)
-        : null;
+    const yamlPath = findYamlRecipePath(this.opts.recipesDir, name);
 
     if (yamlPath) {
       if (!this.opts.runYaml) {

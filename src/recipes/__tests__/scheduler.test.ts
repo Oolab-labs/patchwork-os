@@ -179,4 +179,34 @@ describe("RecipeScheduler", () => {
     const scheduled = scheduler.start();
     expect(scheduled.map((s) => s.name)).toEqual(["ok"]);
   });
+
+  it("fires YAML recipes by declared name when filename differs", () => {
+    writeFileSync(
+      path.join(tmp, "custom-name.yaml"),
+      [
+        "name: scheduled-yaml",
+        "trigger:",
+        "  type: cron",
+        "  at: '@every 1m'",
+        "steps:",
+        "  - tool: file.write",
+        "    path: /tmp/out.txt",
+        "    content: ok",
+        "",
+      ].join("\n"),
+    );
+    const ran: string[] = [];
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+      runYaml: async (name) => {
+        ran.push(name);
+      },
+    });
+
+    const scheduled = scheduler.start();
+    expect(scheduled.map((s) => s.name)).toEqual(["scheduled-yaml"]);
+    scheduler.fireForTest("scheduled-yaml");
+    expect(ran).toEqual(["scheduled-yaml"]);
+  });
 });
