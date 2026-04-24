@@ -39,11 +39,31 @@ function slugToShortDate(name: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-function recipeIcon(name: string): string {
+function RecipeIcon({ name }: { name: string }) {
   const lower = name.toLowerCase();
-  if (lower.includes("brief") || lower.includes("triage")) return "✉";
-  if (lower.includes("health") || lower.includes("check")) return "🔍";
-  return "📋";
+  // envelope
+  if (lower.includes("brief") || lower.includes("triage"))
+    return (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="2" y="4" width="20" height="16" rx="2" />
+        <path d="M2 7l10 7 10-7" />
+      </svg>
+    );
+  // magnifier
+  if (lower.includes("health") || lower.includes("check"))
+    return (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="8" />
+        <path d="M21 21l-4.35-4.35" />
+      </svg>
+    );
+  // clipboard
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    </svg>
+  );
 }
 
 function senderBadgeColor(name: string): string {
@@ -285,7 +305,7 @@ export default function InboxPage() {
 
       const handler = () => {
         void navigator.clipboard.writeText(sectionText).then(() => {
-          btn.textContent = "✓ Copied";
+          btn.textContent = "Copied";
           btn.classList.add("copied");
           setTimeout(() => {
             btn.textContent = "Copy";
@@ -488,7 +508,6 @@ export default function InboxPage() {
                 const isActive = selected?.name === item.name;
                 const title = slugToTitle(item.name);
                 const shortDate = slugToShortDate(item.name);
-                const icon = recipeIcon(item.name);
                 const plainPreview = stripMarkdown(item.preview);
 
                 return (
@@ -535,7 +554,7 @@ export default function InboxPage() {
                           flexShrink: 0,
                         }}
                       />
-                      <span style={{ fontSize: 13, lineHeight: 1 }}>{icon}</span>
+                      <span style={{ color: "var(--fg-2)", lineHeight: 1 }}><RecipeIcon name={item.name} /></span>
                       <span
                         style={{
                           flex: 1,

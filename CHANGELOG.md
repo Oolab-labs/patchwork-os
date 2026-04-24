@@ -10,6 +10,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-alpha.26] — 2026-04-24
+
+### Added
+
+- **Wave 2 connectors** — four new production-grade connectors extending the Patchwork ecosystem:
+  - **Intercom** (`src/connectors/intercom.ts`) — fetch conversations, reply to threads, resolve tickets. Auth: `INTERCOM_ACCESS_TOKEN` env var or stored token.
+  - **HubSpot** (`src/connectors/hubspot.ts`) — read/write CRM contacts and deals, log notes. Auth: `HUBSPOT_ACCESS_TOKEN`.
+  - **Datadog** (`src/connectors/datadog.ts`) — query metrics, list monitors, trigger downtimes. Auth: `DATADOG_API_KEY` + `DATADOG_APP_KEY`.
+  - **Stripe** (`src/connectors/stripe.ts`) — fetch customers, subscriptions, invoices, payment intents. Auth: `STRIPE_SECRET_KEY`.
+  - All extend `BaseConnector` for unified auth, retry, rate-limit, token storage, and error normalization.
+  - HTTP handlers wired: `POST /connections/<provider>/connect`, `POST /connections/<provider>/test`, `DELETE /connections/<provider>`.
+
+- **MCP production alignment** — server-side changes to pass claude.ai custom connector review:
+  - Composite tool schemas — `object` params with nested `properties` compile correctly for MCP consumers.
+  - Lazy schema loading — heavy JSON schemas deferred until first tool call, reducing cold-start time.
+  - Recipe transforms — MCP tool descriptions auto-generated from YAML recipe metadata.
+  - Server bundling improvements — single-file dist output for npm publish with correct `exports` map.
+
+- **Recipe manifest format + install command**:
+  - `patchwork recipe install <source>` — installs from `github:<org>/<repo>/recipes/<name>` or HTTP URL.
+  - `patchwork recipe manifest` — prints machine-readable JSON manifest for installed recipes (name, version, trigger, connectors, hash).
+  - Community registry index at `https://raw.githubusercontent.com/patchworkos/recipes/main/index.json` with five starter recipes: `morning-brief`, `incident-war-room`, `sprint-review-prep`, `customer-escalation`, `deal-won-celebration`.
+  - Bridge API endpoints: `POST /api/bridge/recipes/install`, `GET /api/bridge/templates`.
+
+- **Dashboard v2** (`dashboard/`) — full Patchwork 2.0 design system:
+  - Overview page: hero status bar, color-coded stat cards, 2-col approvals/activity feed, 3-col recipes/providers/milestones grid.
+  - Marketplace page: community recipe browser with category filters, connector chips, one-click install. "Coming soon" banner for alpha.26.
+  - Recipe editor (`/recipes/new`): multi-step form with live JSON preview, trigger selector, variable declarations.
+  - Connections page: `AddConnectionModal` with provider grid, status pills, reconnect flow, connector request form.
+  - Inbox page: email-client layout, markdown renderer with copy-per-section, SVG icons (no emoji).
+  - CSS: `backdrop-filter: blur(44px)` glass cards, orange accent nav bar, stat icon glows, input focus glow, custom scrollbars, page fade-in animation.
+  - `+ New recipe` sidebar button wired to `/recipes/new`.
+  - All 12 page subtitles tightened. Sharp Lucide-style SVG nav icons across all 16 nav items.
+
+- **VPS deploy scripts** (`deploy/`):
+  - `deploy/bootstrap-new-vps.sh` — full VPS provisioning: Node, nginx, certbot, systemd service, firewall rules.
+  - `deploy/install-vps-service.sh` — idempotent bridge service install/update.
+  - `deploy/deploy-landing.sh` — SCP `landing/index.html` to VPS + nginx config for `patchworkos.com`.
+  - `deploy/deploy-dashboard.sh` — Next.js prod build + SCP + nginx config for `patchworkos.com/dashboard`.
+
+- **Landing page v2** (`landing/index.html`) — full static rewrite for `patchworkos.com`:
+  - Sections: hero with install snippet, "What is it" scenarios, "How it works", Features, Shipping status badge grid, Community recipes, Connectors marquee, Approval mockup, Get started, Who it's for, Footer.
+  - Self-contained single HTML file, zero build step.
+
+### Changed
+
+- `onRecipeSave` hook: default prompt now runs `patchwork recipe preflight {{file}}` and delivers issues as a Claude task. Override with explicit `prompt` or `promptName` for custom behavior.
+- Dashboard `basePath: /dashboard` — all API fetches use `apiPath()` helper; no hardcoded paths remain.
+
+### Tests
+
+- Wave 2 connector test suites (Intercom, HubSpot, Datadog, Stripe).
+- Recipe install + manifest command tests.
+- MCP composite schema + lazy loading unit tests.
+- **Total: ~3800 tests** (all passing).
+
+---
+
 ## [0.2.0-alpha.25] — 2026-04-23
 
 ### Added

@@ -431,9 +431,54 @@ export default function MarketplacePage() {
           <h1>Marketplace</h1>
           <div className="page-head-sub">Community recipes for Patchwork OS</div>
         </div>
-        {registry && (
-          <span className="pill muted">{filtered.length} recipe{filtered.length !== 1 ? "s" : ""}</span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "4px 12px",
+              borderRadius: "var(--r-full)",
+              fontSize: 12,
+              fontWeight: 600,
+              background: "rgba(216,119,87,0.12)",
+              color: "var(--orange)",
+              border: "1px solid rgba(216,119,87,0.25)",
+              letterSpacing: "0.04em",
+            }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--orange)", display: "inline-block", animation: "pulse 2s infinite" }} />
+            Coming soon
+          </span>
+          {registry && (
+            <span className="pill muted">{filtered.length} recipe{filtered.length !== 1 ? "s" : ""}</span>
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginBottom: "var(--s-6)",
+          padding: "14px 18px",
+          background: "rgba(216,119,87,0.06)",
+          border: "1px solid rgba(216,119,87,0.18)",
+          borderRadius: "var(--r-3)",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 8v4M12 16h.01" />
+        </svg>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-0)", marginBottom: 3 }}>Marketplace launching soon</div>
+          <div style={{ fontSize: 12, color: "var(--fg-2)", lineHeight: 1.5 }}>
+            The public registry is under construction. Install and publish commands will be available with alpha.26.
+            Previewing the recipe catalogue below.
+          </div>
+        </div>
       </div>
 
       {/* search + category filters */}

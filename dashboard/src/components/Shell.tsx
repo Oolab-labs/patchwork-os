@@ -239,12 +239,12 @@ export function Shell({ children }: { children: ReactNode }) {
           <span>patchwork</span>
         </div>
 
-        <button className="sidebar-create" type="button">
+        <Link href="/recipes/new" className="sidebar-create" style={{ textDecoration: "none" }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <path d={PATHS.plus} />
           </svg>
-          + New recipe
-        </button>
+          New recipe
+        </Link>
 
         <nav className="app-nav" aria-label="Main navigation">
           {NAV_SECTIONS.map((section, si) => (
