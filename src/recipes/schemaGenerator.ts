@@ -504,17 +504,26 @@ function generateRecipeSchema(
         properties: {
           retry: {
             type: "number",
-            description: "Number of retries",
+            description:
+              "Number of retries per failing step (overridden by step.retry)",
             default: 0,
+          },
+          retryDelay: {
+            type: "number",
+            description:
+              "Milliseconds between retries (overridden by step.retryDelay)",
+            default: 1000,
           },
           fallback: {
             type: "string",
             enum: ["log_only", "abort", "deliver_original"],
-            description: "Fallback action on error",
+            description:
+              "log_only / deliver_original: treat step failure as non-fatal (like optional); fail-open. abort (default): propagate failure.",
           },
           notify: {
             type: "boolean",
-            description: "Whether to notify on error",
+            description:
+              "Reserved. yamlRunner currently posts Slack notifications on any step failure when slack is connected; gating on this flag is not yet wired.",
             default: true,
           },
         },

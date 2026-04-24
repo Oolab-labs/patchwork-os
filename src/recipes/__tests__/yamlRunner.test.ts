@@ -329,6 +329,106 @@ describe("runYamlRecipe — git.stale_branches", () => {
   });
 });
 
+describe("runYamlRecipe — on_error retry + fallback", () => {
+  function deps(readFile: () => string): RunnerDeps {
+    return { ...noop(), readFile };
+  }
+
+  it("retries a failing file.read step up to step.retry times", async () => {
+    let calls = 0;
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "file.read",
+          path: "/tmp/a",
+          into: "data",
+          retry: 2,
+          retryDelay: 0,
+        },
+      ],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      deps(() => {
+        calls++;
+        if (calls < 3) throw new Error("transient");
+        return "ok";
+      }),
+    );
+    expect(calls).toBe(3);
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.context.data).toBe("ok");
+  });
+
+  it("honors recipe-level on_error.retry when step has no retry", async () => {
+    let calls = 0;
+    const recipe = makeRecipe({
+      on_error: { retry: 1, retryDelay: 0 },
+      steps: [{ tool: "file.read", path: "/tmp/a", into: "data" }],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      deps(() => {
+        calls++;
+        if (calls === 1) throw new Error("transient");
+        return "ok";
+      }),
+    );
+    expect(calls).toBe(2);
+    expect(result.errorMessage).toBeUndefined();
+  });
+
+  it("treats step failure as non-fatal when on_error.fallback=log_only", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const recipe = makeRecipe({
+      on_error: { fallback: "log_only" },
+      steps: [{ tool: "file.read", path: "/tmp/a", into: "data" }],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      deps(() => {
+        throw new Error("boom");
+      }),
+    );
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("on_error.fallback=log_only"),
+    );
+    warn.mockRestore();
+  });
+
+  it("deliver_original behaves like log_only (fail-open)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const recipe = makeRecipe({
+      on_error: { fallback: "deliver_original" },
+      steps: [{ tool: "file.read", path: "/tmp/a", into: "data" }],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      deps(() => {
+        throw new Error("boom");
+      }),
+    );
+    expect(result.errorMessage).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it("propagates failure when on_error.fallback=abort (default)", async () => {
+    const recipe = makeRecipe({
+      on_error: { fallback: "abort" },
+      steps: [{ tool: "file.read", path: "/tmp/a", into: "data" }],
+    });
+    const result = await runYamlRecipe(
+      recipe,
+      deps(() => {
+        throw new Error("boom");
+      }),
+    );
+    expect(result.errorMessage).toBeDefined();
+  });
+});
+
 describe("runYamlRecipe — unknown tool", () => {
   it("skips unknown tools without throwing", async () => {
     const recipe = makeRecipe({
