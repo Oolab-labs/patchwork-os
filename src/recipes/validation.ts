@@ -132,7 +132,7 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
 }
 
 function normalizeRecipeForValidation(recipe: unknown): unknown {
-  const normalized = normalizeRecipeForRuntime(recipe);
+  const normalized = normalizeRecipeForRuntime(recipe, console.warn);
 
   if (
     !normalized ||

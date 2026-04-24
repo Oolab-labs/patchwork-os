@@ -445,7 +445,10 @@ export function runFmt(
 ): FmtResult {
   const content = readFileSync(recipePath, "utf-8");
   const { header: schemaHeader } = extractSchemaHeader(content);
-  const recipe = normalizeRecipeForRuntime(parseYaml(content)) as YamlRecipe;
+  const recipe = normalizeRecipeForRuntime(
+    parseYaml(content),
+    console.warn,
+  ) as YamlRecipe;
 
   // Normalize key order
   const normalized: Record<string, unknown> = {};

@@ -2,7 +2,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function normalizeRecipeForRuntime(recipe: unknown): unknown {
+export type WarnFn = (msg: string) => void;
+
+export function normalizeRecipeForRuntime(
+  recipe: unknown,
+  warn?: WarnFn,
+): unknown {
   if (!isRecord(recipe)) {
     return recipe;
   }
@@ -12,12 +17,15 @@ export function normalizeRecipeForRuntime(recipe: unknown): unknown {
   };
 
   if (isRecord(normalized.trigger)) {
-    normalized.trigger = normalizeLegacyTriggerForRuntime(normalized.trigger);
+    normalized.trigger = normalizeLegacyTriggerForRuntime(
+      normalized.trigger,
+      warn,
+    );
   }
 
   if (Array.isArray(normalized.steps)) {
     normalized.steps = normalized.steps.map((step) =>
-      normalizeLegacyRuntimeStep(step),
+      normalizeLegacyRuntimeStep(step, warn),
     );
   }
 
@@ -26,6 +34,7 @@ export function normalizeRecipeForRuntime(recipe: unknown): unknown {
 
 function normalizeLegacyTriggerForRuntime(
   trigger: Record<string, unknown>,
+  warn?: WarnFn,
 ): Record<string, unknown> {
   const normalized: Record<string, unknown> = { ...trigger };
 
@@ -34,6 +43,9 @@ function normalizeLegacyTriggerForRuntime(
     typeof normalized.schedule === "string" &&
     typeof normalized.at !== "string"
   ) {
+    warn?.(
+      "Deprecated recipe field: trigger.schedule — rename to trigger.at (will be removed in a future major version)",
+    );
     normalized.at = normalized.schedule;
   }
 
@@ -42,7 +54,7 @@ function normalizeLegacyTriggerForRuntime(
   return normalized;
 }
 
-function normalizeLegacyRuntimeStep(step: unknown): unknown {
+function normalizeLegacyRuntimeStep(step: unknown, warn?: WarnFn): unknown {
   if (!isRecord(step)) {
     return step;
   }
@@ -58,13 +70,13 @@ function normalizeLegacyRuntimeStep(step: unknown): unknown {
     }
     if (key === "parallel" && Array.isArray(value)) {
       normalized.parallel = value.map((entry) =>
-        normalizeLegacyRuntimeStep(entry),
+        normalizeLegacyRuntimeStep(entry, warn),
       );
       continue;
     }
     if (key === "branch" && Array.isArray(value)) {
       normalized.branch = value.map((entry) =>
-        normalizeLegacyBranchEntry(entry),
+        normalizeLegacyBranchEntry(entry, warn),
       );
       continue;
     }
@@ -80,6 +92,9 @@ function normalizeLegacyRuntimeStep(step: unknown): unknown {
       typeof step.prompt === "string" &&
       typeof agentConfig.prompt !== "string"
     ) {
+      warn?.(
+        "Deprecated recipe step field: prompt at step level — move to step.agent.prompt (will be removed in a future major version)",
+      );
       agentConfig.prompt = step.prompt;
     }
 
@@ -87,7 +102,16 @@ function normalizeLegacyRuntimeStep(step: unknown): unknown {
       typeof step.output === "string" &&
       typeof agentConfig.into !== "string"
     ) {
+      warn?.(
+        "Deprecated recipe step field: output — use step.agent.into instead (will be removed in a future major version)",
+      );
       agentConfig.into = step.output;
+    }
+
+    if (step.agent === true) {
+      warn?.(
+        "Deprecated recipe step field: agent: true — use agent: { prompt, into } object instead (will be removed in a future major version)",
+      );
     }
 
     normalized.agent = agentConfig;
@@ -95,6 +119,9 @@ function normalizeLegacyRuntimeStep(step: unknown): unknown {
   }
 
   if (isRecord(step.params)) {
+    warn?.(
+      "Deprecated recipe step field: params — inline fields directly on the step (will be removed in a future major version)",
+    );
     Object.assign(normalized, step.params);
   }
 
@@ -102,11 +129,17 @@ function normalizeLegacyRuntimeStep(step: unknown): unknown {
     typeof normalized.recipe !== "string" &&
     typeof normalized.chain === "string"
   ) {
+    warn?.(
+      "Deprecated recipe step field: chain — rename to recipe (will be removed in a future major version)",
+    );
     normalized.recipe = normalized.chain;
   }
   delete normalized.chain;
 
   if (typeof normalized.into !== "string" && typeof step.output === "string") {
+    warn?.(
+      "Deprecated recipe step field: output — rename to into (will be removed in a future major version)",
+    );
     normalized.into = step.output;
   }
 
@@ -115,6 +148,9 @@ function normalizeLegacyRuntimeStep(step: unknown): unknown {
     typeof normalized.content !== "string" &&
     typeof normalized.line === "string"
   ) {
+    warn?.(
+      "Deprecated recipe step field: line (file.append) — rename to content (will be removed in a future major version)",
+    );
     normalized.content = normalized.line;
     delete normalized.line;
   }
@@ -122,7 +158,7 @@ function normalizeLegacyRuntimeStep(step: unknown): unknown {
   return normalized;
 }
 
-function normalizeLegacyBranchEntry(entry: unknown): unknown {
+function normalizeLegacyBranchEntry(entry: unknown, warn?: WarnFn): unknown {
   if (!isRecord(entry)) {
     return entry;
   }
@@ -130,7 +166,7 @@ function normalizeLegacyBranchEntry(entry: unknown): unknown {
   const normalized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(entry)) {
     if (key === "otherwise" && isRecord(value)) {
-      normalized.otherwise = normalizeLegacyRuntimeStep(value);
+      normalized.otherwise = normalizeLegacyRuntimeStep(value, warn);
       continue;
     }
     normalized[key] = value;
@@ -140,5 +176,5 @@ function normalizeLegacyBranchEntry(entry: unknown): unknown {
     return normalized;
   }
 
-  return normalizeLegacyRuntimeStep(entry);
+  return normalizeLegacyRuntimeStep(entry, warn);
 }
