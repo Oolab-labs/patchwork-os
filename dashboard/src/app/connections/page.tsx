@@ -189,6 +189,72 @@ function IconNotion() {
   );
 }
 
+function IconConfluence() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      {/* Wave shape — Atlassian/Confluence wave mark */}
+      <path d="M3 14c2-3 4-5 7-5s5 2 7-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M3 10c2-3 4-5 7-5s5 2 7-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconDatadog() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      {/* Simple dog/monitor shape */}
+      <rect x="2" y="5" width="16" height="11" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6 5V3M14 5V3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="10" cy="11" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function IconHubspot() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      {/* Magnet / sprocket shape loosely evocative of HubSpot */}
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10 3v2M10 15v2M3 10h2M15 10h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconIntercom() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      {/* Chat bubble */}
+      <rect x="2" y="3" width="16" height="11" rx="3" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6 17l2-3h4l2 3" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M6 8h8M6 11h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconStripe() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      {/* Credit card */}
+      <rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M2 8h16" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="4" y="11" width="4" height="2" rx="0.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconZendesk() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      {/* Headset / support shape */}
+      <path d="M4 10a6 6 0 0112 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <rect x="2" y="10" width="3" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="15" y="10" width="3" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M17 15v1a3 3 0 01-3 3h-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // ------------------------------------------------------------------ providers
 
 const PROVIDERS: {
@@ -245,6 +311,48 @@ const PROVIDERS: {
     description:
       "Query databases, read pages, and create content. Agents can sync issues, append meeting notes, and search your knowledge base.",
     icon: IconNotion,
+  },
+  {
+    id: "confluence",
+    name: "Confluence",
+    description:
+      "Read and write Confluence pages and spaces. Agents can search your knowledge base, append meeting notes, and create documentation.",
+    icon: IconConfluence,
+  },
+  {
+    id: "datadog",
+    name: "Datadog",
+    description:
+      "Query monitors, dashboards, and events. Agents can surface active alerts and correlate incidents with recent deployments.",
+    icon: IconDatadog,
+  },
+  {
+    id: "hubspot",
+    name: "HubSpot",
+    description:
+      "Read contacts, deals, and companies. Agents can surface CRM context, draft follow-ups, and log activity.",
+    icon: IconHubspot,
+  },
+  {
+    id: "intercom",
+    name: "Intercom",
+    description:
+      "Read conversations and customer data. Agents can triage support threads and surface trending issues.",
+    icon: IconIntercom,
+  },
+  {
+    id: "stripe",
+    name: "Stripe",
+    description:
+      "Read payment events, customers, and subscriptions. Agents can surface billing anomalies and subscription status.",
+    icon: IconStripe,
+  },
+  {
+    id: "zendesk",
+    name: "Zendesk",
+    description:
+      "Read support tickets and customer context. Agents can triage issues, surface trends, and draft responses.",
+    icon: IconZendesk,
   },
 ];
 
@@ -489,6 +597,109 @@ function PlaceholderCard({
   );
 }
 
+// ------------------------------------------------------------------ token-modal config (token-paste connectors)
+
+interface TokenModalConfig {
+  name: string;
+  icon: React.ReactNode;
+  instructions: React.ReactNode;
+  placeholder: string;
+  tokenKey: string; // JSON body key
+}
+
+const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
+  confluence: {
+    name: "Confluence",
+    icon: <IconConfluence />,
+    instructions: (
+      <>
+        Generate an API token at{" "}
+        <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          id.atlassian.com/manage-profile/security/api-tokens
+        </a>
+        . Paste it below along with your Atlassian base URL (e.g. <code>https://your-org.atlassian.net</code>) — the bridge stores both.
+      </>
+    ),
+    placeholder: "Atlassian API token",
+    tokenKey: "token",
+  },
+  datadog: {
+    name: "Datadog",
+    icon: <IconDatadog />,
+    instructions: (
+      <>
+        Create an API key in Datadog under{" "}
+        <a href="https://app.datadoghq.com/organization-settings/api-keys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Organization Settings → API Keys
+        </a>
+        .
+      </>
+    ),
+    placeholder: "Datadog API key",
+    tokenKey: "apiKey",
+  },
+  hubspot: {
+    name: "HubSpot",
+    icon: <IconHubspot />,
+    instructions: (
+      <>
+        Create a private app in HubSpot and copy the access token from{" "}
+        <a href="https://app.hubspot.com/private-apps" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          HubSpot → Private Apps
+        </a>
+        .
+      </>
+    ),
+    placeholder: "HubSpot private app token",
+    tokenKey: "token",
+  },
+  intercom: {
+    name: "Intercom",
+    icon: <IconIntercom />,
+    instructions: (
+      <>
+        Generate an access token in{" "}
+        <a href="https://app.intercom.com/a/apps/_/settings/keys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Intercom Settings → Access Tokens
+        </a>
+        .
+      </>
+    ),
+    placeholder: "Intercom access token",
+    tokenKey: "token",
+  },
+  stripe: {
+    name: "Stripe",
+    icon: <IconStripe />,
+    instructions: (
+      <>
+        Find your secret key in{" "}
+        <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Stripe Dashboard → Developers → API Keys
+        </a>
+        . Use a restricted key with read-only permissions.
+      </>
+    ),
+    placeholder: "sk_live_… or sk_test_…",
+    tokenKey: "secretKey",
+  },
+  zendesk: {
+    name: "Zendesk",
+    icon: <IconZendesk />,
+    instructions: (
+      <>
+        Generate an API token in{" "}
+        <a href="https://support.zendesk.com/hc/en-us/articles/4408889192858" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Zendesk Admin Center → Apps and Integrations → APIs
+        </a>
+        . You will also need your subdomain and agent email.
+      </>
+    ),
+    placeholder: "Zendesk API token",
+    tokenKey: "token",
+  },
+};
+
 // ------------------------------------------------------------------ page
 
 export default function ConnectionsPage() {
@@ -505,6 +716,11 @@ export default function ConnectionsPage() {
   const [notionToken, setNotionToken] = useState("");
   const [notionConnecting, setNotionConnecting] = useState(false);
   const [notionErr, setNotionErr] = useState<string | null>(null);
+  // Generic token modal (confluence, datadog, hubspot, intercom, stripe, zendesk)
+  const [tokenModal, setTokenModal] = useState<string | null>(null); // connector id
+  const [tokenValue, setTokenValue] = useState("");
+  const [tokenConnecting, setTokenConnecting] = useState(false);
+  const [tokenErr, setTokenErr] = useState<string | null>(null);
 
   async function fetchConnectors() {
     try {
@@ -563,10 +779,42 @@ export default function ConnectionsPage() {
     }
   }
 
+  async function handleTokenConnect() {
+    if (!tokenModal) return;
+    setTokenConnecting(true);
+    setTokenErr(null);
+    const cfg = TOKEN_MODAL_CONNECTORS[tokenModal];
+    try {
+      const res = await fetch(apiPath(`/api/connections/${tokenModal}/connect`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [cfg.tokenKey]: tokenValue }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        setTokenErr(body.error ?? `Error ${res.status}`);
+        return;
+      }
+      setTokenValue("");
+      setTokenModal(null);
+      await fetchConnectors();
+    } catch (e) {
+      setTokenErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTokenConnecting(false);
+    }
+  }
+
   function handleConnect(id: string) {
     if (id === "notion") {
       setNotionModalOpen(true);
       setNotionErr(null);
+      return;
+    }
+    if (id in TOKEN_MODAL_CONNECTORS) {
+      setTokenModal(id);
+      setTokenValue("");
+      setTokenErr(null);
       return;
     }
     // Open the OAuth auth URL. Omit "noopener" so the callback page can
@@ -657,8 +905,14 @@ export default function ConnectionsPage() {
   const sentryConnector = getConnector("sentry");
   const calendarConnector = getConnector("google-calendar");
   const slackConnector = getConnector("slack");
+  const confluenceConnector = getConnector("confluence");
+  const datadogConnector = getConnector("datadog");
+  const hubspotConnector = getConnector("hubspot");
+  const intercomConnector = getConnector("intercom");
+  const stripeConnector = getConnector("stripe");
+  const zendeskConnector = getConnector("zendesk");
 
-  const totalProviders = 7;
+  const totalProviders = 13;
   const connectedCount = connectors.filter((c) => c.status === "connected").length;
   const degradedCount = connectors.filter((c) => c.status === "needs_reauth").length;
 
@@ -849,6 +1103,72 @@ export default function ConnectionsPage() {
             onTest={() => handleTest("notion")}
             loading={acting === "notion"}
           />
+          <ConnectorCard
+            name="Confluence"
+            description="Read and write Confluence pages and spaces. Agents can search your knowledge base, append meeting notes, and create documentation."
+            icon={<IconConfluence />}
+            status={confluenceConnector.status}
+            lastSync={confluenceConnector.lastSync}
+            onConnect={() => handleConnect("confluence")}
+            onDisconnect={() => handleDisconnect("confluence")}
+            onTest={() => handleTest("confluence")}
+            loading={acting === "confluence"}
+          />
+          <ConnectorCard
+            name="Datadog"
+            description="Query monitors, dashboards, and events. Agents can surface active alerts and correlate incidents with recent deployments."
+            icon={<IconDatadog />}
+            status={datadogConnector.status}
+            lastSync={datadogConnector.lastSync}
+            onConnect={() => handleConnect("datadog")}
+            onDisconnect={() => handleDisconnect("datadog")}
+            onTest={() => handleTest("datadog")}
+            loading={acting === "datadog"}
+          />
+          <ConnectorCard
+            name="HubSpot"
+            description="Read contacts, deals, and companies. Agents can surface CRM context, draft follow-ups, and log activity."
+            icon={<IconHubspot />}
+            status={hubspotConnector.status}
+            lastSync={hubspotConnector.lastSync}
+            onConnect={() => handleConnect("hubspot")}
+            onDisconnect={() => handleDisconnect("hubspot")}
+            onTest={() => handleTest("hubspot")}
+            loading={acting === "hubspot"}
+          />
+          <ConnectorCard
+            name="Intercom"
+            description="Read conversations and customer data. Agents can triage support threads and surface trending issues."
+            icon={<IconIntercom />}
+            status={intercomConnector.status}
+            lastSync={intercomConnector.lastSync}
+            onConnect={() => handleConnect("intercom")}
+            onDisconnect={() => handleDisconnect("intercom")}
+            onTest={() => handleTest("intercom")}
+            loading={acting === "intercom"}
+          />
+          <ConnectorCard
+            name="Stripe"
+            description="Read payment events, customers, and subscriptions. Agents can surface billing anomalies and subscription status."
+            icon={<IconStripe />}
+            status={stripeConnector.status}
+            lastSync={stripeConnector.lastSync}
+            onConnect={() => handleConnect("stripe")}
+            onDisconnect={() => handleDisconnect("stripe")}
+            onTest={() => handleTest("stripe")}
+            loading={acting === "stripe"}
+          />
+          <ConnectorCard
+            name="Zendesk"
+            description="Read support tickets and customer context. Agents can triage issues, surface trends, and draft responses."
+            icon={<IconZendesk />}
+            status={zendeskConnector.status}
+            lastSync={zendeskConnector.lastSync}
+            onConnect={() => handleConnect("zendesk")}
+            onDisconnect={() => handleDisconnect("zendesk")}
+            onTest={() => handleTest("zendesk")}
+            loading={acting === "zendesk"}
+          />
           </div>
         </>
       )}
@@ -910,6 +1230,74 @@ export default function ConnectionsPage() {
                 style={{ padding: "6px 16px", fontSize: 13, cursor: notionConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !notionToken ? 0.5 : 1 }}
               >
                 {notionConnecting ? "Connecting…" : "Connect"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generic token-paste modal (confluence, datadog, hubspot, intercom, stripe, zendesk) */}
+      {tokenModal && TOKEN_MODAL_CONNECTORS[tokenModal] && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 50,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setTokenModal(null);
+              setTokenValue("");
+              setTokenErr(null);
+            }
+          }}
+        >
+          <div
+            className="card"
+            style={{ width: "100%", maxWidth: 440, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {TOKEN_MODAL_CONNECTORS[tokenModal].icon}
+              <strong style={{ fontSize: 15 }}>
+                Connect {TOKEN_MODAL_CONNECTORS[tokenModal].name}
+              </strong>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--fg-2)", margin: 0, lineHeight: 1.6 }}>
+              {TOKEN_MODAL_CONNECTORS[tokenModal].instructions}
+            </p>
+            <input
+              type="password"
+              autoFocus
+              placeholder={TOKEN_MODAL_CONNECTORS[tokenModal].placeholder}
+              value={tokenValue}
+              onChange={(e) => setTokenValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleTokenConnect(); }}
+              style={{
+                fontFamily: "var(--font-mono)", fontSize: 13,
+                padding: "8px 12px", borderRadius: 6,
+                border: "1px solid var(--border-subtle)",
+                background: "var(--bg-0)", color: "var(--fg-1)",
+                width: "100%", boxSizing: "border-box",
+              }}
+            />
+            {tokenErr && (
+              <div className="alert-err" style={{ fontSize: 12 }}>{tokenErr}</div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => { setTokenModal(null); setTokenValue(""); setTokenErr(null); }}
+                style={{ padding: "6px 16px", fontSize: 13, cursor: "pointer", borderRadius: 6, border: "1px solid var(--border-subtle)", background: "var(--bg-1)", color: "var(--fg-1)" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleTokenConnect()}
+                disabled={tokenConnecting || !tokenValue.trim()}
+                style={{ padding: "6px 16px", fontSize: 13, cursor: tokenConnecting ? "wait" : "pointer", borderRadius: 6, border: "none", background: "var(--fg-1)", color: "var(--bg-0)", opacity: !tokenValue.trim() ? 0.5 : 1 }}
+              >
+                {tokenConnecting ? "Connecting…" : "Connect"}
               </button>
             </div>
           </div>
