@@ -262,14 +262,23 @@ function ActivityFeed() {
           style={{
             flex: 1,
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
+            gap: "var(--s-2)",
             color: "var(--ink-2)",
-            fontSize: 13,
+            fontSize: 12,
             padding: "var(--s-8) 0",
+            textAlign: "center",
           }}
         >
-          No recent activity
+          <span>No activity yet</span>
+          <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+            Tool calls will appear here once Claude starts running tasks.
+          </span>
+          <Link href="/activity" style={{ fontSize: 11, color: "var(--accent)", textDecoration: "none", marginTop: "var(--s-1)" }}>
+            Open activity feed →
+          </Link>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -1118,14 +1127,23 @@ export default function HomePage() {
               style={{
                 flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "var(--ink-2)",
-                fontSize: 12,
+                gap: "var(--s-3)",
                 padding: "var(--s-6) 0",
+                textAlign: "center",
               }}
             >
-              No recipes configured
+              <span style={{ fontSize: 12, color: "var(--ink-2)" }}>No recipes configured yet</span>
+              <div style={{ display: "flex", gap: "var(--s-2)" }}>
+                <Link href="/marketplace" className="btn sm primary" style={{ textDecoration: "none", fontSize: 11 }}>
+                  Browse marketplace
+                </Link>
+                <Link href="/recipes/new" className="btn sm ghost" style={{ textDecoration: "none", fontSize: 11 }}>
+                  New recipe
+                </Link>
+              </div>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)", flex: 1 }}>
