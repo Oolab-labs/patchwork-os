@@ -658,6 +658,10 @@ export default function ConnectionsPage() {
   const calendarConnector = getConnector("google-calendar");
   const slackConnector = getConnector("slack");
 
+  const totalProviders = 7;
+  const connectedCount = connectors.filter((c) => c.status === "connected").length;
+  const degradedCount = connectors.filter((c) => c.status === "needs_reauth").length;
+
   return (
     <section>
       <div className="page-head">
@@ -677,6 +681,42 @@ export default function ConnectionsPage() {
           </button>
         )}
       </div>
+
+      {!loading && !bridgeOffline && (
+        <div
+          className="card"
+          style={{
+            padding: "16px 22px",
+            marginBottom: "var(--s-5)",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--s-5)",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", background: degradedCount > 0 ? "var(--warn)" : connectedCount > 0 ? "var(--ok)" : "var(--ink-3)" }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: degradedCount > 0 ? "var(--warn)" : connectedCount > 0 ? "var(--ok)" : "var(--ink-2)" }}>
+              {degradedCount > 0 ? `${degradedCount} needs reconnect` : connectedCount > 0 ? "All healthy" : "No connections"}
+            </span>
+          </div>
+          <div aria-hidden="true" style={{ width: 1, height: 28, background: "var(--line-2)" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-4)" }}>
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 20, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{connectedCount}</div>
+              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Connected</div>
+            </div>
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 20, fontWeight: 800, color: degradedCount > 0 ? "var(--warn)" : "var(--ink-0)", lineHeight: 1 }}>{degradedCount}</div>
+              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Degraded</div>
+            </div>
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 20, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>{totalProviders}</div>
+              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Available</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {err && (
         <div className="alert-err" role="alert">

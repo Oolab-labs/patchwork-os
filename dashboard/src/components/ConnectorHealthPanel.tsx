@@ -94,6 +94,14 @@ export function ConnectorHealthPanel({ connectors }: Props) {
 
   if (connectors.length === 0) return null;
 
+  const total = connectors.length;
+  const okCount = connectors.filter((n) => statusMap?.[n.toLowerCase()]?.status === "connected").length;
+  const degCount = connectors.filter((n) => statusMap?.[n.toLowerCase()]?.status === "degraded").length;
+  const errCount = connectors.filter((n) => {
+    const s = statusMap?.[n.toLowerCase()]?.status;
+    return s === "error" || s === "missing";
+  }).length;
+
   return (
     <div
       className="glass-card"
@@ -104,23 +112,29 @@ export function ConnectorHealthPanel({ connectors }: Props) {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: "var(--s-4)",
+          marginBottom: "var(--s-3)",
           gap: "var(--s-3)",
           flexWrap: "wrap",
         }}
       >
-        <h3
-          style={{
-            margin: 0,
-            fontSize: 13,
-            color: "var(--fg-2)",
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-          }}
-        >
-          Required Connectors
-        </h3>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}>
+          <h3
+            style={{
+              margin: 0,
+              fontSize: 11,
+              color: "var(--ink-2)",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.07em",
+            }}
+          >
+            Required connectors
+          </h3>
+          <span className="pill muted" style={{ fontSize: 10 }}>{total}</span>
+          {okCount > 0 && <span className="pill ok" style={{ fontSize: 10 }}>{okCount} ok</span>}
+          {degCount > 0 && <span className="pill warn" style={{ fontSize: 10 }}>{degCount} degraded</span>}
+          {errCount > 0 && <span className="pill err" style={{ fontSize: 10 }}>{errCount} issue{errCount !== 1 ? "s" : ""}</span>}
+        </div>
         {fetchErr && (
           <span style={{ fontSize: 11, color: "var(--err)" }}>{fetchErr}</span>
         )}
@@ -129,7 +143,7 @@ export function ConnectorHealthPanel({ connectors }: Props) {
         )}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {connectors.map((name) => {
           const key = name.toLowerCase();
           const info = statusMap?.[key];
@@ -145,10 +159,9 @@ export function ConnectorHealthPanel({ connectors }: Props) {
                 display: "flex",
                 alignItems: "center",
                 gap: "var(--s-3)",
-                padding: "var(--s-2) var(--s-3)",
-                borderRadius: "var(--r-2)",
-                background: "var(--bg-2)",
-                border: "1px solid var(--border-subtle)",
+                padding: "7px 10px",
+                borderRadius: "var(--r-s)",
+                background: "var(--recess)",
                 fontSize: 13,
               }}
             >

@@ -171,15 +171,110 @@ export default function SessionDetailPage() {
       )}
 
       {summary && (
-        <div className="card" style={{ marginTop: "var(--s-4)" }}>
-          <div className="card-head">
-            <h2>Summary</h2>
-            <span
-              className="pill muted"
+        <div
+          className="card"
+          style={{
+            marginTop: "var(--s-4)",
+            padding: "16px 20px",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+            gap: "var(--s-4)",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--ink-2)",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                marginBottom: 4,
+              }}
+            >
+              Connected
+            </div>
+            <div
+              style={{ fontSize: 13, color: "var(--ink-0)", fontWeight: 500 }}
               title={new Date(summary.connectedAt).toLocaleString()}
             >
-              connected {relTime(new Date(summary.connectedAt).getTime())}
-            </span>
+              {relTime(new Date(summary.connectedAt).getTime())}
+            </div>
+          </div>
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--ink-2)",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                marginBottom: 4,
+              }}
+            >
+              Open files
+            </div>
+            <div
+              style={{
+                fontSize: 17,
+                fontFamily: "var(--font-mono)",
+                fontWeight: 700,
+                color: "var(--ink-0)",
+              }}
+            >
+              {summary.openedFileCount}
+            </div>
+          </div>
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--ink-2)",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                marginBottom: 4,
+              }}
+            >
+              Pending approvals
+            </div>
+            <div
+              style={{
+                fontSize: 17,
+                fontFamily: "var(--font-mono)",
+                fontWeight: 700,
+                color:
+                  summary.pendingApprovals > 0
+                    ? "var(--amber)"
+                    : "var(--ink-0)",
+              }}
+            >
+              {summary.pendingApprovals}
+            </div>
+          </div>
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--ink-2)",
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                marginBottom: 4,
+              }}
+            >
+              Events logged
+            </div>
+            <div
+              style={{
+                fontSize: 17,
+                fontFamily: "var(--font-mono)",
+                fontWeight: 700,
+                color: "var(--ink-0)",
+              }}
+            >
+              {stream.length}
+            </div>
           </div>
         </div>
       )}
@@ -315,6 +410,27 @@ export default function SessionDetailPage() {
         <div className="card" style={{ marginTop: "var(--s-4)" }}>
           <div className="card-head">
             <h2>Event stream</h2>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 11,
+                color: "var(--green)",
+                fontWeight: 600,
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: "var(--green)",
+                }}
+              />
+              live
+            </span>
             <span className="pill muted">{stream.length}</span>
           </div>
           <div className="table-wrap">

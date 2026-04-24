@@ -638,9 +638,79 @@ function ApprovalsContent() {
             Review tool calls before they execute.
           </div>
         </div>
-        <span className={`pill ${pending.length > 0 ? "warn" : "muted"}`}>
+        <span className={`pill ${pending.length > 0 ? "warn" : "ok"}`}>
           {pending.length} pending
         </span>
+      </div>
+
+      {/* Hero status bar — counts by tier */}
+      <div
+        className="card"
+        style={{
+          padding: "20px 24px",
+          marginBottom: "var(--s-4)",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--s-6)",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--ink-2)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.07em",
+              marginBottom: 4,
+            }}
+          >
+            Queue
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1.1 }}>
+            {pending.length === 0 ? "All clear" : `${pending.length} awaiting decision`}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-4)", flexWrap: "wrap" }}>
+          {([
+            { label: "Total", val: counts.all, color: "var(--ink-0)" },
+            { label: "High", val: counts.high, color: "var(--err)" },
+            { label: "Medium", val: counts.medium, color: "var(--warn)" },
+            { label: "Low", val: counts.low, color: "var(--ink-1)" },
+          ] as const).map((s, i) => (
+            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s-4)" }}>
+              {i > 0 && (
+                <span aria-hidden="true" style={{ width: 1, height: 28, background: "var(--line-2)" }} />
+              )}
+              <div style={{ textAlign: "center", minWidth: 54 }}>
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    fontFamily: "var(--font-mono)",
+                    color: s.color,
+                    lineHeight: 1,
+                  }}
+                >
+                  {s.val}
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "var(--ink-2)",
+                    marginTop: 4,
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  {s.label}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Risk filter buttons */}

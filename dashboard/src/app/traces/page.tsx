@@ -51,18 +51,31 @@ const TYPE_LABELS: Record<TraceType, string> = {
   decision: "Decision",
 };
 
-const TYPE_COLORS: Record<TraceType, string> = {
-  approval: "var(--warn, #d97706)",
-  enrichment: "var(--ok, #059669)",
-  recipe_run: "var(--fg-2)",
-  decision: "#a78bfa",
+const TYPE_THEME: Record<
+  TraceType,
+  { fg: string; bg: string; pill: string }
+> = {
+  approval: { fg: "var(--amber)", bg: "var(--amber-soft)", pill: "warn" },
+  enrichment: { fg: "var(--green)", bg: "var(--green-soft)", pill: "ok" },
+  recipe_run: { fg: "var(--blue)", bg: "var(--blue-soft)", pill: "info" },
+  decision: { fg: "var(--purple)", bg: "var(--purple-soft)", pill: "purp" },
 };
+
+const GROUP_ORDER: TraceType[] = [
+  "approval",
+  "decision",
+  "recipe_run",
+  "enrichment",
+];
 
 export default function TracesPage() {
   const [filter, setFilter] = useState<TraceType | "all">("all");
   const [keyQuery, setKeyQuery] = useState("");
   const [textQuery, setTextQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<TraceType>>(
+    new Set(),
+  );
 
   const qs = useMemo(() => {
     const params = new URLSearchParams();
@@ -82,6 +95,16 @@ export default function TracesPage() {
   const traces = data?.traces ?? [];
   const sources = data?.sources;
 
+  const grouped = useMemo(() => {
+    const m = new Map<TraceType, DecisionTrace[]>();
+    for (const t of traces) {
+      const list = m.get(t.traceType) ?? [];
+      list.push(t);
+      m.set(t.traceType, list);
+    }
+    return m;
+  }, [traces]);
+
   const toggle = (rowKey: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -90,6 +113,23 @@ export default function TracesPage() {
       return next;
     });
   };
+
+  const toggleGroup = (t: TraceType) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+  };
+
+  const filterChips: { k: TraceType | "all"; label: string }[] = [
+    { k: "all", label: "All" },
+    { k: "approval", label: "Approval" },
+    { k: "decision", label: "Decision" },
+    { k: "recipe_run", label: "Recipe run" },
+    { k: "enrichment", label: "Enrichment" },
+  ];
 
   return (
     <section>
@@ -105,6 +145,7 @@ export default function TracesPage() {
         </span>
       </div>
 
+      {/* filter bar */}
       <div
         style={{
           display: "flex",
@@ -114,34 +155,17 @@ export default function TracesPage() {
           alignItems: "center",
         }}
       >
-        <div style={{ display: "flex", gap: "var(--s-2)" }}>
-          {(
-            ["all", "approval", "enrichment", "recipe_run", "decision"] as const
-          ).map(
-            (f) => {
-              const active = filter === f;
-              return (
-                <button
-                  type="button"
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={active ? "pill" : "pill muted"}
-                  style={{
-                    cursor: "pointer",
-                    textTransform: "capitalize",
-                    ...(active && {
-                      background: "var(--accent, #8b5cf6)",
-                      color: "var(--bg-0, #0a0a0a)",
-                      borderColor: "var(--accent, #8b5cf6)",
-                      fontWeight: 600,
-                    }),
-                  }}
-                >
-                  {f === "all" ? "All" : TYPE_LABELS[f as TraceType]}
-                </button>
-              );
-            },
-          )}
+        <div className="filter-chips" style={{ marginBottom: 0 }}>
+          {filterChips.map((c) => (
+            <button
+              type="button"
+              key={c.k}
+              onClick={() => setFilter(c.k)}
+              className={`filter-chip${filter === c.k ? " active" : ""}`}
+            >
+              {c.label}
+            </button>
+          ))}
         </div>
         <input
           type="text"
@@ -150,30 +174,30 @@ export default function TracesPage() {
           placeholder="filter by key (sessionId, sha, taskId…)"
           style={{
             flex: 1,
-            minWidth: 240,
+            minWidth: 220,
             padding: "6px 10px",
             fontSize: 13,
             fontFamily: "var(--font-mono)",
-            background: "var(--bg-2)",
-            border: "1px solid var(--bg-3)",
-            borderRadius: 4,
-            color: "var(--fg-0)",
+            background: "var(--recess)",
+            border: "1px solid var(--line-2)",
+            borderRadius: "var(--r-s)",
+            color: "var(--ink-0)",
           }}
         />
         <input
           type="text"
           value={textQuery}
           onChange={(e) => setTextQuery(e.target.value)}
-          placeholder="search summary + body (case-insensitive)"
+          placeholder="search summary + body"
           style={{
             flex: 1,
-            minWidth: 240,
+            minWidth: 220,
             padding: "6px 10px",
             fontSize: 13,
-            background: "var(--bg-2)",
-            border: "1px solid var(--bg-3)",
-            borderRadius: 4,
-            color: "var(--fg-0)",
+            background: "var(--recess)",
+            border: "1px solid var(--line-2)",
+            borderRadius: "var(--r-s)",
+            color: "var(--ink-0)",
           }}
         />
       </div>
@@ -181,8 +205,8 @@ export default function TracesPage() {
       {sources && (
         <div
           style={{
-            fontSize: 12,
-            color: "var(--fg-3)",
+            fontSize: 11,
+            color: "var(--ink-3)",
             marginBottom: "var(--s-3)",
           }}
         >
@@ -216,94 +240,177 @@ export default function TracesPage() {
           </p>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
-          {traces.map((t) => {
-            const rowKey = `${t.traceType}:${t.ts}:${t.key}`;
-            const isOpen = expanded.has(rowKey);
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}
+        >
+          {GROUP_ORDER.filter((g) => grouped.has(g)).map((g) => {
+            const items = grouped.get(g) ?? [];
+            const theme = TYPE_THEME[g];
+            const collapsed = collapsedGroups.has(g);
             return (
               <div
-                key={rowKey}
+                key={g}
                 className="card"
-                style={{ padding: "var(--s-3)" }}
+                style={{ padding: 0, overflow: "hidden" }}
               >
                 <button
                   type="button"
-                  onClick={() => toggle(rowKey)}
+                  onClick={() => toggleGroup(g)}
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--s-3)",
                     width: "100%",
                     background: "transparent",
                     border: "none",
-                    padding: 0,
                     cursor: "pointer",
+                    padding: "12px 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--s-3)",
+                    borderBottom: collapsed
+                      ? "none"
+                      : "1px solid var(--line-3)",
+                    borderLeft: `3px solid ${theme.fg}`,
                     textAlign: "left",
                     color: "inherit",
                   }}
                 >
                   <span
+                    aria-hidden
                     style={{
-                      fontSize: 11,
-                      padding: "2px 6px",
-                      borderRadius: 3,
-                      color: TYPE_COLORS[t.traceType],
-                      border: `1px solid ${TYPE_COLORS[t.traceType]}`,
-                      textTransform: "uppercase",
-                      letterSpacing: 0.5,
-                      flexShrink: 0,
+                      display: "inline-block",
+                      width: 8,
+                      textAlign: "center",
+                      color: "var(--ink-3)",
+                      fontSize: 10,
                     }}
                   >
-                    {TYPE_LABELS[t.traceType]}
+                    {collapsed ? "▸" : "▾"}
+                  </span>
+                  <span
+                    className={`pill ${theme.pill}`}
+                    style={{ fontSize: 10, fontWeight: 600 }}
+                  >
+                    {TYPE_LABELS[g]}
                   </span>
                   <span
                     style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 12,
-                      color: "var(--fg-2)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {t.key}
-                  </span>
-                  <span
-                    style={{
-                      flex: 1,
                       fontSize: 13,
-                      color: "var(--fg-1)",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
+                      fontWeight: 600,
+                      color: "var(--ink-0)",
                     }}
                   >
-                    {t.summary}
+                    {items.length} trace{items.length !== 1 ? "s" : ""}
                   </span>
+                  <span style={{ flex: 1 }} />
                   <span
-                    style={{
-                      fontSize: 12,
-                      color: "var(--fg-3)",
-                      flexShrink: 0,
-                    }}
+                    style={{ fontSize: 11, color: "var(--ink-3)" }}
                   >
-                    {relTime(t.ts)}
+                    latest {relTime(items[0]?.ts ?? Date.now())}
                   </span>
                 </button>
-                {isOpen && (
-                  <pre
-                    style={{
-                      marginTop: "var(--s-3)",
-                      padding: "var(--s-3)",
-                      background: "var(--bg-2)",
-                      borderRadius: 4,
-                      fontSize: 12,
-                      fontFamily: "var(--font-mono)",
-                      overflow: "auto",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                    }}
+
+                {!collapsed && (
+                  <div
+                    style={{ display: "flex", flexDirection: "column" }}
                   >
-                    {JSON.stringify(t.body, null, 2)}
-                  </pre>
+                    {items.map((t) => {
+                      const rowKey = `${t.traceType}:${t.ts}:${t.key}`;
+                      const isOpen = expanded.has(rowKey);
+                      return (
+                        <div
+                          key={rowKey}
+                          style={{
+                            borderBottom: "1px solid var(--line-3)",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggle(rowKey)}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "var(--s-3)",
+                              width: "100%",
+                              background: "transparent",
+                              border: "none",
+                              padding: "9px 16px",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              color: "inherit",
+                            }}
+                          >
+                            <span
+                              aria-hidden
+                              style={{
+                                width: 8,
+                                textAlign: "center",
+                                color: "var(--ink-3)",
+                                fontSize: 10,
+                              }}
+                            >
+                              {isOpen ? "▾" : "▸"}
+                            </span>
+                            <span
+                              className="mono"
+                              style={{
+                                fontSize: 11.5,
+                                color: theme.fg,
+                                flexShrink: 0,
+                                fontWeight: 600,
+                                minWidth: 90,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                              title={t.key}
+                            >
+                              {t.key.length > 18
+                                ? `${t.key.slice(0, 16)}…`
+                                : t.key}
+                            </span>
+                            <span
+                              style={{
+                                flex: 1,
+                                fontSize: 13,
+                                color: "var(--ink-1)",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                minWidth: 0,
+                              }}
+                            >
+                              {t.summary}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: "var(--ink-3)",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {relTime(t.ts)}
+                            </span>
+                          </button>
+                          {isOpen && (
+                            <pre
+                              style={{
+                                margin: 0,
+                                padding: "10px 16px 14px 36px",
+                                background: "var(--recess)",
+                                fontSize: 12,
+                                fontFamily: "var(--font-mono)",
+                                overflow: "auto",
+                                whiteSpace: "pre-wrap",
+                                wordBreak: "break-word",
+                                color: "var(--ink-1)",
+                              }}
+                            >
+                              {JSON.stringify(t.body, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             );

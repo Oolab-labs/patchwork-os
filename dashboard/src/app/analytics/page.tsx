@@ -117,16 +117,41 @@ export default function AnalyticsPage() {
               label="Total tool calls"
               value={loading ? "—" : totalCalls.toLocaleString()}
               foot={`Last ${windowHours >= 168 ? "7 days" : `${windowHours}h`}`}
+              icon={
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(var(--orange-rgb), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orange)" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+              }
+            />
+            <StatCard
+              label="Unique tools"
+              value={loading ? "—" : topTools.length.toLocaleString()}
+              foot="Distinct tools invoked"
+              icon={
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(107,107,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b6bff" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                </div>
+              }
             />
             <StatCard
               label="Hooks last 24h"
               value={loading ? "—" : (data?.hooksLast24h ?? 0).toLocaleString()}
               foot="Automation hook triggers"
+              icon={
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(13,138,94,0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "#0d8a5e" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                </div>
+              }
             />
             <StatCard
               label="Error rate"
               value={loading ? "—" : errorRate}
               foot="Errors / total calls"
+              icon={
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: totalErrors > 0 ? "rgba(220,38,38,0.12)" : "rgba(180,83,9,0.10)", display: "flex", alignItems: "center", justifyContent: "center", color: totalErrors > 0 ? "var(--err)" : "#b45309" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                </div>
+              }
             />
           </div>
 

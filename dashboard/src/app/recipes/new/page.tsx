@@ -239,7 +239,7 @@ export default function NewRecipePage() {
         <div>
           <h1>New recipe</h1>
           <div className="page-head-sub">
-            Author and save a new automation recipe.
+            Author and save a new automation recipe. Fill in metadata, trigger, variables, and steps.
           </div>
         </div>
       </div>

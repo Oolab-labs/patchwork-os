@@ -34,6 +34,8 @@ export default function MetricsPage() {
   }, []);
 
   const groups = useMemo(() => categorize(metrics), [metrics]);
+  const totalSeries = metrics.length;
+  const groupCount = Object.keys(groups).length;
 
   return (
     <section>
@@ -48,6 +50,55 @@ export default function MetricsPage() {
           <span className="pill muted">updated {relTime(updatedAt)}</span>
         )}
       </div>
+
+      {metrics.length > 0 && (
+        <div
+          className="card"
+          style={{
+            padding: "16px 22px",
+            marginBottom: "var(--s-5)",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--s-5)",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              aria-hidden="true"
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: err ? "var(--err)" : "var(--ok)",
+                display: "inline-block",
+              }}
+            />
+            <span style={{ fontSize: 13, fontWeight: 600, color: err ? "var(--err)" : "var(--ok)" }}>
+              {err ? "Unreachable" : "Streaming live"}
+            </span>
+          </div>
+          <div aria-hidden="true" style={{ width: 1, height: 28, background: "var(--line-2)" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-4)" }}>
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 20, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
+                {totalSeries}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Series
+              </div>
+            </div>
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 20, fontWeight: 800, color: "var(--ink-0)", lineHeight: 1 }}>
+                {groupCount}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Groups
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {err && <div className="alert-err">Unreachable: {err}</div>}
 

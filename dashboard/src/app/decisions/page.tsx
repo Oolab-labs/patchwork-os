@@ -98,6 +98,23 @@ function DecisionsContent() {
     return [...set].sort();
   }, [traces]);
 
+  // Classify a decision into an accent variant based on tag/ref hints.
+  const variantFor = (t: DecisionTrace): "accent" | "info" | "warn" | "err" => {
+    const tags = (Array.isArray(t.body.tags) ? t.body.tags : []).map((x) => String(x).toLowerCase());
+    const ref = String(t.body.ref ?? t.key ?? "").toLowerCase();
+    if (tags.some((x) => /(bug|error|fail|incident|regress)/.test(x))) return "err";
+    if (tags.some((x) => /(warn|risk|flaky|security)/.test(x))) return "warn";
+    if (tags.some((x) => /(feat|feature|ship|release)/.test(x)) || ref.startsWith("pr-")) return "accent";
+    return "info";
+  };
+
+  const variantCounts = useMemo(() => {
+    const c = { accent: 0, info: 0, warn: 0, err: 0 };
+    for (const t of traces) c[variantFor(t)]++;
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [traces]);
+
   return (
     <section>
       <div className="page-head">
@@ -111,6 +128,35 @@ function DecisionsContent() {
           {traces.length} decision{traces.length !== 1 ? "s" : ""}
         </span>
       </div>
+
+      {/* Sub-header: counts per variant */}
+      {traces.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: "var(--s-2)",
+            marginBottom: "var(--s-3)",
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <span style={{ fontSize: 12, color: "var(--ink-2)", marginRight: 4 }}>
+            by type:
+          </span>
+          <span className="pill" style={{ fontSize: 11, borderLeft: "3px solid var(--orange)" }}>
+            feature · {variantCounts.accent}
+          </span>
+          <span className="pill info" style={{ fontSize: 11 }}>
+            general · {variantCounts.info}
+          </span>
+          <span className="pill warn" style={{ fontSize: 11 }}>
+            risk · {variantCounts.warn}
+          </span>
+          <span className="pill err" style={{ fontSize: 11 }}>
+            bug · {variantCounts.err}
+          </span>
+        </div>
+      )}
 
       <div
         style={{
@@ -242,11 +288,12 @@ function DecisionsContent() {
             const b = t.body;
             const tags = Array.isArray(b.tags) ? b.tags : [];
             const rowKey = `${t.ts}:${t.key}`;
+            const variant = variantFor(t);
             return (
               <div
                 key={rowKey}
-                className="card"
-                style={{ padding: "var(--s-3)" }}
+                className={`decision-row decision-row-${variant}`}
+                style={{ padding: "var(--s-3) var(--s-4)", cursor: "default" }}
               >
                 <div
                   style={{

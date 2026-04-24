@@ -154,20 +154,26 @@ export default function ApprovalDetailPage() {
       )}
 
       {pending && (
-        <div className="card" style={{ marginTop: "var(--s-4)" }}>
+        <div
+          className="card"
+          style={{
+            marginTop: "var(--s-4)",
+            padding: "20px 24px",
+            borderLeft: `3px solid ${
+              tier === "high" ? "var(--err)" : tier === "medium" ? "var(--warn)" : "var(--ok)"
+            }`,
+          }}
+        >
           <div className="card-head">
             <h2>Decide</h2>
+            <span className="pill warn" style={{ fontSize: 11 }}>
+              <span className="pill-dot" /> awaiting you
+            </span>
           </div>
-          <p style={{ fontSize: 13, color: "var(--fg-2)" }}>
+          <p style={{ fontSize: 13, color: "var(--ink-2)", marginBottom: "var(--s-3)" }}>
             Still in the queue. Approve or reject to unblock the caller.
           </p>
-          <div
-            style={{
-              display: "flex",
-              gap: "var(--s-2)",
-              marginTop: "var(--s-3)",
-            }}
-          >
+          <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
             <button
               type="button"
               className="btn success"
@@ -182,6 +188,10 @@ export default function ApprovalDetailPage() {
             >
               Reject
             </button>
+            <span className="approval-spacer" />
+            <Link href="/approvals" className="btn sm ghost" style={{ textDecoration: "none" }}>
+              ← Back to queue
+            </Link>
           </div>
         </div>
       )}
