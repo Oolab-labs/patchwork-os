@@ -206,25 +206,28 @@ function globMatch(pattern: string, str: string): boolean {
   // dp[i][j] = pattern[0..i) matches str[0..j)
   const p = pattern.length;
   const s = str.length;
-  const dp: boolean[][] = Array.from({ length: p + 1 }, () =>
+  const dp = Array.from({ length: p + 1 }, () =>
     new Array<boolean>(s + 1).fill(false),
-  );
-  dp[0]![0] = true;
+  ) as boolean[][];
+  (dp[0] as boolean[])[0] = true;
 
   // Leading stars match empty string.
   for (let i = 1; i <= p; i++) {
-    if (pattern[i - 1] === "*") dp[i]![0] = dp[i - 1]![0]!;
+    if (pattern[i - 1] === "*")
+      (dp[i] as boolean[])[0] = (dp[i - 1] as boolean[])[0] ?? false;
   }
 
   for (let i = 1; i <= p; i++) {
     for (let j = 1; j <= s; j++) {
       if (pattern[i - 1] === "*") {
-        dp[i]![j] = dp[i - 1]![j]! || dp[i]![j - 1]!;
+        (dp[i] as boolean[])[j] =
+          ((dp[i - 1] as boolean[])[j] ?? false) ||
+          ((dp[i] as boolean[])[j - 1] ?? false);
       } else if (pattern[i - 1] === "?" || pattern[i - 1] === str[j - 1]) {
-        dp[i]![j] = dp[i - 1]![j - 1]!;
+        (dp[i] as boolean[])[j] = (dp[i - 1] as boolean[])[j - 1] ?? false;
       }
     }
   }
 
-  return dp[p]![s]!;
+  return (dp[p] as boolean[])[s] ?? false;
 }

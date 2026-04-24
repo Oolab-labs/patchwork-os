@@ -29,7 +29,7 @@
       "!**/coverage",
       "!**/docs",
       "!**/.claude/worktrees",
-      "!dashboard/**"
+      "!dashboard"
     ]
   },
   "overrides": [
