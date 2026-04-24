@@ -675,11 +675,12 @@ steps:
       expect(result.valid).toBe(false);
     });
 
-    it("does not warn when chain: references a local yaml file that exists", () => {
-      const childPath = join(tmpDir, "child-recipe.yaml");
+    it("does not error when chain: references a valid local yaml file that exists", () => {
+      const childPath = join(tmpDir, "child-recipe-valid.yaml");
       writeFileSync(
         childPath,
-        `name: child-recipe
+        `name: child-recipe-valid
+description: A valid child recipe
 trigger:
   type: manual
 steps:
@@ -696,14 +697,76 @@ trigger:
   type: chained
 steps:
   - id: step1
-    chain: ./child-recipe.yaml
+    chain: ./child-recipe-valid.yaml
 `,
       );
       const result = runLint(recipePath);
-      const chainWarnings = result.issues.filter((i) =>
-        i.message.includes("child-recipe.yaml"),
+      // No file-not-found error and no child-validation errors.
+      const chainErrors = result.issues.filter(
+        (i) => i.level === "error" && i.message.includes("child-recipe-valid"),
       );
-      expect(chainWarnings).toHaveLength(0);
+      expect(chainErrors).toHaveLength(0);
+      expect(result.valid).toBe(true);
+    });
+
+    it("surfaces errors from an invalid child recipe", () => {
+      const childPath = join(tmpDir, "child-recipe-bad.yaml");
+      writeFileSync(
+        childPath,
+        `name: child-recipe-bad
+trigger:
+  type: manual
+steps: []
+`,
+      );
+      const recipePath = join(tmpDir, "chained-with-bad-child.yaml");
+      writeFileSync(
+        recipePath,
+        `name: chained-with-bad-child
+description: Parent of bad child
+trigger:
+  type: chained
+steps:
+  - id: step1
+    chain: ./child-recipe-bad.yaml
+`,
+      );
+      const result = runLint(recipePath);
+      const childErrors = result.issues.filter(
+        (i) =>
+          i.level === "error" && i.message.includes("child-recipe-bad.yaml"),
+      );
+      expect(childErrors.length).toBeGreaterThan(0);
+      expect(result.valid).toBe(false);
+    });
+
+    it("does not infinitely recurse when two chained recipes reference each other", () => {
+      const alphaPath = join(tmpDir, "chain-alpha.yaml");
+      const betaPath = join(tmpDir, "chain-beta.yaml");
+      writeFileSync(
+        alphaPath,
+        `name: chain-alpha
+description: Alpha
+trigger:
+  type: chained
+steps:
+  - id: step1
+    chain: ./chain-beta.yaml
+`,
+      );
+      writeFileSync(
+        betaPath,
+        `name: chain-beta
+description: Beta
+trigger:
+  type: chained
+steps:
+  - id: step1
+    chain: ./chain-alpha.yaml
+`,
+      );
+      // Should complete without stack overflow, result shape doesn't matter.
+      expect(() => runLint(alphaPath)).not.toThrow();
     });
 
     it("warns when named chain: ref is not found in recipes dir", () => {
