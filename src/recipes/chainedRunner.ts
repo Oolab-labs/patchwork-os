@@ -32,6 +32,8 @@ export interface ChainedStep {
   agent?: { prompt: string; model?: string; driver?: string };
   recipe?: NestedRecipeConfig["recipe"];
   chain?: NestedRecipeConfig["recipe"];
+  /** Sugar: run these steps concurrently. Expanded to flat steps at runtime. */
+  parallel?: ChainedStep[];
   vars?: Record<string, string>;
   awaits?: string[];
   when?: string; // template condition
@@ -402,6 +404,71 @@ export interface ChainedRunResult {
   errorMessage?: string;
 }
 
+/**
+ * Expand `parallel:` sugar into flat steps with auto-generated ids and
+ * correct `awaits` wiring so the existing dependency graph handles execution.
+ *
+ * A `parallel:` step is a group container — it has no id/tool/agent of its
+ * own. Each child in the group inherits the group's `awaits` and is assigned
+ * an id of `<groupId>_<index>`. Steps that previously awaited the group
+ * (determined by a post-pass) are rewritten to await all children instead.
+ *
+ * Expansion is recursive so nested `parallel:` blocks work too.
+ */
+export function expandParallelSteps(steps: ChainedStep[]): ChainedStep[] {
+  const flat: ChainedStep[] = [];
+  // Maps a group placeholder id → the ids of its expanded children.
+  const groupChildren = new Map<string, string[]>();
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (!step) continue;
+
+    if (Array.isArray(step.parallel) && step.parallel.length > 0) {
+      // Generate a stable group id from position if the group has no id.
+      const groupId = step.id ?? `parallel_${i}`;
+      const groupAwaits = step.awaits ?? [];
+      const childIds: string[] = [];
+
+      for (let j = 0; j < step.parallel.length; j++) {
+        const child = step.parallel[j];
+        if (!child) continue;
+        const childId = child.id ?? `${groupId}_${j}`;
+        childIds.push(childId);
+        // Expand child recursively in case it also has parallel:.
+        const expanded = expandParallelSteps([
+          {
+            ...child,
+            id: childId,
+            awaits: [...groupAwaits, ...(child.awaits ?? [])],
+          },
+        ]);
+        flat.push(...expanded);
+      }
+
+      groupChildren.set(groupId, childIds);
+    } else {
+      flat.push(step);
+    }
+  }
+
+  // Rewrite awaits: any step that awaited a group id now awaits all its children.
+  if (groupChildren.size === 0) return flat;
+
+  return flat.map((step) => {
+    if (!step.awaits?.length) return step;
+    const rewritten = step.awaits.flatMap(
+      (dep) => groupChildren.get(dep) ?? [dep],
+    );
+    // Deduplicate while preserving order.
+    const seen = new Set<string>();
+    const deduped = rewritten.filter((id) =>
+      seen.has(id) ? false : (seen.add(id), true),
+    );
+    return { ...step, awaits: deduped };
+  });
+}
+
 /** Main entry point: run a chained recipe */
 export async function runChainedRecipe(
   recipe: ChainedRecipe,
@@ -423,9 +490,12 @@ export async function runChainedRecipe(
 
   const registry = existingRegistry ?? createOutputRegistry();
 
+  // Expand parallel: sugar into flat steps before building the dependency graph.
+  const steps = expandParallelSteps(recipe.steps);
+
   // Build dependency graph
   const depGraph = buildDependencyGraph(
-    recipe.steps.map((s, i) => ({ id: s.id ?? `step_${i}`, awaits: s.awaits })),
+    steps.map((s, i) => ({ id: s.id ?? `step_${i}`, awaits: s.awaits })),
   );
 
   if (depGraph.hasCycles) {
@@ -437,10 +507,10 @@ export async function runChainedRecipe(
     };
   }
 
-  // Create step lookup
+  // Create step lookup from expanded steps.
   const stepMap = new Map<string, ChainedStep>();
-  for (let i = 0; i < recipe.steps.length; i++) {
-    const step = recipe.steps[i];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
     if (!step) continue;
     const stepId = step.id ?? `step_${i}`;
     stepMap.set(stepId, { ...step, id: stepId });
@@ -521,8 +591,12 @@ export function generateExecutionPlan(recipe: ChainedRecipe): {
   parallelGroups: string[][];
   maxDepth: number;
 } {
+  const expandedSteps = expandParallelSteps(recipe.steps);
   const depGraph = buildDependencyGraph(
-    recipe.steps.map((s, i) => ({ id: s.id ?? `step_${i}`, awaits: s.awaits })),
+    expandedSteps.map((s, i) => ({
+      id: s.id ?? `step_${i}`,
+      awaits: s.awaits,
+    })),
   );
 
   // Group by topological levels (parallelizable)
@@ -543,7 +617,7 @@ export function generateExecutionPlan(recipe: ChainedRecipe): {
   }
 
   return {
-    steps: recipe.steps.map((s) => ({
+    steps: expandedSteps.map((s) => ({
       id: s.id ?? "",
       type: nestedRecipeRef(s) ? "recipe" : s.agent ? "agent" : "tool",
       dependencies: s.awaits ?? [],
