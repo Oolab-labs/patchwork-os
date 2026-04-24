@@ -72,3 +72,4 @@ session-*.md
 
 # Dogfood / playtest / debug screenshots (ad-hoc, not repo assets)
 /*.png
+screenshots/
