@@ -289,6 +289,39 @@ describe("runChainedRecipe", () => {
     expect(result.success).toBe(true);
   });
 
+  it("treats step failure as non-fatal when recipe on_error.fallback=log_only", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const failDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockRejectedValue(new Error("boom")),
+    };
+    const recipe: ChainedRecipe = {
+      name: "test",
+      on_error: { fallback: "log_only" },
+      steps: [{ id: "a", tool: "t" }],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, failDeps);
+    expect(result.success).toBe(true);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("on_error.fallback=log_only"),
+    );
+    warn.mockRestore();
+  });
+
+  it("propagates step failure when recipe on_error.fallback=abort (default)", async () => {
+    const failDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockRejectedValue(new Error("boom")),
+    };
+    const recipe: ChainedRecipe = {
+      name: "test",
+      on_error: { fallback: "abort" },
+      steps: [{ id: "a", tool: "t" }],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, failDeps);
+    expect(result.success).toBe(false);
+  });
+
   it("retries a failing step up to step.retry times", async () => {
     let calls = 0;
     const failThenSucceedDeps = {
