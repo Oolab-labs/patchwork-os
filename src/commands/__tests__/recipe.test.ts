@@ -630,6 +630,81 @@ steps:
       }
     });
 
+    it("accepts chained recipe step with chain: alias (valid, named recipe)", () => {
+      const recipePath = join(tmpDir, "chained-chain-alias.yaml");
+      writeFileSync(
+        recipePath,
+        `name: chained-chain-alias
+description: Tests chain alias
+trigger:
+  type: chained
+steps:
+  - id: step1
+    tool: github.list_issues
+  - id: step2
+    chain: decision-review
+    awaits: [step1]
+`,
+      );
+      const result = runLint(recipePath);
+      expect(
+        result.valid,
+        result.issues.map((i) => i.message).join(" | "),
+      ).toBe(true);
+    });
+
+    it("warns when chain: references a missing local yaml file", () => {
+      const recipePath = join(tmpDir, "chained-missing-child.yaml");
+      writeFileSync(
+        recipePath,
+        `name: chained-missing-child
+description: Tests missing chain file
+trigger:
+  type: chained
+steps:
+  - id: step1
+    chain: ./does-not-exist.yaml
+`,
+      );
+      const result = runLint(recipePath);
+      const chainWarning = result.issues.find((i) =>
+        i.message.includes("does-not-exist.yaml"),
+      );
+      expect(chainWarning).toBeDefined();
+      expect(chainWarning?.level).toBe("warning");
+    });
+
+    it("does not warn when chain: references a local yaml file that exists", () => {
+      const childPath = join(tmpDir, "child-recipe.yaml");
+      writeFileSync(
+        childPath,
+        `name: child-recipe
+trigger:
+  type: manual
+steps:
+  - tool: file.read
+    path: /tmp/x
+`,
+      );
+      const recipePath = join(tmpDir, "chained-with-child.yaml");
+      writeFileSync(
+        recipePath,
+        `name: chained-with-child
+description: Tests present chain file
+trigger:
+  type: chained
+steps:
+  - id: step1
+    chain: ./child-recipe.yaml
+`,
+      );
+      const result = runLint(recipePath);
+      const chainWarnings = result.issues.filter((i) =>
+        i.message.includes("child-recipe.yaml"),
+      );
+      expect(chainWarnings).toHaveLength(0);
+    });
+
     it("validates all bundled template recipes recursively when schema lint flag is enabled", () => {
       const previous = process.env.PATCHWORK_FLAG_UI_SCHEMA_LINT;
       process.env.PATCHWORK_FLAG_UI_SCHEMA_LINT = "true";

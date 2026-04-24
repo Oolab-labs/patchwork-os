@@ -92,12 +92,13 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
         const hasTool = typeof step.tool === "string";
         const hasAgent = !!step.agent;
         const hasNestedRecipe =
-          allowNestedRecipeSteps && typeof step.recipe === "string";
+          allowNestedRecipeSteps &&
+          (typeof step.recipe === "string" || typeof step.chain === "string");
 
         if (!hasTool && !hasAgent && !hasNestedRecipe) {
           issues.push({
             level: "error",
-            message: `Step ${i + 1}: Must have 'tool' or 'agent' field${allowNestedRecipeSteps ? " (or 'recipe' for chained recipes)" : ""}`,
+            message: `Step ${i + 1}: Must have 'tool' or 'agent' field${allowNestedRecipeSteps ? " (or 'recipe'/'chain' for chained recipes)" : ""}`,
           });
         }
         if (step.agent && typeof step.agent === "object") {
