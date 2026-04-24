@@ -10,6 +10,13 @@ const ALLOWED_CONNECTORS = new Set([
   "linear",
   "sentry",
   "slack",
+  "notion",
+  "confluence",
+  "datadog",
+  "hubspot",
+  "intercom",
+  "stripe",
+  "zendesk",
 ]);
 
 export async function GET(
