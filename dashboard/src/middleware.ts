@@ -26,7 +26,7 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    // Protect all routes except Next.js internals and public schema files
-    "/((?!_next/static|_next/image|favicon.ico|schema/).*)",
+    // Protect all routes except Next.js internals, public schema files, and marketplace
+    "/((?!_next/static|_next/image|favicon.ico|schema/|marketplace).*)",
   ],
 };
