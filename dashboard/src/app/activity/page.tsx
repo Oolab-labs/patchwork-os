@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
+import { isDemoMode } from "@/lib/demoMode";
 
 type Tab = "all" | "tools" | "hooks";
 
@@ -118,7 +119,7 @@ export default function ActivityPage() {
     };
     es.onerror = () => {
       setConnected(false);
-      setErr("Disconnected — reconnecting…");
+      if (!isDemoMode()) setErr("Disconnected — reconnecting…");
     };
     es.onmessage = (msg) => {
       try {
