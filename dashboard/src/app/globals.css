@@ -915,6 +915,36 @@ button { font-family: inherit; }
 /* round variant for nav/count chips */
 .pill.round { border-radius: 999px; }
 
+/* ---- Connector dot (marketplace + health panel) ---- */
+.connector-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0;
+  flex-shrink: 0;
+}
+
+/* ---- Tag pill (marketplace recipe tags) ---- */
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--recess);
+  color: var(--ink-3);
+  border: 1px solid var(--line-1);
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
 /* ---- Bridge status pill ---- */
 
 .bridge-status-pill {
@@ -1267,9 +1297,7 @@ button { font-family: inherit; }
 
 .decision-row {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 10px 14px 10px 0;
+  flex-direction: column;
   border-radius: var(--r-m);
   text-decoration: none;
   color: inherit;
@@ -1279,9 +1307,9 @@ button { font-family: inherit; }
   border-right: 1px solid var(--line-1);
   border-bottom: 1px solid var(--line-1);
   overflow: hidden;
-  transition: background 120ms, transform 120ms;
+  transition: background 120ms;
 }
-.decision-row:hover { background: var(--recess); text-decoration: none; transform: translateX(2px); }
+.decision-row:hover { background: var(--recess); text-decoration: none; }
 .decision-row-accent { border-left-color: var(--orange); }
 .decision-row-info   { border-left-color: var(--blue); }
 .decision-row-warn   { border-left-color: var(--amber); }
@@ -1367,11 +1395,11 @@ button { font-family: inherit; }
 /* ---- Marketplace / template card ---- */
 .marketplace-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
 }
 .template-card {
-  display: flex; flex-direction: column; gap: 10px; padding: 18px;
+  display: flex; flex-direction: column; gap: 10px; padding: 16px 18px 14px;
   background: var(--card-bg);
   backdrop-filter: var(--card-blur); -webkit-backdrop-filter: var(--card-blur);
   border: 1px solid var(--line-1); border-radius: var(--r-l);
