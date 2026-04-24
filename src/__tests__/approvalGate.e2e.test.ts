@@ -8,7 +8,7 @@
  * isError:true MCP content (not a JSON-RPC error).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   type ApprovalQueue,
   getApprovalQueue,

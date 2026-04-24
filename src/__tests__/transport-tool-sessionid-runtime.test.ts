@@ -105,7 +105,7 @@ describe("tool-call sessionId wiring (runtime)", () => {
 
     // And the "wrong" UUID returns nothing — proves we're keying on real value,
     // not some default.
-    expect(activityLog.querySessionTools("not-" + SESSION_ID)).toHaveLength(0);
+    expect(activityLog.querySessionTools(`not-${SESSION_ID}`)).toHaveLength(0);
   });
 
   it("records tool-call errors with sessionId too", async () => {

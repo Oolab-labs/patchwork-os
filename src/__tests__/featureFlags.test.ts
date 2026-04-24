@@ -4,7 +4,6 @@ import {
   isEnabled,
   KILL_SWITCH_WRITES,
   listFlags,
-  loadFlags,
   registerFlag,
   setFlag,
 } from "../featureFlags.js";

@@ -1006,7 +1006,7 @@
 <div class="toast" id="toast">Copied to clipboard</div>
 
 <script>
-  (function() {
+  (() => {
     var connectors = [
       ['#EA4335','Gmail'],['#4A154B','Slack'],['#6e7681','GitHub'],
       ['#5E6AD2','Linear'],['#4a4a4a','Notion'],['#4285F4','Google Calendar'],
@@ -1016,11 +1016,11 @@
     ];
     var m = document.getElementById('marquee');
     if (!m) return;
-    [1,2].forEach(function() {
-      connectors.forEach(function(c) {
+    [1,2].forEach(() => {
+      connectors.forEach((c) => {
         var el = document.createElement('div');
         el.className = 'connector-chip';
-        el.innerHTML = '<span class="connector-dot" style="background:'+c[0]+'"></span>'+c[1];
+        el.innerHTML = `<span class="connector-dot" style="background:${c[0]}"></span>${c[1]}`;
         m.appendChild(el);
       });
     });
@@ -1030,12 +1030,12 @@
     var t = document.getElementById('toast');
     t.textContent = msg || 'Copied to clipboard';
     t.classList.add('show');
-    setTimeout(function() { t.classList.remove('show'); }, 2200);
+    setTimeout(() => { t.classList.remove('show'); }, 2200);
   }
 
   function copyText(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function() { showToast(); }).catch(function() { fallbackCopy(text); });
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => { showToast(); }).catch(() => { fallbackCopy(text); });
     } else { fallbackCopy(text); }
   }
 
@@ -1045,7 +1045,7 @@
     ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); showToast(); } catch(e) {}
+    try { document.execCommand('copy'); showToast(); } catch(_e) {}
     document.body.removeChild(ta);
   }
 
