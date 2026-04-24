@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
@@ -60,6 +60,132 @@ const TYPE_THEME: Record<
   recipe_run: { fg: "var(--blue)", bg: "var(--blue-soft)", pill: "info" },
   decision: { fg: "var(--purple)", bg: "var(--purple-soft)", pill: "purp" },
 };
+
+// ------------------------------------------------------------------ detail panel
+
+const SCALAR_KEYS_FIRST = ["status", "trigger", "recipeName", "taskId", "durationMs", "seq"];
+
+function TraceDetail({
+  body,
+  theme,
+}: {
+  body: Record<string, unknown>;
+  theme: { fg: string; bg: string };
+}) {
+  const entries = Object.entries(body);
+  const scalars = entries.filter(
+    ([, v]) => typeof v !== "object" || v === null,
+  );
+  const objects = entries.filter(
+    ([, v]) => typeof v === "object" && v !== null,
+  );
+  // Put well-known keys first
+  scalars.sort(([a], [b]) => {
+    const ai = SCALAR_KEYS_FIRST.indexOf(a);
+    const bi = SCALAR_KEYS_FIRST.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  return (
+    <div
+      style={{
+        margin: "0 16px 14px 36px",
+        borderRadius: "var(--r-s)",
+        border: "1px solid var(--line-2)",
+        overflow: "hidden",
+        fontSize: 12,
+      }}
+    >
+      {/* scalar fields as key/value grid */}
+      {scalars.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "max-content 1fr",
+            background: "var(--recess)",
+          }}
+        >
+          {scalars.map(([k, v], i) => (
+            <Fragment key={k}>
+              <div
+                style={{
+                  padding: "5px 12px",
+                  fontFamily: "var(--font-mono)",
+                  color: theme.fg,
+                  fontWeight: 600,
+                  fontSize: 11,
+                  background: i % 2 === 0 ? "rgba(0,0,0,0.06)" : "transparent",
+                  borderRight: "1px solid var(--line-2)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {k}
+              </div>
+              <div
+                style={{
+                  padding: "5px 12px",
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--ink-1)",
+                  fontSize: 11,
+                  background: i % 2 === 0 ? "rgba(0,0,0,0.06)" : "transparent",
+                  wordBreak: "break-all",
+                }}
+              >
+                {String(v)}
+              </div>
+            </Fragment>
+          ))}
+        </div>
+      )}
+      {/* complex fields as collapsible JSON */}
+      {objects.map(([k, v]) => (
+        <details key={k} style={{ borderTop: "1px solid var(--line-2)" }}>
+          <summary
+            style={{
+              padding: "5px 12px",
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              color: theme.fg,
+              cursor: "pointer",
+              background: "var(--recess)",
+              listStyle: "none",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span style={{ color: "var(--ink-3)", fontSize: 9 }}>▸</span>
+            {k}
+            {Array.isArray(v) && (
+              <span style={{ color: "var(--ink-3)", fontWeight: 400 }}>
+                [{(v as unknown[]).length}]
+              </span>
+            )}
+          </summary>
+          <pre
+            style={{
+              margin: 0,
+              padding: "8px 12px 10px 24px",
+              background: "var(--bg-0)",
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+              overflow: "auto",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              color: "var(--ink-2)",
+            }}
+          >
+            {JSON.stringify(v, null, 2)}
+          </pre>
+        </details>
+      ))}
+    </div>
+  );
+}
 
 const GROUP_ORDER: TraceType[] = [
   "approval",
@@ -411,21 +537,7 @@ export default function TracesPage() {
                             </span>
                           </button>
                           {isOpen && (
-                            <pre
-                              style={{
-                                margin: 0,
-                                padding: "10px 16px 14px 36px",
-                                background: "var(--recess)",
-                                fontSize: 12,
-                                fontFamily: "var(--font-mono)",
-                                overflow: "auto",
-                                whiteSpace: "pre-wrap",
-                                wordBreak: "break-word",
-                                color: "var(--ink-1)",
-                              }}
-                            >
-                              {JSON.stringify(t.body, null, 2)}
-                            </pre>
+                            <TraceDetail body={t.body} theme={theme} />
                           )}
                         </div>
                       );
