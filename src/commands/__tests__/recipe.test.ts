@@ -1852,6 +1852,93 @@ steps:
     });
   });
 
+  describe("runTest (chained recipes)", () => {
+    it("runs a chained recipe with mocked tools and reports step count", async () => {
+      const recipePath = join(tmpDir, "chained-test.yaml");
+      writeFileSync(
+        recipePath,
+        `name: chained-test
+description: Chained test recipe
+trigger:
+  type: chained
+steps:
+  - id: fetch
+    tool: git.status
+  - id: summarize
+    tool: git.status
+    awaits: [fetch]
+`,
+      );
+
+      const result = await runTest(recipePath);
+      expect(result.valid).toBe(true);
+      expect(result.stepsRun).toBe(2);
+    });
+
+    it("reports failure when a chained step has no tool or agent", async () => {
+      const recipePath = join(tmpDir, "chained-bad.yaml");
+      writeFileSync(
+        recipePath,
+        `name: chained-bad
+description: Bad chained recipe
+trigger:
+  type: chained
+steps:
+  - id: empty
+`,
+      );
+
+      const result = await runTest(recipePath);
+      expect(result.valid).toBe(false);
+    });
+
+    it("evaluates expect.stepsRun for chained recipes", async () => {
+      const recipePath = join(tmpDir, "chained-expect.yaml");
+      writeFileSync(
+        recipePath,
+        `name: chained-expect
+description: Chained expect test
+trigger:
+  type: chained
+steps:
+  - id: a
+    tool: git.status
+  - id: b
+    tool: git.status
+    awaits: [a]
+expect:
+  stepsRun: 2
+`,
+      );
+
+      const result = await runTest(recipePath);
+      expect(result.valid).toBe(true);
+      expect(result.assertionFailures).toHaveLength(0);
+    });
+
+    it("surfaces expect.stepsRun mismatch as assertion failure for chained recipes", async () => {
+      const recipePath = join(tmpDir, "chained-expect-fail.yaml");
+      writeFileSync(
+        recipePath,
+        `name: chained-expect-fail
+description: Chained expect failure test
+trigger:
+  type: chained
+steps:
+  - id: a
+    tool: git.status
+expect:
+  stepsRun: 5
+`,
+      );
+
+      const result = await runTest(recipePath);
+      expect(result.valid).toBe(false);
+      expect(result.assertionFailures.length).toBeGreaterThan(0);
+      expect(result.assertionFailures[0]!.assertion).toBe("stepsRun");
+    });
+  });
+
   describe("runWatch", () => {
     it("runs a valid watched recipe through the shared local execution path", async () => {
       const recipePath = join(tmpDir, "watched-valid.yaml");

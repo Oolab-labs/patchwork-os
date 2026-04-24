@@ -1299,39 +1299,90 @@ export async function runTest(
   if (issues.every((issue) => issue.level !== "error")) {
     try {
       const recipe = loadYamlRecipe(recipePath);
-      const mockConnectors = createMockToolConnectors(
-        recipe.steps,
-        fixturesDir,
-      );
-      const run = await runYamlRecipe(recipe, {
-        testMode: true,
-        mockConnectors,
-        readFile: (filePath) => readFileSync(filePath, "utf-8"),
-        writeFile: () => {},
-        appendFile: () => {},
-        mkdir: () => {},
-        gitLogSince: () => "[mock git log]",
-        gitStaleBranches: () => "[mock stale branches]",
-        getDiagnostics: () => "[mock diagnostics]",
-        claudeFn: async () => "[mock agent output]",
-        claudeCodeFn: async () => "[mock agent output]",
-        providerDriverFn: async () => "[mock agent output]",
-      });
-      stepsRun = run.stepsRun;
-      outputs = run.outputs;
+      const triggerType = (
+        recipe.trigger as unknown as Record<string, unknown> | undefined
+      )?.type;
 
-      if (run.assertionFailures && run.assertionFailures.length > 0) {
-        assertionFailures = run.assertionFailures;
-        for (const failure of run.assertionFailures) {
-          issues.push({ level: "error", message: failure.message });
+      if (triggerType === "chained") {
+        // Chained recipes: run through chainedRunner with mocked tool + agent executors
+        const { runChainedRecipe } = await import(
+          "../recipes/chainedRunner.js"
+        );
+        const { evaluateExpect } = await import("../recipes/yamlRunner.js");
+        const chainedRecipe =
+          recipe as unknown as import("../recipes/chainedRunner.js").ChainedRecipe;
+        const recipeRecord = recipe as unknown as Record<string, unknown>;
+        const run = await runChainedRecipe(
+          chainedRecipe,
+          {
+            env: process.env as Record<string, string>,
+            maxConcurrency: (recipeRecord.maxConcurrency as number) ?? 4,
+            maxDepth: (recipeRecord.maxDepth as number) ?? 3,
+            dryRun: false,
+            sourcePath: recipePath,
+          },
+          {
+            executeTool: async (tool) => `[mock:${tool}]`,
+            executeAgent: async () => "[mock agent output]",
+            loadNestedRecipe: async () => null,
+          },
+        );
+        stepsRun = run.summary.total;
+        if (run.errorMessage) {
+          issues.push({ level: "error", message: run.errorMessage });
         }
-      }
 
-      if (run.errorMessage) {
-        issues.push({
-          level: "error",
-          message: run.errorMessage,
+        // Evaluate expect: block against chained run results
+        const expectBlock = recipeRecord.expect as
+          | import("../recipes/yamlRunner.js").YamlRecipeExpect
+          | undefined;
+        if (expectBlock) {
+          const failures = evaluateExpect(
+            {
+              stepsRun: run.summary.total,
+              outputs: [],
+              context: run.context,
+              errorMessage: run.errorMessage,
+            },
+            expectBlock,
+          );
+          assertionFailures = failures;
+          for (const failure of failures) {
+            issues.push({ level: "error", message: failure.message });
+          }
+        }
+      } else {
+        const mockConnectors = createMockToolConnectors(
+          recipe.steps,
+          fixturesDir,
+        );
+        const run = await runYamlRecipe(recipe, {
+          testMode: true,
+          mockConnectors,
+          readFile: (filePath) => readFileSync(filePath, "utf-8"),
+          writeFile: () => {},
+          appendFile: () => {},
+          mkdir: () => {},
+          gitLogSince: () => "[mock git log]",
+          gitStaleBranches: () => "[mock stale branches]",
+          getDiagnostics: () => "[mock diagnostics]",
+          claudeFn: async () => "[mock agent output]",
+          claudeCodeFn: async () => "[mock agent output]",
+          providerDriverFn: async () => "[mock agent output]",
         });
+        stepsRun = run.stepsRun;
+        outputs = run.outputs;
+
+        if (run.assertionFailures && run.assertionFailures.length > 0) {
+          assertionFailures = run.assertionFailures;
+          for (const failure of run.assertionFailures) {
+            issues.push({ level: "error", message: failure.message });
+          }
+        }
+
+        if (run.errorMessage) {
+          issues.push({ level: "error", message: run.errorMessage });
+        }
       }
     } catch (err) {
       issues.push({
