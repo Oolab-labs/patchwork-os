@@ -289,6 +289,61 @@ describe("runChainedRecipe", () => {
     expect(result.success).toBe(true);
   });
 
+  it("retries a failing step up to step.retry times", async () => {
+    let calls = 0;
+    const failThenSucceedDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockImplementation(async () => {
+        calls++;
+        if (calls < 3) throw new Error("transient");
+      }),
+    };
+    const recipe: ChainedRecipe = {
+      name: "test",
+      steps: [{ id: "a", tool: "t", retry: 2, retryDelay: 0 }],
+    };
+    const result = await runChainedRecipe(
+      recipe,
+      baseOptions,
+      failThenSucceedDeps,
+    );
+    expect(result.success).toBe(true);
+    expect(calls).toBe(3);
+  });
+
+  it("respects recipe-level on_error.retry when step has no retry", async () => {
+    let calls = 0;
+    const failOnceDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockImplementation(async () => {
+        calls++;
+        if (calls === 1) throw new Error("transient");
+      }),
+    };
+    const recipe: ChainedRecipe = {
+      name: "test",
+      on_error: { retry: 1, retryDelay: 0 },
+      steps: [{ id: "a", tool: "t" }],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, failOnceDeps);
+    expect(result.success).toBe(true);
+    expect(calls).toBe(2);
+  });
+
+  it("fails after exhausting all retries", async () => {
+    const alwaysFailDeps = {
+      ...noopDeps,
+      executeTool: vi.fn().mockRejectedValue(new Error("permanent")),
+    };
+    const recipe: ChainedRecipe = {
+      name: "test",
+      steps: [{ id: "a", tool: "t", retry: 2, retryDelay: 0 }],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, alwaysFailDeps);
+    expect(result.success).toBe(false);
+    expect(alwaysFailDeps.executeTool).toHaveBeenCalledTimes(3);
+  });
+
   it("counts skipped steps correctly", async () => {
     const recipe: ChainedRecipe = {
       name: "test",
