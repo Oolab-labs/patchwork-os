@@ -643,6 +643,46 @@ export function summarizeRecipeExecution(
   };
 }
 
+export function formatRunReport(
+  result: RunRecipeResult["result"],
+  recipeName: string,
+): string {
+  const lines: string[] = [];
+  const hr = "─".repeat(48);
+
+  if ("stepsRun" in result) {
+    // Simple (non-chained) recipe — compact summary
+    const ok = !result.errorMessage;
+    lines.push(`${ok ? "✓" : "✗"} ${recipeName} — ${result.stepsRun} step(s)`);
+    if (result.outputs.length > 0) {
+      for (const o of result.outputs) lines.push(`  → ${o}`);
+    }
+    if (result.errorMessage) lines.push(`  Error: ${result.errorMessage}`);
+    return lines.join("\n");
+  }
+
+  // Chained recipe — per-step table
+  const { stepResults, summary } = result;
+  const overallOk = result.success;
+  lines.push(hr);
+  lines.push(`Recipe: ${recipeName}`);
+  lines.push(hr);
+
+  for (const [id, step] of stepResults) {
+    const icon = step.skipped ? "↷" : step.success ? "✓" : "✗";
+    const dur = step.durationMs !== undefined ? ` (${step.durationMs}ms)` : "";
+    const err = step.error ? `  → ${step.error.message}` : "";
+    lines.push(`  ${icon} ${id}${dur}${err}`);
+  }
+
+  lines.push(hr);
+  const parts = [`${summary.succeeded} ok`];
+  if (summary.skipped > 0) parts.push(`${summary.skipped} skipped`);
+  if (summary.failed > 0) parts.push(`${summary.failed} failed`);
+  lines.push(`${overallOk ? "✓" : "✗"} ${parts.join(" · ")}`);
+  return lines.join("\n");
+}
+
 export async function runWatchedRecipe(
   recipePath: string,
   options: Pick<RunRecipeOptions, "workdir" | "deps" | "vars"> = {},

@@ -431,9 +431,16 @@ async function withRetry(
   return last;
 }
 
+export interface ChainedStepRunResult {
+  success: boolean;
+  skipped?: boolean;
+  durationMs?: number;
+  error?: Error;
+}
+
 export interface ChainedRunResult {
   success: boolean;
-  stepResults: Map<string, { success: boolean; error?: Error }>;
+  stepResults: Map<string, ChainedStepRunResult>;
   summary: {
     total: number;
     succeeded: number;
@@ -501,9 +508,11 @@ export function expandParallelSteps(steps: ChainedStep[]): ChainedStep[] {
     );
     // Deduplicate while preserving order.
     const seen = new Set<string>();
-    const deduped = rewritten.filter((id) =>
-      seen.has(id) ? false : (seen.add(id), true),
-    );
+    const deduped = rewritten.filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
     return { ...step, awaits: deduped };
   });
 }
@@ -555,6 +564,11 @@ export async function runChainedRecipe(
     stepMap.set(stepId, { ...step, id: stepId });
   }
 
+  const stepTimings = new Map<
+    string,
+    { durationMs: number; skipped?: boolean }
+  >();
+
   // Execute with dependency tracking
   const execOptions: ExecutionOptions = {
     maxConcurrency: options.maxConcurrency,
@@ -576,11 +590,16 @@ export async function runChainedRecipe(
 
     const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
     const retryDelay = step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;
+    const stepStart = Date.now();
     const result = await withRetry(
       () => executeChainedStep(ctx, deps),
       retryCount,
       retryDelay,
     );
+    stepTimings.set(stepId, {
+      durationMs: Date.now() - stepStart,
+      skipped: result.skipped,
+    });
 
     const isOptional = step.optional === true;
     const effectiveSuccess = result.success || isOptional;
@@ -609,15 +628,22 @@ export async function runChainedRecipe(
     execOptions,
   );
 
-  // Calculate overall success
+  // Merge timings into step results
+  const enrichedResults = new Map<string, ChainedStepRunResult>();
   let failed = 0;
-  for (const [_, result] of stepResults) {
+  for (const [id, result] of stepResults) {
+    const timing = stepTimings.get(id);
+    enrichedResults.set(id, {
+      ...result,
+      skipped: timing?.skipped,
+      durationMs: timing?.durationMs,
+    });
     if (!result.success) failed++;
   }
 
   return {
     success: failed === 0,
-    stepResults,
+    stepResults: enrichedResults,
     summary: registry.summary(),
     errorMessage: failed > 0 ? `${failed} step(s) failed` : undefined,
   };
