@@ -905,8 +905,12 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
         }
       }
 
-      const { runRecipe, runRecipeDryPlan, summarizeRecipeExecution } =
-        await import("./commands/recipe.js");
+      const {
+        runRecipe,
+        runRecipeDryPlan,
+        summarizeRecipeExecution,
+        formatRunReport,
+      } = await import("./commands/recipe.js");
       if (dryRun) {
         const plan = await runRecipeDryPlan(recipeArg, {
           ...(step ? { step } : {}),
@@ -933,16 +937,9 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
         );
       }
       const summary = summarizeRecipeExecution(run.result);
-      process.stdout.write(
-        `  ${summary.ok ? "✓" : "✗"} ${summary.steps} step(s) completed\n`,
-      );
+      process.stdout.write(`${formatRunReport(run.result, run.recipe.name)}\n`);
       if (summary.errorMessage) {
         process.stderr.write(`  Error: ${summary.errorMessage}\n`);
-      }
-      if (summary.outputs.length > 0) {
-        process.stdout.write(
-          `  Output written to:\n${summary.outputs.map((o: string) => `    ${o}`).join("\n")}\n`,
-        );
       }
       process.exit(0);
     } catch (err) {

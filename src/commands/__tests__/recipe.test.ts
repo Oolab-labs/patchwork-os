@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadFixtureLibrary } from "../../connectors/fixtureLibrary.js";
 import {
+  formatRunReport,
   listTemplates,
   runFmt,
   runFmtWatch,
@@ -1134,6 +1135,58 @@ steps:
       if ("stepsRun" in run.result) {
         expect(run.result.context.commits).toBe("abc123 Commit");
       }
+    });
+  });
+
+  describe("formatRunReport", () => {
+    it("renders a per-step table for chained results", () => {
+      const stepResults = new Map([
+        ["fetch", { success: true, durationMs: 120 }],
+        ["summarize", { success: true, durationMs: 340 }],
+        ["write", { success: false, error: new Error("disk full") }],
+      ]);
+      const result = {
+        success: false,
+        stepResults,
+        summary: { total: 3, succeeded: 2, failed: 1, skipped: 0 },
+        errorMessage: "1 step(s) failed",
+      };
+      const report = formatRunReport(result, "my-recipe");
+      expect(report).toContain("my-recipe");
+      expect(report).toContain("✓ fetch");
+      expect(report).toContain("120ms");
+      expect(report).toContain("✗ write");
+      expect(report).toContain("disk full");
+      expect(report).toContain("2 ok");
+      expect(report).toContain("1 failed");
+    });
+
+    it("marks skipped steps with ↷", () => {
+      const stepResults = new Map([
+        ["a", { success: true, durationMs: 10 }],
+        ["b", { success: true, skipped: true, durationMs: 0 }],
+      ]);
+      const result = {
+        success: true,
+        stepResults,
+        summary: { total: 2, succeeded: 1, failed: 0, skipped: 1 },
+      };
+      const report = formatRunReport(result, "r");
+      expect(report).toContain("↷ b");
+      expect(report).toContain("1 skipped");
+    });
+
+    it("renders compact summary for simple (non-chained) results", () => {
+      const result = {
+        success: true,
+        stepsRun: 2,
+        outputs: ["/tmp/out.md"],
+        errorMessage: undefined,
+      };
+      const report = formatRunReport(result as never, "simple-recipe");
+      expect(report).toContain("✓ simple-recipe");
+      expect(report).toContain("2 step(s)");
+      expect(report).toContain("/tmp/out.md");
     });
   });
 
