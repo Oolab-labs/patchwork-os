@@ -698,8 +698,8 @@
     <a href="#how">How it works</a>
     <a href="#recipes">Recipes</a>
     <a href="https://github.com/patchworkos/recipes" target="_blank" rel="noopener">GitHub</a>
-    <button class="nav-pill" onclick="copyInstall()" title="Copy install command">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M11 5V3a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <button type="button" class="nav-pill" onclick="copyInstall()" title="Copy install command">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M11 5V3a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       npm i -g patchwork-os
     </button>
   </div>
@@ -724,8 +724,8 @@
   <div class="install-snippet">
     <pre><span class="cmd">$</span> npm install -g patchwork-os
 <span class="cmd">$</span> patchwork init</pre>
-    <button class="copy-btn" onclick="copySnippet()" title="Copy to clipboard">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M11 5V3a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>
+    <button type="button" class="copy-btn" onclick="copySnippet()" title="Copy to clipboard">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M11 5V3a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>
       Copy
     </button>
   </div>
@@ -947,8 +947,8 @@
     <div class="install-block">
       <div class="install-block-header">
         <span class="install-block-title">terminal</span>
-        <button class="copy-btn" onclick="copySnippet()" style="border:none;border-left:none;padding:0.25rem 0.5rem">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M11 5V3a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>
+        <button type="button" class="copy-btn" onclick="copySnippet()" style="border:none;border-left:none;padding:0.25rem 0.5rem">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M11 5V3a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>
           Copy
         </button>
       </div>
@@ -1049,7 +1049,9 @@
     document.body.removeChild(ta);
   }
 
+  // biome-ignore lint/correctness/noUnusedVariables: called via onclick
   function copySnippet() { copyText('npm install -g patchwork-os\npatchwork init'); }
+  // biome-ignore lint/correctness/noUnusedVariables: called via onclick
   function copyInstall() { copyText('npm install -g patchwork-os'); }
 </script>
 </body>

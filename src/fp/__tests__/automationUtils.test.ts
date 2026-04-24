@@ -46,8 +46,7 @@ describe("truncatePrompt", () => {
   });
 
   it("truncates at last newline before limit", () => {
-    const base =
-      "a".repeat(MAX_POLICY_PROMPT_CHARS - 10) + "\nmore content here";
+    const base = `${"a".repeat(MAX_POLICY_PROMPT_CHARS - 10)}\nmore content here`;
     const result = truncatePrompt(base);
     expect(result.length).toBeLessThanOrEqual(MAX_POLICY_PROMPT_CHARS + 50);
     expect(result).toContain("truncated");
