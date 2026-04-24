@@ -205,16 +205,36 @@ export default function TracesPage() {
       {sources && (
         <div
           style={{
-            fontSize: 11,
-            color: "var(--ink-3)",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--s-2)",
             marginBottom: "var(--s-3)",
+            fontSize: 12,
+            color: "var(--ink-2)",
+            flexWrap: "wrap",
           }}
         >
-          Sources:{" "}
-          {(Object.entries(sources) as [TraceType, boolean][])
-            .filter(([, avail]) => avail)
-            .map(([t]) => TYPE_LABELS[t])
-            .join(" · ") || "none available"}
+          <span style={{ color: "var(--ink-3)" }}>Recording from:</span>
+          {(Object.entries(sources) as [TraceType, boolean][]).map(
+            ([t, avail]) => (
+              <span
+                key={t}
+                className={`pill ${avail ? TYPE_THEME[t].pill : "muted"}`}
+                style={{
+                  fontSize: 11,
+                  opacity: avail ? 1 : 0.5,
+                }}
+                title={
+                  avail
+                    ? `${TYPE_LABELS[t]} traces are being captured`
+                    : `${TYPE_LABELS[t]} traces are not being captured yet`
+                }
+              >
+                {TYPE_LABELS[t]}
+                {!avail && " (off)"}
+              </span>
+            ),
+          )}
         </div>
       )}
 
@@ -235,7 +255,7 @@ export default function TracesPage() {
           </h3>
           <p>
             {filter === "all" && !keyQuery && !textQuery
-              ? "Traces will appear once the bridge records approval decisions, enrichment links, or recipe runs."
+              ? "Nothing has been recorded yet. A trace appears here every time the bridge approves an action, links an enrichment, runs a recipe, or an agent saves a decision."
               : `No ${filter === "all" ? "traces" : TYPE_LABELS[filter as TraceType].toLowerCase()} traces${keyQuery ? ` with key matching "${keyQuery}"` : ""}${textQuery ? ` containing "${textQuery}"` : ""}.`}
           </p>
         </div>
@@ -356,15 +376,15 @@ export default function TracesPage() {
                                 color: theme.fg,
                                 flexShrink: 0,
                                 fontWeight: 600,
-                                minWidth: 90,
+                                minWidth: 140,
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
                                 whiteSpace: "nowrap",
                               }}
                               title={t.key}
                             >
-                              {t.key.length > 18
-                                ? `${t.key.slice(0, 16)}…`
+                              {t.key.length > 28
+                                ? `${t.key.slice(0, 26)}…`
                                 : t.key}
                             </span>
                             <span
