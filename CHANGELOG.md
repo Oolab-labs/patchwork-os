@@ -10,6 +10,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-alpha.28] — 2026-04-24
+
+### Added
+
+- **Dashboard self-hosted deploy** — Dockerfile (multi-stage, `output: standalone`) + basic-auth middleware. Set `DASHBOARD_PASSWORD` env var to protect all routes; unset for local dev (no-op). `dashboard/.env.example` documents all env vars.
+- **JSON Schema for recipes** — `schemas/recipe.v1.json` and `schemas/dry-run-plan.v1.json` generated from live tool registry. Served publicly at `https://patchworkos.com/dashboard/schema/recipe.v1.json`. `npm run schema:generate` regenerates after schema changes.
+- **SchemaStore PR submitted** — [SchemaStore/schemastore#5608](https://github.com/SchemaStore/schemastore/pull/5608). Enables editor autocomplete for `*.patchwork.yaml` and `*.patchwork.yml` files once merged.
+- **`onDiagnosticsStateChange` array form** — policy can now list both `state: "error"` and `state: "cleared"` entries as an array under a single key, eliminating the need for deprecated legacy keys.
+
+### Fixed
+
+- `morning-brief` recipe: switched agent `driver` from `gemini` to `claude` — Gemini free tier exhausts daily quota mid-recipe. Template updated so new installs default to Claude.
+- Dashboard `/schema/` routes excluded from basic-auth so schema files are publicly accessible without credentials.
+
+---
+
 ## [0.2.0-alpha.26] — 2026-04-24
 
 ### Added
