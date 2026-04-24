@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patchwork OS — AI that works while you're away</title>
+  <meta name="description" content="Patchwork OS watches for things that matter, acts, and asks before anything risky goes out. Runs on your machine. Doesn't lock you in." />
+  <meta property="og:title" content="Patchwork OS — AI that works while you're away" />
+  <meta property="og:description" content="Patchwork OS watches for things that matter, acts, and asks before anything risky goes out. Runs on your machine. Doesn't lock you in." />
+  <meta property="og:image" content="https://patchworkos.com/og-image.png" />
+  <meta property="og:url" content="https://patchworkos.com/" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Patchwork OS — AI that works while you're away" />
+  <meta name="twitter:description" content="Patchwork OS watches for things that matter, acts, and asks before anything risky goes out." />
+  <meta name="twitter:image" content="https://patchworkos.com/og-image.png" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0b0d;
+      --bg-card: #0f1114;
+      --bg-card-2: #15181d;
+      --accent: #d87757;
+      --accent-hover: #c9684a;
+      --text: #f4f6fa;
+      --text-secondary: #c7ccd6;
+      --text-muted: #8b92a0;
+      --border: #2a3040;
+      --glass-bg: rgba(255,255,255,0.04);
+      --glass-border: rgba(255,255,255,0.08);
+      --radius: 12px;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --err: #f87171;
+      --info: #60a5fa;
+      --font: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, Inter, sans-serif;
+      --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+      --brand-gradient: linear-gradient(135deg, #d87757, #c084fc);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 clamp(1.25rem, 5vw, 3rem);
+      height: 60px;
+      background: rgba(10,11,13,0.8);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-wordmark {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .nav-wordmark span.pw { color: var(--accent); }
+    .nav-wordmark span.os { color: var(--text-muted); }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      transition: color 0.15s;
+    }
+    .nav-links a:hover { color: var(--text); }
+
+    .nav-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.25rem 0.875rem;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .nav-pill:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: clamp(5rem, 12vw, 9rem) clamp(1.25rem, 5vw, 3rem) clamp(4rem, 8vw, 7rem);
+      overflow: hidden;
+    }
+
+    /* animated gradient orb */
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -160px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 720px;
+      height: 520px;
+      background: radial-gradient(ellipse at 40% 40%, rgba(216,119,87,0.18) 0%, rgba(192,132,252,0.12) 45%, transparent 70%);
+      filter: blur(60px);
+      animation: orbDrift 8s ease-in-out infinite alternate;
+      pointer-events: none;
+      z-index: 0;
+    }
+    @keyframes orbDrift {
+      from { transform: translateX(-50%) translateY(0) scale(1); }
+      to   { transform: translateX(-50%) translateY(24px) scale(1.06); }
+    }
+
+    .hero > * { position: relative; z-index: 1; }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      padding: 0.3rem 1rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 1.75rem;
+      letter-spacing: 0.02em;
+    }
+    .eyebrow .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--brand-gradient);
+      flex-shrink: 0;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 7vw, 4.75rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      max-width: 800px;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero p.subhead {
+      font-size: clamp(1rem, 2.2vw, 1.2rem);
+      color: var(--text-secondary);
+      max-width: 580px;
+      margin-bottom: 2.5rem;
+      line-height: 1.7;
+    }
+
+    .cta-row {
+      display: flex;
+      align-items: center;
+      gap: 0.875rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 2.25rem;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0.7rem 1.625rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      font-family: var(--font);
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.7rem 1.625rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, transform 0.1s;
+      font-family: var(--font);
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn-ghost:hover { border-color: var(--text-muted); color: var(--text); transform: translateY(-1px); }
+
+    .install-snippet {
+      display: inline-flex;
+      align-items: stretch;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      max-width: 100%;
+    }
+    .install-snippet pre {
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      padding: 0.875rem 1.25rem;
+      white-space: pre;
+      line-height: 1.7;
+      text-align: left;
+    }
+    .install-snippet pre .cmd { color: var(--accent); }
+    .copy-btn {
+      display: flex;
+      align-items: center;
+      padding: 0 1rem;
+      background: var(--glass-bg);
+      border: none;
+      border-left: 1px solid var(--border);
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-family: var(--font);
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+      gap: 0.4rem;
+    }
+    .copy-btn:hover { color: var(--accent); background: rgba(216,119,87,0.06); }
+    .copy-btn svg { width: 14px; height: 14px; }
+
+    /* ── SECTIONS SHARED ── */
+    section { padding: clamp(3.5rem, 7vw, 6rem) clamp(1.25rem, 5vw, 3rem); }
+    .section-inner { max-width: 1160px; margin: 0 auto; }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+    .section-title {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+    .section-sub {
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      max-width: 540px;
+      line-height: 1.65;
+    }
+
+    .glass-card {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      backdrop-filter: blur(60px);
+      -webkit-backdrop-filter: blur(60px);
+    }
+
+    /* ── HOW IT WORKS ── */
+    #how {
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    @media (max-width: 720px) {
+      .steps-grid { grid-template-columns: 1fr; }
+    }
+
+    .step-card {
+      padding: 1.75rem;
+    }
+    .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: rgba(216,119,87,0.15);
+      border: 1px solid rgba(216,119,87,0.3);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 0.85rem;
+      margin-bottom: 1.1rem;
+    }
+    .step-card h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+    .step-card p { color: var(--text-secondary); font-size: 0.93rem; line-height: 1.65; }
+
+    /* ── FEATURES ── */
+    #features .header-block { margin-bottom: 3rem; }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
+    }
+    @media (max-width: 640px) {
+      .features-grid { grid-template-columns: 1fr; }
+    }
+
+    .feature-card {
+      padding: 1.75rem;
+      transition: border-color 0.2s;
+    }
+    .feature-card:hover { border-color: rgba(216,119,87,0.25); }
+    .feature-icon {
+      width: 40px; height: 40px;
+      border-radius: 10px;
+      background: rgba(216,119,87,0.1);
+      border: 1px solid rgba(216,119,87,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.1rem;
+      font-size: 1.1rem;
+    }
+    .feature-card h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+    .feature-card p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.65; }
+    .feature-card code {
+      font-family: var(--mono);
+      font-size: 0.82em;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0.15em 0.4em;
+      color: var(--text-muted);
+    }
+
+    /* ── CONNECTORS ── */
+    #connectors {
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
+    }
+    #connectors .header-block { margin-bottom: 2.5rem; }
+
+    .connector-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .connector-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.375rem 0.875rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .connector-chip:hover { border-color: var(--border); color: var(--text); }
+    .connector-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* marquee on small viewports */
+    .connector-marquee-wrap {
+      display: none;
+      overflow: hidden;
+      width: 100%;
+      -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+      mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+    }
+    .connector-marquee {
+      display: flex;
+      gap: 0.75rem;
+      width: max-content;
+      animation: marquee 28s linear infinite;
+    }
+    @keyframes marquee {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+    @media (max-width: 600px) {
+      .connector-grid { display: none; }
+      .connector-marquee-wrap { display: block; }
+    }
+
+    /* ── RECIPES ── */
+    #recipes .header-block { margin-bottom: 3rem; }
+    .recipes-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+    }
+    @media (max-width: 900px) {
+      .recipes-grid { grid-template-columns: 1fr; }
+    }
+
+    .recipe-card {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.875rem;
+      transition: border-color 0.2s;
+    }
+    .recipe-card:hover { border-color: rgba(216,119,87,0.3); }
+    .recipe-name {
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .recipe-desc {
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      flex: 1;
+    }
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+    .tag {
+      font-size: 0.72rem;
+      font-weight: 500;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+    .recipe-connectors {
+      display: flex;
+      gap: 0.4rem;
+    }
+    .r-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .recipe-install {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.625rem 0.875rem;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .recipe-install .ri-cmd { color: var(--accent); }
+
+    /* ── APPROVAL ── */
+    #approval {
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .approval-inner {
+      max-width: 1160px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    @media (max-width: 780px) {
+      .approval-inner { grid-template-columns: 1fr; gap: 2.5rem; }
+    }
+    .approval-text {}
+    .approval-text h2 {
+      font-size: clamp(1.75rem, 4vw, 2.4rem);
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+    .approval-text p { color: var(--text-secondary); line-height: 1.7; font-size: 0.97rem; }
+
+    .approval-mock {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .mock-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .mock-tool {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .mock-risk {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(251,191,36,0.12);
+      border: 1px solid rgba(251,191,36,0.3);
+      color: var(--warn);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .mock-field {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+    .mock-field span {
+      color: var(--text-secondary);
+      font-family: var(--mono);
+    }
+    .mock-message {
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.83rem;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+    .mock-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+    .mock-approve {
+      flex: 1;
+      padding: 0.55rem;
+      background: rgba(52,211,153,0.12);
+      border: 1px solid rgba(52,211,153,0.3);
+      border-radius: 8px;
+      color: var(--ok);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: default;
+      text-align: center;
+      font-family: var(--font);
+    }
+    .mock-reject {
+      flex: 1;
+      padding: 0.55rem;
+      background: rgba(248,113,113,0.08);
+      border: 1px solid rgba(248,113,113,0.2);
+      border-radius: 8px;
+      color: var(--err);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: default;
+      text-align: center;
+      font-family: var(--font);
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem clamp(1.25rem, 5vw, 3rem);
+    }
+    .footer-inner {
+      max-width: 1160px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .footer-brand { font-size: 0.83rem; color: var(--text-muted); }
+    .footer-links {
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .footer-links a {
+      font-size: 0.83rem;
+      color: var(--text-muted);
+      transition: color 0.15s;
+    }
+    .footer-links a:hover { color: var(--text); }
+    .footer-copy { font-size: 0.83rem; color: var(--text-muted); }
+
+    /* ── TOAST ── */
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: var(--bg-card-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.65rem 1.1rem;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      z-index: 9999;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ─────────────────────────────────────────── -->
+<nav>
+  <div class="nav-wordmark">
+    <span class="pw">patchwork</span><span class="os"> OS</span>
+  </div>
+  <div class="nav-links">
+    <a href="/dashboard">Dashboard →</a>
+    <a href="https://github.com/patchworkos/recipes" target="_blank" rel="noopener">GitHub</a>
+    <button class="nav-pill" onclick="copyInstall()" title="Copy install command">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M11 5V3a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      npm i -g patchwork-os
+    </button>
+  </div>
+</nav>
+
+<!-- ── HERO ─────────────────────────────────────────── -->
+<section class="hero">
+  <div class="eyebrow"><span class="dot"></span>v0.2.0-alpha.26 &middot; now in alpha</div>
+  <h1>AI that works while<br/>you're away.</h1>
+  <p class="subhead">Patchwork OS watches for things that matter, acts, and asks before anything risky goes out. Runs on your machine. Doesn't lock you in.</p>
+  <div class="cta-row">
+    <a href="#how" class="btn-primary">Get started →</a>
+    <a href="https://github.com/patchworkos/recipes" target="_blank" rel="noopener" class="btn-ghost">View recipes</a>
+  </div>
+  <div class="install-snippet">
+    <pre><span class="cmd">$</span> npm install -g patchwork-os
+<span class="cmd">$</span> patchwork init</pre>
+    <button class="copy-btn" onclick="copySnippet()" title="Copy to clipboard">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="2"/><path d="M11 5V3a2 2 0 0 0-2-2H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>
+      Copy
+    </button>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ──────────────────────────────────── -->
+<section id="how">
+  <div class="section-inner">
+    <div class="section-label">How it works</div>
+    <div class="section-title">Three steps to autopilot.</div>
+    <div class="steps-grid">
+
+      <div class="step-card glass-card">
+        <div class="step-num">1</div>
+        <h3>Install</h3>
+        <p>One command. Detects your tools, sets up 5 starter recipes, opens the dashboard.</p>
+      </div>
+
+      <div class="step-card glass-card">
+        <div class="step-num">2</div>
+        <h3>Connect</h3>
+        <p>Link Gmail, Slack, Linear, GitHub and 10+ more. OAuth in one click.</p>
+      </div>
+
+      <div class="step-card glass-card">
+        <div class="step-num">3</div>
+        <h3>Approve</h3>
+        <p>Patchwork acts. Anything risky lands in your inbox first. You tap once.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── FEATURES ──────────────────────────────────────── -->
+<section id="features">
+  <div class="section-inner">
+    <div class="header-block">
+      <div class="section-label">Features</div>
+      <div class="section-title">Everything you need. Nothing you don't.</div>
+    </div>
+    <div class="features-grid">
+
+      <div class="feature-card glass-card">
+        <div class="feature-icon">📄</div>
+        <h3>Recipes</h3>
+        <p>Plain YAML files describe what to watch and what to do. Share them like dotfiles. No code required.</p>
+      </div>
+
+      <div class="feature-card glass-card">
+        <div class="feature-icon">🛡</div>
+        <h3>Oversight</h3>
+        <p>Every write, send, or commit lands in your approval queue before it goes anywhere.</p>
+      </div>
+
+      <div class="feature-card glass-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Multi-model</h3>
+        <p>Claude, GPT, Gemini, Grok, or local Ollama. Your keys, your models. Nothing phones home.</p>
+      </div>
+
+      <div class="feature-card glass-card">
+        <div class="feature-icon">🏪</div>
+        <h3>Marketplace</h3>
+        <p>Browse and install community recipes in one command.<br/><code>patchwork recipe install github:patchworkos/recipes/...</code></p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── CONNECTORS ────────────────────────────────────── -->
+<section id="connectors">
+  <div class="section-inner">
+    <div class="header-block">
+      <div class="section-label">Integrations</div>
+      <div class="section-title">Works with your stack.</div>
+    </div>
+
+    <!-- desktop grid -->
+    <div class="connector-grid">
+      <div class="connector-chip"><span class="connector-dot" style="background:#EA4335"></span>Gmail</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#4A154B"></span>Slack</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#6e7681"></span>GitHub</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#5E6AD2"></span>Linear</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#4a4a4a"></span>Notion</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#4285F4"></span>Google Calendar</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#0052CC"></span>Jira</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#6c5fc7"></span>Sentry</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#FF7A59"></span>HubSpot</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#632CA6"></span>Datadog</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#635BFF"></span>Stripe</div>
+      <div class="connector-chip"><span class="connector-dot" style="background:#1F8DED"></span>Intercom</div>
+    </div>
+
+    <!-- mobile marquee -->
+    <div class="connector-marquee-wrap">
+      <div class="connector-marquee" id="marquee"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── RECIPES ───────────────────────────────────────── -->
+<section id="recipes">
+  <div class="section-inner">
+    <div class="header-block">
+      <div class="section-label">Community</div>
+      <div class="section-title">Community recipes.</div>
+    </div>
+    <div class="recipes-grid">
+
+      <div class="recipe-card glass-card">
+        <div class="recipe-name">morning-brief</div>
+        <p class="recipe-desc">Daily 6am digest: Gmail unread, Linear assigned issues, Slack DMs, and today's calendar — composed into one Slack message.</p>
+        <div class="tag-row">
+          <span class="tag">productivity</span>
+          <span class="tag">morning</span>
+        </div>
+        <div class="recipe-connectors">
+          <span class="r-dot" style="background:#EA4335" title="Gmail"></span>
+          <span class="r-dot" style="background:#5E6AD2" title="Linear"></span>
+          <span class="r-dot" style="background:#4A154B" title="Slack"></span>
+          <span class="r-dot" style="background:#4285F4" title="Google Calendar"></span>
+        </div>
+        <div class="recipe-install"><span class="ri-cmd">$</span> patchwork recipe install github:patchworkos/recipes/morning-brief</div>
+      </div>
+
+      <div class="recipe-card glass-card">
+        <div class="recipe-name">incident-war-room</div>
+        <p class="recipe-desc">Ops incident response: summarize alert, open Linear issue, post to #incidents Slack.</p>
+        <div class="tag-row">
+          <span class="tag">ops</span>
+          <span class="tag">incident</span>
+        </div>
+        <div class="recipe-connectors">
+          <span class="r-dot" style="background:#6c5fc7" title="Sentry"></span>
+          <span class="r-dot" style="background:#5E6AD2" title="Linear"></span>
+          <span class="r-dot" style="background:#4A154B" title="Slack"></span>
+        </div>
+        <div class="recipe-install"><span class="ri-cmd">$</span> patchwork recipe install github:patchworkos/recipes/incident-war-room</div>
+      </div>
+
+      <div class="recipe-card glass-card">
+        <div class="recipe-name">sprint-review-prep</div>
+        <p class="recipe-desc">Pull completed Linear issues for the current sprint, summarize with AI, post digest to Slack.</p>
+        <div class="tag-row">
+          <span class="tag">engineering</span>
+          <span class="tag">sprint</span>
+        </div>
+        <div class="recipe-connectors">
+          <span class="r-dot" style="background:#5E6AD2" title="Linear"></span>
+          <span class="r-dot" style="background:#4A154B" title="Slack"></span>
+        </div>
+        <div class="recipe-install"><span class="ri-cmd">$</span> patchwork recipe install github:patchworkos/recipes/sprint-review-prep</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── APPROVAL CALLOUT ──────────────────────────────── -->
+<section id="approval">
+  <div class="approval-inner">
+    <div class="approval-text">
+      <div class="section-label">Oversight</div>
+      <h2>Human in the loop.<br/>Always.</h2>
+      <p>Nothing sends, deletes, or commits without your approval. Patchwork shows the proposed action on one screen. You tap once. That's it.</p>
+    </div>
+    <div class="approval-mock">
+      <div class="mock-header">
+        <div class="mock-tool">slack.postMessage</div>
+        <div class="mock-risk">medium risk</div>
+      </div>
+      <div class="mock-field">Channel: <span>#engineering</span></div>
+      <div class="mock-message">
+        Sprint 42 review: 14 issues completed, 2 carried over. Velocity 34pts. Top delivery: auth refactor + dashboard v2. Full breakdown in Linear →
+      </div>
+      <div class="mock-actions">
+        <div class="mock-approve">Approve</div>
+        <div class="mock-reject">Reject</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ────────────────────────────────────────── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">patchwork OS &middot; v0.2.0-alpha.26</div>
+    <div class="footer-links">
+      <a href="/dashboard">Dashboard</a>
+      <a href="#recipes">Recipes</a>
+      <a href="https://github.com/patchworkos/recipes" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.npmjs.com/package/patchwork-os" target="_blank" rel="noopener">npm</a>
+    </div>
+    <div class="footer-copy">MIT &copy; Oolab Labs</div>
+  </div>
+</footer>
+
+<div class="toast" id="toast">Copied to clipboard</div>
+
+<script>
+  // build marquee from connector chips
+  (function() {
+    var connectors = [
+      ['#EA4335','Gmail'],['#4A154B','Slack'],['#6e7681','GitHub'],
+      ['#5E6AD2','Linear'],['#4a4a4a','Notion'],['#4285F4','Google Calendar'],
+      ['#0052CC','Jira'],['#6c5fc7','Sentry'],['#FF7A59','HubSpot'],
+      ['#632CA6','Datadog'],['#635BFF','Stripe'],['#1F8DED','Intercom']
+    ];
+    var m = document.getElementById('marquee');
+    if (!m) return;
+    // double for seamless loop
+    [1,2].forEach(function() {
+      connectors.forEach(function(c) {
+        var el = document.createElement('div');
+        el.className = 'connector-chip';
+        el.innerHTML = '<span class="connector-dot" style="background:'+c[0]+'"></span>'+c[1];
+        m.appendChild(el);
+      });
+    });
+  })();
+
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg || 'Copied to clipboard';
+    t.classList.add('show');
+    setTimeout(function() { t.classList.remove('show'); }, 2200);
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function() { showToast(); }).catch(function() { fallbackCopy(text); });
+    } else { fallbackCopy(text); }
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showToast(); } catch(e) {}
+    document.body.removeChild(ta);
+  }
+
+  function copySnippet() { copyText('npm install -g patchwork-os\npatchwork init'); }
+  function copyInstall() { copyText('npm install -g patchwork-os'); }
+</script>
+</body>
+</html>
