@@ -206,19 +206,27 @@ function RecipeCard({
   return (
     <div className="template-card glass-card">
       {/* top: name + tags */}
-      <div style={{ marginBottom: "var(--s-2)" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 8,
+          marginBottom: "var(--s-2)",
+        }}
+      >
         <div
           style={{
             fontWeight: 600,
             fontSize: 14,
             color: "var(--fg-0)",
-            marginBottom: "var(--s-2)",
             wordBreak: "break-word",
+            lineHeight: 1.4,
           }}
         >
           {shortName(recipe.name)}
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end", flexShrink: 0 }}>
           {displayTags.map((tag) => (
             <span key={tag} className="tag-pill">
               {tag}
