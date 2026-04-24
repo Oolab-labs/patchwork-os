@@ -604,8 +604,20 @@ export async function runChainedRecipe(
       skipped: result.skipped,
     });
 
-    const isOptional = step.optional === true;
+    // Recipe-level on_error.fallback: "log_only" means step failures are
+    // logged but do not propagate — same semantics as step-level optional: true.
+    // "abort" is the default (propagate failure).
+    const recipeFallbackLogOnly = recipe.on_error?.fallback === "log_only";
+    const isOptional = step.optional === true || recipeFallbackLogOnly;
     const effectiveSuccess = result.success || isOptional;
+
+    if (!result.success && recipeFallbackLogOnly && !step.optional) {
+      console.warn(
+        `step ${stepId} failed but on_error.fallback=log_only — treating as non-fatal: ${
+          result.error ?? "unknown error"
+        }`,
+      );
+    }
 
     // Store output in registry with accurate status
     registry.set(stepId, {
