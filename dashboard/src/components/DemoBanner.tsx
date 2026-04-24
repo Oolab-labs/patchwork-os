@@ -1,7 +1,16 @@
 "use client";
+import { useEffect, useState } from "react";
+import { isDemoMode, onDemoModeChange } from "@/lib/demoMode";
 
 export function DemoBanner() {
-  if (process.env.NEXT_PUBLIC_DEMO_MODE !== "true") return null;
+  const [demo, setDemo] = useState(false);
+
+  useEffect(() => {
+    setDemo(isDemoMode());
+    return onDemoModeChange(setDemo);
+  }, []);
+
+  if (!demo) return null;
 
   return (
     <div

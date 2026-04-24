@@ -234,7 +234,8 @@ export function mockBridgeResponse(pathname: string, method = "GET"): Response |
   if (path === "/templates")              return json(MOCK_TEMPLATES);
   if (path === "/connectors/status")      return json(MOCK_CONNECTORS_STATUS);
   if (path === "/runs")                   return json({ runs: [] });
-  if (path === "/sessions")               return json({ sessions: [] });
+  if (path === "/sessions")               return json([]);
+  if (path.startsWith("/traces"))         return json({ traces: [], count: 0, sources: { approval: false, enrichment: false, recipe_run: false, decision: false } });
 
   // write operations in demo mode — acknowledge but don't mutate
   if (method === "POST" || method === "PATCH" || method === "PUT" || method === "DELETE") {

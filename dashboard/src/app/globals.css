@@ -547,24 +547,33 @@ button { font-family: inherit; }
   margin-bottom: 16px;
 }
 
-/* Mouse-tracking radial glow on cards */
+/* Shimmer sweep on hover */
 .card::before {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: var(--r-l);
-  background: radial-gradient(
-    600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    rgba(var(--orange-rgb), 0.15),
-    transparent 60%
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.07) 50%,
+    transparent 70%
   );
+  background-size: 200% 100%;
+  background-position: 200% 0;
   opacity: 0;
-  transition: opacity 300ms;
   pointer-events: none;
+  transition: opacity 200ms;
 }
-.card:hover::before { opacity: 1; }
-[data-theme="dark"] .card::before { opacity: 0; }
-[data-theme="dark"] .card:hover::before { opacity: 0.25; }
+.card:hover::before {
+  opacity: 1;
+  animation: cardShimmer 600ms ease forwards;
+}
+[data-theme="dark"] .card:hover::before { opacity: 0.6; }
+@keyframes cardShimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
 
 /* Border beam animation on cards */
 .card.beam {
@@ -1348,6 +1357,32 @@ button { font-family: inherit; }
 @keyframes shimmer {
   0% { left: -100%; }
   100% { left: 140%; }
+}
+
+/* ---- Skeleton loading ---- */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--recess);
+  border-radius: var(--r-s);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%);
+  animation: shimmer 1.4s infinite;
+}
+.skeleton-text {
+  height: 13px;
+  border-radius: 4px;
+}
+.skeleton-text.lg { height: 20px; }
+.skeleton-text.sm { height: 10px; }
+.skeleton-card {
+  border-radius: var(--r-3);
+  height: 100%;
+  min-height: 80px;
 }
 
 /* ---- ConnectorCard ---- */
