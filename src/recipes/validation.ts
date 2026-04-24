@@ -414,7 +414,7 @@ function validateTemplateReferences(
       }
     }
 
-    registerStepContextKeys(step, availableKeys, isChainedRecipe);
+    registerStepContextKeys(step, availableKeys);
   }
 }
 
@@ -489,13 +489,10 @@ function extractTemplateIdentifiers(expression: string): string[] {
 function registerStepContextKeys(
   step: Record<string, unknown>,
   availableKeys: Set<string>,
-  isChainedRecipe = false,
 ): void {
-  if (isChainedRecipe) {
-    const stepId = typeof step.id === "string" ? step.id : undefined;
-    if (stepId) {
-      availableKeys.add(stepId);
-    }
+  const stepId = typeof step.id === "string" ? step.id : undefined;
+  if (stepId) {
+    availableKeys.add(stepId);
   }
 
   if (step.agent && typeof step.agent === "object") {

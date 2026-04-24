@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://patchworkos.com/schema/recipe.v1.json
+apiVersion: patchwork.sh/v1
+name: project-health-check
+description: Fetch git activity, open issues, and diagnostics in parallel, then write a health summary.
+trigger:
+  type: manual
+maxConcurrency: 4
+steps:
+  - id: gather
+    parallel:
+      - id: commits
+        tool: git.log_since
+        since: 24h
+      - id: issues
+        tool: github.list_issues
+        assignee: "@me"
+        max: 20
+      - id: prs
+        tool: github.list_prs
+        author: "@me"
+        max: 10
+  - id: summarize
+    agent:
+      prompt: |
+        Write a concise project health summary using ONLY the data below.
+
+        RECENT COMMITS (last 24h):
+        {{commits}}
+
+        OPEN ISSUES (assigned to me):
+        {{issues}}
+
+        OPEN PULL REQUESTS:
+        {{prs}}
+
+        Sections:
+        1. **Activity** — what shipped or changed in the last 24 hours
+        2. **Issues** — issues needing attention today; omit if empty
+        3. **PRs** — PRs waiting on review or action; omit if empty
+        4. **Health** — one-sentence overall assessment (on track / needs attention / blocked)
+      driver: claude
+    awaits: [gather]
+  - id: write
+    tool: file.write
+    path: ~/.patchwork/inbox/health-{{date}}.md
+    content: |
+      # Project health — {{date}}
+
+      {{summarize}}
+    awaits: [summarize]
