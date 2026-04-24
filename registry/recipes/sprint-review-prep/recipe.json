@@ -1,0 +1,32 @@
+{
+  "name": "@patchworkos/sprint-review-prep",
+  "version": "1.0.0",
+  "description": "Pull completed Linear issues for the current sprint, summarize with AI, post digest to #engineering Slack channel.",
+  "author": "patchworkos",
+  "license": "MIT",
+  "tags": ["engineering", "sprint", "linear", "slack", "agile"],
+  "connectors": ["linear", "slack"],
+  "recipes": {
+    "main": "sprint-review-prep.yaml"
+  },
+  "variables": {
+    "LINEAR_TEAM_ID": {
+      "description": "Linear team ID to pull sprint issues from",
+      "required": true
+    },
+    "LINEAR_CYCLE_ID": {
+      "description": "Linear cycle (sprint) ID. Omit to use the active cycle.",
+      "required": false
+    },
+    "SLACK_CHANNEL": {
+      "description": "Slack channel to post the sprint summary (e.g. #engineering)",
+      "required": true
+    },
+    "TEAM_NAME": {
+      "description": "Human-readable team name included in the summary header",
+      "required": false,
+      "default": "Engineering"
+    }
+  },
+  "homepage": "https://github.com/patchworkos/recipes/tree/main/recipes/sprint-review-prep"
+}

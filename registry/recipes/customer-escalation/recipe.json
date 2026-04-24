@@ -1,0 +1,32 @@
+{
+  "name": "@patchworkos/customer-escalation",
+  "version": "1.0.0",
+  "description": "Zendesk ticket escalation pipeline: fetch ticket, create linked Linear issue, alert #support-escalations on Slack.",
+  "author": "patchworkos",
+  "license": "MIT",
+  "tags": ["support", "escalation", "zendesk", "linear", "slack", "customer"],
+  "connectors": ["zendesk", "linear", "slack"],
+  "recipes": {
+    "main": "customer-escalation.yaml"
+  },
+  "variables": {
+    "ticket_id": {
+      "description": "Zendesk ticket ID to escalate",
+      "required": true
+    },
+    "LINEAR_TEAM_ID": {
+      "description": "Linear team ID where the escalation issue will be created",
+      "required": true
+    },
+    "LINEAR_ESCALATION_LABEL": {
+      "description": "Linear label to apply to escalation issues",
+      "required": false,
+      "default": "customer-escalation"
+    },
+    "SLACK_ESCALATIONS_CHANNEL": {
+      "description": "Slack channel for escalation alerts (e.g. #support-escalations)",
+      "required": true
+    }
+  },
+  "homepage": "https://github.com/patchworkos/recipes/tree/main/recipes/customer-escalation"
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://patchwork.dev/schemas/recipe-manifest/v1",
+  "title": "RecipeManifest",
+  "description": "recipe.json manifest for a Patchwork recipe marketplace package",
+  "type": "object",
+  "required": ["name", "version", "description", "recipes"],
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Package name. May be scoped (@scope/name) or unscoped.",
+      "pattern": "^(@[a-z0-9-]+/)?[a-z0-9][a-z0-9\\-_.]*$"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semver version string e.g. \"1.0.0\"",
+      "pattern": "^\\d+\\.\\d+\\.\\d+"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short human-readable description of the recipe package"
+    },
+    "author": {
+      "type": "string",
+      "description": "Author name or email"
+    },
+    "license": {
+      "type": "string",
+      "description": "SPDX license identifier e.g. \"MIT\""
+    },
+    "tags": {
+      "type": "array",
+      "description": "Search tags for the marketplace",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "connectors": {
+      "type": "array",
+      "description": "Connector identifiers required by this recipe package",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "recipes": {
+      "type": "object",
+      "required": ["main"],
+      "additionalProperties": false,
+      "properties": {
+        "main": {
+          "type": "string",
+          "description": "Filename of the entry-point recipe (must end in .yaml or .yml)",
+          "pattern": "\\.ya?ml$"
+        },
+        "children": {
+          "type": "array",
+          "description": "Filenames of child/helper recipes (must end in .yaml or .yml)",
+          "items": {
+            "type": "string",
+            "pattern": "\\.ya?ml$"
+          }
+        }
+      }
+    },
+    "variables": {
+      "type": "object",
+      "description": "Configurable variables for this recipe package",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["description"],
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "homepage": {
+      "type": "string",
+      "description": "GitHub or documentation URL"
+    },
+    "repository": {
+      "type": "string",
+      "description": "Git repository URL"
+    }
+  }
+}

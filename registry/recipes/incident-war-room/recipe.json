@@ -1,0 +1,37 @@
+{
+  "name": "@patchworkos/incident-war-room",
+  "version": "1.0.0",
+  "description": "Ops incident response: summarize alert, open Linear issue, post to #incidents Slack, then append post-incident summary to Notion.",
+  "author": "patchworkos",
+  "license": "MIT",
+  "tags": ["ops", "incident", "on-call", "linear", "slack", "notion"],
+  "connectors": ["linear", "slack", "notion"],
+  "recipes": {
+    "main": "incident-war-room.yaml",
+    "children": ["incident-followup.yaml"]
+  },
+  "variables": {
+    "incident_description": {
+      "description": "Free-text description of the incident or PagerDuty alert body",
+      "required": true
+    },
+    "LINEAR_TEAM_ID": {
+      "description": "Linear team ID where the incident issue will be created",
+      "required": true
+    },
+    "LINEAR_INCIDENT_LABEL": {
+      "description": "Linear label to apply to incident issues",
+      "required": false,
+      "default": "incident"
+    },
+    "SLACK_INCIDENTS_CHANNEL": {
+      "description": "Slack channel to post the incident alert (e.g. #incidents)",
+      "required": true
+    },
+    "NOTION_INCIDENTS_DB": {
+      "description": "Notion database ID where post-incident summaries are logged",
+      "required": true
+    }
+  },
+  "homepage": "https://github.com/patchworkos/recipes/tree/main/recipes/incident-war-room"
+}

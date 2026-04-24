@@ -1,0 +1,76 @@
+name: "@patchworkos/sprint-review-prep"
+version: "1.0.0"
+description: >
+  Sprint review prep pipeline. Fetch completed Linear issues for the current
+  cycle, generate an AI summary grouped by theme, and post to Slack.
+
+trigger:
+  type: manual
+
+context:
+  - type: env
+    keys:
+      - LINEAR_TEAM_ID
+      - LINEAR_CYCLE_ID
+      - SLACK_CHANNEL
+      - TEAM_NAME
+
+steps:
+  - id: fetch_completed_issues
+    tool: linear.listIssues
+    params:
+      teamId: "{{LINEAR_TEAM_ID}}"
+      cycleId: "{{LINEAR_CYCLE_ID}}"
+      states: ["Done", "Completed", "Cancelled"]
+      includeArchived: false
+    output: completed_issues
+    risk: low
+
+  - id: fetch_in_progress
+    tool: linear.listIssues
+    params:
+      teamId: "{{LINEAR_TEAM_ID}}"
+      cycleId: "{{LINEAR_CYCLE_ID}}"
+      states: ["In Progress", "In Review"]
+    output: in_progress_issues
+    risk: low
+
+  - id: summarize_sprint
+    agent:
+      prompt: |
+        Generate a sprint review summary for the {{TEAM_NAME}} team.
+
+        COMPLETED THIS SPRINT ({{completed_issues.length}} issues):
+        {{completed_issues}}
+
+        STILL IN PROGRESS ({{in_progress_issues.length}} issues):
+        {{in_progress_issues}}
+
+        Format the summary as:
+        **Sprint Review — {{TEAM_NAME}}**
+
+        :white_check_mark: *Shipped (N)*
+        Group completed issues by theme/label. 2-4 bullet points max per group.
+
+        :hourglass_flowing_sand: *Carrying Over (N)*
+        List in-progress items with assignee.
+
+        :bar_chart: *Velocity*
+        Issue count closed vs. planned. One sentence.
+
+        Keep the whole thing under 30 lines. Use Slack mrkdwn formatting.
+    awaits: [fetch_completed_issues, fetch_in_progress]
+    output: sprint_summary
+    risk: low
+
+  - id: post_summary
+    tool: slack.postMessage
+    params:
+      channel: "{{SLACK_CHANNEL}}"
+      text: "{{sprint_summary}}"
+    awaits: [summarize_sprint]
+    risk: low
+
+on_error:
+  notify: false
+  retry: 1

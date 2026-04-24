@@ -1,0 +1,65 @@
+name: incident-followup
+version: "1.0.0"
+description: >
+  Child recipe: compose post-incident summary and append to Notion incidents database.
+  Invoked by incident-war-room after initial triage is posted.
+
+trigger:
+  type: chained
+
+maxConcurrency: 1
+maxDepth: 1
+
+context:
+  - type: env
+    keys:
+      - alert_summary
+      - linear_issue_url
+      - linear_issue_id
+      - notion_db
+      - slack_channel
+
+steps:
+  - id: compose_postmortem_stub
+    agent:
+      prompt: |
+        Draft an initial post-incident summary document.
+        This is a stub — it will be filled in by the on-call engineer.
+
+        Incident: {{alert_summary.headline}}
+        Severity: {{alert_summary.severity}}
+        Impact: {{alert_summary.impact}}
+        Linear issue: {{linear_issue_url}}
+
+        Generate a structured post-incident template with these sections:
+        1. Timeline (placeholder rows)
+        2. Root cause (TBD)
+        3. Impact scope
+        4. Resolution steps (TBD)
+        5. Action items (at least 2 placeholder action items)
+
+        Return as clean Markdown.
+    output: postmortem_draft
+    risk: low
+
+  - id: log_to_notion
+    tool: notion.createPage
+    params:
+      database_id: "{{notion_db}}"
+      properties:
+        title: "[{{alert_summary.severity}}] {{alert_summary.headline}}"
+        Status: "Open"
+        Linear: "{{linear_issue_url}}"
+        Severity: "{{alert_summary.severity}}"
+      content: "{{postmortem_draft}}"
+    awaits: [compose_postmortem_stub]
+    output: notion_page
+    risk: medium
+
+  - id: notify_notion_link
+    tool: slack.postMessage
+    params:
+      channel: "{{slack_channel}}"
+      text: ":memo: Post-incident doc created: {{notion_page.url}}\nFill in timeline + root cause when resolved."
+    awaits: [log_to_notion]
+    risk: low

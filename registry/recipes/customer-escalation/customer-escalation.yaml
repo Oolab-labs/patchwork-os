@@ -1,0 +1,103 @@
+name: "@patchworkos/customer-escalation"
+version: "1.0.0"
+description: >
+  Customer escalation pipeline. Fetch a Zendesk ticket, create a linked
+  Linear engineering issue, and post an alert to the support escalations
+  Slack channel.
+
+trigger:
+  type: manual
+
+context:
+  - type: env
+    keys:
+      - ticket_id
+      - LINEAR_TEAM_ID
+      - LINEAR_ESCALATION_LABEL
+      - SLACK_ESCALATIONS_CHANNEL
+
+steps:
+  - id: fetch_ticket
+    tool: zendesk.getTicket
+    params:
+      ticketId: "{{ticket_id}}"
+    output: ticket
+    risk: low
+
+  - id: triage_ticket
+    agent:
+      prompt: |
+        Triage this Zendesk support ticket for engineering escalation.
+
+        Ticket #{{ticket.id}}: {{ticket.subject}}
+        Priority: {{ticket.priority}}
+        Status: {{ticket.status}}
+        Customer: {{ticket.requester.name}} ({{ticket.requester.email}})
+        Organization: {{ticket.organization.name}}
+
+        Description:
+        {{ticket.description}}
+
+        Latest comment:
+        {{ticket.latest_comment}}
+
+        Provide:
+        1. One-line engineering-friendly summary of the problem
+        2. Likely root cause category (bug / config / docs / billing / other)
+        3. Suggested engineering priority (P1/P2/P3)
+        4. Any reproduction steps mentioned in the ticket
+
+        Return as JSON: { summary, category, priority, repro_steps, customer_impact }
+    awaits: [fetch_ticket]
+    output: triage
+    risk: low
+
+  - id: create_linear_issue
+    tool: linear.createIssue
+    params:
+      teamId: "{{LINEAR_TEAM_ID}}"
+      title: "[Escalation] {{triage.summary}}"
+      description: |
+        ## Customer Escalation from Zendesk
+
+        **Ticket:** [#{{ticket.id}} — {{ticket.subject}}]({{ticket.url}})
+        **Customer:** {{ticket.requester.name}} ({{ticket.organization.name}})
+        **Zendesk Priority:** {{ticket.priority}}
+        **Suggested Eng Priority:** {{triage.priority}}
+
+        ## Problem Summary
+        {{triage.summary}}
+
+        ## Category
+        {{triage.category}}
+
+        ## Customer Impact
+        {{triage.customer_impact}}
+
+        ## Reproduction Steps
+        {{triage.repro_steps}}
+      labelIds: ["{{LINEAR_ESCALATION_LABEL}}"]
+      priority: 2
+    awaits: [triage_ticket]
+    output: linear_issue
+    risk: medium
+
+  - id: post_slack_alert
+    tool: slack.postMessage
+    params:
+      channel: "{{SLACK_ESCALATIONS_CHANNEL}}"
+      text: |
+        :escalation: *Customer Escalation — {{triage.priority}}*
+
+        *Customer:* {{ticket.requester.name}} ({{ticket.organization.name}})
+        *Problem:* {{triage.summary}}
+        *Category:* {{triage.category}}
+
+        :ticket: Zendesk: {{ticket.url}}
+        :linear: Linear: {{linear_issue.url}}
+    awaits: [create_linear_issue]
+    risk: low
+
+on_error:
+  notify: true
+  retry: 0

@@ -1,0 +1,92 @@
+name: "@patchworkos/deal-won-celebration"
+version: "1.0.0"
+description: >
+  Deal closed-won pipeline. Fetch deal details from HubSpot, post a
+  celebration message to #wins on Slack, and log deal details to a
+  Notion CRM database.
+
+trigger:
+  type: manual
+
+context:
+  - type: env
+    keys:
+      - deal_id
+      - SLACK_WINS_CHANNEL
+      - NOTION_DEALS_DB
+      - DEAL_OWNER_SLACK_ID
+
+steps:
+  - id: fetch_deal
+    tool: hubspot.getDeal
+    params:
+      dealId: "{{deal_id}}"
+      properties:
+        - dealname
+        - amount
+        - closedate
+        - dealstage
+        - hubspot_owner_id
+        - hs_deal_stage_probability
+        - num_associated_contacts
+    output: deal
+    risk: low
+
+  - id: craft_celebration
+    agent:
+      prompt: |
+        Write a short, energetic deal-win celebration message for Slack.
+
+        Deal: {{deal.properties.dealname}}
+        Value: ${{deal.properties.amount}}
+        Close date: {{deal.properties.closedate}}
+        Owner: {{DEAL_OWNER_SLACK_ID}}
+
+        Rules:
+        - Max 3 lines
+        - Start with a relevant emoji (not :tada: — be creative)
+        - Include the deal name and amount
+        - If DEAL_OWNER_SLACK_ID is set, @mention the owner
+        - Upbeat but not cringe. No exclamation marks every sentence.
+        - End with one relevant emoji
+
+        Return only the Slack message text.
+    awaits: [fetch_deal]
+    output: celebration_message
+    risk: low
+
+  - id: post_slack_celebration
+    tool: slack.postMessage
+    params:
+      channel: "{{SLACK_WINS_CHANNEL}}"
+      text: "{{celebration_message}}"
+    awaits: [craft_celebration]
+    risk: low
+
+  - id: log_to_notion
+    tool: notion.createPage
+    params:
+      database_id: "{{NOTION_DEALS_DB}}"
+      properties:
+        title: "{{deal.properties.dealname}}"
+        Amount: "{{deal.properties.amount}}"
+        "Close Date": "{{deal.properties.closedate}}"
+        Stage: "Closed Won"
+        "HubSpot ID": "{{deal_id}}"
+        "HubSpot Owner ID": "{{deal.properties.hubspot_owner_id}}"
+        Contacts: "{{deal.properties.num_associated_contacts}}"
+      content: |
+        ## Deal Summary
+        **Deal:** {{deal.properties.dealname}}
+        **Value:** ${{deal.properties.amount}}
+        **Closed:** {{deal.properties.closedate}}
+
+        ## Notes
+        _Add post-close notes here._
+    awaits: [fetch_deal]
+    output: notion_page
+    risk: medium
+
+on_error:
+  notify: false
+  retry: 1

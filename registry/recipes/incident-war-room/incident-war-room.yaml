@@ -1,0 +1,83 @@
+name: "@patchworkos/incident-war-room"
+version: "1.0.0"
+description: >
+  Ops incident response pipeline. Summarize the alert, open a Linear issue,
+  post to #incidents, then chain into post-incident follow-up.
+
+trigger:
+  type: manual
+
+context:
+  - type: env
+    keys:
+      - incident_description
+      - LINEAR_TEAM_ID
+      - LINEAR_INCIDENT_LABEL
+      - SLACK_INCIDENTS_CHANNEL
+      - NOTION_INCIDENTS_DB
+
+steps:
+  - id: gather_alert
+    agent:
+      prompt: |
+        Summarize this incident for an engineering war-room channel.
+        Be direct and factual. Include:
+        - One-line headline (what broke)
+        - Impact statement (who/what is affected)
+        - Severity assessment (P1/P2/P3)
+        - Suggested immediate action
+
+        Incident description:
+        {{incident_description}}
+
+        Return a JSON object with keys: headline, impact, severity, action, full_summary.
+    output: alert_summary
+    risk: low
+
+  - id: create_linear_issue
+    tool: linear.createIssue
+    params:
+      teamId: "{{LINEAR_TEAM_ID}}"
+      title: "[{{alert_summary.severity}}] {{alert_summary.headline}}"
+      description: |
+        ## Incident Summary
+        {{alert_summary.full_summary}}
+
+        ## Impact
+        {{alert_summary.impact}}
+
+        ## Immediate Action
+        {{alert_summary.action}}
+      labelIds: ["{{LINEAR_INCIDENT_LABEL}}"]
+      priority: 1
+    awaits: [gather_alert]
+    output: linear_issue
+    risk: medium
+
+  - id: post_slack_alert
+    tool: slack.postMessage
+    params:
+      channel: "{{SLACK_INCIDENTS_CHANNEL}}"
+      text: |
+        :rotating_light: *{{alert_summary.severity}} Incident* — {{alert_summary.headline}}
+
+        *Impact:* {{alert_summary.impact}}
+        *Action:* {{alert_summary.action}}
+        *Linear:* {{linear_issue.url}}
+    awaits: [create_linear_issue]
+    risk: low
+
+  - id: followup
+    recipe: incident-followup
+    vars:
+      alert_summary: "{{alert_summary}}"
+      linear_issue_url: "{{linear_issue.url}}"
+      linear_issue_id: "{{linear_issue.id}}"
+      notion_db: "{{NOTION_INCIDENTS_DB}}"
+      slack_channel: "{{SLACK_INCIDENTS_CHANNEL}}"
+    awaits: [post_slack_alert]
+    risk: low
+
+on_error:
+  notify: true
+  retry: 0

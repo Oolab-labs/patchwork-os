@@ -1,0 +1,86 @@
+name: "@patchworkos/morning-brief"
+version: "1.0.0"
+description: >
+  Daily 6am digest. Fetch Gmail unread, Linear assigned issues, Slack DMs,
+  and today's Google Calendar events. Compose into a single Slack message.
+
+trigger:
+  type: cron
+  schedule: "0 6 * * 1-5"
+
+context:
+  - type: env
+    keys: [SLACK_CHANNEL, LINEAR_TEAM_ID, CALENDAR_MAX_EVENTS]
+
+steps:
+  - id: fetch_all
+    parallel:
+      - id: gmail_unread
+        tool: gmail.listMessages
+        params:
+          query: "is:unread"
+          maxResults: 10
+        output: emails
+
+      - id: linear_issues
+        tool: linear.listIssues
+        params:
+          assignedToMe: true
+          states: ["In Progress", "Todo"]
+          teamId: "{{LINEAR_TEAM_ID}}"
+        output: issues
+
+      - id: slack_dms
+        tool: slack.listDMs
+        params:
+          limit: 5
+          unreadOnly: true
+        output: dms
+
+      - id: calendar_today
+        tool: googleCalendar.listEvents
+        params:
+          timeMin: "{{today_start}}"
+          timeMax: "{{today_end}}"
+          maxResults: "{{CALENDAR_MAX_EVENTS}}"
+        output: events
+    risk: low
+
+  - id: compose_brief
+    agent:
+      prompt: |
+        Compose a concise morning brief. No greeting. No filler. Use this data:
+
+        GMAIL ({{emails.length}} unread):
+        {{emails}}
+
+        LINEAR ISSUES assigned to me:
+        {{issues}}
+
+        SLACK DMs (unread):
+        {{dms}}
+
+        CALENDAR (today):
+        {{events}}
+
+        Format:
+        - **Inbox**: top 3 senders + subject lines
+        - **In Progress**: Linear issues with status
+        - **DMs**: names of people who messaged
+        - **Today**: meeting times + titles, chronological
+        Keep it under 20 lines total.
+    awaits: [fetch_all]
+    output: brief
+    risk: low
+
+  - id: post_to_slack
+    tool: slack.postMessage
+    params:
+      channel: "{{SLACK_CHANNEL}}"
+      text: "{{brief}}"
+    awaits: [compose_brief]
+    risk: low
+
+on_error:
+  notify: false
+  retry: 1
