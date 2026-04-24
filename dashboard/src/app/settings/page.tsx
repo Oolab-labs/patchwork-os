@@ -20,13 +20,13 @@ interface StatusResponse {
 }
 
 const DRIVER_OPTIONS = [
-  { value: "none", label: "None (disabled)" },
-  { value: "subprocess", label: "Claude Code (subprocess)" },
-  { value: "api", label: "Claude API" },
-  { value: "openai", label: "OpenAI" },
-  { value: "grok", label: "Grok (xAI)" },
-  { value: "gemini", label: "Gemini CLI" },
-] as const;
+  { value: "none", label: "None (disabled)", desc: "Disable AI-powered recipe steps", comingSoon: false },
+  { value: "subprocess", label: "Claude Code", desc: "Runs via Claude Code CLI — no API key needed", comingSoon: false },
+  { value: "api", label: "Claude API", desc: "Calls Anthropic API directly — requires API key", comingSoon: false },
+  { value: "gemini", label: "Gemini CLI", desc: "Runs via Gemini CLI — requires Google account", comingSoon: false },
+  { value: "openai", label: "OpenAI", desc: "GPT-4o and friends — requires OpenAI API key", comingSoon: true },
+  { value: "grok", label: "Grok (xAI)", desc: "xAI Grok — requires xAI API key", comingSoon: true },
+];
 
 const DRIVER_KEY_PROVIDER: Record<
   string,
@@ -328,35 +328,51 @@ export default function SettingsPage() {
                 orchestrated tasks. Changes are saved to the authoritative
                 bridge config file and take effect after restarting the bridge.
               </p>
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <select
-                    id="ai-driver"
-                    value={driverValue}
-                    disabled={driverSaving}
-                    onChange={(e) => {
-                      setDriverValue(e.target.value);
-                      setDriverSaveMsg(null);
-                      setApiKeyInput("");
-                    }}
-                    style={{
-                      background: "var(--bg-2)",
-                      border: "1px solid var(--border-default)",
-                      borderRadius: "var(--r-2)",
-                      color: "var(--fg-0)",
-                      fontSize: 13,
-                      padding: "6px 10px",
-                      cursor: "pointer",
-                      outline: "none",
-                      minWidth: 220,
-                    }}
-                  >
-                    {DRIVER_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", width: "100%" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8, width: "100%", marginBottom: 4 }}>
+                  {DRIVER_OPTIONS.map((o) => {
+                    const selected = driverValue === o.value;
+                    return (
+                      <button
+                        key={o.value}
+                        type="button"
+                        disabled={driverSaving || o.comingSoon}
+                        onClick={() => {
+                          if (o.comingSoon) return;
+                          setDriverValue(o.value);
+                          setDriverSaveMsg(null);
+                          setApiKeyInput("");
+                        }}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "flex-start",
+                          gap: 2,
+                          padding: "10px 12px",
+                          background: selected ? "var(--bg-3)" : "var(--bg-2)",
+                          border: selected ? "1px solid var(--accent)" : "1px solid var(--border-default)",
+                          borderRadius: "var(--r-2)",
+                          cursor: o.comingSoon ? "default" : "pointer",
+                          opacity: o.comingSoon ? 0.55 : 1,
+                          textAlign: "left",
+                          transition: "border-color 0.15s, background 0.15s",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
+                          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)", flex: 1 }}>{o.label}</span>
+                          {o.comingSoon && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: "var(--fg-3)", background: "var(--bg-3)", border: "1px solid var(--border-default)", borderRadius: 4, padding: "1px 5px", whiteSpace: "nowrap" }}>
+                              Soon
+                            </span>
+                          )}
+                          {selected && !o.comingSoon && (
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
+                          )}
+                        </div>
+                        <span style={{ fontSize: 11, color: "var(--fg-3)", lineHeight: 1.4 }}>{o.desc}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {selectedKeyMeta && (
