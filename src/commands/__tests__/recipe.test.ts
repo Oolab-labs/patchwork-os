@@ -293,6 +293,51 @@ steps:
       ).toBe(true);
     });
 
+    it("accepts $result references inside transform: strings", () => {
+      const recipePath = join(tmpDir, "transform-templates.yaml");
+      writeFileSync(
+        recipePath,
+        `name: transform-templates
+description: transform with $result
+trigger:
+  type: manual
+steps:
+  - tool: file.read
+    path: ~/input.json
+    into: raw
+    transform: "{{$result.body}} / {{$result.headers.subject}}"
+`,
+      );
+
+      const result = runLint(recipePath);
+      expect(result.valid).toBe(true);
+    });
+
+    it("still flags unknown non-$result refs in transform: strings", () => {
+      const recipePath = join(tmpDir, "bad-transform.yaml");
+      writeFileSync(
+        recipePath,
+        `name: bad-transform
+description: transform referencing an unknown key
+trigger:
+  type: manual
+steps:
+  - tool: file.read
+    path: ~/input.json
+    into: raw
+    transform: "{{$result.body}} / {{missing}}"
+`,
+      );
+
+      const result = runLint(recipePath);
+      expect(result.valid).toBe(false);
+      expect(
+        result.issues.some((issue) =>
+          issue.message.includes("Unknown template reference '{{missing}}'"),
+        ),
+      ).toBe(true);
+    });
+
     it("accepts Gmail flattened output references exposed by yamlRunner", () => {
       const recipePath = join(tmpDir, "gmail-templates.yaml");
       writeFileSync(
