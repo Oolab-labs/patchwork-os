@@ -53,6 +53,23 @@ function parse(r: { content: Array<{ text: string }> }) {
 
 const baseArgs = () => ({ filePath: testFilePath, line: 1, column: 1 });
 
+/**
+ * Run an async handler that internally uses LSP retry delays (4 s + 8 s)
+ * without actually waiting 12 seconds. Fake timers advance automatically
+ * between microtask flushes so the retry loop resolves instantly.
+ */
+async function runWithFakeTimers<T>(fn: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers();
+  try {
+    const p = fn();
+    // Drain microtasks then advance past retry delays in one shot
+    await vi.runAllTimersAsync();
+    return await p;
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // goToDefinition
 // ---------------------------------------------------------------------------
@@ -97,7 +114,7 @@ describe("createGoToDefinitionTool", () => {
       workspace,
       makeClient({ connected: true, throwTimeout: true }),
     );
-    const result = await tool.handler(baseArgs());
+    const result = await runWithFakeTimers(() => tool.handler(baseArgs()));
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("timed out");
   });
@@ -145,7 +162,7 @@ describe("createFindReferencesTool", () => {
       workspace,
       makeClient({ connected: true, throwTimeout: true }),
     );
-    const result = await tool.handler(baseArgs());
+    const result = await runWithFakeTimers(() => tool.handler(baseArgs()));
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("timed out");
   });
@@ -191,7 +208,7 @@ describe("createGetHoverTool", () => {
       workspace,
       makeClient({ connected: true, throwTimeout: true }),
     );
-    const result = await tool.handler(baseArgs());
+    const result = await runWithFakeTimers(() => tool.handler(baseArgs()));
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("timed out");
   });
@@ -287,7 +304,7 @@ describe("createGetCodeActionsTool", () => {
       workspace,
       makeClient({ connected: true, throwTimeout: true }),
     );
-    const result = await tool.handler(rangeArgs());
+    const result = await runWithFakeTimers(() => tool.handler(rangeArgs()));
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("timed out");
   });
@@ -342,7 +359,7 @@ describe("createApplyCodeActionTool", () => {
       workspace,
       makeClient({ connected: true, throwTimeout: true }),
     );
-    const result = await tool.handler(applyArgs());
+    const result = await runWithFakeTimers(() => tool.handler(applyArgs()));
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("timed out");
   });
@@ -408,7 +425,7 @@ describe("createRenameSymbolTool", () => {
       workspace,
       makeClient({ connected: true, throwTimeout: true }),
     );
-    const result = await tool.handler(renameArgs());
+    const result = await runWithFakeTimers(() => tool.handler(renameArgs()));
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("timed out");
   });
@@ -454,7 +471,7 @@ describe("createGetCallHierarchyTool", () => {
       workspace,
       makeClient({ connected: true, throwTimeout: true }),
     );
-    const result = await tool.handler(baseArgs());
+    const result = await runWithFakeTimers(() => tool.handler(baseArgs()));
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("timed out");
   });
