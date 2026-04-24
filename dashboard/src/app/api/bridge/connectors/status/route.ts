@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const res = await bridgeFetch("/connectors/status");
+  const res = await bridgeFetch("/connections");
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     return NextResponse.json(

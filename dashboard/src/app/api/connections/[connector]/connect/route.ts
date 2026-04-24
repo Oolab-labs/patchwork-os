@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const ALLOWED_CONNECTORS = new Set([
-  "linear", "sentry", "google-calendar",
+  "github", "linear", "sentry", "google-calendar",
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe", "zendesk",
 ]);
 
