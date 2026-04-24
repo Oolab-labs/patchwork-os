@@ -176,49 +176,24 @@ function DecisionsContent() {
           value={tag}
           onChange={(e) => setTag(e.target.value)}
           placeholder="filter by tag"
-          style={{
-            minWidth: 200,
-            padding: "6px 10px",
-            fontSize: 13,
-            fontFamily: "var(--font-mono)",
-            background: "var(--bg-2)",
-            border: "1px solid var(--bg-3)",
-            borderRadius: 4,
-            color: "var(--fg-0)",
-          }}
+          className="input"
+          style={{ minWidth: 160, fontFamily: "var(--font-mono)" }}
         />
         <input
           type="text"
           value={keyQuery}
           onChange={(e) => setKeyQuery(e.target.value)}
           placeholder="filter by ref (#42, sha, etc.)"
-          style={{
-            flex: 1,
-            minWidth: 200,
-            padding: "6px 10px",
-            fontSize: 13,
-            fontFamily: "var(--font-mono)",
-            background: "var(--bg-2)",
-            border: "1px solid var(--bg-3)",
-            borderRadius: 4,
-            color: "var(--fg-0)",
-          }}
+          className="input"
+          style={{ flex: 1, minWidth: 200, fontFamily: "var(--font-mono)" }}
         />
         <input
           type="text"
           value={textQuery}
           onChange={(e) => setTextQuery(e.target.value)}
           placeholder="search problem + solution"
-          style={{
-            flex: 1,
-            minWidth: 200,
-            padding: "6px 10px",
-            fontSize: 13,
-            background: "var(--bg-2)",
-            border: "1px solid var(--bg-3)",
-            borderRadius: 4,
-            color: "var(--fg-0)",
-          }}
+          className="input"
+          style={{ flex: 1, minWidth: 200 }}
         />
       </div>
 
@@ -297,94 +272,102 @@ function DecisionsContent() {
               <div
                 key={rowKey}
                 className={`decision-row decision-row-${variant}`}
-                style={{ padding: "var(--s-3) var(--s-4)", cursor: "default" }}
+                style={{ padding: "12px 16px", cursor: "default", display: "flex", flexDirection: "column", gap: 0 }}
               >
+                {/* header row: ref + meta */}
                 <div
                   style={{
                     display: "flex",
-                    alignItems: "baseline",
+                    alignItems: "center",
                     gap: "var(--s-3)",
-                    marginBottom: b.problem || b.solution ? 8 : 0,
+                    marginBottom: (b.problem || b.solution) ? 10 : 0,
                   }}
                 >
                   <span
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 13,
-                      color: "#a78bfa",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "var(--purple)",
                       flexShrink: 0,
                     }}
                   >
                     {b.ref ?? t.key}
                   </span>
-                  <div
-                    style={{
-                      flex: 1,
-                      display: "flex",
-                      alignItems: "baseline",
-                      justifyContent: "flex-end",
-                      gap: "var(--s-2)",
-                      color: "var(--fg-3)",
-                      fontSize: 12,
-                    }}
-                  >
-                    {typeof b.sessionId === "string" && b.sessionId.length > 0 && (
-                      <Link
-                        href={`/sessions/${b.sessionId}`}
-                        className="pill muted"
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 11,
-                          textDecoration: "none",
-                        }}
-                        title={`session ${b.sessionId}`}
-                      >
-                        {b.sessionId.slice(0, 8)}
-                      </Link>
-                    )}
-                    <span>{relTime(t.ts)}</span>
-                  </div>
+                  <span style={{ flex: 1 }} />
+                  {typeof b.sessionId === "string" && b.sessionId.length > 0 && (
+                    <Link
+                      href={`/sessions/${b.sessionId}`}
+                      className="pill muted"
+                      style={{ fontFamily: "var(--font-mono)", fontSize: 10, textDecoration: "none" }}
+                      title={`session ${b.sessionId}`}
+                    >
+                      {b.sessionId.slice(0, 8)}
+                    </Link>
+                  )}
+                  <span style={{ fontSize: 11, color: "var(--ink-3)", flexShrink: 0 }}>
+                    {relTime(t.ts)}
+                  </span>
                 </div>
-                {b.problem && (
+
+                {/* two-column body: problem | solution */}
+                {(b.problem || b.solution) && (
                   <div
                     style={{
-                      fontSize: 13,
-                      color: "var(--fg-2)",
-                      marginBottom: 4,
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 12,
                     }}
                   >
-                    <span style={{ color: "var(--fg-3)" }}>Problem:</span>{" "}
-                    {b.problem}
-                  </div>
-                )}
-                {b.solution && (
-                  <div style={{ fontSize: 13, color: "var(--fg-1)" }}>
-                    <span style={{ color: "var(--fg-3)" }}>Solution:</span>{" "}
-                    {b.solution}
-                  </div>
-                )}
-                {tags.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 6,
-                      flexWrap: "wrap",
-                      marginTop: 8,
-                    }}
-                  >
-                    {tags.map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setTag(t)}
-                        className="pill muted"
+                    {b.problem && (
+                      <div
                         style={{
-                          cursor: "pointer",
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 11,
+                          padding: "8px 12px",
+                          background: "var(--recess)",
+                          borderRadius: "var(--r-s)",
+                          borderTop: "2px solid var(--amber)",
                         }}
                       >
-                        {t}
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--amber)", letterSpacing: "0.06em", marginBottom: 5, textTransform: "uppercase" }}>
+                          Problem
+                        </div>
+                        <div style={{ fontSize: 13, color: "var(--ink-1)", lineHeight: 1.55 }}>
+                          {b.problem as string}
+                        </div>
+                      </div>
+                    )}
+                    {b.solution && (
+                      <div
+                        style={{
+                          padding: "8px 12px",
+                          background: "var(--recess)",
+                          borderRadius: "var(--r-s)",
+                          borderTop: "2px solid var(--green)",
+                        }}
+                      >
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--green)", letterSpacing: "0.06em", marginBottom: 5, textTransform: "uppercase" }}>
+                          Solution
+                        </div>
+                        <div style={{ fontSize: 13, color: "var(--ink-0)", lineHeight: 1.55 }}>
+                          {b.solution as string}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* tags */}
+                {tags.length > 0 && (
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 10 }}>
+                    {tags.map((tg) => (
+                      <button
+                        key={tg}
+                        type="button"
+                        onClick={() => setTag(tg)}
+                        className="tag-pill"
+                        style={{ cursor: "pointer", fontFamily: "var(--font-mono)" }}
+                      >
+                        {tg}
                       </button>
                     ))}
                   </div>
