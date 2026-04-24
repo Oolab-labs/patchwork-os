@@ -1357,17 +1357,6 @@ export class Bridge {
         return { ok: false, error: "not_found" };
       }
       if (match.format === "yaml") {
-        const { loadYamlRecipe, dispatchRecipe, buildChainedDeps } =
-          await import("./recipes/yamlRunner.js");
-        const orch = this.orchestrator;
-        const claudeCodeFn = async (prompt: string): Promise<string> => {
-          const task = await orch.runAndWait({
-            prompt,
-            triggerSource: `webhook:${match.name}:agent`,
-            timeoutMs: 600_000,
-          });
-          return task.output ?? task.errorMessage ?? "";
-        };
         let payloadText: string | undefined;
         if (payload !== undefined) {
           try {
@@ -1379,56 +1368,21 @@ export class Bridge {
             payloadText = `${payloadText.slice(0, 8_000)}\n…[truncated]`;
           }
         }
-        try {
-          const recipe = loadYamlRecipe(match.filePath);
-          const taskId = `yaml-webhook-${match.name}-${Date.now()}`;
-          const runnerDeps = {
-            workdir: this.config.workspace,
-            claudeCodeFn,
-          };
-          const seedContext = {
-            hook_path: hookPath,
-            webhook_path: hookPath,
-            ...(payloadText !== undefined
-              ? {
-                  payload: payloadText,
-                  webhook_payload: payloadText,
-                }
-              : {}),
-          };
-          dispatchRecipe(
-            recipe,
-            {
-              ...runnerDeps,
-              chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
-              chainedOptions: { sourcePath: match.filePath },
-            },
-            seedContext,
-          )
-            .then((result) => {
-              const steps =
-                "stepsRun" in result
-                  ? result.stepsRun
-                  : (result.summary?.total ?? "?");
-              const succeeded =
-                "stepsRun" in result ? !result.errorMessage : result.success;
-              if (succeeded) recordRecipeRun();
-              this.logger.info?.(
-                `[recipe] webhook "${match.name}" finished: ${steps} steps`,
-              );
-            })
-            .catch((err: unknown) => {
-              this.logger.warn?.(
-                `[recipe] webhook "${match.name}" error: ${err instanceof Error ? err.message : String(err)}`,
-              );
-            });
-          return { ok: true, taskId, name: match.name };
-        } catch (err) {
-          return {
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          };
-        }
+        const seedContext: Record<string, string> = {
+          hook_path: hookPath,
+          webhook_path: hookPath,
+          ...(payloadText !== undefined
+            ? { payload: payloadText, webhook_payload: payloadText }
+            : {}),
+        };
+        return this._fireYamlRecipe({
+          filePath: match.filePath,
+          name: match.name,
+          taskIdPrefix: `yaml-webhook-${match.name}`,
+          triggerSourceSuffix: `webhook:${match.name}`,
+          logLabel: `webhook "${match.name}"`,
+          seedContext,
+        });
       }
       const loaded = loadRecipePrompt(
         recipesDir,
@@ -1488,9 +1442,6 @@ export class Bridge {
       }
 
       // Fall through to YAML runner for .yaml/.yml recipes.
-      const { loadYamlRecipe, dispatchRecipe, buildChainedDeps } = await import(
-        "./recipes/yamlRunner.js"
-      );
       const ymlPath = findYamlRecipePath(recipesDir, name);
       if (!ymlPath) {
         return {
@@ -1498,53 +1449,13 @@ export class Bridge {
           error: `Recipe "${name}" not found in ${recipesDir}`,
         };
       }
-
-      // Build claudeCodeFn that goes through the orchestrator driver.
-      const orch = this.orchestrator;
-      const claudeCodeFn = async (prompt: string): Promise<string> => {
-        const task = await orch.runAndWait({
-          prompt,
-          triggerSource: `recipe:${name}:agent`,
-          timeoutMs: 600_000,
-        });
-        return task.output ?? task.errorMessage ?? "";
-      };
-
-      try {
-        const recipe = loadYamlRecipe(ymlPath);
-        const taskId = `yaml-recipe-${name}-${Date.now()}`;
-        const runnerDeps = {
-          workdir: this.config.workspace,
-          claudeCodeFn,
-        };
-        // Run in background — caller gets taskId immediately.
-        dispatchRecipe(recipe, {
-          ...runnerDeps,
-          chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
-          chainedOptions: { sourcePath: ymlPath },
-        })
-          .then((result) => {
-            const steps =
-              "stepsRun" in result
-                ? result.stepsRun
-                : (result.summary?.total ?? "?");
-            const succeeded =
-              "stepsRun" in result ? !result.errorMessage : result.success;
-            if (succeeded) recordRecipeRun();
-            this.logger.info?.(`[recipe] "${name}" finished: ${steps} steps`);
-          })
-          .catch((err: unknown) => {
-            this.logger.warn?.(
-              `[recipe] "${name}" error: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          });
-        return { ok: true, taskId };
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
+      return this._fireYamlRecipe({
+        filePath: ymlPath,
+        name,
+        taskIdPrefix: `yaml-recipe-${name}`,
+        triggerSourceSuffix: `recipe:${name}`,
+        logLabel: `"${name}"`,
+      });
     };
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
@@ -1913,6 +1824,70 @@ export class Bridge {
           commandAllowlist: this.config.commandAllowlist,
         })}`,
       );
+    }
+  }
+
+  /**
+   * Load and fire a YAML recipe in the background via the orchestrator.
+   * Returns `{ ok, taskId, name? }` immediately; execution continues async.
+   * Both the webhook path and runRecipeFn use this to eliminate duplication.
+   */
+  private async _fireYamlRecipe(opts: {
+    filePath: string;
+    name: string;
+    taskIdPrefix: string;
+    triggerSourceSuffix: string;
+    logLabel: string;
+    seedContext?: Record<string, string>;
+  }): Promise<{ ok: boolean; taskId?: string; name?: string; error?: string }> {
+    const { loadYamlRecipe, dispatchRecipe, buildChainedDeps } = await import(
+      "./recipes/yamlRunner.js"
+    );
+    const orch = this.orchestrator!;
+    const claudeCodeFn = async (prompt: string): Promise<string> => {
+      const task = await orch.runAndWait({
+        prompt,
+        triggerSource: `${opts.triggerSourceSuffix}:agent`,
+        timeoutMs: 600_000,
+      });
+      return task.output ?? task.errorMessage ?? "";
+    };
+    try {
+      const recipe = loadYamlRecipe(opts.filePath);
+      const taskId = `${opts.taskIdPrefix}-${Date.now()}`;
+      const runnerDeps = { workdir: this.config.workspace, claudeCodeFn };
+      dispatchRecipe(
+        recipe,
+        {
+          ...runnerDeps,
+          chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
+          chainedOptions: { sourcePath: opts.filePath },
+        },
+        opts.seedContext,
+      )
+        .then((result) => {
+          const steps =
+            "stepsRun" in result
+              ? result.stepsRun
+              : (result.summary?.total ?? "?");
+          const succeeded =
+            "stepsRun" in result ? !result.errorMessage : result.success;
+          if (succeeded) recordRecipeRun();
+          this.logger.info?.(
+            `[recipe] ${opts.logLabel} finished: ${steps} steps`,
+          );
+        })
+        .catch((err: unknown) => {
+          this.logger.warn?.(
+            `[recipe] ${opts.logLabel} error: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+      return { ok: true, taskId, name: opts.name };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
