@@ -146,6 +146,15 @@ function generateRecipeSchema(
       description:
         "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions.",
     },
+    retry: {
+      type: "number",
+      description:
+        "Number of times to retry this step on failure (overrides recipe-level on_error.retry)",
+    },
+    retryDelay: {
+      type: "number",
+      description: "Milliseconds to wait between retries (default 1000)",
+    },
   };
   const toolRefs = Object.keys(namespaceSchemas).map((ns) => ({
     allOf: [

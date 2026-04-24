@@ -40,6 +40,10 @@ export interface ChainedStep {
   output?: string; // alias for into
   risk?: "low" | "medium" | "high";
   optional?: boolean;
+  /** Retry count for this step on failure (overrides recipe-level on_error.retry). */
+  retry?: number;
+  /** Delay in ms between retries (default 1000). */
+  retryDelay?: number;
   transform?: string; // template rendered after tool execution; $result = raw tool output
   [key: string]: unknown;
 }
@@ -52,6 +56,7 @@ export interface ChainedRecipe {
   maxDepth?: number;
   /** Plugin specs (npm package name or local path) to load before running steps. */
   servers?: string[];
+  on_error?: { retry?: number; retryDelay?: number; fallback?: string };
 }
 
 export interface RunOptions {
@@ -134,6 +139,9 @@ export function resolveStepTemplates(
     "optional",
     "vars",
     "transform",
+    "retry",
+    "retryDelay",
+    "parallel",
   ]);
 
   // Resolve tool params
@@ -392,6 +400,37 @@ export async function executeChainedStep(
   }
 }
 
+async function withRetry(
+  fn: () => Promise<{
+    success: boolean;
+    skipped?: boolean;
+    data?: unknown;
+    error?: string;
+  }>,
+  maxRetries: number,
+  delayMs: number,
+): Promise<{
+  success: boolean;
+  skipped?: boolean;
+  data?: unknown;
+  error?: string;
+}> {
+  let last: {
+    success: boolean;
+    skipped?: boolean;
+    data?: unknown;
+    error?: string;
+  } = { success: false };
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+    last = await fn();
+    if (last.success) return last;
+  }
+  return last;
+}
+
 export interface ChainedRunResult {
   success: boolean;
   stepResults: Map<string, { success: boolean; error?: Error }>;
@@ -535,7 +574,13 @@ export async function runChainedRecipe(
       depth,
     };
 
-    const result = await executeChainedStep(ctx, deps);
+    const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
+    const retryDelay = step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;
+    const result = await withRetry(
+      () => executeChainedStep(ctx, deps),
+      retryCount,
+      retryDelay,
+    );
 
     const isOptional = step.optional === true;
     const effectiveSuccess = result.success || isOptional;
