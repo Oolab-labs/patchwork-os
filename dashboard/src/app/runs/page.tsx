@@ -75,7 +75,7 @@ export default function RunsPage() {
         <div>
           <h1>Runs</h1>
           <div className="page-head-sub">
-            Audit trail of every recipe execution — cron, webhook, and manual.
+            Every recipe execution — cron, webhook, and manual.
           </div>
         </div>
         {runs && <span className="pill muted">{runs.length} shown</span>}

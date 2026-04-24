@@ -243,7 +243,6 @@ function ActivityFeed() {
               borderRadius: "50%",
               background: "var(--ok)",
               display: "inline-block",
-              boxShadow: "0 0 0 2px rgba(var(--ok-rgb, 34,197,94), 0.25)",
             }}
           />
           live
@@ -291,7 +290,6 @@ function ActivityFeed() {
                   gap: "var(--s-3)",
                   padding: "7px 10px 7px 8px",
                   borderRadius: "var(--r-s)",
-                  borderLeft: `3px solid ${borderColor}`,
                   background: i % 2 === 0 ? "rgba(0,0,0,0.015)" : "transparent",
                   minWidth: 0,
                 }}
@@ -657,20 +655,8 @@ export default function HomePage() {
           overflow: "hidden",
           padding: "24px 28px",
           marginBottom: "var(--s-6)",
-          borderLeft: "3px solid var(--orange)",
         }}
       >
-        {/* Radial glow accent */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            right: 0,
-            background: `radial-gradient(ellipse 55% 100% at 100% 50%, rgba(var(--orange-rgb), 0.08) 0%, transparent 70%)`,
-            pointerEvents: "none",
-          }}
-        />
 
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: "var(--s-6)", flexWrap: "wrap" }}>
           {/* Greeting + bridge status */}
@@ -817,14 +803,14 @@ export default function HomePage() {
                 width: 36,
                 height: 36,
                 borderRadius: 10,
-                background: "rgba(34,197,94,0.12)",
+                background: "rgba(13,138,94,0.12)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 18,
+                color: "#0d8a5e",
               }}
             >
-              ⬡
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 12H18L15 21 9 3 6 12H2"/></svg>
             </div>
           }
         />
@@ -844,10 +830,10 @@ export default function HomePage() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 18,
+                color: "var(--orange)",
               }}
             >
-              ⚡
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
             </div>
           }
         />
@@ -862,14 +848,14 @@ export default function HomePage() {
                 width: 36,
                 height: 36,
                 borderRadius: 10,
-                background: "rgba(245,158,11,0.12)",
+                background: "rgba(180,83,9,0.10)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 18,
+                color: "#b45309",
               }}
             >
-              ◎
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
             </div>
           }
         />
@@ -884,14 +870,14 @@ export default function HomePage() {
                 width: 36,
                 height: 36,
                 borderRadius: 10,
-                background: "rgba(139,92,246,0.12)",
+                background: "rgba(107,107,255,0.12)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 18,
+                color: "#6b6bff",
               }}
             >
-              ◈
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 016.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15zM12 7h5M12 11h5"/></svg>
             </div>
           }
         />

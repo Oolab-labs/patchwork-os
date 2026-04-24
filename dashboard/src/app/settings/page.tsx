@@ -221,8 +221,7 @@ export default function SettingsPage() {
         <div>
           <h1>Settings</h1>
           <div className="page-head-sub">
-            Bridge configuration. Most changes take effect after restarting the
-            bridge.
+            Configure the bridge. Most changes need a restart.
           </div>
         </div>
       </div>

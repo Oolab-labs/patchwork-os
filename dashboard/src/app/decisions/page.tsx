@@ -104,8 +104,7 @@ function DecisionsContent() {
         <div>
           <h1>Decisions</h1>
           <div className="page-head-sub">
-            Agent-authored knowledge base. Saved via <code>ctxSaveTrace</code>;
-            surfaced here and in the session-start digest.
+            Knowledge saved by agents across sessions.
           </div>
         </div>
         <span className="pill muted">

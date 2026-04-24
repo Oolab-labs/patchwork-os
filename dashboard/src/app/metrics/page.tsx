@@ -41,7 +41,7 @@ export default function MetricsPage() {
         <div>
           <h1>Metrics</h1>
           <div className="page-head-sub">
-            Prometheus counters from the bridge process.
+            Live Prometheus counters from the bridge.
           </div>
         </div>
         {updatedAt && (

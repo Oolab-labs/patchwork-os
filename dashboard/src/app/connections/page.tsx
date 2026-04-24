@@ -664,7 +664,7 @@ export default function ConnectionsPage() {
         <div>
           <h1>Connections</h1>
           <div className="page-head-sub">
-            Connect your accounts so Patchwork agents can read and act on your behalf.
+            Link your accounts so Patchwork can act on your behalf.
           </div>
         </div>
         {!loading && !bridgeOffline && hasAnyConnected && (
