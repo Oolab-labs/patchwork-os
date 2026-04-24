@@ -768,21 +768,11 @@ export function register(ctx) {
 // Patchwork: `patchwork recipe list` — enumerate installed recipes.
 if (process.argv[2] === "recipe" && process.argv[3] === "list") {
   (async () => {
-    const { listYamlRecipes } = await import("./recipes/yamlRunner.js");
-    const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-    const recipes = listYamlRecipes(recipesDir);
-    if (recipes.length === 0) {
-      process.stdout.write(
-        "No recipes installed. Run `patchwork-os patchwork-init` to install the starter set.\n",
-      );
-    } else {
-      process.stdout.write(`Installed recipes (${recipes.length}):\n\n`);
-      for (const r of recipes) {
-        const desc = r.description ? `  ${r.description}` : "";
-        process.stdout.write(`  ${r.name.padEnd(28)} [${r.trigger}]${desc}\n`);
-      }
-      process.stdout.write(`\nRun a recipe: patchwork-os recipe run <name>\n`);
-    }
+    const { listInstalledRecipes, printInstalledList } = await import(
+      "./commands/recipeInstall.js"
+    );
+    const entries = listInstalledRecipes();
+    printInstalledList(entries);
     process.exit(0);
   })();
 }
@@ -965,25 +955,50 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
 }
 
 // Handle init subcommand — one-command setup: install extension + write CLAUDE.md + print next steps
-// Patchwork: `patchwork recipe install <file.json>` subcommand.
+// Patchwork: `patchwork recipe install <source>` subcommand.
+// Supports: github:owner/repo, github:owner/repo/subdir, https://github.com/owner/repo,
+//           ./local/path, or legacy <file.json> (single-recipe install).
 if (process.argv[2] === "recipe" && process.argv[3] === "install") {
-  const file = process.argv[4];
-  if (!file) {
-    process.stderr.write("Usage: patchwork recipe install <file.json>\n");
+  const source = process.argv[4];
+  if (!source) {
+    process.stderr.write(
+      "Usage: patchwork recipe install <source>\n" +
+        "  <source> can be:\n" +
+        "    github:owner/repo\n" +
+        "    github:owner/repo/subdir\n" +
+        "    https://github.com/owner/repo\n" +
+        "    ./local/path\n",
+    );
     process.exit(1);
   }
   (async () => {
     try {
-      const { installRecipeFromFile } = await import("./recipes/installer.js");
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-      const result = installRecipeFromFile(path.resolve(file), {
-        recipesDir,
-      });
-      process.stdout.write(
-        `  ✓ ${result.action} ${result.installedPath}\n` +
-          `  ℹ permissions snippet written to ${result.installedPath}.permissions.json\n` +
-          `    Review + merge into ~/.claude/settings.json to pre-approve recipe steps.\n`,
-      );
+      // Legacy path: bare .json file argument → single-file installer
+      if (
+        source.endsWith(".json") &&
+        !source.startsWith("github:") &&
+        !source.startsWith("http")
+      ) {
+        const { installRecipeFromFile } = await import(
+          "./recipes/installer.js"
+        );
+        const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+        const result = installRecipeFromFile(path.resolve(source), {
+          recipesDir,
+        });
+        process.stdout.write(
+          `  ✓ ${result.action} ${result.installedPath}\n` +
+            `  ℹ permissions snippet written to ${result.installedPath}.permissions.json\n` +
+            `    Review + merge into ~/.claude/settings.json to pre-approve recipe steps.\n`,
+        );
+      } else {
+        // Marketplace install: github:, https://, ./local/
+        const { runRecipeInstall, printInstallResult } = await import(
+          "./commands/recipeInstall.js"
+        );
+        const result = await runRecipeInstall(source);
+        printInstallResult(result);
+      }
       process.exit(0);
     } catch (err) {
       process.stderr.write(
