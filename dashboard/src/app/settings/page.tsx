@@ -244,7 +244,12 @@ export default function SettingsPage() {
         <>
           <div className="card">
             <div className="card-head">
-              <h2>Bridge</h2>
+              <div>
+                <h2 style={{ margin: 0 }}>Bridge</h2>
+                <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+                  Runtime status and workspace binding
+                </div>
+              </div>
               <span className={`pill ${settings.extension ? "ok" : "warn"}`}>
                 extension {settings.extension ? "connected" : "offline"}
               </span>

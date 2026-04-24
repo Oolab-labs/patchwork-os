@@ -156,6 +156,21 @@ export default function ActivityPage() {
     [events, showNoise],
   );
 
+  const stats = useMemo(() => {
+    let tools = 0;
+    let errors = 0;
+    let approvals = 0;
+    for (const e of events) {
+      if (e.kind === "tool") {
+        tools++;
+        if (e.status === "error") errors++;
+      } else if (e.kind === "lifecycle" && e.event === "approval_decision") {
+        approvals++;
+      }
+    }
+    return { tools, errors, approvals };
+  }, [events]);
+
   return (
     <section>
       <div className="page-head">
@@ -171,7 +186,67 @@ export default function ActivityPage() {
         </span>
       </div>
 
-      <div className="activity-toolbar">
+      {/* Hero strip — event counts */}
+      <div
+        className="card"
+        style={{
+          padding: "16px 22px",
+          marginBottom: "var(--s-4)",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--s-5)",
+          flexWrap: "wrap",
+        }}
+      >
+        {([
+          { label: "Events", val: events.length, color: "var(--ink-0)" },
+          { label: "Tool calls", val: stats.tools, color: "var(--orange)" },
+          { label: "Errors", val: stats.errors, color: stats.errors > 0 ? "var(--err)" : "var(--ink-2)" },
+          { label: "Approvals", val: stats.approvals, color: "var(--accent)" },
+        ] as const).map((s, i) => (
+          <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "var(--s-5)" }}>
+            {i > 0 && (
+              <span aria-hidden="true" style={{ width: 1, height: 28, background: "var(--line-2)" }} />
+            )}
+            <div>
+              <div
+                style={{
+                  fontSize: 20,
+                  fontWeight: 800,
+                  fontFamily: "var(--font-mono)",
+                  color: s.color,
+                  lineHeight: 1,
+                }}
+              >
+                {s.val}
+              </div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--ink-2)",
+                  marginTop: 4,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                {s.label}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        className="activity-toolbar"
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 5,
+          background: "var(--bg-1, var(--bg-0))",
+          paddingTop: 4,
+        }}
+      >
         <input
           className="input"
           placeholder="Filter by tool, kind, or status…"

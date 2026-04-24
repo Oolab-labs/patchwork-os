@@ -1,8 +1,8 @@
 "use client";
 import React from "react";
-import { apiPath } from '@/lib/api';
+import { apiPath } from "@/lib/api";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 interface AssertionFailure {
   assertion: string;
@@ -43,6 +43,13 @@ function fmtDur(ms: number): string {
   return `${(ms / 60_000).toFixed(1)}m`;
 }
 
+function statusPill(r: Run): "ok" | "err" | "warn" | "muted" {
+  if (r.assertionFailures && r.assertionFailures.length > 0) return "err";
+  if (r.status === "done") return "ok";
+  if (r.status === "error") return "err";
+  return "warn";
+}
+
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [err, setErr] = useState<string>();
@@ -69,6 +76,38 @@ export default function RunsPage() {
     return () => clearInterval(id);
   }, [trigger, status]);
 
+  const stats = useMemo(() => {
+    const list = runs ?? [];
+    const s = { ok: 0, err: 0, other: 0, totalMs: 0 };
+    for (const r of list) {
+      if (r.assertionFailures && r.assertionFailures.length > 0) s.err++;
+      else if (r.status === "done") s.ok++;
+      else if (r.status === "error") s.err++;
+      else s.other++;
+      s.totalMs += r.durationMs;
+    }
+    const avgMs = list.length ? Math.round(s.totalMs / list.length) : 0;
+    return { ...s, avgMs, total: list.length };
+  }, [runs]);
+
+  const maxDur = useMemo(() => {
+    if (!runs || runs.length === 0) return 1;
+    return Math.max(...runs.map((r) => r.durationMs), 1);
+  }, [runs]);
+
+  const triggerChips: { k: TriggerFilter; label: string }[] = [
+    { k: "all", label: "All" },
+    { k: "cron", label: "Cron" },
+    { k: "webhook", label: "Webhook" },
+    { k: "recipe", label: "Manual" },
+  ];
+  const statusChips: { k: StatusFilter; label: string }[] = [
+    { k: "all", label: "Any" },
+    { k: "done", label: "Done" },
+    { k: "error", label: "Error" },
+    { k: "cancelled", label: "Cancelled" },
+  ];
+
   return (
     <section>
       <div className="page-head">
@@ -81,39 +120,144 @@ export default function RunsPage() {
         {runs && <span className="pill muted">{runs.length} shown</span>}
       </div>
 
+      {/* hero strip */}
+      <div
+        className="card"
+        style={{
+          padding: "18px 22px",
+          marginBottom: "var(--s-5)",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--s-5)",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--ink-2)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.07em",
+              marginBottom: 4,
+            }}
+          >
+            Recipe runs
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--ink-0)" }}>
+            {stats.total} execution{stats.total !== 1 ? "s" : ""} in window
+          </div>
+        </div>
+        {[
+          { label: "Passed", n: stats.ok, color: "var(--green)" },
+          { label: "Failed", n: stats.err, color: "var(--red)" },
+          { label: "Other", n: stats.other, color: "var(--ink-3)" },
+          {
+            label: "Avg",
+            n: stats.avgMs ? fmtDur(stats.avgMs) : "—",
+            color: "var(--ink-0)",
+          },
+        ].map((it, i) => (
+          <Fragment key={it.label}>
+            <div
+              aria-hidden
+              style={{ width: 1, height: 32, background: "var(--line-2)" }}
+            />
+            <div style={{ textAlign: "center", minWidth: 72 }}>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  fontFamily: "var(--font-mono)",
+                  color:
+                    typeof it.n === "number" && it.n === 0
+                      ? "var(--ink-3)"
+                      : it.color,
+                  lineHeight: 1,
+                }}
+              >
+                {it.n}
+              </div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--ink-2)",
+                  marginTop: 4,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                {it.label}
+              </div>
+            </div>
+          </Fragment>
+        ))}
+      </div>
+
+      {/* filter chips */}
       <div
         style={{
           display: "flex",
-          gap: 12,
-          marginBottom: 16,
+          gap: "var(--s-4)",
+          marginBottom: "var(--s-4)",
+          flexWrap: "wrap",
           alignItems: "center",
         }}
       >
-        <label style={{ fontSize: 12 }}>
-          Trigger:&nbsp;
-          <select
-            value={trigger}
-            onChange={(e) => setTrigger(e.target.value as TriggerFilter)}
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--ink-2)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              marginBottom: 4,
+            }}
           >
-            <option value="all">all</option>
-            <option value="cron">cron</option>
-            <option value="webhook">webhook</option>
-            <option value="recipe">recipe (manual)</option>
-          </select>
-        </label>
-        <label style={{ fontSize: 12 }}>
-          Status:&nbsp;
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value as StatusFilter)}
+            Trigger
+          </div>
+          <div className="filter-chips" style={{ marginBottom: 0 }}>
+            {triggerChips.map((c) => (
+              <button
+                type="button"
+                key={c.k}
+                onClick={() => setTrigger(c.k)}
+                className={`filter-chip${trigger === c.k ? " active" : ""}`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--ink-2)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              marginBottom: 4,
+            }}
           >
-            <option value="all">all</option>
-            <option value="done">done</option>
-            <option value="error">error</option>
-            <option value="cancelled">cancelled</option>
-            <option value="interrupted">interrupted</option>
-          </select>
-        </label>
+            Status
+          </div>
+          <div className="filter-chips" style={{ marginBottom: 0 }}>
+            {statusChips.map((c) => (
+              <button
+                type="button"
+                key={c.k}
+                onClick={() => setStatus(c.k)}
+                className={`filter-chip${status === c.k ? " active" : ""}`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {err && <div className="alert-err">Unreachable: {err}</div>}
@@ -136,11 +280,11 @@ export default function RunsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: 140 }}>When</th>
+                <th style={{ width: 120 }}>When</th>
                 <th>Recipe</th>
                 <th style={{ width: 90 }}>Trigger</th>
-                <th style={{ width: 90 }}>Status</th>
-                <th style={{ width: 80 }}>Duration</th>
+                <th style={{ width: 110 }}>Status</th>
+                <th style={{ width: 200 }}>Duration</th>
                 <th style={{ width: 80 }}>Task</th>
               </tr>
             </thead>
@@ -148,10 +292,23 @@ export default function RunsPage() {
               {runs.map((r, idx) => {
                 const isExpanded = expanded === String(r.seq);
                 const key = `${r.seq}-${idx}`;
+                const pct = Math.max(
+                  3,
+                  Math.round((r.durationMs / maxDur) * 100),
+                );
+                const sClass = statusPill(r);
+                const barColor =
+                  sClass === "ok"
+                    ? "var(--green)"
+                    : sClass === "err"
+                      ? "var(--red)"
+                      : "var(--amber)";
                 return (
                   <React.Fragment key={key}>
                     <tr
-                      onClick={() => setExpanded(isExpanded ? null : String(r.seq))}
+                      onClick={() =>
+                        setExpanded(isExpanded ? null : String(r.seq))
+                      }
                       style={{ cursor: "pointer" }}
                     >
                       <td className="mono muted">{fmtWhen(r.doneAt)}</td>
@@ -159,6 +316,7 @@ export default function RunsPage() {
                         <Link
                           href={`/runs/${r.seq}`}
                           onClick={(e) => e.stopPropagation()}
+                          style={{ fontWeight: 600 }}
                         >
                           {r.recipeName}
                         </Link>
@@ -166,85 +324,188 @@ export default function RunsPage() {
                       <td>
                         <span className="pill muted">{r.trigger}</span>
                       </td>
-                      <td style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+                      <td>
                         <span
-                          className={`status-cell ${r.status === "done" && !(r.assertionFailures?.length) ? "ok" : "err"}`}
+                          className={`pill ${sClass}`}
+                          style={{ fontSize: 11 }}
                         >
+                          <span className="pill-dot" />
                           {r.status}
+                          {r.assertionFailures &&
+                            r.assertionFailures.length > 0 &&
+                            ` · ${r.assertionFailures.length} fail`}
                         </span>
-                        {r.assertionFailures && r.assertionFailures.length > 0 && (
-                          <span className="pill err" style={{ fontSize: 10 }}>
-                            {r.assertionFailures.length} assert
-                          </span>
-                        )}
                       </td>
-                      <td className="mono muted">{fmtDur(r.durationMs)}</td>
+                      <td>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <div
+                            className="progress"
+                            style={{ flex: 1, height: 6 }}
+                          >
+                            <div
+                              className="progress-fill"
+                              style={{
+                                width: `${pct}%`,
+                                background: barColor,
+                              }}
+                            />
+                          </div>
+                          <span
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              color: "var(--ink-2)",
+                              minWidth: 42,
+                              textAlign: "right",
+                            }}
+                          >
+                            {fmtDur(r.durationMs)}
+                          </span>
+                        </div>
+                      </td>
                       <td className="mono muted">
                         <Link href="/tasks">{r.taskId.slice(0, 8)}</Link>
                       </td>
                     </tr>
                     {isExpanded && (
-                      <tr key={`${key}-detail`}>
-                        <td
-                          colSpan={6}
-                          style={{ background: "rgba(0,0,0,0.02)" }}
-                        >
-                          <div style={{ padding: 12, fontSize: 12 }}>
-                            {r.model && (
-                              <div>
-                                <strong>Model:</strong>{" "}
-                                <span className="mono">{r.model}</span>
-                              </div>
-                            )}
-                            <div>
-                              <strong>Created:</strong>{" "}
-                              <span className="mono">
-                                {new Date(r.createdAt).toISOString()}
+                      <tr key={`${key}-detail`} className="task-row-expand">
+                        <td colSpan={6}>
+                          <div
+                            style={{
+                              padding: "12px 14px",
+                              fontSize: 12,
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 8,
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 16,
+                                flexWrap: "wrap",
+                                color: "var(--ink-2)",
+                              }}
+                            >
+                              {r.model && (
+                                <span>
+                                  Model{" "}
+                                  <span className="mono" style={{ color: "var(--ink-0)" }}>
+                                    {r.model}
+                                  </span>
+                                </span>
+                              )}
+                              <span>
+                                Created{" "}
+                                <span
+                                  className="mono"
+                                  style={{ color: "var(--ink-0)" }}
+                                >
+                                  {new Date(r.createdAt).toISOString()}
+                                </span>
                               </span>
                             </div>
                             {r.errorMessage && (
-                              <div style={{ marginTop: 8 }}>
-                                <strong>Error:</strong>
-                                <pre
+                              <div>
+                                <div
                                   style={{
-                                    whiteSpace: "pre-wrap",
-                                    margin: "4px 0 0",
+                                    fontSize: 10,
+                                    color: "var(--red)",
+                                    fontWeight: 600,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.06em",
+                                    marginBottom: 4,
                                   }}
+                                >
+                                  Error
+                                </div>
+                                <pre
+                                  className="task-output"
+                                  style={{ color: "var(--red)" }}
                                 >
                                   {r.errorMessage}
                                 </pre>
                               </div>
                             )}
-                            {r.assertionFailures && r.assertionFailures.length > 0 && (
-                              <div style={{ marginTop: 8 }}>
-                                <strong style={{ color: "var(--err)" }}>
-                                  Assertion failures ({r.assertionFailures.length}):
-                                </strong>
-                                <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>
-                                  {r.assertionFailures.map((f, i) => (
-                                    <li key={i} style={{ fontSize: 12, color: "var(--err)", marginTop: 2 }}>
-                                      <span className="mono" style={{ fontWeight: 600 }}>{f.assertion}</span>
-                                      {" — "}{f.message}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
+                            {r.assertionFailures &&
+                              r.assertionFailures.length > 0 && (
+                                <div>
+                                  <div
+                                    style={{
+                                      fontSize: 10,
+                                      color: "var(--red)",
+                                      fontWeight: 600,
+                                      textTransform: "uppercase",
+                                      letterSpacing: "0.06em",
+                                      marginBottom: 4,
+                                    }}
+                                  >
+                                    {r.assertionFailures.length} assertion
+                                    failure
+                                    {r.assertionFailures.length !== 1 ? "s" : ""}
+                                  </div>
+                                  <ul
+                                    style={{
+                                      margin: 0,
+                                      paddingLeft: 20,
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: 3,
+                                    }}
+                                  >
+                                    {r.assertionFailures.map((f, i) => (
+                                      <li
+                                        key={i}
+                                        style={{
+                                          fontSize: 12,
+                                          color: "var(--red)",
+                                        }}
+                                      >
+                                        <span
+                                          className="mono"
+                                          style={{ fontWeight: 600 }}
+                                        >
+                                          {f.assertion}
+                                        </span>
+                                        {" — "}
+                                        {f.message}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
                             {r.outputTail && (
-                              <div style={{ marginTop: 8 }}>
-                                <strong>Output (tail):</strong>
-                                <pre
+                              <div>
+                                <div
                                   style={{
-                                    whiteSpace: "pre-wrap",
-                                    margin: "4px 0 0",
-                                    maxHeight: 240,
-                                    overflow: "auto",
+                                    fontSize: 10,
+                                    color: "var(--ink-2)",
+                                    fontWeight: 600,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.06em",
+                                    marginBottom: 4,
                                   }}
                                 >
-                                  {r.outputTail}
-                                </pre>
+                                  Output tail
+                                </div>
+                                <pre className="task-output">{r.outputTail}</pre>
                               </div>
                             )}
+                            <div>
+                              <Link
+                                href={`/runs/${r.seq}`}
+                                className="btn sm ghost"
+                                style={{ textDecoration: "none" }}
+                              >
+                                Open full run →
+                              </Link>
+                            </div>
                           </div>
                         </td>
                       </tr>

@@ -426,33 +426,57 @@ export default function RunDetailPage() {
 
   return (
     <section>
-      {/* ── header ── */}
-      <div className="page-head" style={{ marginBottom: 20 }}>
-        <div>
-          <div style={{ fontSize: 12, color: "var(--fg-2)", marginBottom: 4 }}>
-            <Link href="/runs" style={{ color: "var(--fg-2)" }}>Runs</Link>
+      {/* ── sticky header ── */}
+      <div
+        className="card"
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 5,
+          padding: "16px 20px",
+          marginBottom: "var(--s-4)",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--s-4)",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 2 }}>
+            <Link href="/runs" style={{ color: "var(--ink-2)" }}>Runs</Link>
             {" / "}
             <span className="mono">#{seq}</span>
           </div>
-          <h1 style={{ margin: 0 }}>
-            {run ? run.recipeName : <span style={{ color: "var(--fg-2)" }}>…</span>}
+          <h1 style={{ margin: 0, fontSize: 22 }}>
+            {run ? run.recipeName : <span style={{ color: "var(--ink-3)" }}>…</span>}
           </h1>
-          {run && (
-            <div className="page-head-sub" style={{ marginTop: 4 }}>
-              {fmtTs(run.createdAt)} &middot; {fmtDur(run.durationMs)} &middot;{" "}
-              <span className="pill muted" style={{ fontSize: 11 }}>{run.trigger}</span>{" "}
-              <span className={`pill ${run.status === "done" ? "ok" : "err"}`} style={{ fontSize: 11 }}>
-                {run.status}
-              </span>
-              {run.model && (
-                <>{" "}<span className="pill muted" style={{ fontSize: 11 }}>{run.model}</span></>
-              )}
-              {run.assertionFailures && run.assertionFailures.length > 0 && (
-                <>{" "}<span className="pill err" style={{ fontSize: 11 }}>{run.assertionFailures.length} assertion{run.assertionFailures.length !== 1 ? "s" : ""} failed</span></>
-              )}
-            </div>
-          )}
         </div>
+        {run && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span className="pill muted" style={{ fontSize: 11 }}>{run.trigger}</span>
+            <span
+              className={`pill ${run.status === "done" && !(run.assertionFailures?.length) ? "ok" : "err"}`}
+              style={{ fontSize: 11 }}
+            >
+              <span className="pill-dot" />
+              {run.status}
+            </span>
+            <span className="pill muted" style={{ fontSize: 11 }}>
+              {fmtDur(run.durationMs)}
+            </span>
+            {run.model && (
+              <span className="pill muted" style={{ fontSize: 11 }}>{run.model}</span>
+            )}
+            {run.assertionFailures && run.assertionFailures.length > 0 && (
+              <span className="pill err" style={{ fontSize: 11 }}>
+                {run.assertionFailures.length} assertion{run.assertionFailures.length !== 1 ? "s" : ""} failed
+              </span>
+            )}
+            <span style={{ fontSize: 11, color: "var(--ink-3)", marginLeft: 4 }}>
+              {fmtTs(run.createdAt)}
+            </span>
+          </div>
+        )}
       </div>
 
       {runErr && <div className="alert-err">Failed to load run: {runErr}</div>}

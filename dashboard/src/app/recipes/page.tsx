@@ -421,12 +421,15 @@ export default function RecipesPage() {
           </div>
         </div>
         <div
-          style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}
+          style={{ display: "flex", alignItems: "center", gap: "var(--s-2)" }}
         >
           {recipes && (
-            <span className="pill muted">{filteredRecipes.length} recipes</span>
+            <span className="pill muted">{filteredRecipes.length} installed</span>
           )}
-          <Link href="/recipes/new" className="btn">
+          <Link href="/recipes/marketplace" className="btn sm ghost" style={{ textDecoration: "none" }}>
+            Browse marketplace →
+          </Link>
+          <Link href="/recipes/new" className="btn primary" style={{ textDecoration: "none" }}>
             New recipe
           </Link>
         </div>
@@ -452,9 +455,15 @@ export default function RecipesPage() {
       ) : recipes === null || recipes.length === 0 ? (
         <div className="empty-state">
           <h3>No recipes installed</h3>
-          <p>
-            Run <code>patchwork recipe install &lt;file&gt;</code> to add one.
-          </p>
+          <p>Browse the marketplace or author your own.</p>
+          <div style={{ display: "flex", gap: "var(--s-2)", marginTop: "var(--s-3)" }}>
+            <Link href="/recipes/marketplace" className="btn primary" style={{ textDecoration: "none" }}>
+              Browse marketplace
+            </Link>
+            <Link href="/recipes/new" className="btn ghost" style={{ textDecoration: "none" }}>
+              New recipe
+            </Link>
+          </div>
           {unsupported && (
             <p style={{ marginTop: 12, fontSize: 12 }}>
               Recipe listing endpoint not available on this bridge version.

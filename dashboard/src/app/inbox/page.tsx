@@ -46,6 +46,15 @@ function recipeIcon(name: string): string {
   return "📋";
 }
 
+function senderBadgeColor(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.includes("morning-brief")) return "var(--orange)";
+  if (lower.includes("health") || lower.includes("check")) return "var(--ok, #0d8a5e)";
+  if (lower.includes("sentry") || lower.includes("error") || lower.includes("incident")) return "var(--err, #b91c1c)";
+  if (lower.includes("recipe") || lower.includes("ctx-loop")) return "#6b6bff";
+  return "var(--ink-2)";
+}
+
 // ------------------------------------------------------------------ preview strip
 
 function stripMarkdown(text: string): string {
@@ -507,15 +516,25 @@ export default function InboxPage() {
                     }}
                     aria-pressed={isActive}
                   >
-                    {/* Row 1: icon + title + short date */}
+                    {/* Row 1: colored sender dot + icon + title + short date */}
                     <div
                       style={{
                         display: "flex",
-                        alignItems: "baseline",
-                        gap: 6,
+                        alignItems: "center",
+                        gap: 8,
                         marginBottom: 4,
                       }}
                     >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: senderBadgeColor(item.name),
+                          flexShrink: 0,
+                        }}
+                      />
                       <span style={{ fontSize: 13, lineHeight: 1 }}>{icon}</span>
                       <span
                         style={{
