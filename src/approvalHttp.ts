@@ -1,5 +1,9 @@
 import * as dns from "node:dns/promises";
 import * as path from "node:path";
+import {
+  recordApprovalCompleted,
+  recordApprovalPrompted,
+} from "./activationMetrics.js";
 import type { ApprovalQueue, RiskSignal } from "./approvalQueue.js";
 import {
   evaluateRules,
@@ -623,6 +627,7 @@ async function handleApprovalRequest(
     { toolName, params, tier, summary, sessionId, riskSignals },
     { withToken: !!deps.pushServiceUrl },
   );
+  recordApprovalPrompted();
 
   // Fire webhook notification in the background — never block approval flow
   if (deps.webhookUrl) {
@@ -652,6 +657,9 @@ async function handleApprovalRequest(
   }
 
   const outcome = await promise;
+  if (outcome !== "expired") {
+    recordApprovalCompleted();
+  }
   emit(outcome === "approved" ? "allow" : "deny", outcome, {
     riskSignals,
     callId,
