@@ -3,7 +3,10 @@ import { bridgeFetch } from "@/lib/bridge";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ALLOWED_CONNECTORS = new Set(["gmail", "github", "linear", "sentry", "google-calendar", "slack"]);
+const ALLOWED_CONNECTORS = new Set([
+  "gmail", "github", "linear", "sentry", "google-calendar", "slack",
+  "notion", "confluence", "datadog", "hubspot", "intercom", "stripe", "zendesk",
+]);
 
 export async function POST(
   _req: Request,
