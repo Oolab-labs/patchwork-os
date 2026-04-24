@@ -178,6 +178,34 @@ describe("loadPolicy — legacy diagnostics-hook deprecation warnings", () => {
     warnSpy.mockRestore();
   });
 
+  it("expands array form into both onDiagnosticsError and onDiagnosticsCleared", () => {
+    writePolicy({
+      onDiagnosticsStateChange: [
+        {
+          state: "error",
+          enabled: true,
+          minSeverity: "error",
+          prompt: "err",
+          cooldownMs: 5_000,
+        },
+        {
+          state: "cleared",
+          enabled: true,
+          prompt: "cleared",
+          cooldownMs: 10_000,
+        },
+      ],
+    });
+
+    const policy = loadPolicy(policyPath);
+    expect(
+      (policy as Record<string, unknown>).onDiagnosticsError,
+    ).toMatchObject({ enabled: true, prompt: "err" });
+    expect(
+      (policy as Record<string, unknown>).onDiagnosticsCleared,
+    ).toMatchObject({ enabled: true, prompt: "cleared" });
+  });
+
   it("does NOT warn when onDiagnosticsStateChange is used (canonical form)", () => {
     writePolicy({
       onDiagnosticsStateChange: {

@@ -632,8 +632,31 @@ function expandDiscriminatedHook(
   const p = policy as Record<string, unknown>;
   const hook = p[unifiedKey];
   if (hook === undefined) return;
+
+  // Array form: [{state:"error",...},{state:"cleared",...}] — expand each entry.
+  if (Array.isArray(hook)) {
+    p[unifiedKey] = undefined;
+    for (const entry of hook) {
+      if (typeof entry !== "object" || entry === null) {
+        throw new Error(`Each entry in "${unifiedKey}[]" must be an object`);
+      }
+      const disc = (entry as Record<string, unknown>)[discriminatorKey];
+      const { [discriminatorKey]: _d, ...rest } = entry as Record<
+        string,
+        unknown
+      >;
+      if (disc === valueA) p[slotA] = rest;
+      else if (disc === valueB) p[slotB] = rest;
+      else
+        throw new Error(
+          `"${unifiedKey}[].${discriminatorKey}" must be "${valueA}" or "${valueB}" (got ${JSON.stringify(disc)})`,
+        );
+    }
+    return;
+  }
+
   if (typeof hook !== "object" || hook === null) {
-    throw new Error(`"${unifiedKey}" must be an object`);
+    throw new Error(`"${unifiedKey}" must be an object or array`);
   }
   const discriminator = (hook as Record<string, unknown>)[discriminatorKey];
   if (discriminator !== valueA && discriminator !== valueB) {
