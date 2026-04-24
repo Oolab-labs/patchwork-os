@@ -262,7 +262,7 @@ export function loadYamlRecipe(filePath: string): YamlRecipe {
 }
 
 export function validateYamlRecipe(raw: unknown): YamlRecipe {
-  const normalized = normalizeRecipeForRuntime(raw);
+  const normalized = normalizeRecipeForRuntime(raw, console.warn);
   if (typeof normalized !== "object" || normalized === null) {
     throw new Error("recipe must be an object");
   }
