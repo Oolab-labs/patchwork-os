@@ -10,6 +10,14 @@ export interface UseBridgeFetchResult<T> {
   unsupported: boolean;
 }
 
+const MAX_BACKOFF_MS = 30_000;
+
+function nextDelay(failures: number, baseMs: number): number {
+  const exp = Math.min(baseMs * 2 ** failures, MAX_BACKOFF_MS);
+  // ±20% jitter to avoid thundering-herd when multiple hooks recover together
+  return exp * (0.8 + Math.random() * 0.4);
+}
+
 export function useBridgeFetch<T>(
   path: string,
   options?: {
@@ -35,6 +43,8 @@ export function useBridgeFetch<T>(
     if (!enabled) return;
 
     let alive = true;
+    let failures = 0;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
 
     const tick = async () => {
       try {
@@ -47,42 +57,54 @@ export function useBridgeFetch<T>(
           setData(unsupportedValue as T | null);
           setError(undefined);
           setLoading(false);
+          failures = 0;
+          schedule(intervalMs);
           return;
         }
 
         if (res.status === 503) {
           setError("Bridge not running");
           setLoading(false);
+          failures++;
+          schedule(nextDelay(failures, intervalMs));
           return;
         }
 
         if (!res.ok) {
           setError(`Request failed: ${res.status}`);
           setLoading(false);
+          failures++;
+          schedule(nextDelay(failures, intervalMs));
           return;
         }
 
         const raw: unknown = await res.json();
         if (!alive) return;
-        const result = transformRef.current
-          ? transformRef.current(raw)
-          : (raw as T);
+        const result = transformRef.current ? transformRef.current(raw) : (raw as T);
         setData(result);
         setUnsupported(false);
         setError(undefined);
         setLoading(false);
+        failures = 0;
+        schedule(intervalMs);
       } catch (e) {
         if (!alive) return;
         setError(e instanceof Error ? e.message : String(e));
         setLoading(false);
+        failures++;
+        schedule(nextDelay(failures, intervalMs));
       }
     };
 
+    function schedule(ms: number) {
+      if (!alive) return;
+      timerId = setTimeout(tick, ms);
+    }
+
     tick();
-    const id = setInterval(tick, intervalMs);
     return () => {
       alive = false;
-      clearInterval(id);
+      if (timerId !== null) clearTimeout(timerId);
     };
   }, [path, intervalMs, enabled, unsupportedValue]);
 

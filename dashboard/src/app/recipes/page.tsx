@@ -426,7 +426,7 @@ export default function RecipesPage() {
           {recipes && (
             <span className="pill muted">{filteredRecipes.length} installed</span>
           )}
-          <Link href="/recipes/marketplace" className="btn sm ghost" style={{ textDecoration: "none" }}>
+          <Link href="/marketplace" className="btn sm ghost" style={{ textDecoration: "none" }}>
             Browse marketplace →
           </Link>
           <Link href="/recipes/new" className="btn primary" style={{ textDecoration: "none" }}>
@@ -457,7 +457,7 @@ export default function RecipesPage() {
           <h3>No recipes installed</h3>
           <p>Browse the marketplace or author your own.</p>
           <div style={{ display: "flex", gap: "var(--s-2)", marginTop: "var(--s-3)" }}>
-            <Link href="/recipes/marketplace" className="btn primary" style={{ textDecoration: "none" }}>
+            <Link href="/marketplace" className="btn primary" style={{ textDecoration: "none" }}>
               Browse marketplace
             </Link>
             <Link href="/recipes/new" className="btn ghost" style={{ textDecoration: "none" }}>
