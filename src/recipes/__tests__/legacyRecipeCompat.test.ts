@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { normalizeRecipeForRuntime } from "../legacyRecipeCompat.js";
+import { validateYamlRecipe } from "../yamlRunner.js";
 
 describe("normalizeRecipeForRuntime — deprecation warnings", () => {
   it("emits no warnings for a modern recipe", () => {
@@ -161,5 +162,33 @@ describe("normalizeRecipeForRuntime — deprecation warnings", () => {
       warn,
     );
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("line"));
+  });
+});
+
+// ── validateYamlRecipe — warn-callback wired to console.warn ────────────────
+
+describe("validateYamlRecipe — deprecation warnings reach console.warn", () => {
+  it("emits console.warn when a deprecated field is present", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    validateYamlRecipe({
+      name: "compat-test",
+      trigger: { type: "cron", schedule: "0 9 * * *" }, // deprecated: schedule → at
+      steps: [{ tool: "file.write", path: "/tmp/x", content: "y" }],
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/deprecated.*trigger\.schedule/i),
+    );
+    warn.mockRestore();
+  });
+
+  it("does not emit console.warn for a modern recipe", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    validateYamlRecipe({
+      name: "modern",
+      trigger: { type: "manual" },
+      steps: [{ tool: "file.write", path: "/tmp/x", content: "y" }],
+    });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

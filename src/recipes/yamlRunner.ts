@@ -35,6 +35,10 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
+import {
+  executeAgent as _executeAgent,
+  type AgentExecutorDeps,
+} from "./agentExecutor.js";
 import { normalizeRecipeForRuntime } from "./legacyRecipeCompat.js";
 import type { ErrorPolicy } from "./schema.js";
 
@@ -379,54 +383,19 @@ export async function runYamlRecipe(
     if (step.agent) {
       const agentCfg = step.agent;
       const renderedPrompt = render(agentCfg.prompt, ctx);
-      const model = agentCfg.model ?? "claude-haiku-4-5-20251001";
       const intoKey = agentCfg.into ?? "agent_output";
       const stepId = intoKey;
       const stepStart = Date.now();
       let agentResult: string;
       try {
-        if (agentCfg.driver === "claude-code") {
-          agentResult = await stepDeps.claudeCodeFn(renderedPrompt);
-        } else if (agentCfg.driver === "api") {
-          agentResult = await stepDeps.claudeFn(renderedPrompt, model);
-        } else if (agentCfg.driver === "local") {
-          agentResult = await stepDeps.localFn(renderedPrompt, model);
-        } else if (
-          agentCfg.driver === "openai" ||
-          agentCfg.driver === "grok" ||
-          agentCfg.driver === "gemini"
-        ) {
-          agentResult = await stepDeps.providerDriverFn(
-            agentCfg.driver,
-            renderedPrompt,
-            agentCfg.model,
-          );
-        } else {
-          // Default: route by configured model. If model=local, use localFn.
-          // Otherwise fall back to Anthropic API / claude CLI auto-detect.
-          const { loadConfig: loadPatchworkConfig } = await import(
-            "../patchworkConfig.js"
-          );
-          const pwCfg = loadPatchworkConfig();
-          if (pwCfg.model === "local") {
-            agentResult = await stepDeps.localFn(renderedPrompt, model);
-          } else {
-            const usingDefaultClaudeFn = deps.claudeFn === undefined;
-            if (!process.env.ANTHROPIC_API_KEY && usingDefaultClaudeFn) {
-              const probe = spawnSync("claude", ["--version"], {
-                encoding: "utf-8",
-                timeout: 5000,
-              });
-              if (!probe.error) {
-                agentResult = await stepDeps.claudeCodeFn(renderedPrompt);
-              } else {
-                agentResult = await stepDeps.claudeFn(renderedPrompt, model);
-              }
-            } else {
-              agentResult = await stepDeps.claudeFn(renderedPrompt, model);
-            }
-          }
-        }
+        agentResult = await _executeAgent(
+          {
+            prompt: renderedPrompt,
+            driver: agentCfg.driver === "api" ? "anthropic" : agentCfg.driver,
+            model: agentCfg.model,
+          },
+          buildAgentExecutorDeps(stepDeps, deps),
+        );
         if (agentResult.startsWith("[agent step failed:")) {
           runError = runError ?? agentResult;
           stepResults.push({
@@ -823,7 +792,7 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
     claudeFn: deps.claudeFn ?? defaultClaudeFn,
     claudeCodeFn: deps.claudeCodeFn ?? defaultClaudeCodeFn,
     localFn: deps.localFn ?? defaultLocalFn,
-    providerDriverFn: deps.providerDriverFn ?? defaultProviderDriverFn,
+    providerDriverFn: deps.providerDriverFn ?? makeProviderDriverFn(),
     mockConnectors: deps.mockConnectors ?? {},
     recordFixturesDir: deps.recordFixturesDir,
     getGmailToken:
@@ -834,6 +803,40 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
       }),
     logDir: deps.logDir,
     testMode: deps.testMode ?? false,
+  };
+}
+
+function buildAgentExecutorDeps(
+  stepDeps: StepDeps,
+  runnerDeps: RunnerDeps,
+  claudeCodeFnOverride?: (prompt: string) => Promise<string>,
+): AgentExecutorDeps {
+  const claudeCliFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
+  return {
+    anthropicFn: (prompt, model) => stepDeps.claudeFn(prompt, model),
+    providerDriverFn: (driver, prompt, model) =>
+      stepDeps.providerDriverFn(driver, prompt, model),
+    claudeCliFn: (prompt) => claudeCliFn(prompt),
+    localFn: (prompt, model) => stepDeps.localFn(prompt, model),
+    probeClaudeCli: () => {
+      if (runnerDeps.claudeFn !== undefined) return false;
+      const probe = spawnSync("claude", ["--version"], {
+        encoding: "utf-8",
+        timeout: 5000,
+      });
+      return !probe.error;
+    },
+    loadPatchworkConfig: () => {
+      try {
+        // Lazy sync load — patchworkConfig exports a synchronous loadConfig.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { loadConfig } =
+          require("../patchworkConfig.js") as typeof import("../patchworkConfig.js");
+        return loadConfig();
+      } catch {
+        return {};
+      }
+    },
   };
 }
 
@@ -872,57 +875,60 @@ function defaultClaudeCodeFn(prompt: string): Promise<string> {
   }
 }
 
-// Cache provider drivers across steps within a single recipe process.
-const providerDriverCache = new Map<
-  string,
-  import("../drivers/types.js").ProviderDriver
->();
-
-async function defaultProviderDriverFn(
+/** Returns a providerDriverFn with a per-run driver cache (not shared across runs). */
+function makeProviderDriverFn(): (
   driverName: "openai" | "grok" | "gemini",
   prompt: string,
   model: string | undefined,
-): Promise<string> {
-  try {
-    let driver = providerDriverCache.get(driverName);
-    if (!driver) {
-      const { createDriver } = await import("../drivers/index.js");
-      const d = createDriver(
-        driverName,
-        { binary: "claude", antBinary: "ant" },
-        () => {},
-      );
-      if (!d) return `[agent step failed: ${driverName} driver returned null]`;
-      driver = d;
-      providerDriverCache.set(driverName, driver);
-    }
-    const controller = new AbortController();
-    const timeoutMs = 300_000;
-    const startupTimeoutMs = 30_000;
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+) => Promise<string> {
+  const cache = new Map<string, import("../drivers/types.js").ProviderDriver>();
+  return async function defaultProviderDriverFn(
+    driverName: "openai" | "grok" | "gemini",
+    prompt: string,
+    model: string | undefined,
+  ): Promise<string> {
     try {
-      const result = await driver.run({
-        prompt,
-        workspace: process.cwd(),
-        timeoutMs,
-        startupTimeoutMs,
-        signal: controller.signal,
-        model,
-      });
-      if (result.exitCode !== undefined && result.exitCode !== 0) {
-        const detail = result.stderrTail ?? result.text ?? "";
-        return `[agent step failed: ${driverName} exited ${result.exitCode}${detail ? ` — ${detail.slice(0, 200)}` : ""}]`;
+      let driver = cache.get(driverName);
+      if (!driver) {
+        const { createDriver } = await import("../drivers/index.js");
+        const d = createDriver(
+          driverName,
+          { binary: "claude", antBinary: "ant" },
+          () => {},
+        );
+        if (!d)
+          return `[agent step failed: ${driverName} driver returned null]`;
+        driver = d;
+        cache.set(driverName, driver);
       }
-      if (!result.text) {
-        return `[agent step failed: ${driverName} returned empty output (possible timeout or auth error)]`;
+      const controller = new AbortController();
+      const timeoutMs = 300_000;
+      const startupTimeoutMs = 30_000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const result = await driver.run({
+          prompt,
+          workspace: process.cwd(),
+          timeoutMs,
+          startupTimeoutMs,
+          signal: controller.signal,
+          model,
+        });
+        if (result.exitCode !== undefined && result.exitCode !== 0) {
+          const detail = result.stderrTail ?? result.text ?? "";
+          return `[agent step failed: ${driverName} exited ${result.exitCode}${detail ? ` — ${detail.slice(0, 200)}` : ""}]`;
+        }
+        if (!result.text) {
+          return `[agent step failed: ${driverName} returned empty output (possible timeout or auth error)]`;
+        }
+        return result.text;
+      } finally {
+        clearTimeout(timeout);
       }
-      return result.text;
-    } finally {
-      clearTimeout(timeout);
+    } catch (err) {
+      return `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`;
     }
-  } catch (err) {
-    return `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`;
-  }
+  };
 }
 
 async function defaultClaudeFn(prompt: string, model: string): Promise<string> {
@@ -1031,31 +1037,11 @@ export function buildChainedDeps(
     prompt: string,
     model?: string,
     driver?: string,
-  ): Promise<string> => {
-    const claudeCodeFn = claudeCodeFnOverride ?? stepDeps.claudeCodeFn;
-    if (driver === "claude-code") {
-      return claudeCodeFn(prompt);
-    }
-    if (driver === "claude" || driver === "anthropic") {
-      return stepDeps.claudeFn(prompt, model ?? "claude-haiku-4-5-20251001");
-    }
-    if (driver === "openai" || driver === "grok" || driver === "gemini") {
-      return stepDeps.providerDriverFn(driver, prompt, model);
-    }
-    // No driver specified — mirror runYamlRecipe fallback logic:
-    // prefer API if key is set, otherwise probe for claude CLI.
-    const usingDefaultClaudeFn = runnerDeps.claudeFn === undefined;
-    if (!process.env.ANTHROPIC_API_KEY && usingDefaultClaudeFn) {
-      const probe = spawnSync("claude", ["--version"], {
-        encoding: "utf-8",
-        timeout: 5000,
-      });
-      if (!probe.error) {
-        return claudeCodeFn(prompt);
-      }
-    }
-    return stepDeps.claudeFn(prompt, model ?? "claude-haiku-4-5-20251001");
-  };
+  ): Promise<string> =>
+    _executeAgent(
+      { prompt, model, driver },
+      buildAgentExecutorDeps(stepDeps, runnerDeps, claudeCodeFnOverride),
+    );
 
   const loadNestedRecipe = async (
     name: string,

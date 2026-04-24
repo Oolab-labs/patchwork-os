@@ -8,6 +8,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`RecipeOrchestrator.fire()`** — new method with process-wide in-flight dedup (`dedupPolicy: "reject"|"allow"`). All recipe entry paths (HTTP webhook, CLI, scheduler, automation hooks) share one dedup `Set`; concurrent identical-name runs are rejected by default. Exposes `isInFlight(name)` and `listInFlight()`.
+- **`src/recipes/agentExecutor.ts`** — unified agent driver dispatch extracted from the two divergent call sites in `yamlRunner.ts`. Superset behavior: chained recipes now correctly route `driver:"local"` and `~/.patchwork/config model:local` to localFn (Ollama/LM Studio). Previously both paths were silently missing from the chained runner.
+
+### Changed
+
+- **`providerDriverCache` is now per-run** — previously a process-level module singleton; each recipe run now gets an isolated driver cache via `makeProviderDriverFn()`. Prevents credential/state leakage across concurrent runs.
+- **`bridge._fireYamlRecipe` delegates to `RecipeOrchestrator`** — `this.recipeOrchestrator` is the shared dedup authority; per-call `claudeCodeFn` is injected via `FireRequest.dispatchFn`.
+
+### Breaking (chained recipes only)
+
+- Chained recipe users with `model: local` set in `~/.patchwork/config` will now route agent steps to the local LLM (Ollama/LM Studio) instead of the Anthropic API. This aligns chained behavior with the existing YAML runner behavior. To preserve the previous behavior, set `driver: anthropic` explicitly on affected agent steps.
+
 ---
 
 ## [0.2.0-alpha.29] — 2026-04-24

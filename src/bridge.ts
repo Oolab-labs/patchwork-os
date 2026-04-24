@@ -32,6 +32,7 @@ import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
+import { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
 import { RecipeScheduler } from "./recipes/scheduler.js";
 import {
   findWebhookRecipe,
@@ -149,6 +150,7 @@ export class Bridge {
   private automationHooks: AutomationHooks | undefined = undefined;
   private recipeScheduler: RecipeScheduler | null = null;
   private recipeRunLog: RecipeRunLog | null = null;
+  private recipeOrchestrator: RecipeOrchestrator | null = null;
   private commitIssueLinkLog: CommitIssueLinkLog | null = null;
   private decisionTraceLog: DecisionTraceLog | null = null;
   /** Pre-computed digest of recent decisions, refreshed on each session connect. */
@@ -978,6 +980,10 @@ export class Bridge {
           },
         );
         this.logger.info(`[bridge] Claude driver: ${driver.name}`);
+        // Recipe orchestrator — owns in-flight dedup across all entry paths.
+        this.recipeOrchestrator = new RecipeOrchestrator({
+          workdir: this.config.workspace,
+        });
         // Patchwork: start cron-trigger scheduler once the orchestrator exists.
         const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
         this.recipeScheduler = new RecipeScheduler({
@@ -1840,10 +1846,13 @@ export class Bridge {
     logLabel: string;
     seedContext?: Record<string, string>;
   }): Promise<{ ok: boolean; taskId?: string; name?: string; error?: string }> {
-    const { loadYamlRecipe, dispatchRecipe, buildChainedDeps } = await import(
+    if (!this.recipeOrchestrator) {
+      return { ok: false, error: "recipe orchestrator unavailable" };
+    }
+    const orch = this.orchestrator!;
+    const { buildChainedDeps, dispatchRecipe } = await import(
       "./recipes/yamlRunner.js"
     );
-    const orch = this.orchestrator!;
     const claudeCodeFn = async (prompt: string): Promise<string> => {
       const task = await orch.runAndWait({
         prompt,
@@ -1852,25 +1861,29 @@ export class Bridge {
       });
       return task.output ?? task.errorMessage ?? "";
     };
-    try {
-      const recipe = loadYamlRecipe(opts.filePath);
-      const taskId = `${opts.taskIdPrefix}-${Date.now()}`;
-      const runnerDeps = { workdir: this.config.workspace, claudeCodeFn };
-      dispatchRecipe(
-        recipe,
-        {
-          ...runnerDeps,
-          chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
-          chainedOptions: {
-            sourcePath: opts.filePath,
-            runLogDir: this.recipeRunLog
-              ? path.join(os.homedir(), ".patchwork")
-              : undefined,
-          },
-        },
-        opts.seedContext,
-      )
-        .then((result) => {
+    const runnerDeps = { workdir: this.config.workspace, claudeCodeFn };
+    const chainedOptions = {
+      sourcePath: opts.filePath,
+      runLogDir: this.recipeRunLog
+        ? path.join(os.homedir(), ".patchwork")
+        : undefined,
+    };
+    const fireResult = await this.recipeOrchestrator
+      .fire({
+        filePath: opts.filePath,
+        name: opts.name,
+        triggerSource: opts.triggerSourceSuffix,
+        seedContext: opts.seedContext,
+        dispatchFn: async (recipe, _deps, seedContext) => {
+          const result = await dispatchRecipe(
+            recipe,
+            {
+              ...runnerDeps,
+              chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
+              chainedOptions,
+            },
+            seedContext,
+          );
           const steps =
             "stepsRun" in result
               ? result.stepsRun
@@ -1881,19 +1894,19 @@ export class Bridge {
           this.logger.info?.(
             `[recipe] ${opts.logLabel} finished: ${steps} steps`,
           );
-        })
-        .catch((err: unknown) => {
-          this.logger.warn?.(
-            `[recipe] ${opts.logLabel} error: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
-      return { ok: true, taskId, name: opts.name };
-    } catch (err) {
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
+          return result;
+        },
+      })
+      .catch((err: unknown) => {
+        this.logger.warn?.(
+          `[recipe] ${opts.logLabel} error: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return {
+          ok: false as const,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      });
+    return fireResult;
   }
 
   /** Start the bridge-level WebSocket keepalive heartbeat. Idempotent. */
