@@ -3,6 +3,10 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
+import {
+  computeSummary as computeActivationSummary,
+  loadMetrics as loadActivationMetrics,
+} from "./activationMetrics.js";
 import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import { saveBridgeConfigDriver } from "./config.js";
@@ -1945,6 +1949,25 @@ export class Server extends EventEmitter<ServerEvents> {
             }
           })();
         });
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/activation-metrics" &&
+        req.method === "GET"
+      ) {
+        try {
+          const metrics = loadActivationMetrics();
+          const summary = computeActivationSummary(metrics);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ metrics, summary }));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
         return;
       }
       if (parsedUrl.pathname === "/runs" && req.method === "GET") {

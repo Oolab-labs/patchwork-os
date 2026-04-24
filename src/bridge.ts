@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
+import { recordRecipeRun } from "./activationMetrics.js";
 import { ActivityLog } from "./activityLog.js";
 import { buildSummary } from "./analyticsAggregator.js";
 import { getAnalyticsPref } from "./analyticsPrefs.js";
@@ -1408,6 +1409,9 @@ export class Bridge {
                 "stepsRun" in result
                   ? result.stepsRun
                   : (result.summary?.total ?? "?");
+              const succeeded =
+                "stepsRun" in result ? !result.errorMessage : result.success;
+              if (succeeded) recordRecipeRun();
               this.logger.info?.(
                 `[recipe] webhook "${match.name}" finished: ${steps} steps`,
               );
@@ -1522,6 +1526,9 @@ export class Bridge {
               "stepsRun" in result
                 ? result.stepsRun
                 : (result.summary?.total ?? "?");
+            const succeeded =
+              "stepsRun" in result ? !result.errorMessage : result.success;
+            if (succeeded) recordRecipeRun();
             this.logger.info?.(`[recipe] "${name}" finished: ${steps} steps`);
           })
           .catch((err: unknown) => {
