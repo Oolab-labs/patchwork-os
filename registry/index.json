@@ -1,0 +1,51 @@
+{
+  "version": "1",
+  "updated_at": "2026-04-24T00:00:00Z",
+  "recipes": [
+    {
+      "name": "@patchworkos/morning-brief",
+      "version": "1.0.0",
+      "description": "Daily 6am digest: Gmail unread, Linear assigned issues, Slack DMs, and today's calendar — composed into one Slack message.",
+      "tags": ["productivity", "morning", "daily"],
+      "connectors": ["gmail", "linear", "slack", "googleCalendar"],
+      "install": "github:patchworkos/recipes/recipes/morning-brief",
+      "downloads": 0
+    },
+    {
+      "name": "@patchworkos/incident-war-room",
+      "version": "1.0.0",
+      "description": "Ops incident response: summarize alert, open Linear issue, post to #incidents Slack, then append post-incident summary to Notion.",
+      "tags": ["ops", "incident", "on-call", "linear", "slack", "notion"],
+      "connectors": ["linear", "slack", "notion"],
+      "install": "github:patchworkos/recipes/recipes/incident-war-room",
+      "downloads": 0
+    },
+    {
+      "name": "@patchworkos/sprint-review-prep",
+      "version": "1.0.0",
+      "description": "Pull completed Linear issues for the current sprint, summarize with AI, post digest to #engineering Slack channel.",
+      "tags": ["engineering", "sprint", "linear", "slack"],
+      "connectors": ["linear", "slack"],
+      "install": "github:patchworkos/recipes/recipes/sprint-review-prep",
+      "downloads": 0
+    },
+    {
+      "name": "@patchworkos/customer-escalation",
+      "version": "1.0.0",
+      "description": "Zendesk ticket escalation pipeline: fetch ticket, create linked Linear issue, alert #support-escalations on Slack.",
+      "tags": ["support", "escalation", "zendesk", "linear", "slack"],
+      "connectors": ["zendesk", "linear", "slack"],
+      "install": "github:patchworkos/recipes/recipes/customer-escalation",
+      "downloads": 0
+    },
+    {
+      "name": "@patchworkos/deal-won-celebration",
+      "version": "1.0.0",
+      "description": "HubSpot deal closed-won trigger: celebrate in #wins Slack, log deal details to a Notion database.",
+      "tags": ["sales", "hubspot", "slack", "notion", "crm"],
+      "connectors": ["hubspot", "slack", "notion"],
+      "install": "github:patchworkos/recipes/recipes/deal-won-celebration",
+      "downloads": 0
+    }
+  ]
+}

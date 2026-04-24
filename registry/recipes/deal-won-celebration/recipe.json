@@ -1,0 +1,31 @@
+{
+  "name": "@patchworkos/deal-won-celebration",
+  "version": "1.0.0",
+  "description": "HubSpot deal closed-won trigger: celebrate in #wins Slack, log deal details to a Notion database.",
+  "author": "patchworkos",
+  "license": "MIT",
+  "tags": ["sales", "hubspot", "slack", "notion", "crm", "celebration"],
+  "connectors": ["hubspot", "slack", "notion"],
+  "recipes": {
+    "main": "deal-won-celebration.yaml"
+  },
+  "variables": {
+    "deal_id": {
+      "description": "HubSpot deal ID (passed from webhook or entered manually)",
+      "required": true
+    },
+    "SLACK_WINS_CHANNEL": {
+      "description": "Slack channel for deal celebration posts (e.g. #wins)",
+      "required": true
+    },
+    "NOTION_DEALS_DB": {
+      "description": "Notion database ID where closed deals are logged",
+      "required": true
+    },
+    "DEAL_OWNER_SLACK_ID": {
+      "description": "Slack user ID of the deal owner (for @mention). Optional.",
+      "required": false
+    }
+  },
+  "homepage": "https://github.com/patchworkos/recipes/tree/main/recipes/deal-won-celebration"
+}

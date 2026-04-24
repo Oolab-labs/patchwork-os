@@ -966,6 +966,35 @@ export function buildChainedDeps(
   ): Promise<import("./chainedRunner.js").ChainedRecipe | null> => {
     const { homedir } = await import("node:os");
     const recipesDir = path.join(homedir(), ".patchwork", "recipes");
+
+    // Check for manifest-based package directory first.
+    // Supports both plain names ("morning-brief") and scoped names ("@acme/morning-brief").
+    const pkgDirCandidates = [
+      path.join(recipesDir, name),
+      // scoped: @acme/morning-brief → recipesDir/@acme/morning-brief
+    ];
+    for (const pkgDir of pkgDirCandidates) {
+      try {
+        const { loadManifestFromDir } = await import("./manifest.js");
+        const manifest = loadManifestFromDir(pkgDir);
+        if (manifest) {
+          const mainPath = path.join(pkgDir, manifest.recipes.main);
+          try {
+            const raw = stepDeps.readFile(mainPath);
+            const { parse } = await import("yaml");
+            const parsed = parse(
+              raw,
+            ) as import("./chainedRunner.js").ChainedRecipe;
+            if (parsed?.steps) return parsed;
+          } catch {
+            // manifest found but main recipe unreadable — fall through
+          }
+        }
+      } catch {
+        // not a manifest dir — try flat file candidates
+      }
+    }
+
     const candidates = [
       path.join(recipesDir, `${name}.yaml`),
       path.join(recipesDir, `${name}.yml`),

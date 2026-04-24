@@ -1,0 +1,28 @@
+{
+  "name": "@patchworkos/morning-brief",
+  "version": "1.0.0",
+  "description": "Daily 6am digest: Gmail unread, Linear assigned issues, Slack DMs, and today's calendar — composed into one Slack message.",
+  "author": "patchworkos",
+  "license": "MIT",
+  "tags": ["productivity", "morning", "daily"],
+  "connectors": ["gmail", "linear", "slack", "googleCalendar"],
+  "recipes": {
+    "main": "morning-brief.yaml"
+  },
+  "variables": {
+    "SLACK_CHANNEL": {
+      "description": "Slack channel ID or name to post the morning brief to (e.g. #morning-brief or your DM ID)",
+      "required": true
+    },
+    "LINEAR_TEAM_ID": {
+      "description": "Linear team ID to scope assigned-issue queries",
+      "required": false
+    },
+    "CALENDAR_MAX_EVENTS": {
+      "description": "Maximum number of calendar events to include",
+      "required": false,
+      "default": "5"
+    }
+  },
+  "homepage": "https://github.com/patchworkos/recipes/tree/main/recipes/morning-brief"
+}
