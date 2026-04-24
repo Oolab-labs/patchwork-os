@@ -35,6 +35,7 @@ export default function RecipeEditPage({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const { toasts, push } = useToasts();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -78,6 +79,7 @@ export default function RecipeEditPage({
 
   async function handleSave() {
     setSaving(true);
+    setSaveError(null);
     try {
       const res = await fetch(
         `/api/bridge/recipes/${encodeURIComponent(name)}`,
@@ -91,13 +93,15 @@ export default function RecipeEditPage({
         push("Saved.", "ok");
       } else {
         const data = await res.json().catch(() => ({ error: res.statusText }));
-        push(
-          `Save failed: ${(data as { error?: string }).error ?? res.statusText}`,
-          "err",
-        );
+        const message =
+          (data as { error?: string }).error ?? res.statusText ?? "Save failed";
+        setSaveError(message);
+        push(`Save failed: ${message}`, "err");
       }
     } catch (e) {
-      push(`Save failed: ${e instanceof Error ? e.message : String(e)}`, "err");
+      const message = e instanceof Error ? e.message : String(e);
+      setSaveError(message);
+      push(`Save failed: ${message}`, "err");
     } finally {
       setSaving(false);
     }
@@ -219,6 +223,51 @@ export default function RecipeEditPage({
         </div>
       </div>
 
+      {/* Validation error banner */}
+      {saveError && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: "var(--s-3)",
+            padding: "var(--s-3) var(--s-4)",
+            borderRadius: "var(--r-2)",
+            background: "var(--err-soft, #3a1a1a)",
+            border: "1px solid var(--err, #f87171)",
+            color: "var(--err, #f87171)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: "var(--s-3)",
+            fontSize: 13,
+          }}
+        >
+          <div>
+            <strong style={{ display: "block", marginBottom: 2 }}>
+              Save failed
+            </strong>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+              {saveError}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSaveError(null)}
+            aria-label="Dismiss save error"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "inherit",
+              cursor: "pointer",
+              fontSize: 16,
+              lineHeight: 1,
+              padding: 0,
+            }}
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       {/* Editor card */}
       <div className="glass-card" style={{ padding: "var(--s-4)" }}>
         {loading ? (
@@ -229,7 +278,10 @@ export default function RecipeEditPage({
           <textarea
             ref={textareaRef}
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={(e) => {
+              setContent(e.target.value);
+              if (saveError) setSaveError(null);
+            }}
             spellCheck={false}
             aria-label={`YAML content for recipe ${name}`}
             style={{
