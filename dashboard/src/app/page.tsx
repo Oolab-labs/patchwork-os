@@ -5,6 +5,7 @@ import { apiPath } from "@/lib/api";
 import { StatCard } from "@/components/StatCard";
 import { fmtDuration, relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+import { useBridgeStatus } from "@/hooks/useBridgeStatus";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,7 +35,6 @@ interface Overview {
   runningTasks: number;
   recentActivity: number;
   uptimeMs: number | null;
-  bridgeOk: boolean;
   toolCallDelta: string | undefined;
   activeRecipes: number;
 }
@@ -150,17 +150,6 @@ function withAt(e: ActivityEvent): ActivityEvent {
     if (Number.isFinite(ms)) return { ...e, at: ms };
   }
   return { ...e, at: Date.now() };
-}
-
-function activityBorderColor(e: ActivityEvent): string {
-  if (e.status === "error") return "var(--err)";
-  if (e.kind === "tool" && e.status === "success") return "var(--ok)";
-  if (e.event === "approval_decision") {
-    const dec = e.metadata?.decision;
-    if (dec === "approve") return "var(--ok)";
-    if (dec === "reject") return "var(--err)";
-  }
-  return "var(--warn)";
 }
 
 function activityLabel(e: ActivityEvent): string {
@@ -288,7 +277,6 @@ function ActivityFeed() {
             const label = activityLabel(e);
             const desc = activityDescription(e);
             const ts = e.at ?? Date.now();
-            const borderColor = activityBorderColor(e);
             const isErr = e.status === "error";
             return (
               <div
@@ -565,7 +553,6 @@ export default function HomePage() {
     runningTasks: 0,
     recentActivity: 0,
     uptimeMs: null,
-    bridgeOk: false,
     toolCallDelta: undefined,
     activeRecipes: 0,
   });
@@ -587,10 +574,7 @@ export default function HomePage() {
             fetch(apiPath("/api/bridge/connectors/status")),
           ]);
         if (!alive) return;
-        if (!approvalsRes.ok || !tasksRes.ok) {
-          setData((prev) => ({ ...prev, bridgeOk: false }));
-          return;
-        }
+        if (!approvalsRes.ok || !tasksRes.ok) return;
 
         const [approvalsData, tasks, metricsText, recipesData, connectorsData] =
           await Promise.all([
@@ -627,13 +611,11 @@ export default function HomePage() {
           ).length,
           recentActivity: toolCalls,
           uptimeMs: uptime,
-          bridgeOk: true,
           toolCallDelta: delta,
           activeRecipes: recipeList.filter((r) => r.enabled !== false).length,
         });
       } catch {
         if (!alive) return;
-        setData((prev) => ({ ...prev, bridgeOk: false }));
       }
     };
     tick();
@@ -644,6 +626,7 @@ export default function HomePage() {
     };
   }, []);
 
+  const bridgeStatus = useBridgeStatus();
   const { data: health } = useBridgeFetch<BridgeHealth>("/api/bridge/health", {
     intervalMs: 5000,
   });
@@ -698,13 +681,13 @@ export default function HomePage() {
                   width: 7,
                   height: 7,
                   borderRadius: "50%",
-                  background: data.bridgeOk ? "var(--ok)" : "var(--err)",
+                  background: bridgeStatus.ok ? "var(--ok)" : "var(--err)",
                   display: "inline-block",
                   flexShrink: 0,
                 }}
               />
-              <span style={{ fontWeight: 500, color: data.bridgeOk ? "var(--ok)" : "var(--err)" }}>
-                {data.bridgeOk ? "Bridge connected" : "Bridge offline"}
+              <span style={{ fontWeight: 500, color: bridgeStatus.ok ? "var(--ok)" : "var(--err)" }}>
+                {bridgeStatus.ok ? "Bridge connected" : "Bridge offline"}
               </span>
               {data.uptimeMs != null && (
                 <span style={{ color: "var(--ink-3)" }}>
