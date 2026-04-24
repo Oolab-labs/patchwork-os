@@ -1401,6 +1401,7 @@ export class Bridge {
             {
               ...runnerDeps,
               chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
+              chainedOptions: { sourcePath: match.filePath },
             },
             seedContext,
           )
@@ -1520,6 +1521,7 @@ export class Bridge {
         dispatchRecipe(recipe, {
           ...runnerDeps,
           chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
+          chainedOptions: { sourcePath: ymlPath },
         })
           .then((result) => {
             const steps =

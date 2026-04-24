@@ -952,6 +952,25 @@ export function buildChainedDeps(
 ): import("./chainedRunner.js").ExecutionDeps {
   const stepDeps = resolveStepDeps(runnerDeps);
 
+  function normalizeNestedRecipeLookupName(ref: string): string {
+    return ref.trim().replace(/\.ya?ml$/i, "");
+  }
+
+  function tryLoadRecipeFile(filePath: string): {
+    recipe: import("./chainedRunner.js").ChainedRecipe;
+    sourcePath: string;
+  } | null {
+    if (!existsSync(filePath)) return null;
+    try {
+      const recipe = loadYamlRecipe(
+        filePath,
+      ) as unknown as import("./chainedRunner.js").ChainedRecipe;
+      return { recipe, sourcePath: filePath };
+    } catch {
+      return null;
+    }
+  }
+
   const executeTool = async (
     tool: string,
     params: Record<string, unknown>,
@@ -997,14 +1016,42 @@ export function buildChainedDeps(
 
   const loadNestedRecipe = async (
     name: string,
-  ): Promise<import("./chainedRunner.js").ChainedRecipe | null> => {
+    parentSourcePath?: string,
+  ): Promise<{
+    recipe: import("./chainedRunner.js").ChainedRecipe;
+    sourcePath?: string;
+  } | null> => {
+    const lookupName = normalizeNestedRecipeLookupName(name);
+
+    if (parentSourcePath) {
+      const parentDir = path.dirname(parentSourcePath);
+      const pathLike =
+        path.isAbsolute(name) ||
+        name.startsWith("./") ||
+        name.startsWith("../") ||
+        /[\\/]/.test(name) ||
+        /\.ya?ml$/i.test(name);
+      if (pathLike) {
+        const resolvedBase = path.isAbsolute(name)
+          ? path.resolve(name)
+          : path.resolve(parentDir, name);
+        const candidates = /\.ya?ml$/i.test(resolvedBase)
+          ? [resolvedBase]
+          : [`${resolvedBase}.yaml`, `${resolvedBase}.yml`, resolvedBase];
+        for (const candidate of candidates) {
+          const loaded = tryLoadRecipeFile(candidate);
+          if (loaded) return loaded;
+        }
+      }
+    }
+
     const { homedir } = await import("node:os");
     const recipesDir = path.join(homedir(), ".patchwork", "recipes");
 
     // Check for manifest-based package directory first.
     // Supports both plain names ("morning-brief") and scoped names ("@acme/morning-brief").
     const pkgDirCandidates = [
-      path.join(recipesDir, name),
+      path.join(recipesDir, lookupName),
       // scoped: @acme/morning-brief → recipesDir/@acme/morning-brief
     ];
     for (const pkgDir of pkgDirCandidates) {
@@ -1013,32 +1060,18 @@ export function buildChainedDeps(
         const manifest = loadManifestFromDir(pkgDir);
         if (manifest) {
           const mainPath = path.join(pkgDir, manifest.recipes.main);
-          try {
-            const raw = stepDeps.readFile(mainPath);
-            const { parse } = await import("yaml");
-            const parsed = parse(
-              raw,
-            ) as import("./chainedRunner.js").ChainedRecipe;
-            if (parsed?.steps) return parsed;
-          } catch {
-            // manifest found but main recipe unreadable — fall through
-          }
+          const loaded = tryLoadRecipeFile(mainPath);
+          if (loaded) return loaded;
         }
       } catch {
         // not a manifest dir — try flat file candidates
       }
     }
 
-    const candidate = findYamlRecipePath(recipesDir, name);
+    const candidate = findYamlRecipePath(recipesDir, lookupName);
     if (candidate) {
-      try {
-        const raw = stepDeps.readFile(candidate);
-        const { parse } = await import("yaml");
-        const parsed = parse(raw) as import("./chainedRunner.js").ChainedRecipe;
-        if (parsed?.steps) return parsed;
-      } catch {
-        // fall through
-      }
+      const loaded = tryLoadRecipeFile(candidate);
+      if (loaded) return loaded;
     }
     return null;
   };
@@ -1080,6 +1113,7 @@ export async function dispatchRecipe(
       maxConcurrency: chainedRecipe.maxConcurrency ?? 4,
       maxDepth: chainedRecipe.maxDepth ?? 3,
       dryRun: deps.chainedOptions?.dryRun ?? false,
+      sourcePath: deps.chainedOptions?.sourcePath,
       onStepStart: deps.chainedOptions?.onStepStart,
       onStepComplete: deps.chainedOptions?.onStepComplete,
     };

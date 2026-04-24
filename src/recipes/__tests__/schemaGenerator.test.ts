@@ -181,13 +181,13 @@ describe("schemaGenerator", () => {
     expect(recipeSchema.properties?.maxDepth).toMatchObject({ type: "number" });
 
     const nestedRecipeStep = recipeSchema.properties?.steps?.items?.oneOf?.find(
-      (entry) =>
-        Array.isArray(entry.required) && entry.required.includes("recipe"),
+      (entry) => Array.isArray(entry.anyOf),
     );
     expect(nestedRecipeStep).toMatchObject({
-      required: ["recipe"],
+      anyOf: [{ required: ["recipe"] }, { required: ["chain"] }],
       properties: {
         recipe: { type: "string" },
+        chain: { type: "string" },
         vars: { type: "object" },
         output: { type: "string" },
       },

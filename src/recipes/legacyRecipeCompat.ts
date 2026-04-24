@@ -98,6 +98,14 @@ function normalizeLegacyRuntimeStep(step: unknown): unknown {
     Object.assign(normalized, step.params);
   }
 
+  if (
+    typeof normalized.recipe !== "string" &&
+    typeof normalized.chain === "string"
+  ) {
+    normalized.recipe = normalized.chain;
+  }
+  delete normalized.chain;
+
   if (typeof normalized.into !== "string" && typeof step.output === "string") {
     normalized.into = step.output;
   }

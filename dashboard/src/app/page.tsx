@@ -722,10 +722,23 @@ export default function HomePage() {
         style={{
           position: "relative",
           overflow: "hidden",
-          padding: "24px 28px",
+          padding: "28px 32px",
           marginBottom: "var(--s-6)",
+          background: "linear-gradient(135deg, var(--card-bg) 0%, rgba(var(--orange-rgb),0.04) 100%)",
+          borderColor: "rgba(var(--orange-rgb),0.15)",
         }}
       >
+        {/* subtle background accent */}
+        <div aria-hidden="true" style={{
+          position: "absolute",
+          top: -60,
+          right: -60,
+          width: 200,
+          height: 200,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(var(--orange-rgb),0.08) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }} />
 
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: "var(--s-6)", flexWrap: "wrap" }}>
           {/* Greeting + bridge status */}
@@ -733,10 +746,11 @@ export default function HomePage() {
             <h1
               style={{
                 margin: 0,
-                fontSize: 24,
+                fontSize: 28,
                 fontWeight: 800,
                 color: "var(--ink-0)",
                 lineHeight: 1.1,
+                letterSpacing: "-0.025em",
               }}
             >
               {greet}
@@ -829,67 +843,42 @@ export default function HomePage() {
           </div>
 
           {/* Inline key numbers */}
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-4)", flexWrap: "wrap" }}>
-            <div style={{ textAlign: "center" }}>
+          <div style={{ display: "flex", alignItems: "stretch", gap: "var(--s-3)", flexWrap: "wrap" }}>
+            {[
+              { label: "Tool calls", value: toolCalls, color: "var(--ink-0)" },
+              { label: "Recipes", value: recipeCount, color: "var(--ink-0)" },
+              { label: "Pending", value: pendingCount, color: pendingCount > 0 ? "var(--warn)" : "var(--ink-0)" },
+            ].map(({ label, value, color }) => (
               <div
+                key={label}
                 style={{
-                  fontSize: 22,
-                  fontWeight: 800,
-                  fontFamily: "var(--font-mono)",
-                  color: "var(--ink-0)",
-                  lineHeight: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "10px 20px",
+                  borderRadius: "var(--r-m)",
+                  background: "rgba(0,0,0,0.04)",
+                  border: "1px solid var(--line-1)",
+                  minWidth: 72,
+                  gap: 3,
                 }}
               >
-                {toolCalls}
-              </div>
-              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Tool calls
-              </div>
-            </div>
-
-            <div
-              aria-hidden="true"
-              style={{ width: 1, height: 32, background: "var(--line-2)" }}
-            />
-
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: 22,
+                <div style={{
+                  fontSize: 24,
                   fontWeight: 800,
                   fontFamily: "var(--font-mono)",
-                  color: "var(--ink-0)",
+                  color,
                   lineHeight: 1,
-                }}
-              >
-                {recipeCount}
+                  letterSpacing: "-0.03em",
+                }}>
+                  {value}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--ink-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  {label}
+                </div>
               </div>
-              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Recipes
-              </div>
-            </div>
-
-            <div
-              aria-hidden="true"
-              style={{ width: 1, height: 32, background: "var(--line-2)" }}
-            />
-
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  fontSize: 22,
-                  fontWeight: 800,
-                  fontFamily: "var(--font-mono)",
-                  color: pendingCount > 0 ? "var(--warn)" : "var(--ink-0)",
-                  lineHeight: 1,
-                }}
-              >
-                {pendingCount}
-              </div>
-              <div style={{ fontSize: 10, color: "var(--ink-2)", marginTop: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Pending
-              </div>
-            </div>
+            ))}
           </div>
 
           {/* CTA if pending */}

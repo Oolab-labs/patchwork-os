@@ -109,6 +109,40 @@ describe("resolveStepTemplates", () => {
   });
 });
 
+describe("chain: alias for nested recipe steps", () => {
+  it("calls loadNestedRecipe when step has chain: instead of recipe:", async () => {
+    const childRecipe: ChainedRecipe = {
+      name: "child",
+      steps: [{ id: "c", tool: "child-tool" }],
+    };
+    const loadNestedRecipe = vi.fn().mockResolvedValue({
+      recipe: childRecipe,
+      sourcePath: "/tmp/child.yaml",
+    });
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue("ok"),
+      executeAgent: vi.fn().mockResolvedValue("ok"),
+      loadNestedRecipe,
+    };
+    const reg = createOutputRegistry();
+    const result = await executeChainedStep(
+      {
+        registry: reg,
+        step: { id: "s", chain: "child.yaml" },
+        options: { ...baseOptions, sourcePath: "/tmp/parent.yaml" },
+        recipe: { name: "parent", steps: [] },
+        depth: 0,
+      },
+      deps,
+    );
+    expect(result.success).toBe(true);
+    expect(loadNestedRecipe).toHaveBeenCalledWith(
+      "child.yaml",
+      "/tmp/parent.yaml",
+    );
+  });
+});
+
 describe("executeChainedStep", () => {
   it("executes tool step", async () => {
     const reg = createOutputRegistry();
