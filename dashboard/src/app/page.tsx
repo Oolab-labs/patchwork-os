@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { StatCard } from "@/components/StatCard";
+import { SkeletonStatCard } from "@/components/Skeleton";
 import { fmtDuration, relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useBridgeStatus } from "@/hooks/useBridgeStatus";
@@ -568,6 +569,7 @@ export default function HomePage() {
   const [approvals, setApprovals] = useState<Pending[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [providerCount, setProviderCount] = useState(0);
+  const [overviewLoading, setOverviewLoading] = useState(true);
   const prevToolCallsRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -613,6 +615,7 @@ export default function HomePage() {
 
         setApprovals(Array.isArray(approvalsData) ? approvalsData : []);
         setRecipes(recipeList.slice(0, 6));
+        setOverviewLoading(false);
         setData({
           pendingApprovals: Array.isArray(approvalsData) ? approvalsData.length : 0,
           runningTasks: (tasks.tasks ?? []).filter(
@@ -849,95 +852,62 @@ export default function HomePage() {
       {/* Stat row                                                              */}
       {/* ------------------------------------------------------------------ */}
       <div className="stat-grid" style={{ marginBottom: "var(--s-6)" }}>
-        <StatCard
-          label="Bridge uptime"
-          value={data.uptimeMs != null ? fmtDuration(data.uptimeMs) : "—"}
-          foot="Since last restart"
-          href="/metrics"
-          icon={
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: "rgba(13,138,94,0.12)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#0d8a5e",
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 12H18L15 21 9 3 6 12H2"/></svg>
-            </div>
-          }
-        />
-        <StatCard
-          label="Tool calls today"
-          value={data.recentActivity}
-          delta={data.toolCallDelta}
-          foot="Total this session"
-          href="/activity"
-          icon={
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: "rgba(var(--orange-rgb), 0.12)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--orange)",
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            </div>
-          }
-        />
-        <StatCard
-          label="Pending approvals"
-          value={data.pendingApprovals}
-          foot={data.pendingApprovals === 0 ? "All clear" : "Awaiting decision"}
-          href="/approvals"
-          icon={
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: "rgba(180,83,9,0.10)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#b45309",
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
-            </div>
-          }
-        />
-        <StatCard
-          label="Active recipes"
-          value={data.activeRecipes}
-          foot="Automation recipes enabled"
-          href="/recipes"
-          icon={
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: "rgba(107,107,255,0.12)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#6b6bff",
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 016.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15zM12 7h5M12 11h5"/></svg>
-            </div>
-          }
-        />
+        {overviewLoading ? (
+          <>
+            <SkeletonStatCard />
+            <SkeletonStatCard />
+            <SkeletonStatCard />
+            <SkeletonStatCard />
+          </>
+        ) : (
+          <>
+            <StatCard
+              label="Bridge uptime"
+              value={data.uptimeMs != null ? fmtDuration(data.uptimeMs) : "—"}
+              foot="Since last restart"
+              href="/metrics"
+              icon={
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(13,138,94,0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "#0d8a5e" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 12H18L15 21 9 3 6 12H2"/></svg>
+                </div>
+              }
+            />
+            <StatCard
+              label="Tool calls today"
+              value={data.recentActivity}
+              delta={data.toolCallDelta}
+              foot="Total this session"
+              href="/activity"
+              icon={
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(var(--orange-rgb), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orange)" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </div>
+              }
+            />
+            <StatCard
+              label="Pending approvals"
+              value={data.pendingApprovals}
+              foot={data.pendingApprovals === 0 ? "All clear" : "Awaiting decision"}
+              href="/approvals"
+              icon={
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(180,83,9,0.10)", display: "flex", alignItems: "center", justifyContent: "center", color: "#b45309" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+                </div>
+              }
+            />
+            <StatCard
+              label="Active recipes"
+              value={data.activeRecipes}
+              foot="Automation recipes enabled"
+              href="/recipes"
+              icon={
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(107,107,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b6bff" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 016.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15zM12 7h5M12 11h5"/></svg>
+                </div>
+              }
+            />
+          </>
+        )}
       </div>
 
       {/* ------------------------------------------------------------------ */}

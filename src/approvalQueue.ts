@@ -42,9 +42,26 @@ interface Entry extends PendingApproval {
 export class ApprovalQueue {
   private readonly entries = new Map<string, Entry>();
   private readonly ttlMs: number;
+  private readonly listeners = new Set<() => void>();
 
   constructor(opts: { ttlMs?: number } = {}) {
     this.ttlMs = opts.ttlMs ?? 5 * 60_000;
+  }
+
+  /** Subscribe to queue changes (enqueue + resolve). Returns unsubscribe fn. */
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private notify(): void {
+    for (const fn of this.listeners) {
+      try {
+        fn();
+      } catch {
+        /* ignore listener errors */
+      }
+    }
   }
 
   request(
@@ -69,6 +86,7 @@ export class ApprovalQueue {
       if (!entry) return;
       this.entries.delete(callId);
       entry.resolve("expired");
+      this.notify();
     }, this.ttlMs);
     if (typeof timer === "object" && "unref" in timer) timer.unref();
 
@@ -80,6 +98,7 @@ export class ApprovalQueue {
       approvalToken,
       ...input,
     });
+    this.notify();
     return { callId, approvalToken, promise };
   }
 
@@ -140,6 +159,7 @@ export class ApprovalQueue {
     clearTimeout(entry.timer);
     this.entries.delete(callId);
     entry.resolve(decision);
+    this.notify();
     return true;
   }
 }

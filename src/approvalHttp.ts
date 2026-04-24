@@ -74,6 +74,69 @@ export interface HttpResponse {
   body: unknown;
 }
 
+export interface SseWriter {
+  write(data: string): boolean;
+  writableEnded: boolean;
+  on(event: "close", fn: () => void): void;
+  writeHead(status: number, headers: Record<string, string>): void;
+}
+
+/**
+ * Mount SSE stream for live approval queue updates on `GET /approvals/stream`.
+ * Sends the full queue snapshot as a `snapshot` event on connect, then a
+ * `update` event whenever the queue changes (enqueue, approve, reject, expire).
+ * Heartbeat comment every 15s keeps the connection alive through proxies.
+ */
+export function handleApprovalsStream(
+  res: SseWriter,
+  deps: Pick<ApprovalHttpDeps, "queue">,
+  sessionFilter?: string | null,
+): void {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+
+  function sendSnapshot() {
+    if (res.writableEnded) return;
+    const list = deps.queue.list();
+    const filtered = sessionFilter
+      ? list.filter((a) => a.sessionId === sessionFilter)
+      : list;
+    res.write(`event: snapshot\ndata: ${JSON.stringify(filtered)}\n\n`);
+  }
+
+  sendSnapshot();
+
+  const unsubscribe = deps.queue.subscribe(() => {
+    if (res.writableEnded) {
+      unsubscribe();
+      return;
+    }
+    const list = deps.queue.list();
+    const filtered = sessionFilter
+      ? list.filter((a) => a.sessionId === sessionFilter)
+      : list;
+    res.write(`event: update\ndata: ${JSON.stringify(filtered)}\n\n`);
+  });
+
+  const heartbeat = setInterval(() => {
+    if (res.writableEnded) {
+      clearInterval(heartbeat);
+      unsubscribe();
+      return;
+    }
+    res.write(": heartbeat\n\n");
+  }, 15_000);
+
+  res.on("close", () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+}
+
 export async function routeApprovalRequest(
   req: HttpRequest,
   deps: ApprovalHttpDeps,

@@ -19,6 +19,12 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata = {
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+    ],
+  },
   title: "Patchwork",
   description: "AI agent oversight and approval dashboard",
   manifest: "/dashboard/manifest.json",
@@ -38,6 +44,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${albertSans.variable} ${jetbrainsMono.variable}`}>
       <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="manifest" href="/dashboard/manifest.json" />
         <meta name="theme-color" content="#faf7f2" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#0d0c0b" media="(prefers-color-scheme: dark)" />

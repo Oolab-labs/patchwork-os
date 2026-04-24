@@ -3,7 +3,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { WebSocket, WebSocketServer as WsServer } from "ws";
-import { routeApprovalRequest } from "./approvalHttp.js";
+import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import { saveBridgeConfigDriver } from "./config.js";
 import { timingSafeStringEqual } from "./crypto.js";
@@ -2373,6 +2373,16 @@ export class Server extends EventEmitter<ServerEvents> {
             }),
           );
         }
+        return;
+      }
+
+      // SSE stream for live approval queue updates.
+      if (parsedUrl.pathname === "/approvals/stream" && req.method === "GET") {
+        handleApprovalsStream(
+          res as unknown as import("./approvalHttp.js").SseWriter,
+          { queue: getApprovalQueue() },
+          parsedUrl.searchParams.get("session"),
+        );
         return;
       }
 

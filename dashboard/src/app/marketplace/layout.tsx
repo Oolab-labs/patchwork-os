@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { DemoBanner } from "@/components/DemoBanner";
 
 export const metadata = { title: "Marketplace — Patchwork OS" };
 
@@ -18,7 +17,6 @@ function BrandMark() {
 export default function MarketplaceLayout({ children }: { children: ReactNode }) {
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-0)", color: "var(--fg-0)" }}>
-      <DemoBanner />
       {/* public header — no sidebar */}
       <header
         style={{

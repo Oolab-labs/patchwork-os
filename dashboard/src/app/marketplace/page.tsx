@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { apiPath } from "@/lib/api";
 
 // ------------------------------------------------------------------ types
@@ -566,8 +567,22 @@ export default function MarketplacePage() {
       )}
 
       {registry === null && !loadErr ? (
-        <div className="empty-state" role="status" aria-busy="true">
-          <p>Loading marketplace…</p>
+        <div className="marketplace-grid" role="status" aria-busy="true" aria-label="Loading recipes">
+          {Array.from({ length: 6 }).map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+            <div key={i} className="template-card glass-card" style={{ display: "flex", flexDirection: "column", gap: 10, padding: "18px 18px 16px" }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+                <Skeleton width={20} height={20} style={{ borderRadius: 4, flexShrink: 0 }} />
+                <SkeletonText width="60%" />
+              </div>
+              <SkeletonText width="90%" />
+              <SkeletonText width="75%" size="sm" />
+              <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                <Skeleton width={40} height={18} style={{ borderRadius: 20 }} />
+                <Skeleton width={50} height={18} style={{ borderRadius: 20 }} />
+              </div>
+            </div>
+          ))}
         </div>
       ) : filtered.length === 0 ? (
         <div className="empty-state">

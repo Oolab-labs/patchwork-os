@@ -476,24 +476,65 @@ function ApprovalsContent() {
   const { patterns, clearPatterns } = useApprovalPatterns();
 
   useEffect(() => {
-    const tick = async () => {
+    // Load CC permissions once (changes rarely).
+    fetch(`${API}/cc-permissions`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) setRules(d as CcRules); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const qs = sessionFilter ? `?session=${encodeURIComponent(sessionFilter)}` : "";
+    const streamUrl = apiPath(`/api/bridge/approvals/stream${qs}`);
+
+    let es: EventSource | null = null;
+    let pollId: ReturnType<typeof setInterval> | null = null;
+    let alive = true;
+
+    function applySnapshot(data: string) {
       try {
-        const approvalsUrl = `${API}/approvals${sessionFilter ? `?session=${sessionFilter}` : ""}`;
-        const [pRes, rRes] = await Promise.all([
-          fetch(approvalsUrl),
-          fetch(`${API}/cc-permissions`),
-        ]);
-        if (!pRes.ok) throw new Error(`/approvals ${pRes.status}`);
-        setPending((await pRes.json()) as Pending[]);
-        if (rRes.ok) setRules((await rRes.json()) as CcRules);
+        setPending(JSON.parse(data) as Pending[]);
         setErr(undefined);
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
-      }
+      } catch { /* ignore parse errors */ }
+    }
+
+    function startPolling() {
+      if (pollId !== null || !alive) return;
+      const poll = async () => {
+        if (!alive) return;
+        try {
+          const approvalsUrl = `${API}/approvals${sessionFilter ? `?session=${sessionFilter}` : ""}`;
+          const r = await fetch(approvalsUrl);
+          if (!r.ok) throw new Error(`/approvals ${r.status}`);
+          setPending((await r.json()) as Pending[]);
+          setErr(undefined);
+        } catch (e) {
+          setErr(e instanceof Error ? e.message : String(e));
+        }
+      };
+      poll();
+      pollId = setInterval(poll, 5000);
+    }
+
+    if (typeof EventSource !== "undefined") {
+      es = new EventSource(streamUrl);
+      es.addEventListener("snapshot", (e) => applySnapshot((e as MessageEvent).data));
+      es.addEventListener("update", (e) => applySnapshot((e as MessageEvent).data));
+      es.onerror = () => {
+        // SSE unavailable (e.g. old bridge) — fall back to polling
+        es?.close();
+        es = null;
+        startPolling();
+      };
+    } else {
+      startPolling();
+    }
+
+    return () => {
+      alive = false;
+      es?.close();
+      if (pollId !== null) clearInterval(pollId);
     };
-    tick();
-    const id = setInterval(tick, 2000);
-    return () => clearInterval(id);
   }, [sessionFilter]);
 
   // Fade-out then remove
@@ -986,19 +1027,19 @@ function ApprovalsContent() {
           <RuleRow
             label="deny"
             tone="err"
-            items={rules.deny}
+            items={rules.deny ?? []}
             attributed={rules.attributed?.deny}
           />
           <RuleRow
             label="ask"
             tone="warn"
-            items={rules.ask}
+            items={rules.ask ?? []}
             attributed={rules.attributed?.ask}
           />
           <RuleRow
             label="allow"
             tone="ok"
-            items={rules.allow}
+            items={rules.allow ?? []}
             attributed={rules.attributed?.allow}
           />
         </div>

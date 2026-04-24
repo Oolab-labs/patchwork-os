@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { fmtDuration } from "./time";
 import { apiPath } from "@/lib/api";
 import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
+import { isDemoMode, setDemoMode, onDemoModeChange } from "@/lib/demoMode";
 
 // ------------------------------------------------------------------ icons
 
@@ -116,6 +117,18 @@ function useApprovalCount(): number {
   return count;
 }
 
+// ------------------------------------------------------------------ demo mode
+
+function useDemo() {
+  const [demo, setDemo] = useState(false);
+  useEffect(() => {
+    setDemo(isDemoMode());
+    return onDemoModeChange(setDemo);
+  }, []);
+  const toggle = () => setDemoMode(!demo);
+  return { demo, toggle };
+}
+
 // ------------------------------------------------------------------ theme
 
 function useTheme() {
@@ -134,22 +147,6 @@ function useTheme() {
     localStorage.setItem("pw-theme", next ? "dark" : "light");
   };
   return { dark, toggle };
-}
-
-// ------------------------------------------------------------------ mouse glow
-
-function useCardMouseGlow() {
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const card = (e.target as Element).closest<HTMLElement>(".card, .stat-card, .approval, .glass-card");
-      if (!card) return;
-      const rect = card.getBoundingClientRect();
-      card.style.setProperty("--mouse-x", `${e.clientX - rect.left}px`);
-      card.style.setProperty("--mouse-y", `${e.clientY - rect.top}px`);
-    };
-    document.addEventListener("mousemove", handler);
-    return () => document.removeEventListener("mousemove", handler);
-  }, []);
 }
 
 // ------------------------------------------------------------------ topbar nav
@@ -189,8 +186,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const status = useBridgeStatus();
   const approvalCount = useApprovalCount();
   const { dark, toggle } = useTheme();
-  useCardMouseGlow();
-
+  const { demo, toggle: toggleDemo } = useDemo();
   return (
     <div className="app-shell">
       <aside className="app-sidebar" aria-label="Primary navigation">
@@ -257,6 +253,23 @@ export function Shell({ children }: { children: ReactNode }) {
             <TopbarNav pathname={pathname ?? "/"} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              onClick={toggleDemo}
+              title={demo ? "Disable demo mode" : "Enable demo mode"}
+              aria-label="Toggle demo mode"
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                fontSize: 11, fontWeight: 600,
+                padding: "4px 10px", borderRadius: "var(--r-full)",
+                border: `1px solid ${demo ? "rgba(216,119,87,0.35)" : "var(--line-2)"}`,
+                background: demo ? "rgba(216,119,87,0.10)" : "transparent",
+                color: demo ? "var(--orange)" : "var(--ink-2)",
+                cursor: "pointer", transition: "all 150ms",
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: demo ? "var(--orange)" : "var(--ink-3)", display: "inline-block", flexShrink: 0 }} />
+              Demo
+            </button>
             <button
               className="theme-toggle"
               onClick={toggle}
