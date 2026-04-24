@@ -13,6 +13,9 @@ interface StatusResponse {
     approvalGate?: string;
     fullMode?: boolean;
     driver?: string;
+    model?: string;
+    localEndpoint?: string;
+    localModel?: string;
     automationEnabled?: boolean;
     webhookUrl?: string | null;
   };
@@ -26,6 +29,14 @@ const DRIVER_OPTIONS = [
   { value: "gemini", label: "Gemini CLI", desc: "Runs via Gemini CLI — requires Google account", comingSoon: false },
   { value: "openai", label: "OpenAI", desc: "GPT-4o and friends — requires OpenAI API key", comingSoon: true },
   { value: "grok", label: "Grok (xAI)", desc: "xAI Grok — requires xAI API key", comingSoon: true },
+];
+
+const MODEL_OPTIONS = [
+  { value: "claude", label: "Claude", desc: "Anthropic Claude — uses Claude API key or subprocess" },
+  { value: "openai", label: "OpenAI", desc: "GPT-4o and friends — requires OpenAI API key" },
+  { value: "gemini", label: "Gemini", desc: "Google Gemini — requires Google API key or gcloud ADC" },
+  { value: "grok", label: "Grok", desc: "xAI Grok — requires xAI API key" },
+  { value: "local", label: "Local (Ollama / LM Studio)", desc: "Local model via OpenAI-compatible endpoint — no API key needed" },
 ];
 
 const DRIVER_KEY_PROVIDER: Record<
@@ -74,6 +85,14 @@ export default function SettingsPage() {
   } | null>(null);
   const driverInitialized = useRef(false);
 
+  // Model state
+  const [modelValue, setModelValue] = useState("claude");
+  const [localEndpoint, setLocalEndpoint] = useState("http://localhost:11434/v1/chat/completions");
+  const [localModel, setLocalModel] = useState("llama3");
+  const [modelSaving, setModelSaving] = useState(false);
+  const [modelSaveMsg, setModelSaveMsg] = useState<{ ok: boolean; text: string; restart?: boolean } | null>(null);
+  const modelInitialized = useRef(false);
+
   useEffect(() => {
     const tick = async () => {
       try {
@@ -101,6 +120,13 @@ export default function SettingsPage() {
           const d = data.patchwork?.driver ?? "none";
           setDriverValue(d);
           driverInitialized.current = true;
+        }
+        if (!modelInitialized.current) {
+          const m = data.patchwork?.model ?? "claude";
+          setModelValue(m);
+          if (data.patchwork?.localEndpoint) setLocalEndpoint(data.patchwork.localEndpoint);
+          if (data.patchwork?.localModel) setLocalModel(data.patchwork.localModel);
+          modelInitialized.current = true;
         }
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
@@ -212,6 +238,33 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveModel() {
+    setModelSaving(true);
+    setModelSaveMsg(null);
+    try {
+      const payload: Record<string, unknown> = { model: modelValue };
+      if (modelValue === "local") {
+        payload.localEndpoint = localEndpoint.trim() || "http://localhost:11434/v1/chat/completions";
+        payload.localModel = localModel.trim() || "llama3";
+      }
+      const res = await fetch(apiPath("/api/bridge/settings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; restartRequired?: boolean };
+      if (res.ok && body.ok) {
+        setModelSaveMsg({ ok: true, text: "Saved.", restart: body.restartRequired });
+      } else {
+        setModelSaveMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
+      }
+    } catch (e) {
+      setModelSaveMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setModelSaving(false);
+    }
+  }
+
   const activeDriver = settings?.patchwork?.driver ?? "none";
   const selectedKeyMeta = DRIVER_KEY_PROVIDER[driverValue] ?? null;
 
@@ -272,6 +325,10 @@ export default function SettingsPage() {
               label="AI driver"
               value={activeDriver}
               pill={activeDriver !== "none" ? "ok" : undefined}
+            />
+            <Row
+              label="Model"
+              value={settings?.patchwork?.model ?? "claude"}
             />
             <Row
               label="Automation"
@@ -441,6 +498,131 @@ export default function SettingsPage() {
                     <span style={{ color: "var(--fg-2)", marginLeft: 6 }}>
                       Restart the bridge to apply.
                     </span>
+                  )}
+                </p>
+              )}
+            </div>
+
+            <div style={{ padding: "16px 0 8px" }}>
+              <label
+                htmlFor="model-selector"
+                style={{ display: "block", fontSize: 13, color: "var(--fg-1)", marginBottom: 4, fontWeight: 500 }}
+              >
+                Model
+              </label>
+              <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 10px", lineHeight: 1.5 }}>
+                Which LLM to use for recipe steps and interactive tasks. "Local" connects to an Ollama or LM Studio endpoint running on your machine.
+              </p>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", width: "100%" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8, width: "100%", marginBottom: 4 }}>
+                  {MODEL_OPTIONS.map((o) => {
+                    const selected = modelValue === o.value;
+                    return (
+                      <button
+                        key={o.value}
+                        type="button"
+                        disabled={modelSaving}
+                        onClick={() => { setModelValue(o.value); setModelSaveMsg(null); }}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "flex-start",
+                          gap: 2,
+                          padding: "10px 12px",
+                          background: selected ? "var(--bg-3)" : "var(--bg-2)",
+                          border: selected ? "1px solid var(--accent)" : "1px solid var(--border-default)",
+                          borderRadius: "var(--r-2)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          transition: "border-color 0.15s, background 0.15s",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}>
+                          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)", flex: 1 }}>{o.label}</span>
+                          {selected && (
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
+                          )}
+                        </div>
+                        <span style={{ fontSize: 11, color: "var(--fg-3)", lineHeight: 1.4 }}>{o.desc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {modelValue === "local" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", marginBottom: 4 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <label htmlFor="local-endpoint" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+                        Endpoint URL
+                      </label>
+                      <input
+                        id="local-endpoint"
+                        type="url"
+                        value={localEndpoint}
+                        onChange={(e) => { setLocalEndpoint(e.target.value); setModelSaveMsg(null); }}
+                        placeholder="http://localhost:11434/v1/chat/completions"
+                        style={{
+                          background: "var(--bg-2)",
+                          border: "1px solid var(--border-default)",
+                          borderRadius: "var(--r-2)",
+                          color: "var(--fg-0)",
+                          fontSize: 13,
+                          fontFamily: "var(--font-mono)",
+                          padding: "6px 10px",
+                          outline: "none",
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <label htmlFor="local-model" style={{ fontSize: 12, color: "var(--fg-2)" }}>
+                        Model name
+                      </label>
+                      <input
+                        id="local-model"
+                        type="text"
+                        value={localModel}
+                        onChange={(e) => { setLocalModel(e.target.value); setModelSaveMsg(null); }}
+                        placeholder="llama3"
+                        style={{
+                          background: "var(--bg-2)",
+                          border: "1px solid var(--border-default)",
+                          borderRadius: "var(--r-2)",
+                          color: "var(--fg-0)",
+                          fontSize: 13,
+                          fontFamily: "var(--font-mono)",
+                          padding: "6px 10px",
+                          outline: "none",
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={saveModel}
+                  disabled={modelSaving}
+                  style={{
+                    background: "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "var(--r-2)",
+                    padding: "6px 14px",
+                    fontSize: 13,
+                    cursor: modelSaving ? "not-allowed" : "pointer",
+                    opacity: modelSaving ? 0.6 : 1,
+                    whiteSpace: "nowrap",
+                    alignSelf: "flex-end",
+                  }}
+                >
+                  {modelSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+              {modelSaveMsg && (
+                <p style={{ fontSize: 12, marginTop: 6, color: modelSaveMsg.ok ? "var(--ok)" : "var(--err)" }}>
+                  {modelSaveMsg.text}
+                  {modelSaveMsg.restart && (
+                    <span style={{ color: "var(--fg-2)", marginLeft: 6 }}>Restart the bridge to apply.</span>
                   )}
                 </p>
               )}

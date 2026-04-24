@@ -870,6 +870,14 @@ Environment Variables:
   CLAUDE_IDE_BRIDGE_CONFIG           Path to config file (overrides auto-discovery)`);
         return process.exit(0);
       }
+      // Subcommand-only flags (recipe run, etc.) — ignored at bridge startup
+      case "--local":
+      case "--dry-run":
+        break;
+      case "--step":
+      case "--var":
+        ++i; // consume the value
+        break;
       default: {
         const arg = args[i];
         if (arg?.startsWith("--")) {
