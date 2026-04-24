@@ -643,6 +643,41 @@ export function summarizeRecipeExecution(
   };
 }
 
+/**
+ * Normalize either a yamlRunner RunResult or a chainedRunner ChainedRunResult
+ * into the RunStepResult[] shape expected by RecipeRunLog.appendDirect.
+ * Returns undefined when the result has no step-level detail.
+ */
+export function extractRunLogStepResults(result: RunRecipeResult["result"]):
+  | Array<{
+      id: string;
+      tool?: string;
+      status: "ok" | "skipped" | "error";
+      error?: string;
+      durationMs: number;
+    }>
+  | undefined {
+  if ("stepsRun" in result) {
+    // yamlRunner: stepResults is already StepResult[]
+    if (!Array.isArray(result.stepResults)) return undefined;
+    return result.stepResults.map((s) => ({
+      id: s.id,
+      ...(s.tool ? { tool: s.tool } : {}),
+      status: s.status,
+      ...(s.error ? { error: s.error } : {}),
+      durationMs: s.durationMs,
+    }));
+  }
+
+  // chainedRunner: stepResults is Map<string, ChainedStepRunResult>
+  return [...result.stepResults.entries()].map(([id, s]) => ({
+    id,
+    status: s.skipped ? "skipped" : s.success ? "ok" : "error",
+    durationMs: s.durationMs ?? 0,
+    ...(s.error ? { error: s.error.message } : {}),
+  }));
+}
+
 export function formatRunReport(
   result: RunRecipeResult["result"],
   recipeName: string,

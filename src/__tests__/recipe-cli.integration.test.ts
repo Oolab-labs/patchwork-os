@@ -119,8 +119,7 @@ describe("recipe CLI integration", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(`Running recipe "${recipePath}" locally`);
-    expect(result.stdout).toContain("✓ 1 step(s) completed");
-    expect(result.stdout).toContain("Output written to:");
+    expect(result.stdout).toMatch(/✓ run-cli — 1 step\(s\)/);
     expect(result.stdout).toContain(outputPath);
     expect(fs.readFileSync(outputPath, "utf-8")).toBe("run cli");
   });
@@ -157,7 +156,7 @@ describe("recipe CLI integration", () => {
     );
 
     await waitForLine(stdoutLines, /Change detected, running/, 10_000);
-    await waitForLine(stdoutLines, /✓ 1 step\(s\) completed/, 10_000);
+    await waitForLine(stdoutLines, /✓ watch-cli — 1 step\(s\)/, 10_000);
     await waitForLine(
       stdoutLines,
       new RegExp(outputPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
