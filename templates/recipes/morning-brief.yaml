@@ -61,7 +61,8 @@ steps:
         6. **Linear** — list in-progress and unstarted issues by priority; omit this section entirely if the list is empty or returned an error
 
         Be concise. Skip newsletters and automated notifications.
-      driver: gemini
+      # Use claude (not gemini) — Gemini free tier hits daily quota mid-recipe
+      driver: claude
       into: brief
   - tool: file.write
     path: ~/.patchwork/inbox/morning-brief-{{date}}.md
