@@ -7,6 +7,7 @@ import { fmtDuration } from "./time";
 import { apiPath } from "@/lib/api";
 import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
 import { isDemoMode, setDemoMode, onDemoModeChange } from "@/lib/demoMode";
+import { CardGlow } from "./CardGlow";
 
 // ------------------------------------------------------------------ icons
 
@@ -189,6 +190,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const { demo, toggle: toggleDemo } = useDemo();
   return (
     <div className="app-shell">
+      <CardGlow />
       <aside className="app-sidebar" aria-label="Primary navigation">
         <div className="app-brand">
           <BrandMark />
