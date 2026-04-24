@@ -608,6 +608,36 @@ interface TokenModalConfig {
 }
 
 const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
+  github: {
+    name: "GitHub",
+    icon: <IconGitHub />,
+    instructions: (
+      <>
+        Create a personal access token at{" "}
+        <a href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          github.com/settings/tokens
+        </a>
+        . Grant <code>repo</code> and <code>read:org</code> scopes.
+      </>
+    ),
+    placeholder: "ghp_…",
+    tokenKey: "token",
+  },
+  linear: {
+    name: "Linear",
+    icon: <IconLinear />,
+    instructions: (
+      <>
+        Create an API key in{" "}
+        <a href="https://linear.app/settings/api" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          Linear Settings → API
+        </a>
+        .
+      </>
+    ),
+    placeholder: "lin_api_…",
+    tokenKey: "token",
+  },
   confluence: {
     name: "Confluence",
     icon: <IconConfluence />,
