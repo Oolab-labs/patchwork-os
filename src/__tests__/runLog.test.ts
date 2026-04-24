@@ -169,6 +169,40 @@ describe("RecipeRunLog.record", () => {
     expect(lines).toHaveLength(5);
   });
 
+  it("appendDirect persists CLI-run shaped payloads and makes them queryable", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const now = Date.now();
+    log.appendDirect({
+      taskId: `cli-${now}`,
+      recipeName: "project-health-check",
+      trigger: "recipe",
+      status: "done",
+      createdAt: now,
+      startedAt: now,
+      doneAt: now + 1200,
+      durationMs: 1200,
+      stepResults: [
+        { id: "commits", status: "ok", durationMs: 234 },
+        { id: "summarize", status: "ok", durationMs: 890 },
+        { id: "write", status: "ok", durationMs: 12 },
+      ],
+    });
+    expect(log.size()).toBe(1);
+    const runs = log.query({ recipe: "project-health-check" });
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.status).toBe("done");
+    expect(runs[0]!.stepResults).toHaveLength(3);
+    expect(runs[0]!.stepResults![0]!.id).toBe("commits");
+    // Verify it hit disk
+    const lines = readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")
+      .trim()
+      .split("\n");
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0]!);
+    expect(parsed.recipeName).toBe("project-health-check");
+    expect(parsed.stepResults).toHaveLength(3);
+  });
+
   it("tolerates malformed JSONL lines on reload", () => {
     const file = path.join(tmp, "runs.jsonl");
     // Seed with one bad line and one good.

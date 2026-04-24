@@ -941,6 +941,45 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
       if (summary.errorMessage) {
         process.stderr.write(`  Error: ${summary.errorMessage}\n`);
       }
+
+      // Append to run log so CLI runs appear in ctxQueryTraces + dashboard /runs
+      try {
+        const { RecipeRunLog } = await import("./runLog.js");
+        const runLog = new RecipeRunLog({
+          dir: path.join(os.homedir(), ".patchwork"),
+        });
+        const startedAt = Date.now();
+        const stepResultsForLog =
+          "stepResults" in run.result
+            ? [...run.result.stepResults.entries()].map(([id, s]) => ({
+                id,
+                status: s.skipped
+                  ? ("skipped" as const)
+                  : s.success
+                    ? ("ok" as const)
+                    : ("error" as const),
+                durationMs: s.durationMs ?? 0,
+                ...(s.error ? { error: s.error.message } : {}),
+              }))
+            : undefined;
+        runLog.appendDirect({
+          taskId: `cli-${Date.now()}`,
+          recipeName: run.recipe.name,
+          trigger: "recipe",
+          status: summary.ok ? "done" : "error",
+          createdAt: startedAt,
+          startedAt,
+          doneAt: Date.now(),
+          durationMs: 0,
+          ...(summary.errorMessage
+            ? { errorMessage: summary.errorMessage }
+            : {}),
+          ...(stepResultsForLog ? { stepResults: stepResultsForLog } : {}),
+        });
+      } catch {
+        // Non-fatal — run log write failure must not abort the CLI
+      }
+
       process.exit(0);
     } catch (err) {
       process.stderr.write(
