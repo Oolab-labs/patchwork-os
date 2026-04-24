@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Albert_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Shell } from "@/components/Shell";
+import { DemoBanner } from "@/components/DemoBanner";
 
 const albertSans = Albert_Sans({
   subsets: ["latin"],
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link rel="apple-touch-icon" href="/dashboard/icons/icon-192.png" />
       </head>
       <body>
+        <DemoBanner />
         <Shell>{children}</Shell>
         <script
           dangerouslySetInnerHTML={{

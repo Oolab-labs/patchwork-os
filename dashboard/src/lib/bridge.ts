@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { mockBridgeResponse } from "./mockData";
 
 interface BridgeLock {
   pid: number;
@@ -79,6 +80,11 @@ export async function bridgeFetch(
   pathname: string,
   init?: RequestInit,
 ): Promise<Response> {
+  if (process.env.NEXT_PUBLIC_DEMO_MODE === "true") {
+    const mock = mockBridgeResponse(pathname, init?.method ?? "GET");
+    if (mock) return mock;
+  }
+
   const lock = findBridge();
   if (!lock) {
     return new Response(
