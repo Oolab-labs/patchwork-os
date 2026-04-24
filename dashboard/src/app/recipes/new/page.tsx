@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
+import { apiPath } from "@/lib/api";
 
 interface Step {
   id: string;
@@ -214,7 +215,7 @@ export default function NewRecipePage() {
 
     setSaving(true);
     try {
-      const res = await fetch("/api/bridge/recipes", {
+      const res = await fetch(apiPath("/api/bridge/recipes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

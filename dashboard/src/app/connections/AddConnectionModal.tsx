@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { apiPath } from "@/lib/api";
 
 // ------------------------------------------------------------------ types
 
@@ -60,7 +61,7 @@ export default function AddConnectionModal({
     setReqSubmitting(true);
     setReqError(null);
     try {
-      const res = await fetch("/api/connector-requests", {
+      const res = await fetch(apiPath("/api/connector-requests"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: reqName.trim(), notes: reqNotes.trim() || undefined }),

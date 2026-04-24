@@ -1,5 +1,6 @@
 "use client";
 import { Fragment, useEffect, useState } from "react";
+import { apiPath } from "@/lib/api";
 import { fmtDuration } from "@/components/time";
 
 interface Task {
@@ -33,7 +34,7 @@ export default function TasksPage() {
   useEffect(() => {
     const tick = async () => {
       try {
-        const res = await fetch("/api/bridge/tasks");
+        const res = await fetch(apiPath("/api/bridge/tasks"));
         if (!res.ok) throw new Error(`/tasks ${res.status}`);
         const data = (await res.json()) as { tasks: Task[] };
         setTasks(data.tasks ?? []);

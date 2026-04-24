@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { apiPath } from '@/lib/api';
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -55,7 +56,7 @@ export default function RunsPage() {
         const params = new URLSearchParams({ limit: "100" });
         if (trigger !== "all") params.set("trigger", trigger);
         if (status !== "all") params.set("status", status);
-        const res = await fetch(`/api/bridge/runs?${params}`);
+        const res = await fetch(apiPath(`/api/bridge/runs?${params}`));
         if (!res.ok) throw new Error(`/runs ${res.status}`);
         const data = (await res.json()) as { runs?: Run[] };
         setRuns(data.runs ?? []);
@@ -144,9 +145,9 @@ export default function RunsPage() {
               </tr>
             </thead>
             <tbody>
-              {runs.map((r) => {
+              {runs.map((r, idx) => {
                 const isExpanded = expanded === String(r.seq);
-                const key = String(r.seq);
+                const key = `${r.seq}-${idx}`;
                 return (
                   <React.Fragment key={key}>
                     <tr

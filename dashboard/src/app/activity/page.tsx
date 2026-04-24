@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 
 interface ActivityEvent {
@@ -71,7 +72,7 @@ export default function ActivityPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/bridge/activity?last=100");
+        const res = await fetch(apiPath("/api/bridge/activity?last=100"));
         if (res.ok) {
           const data = (await res.json()) as { events?: ActivityEvent[] };
           if (!cancelled) {
@@ -91,7 +92,7 @@ export default function ActivityPage() {
   }, []);
 
   useEffect(() => {
-    const es = new EventSource("/api/bridge/stream");
+    const es = new EventSource(apiPath("/api/bridge/stream"));
     esRef.current = es;
     es.onopen = () => {
       setConnected(true);

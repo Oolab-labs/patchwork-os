@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { apiPath } from "@/lib/api";
 
 export interface UseBridgeFetchResult<T> {
   data: T | null;
@@ -37,7 +38,7 @@ export function useBridgeFetch<T>(
 
     const tick = async () => {
       try {
-        const res = await fetch(path);
+        const res = await fetch(apiPath(path));
         if (!alive) return;
         setStatus(res.status);
 

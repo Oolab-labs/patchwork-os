@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { apiPath } from "@/lib/api";
 import { StatCard } from "@/components/StatCard";
 import { fmtDuration, relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -189,7 +190,7 @@ function ActivityFeed() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch("/api/bridge/activity?last=20");
+        const res = await fetch(apiPath("/api/bridge/activity?last=20"));
         if (!res.ok || !mountedRef.current) return;
         const data = (await res.json()) as { events?: ActivityEvent[] };
         const items = (data.events ?? []).map(withAt).reverse().slice(0, 8);
@@ -329,6 +330,171 @@ function ActivityFeed() {
 }
 
 // ---------------------------------------------------------------------------
+// MilestoneCard — progress toward the current usage milestone
+// ---------------------------------------------------------------------------
+
+interface MilestoneCardProps {
+  approvals: Pending[];
+  recipes: Recipe[];
+  toolCalls: number;
+}
+
+function MilestoneCard({ approvals, recipes, toolCalls }: MilestoneCardProps) {
+  // Derive which milestone is active from real data
+  const hasApprovals = approvals.length > 0 || toolCalls > 0;
+  const hasRecipes = recipes.length > 0;
+
+  type MilestoneItem = { t: string; done: boolean };
+
+  let title = "First steps";
+  let items: MilestoneItem[] = [
+    { t: "Bridge connected", done: true },
+    { t: "First approval reviewed", done: hasApprovals },
+    { t: "First recipe configured", done: hasRecipes },
+    { t: "10 tool calls reached", done: toolCalls >= 10 },
+    { t: "100 tool calls reached", done: toolCalls >= 100 },
+  ];
+
+  if (toolCalls >= 100) {
+    title = "First 100 tool calls";
+    items = [
+      { t: "Bridge connected", done: true },
+      { t: "First approval reviewed", done: hasApprovals },
+      { t: "First recipe configured", done: hasRecipes },
+      { t: "10 tool calls reached", done: true },
+      { t: "100 tool calls reached", done: true },
+    ];
+  } else if (toolCalls >= 10) {
+    title = "Getting started";
+  }
+
+  const doneCount = items.filter((i) => i.done).length;
+  const pct = Math.round((doneCount / items.length) * 100);
+
+  return (
+    <div className="glass-card glass-card--hover" style={{ padding: "20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 11, color: "var(--fg-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2 }}>
+            Current milestone
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fg-0)" }}>{title}</div>
+        </div>
+        <span className="pill muted" style={{ fontSize: 11 }}>In progress</span>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 12, color: "var(--fg-2)" }}>
+        <span>{doneCount} of {items.length} complete</span>
+        <span style={{ fontFamily: "var(--font-mono)" }}>{pct}%</span>
+      </div>
+      <div className="progress" style={{ marginBottom: 16 }}>
+        <div className="progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {items.map((it, i) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: stable static list
+            key={i}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              fontSize: 12.5,
+              color: it.done ? "var(--fg-3)" : "var(--fg-0)",
+              textDecoration: it.done ? "line-through" : "none",
+            }}
+          >
+            <span
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: "50%",
+                border: it.done ? "none" : "1.5px solid var(--border)",
+                background: it.done ? "var(--accent)" : "transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                fontSize: 8,
+                color: "#fff",
+              }}
+            >
+              {it.done ? "✓" : ""}
+            </span>
+            {it.t}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ProviderDeliveryCard — connected providers + wave breakdown
+// ---------------------------------------------------------------------------
+
+interface ProviderDeliveryCardProps {
+  connectedCount: number;
+}
+
+const WAVE_PROVIDERS = ["slack", "linear", "jira", "github", "sentry", "gmail", "google", "notion"];
+
+function ProviderDeliveryCard({ connectedCount }: ProviderDeliveryCardProps) {
+  const waves = [
+    { label: "Wave 1", sublabel: "shipped", n: connectedCount, total: 8, color: "var(--ok)", bg: "var(--ok-soft, var(--recess))" },
+    { label: "Wave 2", sublabel: "core (planned)", n: 0, total: 8, color: "var(--accent)", bg: "var(--accent-soft, var(--recess))" },
+    { label: "Wave 3", sublabel: "expand (roadmap)", n: 0, total: 16, color: "var(--fg-3)", bg: "var(--recess)" },
+  ];
+
+  return (
+    <div className="glass-card glass-card--hover" style={{ padding: "20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 11, color: "var(--fg-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2 }}>
+            Provider delivery
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fg-0)" }}>
+            {connectedCount} of 32 connected
+          </div>
+        </div>
+        <Link href="/connectors" className="btn sm ghost" style={{ textDecoration: "none", fontSize: 12 }}>
+          + Connect
+        </Link>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6, marginBottom: 14 }}>
+        {WAVE_PROVIDERS.map((p) => (
+          <ProviderIcon key={p} name={p} size={28} />
+        ))}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {waves.map((w) => (
+          <div key={w.label}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12 }}>
+              <span style={{ color: "var(--fg-1)", fontWeight: 500 }}>
+                {w.label} ·{" "}
+                <span style={{ color: "var(--fg-3)", fontWeight: 400 }}>{w.sublabel}</span>
+              </span>
+              <span style={{ color: "var(--fg-2)", fontFamily: "var(--font-mono)" }}>
+                {w.n}/{w.total}
+              </span>
+            </div>
+            <div className="progress">
+              <div
+                className="progress-fill"
+                style={{ width: `${w.total > 0 ? (w.n / w.total) * 100 : 0}%`, background: w.color }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -353,11 +519,11 @@ export default function HomePage() {
       try {
         const [approvalsRes, tasksRes, metricsRes, recipesRes, connectorsRes] =
           await Promise.all([
-            fetch("/api/bridge/approvals"),
-            fetch("/api/bridge/tasks"),
-            fetch("/api/bridge/metrics"),
-            fetch("/api/bridge/recipes"),
-            fetch("/api/bridge/connectors/status"),
+            fetch(apiPath("/api/bridge/approvals")),
+            fetch(apiPath("/api/bridge/tasks")),
+            fetch(apiPath("/api/bridge/metrics")),
+            fetch(apiPath("/api/bridge/recipes")),
+            fetch(apiPath("/api/bridge/connectors/status")),
           ]);
         if (!alive) return;
         if (!approvalsRes.ok || !tasksRes.ok) {
@@ -632,6 +798,14 @@ export default function HomePage() {
       </div>
 
       {/* ------------------------------------------------------------------ */}
+      {/* Bottom grid — Milestone + Provider delivery                          */}
+      {/* ------------------------------------------------------------------ */}
+      <section className="overview-bottom-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: "var(--s-6)" }}>
+        <MilestoneCard approvals={approvals} recipes={recipes} toolCalls={data.recentActivity} />
+        <ProviderDeliveryCard connectedCount={providerCount} />
+      </section>
+
+      {/* ------------------------------------------------------------------ */}
       {/* Active recipes section                                               */}
       {/* ------------------------------------------------------------------ */}
       {recipes.length > 0 && (
@@ -749,7 +923,7 @@ function ApproveBtnInline({ callId }: { callId: string }) {
       className="btn sm success"
       style={{ minHeight: 26 }}
       onClick={async () => {
-        await fetch(`/api/bridge/approve/${callId}`, { method: "POST" });
+        await fetch(apiPath(`/api/bridge/approve/${callId}`), { method: "POST" });
         setDone(true);
       }}
     >

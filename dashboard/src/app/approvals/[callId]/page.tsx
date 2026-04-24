@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import { apiPath } from '@/lib/api';
 import { relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 
@@ -80,7 +81,7 @@ export default function ApprovalDetailPage() {
   async function decide(choice: "approve" | "reject") {
     setDecideErr(null);
     try {
-      const res = await fetch(`/api/bridge/${choice}/${callId}`, {
+      const res = await fetch(apiPath(`/api/bridge/${choice}/${callId}`), {
         method: "POST",
       });
       if (!res.ok) {

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 
 interface Metric {
@@ -17,7 +18,7 @@ export default function MetricsPage() {
   useEffect(() => {
     const tick = async () => {
       try {
-        const res = await fetch("/api/bridge/metrics");
+        const res = await fetch(apiPath("/api/bridge/metrics"));
         if (!res.ok) throw new Error(`/metrics ${res.status}`);
         const text = await res.text();
         setMetrics(parsePrometheus(text));

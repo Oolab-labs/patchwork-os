@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { apiPath } from "@/lib/api";
 
 interface StatusResponse {
   uptimeMs?: number;
@@ -76,7 +77,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const tick = async () => {
       try {
-        const res = await fetch("/api/bridge/status");
+        const res = await fetch(apiPath("/api/bridge/status"));
         if (res.status === 404) {
           setUnsupported(true);
           return;
@@ -114,7 +115,7 @@ export default function SettingsPage() {
     setGateSaving(true);
     setGateSaveMsg(null);
     try {
-      const res = await fetch("/api/bridge/settings", {
+      const res = await fetch(apiPath("/api/bridge/settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approvalGate: value }),
@@ -143,7 +144,7 @@ export default function SettingsPage() {
     setWebhookSaving(true);
     setWebhookSaveMsg(null);
     try {
-      const res = await fetch("/api/bridge/settings", {
+      const res = await fetch(apiPath("/api/bridge/settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ webhookUrl: webhookInput }),
@@ -178,7 +179,7 @@ export default function SettingsPage() {
       if (keyMeta && apiKeyInput.trim()) {
         payload.apiKey = { provider: keyMeta.provider, key: apiKeyInput.trim() };
       }
-      const res = await fetch("/api/bridge/settings", {
+      const res = await fetch(apiPath("/api/bridge/settings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -651,7 +652,7 @@ function MobileNotificationsCard() {
   async function handleTest() {
     setMsg(null);
     try {
-      const res = await fetch("/api/push/test", { method: "POST" });
+      const res = await fetch(apiPath("/api/push/test"), { method: "POST" });
       const data = await res.json() as Record<string, unknown>;
       setMsg(res.ok ? { ok: true, text: `Test sent (${data.sent ?? 0} delivered).` } : { ok: false, text: JSON.stringify(data) });
     } catch (err) {
