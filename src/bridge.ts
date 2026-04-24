@@ -34,10 +34,13 @@ import { probeAll } from "./probe.js";
 import { RecipeScheduler } from "./recipes/scheduler.js";
 import {
   findWebhookRecipe,
+  findYamlRecipePath,
   listInstalledRecipes,
+  loadRecipeContent,
   loadRecipePrompt,
   renderWebhookPrompt,
   saveRecipe,
+  saveRecipeContent,
 } from "./recipesHttp.js";
 import { classifyTool } from "./riskTier.js";
 import { RecipeRunLog } from "./runLog.js";
@@ -1235,6 +1238,14 @@ export class Bridge {
         unknown
       >;
     };
+    this.server.loadRecipeContentFn = (name: string) => {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      return loadRecipeContent(recipesDir, name);
+    };
+    this.server.saveRecipeContentFn = (name: string, content: string) => {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      return saveRecipeContent(recipesDir, name, content);
+    };
     this.server.saveRecipeFn = (draft) => {
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
       return saveRecipe(recipesDir, draft);
@@ -1344,7 +1355,80 @@ export class Bridge {
       if (!match) {
         return { ok: false, error: "not_found" };
       }
-      const loaded = loadRecipePrompt(recipesDir, match.name);
+      if (match.format === "yaml") {
+        const { loadYamlRecipe, dispatchRecipe, buildChainedDeps } =
+          await import("./recipes/yamlRunner.js");
+        const orch = this.orchestrator;
+        const claudeCodeFn = async (prompt: string): Promise<string> => {
+          const task = await orch.runAndWait({
+            prompt,
+            triggerSource: `webhook:${match.name}:agent`,
+            timeoutMs: 600_000,
+          });
+          return task.output ?? task.errorMessage ?? "";
+        };
+        let payloadText: string | undefined;
+        if (payload !== undefined) {
+          try {
+            payloadText = JSON.stringify(payload);
+          } catch {
+            payloadText = String(payload);
+          }
+          if (payloadText.length > 8_000) {
+            payloadText = `${payloadText.slice(0, 8_000)}\n…[truncated]`;
+          }
+        }
+        try {
+          const recipe = loadYamlRecipe(match.filePath);
+          const taskId = `yaml-webhook-${match.name}-${Date.now()}`;
+          const runnerDeps = {
+            workdir: this.config.workspace,
+            claudeCodeFn,
+          };
+          const seedContext = {
+            hook_path: hookPath,
+            webhook_path: hookPath,
+            ...(payloadText !== undefined
+              ? {
+                  payload: payloadText,
+                  webhook_payload: payloadText,
+                }
+              : {}),
+          };
+          dispatchRecipe(
+            recipe,
+            {
+              ...runnerDeps,
+              chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
+            },
+            seedContext,
+          )
+            .then((result) => {
+              const steps =
+                "stepsRun" in result
+                  ? result.stepsRun
+                  : (result.summary?.total ?? "?");
+              this.logger.info?.(
+                `[recipe] webhook "${match.name}" finished: ${steps} steps`,
+              );
+            })
+            .catch((err: unknown) => {
+              this.logger.warn?.(
+                `[recipe] webhook "${match.name}" error: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            });
+          return { ok: true, taskId, name: match.name };
+        } catch (err) {
+          return {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      }
+      const loaded = loadRecipePrompt(
+        recipesDir,
+        path.basename(match.filePath, path.extname(match.filePath)),
+      );
       if (!loaded) {
         return { ok: false, error: "recipe_file_missing" };
       }
@@ -1402,11 +1486,7 @@ export class Bridge {
       const { loadYamlRecipe, dispatchRecipe, buildChainedDeps } = await import(
         "./recipes/yamlRunner.js"
       );
-      const ymlCandidates = [
-        path.join(recipesDir, `${name}.yaml`),
-        path.join(recipesDir, `${name}.yml`),
-      ];
-      const ymlPath = ymlCandidates.find((p) => fs.existsSync(p));
+      const ymlPath = findYamlRecipePath(recipesDir, name);
       if (!ymlPath) {
         return {
           ok: false,

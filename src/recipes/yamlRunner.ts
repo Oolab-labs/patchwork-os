@@ -34,6 +34,7 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
+import { findYamlRecipePath } from "../recipesHttp.js";
 import { normalizeRecipeForRuntime } from "./legacyRecipeCompat.js";
 
 // Import tool registry and trigger tool self-registration
@@ -1028,18 +1029,15 @@ export function buildChainedDeps(
       }
     }
 
-    const candidates = [
-      path.join(recipesDir, `${name}.yaml`),
-      path.join(recipesDir, `${name}.yml`),
-    ];
-    for (const p of candidates) {
+    const candidate = findYamlRecipePath(recipesDir, name);
+    if (candidate) {
       try {
-        const raw = stepDeps.readFile(p);
+        const raw = stepDeps.readFile(candidate);
         const { parse } = await import("yaml");
         const parsed = parse(raw) as import("./chainedRunner.js").ChainedRecipe;
         if (parsed?.steps) return parsed;
       } catch {
-        // try next candidate
+        // fall through
       }
     }
     return null;

@@ -137,6 +137,17 @@ export class Server extends EventEmitter<ServerEvents> {
   public tasksFn: (() => { tasks: Record<string, unknown>[] }) | null = null;
   /** Patchwork: set by bridge to list installed recipes for the dashboard. */
   public recipesFn: (() => Record<string, unknown>) | null = null;
+  /** Patchwork: set by bridge to load raw recipe source content by name. */
+  public loadRecipeContentFn:
+    | ((name: string) => { content: string; path: string } | null)
+    | null = null;
+  /** Patchwork: set by bridge to save raw recipe source content by name. */
+  public saveRecipeContentFn:
+    | ((
+        name: string,
+        content: string,
+      ) => { ok: boolean; path?: string; error?: string })
+    | null = null;
   /** Patchwork: set by bridge to save a new recipe draft to disk. */
   public saveRecipeFn:
     | ((draft: RecipeDraft) => { ok: boolean; path?: string; error?: string })
@@ -2091,6 +2102,69 @@ export class Server extends EventEmitter<ServerEvents> {
           } catch {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+          }
+        });
+        return;
+      }
+      const recipeContentMatch = /^\/recipes\/([^/]+)$/.exec(
+        parsedUrl.pathname,
+      );
+      if (recipeContentMatch && req.method === "GET") {
+        const name = decodeURIComponent(recipeContentMatch[1]!);
+        if (!this.loadRecipeContentFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({ ok: false, error: "Recipe content unavailable" }),
+          );
+          return;
+        }
+        const result = this.loadRecipeContentFn(name);
+        if (!result) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Recipe not found" }));
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+        return;
+      }
+      if (recipeContentMatch && req.method === "PUT") {
+        const name = decodeURIComponent(recipeContentMatch[1]!);
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          try {
+            const body = JSON.parse(
+              Buffer.concat(chunks).toString("utf-8"),
+            ) as { content?: string };
+            if (typeof body.content !== "string") {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "content (string) required",
+                }),
+              );
+              return;
+            }
+            if (!this.saveRecipeContentFn) {
+              res.writeHead(503, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "Recipe content saving unavailable",
+                }),
+              );
+              return;
+            }
+            const result = this.saveRecipeContentFn(name, body.content);
+            res.writeHead(result.ok ? 200 : 400, {
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify(result));
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
           }
         });
         return;
