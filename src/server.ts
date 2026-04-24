@@ -2165,6 +2165,9 @@ export class Server extends EventEmitter<ServerEvents> {
               webhookUrl?: string;
               approvalGate?: string;
               driver?: string;
+              model?: string;
+              localEndpoint?: string;
+              localModel?: string;
               apiKey?: { provider: string; key: string };
               pushServiceUrl?: string;
               pushServiceToken?: string;
@@ -2233,6 +2236,31 @@ export class Server extends EventEmitter<ServerEvents> {
               cfg.driver = driver;
               saveBridgeConfigDriver(driver, this.bridgeConfigPath);
             }
+            if (body.model !== undefined) {
+              const validModels = [
+                "claude",
+                "openai",
+                "gemini",
+                "grok",
+                "local",
+              ];
+              if (!validModels.includes(body.model)) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    error: `model must be one of: ${validModels.join(", ")}`,
+                  }),
+                );
+                return;
+              }
+              cfg.model = body.model as PatchworkConfig["model"];
+              if (body.model === "local") {
+                if (body.localEndpoint !== undefined)
+                  cfg.localEndpoint = body.localEndpoint.trim() || undefined;
+                if (body.localModel !== undefined)
+                  cfg.localModel = body.localModel.trim() || undefined;
+              }
+            }
             if (body.apiKey) {
               const { provider, key } = body.apiKey;
               const validProviders = ["anthropic", "openai", "google", "xai"];
@@ -2271,7 +2299,9 @@ export class Server extends EventEmitter<ServerEvents> {
                 body.pushServiceBaseUrl.trim() || undefined;
             }
             const restartRequired =
-              driverRaw !== undefined || body.apiKey !== undefined;
+              driverRaw !== undefined ||
+              body.apiKey !== undefined ||
+              body.model !== undefined;
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: true, restartRequired }));
           } catch (err) {

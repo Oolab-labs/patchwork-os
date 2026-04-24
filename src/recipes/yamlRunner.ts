@@ -192,6 +192,8 @@ export interface RunnerDeps {
   claudeFn?: (prompt: string, model: string) => Promise<string>;
   /** Optional Claude Code CLI caller for agent steps with driver: claude-code. */
   claudeCodeFn?: (prompt: string) => Promise<string>;
+  /** Optional local LLM caller (Ollama / LM Studio) for agent steps with driver: local or model: local. */
+  localFn?: (prompt: string, model: string) => Promise<string>;
   /**
    * Optional provider driver invoker for agent steps with driver: openai|grok|gemini.
    * Dispatches to src/drivers/* under the hood. If not provided, the runner will
@@ -380,6 +382,8 @@ export async function runYamlRecipe(
           agentResult = await stepDeps.claudeCodeFn(renderedPrompt);
         } else if (agentCfg.driver === "api") {
           agentResult = await stepDeps.claudeFn(renderedPrompt, model);
+        } else if (agentCfg.driver === "local") {
+          agentResult = await stepDeps.localFn(renderedPrompt, model);
         } else if (
           agentCfg.driver === "openai" ||
           agentCfg.driver === "grok" ||
@@ -391,22 +395,29 @@ export async function runYamlRecipe(
             agentCfg.model,
           );
         } else {
-          // Default driver: use API path. If no ANTHROPIC_API_KEY and caller did not provide a
-          // custom claudeFn (i.e. using the built-in default that returns a skip message), probe
-          // for the claude CLI and fall back automatically.
-          const usingDefaultClaudeFn = deps.claudeFn === undefined;
-          if (!process.env.ANTHROPIC_API_KEY && usingDefaultClaudeFn) {
-            const probe = spawnSync("claude", ["--version"], {
-              encoding: "utf-8",
-              timeout: 5000,
-            });
-            if (!probe.error) {
-              agentResult = await stepDeps.claudeCodeFn(renderedPrompt);
+          // Default: route by configured model. If model=local, use localFn.
+          // Otherwise fall back to Anthropic API / claude CLI auto-detect.
+          const { loadConfig: loadPatchworkConfig } = await import(
+            "../patchworkConfig.js"
+          );
+          const pwCfg = loadPatchworkConfig();
+          if (pwCfg.model === "local") {
+            agentResult = await stepDeps.localFn(renderedPrompt, model);
+          } else {
+            const usingDefaultClaudeFn = deps.claudeFn === undefined;
+            if (!process.env.ANTHROPIC_API_KEY && usingDefaultClaudeFn) {
+              const probe = spawnSync("claude", ["--version"], {
+                encoding: "utf-8",
+                timeout: 5000,
+              });
+              if (!probe.error) {
+                agentResult = await stepDeps.claudeCodeFn(renderedPrompt);
+              } else {
+                agentResult = await stepDeps.claudeFn(renderedPrompt, model);
+              }
             } else {
               agentResult = await stepDeps.claudeFn(renderedPrompt, model);
             }
-          } else {
-            agentResult = await stepDeps.claudeFn(renderedPrompt, model);
           }
         }
         if (agentResult.startsWith("[agent step failed:")) {
@@ -767,6 +778,7 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
     fetchFn: deps.fetchFn ?? (globalThis.fetch as FetchFn),
     claudeFn: deps.claudeFn ?? defaultClaudeFn,
     claudeCodeFn: deps.claudeCodeFn ?? defaultClaudeCodeFn,
+    localFn: deps.localFn ?? defaultLocalFn,
     providerDriverFn: deps.providerDriverFn ?? defaultProviderDriverFn,
     mockConnectors: deps.mockConnectors ?? {},
     recordFixturesDir: deps.recordFixturesDir,
@@ -899,6 +911,27 @@ async function defaultClaudeFn(prompt: string, model: string): Promise<string> {
       content?: Array<{ type: string; text?: string }>;
     };
     return data.content?.[0]?.text ?? "[agent step failed: empty response]";
+  } catch (err) {
+    return `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`;
+  }
+}
+
+async function defaultLocalFn(prompt: string, model: string): Promise<string> {
+  try {
+    const { createLocalAdapter } = await import("../adapters/local.js");
+    const { loadConfig: loadPatchworkConfig } = await import(
+      "../patchworkConfig.js"
+    );
+    const cfg = loadPatchworkConfig();
+    const adapter = createLocalAdapter({
+      endpoint: cfg.localEndpoint,
+      defaultModel: cfg.localModel ?? model,
+    });
+    const result = await adapter.complete({
+      systemPrompt: "",
+      messages: [{ role: "user", content: prompt }],
+    });
+    return result.text ?? "[agent step failed: empty response from local LLM]";
   } catch (err) {
     return `[agent step failed: ${err instanceof Error ? err.message : String(err)}]`;
   }
