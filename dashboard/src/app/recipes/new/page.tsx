@@ -30,8 +30,181 @@ interface FormState {
   vars: RecipeVar[];
 }
 
+interface ValidationState {
+  triggerPath: string | null;
+  cron: string | null;
+  steps: Array<string | null>;
+  vars: Array<string | null>;
+}
+
 function makeStepId(index: number): string {
   return `step-${index + 1}`;
+}
+
+function makeNextStepId(steps: Step[]): string {
+  const used = new Set(steps.map((step) => step.id.trim()).filter(Boolean));
+  let index = steps.length;
+  let candidate = makeStepId(index);
+  while (used.has(candidate)) {
+    index += 1;
+    candidate = makeStepId(index);
+  }
+  return candidate;
+}
+
+function emptyValidationState(form: FormState): ValidationState {
+  return {
+    triggerPath: null,
+    cron: null,
+    steps: form.steps.map(() => null),
+    vars: form.vars.map(() => null),
+  };
+}
+
+function validateForm(form: FormState): ValidationState {
+  const errors = emptyValidationState(form);
+
+  if (form.trigger.type === "webhook" && !form.trigger.path.trim()) {
+    errors.triggerPath = "Webhook path is required.";
+  }
+
+  if (form.trigger.type === "schedule" && !form.trigger.cron.trim()) {
+    errors.cron = "Cron expression is required.";
+  }
+
+  for (let i = 0; i < form.steps.length; i++) {
+    if (!form.steps[i]?.prompt.trim()) {
+      errors.steps[i] = "Step prompt is required.";
+    }
+  }
+
+  const firstVarIndexByName = new Map<string, number>();
+  for (let i = 0; i < form.vars.length; i++) {
+    const name = form.vars[i]?.name.trim() ?? "";
+    if (!name) {
+      errors.vars[i] = "Variable name is required.";
+      continue;
+    }
+    const existingIndex = firstVarIndexByName.get(name);
+    if (existingIndex !== undefined) {
+      errors.vars[i] = "Variable name must be unique.";
+      errors.vars[existingIndex] ??= "Variable name must be unique.";
+      continue;
+    }
+    firstVarIndexByName.set(name, i);
+  }
+
+  return errors;
+}
+
+function hasValidationErrors(errors: ValidationState): boolean {
+  return Boolean(
+    errors.triggerPath ||
+      errors.cron ||
+      errors.steps.some(Boolean) ||
+      errors.vars.some(Boolean),
+  );
+}
+
+const RECIPE_SCHEMA_HEADER =
+  "# yaml-language-server: $schema=https://patchworkos.com/schema/recipe.v1.json";
+const RECIPE_API_VERSION = "patchwork.sh/v1";
+const SIMPLE_YAML_VALUE_RE = /^[A-Za-z0-9_./:@%+-]+$/;
+const AMBIGUOUS_YAML_VALUE_RE = /^(true|false|null|~|-?\d+(\.\d+)?)$/i;
+
+function normalizeRecipeName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, "-");
+}
+
+function yamlScalar(value: string): string {
+  if (!value) {
+    return '""';
+  }
+  if (
+    SIMPLE_YAML_VALUE_RE.test(value) &&
+    !AMBIGUOUS_YAML_VALUE_RE.test(value)
+  ) {
+    return value;
+  }
+  return JSON.stringify(value);
+}
+
+function pushYamlField(
+  lines: string[],
+  indent: number,
+  key: string,
+  value: string,
+): void {
+  const prefix = " ".repeat(indent);
+  const normalized = value.replace(/\r\n/g, "\n");
+  if (!normalized.includes("\n")) {
+    lines.push(`${prefix}${key}: ${yamlScalar(normalized)}`);
+    return;
+  }
+  lines.push(`${prefix}${key}: |`);
+  for (const line of normalized.split("\n")) {
+    lines.push(`${prefix}  ${line}`);
+  }
+}
+
+function makeStepOutputKey(stepId: string): string {
+  const normalized = stepId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || "step_output";
+}
+
+function buildRecipeYaml(form: FormState, safeName: string): string {
+  const lines: string[] = [
+    RECIPE_SCHEMA_HEADER,
+    `apiVersion: ${RECIPE_API_VERSION}`,
+    `name: ${yamlScalar(safeName || "(name)")}`,
+  ];
+
+  if (form.description.trim()) {
+    pushYamlField(lines, 0, "description", form.description.trim());
+  }
+
+  lines.push("trigger:");
+  if (form.trigger.type === "webhook") {
+    const path = form.trigger.path.trim().replace(/^\/+/, "");
+    lines.push("  type: webhook");
+    pushYamlField(lines, 2, "path", `/hooks/${path || "(path)"}`);
+  } else if (form.trigger.type === "schedule") {
+    lines.push("  type: cron");
+    pushYamlField(lines, 2, "at", form.trigger.cron.trim() || "(cron)");
+  } else {
+    lines.push("  type: manual");
+  }
+
+  if (form.vars.length > 0) {
+    lines.push("vars:");
+    for (const variable of form.vars) {
+      lines.push(`  - name: ${yamlScalar(variable.name.trim() || "(name)")}`);
+      if (variable.description.trim()) {
+        pushYamlField(lines, 4, "description", variable.description.trim());
+      }
+      if (variable.required) {
+        lines.push("    required: true");
+      }
+      if (variable.default) {
+        pushYamlField(lines, 4, "default", variable.default);
+      }
+    }
+  }
+
+  lines.push("steps:");
+  for (let i = 0; i < form.steps.length; i++) {
+    const step = form.steps[i];
+    const stepId = step?.id.trim() || makeStepId(i);
+    lines.push(`  - id: ${yamlScalar(stepId)}`);
+    lines.push("    agent:");
+    pushYamlField(lines, 6, "prompt", step?.prompt.trim() || "(empty)");
+    lines.push(`      into: ${yamlScalar(makeStepOutputKey(stepId))}`);
+  }
+
+  return lines.join("\n");
 }
 
 const NAME_RE = /^[a-z0-9][a-z0-9_\- ]{0,63}$/i;
@@ -39,14 +212,19 @@ const NAME_RE = /^[a-z0-9][a-z0-9_\- ]{0,63}$/i;
 export default function NewRecipePage() {
   const router = useRouter();
 
-  const [form, setForm] = useState<FormState>({
+  const initialForm: FormState = {
     name: "",
     description: "",
     trigger: { type: "manual", path: "", cron: "" },
     steps: [{ id: "step-1", agent: true, prompt: "" }],
     vars: [],
-  });
+  };
+
+  const [form, setForm] = useState<FormState>(initialForm);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<ValidationState>(() =>
+    emptyValidationState(initialForm),
+  );
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -59,25 +237,37 @@ export default function NewRecipePage() {
     } else {
       setNameError(null);
     }
+    setSubmitError(null);
   }, []);
 
   const setDescription = useCallback((v: string) => {
     setForm((f) => ({ ...f, description: v }));
+    setSubmitError(null);
   }, []);
 
   const setTriggerType = useCallback(
     (type: "manual" | "webhook" | "schedule") => {
       setForm((f) => ({ ...f, trigger: { ...f.trigger, type } }));
+      setValidation((current) => ({
+        ...current,
+        triggerPath: null,
+        cron: null,
+      }));
+      setSubmitError(null);
     },
     [],
   );
 
   const setTriggerPath = useCallback((path: string) => {
     setForm((f) => ({ ...f, trigger: { ...f.trigger, path } }));
+    setValidation((current) => ({ ...current, triggerPath: null }));
+    setSubmitError(null);
   }, []);
 
   const setTriggerCron = useCallback((cron: string) => {
     setForm((f) => ({ ...f, trigger: { ...f.trigger, cron } }));
+    setValidation((current) => ({ ...current, cron: null }));
+    setSubmitError(null);
   }, []);
 
   const updateStep = useCallback((index: number, prompt: string) => {
@@ -85,16 +275,23 @@ export default function NewRecipePage() {
       const steps = f.steps.map((s, i) => (i === index ? { ...s, prompt } : s));
       return { ...f, steps };
     });
+    setValidation((current) => ({
+      ...current,
+      steps: current.steps.map((message, i) => (i === index ? null : message)),
+    }));
+    setSubmitError(null);
   }, []);
 
   const addStep = useCallback(() => {
     setForm((f) => {
       const steps = [
         ...f.steps,
-        { id: makeStepId(f.steps.length), agent: true, prompt: "" },
+        { id: makeNextStepId(f.steps), agent: true, prompt: "" },
       ];
       return { ...f, steps };
     });
+    setValidation((current) => ({ ...current, steps: [...current.steps, null] }));
+    setSubmitError(null);
   }, []);
 
   const removeStep = useCallback((index: number) => {
@@ -103,6 +300,11 @@ export default function NewRecipePage() {
       const steps = f.steps.filter((_, i) => i !== index);
       return { ...f, steps };
     });
+    setValidation((current) => ({
+      ...current,
+      steps: current.steps.filter((_, i) => i !== index),
+    }));
+    setSubmitError(null);
   }, []);
 
   const moveStep = useCallback((index: number, direction: "up" | "down") => {
@@ -115,6 +317,16 @@ export default function NewRecipePage() {
       steps[target] = tmp as (typeof steps)[number];
       return { ...f, steps };
     });
+    setValidation((current) => {
+      const steps = [...current.steps];
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= steps.length) return current;
+      const tmp = steps[index];
+      steps[index] = steps[target] ?? null;
+      steps[target] = tmp ?? null;
+      return { ...current, steps };
+    });
+    setSubmitError(null);
   }, []);
 
   const addVar = useCallback(() => {
@@ -125,6 +337,8 @@ export default function NewRecipePage() {
         { name: "", description: "", required: false, default: "" },
       ],
     }));
+    setValidation((current) => ({ ...current, vars: [...current.vars, null] }));
+    setSubmitError(null);
   }, []);
 
   const removeVar = useCallback((index: number) => {
@@ -132,6 +346,11 @@ export default function NewRecipePage() {
       ...f,
       vars: f.vars.filter((_, i) => i !== index),
     }));
+    setValidation((current) => ({
+      ...current,
+      vars: current.vars.filter((_, i) => i !== index),
+    }));
+    setSubmitError(null);
   }, []);
 
   const updateVar = useCallback(
@@ -142,87 +361,57 @@ export default function NewRecipePage() {
           i === index ? { ...v, [field]: value } : v,
         ),
       }));
+      if (field === "name") {
+        setValidation((current) => ({
+          ...current,
+          vars: current.vars.map((message, i) => (i === index ? null : message)),
+        }));
+      }
+      setSubmitError(null);
     },
     [],
   );
 
-  const previewJson = useMemo(() => {
-    const safeName = form.name.toLowerCase().replace(/\s+/g, "-");
-    const trigger: Record<string, string> = { type: form.trigger.type };
-    if (form.trigger.type === "webhook" && form.trigger.path) {
-      trigger.path = `/hooks/${form.trigger.path}`;
-    }
-    if (form.trigger.type === "schedule" && form.trigger.cron) {
-      trigger.cron = form.trigger.cron;
-    }
-    const payload: Record<string, unknown> = {
-      name: safeName || "(name)",
-      ...(form.description ? { description: form.description } : {}),
-      trigger,
-      steps: form.steps.map((s, i) => ({
-        id: s.id || makeStepId(i),
-        agent: s.agent,
-        prompt: s.prompt || "(empty)",
-      })),
-    };
-    if (form.vars.length > 0) {
-      payload.vars = form.vars.map((v) => ({
-        name: v.name || "(name)",
-        ...(v.description ? { description: v.description } : {}),
-        ...(v.required ? { required: true } : {}),
-        ...(v.default ? { default: v.default } : {}),
-      }));
-    }
-    payload.createdAt = "<timestamp>";
-    return JSON.stringify(payload, null, 2);
-  }, [form]);
+  const safeName = useMemo(() => normalizeRecipeName(form.name), [form.name]);
+
+  const previewYaml = useMemo(
+    () => buildRecipeYaml(form, safeName),
+    [form, safeName],
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitError(null);
 
-    if (!form.name || nameError) {
+    const nextValidation = validateForm(form);
+    setValidation(nextValidation);
+
+    if (!safeName || nameError) {
       setNameError(nameError ?? "Name is required.");
       return;
     }
 
-    const trigger: Record<string, string> = { type: form.trigger.type };
-    if (form.trigger.type === "webhook" && form.trigger.path) {
-      trigger.path = `/hooks/${form.trigger.path}`;
-    }
-    if (form.trigger.type === "schedule" && form.trigger.cron) {
-      trigger.cron = form.trigger.cron;
+    if (hasValidationErrors(nextValidation)) {
+      return;
     }
 
-    const body: Record<string, unknown> = {
-      name: form.name,
-      ...(form.description ? { description: form.description } : {}),
-      trigger,
-      steps: form.steps.map((s, i) => ({
-        id: s.id || makeStepId(i),
-        agent: s.agent,
-        prompt: s.prompt,
-      })),
-    };
-    if (form.vars.length > 0) {
-      body.vars = form.vars.map((v) => ({
-        name: v.name,
-        ...(v.description ? { description: v.description } : {}),
-        ...(v.required ? { required: true } : {}),
-        ...(v.default ? { default: v.default } : {}),
-      }));
-    }
+    const content = buildRecipeYaml(form, safeName);
 
     setSaving(true);
     try {
-      const res = await fetch(apiPath("/api/bridge/recipes"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = (await res.json()) as { ok: boolean; error?: string };
-      if (data.ok) {
-        router.push("/recipes");
+      const res = await fetch(
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(safeName)}`),
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        },
+      );
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (res.ok && data.ok !== false) {
+        router.push(`/recipes/${encodeURIComponent(safeName)}/edit`);
+      } else if (data.error === "Invalid recipe name") {
+        setNameError(data.error);
       } else {
         setSubmitError(data.error ?? "Failed to save recipe.");
       }
@@ -239,7 +428,7 @@ export default function NewRecipePage() {
         <div>
           <h1>New recipe</h1>
           <div className="page-head-sub">
-            Author and save a new automation recipe. Fill in metadata, trigger, variables, and steps.
+            Start with structured fields, save a YAML recipe draft, then continue in the source editor.
           </div>
         </div>
       </div>
@@ -431,7 +620,7 @@ export default function NewRecipePage() {
                       style={{
                         flex: 1,
                         background: "var(--bg-2)",
-                        border: "1px solid var(--border-default)",
+                        border: `1px solid ${validation.triggerPath ? "var(--err)" : "var(--border-default)"}`,
                         borderRadius: "0 var(--r-2) var(--r-2) 0",
                         color: "var(--fg-0)",
                         fontSize: 13,
@@ -441,6 +630,17 @@ export default function NewRecipePage() {
                       }}
                     />
                   </div>
+                  {validation.triggerPath && (
+                    <div
+                      style={{
+                        marginTop: "var(--s-1)",
+                        fontSize: 12,
+                        color: "var(--err)",
+                      }}
+                    >
+                      {validation.triggerPath}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -466,7 +666,7 @@ export default function NewRecipePage() {
                     style={{
                       width: "100%",
                       background: "var(--bg-2)",
-                      border: "1px solid var(--border-default)",
+                      border: `1px solid ${validation.cron ? "var(--err)" : "var(--border-default)"}`,
                       borderRadius: "var(--r-2)",
                       color: "var(--fg-0)",
                       fontSize: 13,
@@ -475,6 +675,17 @@ export default function NewRecipePage() {
                       fontFamily: "var(--font-mono)",
                     }}
                   />
+                  {validation.cron && (
+                    <div
+                      style={{
+                        marginTop: "var(--s-1)",
+                        fontSize: 12,
+                        color: "var(--err)",
+                      }}
+                    >
+                      {validation.cron}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -551,7 +762,7 @@ export default function NewRecipePage() {
                           aria-label={`Variable ${i + 1} name`}
                           style={{
                             background: "var(--bg-1)",
-                            border: "1px solid var(--border-subtle)",
+                            border: `1px solid ${validation.vars[i] ? "var(--err)" : "var(--border-subtle)"}`,
                             borderRadius: "var(--r-2)",
                             color: "var(--fg-0)",
                             fontSize: 13,
@@ -589,6 +800,16 @@ export default function NewRecipePage() {
                           &#x2715;
                         </button>
                       </div>
+                      {validation.vars[i] && (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "var(--err)",
+                          }}
+                        >
+                          {validation.vars[i]}
+                        </div>
+                      )}
                       <div
                         style={{
                           display: "grid",
@@ -748,7 +969,7 @@ export default function NewRecipePage() {
                       style={{
                         width: "100%",
                         background: "var(--bg-1)",
-                        border: "1px solid var(--border-subtle)",
+                        border: `1px solid ${validation.steps[i] ? "var(--err)" : "var(--border-subtle)"}`,
                         borderRadius: "var(--r-2)",
                         color: "var(--fg-0)",
                         fontSize: 13,
@@ -758,6 +979,17 @@ export default function NewRecipePage() {
                         fontFamily: "var(--font-sans)",
                       }}
                     />
+                    {validation.steps[i] && (
+                      <div
+                        style={{
+                          marginTop: "var(--s-1)",
+                          fontSize: 12,
+                          color: "var(--err)",
+                        }}
+                      >
+                        {validation.steps[i]}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -773,7 +1005,7 @@ export default function NewRecipePage() {
               }}
             >
               <button type="submit" className="btn" disabled={saving}>
-                {saving ? "Saving…" : "Save recipe"}
+                {saving ? "Creating…" : "Create YAML draft"}
               </button>
               <button
                 type="button"
@@ -785,7 +1017,7 @@ export default function NewRecipePage() {
             </div>
           </div>
 
-          {/* RIGHT: JSON preview */}
+          {/* RIGHT: YAML preview */}
           <div>
             <div
               style={{
@@ -797,7 +1029,16 @@ export default function NewRecipePage() {
                 letterSpacing: "0.06em",
               }}
             >
-              Preview
+              YAML preview
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--fg-3)",
+                marginBottom: "var(--s-2)",
+              }}
+            >
+              Saving creates a <code>.yaml</code> recipe and opens it in the YAML editor.
             </div>
             <pre
               style={{
@@ -815,7 +1056,7 @@ export default function NewRecipePage() {
                 minHeight: 200,
               }}
             >
-              <code>{previewJson}</code>
+              <code>{previewYaml}</code>
             </pre>
           </div>
         </div>
