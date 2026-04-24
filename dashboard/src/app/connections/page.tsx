@@ -849,7 +849,7 @@ export default function ConnectionsPage() {
     }
     // Open the OAuth auth URL. Omit "noopener" so the callback page can
     // postMessage back to this window. Safe: same-origin popup.
-    window.open(`/api/connections/${id}/auth`, "_blank");
+    window.open(apiPath(`/api/connections/${id}/auth`), "_blank");
     // Poll for status update as fallback if postMessage doesn't arrive.
     const poll = setInterval(async () => {
       const res = await fetch(apiPath("/api/connections")).catch(() => null);
