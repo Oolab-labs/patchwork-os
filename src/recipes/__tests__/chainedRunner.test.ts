@@ -7,6 +7,7 @@ import type {
 import {
   buildTemplateContext,
   executeChainedStep,
+  expandParallelSteps,
   generateExecutionPlan,
   resolveStepTemplates,
   runChainedRecipe,
@@ -561,5 +562,139 @@ describe("transform field (chained)", () => {
     );
     expect("transform" in resolved).toBe(false);
     expect(resolved.message).toBe("hi");
+  });
+});
+
+// ── expandParallelSteps ───────────────────────────────────────────────────────
+
+describe("expandParallelSteps", () => {
+  it("passes through flat steps unchanged", () => {
+    const steps = [
+      { id: "a", tool: "t" },
+      { id: "b", tool: "t", awaits: ["a"] },
+    ];
+    expect(expandParallelSteps(steps)).toEqual(steps);
+  });
+
+  it("expands a parallel group into flat sibling steps", () => {
+    const steps = [
+      {
+        id: "grp",
+        parallel: [
+          { id: "p1", tool: "t1" },
+          { id: "p2", tool: "t2" },
+        ],
+      },
+    ];
+    const expanded = expandParallelSteps(steps);
+    expect(expanded).toHaveLength(2);
+    expect(expanded.map((s) => s.id)).toEqual(["p1", "p2"]);
+  });
+
+  it("children of a group inherit the group awaits", () => {
+    const steps = [
+      { id: "pre", tool: "t" },
+      {
+        id: "grp",
+        awaits: ["pre"],
+        parallel: [
+          { id: "p1", tool: "t1" },
+          { id: "p2", tool: "t2" },
+        ],
+      },
+    ];
+    const expanded = expandParallelSteps(steps);
+    const p1 = expanded.find((s) => s.id === "p1");
+    const p2 = expanded.find((s) => s.id === "p2");
+    expect(p1?.awaits).toContain("pre");
+    expect(p2?.awaits).toContain("pre");
+  });
+
+  it("steps after the group await all children not the group id", () => {
+    const steps = [
+      {
+        id: "grp",
+        parallel: [
+          { id: "p1", tool: "t1" },
+          { id: "p2", tool: "t2" },
+        ],
+      },
+      { id: "post", tool: "t", awaits: ["grp"] },
+    ];
+    const expanded = expandParallelSteps(steps);
+    const post = expanded.find((s) => s.id === "post");
+    expect(post?.awaits).toContain("p1");
+    expect(post?.awaits).toContain("p2");
+    expect(post?.awaits).not.toContain("grp");
+  });
+
+  it("auto-generates child ids when children have no id", () => {
+    const steps = [
+      {
+        id: "grp",
+        parallel: [{ tool: "t1" }, { tool: "t2" }],
+      },
+    ];
+    const expanded = expandParallelSteps(steps);
+    expect(expanded).toHaveLength(2);
+    expect(expanded[0]?.id).toBe("grp_0");
+    expect(expanded[1]?.id).toBe("grp_1");
+  });
+
+  it("parallel group executes both steps end-to-end", async () => {
+    const executed: string[] = [];
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn().mockImplementation(async (tool: string) => {
+        executed.push(tool);
+      }),
+      executeAgent: vi.fn().mockResolvedValue("ok"),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const recipe: ChainedRecipe = {
+      name: "r",
+      steps: [
+        {
+          id: "grp",
+          parallel: [
+            { id: "p1", tool: "tool-a" },
+            { id: "p2", tool: "tool-b" },
+          ],
+        } as ChainedRecipe["steps"][number],
+      ],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, deps);
+    expect(result.success).toBe(true);
+    expect(executed).toContain("tool-a");
+    expect(executed).toContain("tool-b");
+    expect(result.summary.succeeded).toBe(2);
+  });
+
+  it("step after parallel group runs only after all children complete", async () => {
+    const order: string[] = [];
+    const deps: ExecutionDeps = {
+      executeTool: vi.fn().mockImplementation(async (tool: string) => {
+        order.push(tool);
+      }),
+      executeAgent: vi.fn().mockResolvedValue("ok"),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const recipe: ChainedRecipe = {
+      name: "r",
+      steps: [
+        {
+          id: "grp",
+          parallel: [
+            { id: "p1", tool: "tool-a" },
+            { id: "p2", tool: "tool-b" },
+          ],
+        } as ChainedRecipe["steps"][number],
+        { id: "post", tool: "tool-post", awaits: ["grp"] },
+      ],
+    };
+    const result = await runChainedRecipe(recipe, baseOptions, deps);
+    expect(result.success).toBe(true);
+    expect(order.indexOf("tool-post")).toBeGreaterThan(
+      Math.max(order.indexOf("tool-a"), order.indexOf("tool-b")),
+    );
   });
 });
