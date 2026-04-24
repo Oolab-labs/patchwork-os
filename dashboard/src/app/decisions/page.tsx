@@ -140,20 +140,24 @@ function DecisionsContent() {
             alignItems: "center",
           }}
         >
-          <span style={{ fontSize: 12, color: "var(--ink-2)", marginRight: 4 }}>
-            by type:
+          <span style={{ fontSize: 12, color: "var(--ink-3)", marginRight: 4 }}>
+            Grouped by kind:
           </span>
-          <span className="pill" style={{ fontSize: 11, borderLeft: "3px solid var(--orange)" }}>
-            feature · {variantCounts.accent}
+          <span
+            className="pill"
+            style={{ fontSize: 11, borderLeft: "3px solid var(--orange)" }}
+            title="Feature work and shipped releases"
+          >
+            Feature &middot; {variantCounts.accent}
           </span>
-          <span className="pill info" style={{ fontSize: 11 }}>
-            general · {variantCounts.info}
+          <span className="pill info" style={{ fontSize: 11 }} title="General notes and context">
+            General &middot; {variantCounts.info}
           </span>
-          <span className="pill warn" style={{ fontSize: 11 }}>
-            risk · {variantCounts.warn}
+          <span className="pill warn" style={{ fontSize: 11 }} title="Risks, flaky tests, security concerns">
+            Risk &middot; {variantCounts.warn}
           </span>
-          <span className="pill err" style={{ fontSize: 11 }}>
-            bug · {variantCounts.err}
+          <span className="pill err" style={{ fontSize: 11 }} title="Bugs, incidents, regressions">
+            Bug &middot; {variantCounts.err}
           </span>
         </div>
       )}
@@ -262,7 +266,7 @@ function DecisionsContent() {
           </h3>
           <p>
             {!tag && !keyQuery && !textQuery
-              ? "Agents save decisions via ctxSaveTrace when they resolve a task. Those entries will appear here and in the session-start digest."
+              ? "When an agent resolves a task it can save a short problem/solution note here. New decisions also show up in the next session's start-of-task digest, so the next agent starts with the context."
               : `No decisions${tag ? ` tagged "${tag}"` : ""}${keyQuery ? ` with ref matching "${keyQuery}"` : ""}${textQuery ? ` containing "${textQuery}"` : ""}.`}
           </p>
           {(tag || keyQuery || textQuery) && (
