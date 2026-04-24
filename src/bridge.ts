@@ -1861,7 +1861,12 @@ export class Bridge {
         {
           ...runnerDeps,
           chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
-          chainedOptions: { sourcePath: opts.filePath },
+          chainedOptions: {
+            sourcePath: opts.filePath,
+            runLogDir: this.recipeRunLog
+              ? path.join(os.homedir(), ".patchwork")
+              : undefined,
+          },
         },
         opts.seedContext,
       )

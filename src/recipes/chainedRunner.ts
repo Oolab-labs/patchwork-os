@@ -68,6 +68,12 @@ export interface RunOptions {
   sourcePath?: string;
   onStepStart?: (stepId: string) => void;
   onStepComplete?: (stepId: string, error?: Error) => void;
+  /**
+   * Directory holding `runs.jsonl`. When set, top-level (depth 0) runs are
+   * appended so the dashboard Runs page shows chained recipes alongside
+   * yamlRunner runs. Omit in tests to avoid filesystem writes.
+   */
+  runLogDir?: string;
 }
 
 export interface StepExecutionContext {
@@ -549,6 +555,8 @@ export async function runChainedRecipe(
     steps.map((s, i) => ({ id: s.id ?? `step_${i}`, awaits: s.awaits })),
   );
 
+  const runStartedAt = Date.now();
+
   if (depGraph.hasCycles) {
     return {
       success: false,
@@ -671,13 +679,71 @@ export async function runChainedRecipe(
     }
   }
 
-  return {
+  const result: ChainedRunResult = {
     success: failed === 0,
     stepResults: enrichedResults,
     summary: registry.summary(),
     errorMessage: failed > 0 ? `${failed} step(s) failed` : undefined,
     context,
   };
+
+  // Mirror yamlRunner: write to RecipeRunLog so the dashboard Runs page shows
+  // chained executions. Only top-level (depth 0) runs are logged — nested
+  // recipe calls are part of their parent's run. Failures here must never
+  // break recipe execution.
+  if (options.runLogDir && depth === 0) {
+    try {
+      const { RecipeRunLog } = await import("../runLog.js");
+      const log = new RecipeRunLog({ dir: options.runLogDir });
+      const doneAt = Date.now();
+      const trigger =
+        (recipe as unknown as { trigger?: { type?: string } }).trigger?.type ??
+        "recipe";
+      const stepResultsList: Array<{
+        id: string;
+        tool?: string;
+        status: "ok" | "skipped" | "error";
+        error?: string;
+        durationMs: number;
+      }> = [];
+      for (const [id, r] of enrichedResults) {
+        const step = stepMap.get(id);
+        stepResultsList.push({
+          id,
+          tool: step?.tool,
+          status: r.skipped ? "skipped" : r.success ? "ok" : "error",
+          error: r.error?.message,
+          durationMs: r.durationMs ?? 0,
+        });
+      }
+      const outputTail = stepResultsList
+        .map(
+          (s) =>
+            `[${s.status}] ${s.tool ?? s.id}${s.error ? `: ${s.error}` : ""}`,
+        )
+        .join("\n")
+        .slice(0, 2000);
+      log.appendDirect({
+        taskId: `chained:${recipe.name}:${runStartedAt}`,
+        recipeName: recipe.name,
+        trigger: (["cron", "webhook", "recipe"].includes(trigger)
+          ? trigger
+          : "recipe") as "cron" | "webhook" | "recipe",
+        status: result.success ? "done" : "error",
+        createdAt: runStartedAt,
+        startedAt: runStartedAt,
+        doneAt,
+        durationMs: doneAt - runStartedAt,
+        outputTail,
+        errorMessage: result.errorMessage,
+        stepResults: stepResultsList,
+      });
+    } catch {
+      // Non-fatal — run log write failure must never break recipe execution
+    }
+  }
+
+  return result;
 }
 
 /** Generate execution plan for dry-run mode */
