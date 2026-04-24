@@ -43,6 +43,7 @@ import {
   type YamlRecipe,
   type YamlStep,
 } from "../recipes/yamlRunner.js";
+import { findYamlRecipePath } from "../recipesHttp.js";
 
 const RECIPES_DIR = join(os.homedir(), ".patchwork", "recipes");
 const FIXTURES_DIR = join(os.homedir(), ".patchwork", "fixtures");
@@ -290,25 +291,43 @@ function lintChainRefs(parsed: unknown, recipePath: string): LintIssue[] {
           : null;
     if (!ref) continue;
 
-    // Only validate refs that look like file paths (have extension or separator).
+    const field = typeof step.chain === "string" ? "chain" : "recipe";
+
+    // Refs that look like file paths (extension or separator) → resolve relative to recipe dir.
     const looksLikePath =
       /\.ya?ml$/i.test(ref) ||
       ref.startsWith("./") ||
       ref.startsWith("../") ||
       /[\\/]/.test(ref);
-    if (!looksLikePath) continue;
 
-    const resolved = /^\//.test(ref) ? ref : resolve(recipeDir, ref);
-    const candidates = /\.ya?ml$/i.test(resolved)
-      ? [resolved]
-      : [`${resolved}.yaml`, `${resolved}.yml`, resolved];
+    if (looksLikePath) {
+      const resolved = /^\//.test(ref) ? ref : resolve(recipeDir, ref);
+      const candidates = /\.ya?ml$/i.test(resolved)
+        ? [resolved]
+        : [`${resolved}.yaml`, `${resolved}.yml`, resolved];
 
-    if (!candidates.some(existsSync)) {
-      const field = typeof step.chain === "string" ? "chain" : "recipe";
-      issues.push({
-        level: "error",
-        message: `Step ${i + 1}: '${field}: ${ref}' — file not found relative to recipe directory (${recipeDir})`,
-      });
+      if (!candidates.some(existsSync)) {
+        issues.push({
+          level: "error",
+          message: `Step ${i + 1}: '${field}: ${ref}' — file not found relative to recipe directory (${recipeDir})`,
+        });
+      }
+      continue;
+    }
+
+    // Named ref (no extension, no separator) → check ~/.patchwork/recipes/.
+    // Emit a warning rather than error: the recipe may be installed on the
+    // deploy target but not the author's machine.
+    if (existsSync(RECIPES_DIR)) {
+      const found =
+        findYamlRecipePath(RECIPES_DIR, ref) ??
+        (existsSync(join(RECIPES_DIR, ref)) ? join(RECIPES_DIR, ref) : null);
+      if (!found) {
+        issues.push({
+          level: "warning",
+          message: `Step ${i + 1}: '${field}: ${ref}' — recipe not found in ${RECIPES_DIR}`,
+        });
+      }
     }
   }
 
