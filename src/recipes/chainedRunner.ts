@@ -448,6 +448,8 @@ export interface ChainedRunResult {
     skipped: number;
   };
   errorMessage?: string;
+  /** Step output data keyed by step id, stringified for expect: assertions. */
+  context: Record<string, string>;
 }
 
 /**
@@ -552,6 +554,7 @@ export async function runChainedRecipe(
       stepResults: new Map(),
       summary: { total: 0, succeeded: 0, failed: 0, skipped: 0 },
       errorMessage: "Recipe has circular dependencies",
+      context: {},
     };
   }
 
@@ -641,11 +644,24 @@ export async function runChainedRecipe(
     if (!result.success) failed++;
   }
 
+  // Build string context map from registry for expect: assertions
+  const context: Record<string, string> = {};
+  for (const id of registry.keys()) {
+    const entry = registry.get(id);
+    if (entry?.data !== undefined) {
+      context[id] =
+        typeof entry.data === "string"
+          ? entry.data
+          : JSON.stringify(entry.data);
+    }
+  }
+
   return {
     success: failed === 0,
     stepResults: enrichedResults,
     summary: registry.summary(),
     errorMessage: failed > 0 ? `${failed} step(s) failed` : undefined,
+    context,
   };
 }
 
