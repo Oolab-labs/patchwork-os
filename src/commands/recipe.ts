@@ -224,8 +224,9 @@ export function runLint(recipePath: string): LintResult {
     };
   }
 
+  let parsed: unknown;
   try {
-    return validateRecipeDefinition(parseYaml(content));
+    parsed = parseYaml(content);
   } catch (err) {
     return {
       valid: false,
@@ -239,6 +240,79 @@ export function runLint(recipePath: string): LintResult {
       errors: 1,
     };
   }
+
+  const result = validateRecipeDefinition(parsed);
+
+  // For chained recipes, check that chain: file references resolve on disk.
+  const chainIssues = lintChainRefs(parsed, recipePath);
+  if (chainIssues.length > 0) {
+    result.issues.push(...chainIssues);
+    result.errors += chainIssues.filter((i) => i.level === "error").length;
+    result.warnings += chainIssues.filter((i) => i.level === "warning").length;
+    if (result.errors > 0) {
+      (result as { valid: boolean }).valid = false;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Walk chained recipe steps and emit a warning for each `chain:` value that
+ * looks like a relative file path but cannot be found on disk relative to the
+ * recipe's own directory. Named recipes (no extension, no path separator) are
+ * resolved at runtime from ~/.patchwork/recipes/ — skip those.
+ */
+function lintChainRefs(parsed: unknown, recipePath: string): LintIssue[] {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  const r = parsed as Record<string, unknown>;
+
+  const trigger =
+    r.trigger && typeof r.trigger === "object"
+      ? (r.trigger as Record<string, unknown>)
+      : undefined;
+  if (trigger?.type !== "chained") return [];
+
+  const steps = Array.isArray(r.steps)
+    ? (r.steps as Array<Record<string, unknown>>)
+    : [];
+  const recipeDir = dirname(recipePath);
+  const issues: LintIssue[] = [];
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if (!step) continue;
+    const ref =
+      typeof step.chain === "string"
+        ? step.chain
+        : typeof step.recipe === "string"
+          ? step.recipe
+          : null;
+    if (!ref) continue;
+
+    // Only validate refs that look like file paths (have extension or separator).
+    const looksLikePath =
+      /\.ya?ml$/i.test(ref) ||
+      ref.startsWith("./") ||
+      ref.startsWith("../") ||
+      /[\\/]/.test(ref);
+    if (!looksLikePath) continue;
+
+    const resolved = /^\//.test(ref) ? ref : resolve(recipeDir, ref);
+    const candidates = /\.ya?ml$/i.test(resolved)
+      ? [resolved]
+      : [`${resolved}.yaml`, `${resolved}.yml`, resolved];
+
+    if (!candidates.some(existsSync)) {
+      const field = typeof step.chain === "string" ? "chain" : "recipe";
+      issues.push({
+        level: "warning",
+        message: `Step ${i + 1}: '${field}: ${ref}' — file not found relative to recipe directory (${recipeDir})`,
+      });
+    }
+  }
+
+  return issues;
 }
 
 // patchwork recipe fmt
