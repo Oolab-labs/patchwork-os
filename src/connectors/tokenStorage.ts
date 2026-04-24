@@ -203,11 +203,66 @@ function getStorageDir(): string {
   return join(base, "tokens");
 }
 
-function getEncryptionKey(): Buffer {
-  // Derive a key from machine-specific entropy
-  // This is not high security but prevents casual inspection
+const MASTER_KEY_FILE = ".master.key";
+
+let cachedKey: Buffer | null = null;
+let cachedKeyDir: string | null = null;
+
+function legacyDerivedKey(): Buffer {
+  // Legacy key: sha256(hostname + username). Kept only for one-time migration
+  // of existing encrypted files. New data is encrypted with the random master key.
   const machineId = `${os.hostname()}-${os.userInfo().username}`;
   return crypto.createHash("sha256").update(machineId).digest().slice(0, 32);
+}
+
+function getEncryptionKey(): Buffer {
+  const dir = getStorageDir();
+  const keyPath = join(dir, MASTER_KEY_FILE);
+
+  if (cachedKey && cachedKeyDir === dir && existsSync(keyPath)) {
+    return cachedKey;
+  }
+
+  if (existsSync(keyPath)) {
+    try {
+      const key = readFileSync(keyPath);
+      if (key.length === 32) {
+        cachedKey = key;
+        cachedKeyDir = dir;
+        return key;
+      }
+    } catch {
+      // fall through to regenerate
+    }
+    // Corrupt or unreadable — replace.
+    try {
+      unlinkSync(keyPath);
+    } catch {}
+  }
+
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+
+  const key = crypto.randomBytes(32);
+  try {
+    // flag "wx" = O_EXCL: fail if another process created the file in between.
+    writeFileSync(keyPath, key, { flag: "wx", mode: 0o600 });
+  } catch {
+    // Another process may have written it first; prefer that one for consistency.
+    try {
+      const existing = readFileSync(keyPath);
+      if (existing.length === 32) {
+        cachedKey = existing;
+        cachedKeyDir = dir;
+        return existing;
+      }
+    } catch {}
+    // Best effort: fall through with the in-memory key.
+  }
+  cachedKey = key;
+  cachedKeyDir = dir;
+  return key;
 }
 
 function encrypt(text: string): string {
@@ -219,14 +274,14 @@ function encrypt(text: string): string {
   return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted}`;
 }
 
-function decrypt(encryptedData: string): string | null {
+function decryptWith(key: Buffer, encryptedData: string): string | null {
   try {
     const [ivHex, authTagHex, encrypted] = encryptedData.split(":");
     if (!ivHex || !authTagHex || !encrypted) return null;
 
     const decipher = crypto.createDecipheriv(
       "aes-256-gcm",
-      getEncryptionKey(),
+      key,
       Buffer.from(ivHex, "hex"),
     );
     decipher.setAuthTag(Buffer.from(authTagHex, "hex"));
@@ -236,6 +291,10 @@ function decrypt(encryptedData: string): string | null {
   } catch {
     return null;
   }
+}
+
+function decrypt(encryptedData: string): string | null {
+  return decryptWith(getEncryptionKey(), encryptedData);
 }
 
 function setEncryptedFileSync(key: string, value: string): void {
@@ -254,7 +313,18 @@ function getEncryptedFileSync(key: string): string | null {
 
   try {
     const encrypted = readFileSync(filePath, "utf-8");
-    return decrypt(encrypted);
+    const plain = decrypt(encrypted);
+    if (plain !== null) return plain;
+
+    // One-time migration: files encrypted with the old hostname-derived key
+    // are re-encrypted under the random master key.
+    const legacyPlain = decryptWith(legacyDerivedKey(), encrypted);
+    if (legacyPlain !== null) {
+      setEncryptedFileSync(key, legacyPlain);
+      return legacyPlain;
+    }
+
+    return null;
   } catch {
     return null;
   }
