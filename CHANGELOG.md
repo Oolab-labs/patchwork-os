@@ -10,6 +10,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0-alpha.29] — 2026-04-24
+
+### Added
+
+- **Recipe `on_error.fallback=log_only`** — chained runner honors per-step error policy; step failure logs and continues instead of aborting the chain.
+- **Recipe lint: `transform:` validation** — catches malformed transform strings at lint time; accepts `$result` references into prior step outputs.
+- **Runs log (`~/.patchwork/runs.jsonl`)** — CLI runs append a JSON line per run (status, timing, step report). File-save re-runs from `watch` mode log to the same file for uniform telemetry.
+
+### Changed
+
+- **Unified `ErrorPolicy` shape** — single normalized structure across `yamlRunner` and `chainedRunner`; removes the dual-shape branch that caused divergent behavior on retry/fallback.
+- **`formatRunReport` adopted by watch** — file-save re-runs print the same per-step timing/status report as CLI runs.
+
+### Fixed
+
+- CLI integration expectations updated after `formatRunReport` switch; typecheck green.
+
+---
+
 ## [0.2.0-alpha.28] — 2026-04-24
 
 ### Added
