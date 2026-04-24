@@ -10,13 +10,23 @@ import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 // Types
 // ---------------------------------------------------------------------------
 
+interface CircuitBreakerState {
+  suspended: boolean;
+  suspendedUntil: number;
+  failures: number;
+  openCount: number;
+  lastOpenedAt: string | null;
+}
+
 interface BridgeHealth {
   status: string;
   uptimeMs: number;
   connections: number;
   extensionConnected: boolean;
-  extensionVersion: string;
+  extensionVersion: string | null;
   activeSessions: number;
+  extensionCircuitBreaker?: CircuitBreakerState;
+  lastDisconnectReason?: string | null;
 }
 
 interface Overview {
@@ -702,6 +712,61 @@ export default function HomePage() {
                 </span>
               )}
             </div>
+
+            {/* Extension status row */}
+            {health && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: "var(--ink-2)",
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: health.extensionConnected ? "var(--ok)" : "var(--ink-3)",
+                    display: "inline-block",
+                    flexShrink: 0,
+                  }}
+                />
+                <span>
+                  Extension{" "}
+                  {health.extensionConnected ? "connected" : "disconnected"}
+                  {health.extensionVersion && (
+                    <span style={{ color: "var(--ink-3)", fontFamily: "var(--font-mono)", marginLeft: 4 }}>
+                      v{health.extensionVersion}
+                    </span>
+                  )}
+                </span>
+                {health.extensionCircuitBreaker?.suspended && (
+                  <span
+                    className="pill err"
+                    style={{ fontSize: 10 }}
+                    title={`${health.extensionCircuitBreaker.failures} failures — suspended until ${new Date(health.extensionCircuitBreaker.suspendedUntil).toLocaleTimeString()}`}
+                  >
+                    circuit open · {health.extensionCircuitBreaker.failures} failures
+                  </span>
+                )}
+                {!health.extensionCircuitBreaker?.suspended && (health.extensionCircuitBreaker?.failures ?? 0) > 0 && (
+                  <span className="pill warn" style={{ fontSize: 10 }}>
+                    {health.extensionCircuitBreaker!.failures} recent failure{health.extensionCircuitBreaker!.failures !== 1 ? "s" : ""}
+                  </span>
+                )}
+                {health.lastDisconnectReason && (
+                  <span style={{ color: "var(--err)", fontSize: 11 }}>
+                    · last disconnect: {health.lastDisconnectReason}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Inline key numbers */}

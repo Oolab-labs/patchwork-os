@@ -711,6 +711,71 @@ function ApprovalsContent() {
             </div>
           ))}
         </div>
+
+        {/* Historical approval rate */}
+        {(() => {
+          let totalApproved = 0;
+          let totalRejected = 0;
+          for (const p of patterns.values()) {
+            totalApproved += p.approved;
+            totalRejected += p.rejected;
+          }
+          const total = totalApproved + totalRejected;
+          if (total === 0) return null;
+          const approvePct = Math.round((totalApproved / total) * 100);
+          const rejectPct = 100 - approvePct;
+          return (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                minWidth: 160,
+                paddingLeft: "var(--s-4)",
+                borderLeft: "1px solid var(--line-2)",
+              }}
+            >
+              <div style={{ fontSize: 10, color: "var(--ink-2)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                Historical rate
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span
+                  className="pill ok"
+                  style={{ fontSize: 11, fontFamily: "var(--font-mono)", fontWeight: 700 }}
+                  title={`${totalApproved} approved`}
+                >
+                  {approvePct}% approved
+                </span>
+                <span
+                  className="pill err"
+                  style={{ fontSize: 11, fontFamily: "var(--font-mono)", fontWeight: 700 }}
+                  title={`${totalRejected} rejected`}
+                >
+                  {rejectPct}% rejected
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  height: 5,
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  background: "var(--recess)",
+                  gap: 1,
+                }}
+                aria-label={`Approval rate: ${approvePct}% approved, ${rejectPct}% rejected`}
+              >
+                <div style={{ width: `${approvePct}%`, background: "var(--ok)", borderRadius: "3px 0 0 3px" }} />
+                {rejectPct > 0 && (
+                  <div style={{ flex: 1, background: "var(--err)", borderRadius: "0 3px 3px 0" }} />
+                )}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--ink-3)" }}>
+                {total} decision{total !== 1 ? "s" : ""} this session
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Risk filter buttons */}

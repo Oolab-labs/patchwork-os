@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { relTime } from "@/components/time";
 
+type Tab = "all" | "tools" | "hooks";
+
 interface ActivityEvent {
   /** "tool" | "lifecycle" */
   kind: string;
@@ -57,6 +59,21 @@ function withAt(e: ActivityEvent): ActivityEvent {
   return e;
 }
 
+/** Lifecycle events that are meaningful / hook-related (not session churn). */
+const HOOK_EVENTS = new Set([
+  "approval_decision",
+  "session_resumed",
+  "crash_detected",
+  "automation_hook_fired",
+  "hook_fired",
+  "PreCompact",
+  "PostCompact",
+  "InstructionsLoaded",
+  "TaskCreated",
+  "PermissionDenied",
+  "CwdChanged",
+]);
+
 export default function ActivityPage() {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [seeded, setSeeded] = useState(false);
@@ -64,6 +81,7 @@ export default function ActivityPage() {
   const [err, setErr] = useState<string>();
   const [filter, setFilter] = useState("");
   const [showNoise, setShowNoise] = useState(false);
+  const [tab, setTab] = useState<Tab>("all");
   const [, setTick] = useState(0);
   const esRef = useRef<EventSource | null>(null);
 
@@ -132,7 +150,15 @@ export default function ActivityPage() {
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     let out = events;
-    if (!showNoise) {
+    // Tab pre-filter
+    if (tab === "tools") {
+      out = out.filter((e) => e.kind === "tool");
+    } else if (tab === "hooks") {
+      out = out.filter(
+        (e) =>
+          e.kind === "lifecycle" && !NOISE_EVENTS.has(e.event ?? ""),
+      );
+    } else if (!showNoise) {
       out = out.filter(
         (e) => !(e.kind === "lifecycle" && NOISE_EVENTS.has(e.event ?? "")),
       );
@@ -144,7 +170,7 @@ export default function ActivityPage() {
         `${e.kind} ${e.event ?? ""} ${e.tool ?? ""} ${m.toolName ?? ""} ${e.status ?? ""} ${m.decision ?? ""} ${m.reason ?? ""}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [events, filter, showNoise]);
+  }, [events, filter, showNoise, tab]);
 
   const hiddenCount = useMemo(
     () =>
@@ -237,6 +263,64 @@ export default function ActivityPage() {
         ))}
       </div>
 
+      {/* Tabs */}
+      <div
+        style={{
+          display: "flex",
+          gap: 0,
+          borderBottom: "1px solid var(--border-subtle)",
+          marginBottom: 12,
+        }}
+      >
+        {(["all", "tools", "hooks"] as Tab[]).map((t) => {
+          const labels: Record<Tab, string> = {
+            all: "All",
+            tools: "Tool calls",
+            hooks: "Lifecycle & hooks",
+          };
+          const count =
+            t === "tools"
+              ? stats.tools
+              : t === "hooks"
+                ? events.filter(
+                    (e) =>
+                      e.kind === "lifecycle" && !NOISE_EVENTS.has(e.event ?? ""),
+                  ).length
+                : events.length;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              style={{
+                padding: "6px 16px",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+                color: tab === t ? "var(--fg-0)" : "var(--fg-2)",
+                background: "none",
+                border: "none",
+                borderBottom:
+                  tab === t
+                    ? "2px solid var(--accent)"
+                    : "2px solid transparent",
+              }}
+            >
+              {labels[t]}{" "}
+              <span
+                style={{
+                  fontSize: 11,
+                  color: tab === t ? "var(--accent)" : "var(--fg-3)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <div
         className="activity-toolbar"
         style={{
@@ -254,16 +338,18 @@ export default function ActivityPage() {
           onChange={(e) => setFilter(e.target.value)}
           aria-label="Filter events"
         />
-        <button
-          type="button"
-          onClick={() => setShowNoise((v) => !v)}
-          className={showNoise ? "pill" : "pill muted"}
-          style={{ cursor: "pointer" }}
-          title="Show connect/disconnect/grace lifecycle events — noisy, not actionable"
-        >
-          {showNoise ? "Hide" : "Show"} connection events
-          {!showNoise && hiddenCount > 0 ? ` (${hiddenCount})` : ""}
-        </button>
+        {tab === "all" && (
+          <button
+            type="button"
+            onClick={() => setShowNoise((v) => !v)}
+            className={showNoise ? "pill" : "pill muted"}
+            style={{ cursor: "pointer" }}
+            title="Show connect/disconnect/grace lifecycle events — noisy, not actionable"
+          >
+            {showNoise ? "Hide" : "Show"} connection events
+            {!showNoise && hiddenCount > 0 ? ` (${hiddenCount})` : ""}
+          </button>
+        )}
         <span className="pill muted">
           {filtered.length} / {events.length} events
         </span>
