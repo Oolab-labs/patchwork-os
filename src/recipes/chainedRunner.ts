@@ -23,6 +23,7 @@ import {
 } from "./nestedRecipeStep.js";
 import type { OutputRegistry } from "./outputRegistry.js";
 import { createOutputRegistry } from "./outputRegistry.js";
+import type { ErrorPolicy } from "./schema.js";
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
 
@@ -56,7 +57,7 @@ export interface ChainedRecipe {
   maxDepth?: number;
   /** Plugin specs (npm package name or local path) to load before running steps. */
   servers?: string[];
-  on_error?: { retry?: number; retryDelay?: number; fallback?: string };
+  on_error?: ErrorPolicy;
 }
 
 export interface RunOptions {
@@ -604,16 +605,18 @@ export async function runChainedRecipe(
       skipped: result.skipped,
     });
 
-    // Recipe-level on_error.fallback: "log_only" means step failures are
-    // logged but do not propagate — same semantics as step-level optional: true.
-    // "abort" is the default (propagate failure).
-    const recipeFallbackLogOnly = recipe.on_error?.fallback === "log_only";
-    const isOptional = step.optional === true || recipeFallbackLogOnly;
+    // Recipe-level on_error.fallback: "log_only" and "deliver_original" both
+    // treat step failures as non-fatal (fail-open) — same semantics as
+    // step-level optional: true. "abort" is the default (propagate failure).
+    const recipeFallback = recipe.on_error?.fallback;
+    const recipeFallbackFailOpen =
+      recipeFallback === "log_only" || recipeFallback === "deliver_original";
+    const isOptional = step.optional === true || recipeFallbackFailOpen;
     const effectiveSuccess = result.success || isOptional;
 
-    if (!result.success && recipeFallbackLogOnly && !step.optional) {
+    if (!result.success && recipeFallbackFailOpen && !step.optional) {
       console.warn(
-        `step ${stepId} failed but on_error.fallback=log_only — treating as non-fatal: ${
+        `step ${stepId} failed but on_error.fallback=${recipeFallback} — treating as non-fatal: ${
           result.error ?? "unknown error"
         }`,
       );

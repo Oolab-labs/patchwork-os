@@ -36,6 +36,7 @@ import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
 import { normalizeRecipeForRuntime } from "./legacyRecipeCompat.js";
+import type { ErrorPolicy } from "./schema.js";
 
 // Import tool registry and trigger tool self-registration
 import {
@@ -52,6 +53,10 @@ export interface YamlStep {
   agent?: { prompt: string; model?: string; into?: string; driver?: string };
   into?: string;
   optional?: boolean;
+  /** Retry count for this step on failure (overrides recipe-level on_error.retry). */
+  retry?: number;
+  /** Delay in ms between retries (default 1000). */
+  retryDelay?: number;
   transform?: string; // template rendered after tool execution; $result = raw tool output
   [key: string]: unknown;
 }
@@ -155,6 +160,7 @@ export interface YamlRecipe {
   output?: { path: string };
   /** Plugin specs (npm package name or local path) to load before running steps. */
   servers?: string[];
+  on_error?: ErrorPolicy;
 }
 
 export type RunContext = Record<string, string>;
@@ -470,21 +476,61 @@ export async function runYamlRecipe(
 
     const stepStart = Date.now();
     const stepId = step.into ?? step.tool ?? `step_${stepsRun}`;
-    let result: string | null;
-    try {
-      result = await executeStep(step, ctx, stepDeps);
-      // Detect tool-level errors reported as JSON {ok: false, error: ...}
-      let stepError: string | undefined;
-      if (result !== null) {
-        try {
-          const parsed = JSON.parse(result) as Record<string, unknown>;
-          if (parsed.ok === false && typeof parsed.error === "string") {
-            stepError = parsed.error;
-          }
-        } catch {
-          /* non-JSON result is fine */
-        }
+    // Resolve retry policy: step-level overrides recipe-level.
+    const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
+    const retryDelayMs = step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;
+    let result: string | null = null;
+    let stepError: string | undefined;
+    let thrownError: string | undefined;
+    for (let attempt = 0; attempt <= retryCount; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, retryDelayMs));
       }
+      stepError = undefined;
+      thrownError = undefined;
+      try {
+        result = await executeStep(step, ctx, stepDeps);
+        // Detect tool-level errors reported as JSON {ok: false, error: ...}
+        if (result !== null) {
+          try {
+            const parsed = JSON.parse(result) as Record<string, unknown>;
+            if (parsed.ok === false && typeof parsed.error === "string") {
+              stepError = parsed.error;
+            }
+          } catch {
+            /* non-JSON result is fine */
+          }
+        }
+      } catch (err) {
+        thrownError = err instanceof Error ? err.message : String(err);
+        result = null;
+      }
+      if (!stepError && !thrownError) break;
+    }
+
+    // Recipe-level fallback: log_only / deliver_original treat step failure
+    // as non-fatal (fail-open) — same semantics as step-level optional: true.
+    const fallback = recipe.on_error?.fallback;
+    const fallbackFailOpen =
+      fallback === "log_only" || fallback === "deliver_original";
+    const failOpen = step.optional === true || fallbackFailOpen;
+
+    if (thrownError) {
+      stepResults.push({
+        id: stepId,
+        tool: step.tool,
+        status: "error",
+        error: thrownError,
+        durationMs: Date.now() - stepStart,
+      });
+      if (!failOpen) {
+        runError = runError ?? `${step.tool} failed: ${thrownError}`;
+      } else if (fallbackFailOpen && !step.optional) {
+        console.warn(
+          `step ${stepId} failed but on_error.fallback=${fallback} — treating as non-fatal: ${thrownError}`,
+        );
+      }
+    } else {
       stepResults.push({
         id: stepId,
         tool: step.tool,
@@ -492,18 +538,15 @@ export async function runYamlRecipe(
         error: stepError,
         durationMs: Date.now() - stepStart,
       });
-      if (stepError) runError = runError ?? `${step.tool} failed: ${stepError}`;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      runError = runError ?? `${step.tool} failed: ${msg}`;
-      stepResults.push({
-        id: stepId,
-        tool: step.tool,
-        status: "error",
-        error: msg,
-        durationMs: Date.now() - stepStart,
-      });
-      result = null;
+      if (stepError) {
+        if (!failOpen) {
+          runError = runError ?? `${step.tool} failed: ${stepError}`;
+        } else if (fallbackFailOpen && !step.optional) {
+          console.warn(
+            `step ${stepId} failed but on_error.fallback=${fallback} — treating as non-fatal: ${stepError}`,
+          );
+        }
+      }
     }
     stepsRun++;
     if (result !== null) {

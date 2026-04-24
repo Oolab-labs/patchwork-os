@@ -74,10 +74,25 @@ export interface ToolStep {
 
 export type Step = AgentStep | ToolStep;
 
+/**
+ * Recipe-level error policy. Single source of truth shared across
+ * chainedRunner, yamlRunner, and generated JSON schema.
+ *
+ * Currently-honored fields at runtime:
+ *   - retry        — integer; overridden per-step via step.retry
+ *   - retryDelay   — ms between retries (default 1000); overridden per-step
+ *   - fallback     — "log_only" and "deliver_original" both treat step
+ *                    failure as non-fatal (like optional: true) — fail-open.
+ *                    "abort" is the default (propagate).
+ *   - notify       — reserved; yamlRunner currently posts Slack notifications
+ *                    on any step failure when slack is connected. Gating on
+ *                    this flag is not yet wired.
+ */
 export interface ErrorPolicy {
-  notify?: boolean;
   retry?: number;
-  fallback?: "log_only" | "abort" | string;
+  retryDelay?: number;
+  fallback?: "log_only" | "abort" | "deliver_original";
+  notify?: boolean;
 }
 
 export interface Recipe {
