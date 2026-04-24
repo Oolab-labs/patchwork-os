@@ -97,7 +97,7 @@ export default function TracesPage() {
         <div>
           <h1>Traces</h1>
           <div className="page-head-sub">
-            Unified decision trail — approvals, enrichment links, recipe runs.
+            Approval history, recipe runs, and enrichment links.
           </div>
         </div>
         <span className="pill muted">

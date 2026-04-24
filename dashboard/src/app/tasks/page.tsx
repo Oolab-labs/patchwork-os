@@ -59,7 +59,7 @@ export default function TasksPage() {
         <div>
           <h1>Claude tasks</h1>
           <div className="page-head-sub">
-            Background subprocess orchestration queue.
+            Claude subprocess tasks running in the background.
           </div>
         </div>
         <span className="pill muted">{tasks.length} total</span>

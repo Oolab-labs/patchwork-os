@@ -417,7 +417,7 @@ export default function RecipesPage() {
         <div>
           <h1>Recipes</h1>
           <div className="page-head-sub">
-            Installed automation recipes and their compiled programs.
+            Your automation recipes and their run status.
           </div>
         </div>
         <div

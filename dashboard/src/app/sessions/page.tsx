@@ -26,7 +26,7 @@ export default function SessionsPage() {
         <div>
           <h1>Sessions</h1>
           <div className="page-head-sub">
-            Active Claude Code agent sessions connected to the bridge.
+            Active Claude Code sessions connected to the bridge.
           </div>
         </div>
         <span className="pill muted">

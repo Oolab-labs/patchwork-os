@@ -162,7 +162,7 @@ export default function ActivityPage() {
         <div>
           <h1>Activity</h1>
           <div className="page-head-sub">
-            Live stream of tool calls and bridge events.
+            Real-time tool calls and bridge events.
           </div>
         </div>
         <span className={`pill ${connected ? "ok" : "err"}`}>

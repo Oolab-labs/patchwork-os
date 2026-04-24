@@ -336,7 +336,7 @@ export default function InboxPage() {
           <div>
             <h1>Inbox</h1>
             <div className="page-head-sub">
-              Output from recipe runs — briefs, summaries, and agent reports.
+              Recipe outputs — briefs, summaries, and agent reports.
             </div>
           </div>
         </div>
@@ -371,7 +371,12 @@ export default function InboxPage() {
               minHeight: 200,
             }}
           >
-            <span style={{ fontSize: 32, lineHeight: 1 }}>✉</span>
+            <div className="empty-state-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <path d="M2 7l10 7 10-7"/>
+              </svg>
+            </div>
             <p style={{ color: "var(--fg-1)", fontSize: 15, fontWeight: 600, margin: 0 }}>
               No items yet
             </p>
@@ -647,7 +652,10 @@ export default function InboxPage() {
                     color: "var(--fg-3)",
                   }}
                 >
-                  <span style={{ fontSize: 28, lineHeight: 1 }}>✉</span>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="2" y="4" width="20" height="16" rx="2"/>
+                    <path d="M2 7l10 7 10-7"/>
+                  </svg>
                   <p style={{ fontSize: 14, color: "var(--fg-2)", margin: 0 }}>
                     Select an item to read it.
                   </p>

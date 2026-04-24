@@ -635,7 +635,7 @@ function ApprovalsContent() {
         <div>
           <h1>Approvals</h1>
           <div className="page-head-sub">
-            Review and decide on tool calls awaiting human approval.
+            Review tool calls before they execute.
           </div>
         </div>
         <span className={`pill ${pending.length > 0 ? "warn" : "muted"}`}>
