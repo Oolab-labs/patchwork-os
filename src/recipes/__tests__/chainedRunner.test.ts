@@ -722,7 +722,7 @@ describe("expandParallelSteps", () => {
         id: "grp",
         parallel: [{ tool: "t1" }, { tool: "t2" }],
       },
-    ];
+    ] as ChainedRecipe["steps"];
     const expanded = expandParallelSteps(steps);
     expect(expanded).toHaveLength(2);
     expect(expanded[0]?.id).toBe("grp_0");
