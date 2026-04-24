@@ -292,57 +292,91 @@ function lintChainRefs(
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     if (!step) continue;
-    const ref =
-      typeof step.chain === "string"
-        ? step.chain
-        : typeof step.recipe === "string"
-          ? step.recipe
-          : null;
-    if (!ref) continue;
+    issues.push(...lintStep(step, i + 1, recipeDir, visited));
+  }
 
-    const field = typeof step.chain === "string" ? "chain" : "recipe";
+  return issues;
+}
 
-    // Refs that look like file paths (extension or separator) → resolve relative to recipe dir.
-    const looksLikePath =
-      /\.ya?ml$/i.test(ref) ||
-      ref.startsWith("./") ||
-      ref.startsWith("../") ||
-      /[\\/]/.test(ref);
+/**
+ * Check a single step (or recurse into its parallel: children).
+ * `stepLabel` is the 1-based position string used in issue messages.
+ */
+function lintStep(
+  step: Record<string, unknown>,
+  stepLabel: number,
+  recipeDir: string,
+  visited: Set<string>,
+): LintIssue[] {
+  const issues: LintIssue[] = [];
 
-    if (looksLikePath) {
-      const resolved = /^\//.test(ref) ? ref : resolve(recipeDir, ref);
-      const candidates = /\.ya?ml$/i.test(resolved)
-        ? [resolved]
-        : [`${resolved}.yaml`, `${resolved}.yml`, resolved];
+  // Recurse into parallel: groups — each child is checked independently.
+  if (Array.isArray(step.parallel)) {
+    for (let j = 0; j < step.parallel.length; j++) {
+      const child = step.parallel[j];
+      if (!child || typeof child !== "object" || Array.isArray(child)) continue;
+      issues.push(
+        ...lintStep(
+          child as Record<string, unknown>,
+          stepLabel,
+          recipeDir,
+          visited,
+        ),
+      );
+    }
+    return issues;
+  }
 
-      const childPath = candidates.find(existsSync) ?? null;
-      if (!childPath) {
-        issues.push({
-          level: "error",
-          message: `Step ${i + 1}: '${field}: ${ref}' — file not found relative to recipe directory (${recipeDir})`,
-        });
-        continue;
-      }
+  const ref =
+    typeof step.chain === "string"
+      ? step.chain
+      : typeof step.recipe === "string"
+        ? step.recipe
+        : null;
+  if (!ref) return issues;
 
-      issues.push(...lintChildRecipe(childPath, field, ref, i + 1, visited));
-      continue;
+  const field = typeof step.chain === "string" ? "chain" : "recipe";
+
+  // Refs that look like file paths (extension or separator) → resolve relative to recipe dir.
+  const looksLikePath =
+    /\.ya?ml$/i.test(ref) ||
+    ref.startsWith("./") ||
+    ref.startsWith("../") ||
+    /[\\/]/.test(ref);
+
+  if (looksLikePath) {
+    const resolved = /^\//.test(ref) ? ref : resolve(recipeDir, ref);
+    const candidates = /\.ya?ml$/i.test(resolved)
+      ? [resolved]
+      : [`${resolved}.yaml`, `${resolved}.yml`, resolved];
+
+    const childPath = candidates.find(existsSync) ?? null;
+    if (!childPath) {
+      issues.push({
+        level: "error",
+        message: `Step ${stepLabel}: '${field}: ${ref}' — file not found relative to recipe directory (${recipeDir})`,
+      });
+      return issues;
     }
 
-    // Named ref (no extension, no separator) → check ~/.patchwork/recipes/.
-    // Emit a warning rather than error: the recipe may be installed on the
-    // deploy target but not the author's machine.
-    if (existsSync(RECIPES_DIR)) {
-      const found =
-        findYamlRecipePath(RECIPES_DIR, ref) ??
-        (existsSync(join(RECIPES_DIR, ref)) ? join(RECIPES_DIR, ref) : null);
-      if (!found) {
-        issues.push({
-          level: "warning",
-          message: `Step ${i + 1}: '${field}: ${ref}' — recipe not found in ${RECIPES_DIR}`,
-        });
-      } else {
-        issues.push(...lintChildRecipe(found, field, ref, i + 1, visited));
-      }
+    issues.push(...lintChildRecipe(childPath, field, ref, stepLabel, visited));
+    return issues;
+  }
+
+  // Named ref (no extension, no separator) → check ~/.patchwork/recipes/.
+  // Emit a warning rather than error: the recipe may be installed on the
+  // deploy target but not the author's machine.
+  if (existsSync(RECIPES_DIR)) {
+    const found =
+      findYamlRecipePath(RECIPES_DIR, ref) ??
+      (existsSync(join(RECIPES_DIR, ref)) ? join(RECIPES_DIR, ref) : null);
+    if (!found) {
+      issues.push({
+        level: "warning",
+        message: `Step ${stepLabel}: '${field}: ${ref}' — recipe not found in ${RECIPES_DIR}`,
+      });
+    } else {
+      issues.push(...lintChildRecipe(found, field, ref, stepLabel, visited));
     }
   }
 

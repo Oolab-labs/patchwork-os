@@ -769,6 +769,71 @@ steps:
       expect(() => runLint(alphaPath)).not.toThrow();
     });
 
+    it("errors when chain: inside parallel: references a missing file", () => {
+      const recipePath = join(tmpDir, "parallel-missing-child.yaml");
+      writeFileSync(
+        recipePath,
+        `name: parallel-missing-child
+description: parallel with bad chain ref
+trigger:
+  type: chained
+steps:
+  - parallel:
+      - id: p1
+        chain: ./definitely-missing.yaml
+      - id: p2
+        tool: file.read
+        path: /tmp/x
+`,
+      );
+      const result = runLint(recipePath);
+      const chainError = result.issues.find(
+        (i) =>
+          i.level === "error" && i.message.includes("definitely-missing.yaml"),
+      );
+      expect(chainError).toBeDefined();
+      expect(result.valid).toBe(false);
+    });
+
+    it("passes clean when chain: inside parallel: references a valid file", () => {
+      const childPath = join(tmpDir, "parallel-child-valid.yaml");
+      writeFileSync(
+        childPath,
+        `name: parallel-child-valid
+description: A valid parallel child
+trigger:
+  type: manual
+steps:
+  - tool: file.read
+    path: /tmp/x
+`,
+      );
+      const recipePath = join(tmpDir, "parallel-good-child.yaml");
+      writeFileSync(
+        recipePath,
+        `name: parallel-good-child
+description: parallel with valid chain ref
+trigger:
+  type: chained
+steps:
+  - parallel:
+      - id: p1
+        chain: ./parallel-child-valid.yaml
+      - id: p2
+        tool: file.read
+        path: /tmp/y
+`,
+      );
+      const result = runLint(recipePath);
+      const chainErrors = result.issues.filter(
+        (i) =>
+          i.level === "error" &&
+          i.message.includes("parallel-child-valid.yaml"),
+      );
+      expect(chainErrors).toHaveLength(0);
+      expect(result.valid).toBe(true);
+    });
+
     it("warns when named chain: ref is not found in recipes dir", () => {
       // Point RECIPES_DIR at an empty tmp dir so the lookup always misses.
       const emptyRecipesDir = join(tmpDir, "empty-recipes");
