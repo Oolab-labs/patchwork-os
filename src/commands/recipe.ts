@@ -416,6 +416,7 @@ export async function runRecipe(
     {
       ...runnerDeps,
       chainedDeps: buildChainedDeps(runnerDeps),
+      chainedOptions: { sourcePath: recipePath },
     },
     options.vars ?? {},
   );

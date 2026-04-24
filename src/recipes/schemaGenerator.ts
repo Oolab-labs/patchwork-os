@@ -165,12 +165,16 @@ function generateRecipeSchema(
     .sort();
   const chainedRecipeStep = {
     type: "object",
-    required: ["recipe"],
+    anyOf: [{ required: ["recipe"] }, { required: ["chain"] }],
     properties: {
       ...chainedStepMetadataProperties,
       recipe: {
         type: "string",
         description: "Nested recipe name or path",
+      },
+      chain: {
+        type: "string",
+        description: "Alias for nested recipe name or path",
       },
       vars: {
         type: "object",

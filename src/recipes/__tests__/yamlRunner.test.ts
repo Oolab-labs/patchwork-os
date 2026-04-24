@@ -14,6 +14,7 @@ const mockLoadTokens = vi.mocked(loadTokens);
 const mockListIssues = vi.mocked(listIssues);
 
 import {
+  buildChainedDeps,
   evaluateExpect,
   type FetchFn,
   listYamlRecipes,
@@ -1359,5 +1360,54 @@ describe("transform field", () => {
       gitLogSince: () => "commit-abc",
     });
     expect(result.context.combined).toBe("2026-04-18 — commit-abc");
+  });
+});
+
+// ── buildChainedDeps: local child.yaml resolution ────────────────────────────
+
+describe("buildChainedDeps loadNestedRecipe", () => {
+  let tmpDir: string;
+
+  it("resolves chain: child.yaml relative to parent recipe's directory", async () => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "patchwork-chain-test-"));
+    try {
+      const childPath = path.join(tmpDir, "child.yaml");
+      writeFileSync(
+        childPath,
+        `name: child-recipe
+trigger:
+  type: manual
+steps:
+  - tool: file.read
+    path: /tmp/x
+`,
+      );
+
+      const deps = buildChainedDeps({}, undefined);
+      const loaded = await deps.loadNestedRecipe(
+        "child.yaml",
+        path.join(tmpDir, "parent.yaml"),
+      );
+
+      expect(loaded).not.toBeNull();
+      expect(loaded?.recipe.name).toBe("child-recipe");
+      expect(loaded?.sourcePath).toBe(childPath);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null when child.yaml does not exist", async () => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "patchwork-chain-test-"));
+    try {
+      const deps = buildChainedDeps({}, undefined);
+      const loaded = await deps.loadNestedRecipe(
+        "missing.yaml",
+        path.join(tmpDir, "parent.yaml"),
+      );
+      expect(loaded).toBeNull();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

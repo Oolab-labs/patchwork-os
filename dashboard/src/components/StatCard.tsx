@@ -73,11 +73,7 @@ function CardInner({
         {icon && (
           <span
             aria-hidden="true"
-            style={{
-              color: "var(--fg-3)",
-              opacity: 0.5,
-              display: "inline-flex",
-            }}
+            style={{ display: "inline-flex", flexShrink: 0 }}
           >
             {icon}
           </span>
@@ -99,17 +95,6 @@ function CardInner({
         </div>
       )}
 
-      {/* sparkline placeholder — filled by parent or future chart layer */}
-      <div
-        aria-hidden="true"
-        style={{
-          marginTop: "var(--s-3)",
-          height: 32,
-          borderRadius: "var(--r-1)",
-          background:
-            "linear-gradient(90deg, rgba(var(--accent-rgb),0.06) 0%, transparent 100%)",
-        }}
-      />
     </>
   );
 }

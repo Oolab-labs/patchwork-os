@@ -31,6 +31,7 @@ export interface ChainedStep {
   tool?: string;
   agent?: { prompt: string; model?: string; driver?: string };
   recipe?: NestedRecipeConfig["recipe"];
+  chain?: NestedRecipeConfig["recipe"];
   vars?: Record<string, string>;
   awaits?: string[];
   when?: string; // template condition
@@ -56,6 +57,7 @@ export interface RunOptions {
   maxConcurrency: number;
   maxDepth: number;
   dryRun: boolean;
+  sourcePath?: string;
   onStepStart?: (stepId: string) => void;
   onStepComplete?: (stepId: string, error?: Error) => void;
 }
@@ -82,7 +84,18 @@ export type AgentExecutor = (
 export interface ExecutionDeps {
   executeTool: ToolExecutor;
   executeAgent: AgentExecutor;
-  loadNestedRecipe: (name: string) => Promise<ChainedRecipe | null>;
+  loadNestedRecipe: (
+    name: string,
+    parentSourcePath?: string,
+  ) => Promise<{ recipe: ChainedRecipe; sourcePath?: string } | null>;
+}
+
+function nestedRecipeRef(step: ChainedStep): string | undefined {
+  return typeof step.recipe === "string"
+    ? step.recipe
+    : typeof step.chain === "string"
+      ? step.chain
+      : undefined;
 }
 
 /** Build template context from registry and env */
@@ -111,6 +124,7 @@ export function resolveStepTemplates(
     "tool",
     "agent",
     "recipe",
+    "chain",
     "awaits",
     "when",
     "output",
@@ -218,12 +232,13 @@ export async function executeChainedStep(
 
   // Dry run: just report what would happen
   if (dryRun) {
+    const recipeRef = nestedRecipeRef(step);
     return {
       success: true,
       data: {
         dryRun: true,
-        stepType: step.recipe ? "recipe" : step.agent ? "agent" : "tool",
-        wouldExecute: (step.tool ?? step.agent) ? "prompt" : step.recipe,
+        stepType: recipeRef ? "recipe" : step.agent ? "agent" : "tool",
+        wouldExecute: (step.tool ?? step.agent) ? "prompt" : recipeRef,
         resolvedParams: Object.keys(resolved).length > 0 ? resolved : undefined,
       },
     };
@@ -254,10 +269,11 @@ export async function executeChainedStep(
 
   // Execute based on step type
   try {
-    if (step.recipe) {
+    const recipeRef = nestedRecipeRef(step);
+    if (recipeRef) {
       // Nested recipe call
       const nestedConfig: NestedRecipeConfig = {
-        recipe: step.recipe,
+        recipe: recipeRef,
         vars: step.vars ?? {},
         output: step.output ?? step.id,
         risk: step.risk,
@@ -282,11 +298,14 @@ export async function executeChainedStep(
       }
 
       // Load and execute nested recipe
-      const nestedRecipe = await deps.loadNestedRecipe(step.recipe);
+      const nestedRecipe = await deps.loadNestedRecipe(
+        recipeRef,
+        options.sourcePath,
+      );
       if (!nestedRecipe) {
         return {
           success: false,
-          error: `Nested recipe "${step.recipe}" not found`,
+          error: `Nested recipe "${recipeRef}" not found`,
         };
       }
 
@@ -313,11 +332,12 @@ export async function executeChainedStep(
       const childOptions: RunOptions = {
         ...options,
         maxDepth: options.maxDepth,
+        sourcePath: nestedRecipe.sourcePath,
         env: { ...options.env, ...resolvedVars }, // Merge resolved vars into env
       };
 
       const childResult = await runChainedRecipe(
-        nestedRecipe,
+        nestedRecipe.recipe,
         childOptions,
         deps,
         childRegistry,
@@ -327,7 +347,7 @@ export async function executeChainedStep(
       return {
         success: !childResult.errorMessage,
         data: {
-          recipe: step.recipe,
+          recipe: recipeRef,
           childSummary: childRegistry.summary(),
           childOutputs: Object.fromEntries(
             childRegistry.keys().map((k) => [k, childRegistry.get(k)?.data]),
@@ -524,8 +544,8 @@ export function generateExecutionPlan(recipe: ChainedRecipe): {
 
   return {
     steps: recipe.steps.map((s) => ({
-      id: s.id!,
-      type: s.recipe ? "recipe" : s.agent ? "agent" : "tool",
+      id: s.id ?? "",
+      type: nestedRecipeRef(s) ? "recipe" : s.agent ? "agent" : "tool",
       dependencies: s.awaits ?? [],
       condition: s.when,
       risk: s.risk ?? "low",
