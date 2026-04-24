@@ -910,6 +910,7 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
         runRecipeDryPlan,
         summarizeRecipeExecution,
         formatRunReport,
+        extractRunLogStepResults,
       } = await import("./commands/recipe.js");
       if (dryRun) {
         const plan = await runRecipeDryPlan(recipeArg, {
@@ -949,19 +950,7 @@ if (process.argv[2] === "recipe" && process.argv[3] === "run") {
           dir: path.join(os.homedir(), ".patchwork"),
         });
         const startedAt = Date.now();
-        const stepResultsForLog =
-          "stepResults" in run.result
-            ? [...run.result.stepResults.entries()].map(([id, s]) => ({
-                id,
-                status: s.skipped
-                  ? ("skipped" as const)
-                  : s.success
-                    ? ("ok" as const)
-                    : ("error" as const),
-                durationMs: s.durationMs ?? 0,
-                ...(s.error ? { error: s.error.message } : {}),
-              }))
-            : undefined;
+        const stepResultsForLog = extractRunLogStepResults(run.result);
         runLog.appendDirect({
           taskId: `cli-${Date.now()}`,
           recipeName: run.recipe.name,
@@ -1500,6 +1489,7 @@ if (process.argv[2] === "recipe" && process.argv[3] === "watch") {
       runWatchedRecipe,
       formatRunReport,
       summarizeRecipeExecution,
+      extractRunLogStepResults,
     } = await import("./commands/recipe.js");
     const filePath = path.resolve(file);
     const lock = findBridgeLock();
@@ -1550,21 +1540,9 @@ if (process.argv[2] === "recipe" && process.argv[3] === "watch") {
               dir: path.join(os.homedir(), ".patchwork"),
             });
             const now = Date.now();
-            const stepResultsForLog =
-              "stepResults" in watched.run.result
-                ? [...watched.run.result.stepResults.entries()].map(
-                    ([id, s]) => ({
-                      id,
-                      status: s.skipped
-                        ? ("skipped" as const)
-                        : s.success
-                          ? ("ok" as const)
-                          : ("error" as const),
-                      durationMs: s.durationMs ?? 0,
-                      ...(s.error ? { error: s.error.message } : {}),
-                    }),
-                  )
-                : undefined;
+            const stepResultsForLog = extractRunLogStepResults(
+              watched.run.result,
+            );
             runLog.appendDirect({
               taskId: `watch-${now}`,
               recipeName: watched.run.recipe.name,
