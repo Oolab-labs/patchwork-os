@@ -259,12 +259,17 @@ export function runLint(recipePath: string): LintResult {
 }
 
 /**
- * Walk chained recipe steps and emit a warning for each `chain:` value that
- * looks like a relative file path but cannot be found on disk relative to the
- * recipe's own directory. Named recipes (no extension, no path separator) are
- * resolved at runtime from ~/.patchwork/recipes/ — skip those.
+ * Walk chained recipe steps, check that chain:/recipe: refs resolve on disk,
+ * and recursively lint any child recipe that does resolve.
+ *
+ * `visited` tracks absolute paths already linted in this call chain to prevent
+ * infinite recursion when two recipes chain each other.
  */
-function lintChainRefs(parsed: unknown, recipePath: string): LintIssue[] {
+function lintChainRefs(
+  parsed: unknown,
+  recipePath: string,
+  visited: Set<string> = new Set(),
+): LintIssue[] {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
   const r = parsed as Record<string, unknown>;
 
@@ -279,6 +284,10 @@ function lintChainRefs(parsed: unknown, recipePath: string): LintIssue[] {
     : [];
   const recipeDir = dirname(recipePath);
   const issues: LintIssue[] = [];
+
+  // Mark the current recipe as visited before descending.
+  const absPath = resolve(recipePath);
+  visited.add(absPath);
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
@@ -306,12 +315,16 @@ function lintChainRefs(parsed: unknown, recipePath: string): LintIssue[] {
         ? [resolved]
         : [`${resolved}.yaml`, `${resolved}.yml`, resolved];
 
-      if (!candidates.some(existsSync)) {
+      const childPath = candidates.find(existsSync) ?? null;
+      if (!childPath) {
         issues.push({
           level: "error",
           message: `Step ${i + 1}: '${field}: ${ref}' — file not found relative to recipe directory (${recipeDir})`,
         });
+        continue;
       }
+
+      issues.push(...lintChildRecipe(childPath, field, ref, i + 1, visited));
       continue;
     }
 
@@ -327,11 +340,55 @@ function lintChainRefs(parsed: unknown, recipePath: string): LintIssue[] {
           level: "warning",
           message: `Step ${i + 1}: '${field}: ${ref}' — recipe not found in ${RECIPES_DIR}`,
         });
+      } else {
+        issues.push(...lintChildRecipe(found, field, ref, i + 1, visited));
       }
     }
   }
 
   return issues;
+}
+
+/**
+ * Read, parse, and validate a resolved child recipe path. Skips the file if
+ * it has already been visited (cycle). Issues are prefixed with the parent
+ * step context so the author knows where the problem originates.
+ */
+function lintChildRecipe(
+  childPath: string,
+  field: string,
+  ref: string,
+  stepNumber: number,
+  visited: Set<string>,
+): LintIssue[] {
+  const absChild = resolve(childPath);
+  if (visited.has(absChild)) return []; // cycle — already linted
+
+  let childParsed: unknown;
+  try {
+    childParsed = parseYaml(readFileSync(childPath, "utf-8"));
+  } catch (err) {
+    return [
+      {
+        level: "error",
+        message: `Step ${stepNumber}: '${field}: ${ref}' — could not read child recipe: ${err instanceof Error ? err.message : String(err)}`,
+      },
+    ];
+  }
+
+  const childResult = validateRecipeDefinition(childParsed);
+  const childChainIssues = lintChainRefs(childParsed, childPath, visited);
+
+  return [
+    ...childResult.issues.map((issue) => ({
+      ...issue,
+      message: `Step ${stepNumber}: '${field}: ${ref}' — child recipe invalid: ${issue.message}`,
+    })),
+    ...childChainIssues.map((issue) => ({
+      ...issue,
+      message: `Step ${stepNumber}: '${field}: ${ref}' — ${issue.message}`,
+    })),
+  ];
 }
 
 // patchwork recipe fmt
