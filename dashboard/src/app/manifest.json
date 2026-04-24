@@ -2,20 +2,20 @@
   "name": "Patchwork",
   "short_name": "Patchwork",
   "description": "AI agent oversight and approval dashboard",
-  "start_url": "/approvals",
+  "start_url": "/dashboard/approvals",
   "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
+  "background_color": "#faf7f2",
+  "theme_color": "#faf7f2",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "/dashboard/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/dashboard/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
@@ -24,7 +24,7 @@
   "shortcuts": [
     {
       "name": "Pending Approvals",
-      "url": "/approvals",
+      "url": "/dashboard/approvals",
       "description": "Review and act on pending tool calls"
     }
   ]

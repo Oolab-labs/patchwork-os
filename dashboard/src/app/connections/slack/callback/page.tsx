@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef } from "react";
+import { apiPath } from '@/lib/api';
 import { useRouter, useSearchParams } from "next/navigation";
 
 function SlackCallbackInner() {
@@ -21,7 +22,7 @@ function SlackCallbackInner() {
     if (state) qs.set("state", state);
     if (error) qs.set("error", error);
 
-    fetch(`/api/connections/slack/callback?${qs.toString()}`)
+    fetch(apiPath(`/api/connections/slack/callback?${qs.toString()}`))
       .then((r) => r.json())
       .then(() => {
         if (window.opener) {

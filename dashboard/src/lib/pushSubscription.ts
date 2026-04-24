@@ -1,3 +1,5 @@
+import { apiPath } from "./api";
+
 /**
  * Web Push subscription helpers — called from the dashboard settings page.
  *
@@ -11,7 +13,7 @@
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!("serviceWorker" in navigator)) return null;
   try {
-    const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    const reg = await navigator.serviceWorker.register("/dashboard/sw.js", { scope: "/dashboard/" });
     return reg;
   } catch (err) {
     console.error("[pwa] SW registration failed:", err);
@@ -43,7 +45,7 @@ export async function subscribeToPush(vapidPublicKey: string): Promise<boolean> 
     return false;
   }
 
-  const res = await fetch("/api/push/subscribe", {
+  const res = await fetch(apiPath("/api/push/subscribe"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(subscription.toJSON()),
@@ -53,11 +55,11 @@ export async function subscribeToPush(vapidPublicKey: string): Promise<boolean> 
 
 export async function unsubscribeFromPush(): Promise<boolean> {
   if (!("serviceWorker" in navigator)) return false;
-  const reg = await navigator.serviceWorker.getRegistration("/");
+  const reg = await navigator.serviceWorker.getRegistration("/dashboard/");
   if (!reg) return false;
   const sub = await reg.pushManager.getSubscription();
   if (!sub) return false;
-  await fetch("/api/push/unsubscribe", {
+  await fetch(apiPath("/api/push/unsubscribe"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ endpoint: sub.endpoint }),
@@ -68,7 +70,7 @@ export async function unsubscribeFromPush(): Promise<boolean> {
 export async function getPushSubscriptionStatus(): Promise<"subscribed" | "denied" | "unsubscribed" | "unsupported"> {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
   if (Notification.permission === "denied") return "denied";
-  const reg = await navigator.serviceWorker.getRegistration("/");
+  const reg = await navigator.serviceWorker.getRegistration("/dashboard/");
   if (!reg) return "unsubscribed";
   const sub = await reg.pushManager.getSubscription();
   return sub ? "subscribed" : "unsubscribed";

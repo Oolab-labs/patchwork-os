@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { apiPath } from '@/lib/api';
 
 // ------------------------------------------------------------------ types
 
@@ -384,7 +385,7 @@ export default function RunDetailPage() {
 
   useEffect(() => {
     if (!seq) return;
-    fetch(`/api/bridge/runs/${seq}`)
+    fetch(apiPath(`/api/bridge/runs/${seq}`))
       .then(async (res) => {
         if (!res.ok) throw new Error(`${res.status}`);
         const data = (await res.json()) as { run?: RunDetail };
@@ -398,7 +399,7 @@ export default function RunDetailPage() {
   useEffect(() => {
     if (tab !== "plan" || plan || planErr || !seq) return;
     setPlanLoading(true);
-    fetch(`/api/bridge/runs/${seq}/plan`)
+    fetch(apiPath(`/api/bridge/runs/${seq}/plan`))
       .then(async (res) => {
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };

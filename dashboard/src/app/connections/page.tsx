@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { apiPath } from '@/lib/api';
 import AddConnectionModal from "./AddConnectionModal";
 
 interface ConnectorStatus {
@@ -507,7 +508,7 @@ export default function ConnectionsPage() {
 
   async function fetchConnectors() {
     try {
-      const res = await fetch("/api/connections");
+      const res = await fetch(apiPath("/api/connections"));
       if (res.status >= 500) {
         setBridgeOffline(true);
         setLoading(false);
@@ -542,7 +543,7 @@ export default function ConnectionsPage() {
     setNotionConnecting(true);
     setNotionErr(null);
     try {
-      const res = await fetch("/api/connections/notion/connect", {
+      const res = await fetch(apiPath("/api/connections/notion/connect"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: notionToken }),
@@ -573,7 +574,7 @@ export default function ConnectionsPage() {
     window.open(`/api/connections/${id}/auth`, "_blank");
     // Poll for status update as fallback if postMessage doesn't arrive.
     const poll = setInterval(async () => {
-      const res = await fetch("/api/connections").catch(() => null);
+      const res = await fetch(apiPath("/api/connections")).catch(() => null);
       if (!res) return;
       const data = (await res.json().catch(() => null)) as {
         connectors: ConnectorStatus[];
@@ -604,7 +605,7 @@ export default function ConnectionsPage() {
     setActing(id);
     setActionErr(null);
     try {
-      const res = await fetch(`/api/connections/${id}`, { method: "DELETE" });
+      const res = await fetch(apiPath(`/api/connections/${id}`), { method: "DELETE" });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as {
           error?: string;
@@ -624,7 +625,7 @@ export default function ConnectionsPage() {
 
   async function handleTest(id: string): Promise<{ ok: boolean; message?: string }> {
     try {
-      const res = await fetch(`/api/connections/${id}/test`, { method: "POST" });
+      const res = await fetch(apiPath(`/api/connections/${id}/test`), { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         message?: string;

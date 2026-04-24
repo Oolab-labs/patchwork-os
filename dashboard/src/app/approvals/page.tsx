@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useApprovalPatterns } from "../../hooks/useApprovalPatterns";
+import { apiPath } from "@/lib/api";
 
 interface RiskSignal {
   kind: "destructive_flag" | "domain_reputation" | "path_escape" | "chaining";
@@ -45,7 +46,7 @@ interface CcRules {
 
 type RiskFilter = "all" | "low" | "medium" | "high";
 
-const API = "/api/bridge";
+const API = apiPath("/api/bridge");
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
 
 // Extract the single most important param to show inline above the JSON block.
@@ -992,7 +993,7 @@ function ruleClass(kind: "deny" | "ask" | "allow"): string {
 }
 
 function tierClass(t: string): string {
-  return t === "high" ? "err" : t === "medium" ? "warn" : "ok";
+  return t === "high" ? "err" : t === "medium" ? "warn" : "muted";
 }
 
 function safeStringify(v: unknown): string {

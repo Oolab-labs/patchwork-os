@@ -2,6 +2,7 @@
 import React from "react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { apiPath } from "@/lib/api";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 
 // Tool prefix → connector name mapping
@@ -274,8 +275,8 @@ export default function RecipesPage() {
   const load = React.useCallback(async () => {
     try {
       const [recipesRes, runsRes] = await Promise.all([
-        fetch("/api/bridge/recipes"),
-        fetch("/api/bridge/runs").catch(() => null),
+        fetch(apiPath("/api/bridge/recipes")),
+        fetch(apiPath("/api/bridge/runs")).catch(() => null),
       ]);
       if (recipesRes.status === 404) {
         setUnsupported(true);
@@ -334,7 +335,7 @@ export default function RecipesPage() {
     try {
       const body: Record<string, unknown> = { name };
       if (vars && Object.keys(vars).length > 0) body.vars = vars;
-      const res = await fetch("/api/bridge/recipes/run", {
+      const res = await fetch(apiPath("/api/bridge/recipes/run"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

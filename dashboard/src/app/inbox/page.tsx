@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { apiPath } from '@/lib/api';
 
 type FilterCategory = "All" | "Morning Briefs" | "Recipe Outputs" | "Agent Reports";
 
@@ -222,7 +223,7 @@ export default function InboxPage() {
 
   const fetchList = useCallback(async () => {
     try {
-      const res = await fetch("/api/inbox");
+      const res = await fetch(apiPath("/api/inbox"));
       if (!res.ok) throw new Error(`/api/inbox ${res.status}`);
       const data = (await res.json()) as { items: InboxItem[] };
       setItems(data.items ?? []);
@@ -232,7 +233,7 @@ export default function InboxPage() {
       if (cur) {
         const updated = (data.items ?? []).find((i) => i.name === cur.name);
         if (updated && updated.modifiedAt !== cur.modifiedAt) {
-          const detailRes = await fetch(`/api/inbox/${encodeURIComponent(cur.name)}`);
+          const detailRes = await fetch(apiPath(`/api/inbox/${encodeURIComponent(cur.name)}`));
           if (detailRes.ok) setSelected(await detailRes.json() as InboxDetail);
         }
       }
@@ -308,7 +309,7 @@ export default function InboxPage() {
     }
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/inbox/${encodeURIComponent(name)}`);
+      const res = await fetch(apiPath(`/api/inbox/${encodeURIComponent(name)}`));
       if (!res.ok) throw new Error(`/api/inbox/${name} ${res.status}`);
       const data = (await res.json()) as InboxDetail;
       setSelected(data);

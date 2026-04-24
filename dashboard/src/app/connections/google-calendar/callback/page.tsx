@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef } from "react";
+import { apiPath } from '@/lib/api';
 import { useRouter, useSearchParams } from "next/navigation";
 
 function CalendarCallbackInner() {
@@ -21,7 +22,7 @@ function CalendarCallbackInner() {
     if (state) qs.set("state", state);
     if (error) qs.set("error", error);
 
-    fetch(`/api/connections/google-calendar/callback?${qs.toString()}`)
+    fetch(apiPath(`/api/connections/google-calendar/callback?${qs.toString()}`))
       .then((r) => r.json())
       .then(() => {
         if (window.opener) {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { apiPath } from "@/lib/api";
 
 interface ConnectorStatus {
   name: string;
@@ -53,7 +54,7 @@ export function ConnectorHealthPanel({ connectors }: Props) {
 
   async function load() {
     try {
-      const res = await fetch("/api/bridge/connectors/status", {
+      const res = await fetch(apiPath("/api/bridge/connectors/status"), {
         cache: "no-store",
       });
       if (!res.ok) {

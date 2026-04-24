@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { apiPath } from "@/lib/api";
 
 export function useBridgeStream(
   path: string,
@@ -16,7 +17,7 @@ export function useBridgeStream(
   useEffect(() => {
     if (!enabled) return;
 
-    const es = new EventSource(path);
+    const es = new EventSource(apiPath(path));
 
     es.onopen = () => {
       setConnected(true);

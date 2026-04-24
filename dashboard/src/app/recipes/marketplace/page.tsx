@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { apiPath } from "@/lib/api";
 
 // ------------------------------------------------------------------ types
 
@@ -322,7 +323,7 @@ export default function MarketplacePage() {
   useEffect(() => {
     async function load() {
       // Fetch installed recipes in parallel
-      const installedPromise = fetch("/api/bridge/recipes")
+      const installedPromise = fetch(apiPath("/api/bridge/recipes"))
         .then(async (r) => {
           if (!r.ok) return [];
           const data = await r.json();
@@ -339,7 +340,7 @@ export default function MarketplacePage() {
       let recipes: RegistryRecipe[] | null = null;
 
       try {
-        const res = await fetch("/api/bridge/templates");
+        const res = await fetch(apiPath("/api/bridge/templates"));
         if (res.ok) {
           const data = (await res.json()) as { recipes?: RegistryRecipe[] } | RegistryRecipe[];
           recipes = Array.isArray(data)
@@ -379,7 +380,7 @@ export default function MarketplacePage() {
   }, []);
 
   async function handleInstall(recipe: RegistryRecipe) {
-    const res = await fetch("/api/bridge/recipes/install", {
+    const res = await fetch(apiPath("/api/bridge/recipes/install"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source: recipe.install }),
