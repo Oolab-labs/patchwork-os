@@ -1,5 +1,9 @@
 node_modules/
 dist/
+
+# Old design mockups / local archives
+patchwork 2.0/
+patchwork 2.0.zip
 *.tsbuildinfo
 vscode-extension/out/
 vscode-extension/*.vsix

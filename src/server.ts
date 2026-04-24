@@ -1494,6 +1494,218 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── Intercom routes ─────────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/intercom/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handleIntercomConnect } = await import(
+              "./connectors/intercom.js"
+            );
+            const result = await handleIntercomConnect(
+              Buffer.concat(chunks).toString("utf-8"),
+            );
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/intercom/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleIntercomTest } = await import(
+            "./connectors/intercom.js"
+          );
+          const result = await handleIntercomTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/intercom" &&
+        req.method === "DELETE"
+      ) {
+        const { handleIntercomDisconnect } = await import(
+          "./connectors/intercom.js"
+        );
+        const result = handleIntercomDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
+      // ── HubSpot routes ─────────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/hubspot/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handleHubSpotConnect } = await import(
+              "./connectors/hubspot.js"
+            );
+            const result = await handleHubSpotConnect(
+              Buffer.concat(chunks).toString("utf-8"),
+            );
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/hubspot/test" &&
+        req.method === "POST"
+      ) {
+        const { handleHubSpotTest } = await import("./connectors/hubspot.js");
+        const result = await handleHubSpotTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/hubspot" &&
+        req.method === "DELETE"
+      ) {
+        const { handleHubSpotDisconnect } = await import(
+          "./connectors/hubspot.js"
+        );
+        const result = handleHubSpotDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
+      // ── Datadog routes ─────────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/datadog/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handleDatadogConnect } = await import(
+              "./connectors/datadog.js"
+            );
+            const result = await handleDatadogConnect(
+              Buffer.concat(chunks).toString("utf-8"),
+            );
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/datadog/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleDatadogTest } = await import("./connectors/datadog.js");
+          const result = await handleDatadogTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/datadog" &&
+        req.method === "DELETE"
+      ) {
+        const { handleDatadogDisconnect } = await import(
+          "./connectors/datadog.js"
+        );
+        const result = handleDatadogDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
+      // ── Stripe routes ───────────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/stripe/connect" &&
+        req.method === "POST"
+      ) {
+        let body = "";
+        req.on("data", (chunk: Buffer) => {
+          body += chunk.toString();
+        });
+        req.on("end", () => {
+          void (async () => {
+            const { handleStripeConnect } = await import(
+              "./connectors/stripe.js"
+            );
+            const result = await handleStripeConnect(body);
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/stripe/test" &&
+        req.method === "POST"
+      ) {
+        const { handleStripeTest } = await import("./connectors/stripe.js");
+        const result = await handleStripeTest();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/stripe" &&
+        req.method === "DELETE"
+      ) {
+        const { handleStripeDisconnect } = await import(
+          "./connectors/stripe.js"
+        );
+        const result = handleStripeDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
       // ── Google Calendar routes ──────────────────────────────────────
       if (
         parsedUrl.pathname === "/connections/google-calendar/auth" &&
@@ -1799,7 +2011,7 @@ export class Server extends EventEmitter<ServerEvents> {
             res.end(JSON.stringify({ error: "plan_unavailable" }));
             return;
           }
-          const recipeName = run["recipeName"] as string;
+          const recipeName = run.recipeName as string;
           const plan = await this.runPlanFn(recipeName);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ plan }));

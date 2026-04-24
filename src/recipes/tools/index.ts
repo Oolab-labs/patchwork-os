@@ -18,6 +18,10 @@ import "./slack.js";
 import "./notion.js";
 import "./confluence.js";
 import "./zendesk.js";
+import "./intercom.js";
+import "./hubspot.js";
+import "./datadog.js";
+import "./stripe.js";
 
 export type {
   RegisteredTool,
