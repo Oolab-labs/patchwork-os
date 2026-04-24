@@ -2,9 +2,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { fmtDuration } from "./time";
 import { apiPath } from "@/lib/api";
+import { useBridgeStatus, type BridgeStatus } from "@/hooks/useBridgeStatus";
 
 // ------------------------------------------------------------------ icons
 
@@ -66,7 +67,7 @@ const NAV_SECTIONS: { title?: string; items: NavItem[] }[] = [
     title: "Automation",
     items: [
       { href: "/recipes",              label: "Recipes",      icon: "book" },
-      { href: "/recipes/marketplace",  label: "Marketplace",  icon: "store" },
+      { href: "/marketplace",           label: "Marketplace",  icon: "store" },
       { href: "/tasks",                label: "Tasks",        icon: "tasks" },
       { href: "/runs",                 label: "Runs",         icon: "play" },
     ],
@@ -92,48 +93,7 @@ const NAV_SECTIONS: { title?: string; items: NavItem[] }[] = [
 
 const ALL_NAV = NAV_SECTIONS.flatMap((s) => s.items);
 
-// ------------------------------------------------------------------ bridge status
-
-interface BridgeStatus {
-  ok: boolean;
-  port?: number;
-  workspace?: string;
-  extensionConnected?: boolean;
-  slim?: boolean;
-  approvalGate?: string;
-  uptimeMs?: number;
-  activeSessions?: number;
-  patchwork?: { port?: number; workspace?: string; approvalGate?: string };
-}
-
-function useBridgeStatus(): BridgeStatus {
-  const [status, setStatus] = useState<BridgeStatus>({ ok: false });
-  useEffect(() => {
-    let alive = true;
-    const tick = async () => {
-      try {
-        const res = await fetch(apiPath("/api/bridge/status"));
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const ct = res.headers.get("content-type") ?? "";
-        if (!ct.includes("application/json") && !ct.includes("text/plain")) throw new Error("bad content-type");
-        const data = (await res.json()) as Partial<BridgeStatus>;
-        if (alive) setStatus({ ok: true, ...data });
-      } catch {
-        try {
-          const res = await fetch(apiPath("/api/bridge/approvals"));
-          const ct = res.headers.get("content-type") ?? "";
-          if (alive) setStatus({ ok: res.ok && ct.includes("application/json") });
-        } catch {
-          if (alive) setStatus({ ok: false });
-        }
-      }
-    };
-    tick();
-    const id = setInterval(tick, 5000);
-    return () => { alive = false; clearInterval(id); };
-  }, []);
-  return status;
-}
+// ------------------------------------------------------------------ bridge status (hook imported from @/hooks/useBridgeStatus)
 
 // ------------------------------------------------------------------ approval count
 
