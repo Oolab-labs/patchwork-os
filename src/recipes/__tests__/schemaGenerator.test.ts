@@ -34,7 +34,7 @@ describe("schemaGenerator", () => {
     // Check recipe schema
     expect(schemas.recipe).toMatchObject({
       $schema: "http://json-schema.org/draft-07/schema#",
-      $id: "https://patchwork.sh/schema/recipe.v1.json",
+      $id: "https://patchworkos.com/schema/recipe.v1.json",
       title: "Patchwork Recipe",
       type: "object",
     });
@@ -280,7 +280,7 @@ describe("schemaGenerator", () => {
       const schema = schemas.dryRunPlan as Record<string, unknown>;
 
       expect(schema.$id).toBe(
-        "https://patchwork.sh/schema/dry-run-plan.v1.json",
+        "https://patchworkos.com/schema/dry-run-plan.v1.json",
       );
       const properties = schema.properties as Record<string, unknown>;
       expect(properties.schemaVersion).toMatchObject({ const: 1 });
