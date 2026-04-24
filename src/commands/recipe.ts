@@ -306,7 +306,7 @@ function lintChainRefs(parsed: unknown, recipePath: string): LintIssue[] {
     if (!candidates.some(existsSync)) {
       const field = typeof step.chain === "string" ? "chain" : "recipe";
       issues.push({
-        level: "warning",
+        level: "error",
         message: `Step ${i + 1}: '${field}: ${ref}' — file not found relative to recipe directory (${recipeDir})`,
       });
     }

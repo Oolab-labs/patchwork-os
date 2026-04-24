@@ -667,11 +667,12 @@ steps:
 `,
       );
       const result = runLint(recipePath);
-      const chainWarning = result.issues.find((i) =>
+      const chainIssue = result.issues.find((i) =>
         i.message.includes("does-not-exist.yaml"),
       );
-      expect(chainWarning).toBeDefined();
-      expect(chainWarning?.level).toBe("warning");
+      expect(chainIssue).toBeDefined();
+      expect(chainIssue?.level).toBe("error");
+      expect(result.valid).toBe(false);
     });
 
     it("does not warn when chain: references a local yaml file that exists", () => {
