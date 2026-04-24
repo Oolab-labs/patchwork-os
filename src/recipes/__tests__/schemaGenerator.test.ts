@@ -192,6 +192,22 @@ describe("schemaGenerator", () => {
         output: { type: "string" },
       },
     });
+
+    const parallelStep = recipeSchema.properties?.steps?.items?.oneOf?.find(
+      (entry) =>
+        Array.isArray(entry.required) && entry.required.includes("parallel"),
+    );
+    expect(parallelStep).toMatchObject({
+      required: ["parallel"],
+      properties: {
+        parallel: {
+          type: "array",
+          items: { oneOf: expect.any(Array) },
+        },
+        id: { type: "string" },
+        awaits: { type: "array" },
+      },
+    });
   });
 
   it("includes shared chained step metadata across step variants", () => {

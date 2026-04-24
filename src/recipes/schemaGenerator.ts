@@ -190,6 +190,72 @@ function generateRecipeSchema(
     },
   };
 
+  // Leaf step variants reused inside parallel: items (one level, no recursion).
+  const leafStepVariants = [
+    ...toolRefs,
+    {
+      type: "object",
+      required: ["agent"],
+      properties: {
+        ...chainedStepMetadataProperties,
+        agent: {
+          type: "object",
+          required: ["prompt"],
+          description: "Agent step configuration",
+          properties: {
+            prompt: { type: "string" },
+            model: { type: "string" },
+            driver: {
+              type: "string",
+              enum: [
+                "claude",
+                "claude-code",
+                "api",
+                "openai",
+                "grok",
+                "gemini",
+                "anthropic",
+              ],
+            },
+            into: { type: "string" },
+          },
+        },
+      },
+    },
+    {
+      type: "object",
+      required: ["tool"],
+      properties: {
+        ...chainedStepMetadataProperties,
+        tool: { type: "string", not: { enum: knownToolIds } },
+        into: { type: "string" },
+      },
+    },
+    chainedRecipeStep,
+  ];
+
+  const parallelStep = {
+    type: "object",
+    required: ["parallel"],
+    properties: {
+      id: {
+        type: "string",
+        description: "Optional group id — used as awaits target by later steps",
+      },
+      awaits: {
+        type: "array",
+        description: "Step IDs that must complete before this group starts",
+        items: { type: "string" },
+      },
+      parallel: {
+        type: "array",
+        description:
+          "Run these steps concurrently. All must finish before later steps that await this group.",
+        items: { oneOf: leafStepVariants },
+      },
+    },
+  };
+
   return {
     $schema: "http://json-schema.org/draft-07/schema#",
     $id: "https://patchworkos.com/schema/recipe.v1.json",
@@ -384,6 +450,7 @@ function generateRecipeSchema(
               },
             },
             chainedRecipeStep,
+            parallelStep,
           ],
         },
       },
