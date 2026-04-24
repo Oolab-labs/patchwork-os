@@ -128,6 +128,63 @@ describe("OpenAIApiDriver", () => {
     delete process.env.OPENAI_API_KEY;
     expect(() => new OpenAIApiDriver(log)).toThrow(/OPENAI_API_KEY/);
   });
+
+  it("appends context file list to prompt when contextFiles provided", async () => {
+    mockCreate.mockResolvedValue(makeStream(["ok"]));
+    const driver = new OpenAIApiDriver(log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+      contextFiles: ["src/foo.ts", "src/bar.ts"],
+    });
+    const call = mockCreate.mock.calls[0]?.[0];
+    const userMsg = call.messages.find(
+      (m: { role: string }) => m.role === "user",
+    );
+    expect(userMsg?.content).toContain("BEGIN CONTEXT FILE LIST");
+    expect(userMsg?.content).toContain("src/foo.ts");
+  });
+
+  it("records startupMs on first chunk", async () => {
+    mockCreate.mockResolvedValue(makeStream(["hello"]));
+    const driver = new OpenAIApiDriver(log);
+    const result = await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(result.startupMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("passes temperature when set in providerOptions", async () => {
+    mockCreate.mockResolvedValue(makeStream(["ok"]));
+    const driver = new OpenAIApiDriver(log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+      providerOptions: { temperature: 0.5 },
+    });
+    const call = mockCreate.mock.calls[0]?.[0];
+    expect(call.temperature).toBe(0.5);
+  });
+
+  it("omits temperature when not set", async () => {
+    mockCreate.mockResolvedValue(makeStream(["ok"]));
+    const driver = new OpenAIApiDriver(log);
+    await driver.run({
+      prompt: "hi",
+      workspace: "/tmp",
+      timeoutMs: 5000,
+      signal: AbortSignal.timeout(5000),
+    });
+    const call = mockCreate.mock.calls[0]?.[0];
+    expect(call).not.toHaveProperty("temperature");
+  });
 });
 
 describe("GrokApiDriver", () => {
