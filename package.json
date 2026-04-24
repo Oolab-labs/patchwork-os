@@ -70,6 +70,7 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:smoke": "bash scripts/smoke/run-all.sh",
+    "schema:generate": "node scripts/generate-schemas.mjs",
     "schema:check": "node scripts/audit-schema-changes.mjs",
     "schema:update": "node scripts/audit-schema-changes.mjs --update",
     "test:coverage": "vitest run --coverage",
