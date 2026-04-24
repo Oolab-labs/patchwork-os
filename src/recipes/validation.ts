@@ -381,9 +381,12 @@ function validateTemplateReferences(
     const templates = collectRenderedTemplates(step, isChainedRecipe);
 
     for (const template of templates) {
+      const scopedKeys = template.extraKeys
+        ? new Set([...availableKeys, ...template.extraKeys])
+        : availableKeys;
       for (const expression of extractTemplateExpressions(template.value)) {
         for (const identifier of extractTemplateIdentifiers(expression)) {
-          if (!availableKeys.has(identifier)) {
+          if (!scopedKeys.has(identifier)) {
             issues.push({
               level: "error",
               message: `Step ${index + 1}: Unknown template reference '{{${expression}}}' in ${template.label}`,
@@ -421,15 +424,26 @@ function validateTemplateReferences(
 function collectRenderedTemplates(
   step: Record<string, unknown>,
   isChainedRecipe: boolean,
-): Array<{ label: string; value: string }> {
-  const templates: Array<{ label: string; value: string }> = [];
+): Array<{ label: string; value: string; extraKeys?: Set<string> }> {
+  const templates: Array<{
+    label: string;
+    value: string;
+    extraKeys?: Set<string>;
+  }> = [];
+  // transform: renders with $result injected (raw tool output); any key under
+  // $result.* is resolved at runtime and cannot be statically validated.
+  const transformExtraKeys = new Set<string>(["$result"]);
 
   for (const [key, value] of Object.entries(step)) {
     if (key === "tool" || key === "into" || key === "agent") {
       continue;
     }
     if (typeof value === "string") {
-      templates.push({ label: key, value });
+      if (key === "transform") {
+        templates.push({ label: key, value, extraKeys: transformExtraKeys });
+      } else {
+        templates.push({ label: key, value });
+      }
     }
   }
 
@@ -470,7 +484,7 @@ function extractTemplateIdentifiers(expression: string): string[] {
   const identifiers = new Set<string>();
 
   for (const match of expression.matchAll(
-    /[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*/g,
+    /\$?[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*/g,
   )) {
     const rawIdentifier = match[0];
     if (!rawIdentifier) {
