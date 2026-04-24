@@ -58,7 +58,7 @@ function parseLcov(
       // Normalise to workspace-relative path
       const relFile = currentFile.startsWith(workspace + path.sep)
         ? currentFile.slice(workspace.length + 1)
-        : currentFile.startsWith(workspace + "/")
+        : currentFile.startsWith(`${workspace}/`)
           ? currentFile.slice(workspace.length + 1)
           : currentFile;
       result.set(relFile, {
@@ -103,7 +103,7 @@ function parseCoverageSummaryJson(
     if (key === "total") continue;
     const relFile = key.startsWith(workspace + path.sep)
       ? key.slice(workspace.length + 1)
-      : key.startsWith(workspace + "/")
+      : key.startsWith(`${workspace}/`)
         ? key.slice(workspace.length + 1)
         : key;
     const covered = val.lines?.covered ?? 0;
