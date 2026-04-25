@@ -1902,6 +1902,53 @@ export class Server extends EventEmitter<ServerEvents> {
       }
       // ── End inbox routes ─────────────────────────────────────────────────
 
+      const recipeNameRunMatch =
+        req.method === "POST"
+          ? /^\/recipes\/([^/]+)\/run$/.exec(parsedUrl.pathname)
+          : null;
+      if (recipeNameRunMatch) {
+        const nameFromPath = decodeURIComponent(recipeNameRunMatch[1] ?? "");
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            try {
+              const body = Buffer.concat(chunks).toString("utf-8");
+              const parsed = body
+                ? (JSON.parse(body) as { vars?: Record<string, string> })
+                : {};
+              const vars =
+                parsed.vars &&
+                typeof parsed.vars === "object" &&
+                !Array.isArray(parsed.vars)
+                  ? (parsed.vars as Record<string, string>)
+                  : undefined;
+              if (!this.runRecipeFn) {
+                res.writeHead(503, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    ok: false,
+                    error:
+                      "Recipe execution unavailable — requires --claude-driver subprocess",
+                  }),
+                );
+                return;
+              }
+              const result = await this.runRecipeFn(nameFromPath, vars);
+              res.writeHead(result.ok ? 200 : 400, {
+                "Content-Type": "application/json",
+              });
+              res.end(JSON.stringify(result));
+            } catch {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({ ok: false, error: "Invalid JSON body" }),
+              );
+            }
+          })();
+        });
+        return;
+      }
       if (parsedUrl.pathname === "/recipes/run" && req.method === "POST") {
         const chunks: Buffer[] = [];
         req.on("data", (c: Buffer) => chunks.push(c));
