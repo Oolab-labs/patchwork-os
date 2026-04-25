@@ -473,6 +473,8 @@ function ApprovalsContent() {
   const [fadingOut, setFadingOut] = useState<Set<string>>(new Set());
   const [batchApproving, setBatchApproving] = useState(false);
   const [batchRejecting, setBatchRejecting] = useState(false);
+  const [batchErr, setBatchErr] = useState<string | null>(null);
+  const [ccRulesErr, setCcRulesErr] = useState(false);
   const { patterns, clearPatterns } = useApprovalPatterns();
 
   useEffect(() => {
@@ -480,7 +482,7 @@ function ApprovalsContent() {
     fetch(`${API}/cc-permissions`)
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (d) setRules(d as CcRules); })
-      .catch(() => {});
+      .catch(() => { setCcRulesErr(true); });
   }, []);
 
   useEffect(() => {
@@ -498,6 +500,25 @@ function ApprovalsContent() {
       } catch { /* ignore parse errors */ }
     }
 
+    function startSSE() {
+      if (!alive || typeof EventSource === "undefined") return;
+      es = new EventSource(streamUrl);
+      es.addEventListener("snapshot", (e) => applySnapshot((e as MessageEvent).data));
+      es.addEventListener("update", (e) => applySnapshot((e as MessageEvent).data));
+      es.addEventListener("bridge-error", () => {
+        // Bridge down event from SSE — fall back to polling
+        es?.close();
+        es = null;
+        startPolling();
+      });
+      es.onerror = () => {
+        // SSE unavailable (e.g. old bridge) — fall back to polling
+        es?.close();
+        es = null;
+        startPolling();
+      };
+    }
+
     function startPolling() {
       if (pollId !== null || !alive) return;
       const poll = async () => {
@@ -508,6 +529,12 @@ function ApprovalsContent() {
           if (!r.ok) throw new Error(`/approvals ${r.status}`);
           setPending((await r.json()) as Pending[]);
           setErr(undefined);
+          // Bridge is back — re-establish SSE and stop polling
+          if (pollId !== null) {
+            clearInterval(pollId);
+            pollId = null;
+          }
+          startSSE();
         } catch (e) {
           setErr(e instanceof Error ? e.message : String(e));
         }
@@ -517,15 +544,7 @@ function ApprovalsContent() {
     }
 
     if (typeof EventSource !== "undefined") {
-      es = new EventSource(streamUrl);
-      es.addEventListener("snapshot", (e) => applySnapshot((e as MessageEvent).data));
-      es.addEventListener("update", (e) => applySnapshot((e as MessageEvent).data));
-      es.onerror = () => {
-        // SSE unavailable (e.g. old bridge) — fall back to polling
-        es?.close();
-        es = null;
-        startPolling();
-      };
+      startSSE();
     } else {
       startPolling();
     }
@@ -616,14 +635,23 @@ function ApprovalsContent() {
     const ids = selectedInView.map((p) => p.callId);
     if (decision === "approve") setBatchApproving(true);
     else setBatchRejecting(true);
+    setBatchErr(null);
     try {
+      const failedIds: string[] = [];
       await Promise.all(
         ids.map((id) =>
-          fetch(`${API}/${decision}/${id}`, { method: "POST" }).then(() =>
-            removeWithFade(id),
-          ),
+          fetch(`${API}/${decision}/${id}`, { method: "POST" }).then((res) => {
+            if (res.ok) {
+              removeWithFade(id);
+            } else {
+              failedIds.push(id.slice(0, 8));
+            }
+          }),
         ),
       );
+      if (failedIds.length > 0) {
+        setBatchErr(`${decision} failed for: ${failedIds.join(", ")}`);
+      }
     } finally {
       setBatchApproving(false);
       setBatchRejecting(false);
@@ -923,6 +951,11 @@ function ApprovalsContent() {
             batchApproving={batchApproving}
             batchRejecting={batchRejecting}
           />
+          {batchErr && (
+            <div className="alert-err" role="alert" style={{ marginTop: "var(--s-3)" }}>
+              {batchErr}
+            </div>
+          )}
         </>
       )}
 
@@ -1018,6 +1051,17 @@ function ApprovalsContent() {
         </div>
       )}
 
+      {ccRulesErr && !rules && (
+        <div className="card" style={{ marginTop: "var(--s-6)" }}>
+          <div className="card-head">
+            <h2>CC permission rules</h2>
+            <span className="pill warn">Unavailable</span>
+          </div>
+          <p style={{ fontSize: 13, color: "var(--fg-2)", padding: "var(--s-3) 0" }}>
+            Could not load CC permission rules. Bridge may be unreachable.
+          </p>
+        </div>
+      )}
       {rules && (
         <div className="card" style={{ marginTop: "var(--s-6)" }}>
           <div className="card-head">

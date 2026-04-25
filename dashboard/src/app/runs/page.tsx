@@ -106,6 +106,7 @@ export default function RunsPage() {
     { k: "done", label: "Done" },
     { k: "error", label: "Error" },
     { k: "cancelled", label: "Cancelled" },
+    { k: "interrupted", label: "Interrupted" },
   ];
 
   return (
@@ -370,7 +371,7 @@ export default function RunsPage() {
                         </div>
                       </td>
                       <td className="mono muted">
-                        <Link href="/tasks">{r.taskId.slice(0, 8)}</Link>
+                        <Link href="/tasks">{r.taskId?.slice(0, 8) ?? "—"}</Link>
                       </td>
                     </tr>
                     {isExpanded && (

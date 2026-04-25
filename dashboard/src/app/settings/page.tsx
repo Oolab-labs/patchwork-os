@@ -67,6 +67,7 @@ export default function SettingsPage() {
 
   // Approval gate state
   const [gateValue, setGateValue] = useState<"off" | "high" | "all">("off");
+  const [gatePending, setGatePending] = useState<"off" | "high" | "all">("off");
   const [gateSaving, setGateSaving] = useState(false);
   const [gateSaveMsg, setGateSaveMsg] = useState<{
     ok: boolean;
@@ -112,8 +113,9 @@ export default function SettingsPage() {
         }
         if (!gateInitialized.current) {
           const g = data.patchwork?.approvalGate;
-          if (g === "high" || g === "all") setGateValue(g);
-          else setGateValue("off");
+          const gv: "off" | "high" | "all" = g === "high" || g === "all" ? g : "off";
+          setGateValue(gv);
+          setGatePending(gv);
           gateInitialized.current = true;
         }
         if (!driverInitialized.current) {
@@ -667,11 +669,11 @@ export default function SettingsPage() {
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <select
                   id="approval-gate"
-                  value={gateValue}
+                  value={gatePending}
                   disabled={gateSaving}
                   onChange={(e) => {
                     setGateSaveMsg(null);
-                    saveGate(e.target.value as "off" | "high" | "all");
+                    setGatePending(e.target.value as "off" | "high" | "all");
                   }}
                   style={{
                     background: "var(--bg-2)",
@@ -688,11 +690,24 @@ export default function SettingsPage() {
                   <option value="high">high — gate high-risk tools only</option>
                   <option value="all">all — gate every tool call</option>
                 </select>
-                {gateSaving && (
-                  <span style={{ fontSize: 12, color: "var(--fg-3)" }}>
-                    Saving…
-                  </span>
-                )}
+                <button
+                  type="button"
+                  disabled={gateSaving || gatePending === gateValue}
+                  onClick={() => saveGate(gatePending)}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    padding: "6px 12px",
+                    borderRadius: "var(--r-2)",
+                    border: "none",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    cursor: gateSaving || gatePending === gateValue ? "default" : "pointer",
+                    opacity: gateSaving || gatePending === gateValue ? 0.5 : 1,
+                  }}
+                >
+                  {gateSaving ? "Saving…" : "Save"}
+                </button>
               </div>
               {gateSaveMsg && (
                 <p
@@ -809,7 +824,7 @@ function MobileNotificationsCard() {
       setStatus("unsupported");
       return;
     }
-    navigator.serviceWorker.getRegistration("/").then(async (reg) => {
+    navigator.serviceWorker.getRegistration("/dashboard/").then(async (reg) => {
       if (!reg) return;
       const sub = await reg.pushManager.getSubscription();
       if (sub) setStatus("subscribed");

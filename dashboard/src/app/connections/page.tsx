@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import AddConnectionModal from "./AddConnectionModal";
 
@@ -435,7 +435,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
 
   const isConnected = statusEntry.status === "connected";
   const isDegraded = statusEntry.status === "needs_reauth";
-  const isComingSoon = def.wave > 1;
+  const isComingSoon = def.wave > 1 && !(def.id in TOKEN_MODAL_CONNECTORS);
 
   async function handleTest() {
     setTesting(true);
@@ -686,6 +686,7 @@ export default function ConnectionsPage() {
   const [tokenErr, setTokenErr] = useState<string | null>(null);
   // Add connection modal
   const [modalOpen, setModalOpen] = useState(false);
+  const oauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function fetchConnectors() {
     try {
@@ -783,7 +784,7 @@ export default function ConnectionsPage() {
       return;
     }
     window.open(apiPath(`/api/connections/${id}/auth`), "_blank");
-    const poll = setInterval(async () => {
+    oauthPollRef.current = setInterval(async () => {
       const res = await fetch(apiPath("/api/connections")).catch(() => null);
       if (!res) return;
       const data = (await res.json().catch(() => null)) as { connectors: ConnectorStatus[] } | null;
@@ -791,10 +792,16 @@ export default function ConnectionsPage() {
       const updated = data.connectors.find((c) => c.id === id);
       if (updated?.status === "connected") {
         setConnectors(data.connectors);
-        clearInterval(poll);
+        clearInterval(oauthPollRef.current!);
+        oauthPollRef.current = null;
       }
     }, 3000);
-    setTimeout(() => clearInterval(poll), 120_000);
+    setTimeout(() => {
+      if (oauthPollRef.current !== null) {
+        clearInterval(oauthPollRef.current);
+        oauthPollRef.current = null;
+      }
+    }, 120_000);
   }
 
   useEffect(() => {
@@ -806,7 +813,13 @@ export default function ConnectionsPage() {
       fetchConnectors();
     }
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      if (oauthPollRef.current !== null) {
+        clearInterval(oauthPollRef.current);
+        oauthPollRef.current = null;
+      }
+    };
   }, []);
 
   async function handleDisconnect(id: string) {

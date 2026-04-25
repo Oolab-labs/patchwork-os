@@ -106,8 +106,9 @@ function renderMarkdown(text: string): string {
   let safe = text
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
-    .replace(/\s+on\w+="[^"]*"/gi, "")
-    .replace(/href="javascript:[^"]*"/gi, 'href="#"');
+    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, "")
+    .replace(/(href|src)\s*=\s*["']?\s*data:[^"'\s>]*["']?/gi, '$1="#"')
+    .replace(/href\s*=\s*["']?\s*javascript:[^"'\s>]*["']?/gi, 'href="#"');
 
   const lines = safe.split("\n");
   const html: string[] = [];
@@ -248,14 +249,14 @@ export default function InboxPage() {
       const data = (await res.json()) as { items: InboxItem[] };
       const incoming = data.items ?? [];
       setItems((prev) => {
-        // Track which names are newly seen (not in prev)
-        for (const item of incoming) {
-          if (!prev.find((p) => p.name === item.name)) {
-            // new item — don't mark seen yet so we can show the badge
-          } else {
+        if (prev.length === 0) {
+          // First load — seed seenNames so existing items don't show "new" badge
+          for (const item of incoming) {
             seenNames.add(item.name);
           }
         }
+        // Items added after first load will not be in seenNames → show "new" badge
+        // Badge clears only when user clicks item (selectItem)
         return incoming;
       });
       setErr(undefined);

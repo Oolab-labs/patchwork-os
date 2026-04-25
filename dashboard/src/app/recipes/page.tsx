@@ -82,7 +82,6 @@ interface RunRecord {
 
 interface RunModalState {
   recipe: Recipe;
-  values: Record<string, string>;
 }
 
 function RunModal({
@@ -97,6 +96,13 @@ function RunModal({
   running: boolean;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const v of state.recipe.vars ?? []) {
+      init[v.name] = v.default ?? "";
+    }
+    return init;
+  });
 
   function handleOverlayClick(e: React.MouseEvent) {
     if (e.target === overlayRef.current) onClose();
@@ -173,7 +179,7 @@ function RunModal({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onConfirm(state.values);
+            onConfirm(values);
           }}
         >
           <div
@@ -212,12 +218,11 @@ function RunModal({
                   id={`run-var-${v.name}`}
                   type="text"
                   required={v.required}
-                  value={state.values[v.name] ?? ""}
+                  value={values[v.name] ?? ""}
                   placeholder={v.description ?? v.default ?? ""}
                   onChange={(e) => {
-                    state.values[v.name] = e.target.value;
-                    // trigger re-render via the parent's setter passed through onConfirm
-                    // we update in-place here; parent re-renders on confirm
+                    const val = e.target.value;
+                    setValues((prev) => ({ ...prev, [v.name]: val }));
                   }}
                   style={{
                     width: "100%",
@@ -354,10 +359,11 @@ export default function RecipesPage() {
           [name]: `queued ${data.taskId?.slice(0, 8)}`,
         }));
       } else {
-        setRunning((p) => ({
-          ...p,
-          [name]: `error: ${data.error ?? "unknown"}`,
-        }));
+        const errMsg =
+          data.error === "already_in_flight"
+            ? "Already running"
+            : `error: ${data.error ?? "unknown"}`;
+        setRunning((p) => ({ ...p, [name]: errMsg }));
       }
     } catch (e) {
       setRunning((p) => ({
@@ -373,12 +379,7 @@ export default function RecipesPage() {
       void executeRun(recipe.name);
       return;
     }
-    // Pre-fill defaults
-    const values: Record<string, string> = {};
-    for (const v of vars) {
-      values[v.name] = v.default ?? "";
-    }
-    setModal({ recipe, values });
+    setModal({ recipe });
     setModalRunning(false);
   }
 
@@ -386,9 +387,12 @@ export default function RecipesPage() {
     if (!modal) return;
     const name = modal.recipe.name;
     setModalRunning(true);
-    setModal(null);
-    setModalRunning(false);
-    await executeRun(name, vars);
+    try {
+      await executeRun(name, vars);
+    } finally {
+      setModal(null);
+      setModalRunning(false);
+    }
   }
 
   const filteredRecipes = (recipes ?? []).filter((r) => {
@@ -569,7 +573,7 @@ export default function RecipesPage() {
                             title={r.enabled === false ? "Enable recipe" : "Disable recipe"}
                             onClick={async () => {
                               await fetch(
-                                `/api/bridge/recipes/${encodeURIComponent(r.name)}`,
+                                apiPath(`/api/bridge/recipes/${encodeURIComponent(r.name)}`),
                                 {
                                   method: "PATCH",
                                   headers: { "Content-Type": "application/json" },

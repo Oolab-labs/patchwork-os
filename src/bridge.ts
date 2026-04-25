@@ -1211,6 +1211,8 @@ export class Bridge {
       };
     };
     this.server.streamFn = (listener) => this.activityLog.subscribe(listener);
+    this.server.cancelTaskFn = (id: string) =>
+      this.orchestrator?.cancel(id, "user") ?? false;
     this.server.tasksFn = () => ({
       tasks: (this.orchestrator?.list() ?? []).map((t) => ({
         taskId: t.id,
