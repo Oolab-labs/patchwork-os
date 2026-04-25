@@ -38,10 +38,17 @@ export async function GET(req: Request): Promise<Response> {
 
   const lock = findBridge();
   if (!lock) {
-    return new Response(": no bridge\n\n", {
-      status: 503,
-      headers: { "Content-Type": "text/event-stream" },
-    });
+    return new Response(
+      'event: bridge-error\ndata: {"error":"bridge unavailable"}\n\n: retry\n\n',
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      },
+    );
   }
 
   const { searchParams } = new URL(req.url);
@@ -63,10 +70,17 @@ export async function GET(req: Request): Promise<Response> {
       duplex: "half",
     });
   } catch {
-    return new Response(": bridge unreachable\n\n", {
-      status: 503,
-      headers: { "Content-Type": "text/event-stream" },
-    });
+    return new Response(
+      'event: bridge-error\ndata: {"error":"bridge unavailable"}\n\n: retry\n\n',
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      },
+    );
   }
 
   return new Response(upstream.body, {

@@ -26,7 +26,7 @@ interface RunDetail {
   taskId: string;
   recipeName: string;
   trigger: string;
-  status: "done" | "error" | "cancelled" | "interrupted";
+  status: "running" | "done" | "error" | "cancelled" | "interrupted";
   createdAt: number;
   startedAt?: number;
   doneAt: number;
@@ -385,14 +385,37 @@ export default function RunDetailPage() {
 
   useEffect(() => {
     if (!seq) return;
-    fetch(apiPath(`/api/bridge/runs/${seq}`))
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`${res.status}`);
-        const data = (await res.json()) as { run?: RunDetail };
-        if (!data.run) throw new Error("empty response");
-        setRun(data.run);
-      })
-      .catch((e) => setRunErr(e instanceof Error ? e.message : String(e)));
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const doFetch = () =>
+      fetch(apiPath(`/api/bridge/runs/${seq}`))
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`${res.status}`);
+          const data = (await res.json()) as { run?: RunDetail };
+          if (!data.run) throw new Error("empty response");
+          setRun(data.run);
+          return data.run;
+        })
+        .catch((e: unknown) => {
+          setRunErr(e instanceof Error ? e.message : String(e));
+          return null;
+        });
+
+    doFetch().then((initialRun) => {
+      if (!initialRun || initialRun.status !== "running") return;
+      intervalId = setInterval(() => {
+        doFetch().then((r) => {
+          if (!r || r.status !== "running") {
+            clearInterval(intervalId);
+            intervalId = undefined;
+          }
+        });
+      }, 3000);
+    });
+
+    return () => {
+      if (intervalId !== undefined) clearInterval(intervalId);
+    };
   }, [seq]);
 
   // Load plan lazily when tab is switched to "plan"
@@ -455,7 +478,7 @@ export default function RunDetailPage() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="pill muted" style={{ fontSize: 11 }}>{run.trigger}</span>
             <span
-              className={`pill ${run.status === "done" && !(run.assertionFailures?.length) ? "ok" : "err"}`}
+              className={`pill ${run.status === "done" && !(run.assertionFailures?.length) ? "ok" : (run.status === "cancelled" || run.status === "interrupted") ? "warn" : "err"}`}
               style={{ fontSize: 11 }}
             >
               <span className="pill-dot" />

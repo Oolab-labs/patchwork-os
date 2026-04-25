@@ -139,6 +139,8 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
   /** Set by bridge to provide task list data (sanitized — no raw prompts) */
   public tasksFn: (() => { tasks: Record<string, unknown>[] }) | null = null;
+  /** Set by bridge to cancel a running/pending task by id. Returns true if found. */
+  public cancelTaskFn: ((id: string) => boolean) | null = null;
   /** Patchwork: set by bridge to list installed recipes for the dashboard. */
   public recipesFn: (() => Record<string, unknown>) | null = null;
   /** Patchwork: set by bridge to load raw recipe source content by name. */
@@ -992,6 +994,32 @@ export class Server extends EventEmitter<ServerEvents> {
           const data = this.tasksFn?.() ?? { tasks: [] };
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(data));
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      const cancelMatch = parsedUrl.pathname?.match(
+        /^\/tasks\/([^/]+)\/cancel$/,
+      );
+      if (cancelMatch && req.method === "POST") {
+        const taskId = cancelMatch[1] as string;
+        try {
+          const found = this.cancelTaskFn?.(taskId) ?? false;
+          if (!found) {
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({ error: "task not found or already terminal" }),
+            );
+          } else {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true }));
+          }
         } catch (err) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(

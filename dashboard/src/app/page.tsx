@@ -198,6 +198,7 @@ function activityDescription(e: ActivityEvent): string {
 // ---------------------------------------------------------------------------
 
 function ActivityFeed() {
+  const bridgeStatus = useBridgeStatus();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [updateCount, setUpdateCount] = useState(0);
   const mountedRef = useRef(true);
@@ -247,7 +248,7 @@ function ActivityFeed() {
             alignItems: "center",
             gap: 5,
             fontSize: 11,
-            color: "var(--ok)",
+            color: bridgeStatus.ok ? "var(--ok)" : "var(--ink-3)",
             fontWeight: 600,
           }}
         >
@@ -257,11 +258,11 @@ function ActivityFeed() {
               width: 7,
               height: 7,
               borderRadius: "50%",
-              background: "var(--ok)",
+              background: bridgeStatus.ok ? "var(--ok)" : "var(--ink-3)",
               display: "inline-block",
             }}
           />
-          live
+          {bridgeStatus.ok ? "live" : "disconnected"}
         </span>
         {updateCount > 0 && (
           <span className="pill muted" style={{ fontSize: 11 }}>
@@ -481,7 +482,7 @@ function ProviderDeliveryCard({ connectedCount }: ProviderDeliveryCardProps) {
             {connectedCount} connected
           </div>
         </div>
-        <Link href="/connectors" className="btn sm ghost" style={{ textDecoration: "none", fontSize: 11 }}>
+        <Link href="/connections" className="btn sm ghost" style={{ textDecoration: "none", fontSize: 11 }}>
           + Connect more
         </Link>
       </div>

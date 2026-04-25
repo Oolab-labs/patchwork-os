@@ -186,28 +186,53 @@ function HeroStrip({ tasks }: { tasks: Task[] }) {
 
 // ----------------------------------------------------------- page
 
+async function cancelTask(id: string): Promise<void> {
+  await fetch(apiPath(`/api/bridge/tasks/${id}/cancel`), { method: "POST" });
+}
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [err, setErr] = useState<string>();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [, setTick] = useState(0);
+  const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
+    let fastId: ReturnType<typeof setInterval> | null = null;
+    let slowId: ReturnType<typeof setInterval> | null = null;
+
+    const TERMINAL = new Set(["done", "error", "cancelled", "interrupted"]);
+
     const tick = async () => {
       try {
         const res = await fetch(apiPath("/api/bridge/tasks"));
         if (!res.ok) throw new Error(`/tasks ${res.status}`);
         const data = (await res.json()) as { tasks: Task[] };
-        setTasks(data.tasks ?? []);
+        const fetched = data.tasks ?? [];
+        setTasks(fetched);
         setErr(undefined);
+        // All terminal → slow down
+        const allTerminal = fetched.length > 0 && fetched.every((t) => TERMINAL.has(t.status));
+        if (allTerminal && fastId !== null) {
+          clearInterval(fastId);
+          fastId = null;
+          slowId = setInterval(tick, 10_000);
+        } else if (!allTerminal && slowId !== null) {
+          clearInterval(slowId);
+          slowId = null;
+          fastId = setInterval(tick, 2000);
+        }
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
     };
     tick();
-    const id = setInterval(tick, 2000);
-    return () => clearInterval(id);
+    fastId = setInterval(tick, 2000);
+    return () => {
+      if (fastId !== null) clearInterval(fastId);
+      if (slowId !== null) clearInterval(slowId);
+    };
   }, []);
 
   useEffect(() => {
@@ -372,7 +397,28 @@ export default function TasksPage() {
                             >
                               {errText ? "Error + output" : "Output"}
                             </span>
-                            <CopyBtn text={(errText ?? "") + (t.output ?? "")} />
+                            <div style={{ display: "flex", gap: 6 }}>
+                              {isLive && (
+                                <button
+                                  type="button"
+                                  className="btn sm ghost"
+                                  style={{ minHeight: 24, fontSize: 11, padding: "3px 9px", color: "var(--red)" }}
+                                  disabled={!!cancelling[t.taskId]}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setCancelling((p) => ({ ...p, [t.taskId]: true }));
+                                    try {
+                                      await cancelTask(t.taskId);
+                                    } finally {
+                                      setCancelling((p) => ({ ...p, [t.taskId]: false }));
+                                    }
+                                  }}
+                                >
+                                  {cancelling[t.taskId] ? "Cancelling…" : "Cancel"}
+                                </button>
+                              )}
+                              <CopyBtn text={(errText ?? "") + (t.output ?? "")} />
+                            </div>
                           </div>
                           {errText && (
                             <pre
@@ -384,7 +430,9 @@ export default function TasksPage() {
                           )}
                           {t.output && (
                             <pre className="task-output">
-                              {t.output.slice(-4000)}
+                              {t.output.length > 4000
+                                ? `[Output truncated — showing last 4000 chars]\n\n${t.output.slice(-4000)}`
+                                : t.output}
                             </pre>
                           )}
                         </td>

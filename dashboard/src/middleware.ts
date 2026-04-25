@@ -11,7 +11,8 @@ export function middleware(req: NextRequest) {
     const [scheme, encoded] = auth.split(" ");
     if (scheme === "Basic" && encoded) {
       const decoded = Buffer.from(encoded, "base64").toString("utf-8");
-      const [, password] = decoded.split(":");
+      const colonIdx = decoded.indexOf(":");
+      const password = colonIdx !== -1 ? decoded.slice(colonIdx + 1) : "";
       if (password === DASHBOARD_PASSWORD) return NextResponse.next();
     }
   }

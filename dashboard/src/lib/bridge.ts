@@ -40,12 +40,18 @@ export function findBridge(): BridgeLock | null {
   const files = fs
     .readdirSync(dir)
     .filter((f) => /^\d+\.lock$/.test(f))
+    .filter((f) => !pinned || f === `${pinned}.lock`)
     .sort((a, b) => {
-      const pa = Number.parseInt(a, 10);
-      const pb = Number.parseInt(b, 10);
-      return pa - pb;
-    })
-    .filter((f) => !pinned || f === `${pinned}.lock`);
+      try {
+        const ma = fs.statSync(path.join(dir, a)).mtimeMs;
+        const mb = fs.statSync(path.join(dir, b)).mtimeMs;
+        return mb - ma; // most recently modified first
+      } catch {
+        const pa = Number.parseInt(a, 10);
+        const pb = Number.parseInt(b, 10);
+        return pa - pb;
+      }
+    });
   for (const f of files) {
     try {
       const raw = fs.readFileSync(path.join(dir, f), "utf8");
