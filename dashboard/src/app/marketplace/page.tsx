@@ -488,33 +488,6 @@ export default function MarketplacePage() {
           <div className="page-head-sub">Community recipes for Patchwork OS</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "4px 12px",
-              borderRadius: "var(--r-full)",
-              fontSize: 12,
-              fontWeight: 600,
-              background: "rgba(216,119,87,0.12)",
-              color: "var(--orange)",
-              border: "1px solid rgba(216,119,87,0.25)",
-              letterSpacing: "0.04em",
-            }}
-          >
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: "var(--orange)",
-                display: "inline-block",
-                animation: "pulse 2s infinite",
-              }}
-            />
-            Coming soon
-          </span>
           {registry && (
             <span className="pill muted">
               {filtered.length} recipe{filtered.length !== 1 ? "s" : ""}
