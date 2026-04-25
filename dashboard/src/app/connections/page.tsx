@@ -854,6 +854,8 @@ export default function ConnectionsPage() {
   }
 
   // ---- derived state
+  const [waveFilter, setWaveFilter] = useState<0 | 1 | 2 | 3>(0); // 0 = all
+
   const hasAnyConnected = connectors.some((c) => c.status === "connected" || c.status === "needs_reauth");
 
   const recentlyUsed = CATALOG
@@ -861,6 +863,16 @@ export default function ConnectionsPage() {
     .filter(({ entry }) => entry.status === "connected" && entry.lastSync)
     .sort((a, b) => Date.parse(b.entry.lastSync!) - Date.parse(a.entry.lastSync!))
     .slice(0, 4);
+
+  const WAVE_LABELS: Record<1 | 2 | 3, string> = { 1: "MVP", 2: "Core", 3: "Expand" };
+
+  function waveProgress(wave: 1 | 2 | 3) {
+    const defs = CATALOG.filter((d) => d.wave === wave);
+    const connected = defs.filter((d) => getConnector(d.id).status === "connected").length;
+    return { total: defs.length, connected };
+  }
+
+  const visibleCatalog = waveFilter === 0 ? CATALOG : CATALOG.filter((d) => d.wave === waveFilter);
 
   // ---- render
 
@@ -918,23 +930,79 @@ export default function ConnectionsPage() {
             </div>
           )}
 
-          {/* All connectors */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12, marginBottom: "var(--s-6)" }}>
-            {CATALOG.map((def) => {
-              const entry = getConnector(def.id);
+          {/* Wave filter tabs */}
+          <div style={{ display: "flex", gap: 8, marginBottom: "var(--s-4)", flexWrap: "wrap" }}>
+            {([0, 1, 2, 3] as const).map((w) => {
+              const label = w === 0 ? "All" : `Wave ${w} — ${WAVE_LABELS[w]}`;
+              const prog = w !== 0 ? waveProgress(w) : null;
               return (
+                <button
+                  key={w}
+                  type="button"
+                  className={`btn sm${waveFilter === w ? " primary" : " ghost"}`}
+                  onClick={() => setWaveFilter(w)}
+                  style={{ gap: 6 }}
+                >
+                  {label}
+                  {prog && (
+                    <span style={{ fontSize: 10, opacity: 0.75 }}>
+                      {prog.connected}/{prog.total}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Connectors — grouped by wave when showing all, flat when filtered */}
+          {waveFilter === 0 ? (
+            ([1, 2, 3] as const).map((wave) => {
+              const defs = CATALOG.filter((d) => d.wave === wave);
+              const prog = waveProgress(wave);
+              return (
+                <div key={wave} style={{ marginBottom: "var(--s-6)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-2)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                      Wave {wave} — {WAVE_LABELS[wave]}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                      {prog.connected}/{prog.total} connected
+                    </span>
+                    <div style={{ flex: 1, height: 2, background: "var(--border)", borderRadius: 1 }}>
+                      <div style={{ height: 2, borderRadius: 1, background: "var(--ok)", width: `${prog.total ? (prog.connected / prog.total) * 100 : 0}%`, transition: "width 0.3s ease" }} />
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+                    {defs.map((def) => (
+                      <ConnectorGridCard
+                        key={def.id}
+                        def={def}
+                        statusEntry={getConnector(def.id)}
+                        onConnect={() => handleConnect(def.id)}
+                        onDisconnect={() => handleDisconnect(def.id)}
+                        onTest={() => handleTest(def.id)}
+                        loading={acting === def.id}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12, marginBottom: "var(--s-6)" }}>
+              {visibleCatalog.map((def) => (
                 <ConnectorGridCard
                   key={def.id}
                   def={def}
-                  statusEntry={entry}
+                  statusEntry={getConnector(def.id)}
                   onConnect={() => handleConnect(def.id)}
                   onDisconnect={() => handleDisconnect(def.id)}
                   onTest={() => handleTest(def.id)}
                   loading={acting === def.id}
                 />
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
