@@ -899,7 +899,11 @@ export class BridgeConnection {
       this.lockWatcher = fs.watch(dir, (_event, filename) => {
         if (!filename?.endsWith(".lock")) return;
         if (this.disposed) return;
-        if (this.ws?.readyState === WebSocket.OPEN) return;
+        if (
+          this.state === ConnectionState.CONNECTED ||
+          this.state === ConnectionState.CONNECTING
+        )
+          return;
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = null;
@@ -931,7 +935,11 @@ export class BridgeConnection {
         this.lockPollTimer = null;
         return;
       }
-      if (this.ws?.readyState === WebSocket.OPEN) return;
+      if (
+        this.state === ConnectionState.CONNECTED ||
+        this.state === ConnectionState.CONNECTING
+      )
+        return;
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
