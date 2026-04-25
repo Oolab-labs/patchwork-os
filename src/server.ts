@@ -255,6 +255,8 @@ export class Server extends EventEmitter<ServerEvents> {
     | null = null;
   /** Patchwork: set by bridge to list active agent sessions for the dashboard. */
   public sessionsFn: (() => SessionSummary[]) | null = null;
+  private _templatesCache: unknown = null;
+  private _templatesCacheTs = 0;
   /** Patchwork: set by bridge to answer GET /sessions/:id with per-session event stream + approvals. */
   public sessionDetailFn:
     | ((id: string) => {
@@ -2280,6 +2282,124 @@ export class Server extends EventEmitter<ServerEvents> {
             }),
           );
         }
+        return;
+      }
+      if (parsedUrl.pathname === "/templates" && req.method === "GET") {
+        try {
+          const now = Date.now();
+          if (
+            !this._templatesCache ||
+            now - this._templatesCacheTs > 5 * 60 * 1000
+          ) {
+            const ghRes = await fetch(
+              "https://raw.githubusercontent.com/patchworkos/recipes/main/index.json",
+            );
+            if (!ghRes.ok) {
+              throw new Error(`GitHub returned ${ghRes.status}`);
+            }
+            this._templatesCache = (await ghRes.json()) as unknown;
+            this._templatesCacheTs = now;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(this._templatesCache));
+        } catch (err) {
+          res.writeHead(502, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        return;
+      }
+      if (parsedUrl.pathname === "/recipes/install" && req.method === "POST") {
+        let body = "";
+        req.on("data", (chunk: Buffer) => {
+          body += chunk.toString();
+        });
+        req.on("end", async () => {
+          try {
+            const { source } = JSON.parse(body) as { source?: string };
+            if (!source) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({ ok: false, error: "Missing source field" }),
+              );
+              return;
+            }
+            const githubPrefix = "github:patchworkos/recipes/recipes/";
+            let fetchUrl: string;
+            let recipeName: string;
+            if (source.startsWith(githubPrefix)) {
+              recipeName = source.slice(githubPrefix.length);
+              fetchUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/${recipeName}.yaml`;
+            } else if (source.startsWith("https://")) {
+              fetchUrl = source;
+              const urlParts = fetchUrl.split("/");
+              recipeName = (urlParts[urlParts.length - 1] ?? "recipe").replace(
+                /\.ya?ml$/i,
+                "",
+              );
+            } else {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "Unsupported source format",
+                }),
+              );
+              return;
+            }
+            const yamlRes = await fetch(fetchUrl);
+            if (!yamlRes.ok) {
+              throw new Error(
+                `Fetch failed: ${yamlRes.status} ${yamlRes.statusText}`,
+              );
+            }
+            const yamlText = await yamlRes.text();
+            const tmpFile = path.join(
+              os.tmpdir(),
+              `patchwork-install-${Date.now()}-${recipeName}.yaml`,
+            );
+            const { writeFileSync, mkdirSync, unlinkSync } = await import(
+              "node:fs"
+            );
+            writeFileSync(tmpFile, yamlText, "utf-8");
+            let result: { action: "created" | "replaced"; name: string };
+            try {
+              const recipesDir = path.join(
+                os.homedir(),
+                ".patchwork",
+                "recipes",
+              );
+              mkdirSync(recipesDir, { recursive: true });
+              const { installRecipeFromFile } = await import(
+                "./recipes/installer.js"
+              );
+              const installResult = installRecipeFromFile(tmpFile, {
+                recipesDir,
+              });
+              result = { action: installResult.action, name: recipeName };
+            } finally {
+              try {
+                unlinkSync(tmpFile);
+              } catch {
+                // best-effort cleanup
+              }
+            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true, ...result }));
+          } catch (err) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        });
         return;
       }
       const sessionDetailMatch = /^\/sessions\/([A-Za-z0-9-]+)$/.exec(
