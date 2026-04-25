@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WebSocket } from "ws";
-import { recordRecipeRun } from "./activationMetrics.js";
 import { ActivityLog } from "./activityLog.js";
 import { buildSummary } from "./analyticsAggregator.js";
 import { getAnalyticsPref } from "./analyticsPrefs.js";
@@ -23,27 +22,14 @@ import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
 import { Logger } from "./logger.js";
 import { OAuthServerImpl } from "./oauth.js";
-import {
-  loadConfig as loadPatchworkConfig,
-  saveConfig as savePatchworkConfig,
-} from "./patchworkConfig.js";
+import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
+import { RecipeOrchestration } from "./recipeOrchestration.js";
 import { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
-import { RecipeScheduler } from "./recipes/scheduler.js";
-import {
-  findWebhookRecipe,
-  findYamlRecipePath,
-  listInstalledRecipes,
-  loadRecipeContent,
-  loadRecipePrompt,
-  renderWebhookPrompt,
-  saveRecipe,
-  saveRecipeContent,
-} from "./recipesHttp.js";
 import { classifyTool } from "./riskTier.js";
 import { RecipeRunLog } from "./runLog.js";
 import { Server } from "./server.js";
@@ -148,7 +134,10 @@ export class Bridge {
   private pluginTools: LoadedPluginTool[] = [];
   private pluginWatcher: PluginWatcher | null = null;
   private automationHooks: AutomationHooks | undefined = undefined;
-  private recipeScheduler: RecipeScheduler | null = null;
+  private recipeOrchestration: RecipeOrchestration | null = null;
+  private recipeScheduler:
+    | import("./recipes/scheduler.js").RecipeScheduler
+    | null = null;
   private recipeRunLog: RecipeRunLog | null = null;
   private recipeOrchestrator: RecipeOrchestrator | null = null;
   private commitIssueLinkLog: CommitIssueLinkLog | null = null;
@@ -984,17 +973,21 @@ export class Bridge {
         this.recipeOrchestrator = new RecipeOrchestrator({
           workdir: this.config.workspace,
         });
-        // Patchwork: start cron-trigger scheduler once the orchestrator exists.
+        // Patchwork: wire recipe server fns + build cron scheduler.
         const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-        this.recipeScheduler = new RecipeScheduler({
+        this.recipeOrchestration = new RecipeOrchestration({
+          server: this.server,
+          getOrchestrator: () => this.orchestrator,
+          recipeOrchestrator: this.recipeOrchestrator,
+          recipeRunLog: this.recipeRunLog,
+          workdir: this.config.workspace,
+          logger: this.logger,
+        });
+        this.recipeOrchestration.wireServerFns();
+        this.recipeScheduler = RecipeOrchestration.buildScheduler({
           recipesDir,
+          runRecipeFn: async (name) => this.server.runRecipeFn?.(name),
           enqueue: (opts) => this.orchestrator?.enqueue(opts) ?? "",
-          runYaml: async (name) => {
-            const result = await this.server.runRecipeFn?.(name);
-            if (result && !result.ok) {
-              throw new Error(result.error ?? "unknown error");
-            }
-          },
           logger: this.logger,
         });
         // scheduler.start() deferred to after this.port is set (see below)
@@ -1240,231 +1233,6 @@ export class Bridge {
       this.config.approvalWebhookUrl ?? undefined;
     this.server.onApprovalDecision = (event, meta) =>
       this.activityLog.recordEvent(event, meta);
-    this.server.recipesFn = () => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-      return listInstalledRecipes(recipesDir) as unknown as Record<
-        string,
-        unknown
-      >;
-    };
-    this.server.loadRecipeContentFn = (name: string) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-      return loadRecipeContent(recipesDir, name);
-    };
-    this.server.saveRecipeContentFn = (name: string, content: string) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-      return saveRecipeContent(recipesDir, name, content);
-    };
-    this.server.saveRecipeFn = (draft) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-      return saveRecipe(recipesDir, draft);
-    };
-    this.server.setRecipeEnabledFn = (name: string, enabled: boolean) => {
-      try {
-        const cfg = loadPatchworkConfig();
-        const disabled = new Set<string>(
-          (cfg as { recipes?: { disabled?: string[] } }).recipes?.disabled ??
-            [],
-        );
-        if (enabled) disabled.delete(name);
-        else disabled.add(name);
-        savePatchworkConfig({
-          ...cfg,
-          recipes: {
-            ...(cfg as { recipes?: Record<string, unknown> }).recipes,
-            disabled: [...disabled],
-          },
-        } as Parameters<typeof savePatchworkConfig>[0]);
-        return { ok: true };
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-    };
-    this.server.runsFn = (q) => {
-      if (!this.recipeRunLog) return [];
-      return this.recipeRunLog.query({
-        ...(q.limit !== undefined && { limit: q.limit }),
-        ...(q.trigger !== undefined && {
-          trigger: q.trigger as "cron" | "webhook" | "recipe",
-        }),
-        ...(q.status !== undefined && {
-          status: q.status as "done" | "error" | "cancelled" | "interrupted",
-        }),
-        ...(q.recipe !== undefined && { recipe: q.recipe }),
-        ...(q.after !== undefined && { after: q.after }),
-      }) as unknown as Record<string, unknown>[];
-    };
-    this.server.runDetailFn = (seq) => {
-      if (!this.recipeRunLog) return null;
-      return this.recipeRunLog.getBySeq(seq) as unknown as Record<
-        string,
-        unknown
-      > | null;
-    };
-    this.server.runPlanFn = async (recipeName) => {
-      const { runRecipeDryPlan } = await import("./commands/recipe.js");
-      return (await runRecipeDryPlan(recipeName)) as unknown as Record<
-        string,
-        unknown
-      >;
-    };
-    this.server.sessionsFn = () =>
-      [...this.sessions.values()].map((s) => {
-        const tools = this.activityLog.querySessionTools(s.id, 1);
-        return {
-          id: s.id,
-          connectedAt: new Date(s.connectedAt).toISOString(),
-          openedFileCount: s.openedFiles.size,
-          pendingApprovals: getApprovalQueue()
-            .list()
-            .filter((a) => a.sessionId === s.id).length,
-          firstTool: tools[0]?.tool,
-          remoteAddr: s.remoteAddr,
-        };
-      });
-    this.server.sessionDetailFn = (id: string) => {
-      const s = this.sessions.get(id);
-      const summary = s
-        ? {
-            id: s.id,
-            connectedAt: new Date(s.connectedAt).toISOString(),
-            openedFileCount: s.openedFiles.size,
-            pendingApprovals: getApprovalQueue()
-              .list()
-              .filter((a) => a.sessionId === s.id).length,
-          }
-        : null;
-      const lifecycle = this.activityLog.querySessionLifecycle(id, 100);
-      const tools = this.activityLog.querySessionTools(id, 100);
-      const decisions =
-        this.decisionTraceLog?.query({ sessionId: id, limit: 50 }) ?? [];
-      const approvals = getApprovalQueue()
-        .list()
-        .filter((a) => a.sessionId === id);
-      return {
-        summary,
-        lifecycle: lifecycle as unknown as Record<string, unknown>[],
-        tools: tools as unknown as Record<string, unknown>[],
-        decisions: decisions as unknown as Record<string, unknown>[],
-        approvals: approvals as unknown as Record<string, unknown>[],
-      };
-    };
-    this.server.webhookFn = async (hookPath: string, payload: unknown) => {
-      if (!this.orchestrator) {
-        return {
-          ok: false,
-          error: "orchestrator_unavailable",
-        };
-      }
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-      const match = findWebhookRecipe(recipesDir, hookPath);
-      if (!match) {
-        return { ok: false, error: "not_found" };
-      }
-      if (match.format === "yaml") {
-        let payloadText: string | undefined;
-        if (payload !== undefined) {
-          try {
-            payloadText = JSON.stringify(payload);
-          } catch {
-            payloadText = String(payload);
-          }
-          if (payloadText.length > 8_000) {
-            payloadText = `${payloadText.slice(0, 8_000)}\n…[truncated]`;
-          }
-        }
-        const seedContext: Record<string, string> = {
-          hook_path: hookPath,
-          webhook_path: hookPath,
-          ...(payloadText !== undefined
-            ? { payload: payloadText, webhook_payload: payloadText }
-            : {}),
-        };
-        return this._fireYamlRecipe({
-          filePath: match.filePath,
-          name: match.name,
-          taskIdPrefix: `yaml-webhook-${match.name}`,
-          triggerSourceSuffix: `webhook:${match.name}`,
-          logLabel: `webhook "${match.name}"`,
-          seedContext,
-        });
-      }
-      const loaded = loadRecipePrompt(
-        recipesDir,
-        path.basename(match.filePath, path.extname(match.filePath)),
-      );
-      if (!loaded) {
-        return { ok: false, error: "recipe_file_missing" };
-      }
-      try {
-        const taskId = this.orchestrator.enqueue({
-          prompt: renderWebhookPrompt(loaded.prompt, payload),
-          triggerSource: `webhook:${match.name}`,
-        });
-        return { ok: true, taskId, name: match.name };
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-    };
-    this.server.runRecipeFn = async (
-      name: string,
-      vars?: Record<string, string>,
-    ) => {
-      if (!this.orchestrator) {
-        return {
-          ok: false,
-          error:
-            "Orchestrator unavailable — start bridge with --claude-driver subprocess",
-        };
-      }
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-
-      // Try JSON recipe first (legacy path: enqueue prompt as a task).
-      const loaded = loadRecipePrompt(recipesDir, name);
-      if (loaded) {
-        try {
-          let prompt = loaded.prompt;
-          if (vars && Object.keys(vars).length > 0) {
-            const varLines = Object.entries(vars)
-              .map(([k, v]) => `${k}=${v}`)
-              .join("\n");
-            prompt = `Variables:\n${varLines}\n\n${prompt}`;
-          }
-          const taskId = this.orchestrator.enqueue({
-            prompt,
-            triggerSource: `recipe:${name}`,
-          });
-          return { ok: true, taskId };
-        } catch (err) {
-          return {
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          };
-        }
-      }
-
-      // Fall through to YAML runner for .yaml/.yml recipes.
-      const ymlPath = findYamlRecipePath(recipesDir, name);
-      if (!ymlPath) {
-        return {
-          ok: false,
-          error: `Recipe "${name}" not found in ${recipesDir}`,
-        };
-      }
-      return this._fireYamlRecipe({
-        filePath: ymlPath,
-        name,
-        taskIdPrefix: `yaml-recipe-${name}`,
-        triggerSourceSuffix: `recipe:${name}`,
-        logLabel: `"${name}"`,
-      });
-    };
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
       const anySession = [...this.sessions.values()][0];
@@ -1833,82 +1601,6 @@ export class Bridge {
         })}`,
       );
     }
-  }
-
-  /**
-   * Load and fire a YAML recipe in the background via the orchestrator.
-   * Returns `{ ok, taskId, name? }` immediately; execution continues async.
-   * Both the webhook path and runRecipeFn use this to eliminate duplication.
-   */
-  private async _fireYamlRecipe(opts: {
-    filePath: string;
-    name: string;
-    taskIdPrefix: string;
-    triggerSourceSuffix: string;
-    logLabel: string;
-    seedContext?: Record<string, string>;
-  }): Promise<{ ok: boolean; taskId?: string; name?: string; error?: string }> {
-    if (!this.recipeOrchestrator) {
-      return { ok: false, error: "recipe orchestrator unavailable" };
-    }
-    const orch = this.orchestrator!;
-    const { buildChainedDeps, dispatchRecipe } = await import(
-      "./recipes/yamlRunner.js"
-    );
-    const claudeCodeFn = async (prompt: string): Promise<string> => {
-      const task = await orch.runAndWait({
-        prompt,
-        triggerSource: `${opts.triggerSourceSuffix}:agent`,
-        timeoutMs: 600_000,
-      });
-      return task.output ?? task.errorMessage ?? "";
-    };
-    const runnerDeps = { workdir: this.config.workspace, claudeCodeFn };
-    const chainedOptions = {
-      sourcePath: opts.filePath,
-      runLogDir: this.recipeRunLog
-        ? path.join(os.homedir(), ".patchwork")
-        : undefined,
-    };
-    const fireResult = await this.recipeOrchestrator
-      .fire({
-        filePath: opts.filePath,
-        name: opts.name,
-        triggerSource: opts.triggerSourceSuffix,
-        seedContext: opts.seedContext,
-        dispatchFn: async (recipe, _deps, seedContext) => {
-          const result = await dispatchRecipe(
-            recipe,
-            {
-              ...runnerDeps,
-              chainedDeps: buildChainedDeps(runnerDeps, claudeCodeFn),
-              chainedOptions,
-            },
-            seedContext,
-          );
-          const steps =
-            "stepsRun" in result
-              ? result.stepsRun
-              : (result.summary?.total ?? "?");
-          const succeeded =
-            "stepsRun" in result ? !result.errorMessage : result.success;
-          if (succeeded) recordRecipeRun();
-          this.logger.info?.(
-            `[recipe] ${opts.logLabel} finished: ${steps} steps`,
-          );
-          return result;
-        },
-      })
-      .catch((err: unknown) => {
-        this.logger.warn?.(
-          `[recipe] ${opts.logLabel} error: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return {
-          ok: false as const,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      });
-    return fireResult;
   }
 
   /** Start the bridge-level WebSocket keepalive heartbeat. Idempotent. */
