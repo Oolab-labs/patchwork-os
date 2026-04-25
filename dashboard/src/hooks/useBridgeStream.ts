@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { isDemoMode } from "@/lib/demoMode";
 
 export function useBridgeStream(
   path: string,
@@ -16,6 +17,7 @@ export function useBridgeStream(
 
   useEffect(() => {
     if (!enabled) return;
+    if (isDemoMode()) return;
 
     const es = new EventSource(apiPath(path));
 

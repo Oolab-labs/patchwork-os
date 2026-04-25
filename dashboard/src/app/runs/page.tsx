@@ -6,14 +6,24 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 
 interface AssertionFailure {
   assertion: string;
+  expected?: unknown;
+  actual?: unknown;
   message: string;
+}
+
+function normaliseTrigger(t: string): string {
+  if (t.startsWith("recipe:")) return "recipe";
+  if (t.startsWith("cron") || t.startsWith("@")) return "cron";
+  if (t.startsWith("webhook") || t.startsWith("yaml-webhook")) return "webhook";
+  if (t.startsWith("git_hook")) return "git_hook";
+  return "manual";
 }
 
 interface Run {
   seq: number;
   taskId: string;
   recipeName: string;
-  trigger: "cron" | "webhook" | "recipe";
+  trigger: string;
   status: "done" | "error" | "cancelled" | "interrupted";
   createdAt: number;
   startedAt?: number;
@@ -25,7 +35,7 @@ interface Run {
   assertionFailures?: AssertionFailure[];
 }
 
-type TriggerFilter = "all" | "cron" | "webhook" | "recipe";
+type TriggerFilter = "all" | "cron" | "webhook" | "recipe" | "manual" | "git_hook";
 type StatusFilter = "all" | "done" | "error" | "cancelled" | "interrupted";
 
 function fmtWhen(ms: number): string {
@@ -323,7 +333,7 @@ export default function RunsPage() {
                         </Link>
                       </td>
                       <td>
-                        <span className="pill muted">{r.trigger}</span>
+                        <span className="pill muted">{normaliseTrigger(r.trigger)}</span>
                       </td>
                       <td>
                         <span
