@@ -333,13 +333,16 @@ export default function RecipesPage() {
   async function executeRun(name: string, vars?: Record<string, string>) {
     setRunning((p) => ({ ...p, [name]: "running…" }));
     try {
-      const body: Record<string, unknown> = { name };
+      const body: Record<string, unknown> = {};
       if (vars && Object.keys(vars).length > 0) body.vars = vars;
-      const res = await fetch(apiPath("/api/bridge/recipes/run"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const res = await fetch(
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}/run`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
       const data = (await res.json()) as {
         ok: boolean;
         taskId?: string;
