@@ -56,6 +56,13 @@ function findLockFile() {
           const data = JSON.parse(fs.readFileSync(fullPath, "utf8"));
           isBridge = data.isBridge === true;
           isOrchestrator = data.orchestrator === true;
+          // Skip locks that don't match the requested workspace
+          if (
+            workspaceFilter &&
+            data.workspace &&
+            data.workspace !== workspaceFilter
+          )
+            continue;
         } catch {
           // unparseable — treat as non-bridge
         }
@@ -189,9 +196,18 @@ function scheduleBackoffReconnect(errorType) {
 }
 
 // --- Explicit args (bypass auto-discover and watcher) ---
-const explicitPort =
-  process.argv[2] && process.argv[3] ? Number(process.argv[2]) : null;
-const explicitToken = process.argv[3] ?? null;
+// Parse named flags first so they don't pollute positional port/token detection.
+const args = process.argv.slice(2);
+let workspaceFilter = null;
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--workspace" && args[i + 1]) {
+    workspaceFilter = args[i + 1];
+    args.splice(i, 2);
+    break;
+  }
+}
+const explicitPort = args[0] && args[1] ? Number(args[0]) : null;
+const explicitToken = args[1] ?? null;
 
 function flushPending() {
   while (pendingLines.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
