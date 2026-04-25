@@ -274,6 +274,20 @@ function RecipeCard({
               {connectorInitials(c)}
             </span>
           ))}
+          {recipe.downloads > 0 && (
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--ink-3)",
+                marginLeft: 2,
+              }}
+              title={`${recipe.downloads.toLocaleString()} installs`}
+            >
+              ↓ {recipe.downloads >= 1000
+                ? `${(recipe.downloads / 1000).toFixed(1)}k`
+                : recipe.downloads}
+            </span>
+          )}
         </div>
 
         <div style={{ flexShrink: 0 }}>
