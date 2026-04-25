@@ -7,6 +7,7 @@ import { SkeletonStatCard } from "@/components/Skeleton";
 import { fmtDuration, relTime } from "@/components/time";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { useBridgeStatus } from "@/hooks/useBridgeStatus";
+import { useBridgeStream } from "@/hooks/useBridgeStream";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -200,7 +201,6 @@ function activityDescription(e: ActivityEvent): string {
 function ActivityFeed() {
   const bridgeStatus = useBridgeStatus();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
-  const [updateCount, setUpdateCount] = useState(0);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -210,23 +210,31 @@ function ActivityFeed() {
     };
   }, []);
 
+  // Seed feed with recent history on mount
   useEffect(() => {
     const load = async () => {
       try {
         const res = await fetch(apiPath("/api/bridge/activity?last=20"));
         if (!res.ok || !mountedRef.current) return;
         const data = (await res.json()) as { events?: ActivityEvent[] };
-        const items = (data.events ?? []).map(withAt).reverse().slice(0, 8);
+        const items = (data.events ?? []).map(withAt).reverse().slice(0, 20);
         setEvents(items);
-        setUpdateCount((c) => c + 1);
       } catch {
-        // bridge offline — keep showing stale
+        // bridge offline — nothing to seed
       }
     };
     load();
-    const id = setInterval(load, 10_000);
-    return () => clearInterval(id);
   }, []);
+
+  // Live SSE updates
+  const { connected: sseConnected } = useBridgeStream(
+    "/api/bridge/stream",
+    (_type, data) => {
+      if (!mountedRef.current) return;
+      const entry = withAt(data as ActivityEvent);
+      setEvents((prev) => [entry, ...prev].slice(0, 20));
+    },
+  );
 
   return (
     <div className="card" style={{ display: "flex", flexDirection: "column", padding: "20px 22px" }}>
@@ -248,7 +256,7 @@ function ActivityFeed() {
             alignItems: "center",
             gap: 5,
             fontSize: 11,
-            color: bridgeStatus.ok ? "var(--ok)" : "var(--ink-3)",
+            color: sseConnected ? "var(--ok)" : bridgeStatus.ok ? "var(--ink-2)" : "var(--ink-3)",
             fontWeight: 600,
           }}
         >
@@ -258,17 +266,12 @@ function ActivityFeed() {
               width: 7,
               height: 7,
               borderRadius: "50%",
-              background: bridgeStatus.ok ? "var(--ok)" : "var(--ink-3)",
+              background: sseConnected ? "var(--ok)" : bridgeStatus.ok ? "var(--ink-2)" : "var(--ink-3)",
               display: "inline-block",
             }}
           />
-          {bridgeStatus.ok ? "live" : "disconnected"}
+          {sseConnected ? "live" : bridgeStatus.ok ? "polling" : "disconnected"}
         </span>
-        {updateCount > 0 && (
-          <span className="pill muted" style={{ fontSize: 11 }}>
-            {updateCount} update{updateCount !== 1 ? "s" : ""}
-          </span>
-        )}
         <Link href="/activity" className="pill muted" style={{ fontSize: 11, textDecoration: "none" }}>
           All →
         </Link>
@@ -300,7 +303,7 @@ function ActivityFeed() {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          {events.map((e, i) => {
+          {events.slice(0, 8).map((e, i) => {
             const label = activityLabel(e);
             const desc = activityDescription(e);
             const ts = e.at ?? Date.now();
