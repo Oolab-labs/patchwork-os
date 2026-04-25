@@ -2333,7 +2333,7 @@ export class Server extends EventEmitter<ServerEvents> {
             let recipeName: string;
             if (source.startsWith(githubPrefix)) {
               recipeName = source.slice(githubPrefix.length);
-              fetchUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/${recipeName}.yaml`;
+              fetchUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/${recipeName}/${recipeName}.yaml`;
             } else if (source.startsWith("https://")) {
               fetchUrl = source;
               const urlParts = fetchUrl.split("/");
