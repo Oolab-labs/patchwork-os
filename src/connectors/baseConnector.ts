@@ -167,7 +167,7 @@ export abstract class BaseConnector {
       this.auth = newAuth;
       await this.saveTokens();
       return newAuth;
-    } catch (err) {
+    } catch {
       // Refresh failed - clear tokens to force re-auth
       await this.clearTokens();
       return null;

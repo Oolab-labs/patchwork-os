@@ -1,14 +1,14 @@
 import os from "node:os";
 import { describe, expect, it } from "vitest";
-import type { IClaudeDriver } from "../../claudeDriver.js";
 import { ClaudeOrchestrator } from "../../claudeOrchestrator.js";
+import type { ProviderDriver } from "../../drivers/types.js";
 import { createCancelClaudeTaskTool } from "../cancelClaudeTask.js";
 import { createGetClaudeTaskStatusTool } from "../getClaudeTaskStatus.js";
 import { createListClaudeTasksTool } from "../listClaudeTasks.js";
 import { createRunClaudeTaskTool } from "../runClaudeTask.js";
 
-function makeOrchestrator(driver?: IClaudeDriver) {
-  const d: IClaudeDriver = driver ?? {
+function makeOrchestrator(driver?: ProviderDriver) {
+  const d: ProviderDriver = driver ?? {
     name: "instant",
     async run() {
       return { text: "result", exitCode: 0, durationMs: 1 };
@@ -30,7 +30,7 @@ describe("runClaudeTask", () => {
     const orch = makeOrchestrator();
     const tool = createRunClaudeTaskTool(orch, "session1", os.tmpdir());
     const result = await tool.handler({ prompt: "hello" });
-    expect(result.isError).toBeUndefined();
+    expect("isError" in result ? result.isError : undefined).toBeUndefined();
     const data = resultData(result) as { taskId: string; status: string };
     expect(typeof data.taskId).toBe("string");
     expect(data.status).toBe("pending");
@@ -40,14 +40,14 @@ describe("runClaudeTask", () => {
     const orch = makeOrchestrator();
     const tool = createRunClaudeTaskTool(orch, "session1", os.tmpdir());
     const result = await tool.handler({});
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
   });
 
   it("rejects empty prompt", async () => {
     const orch = makeOrchestrator();
     const tool = createRunClaudeTaskTool(orch, "session1", os.tmpdir());
     const result = await tool.handler({ prompt: "   " });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
   });
 
   it("rejects contextFiles outside workspace", async () => {
@@ -57,7 +57,7 @@ describe("runClaudeTask", () => {
       prompt: "hello",
       contextFiles: ["/etc/passwd"],
     });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(resultText(result)).toContain("workspace_escape");
   });
 
@@ -68,18 +68,18 @@ describe("runClaudeTask", () => {
       prompt: "hello",
       contextFiles: Array(21).fill("a.ts"),
     });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
   });
 
   it("rejects invalid timeoutMs", async () => {
     const orch = makeOrchestrator();
     const tool = createRunClaudeTaskTool(orch, "session1", os.tmpdir());
     const result = await tool.handler({ prompt: "hello", timeoutMs: 100 });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
   });
 
   it("stream=true blocks and returns output", async () => {
-    const chunkDriver: IClaudeDriver = {
+    const chunkDriver: ProviderDriver = {
       name: "chunk",
       async run(input) {
         input.onChunk?.("result");
@@ -97,7 +97,7 @@ describe("runClaudeTask", () => {
       undefined,
       progressFn,
     );
-    expect(result.isError).toBeUndefined();
+    expect("isError" in result ? result.isError : undefined).toBeUndefined();
     const data = resultData(result) as { status: string; output: string };
     expect(data.status).toBe("done");
     expect(chunks).toContain("result");
@@ -113,16 +113,18 @@ describe("getClaudeTaskStatus", () => {
     const { taskId } = resultData(runResult) as { taskId: string };
 
     const statusResult = await statusTool.handler({ taskId });
-    expect(statusResult.isError).toBeUndefined();
+    expect(
+      "isError" in statusResult ? statusResult.isError : undefined,
+    ).toBeUndefined();
     const data = resultData(statusResult) as { taskId: string };
     expect(data.taskId).toBe(taskId);
   });
 
   it("returns isError + task_not_found for unknown taskId", async () => {
     const orch = makeOrchestrator();
-    const tool = createGetClaudeTaskStatusTool(orch);
+    const tool = createGetClaudeTaskStatusTool(orch, "s1");
     const result = await tool.handler({ taskId: "nonexistent-id" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(resultText(result)).toContain("task_not_found");
   });
 });
@@ -130,7 +132,7 @@ describe("getClaudeTaskStatus", () => {
 describe("cancelClaudeTask", () => {
   it("returns cancelled: true for pending task", async () => {
     // Use a slow driver so the task stays pending/running
-    const slowDriver: IClaudeDriver = {
+    const slowDriver: ProviderDriver = {
       name: "slow",
       async run(input) {
         await new Promise<void>((resolve, reject) => {
@@ -157,16 +159,16 @@ describe("cancelClaudeTask", () => {
     const { taskId } = resultData(runResult) as { taskId: string };
 
     const cancelResult = await cancelTool.handler({ taskId });
-    expect(cancelResult.isError).toBeUndefined();
+    expect(!("isError" in cancelResult) || !cancelResult.isError).toBe(true);
     const data = resultData(cancelResult) as { cancelled: boolean };
     expect(data.cancelled).toBe(true);
   });
 
   it("returns task_not_found for unknown taskId", async () => {
     const orch = makeOrchestrator();
-    const tool = createCancelClaudeTaskTool(orch);
+    const tool = createCancelClaudeTaskTool(orch, "s1");
     const result = await tool.handler({ taskId: "unknown" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(resultText(result)).toContain("task_not_found");
   });
 });
@@ -181,7 +183,7 @@ describe("listClaudeTasks", () => {
     await runTool.handler({ prompt: "task2" });
 
     const result = await listTool.handler({});
-    expect(result.isError).toBeUndefined();
+    expect(!("isError" in result) || !result.isError).toBe(true);
     const data = resultData(result) as { count: number; tasks: unknown[] };
     expect(data.count).toBe(2);
     expect(data.tasks.length).toBe(2);
@@ -199,19 +201,17 @@ describe("listClaudeTasks", () => {
 
   it("rejects invalid status filter", async () => {
     const orch = makeOrchestrator();
-    const tool = createListClaudeTasksTool(orch);
+    const tool = createListClaudeTasksTool(orch, "s1");
     const result = await tool.handler({ status: "bogus" });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
   });
 });
 
 describe("runClaudeTask systemPrompt validation", () => {
   it("accepts valid systemPrompt and stores it on the task", async () => {
-    let capturedSystemPrompt: string | undefined;
-    const driver: IClaudeDriver = {
+    const driver: ProviderDriver = {
       name: "capture",
-      async run(input) {
-        capturedSystemPrompt = (input as any).systemPrompt;
+      async run(_input) {
         return { text: "ok", exitCode: 0, durationMs: 1 };
       },
     };
@@ -221,7 +221,7 @@ describe("runClaudeTask systemPrompt validation", () => {
       prompt: "hello",
       systemPrompt: "Be concise.",
     });
-    expect(result.isError).toBeUndefined();
+    expect(!("isError" in result) || !result.isError).toBe(true);
     // Task stores systemPrompt
     const { taskId } = resultData(result) as { taskId: string };
     const task = orch.list().find((t) => t.id === taskId);
@@ -235,7 +235,7 @@ describe("runClaudeTask systemPrompt validation", () => {
       prompt: "hello",
       systemPrompt: "x".repeat(4097),
     });
-    expect(result.isError).toBe(true);
+    expect("isError" in result && result.isError).toBe(true);
     expect(resultText(result)).toMatch(/systemPrompt/);
   });
 
@@ -246,6 +246,6 @@ describe("runClaudeTask systemPrompt validation", () => {
       prompt: "hello",
       systemPrompt: "x".repeat(4096),
     });
-    expect(result.isError).toBeUndefined();
+    expect(!("isError" in result) || !result.isError).toBe(true);
   });
 });

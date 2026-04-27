@@ -3,8 +3,6 @@ import os from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const NOTION_API = "https://api.notion.com/v1";
-
 describe("notion token helpers", () => {
   const tmpDir = join(os.tmpdir(), `patchwork-notion-${Date.now()}`);
   const homeDir = join(tmpDir, "home");

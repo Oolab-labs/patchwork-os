@@ -745,7 +745,7 @@ describe("structuredContent contract", () => {
   describe("getHandoffNote", () => {
     it("emits structuredContent when no note exists", async () => {
       const tool = createGetHandoffNoteTool({
-        configDir: WORKSPACE + "/nonexistent-dir-xyz",
+        configDir: `${WORKSPACE}/nonexistent-dir-xyz`,
       });
       const result = await tool.handler({});
       assertStructured(result as Parameters<typeof assertStructured>[0]);
@@ -902,7 +902,7 @@ describe("structuredContent contract", () => {
         getHover: vi.fn().mockResolvedValue(null),
       } as never;
       const tool = createGetHoverAtCursorTool(mockClient);
-      const result = await tool.handler();
+      const result = await tool.handler({});
       assertStructured(result as Parameters<typeof assertStructured>[0]);
     });
   });
