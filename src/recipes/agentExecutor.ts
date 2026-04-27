@@ -21,7 +21,7 @@ export interface AgentExecutorDeps {
   /** Returns true when the `claude` CLI is available on PATH. */
   probeClaudeCli: () => boolean;
   /** Reads ~/.patchwork/config; returns {} when absent. */
-  loadPatchworkConfig: () => { model?: string };
+  loadPatchworkConfig: () => { model?: string; driver?: string };
 }
 
 export interface AgentExecutorInput {
@@ -60,6 +60,11 @@ export async function executeAgent(
     return deps.localFn(prompt, model ?? DEFAULT_MODEL);
   }
 
+  // Explicit subprocess driver config → skip API key check entirely.
+  if (pwCfg.driver === "subprocess" || pwCfg.driver === "claude-code") {
+    return deps.claudeCliFn(prompt);
+  }
+
   // Auto-detect: prefer API key, otherwise probe for claude CLI.
   if (process.env.ANTHROPIC_API_KEY) {
     return deps.anthropicFn(prompt, model ?? DEFAULT_MODEL);
@@ -67,5 +72,8 @@ export async function executeAgent(
   if (deps.probeClaudeCli()) {
     return deps.claudeCliFn(prompt);
   }
+  // Probe failed and no API key — fall back to anthropicFn so the caller
+  // surfaces a clear "[agent step skipped: ANTHROPIC_API_KEY not set]" message
+  // (and so test overrides of claudeFn/anthropicFn are honored).
   return deps.anthropicFn(prompt, model ?? DEFAULT_MODEL);
 }
