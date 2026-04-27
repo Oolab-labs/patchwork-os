@@ -83,8 +83,9 @@ function isPrivateCimdHost(hostname: string): boolean {
     h.startsWith("10.") ||
     h.startsWith("192.168.") ||
     h === "::1" ||
-    h.startsWith("fc") ||
-    h.startsWith("fd") ||
+    // IPv6 ULA fc00::/7 — gated on `:` so hostnames like "fcompany.com" or
+    // "fd-cdn.example.com" aren't false-positively blocked.
+    ((h.startsWith("fc") || h.startsWith("fd")) && h.includes(":")) ||
     h.startsWith("169.254.")
   )
     return true;

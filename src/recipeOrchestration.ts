@@ -18,6 +18,7 @@ import type {
 } from "./recipes/scheduler.js";
 import { RecipeScheduler } from "./recipes/scheduler.js";
 import {
+  deleteRecipeContent,
   findWebhookRecipe,
   findYamlRecipePath,
   lintRecipeContent,
@@ -102,6 +103,11 @@ export class RecipeOrchestration {
     server.saveRecipeContentFn = (name: string, content: string) => {
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
       return saveRecipeContent(recipesDir, name, content);
+    };
+
+    server.deleteRecipeContentFn = (name: string) => {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      return deleteRecipeContent(recipesDir, name);
     };
 
     server.lintRecipeContentFn = (content: string) =>

@@ -49,12 +49,30 @@ export default function DecisionsPage() {
   );
 }
 
+type SinceFilter = "1h" | "24h" | "7d" | "30d" | "all";
+
+const SINCE_OPTIONS: { k: SinceFilter; label: string; ms: number | null }[] = [
+  { k: "1h", label: "Last hour", ms: 60 * 60 * 1000 },
+  { k: "24h", label: "Last 24h", ms: 24 * 60 * 60 * 1000 },
+  { k: "7d", label: "Last 7d", ms: 7 * 24 * 60 * 60 * 1000 },
+  { k: "30d", label: "Last 30d", ms: 30 * 24 * 60 * 60 * 1000 },
+  { k: "all", label: "All time", ms: null },
+];
+
+function isSinceFilter(v: string | null): v is SinceFilter {
+  return v === "1h" || v === "24h" || v === "7d" || v === "30d" || v === "all";
+}
+
 function DecisionsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [tag, setTag] = useState(searchParams.get("tag") ?? "");
   const [keyQuery, setKeyQuery] = useState(searchParams.get("ref") ?? "");
   const [textQuery, setTextQuery] = useState(searchParams.get("q") ?? "");
+  const [since, setSince] = useState<SinceFilter>(() => {
+    const sp = searchParams.get("since");
+    return isSinceFilter(sp) ? sp : "30d";
+  });
 
   // Mirror filter state to the URL so links are shareable and the back
   // button reopens the same view. replaceState (not push) — filters are
@@ -64,9 +82,10 @@ function DecisionsContent() {
     if (tag.trim()) params.set("tag", tag.trim());
     if (keyQuery.trim()) params.set("ref", keyQuery.trim());
     if (textQuery.trim()) params.set("q", textQuery.trim());
+    if (since !== "30d") params.set("since", since);
     const qs = params.toString();
     router.replace(qs ? `/decisions?${qs}` : "/decisions", { scroll: false });
-  }, [tag, keyQuery, textQuery, router]);
+  }, [tag, keyQuery, textQuery, since, router]);
 
   const qs = useMemo(() => {
     const params = new URLSearchParams();
@@ -74,9 +93,13 @@ function DecisionsContent() {
     if (tag.trim()) params.set("tag", tag.trim());
     if (keyQuery.trim()) params.set("key", keyQuery.trim());
     if (textQuery.trim()) params.set("q", textQuery.trim());
+    const sinceMs = SINCE_OPTIONS.find((o) => o.k === since)?.ms;
+    if (sinceMs != null) {
+      params.set("since", String(Date.now() - sinceMs));
+    }
     params.set("limit", "200");
     return `?${params.toString()}`;
-  }, [tag, keyQuery, textQuery]);
+  }, [tag, keyQuery, textQuery, since]);
 
   const { data, error, loading } = useBridgeFetch<TracesResponse>(
     `/api/bridge/traces${qs}`,
@@ -171,6 +194,26 @@ function DecisionsContent() {
           alignItems: "center",
         }}
       >
+        <select
+          value={since}
+          onChange={(e) => setSince(e.target.value as SinceFilter)}
+          aria-label="Time range"
+          style={{
+            padding: "6px 10px",
+            fontSize: 13,
+            background: "var(--recess)",
+            border: "1px solid var(--line-2)",
+            borderRadius: "var(--r-s)",
+            color: "var(--ink-0)",
+            cursor: "pointer",
+          }}
+        >
+          {SINCE_OPTIONS.map((o) => (
+            <option key={o.k} value={o.k}>
+              {o.label}
+            </option>
+          ))}
+        </select>
         <input
           type="text"
           value={tag}

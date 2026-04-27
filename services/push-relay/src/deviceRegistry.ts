@@ -70,7 +70,16 @@ export class RedisRegistry implements DeviceRegistry {
       let oldestToken: string | undefined;
       let oldestTs = Infinity;
       for (const [token, raw] of Object.entries(all)) {
-        const parsed = JSON.parse(raw) as DeviceRecord;
+        let parsed: DeviceRecord | null = null;
+        try {
+          parsed = JSON.parse(raw) as DeviceRecord;
+        } catch {
+          // Corrupt entry — evict it as if it were the oldest so the registry
+          // self-heals rather than blocking new registrations.
+          oldestToken = token;
+          oldestTs = -Infinity;
+          continue;
+        }
         if (parsed.registeredAt < oldestTs) {
           oldestTs = parsed.registeredAt;
           oldestToken = token;
@@ -87,7 +96,15 @@ export class RedisRegistry implements DeviceRegistry {
 
   async list(userId: string): Promise<DeviceRecord[]> {
     const all = await this.redis.hGetAll(this.key(userId));
-    return Object.values(all).map((raw) => JSON.parse(raw) as DeviceRecord);
+    const out: DeviceRecord[] = [];
+    for (const raw of Object.values(all)) {
+      try {
+        out.push(JSON.parse(raw) as DeviceRecord);
+      } catch {
+        // Skip corrupt entries — don't poison the entire list for one bad row.
+      }
+    }
+    return out;
   }
 
   async count(userId: string): Promise<number> {

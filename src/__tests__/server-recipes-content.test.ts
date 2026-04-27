@@ -201,4 +201,58 @@ describe("Server recipe content routes", () => {
       error: "Step 1: Agent step missing 'prompt'",
     });
   });
+
+  it("deletes a recipe via DELETE /recipes/:name", async () => {
+    let deletedName = "";
+    server!.deleteRecipeContentFn = (name: string) => {
+      deletedName = name;
+      return { ok: true, path: `/tmp/${name}.yaml` };
+    };
+
+    const { status, body } = await makeRequest({
+      method: "DELETE",
+      path: "/recipes/yaml-draft",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toEqual({
+      ok: true,
+      path: "/tmp/yaml-draft.yaml",
+    });
+    expect(deletedName).toBe("yaml-draft");
+  });
+
+  it("returns 404 when DELETE target is missing", async () => {
+    server!.deleteRecipeContentFn = () => ({
+      ok: false,
+      error: "Recipe not found",
+    });
+
+    const { status, body } = await makeRequest({
+      method: "DELETE",
+      path: "/recipes/missing-recipe",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(status).toBe(404);
+    expect(JSON.parse(body)).toEqual({
+      ok: false,
+      error: "Recipe not found",
+    });
+  });
+
+  it("returns 503 when deleteRecipeContentFn unset", async () => {
+    const { status, body } = await makeRequest({
+      method: "DELETE",
+      path: "/recipes/anything",
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+
+    expect(status).toBe(503);
+    expect(JSON.parse(body)).toEqual({
+      ok: false,
+      error: "Recipe deletion unavailable",
+    });
+  });
 });

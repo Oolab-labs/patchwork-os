@@ -37,6 +37,16 @@ describe("compileTemplate", () => {
     expect("value" in r && r.value).toBe("");
   });
 
+  it("preserves whitespace-only template literally without duplicating surrounding text", () => {
+    // Regression: `{{ }}` previously fell through `if (!expression) continue`
+    // without advancing lastIndex, causing the prefix before the next real
+    // template to be re-emitted (e.g. "hi {{ }}{{env.X}} bye" became
+    // "hi hi {{ }}WORLD bye").
+    const t = compileTemplate("hi {{ }}{{env.X}} bye");
+    const r = t.evaluate({ steps: {}, env: { X: "WORLD" } });
+    expect("value" in r && r.value).toBe("hi {{ }}WORLD bye");
+  });
+
   it("returns eval_error for missing step", () => {
     const t = compileTemplate("{{steps.missing.data.field}}");
     const r = t.evaluate({ steps: {}, env: {} });

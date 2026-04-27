@@ -9,7 +9,15 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
   const target = `/${segments.join("/")}${qs}`;
 
   // SSE passthrough for /stream — stream the response body back to the client.
+  // Browsers only initiate EventSource over GET; reject other methods up-front
+  // so this branch can't be used to bypass the CSRF check on the generic path.
   if (segments[0] === "stream") {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        status: 405,
+        headers: { "content-type": "application/json", allow: "GET, HEAD" },
+      });
+    }
     const lock = findBridge();
     if (!lock) {
       return new Response(

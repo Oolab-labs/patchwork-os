@@ -18,6 +18,9 @@ interface StatusResponse {
     localModel?: string;
     automationEnabled?: boolean;
     webhookUrl?: string | null;
+    pushServiceUrl?: string | null;
+    pushServiceToken?: string | null;
+    pushServiceBaseUrl?: string | null;
   };
   [k: string]: unknown;
 }
@@ -807,10 +810,168 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          <PushRelayCard initial={settings.patchwork} />
+
           <MobileNotificationsCard />
         </>
       )}
     </section>
+  );
+}
+
+function PushRelayCard({
+  initial,
+}: {
+  initial: StatusResponse["patchwork"];
+}) {
+  const [serviceUrl, setServiceUrl] = useState(initial?.pushServiceUrl ?? "");
+  const [token, setToken] = useState("");
+  const [baseUrl, setBaseUrl] = useState(initial?.pushServiceBaseUrl ?? "");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const tokenIsSet = !!initial?.pushServiceToken;
+  const seeded = useRef(false);
+
+  useEffect(() => {
+    if (seeded.current) return;
+    if (!initial) return;
+    setServiceUrl(initial.pushServiceUrl ?? "");
+    setBaseUrl(initial.pushServiceBaseUrl ?? "");
+    seeded.current = true;
+  }, [initial]);
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const payload: Record<string, string> = {
+        pushServiceUrl: serviceUrl.trim(),
+        pushServiceBaseUrl: baseUrl.trim(),
+      };
+      if (token.trim()) payload.pushServiceToken = token.trim();
+      const res = await fetch(apiPath("/api/bridge/settings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (res.ok && body.ok !== false) {
+        setMsg({ ok: true, text: "Saved." });
+        setToken("");
+      } else {
+        setMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
+      }
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = {
+    flex: 1,
+    background: "var(--bg-2)",
+    border: "1px solid var(--border-default)",
+    borderRadius: "var(--r-2)",
+    color: "var(--fg-0)",
+    fontSize: 13,
+    fontFamily: "var(--font-mono)",
+    padding: "6px 10px",
+    outline: "none",
+  } as const;
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">
+        <div>
+          <h2 style={{ margin: 0 }}>Push relay</h2>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+            Forward approval requests to a relay service for mobile push.
+          </div>
+        </div>
+      </div>
+
+      <div style={{ padding: "16px 0", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div>
+          <label htmlFor="push-service-url" style={{ display: "block", fontSize: 13, color: "var(--fg-1)", marginBottom: 4, fontWeight: 500 }}>
+            Push service URL
+          </label>
+          <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 6px", lineHeight: 1.5 }}>
+            HTTPS endpoint of the relay service (e.g. <code>https://push.example.com/notify</code>). Leave blank to disable push.
+          </p>
+          <input
+            id="push-service-url"
+            type="url"
+            value={serviceUrl}
+            onChange={(e) => { setServiceUrl(e.target.value); setMsg(null); }}
+            placeholder="https://push.example.com/notify"
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="push-service-token" style={{ display: "block", fontSize: 13, color: "var(--fg-1)", marginBottom: 4, fontWeight: 500 }}>
+            Bearer token {tokenIsSet && <span style={{ color: "var(--fg-3)", fontWeight: 400 }}>(currently set — leave blank to keep)</span>}
+          </label>
+          <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 6px", lineHeight: 1.5 }}>
+            Auth token sent as <code>Authorization: Bearer …</code> when calling the relay.
+          </p>
+          <input
+            id="push-service-token"
+            type="password"
+            value={token}
+            onChange={(e) => { setToken(e.target.value); setMsg(null); }}
+            placeholder={tokenIsSet ? "•••••••• (set)" : "token…"}
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="push-base-url" style={{ display: "block", fontSize: 13, color: "var(--fg-1)", marginBottom: 4, fontWeight: 500 }}>
+            Public bridge base URL
+          </label>
+          <p style={{ fontSize: 12, color: "var(--fg-2)", margin: "0 0 6px", lineHeight: 1.5 }}>
+            Public HTTPS URL of this bridge (embedded in push payloads as the approval callback host).
+          </p>
+          <input
+            id="push-base-url"
+            type="url"
+            value={baseUrl}
+            onChange={(e) => { setBaseUrl(e.target.value); setMsg(null); }}
+            placeholder="https://bridge.example.com"
+            style={inputStyle}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            style={{
+              background: "var(--accent)",
+              color: "#fff",
+              border: "none",
+              borderRadius: "var(--r-2)",
+              padding: "6px 14px",
+              fontSize: 13,
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.6 : 1,
+            }}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          {msg && (
+            <span style={{ fontSize: 12, color: msg.ok ? "var(--ok)" : "var(--err)" }}>
+              {msg.text}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

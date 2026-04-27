@@ -51,8 +51,17 @@ async function main() {
   let fcm: FcmAdapter | undefined;
   if (process.env.FCM_SERVICE_ACCOUNT) {
     const { default: admin } = await import("firebase-admin");
-    const serviceAccount = JSON.parse(process.env.FCM_SERVICE_ACCOUNT);
-    if (!admin.apps.length) {
+    let serviceAccount: unknown;
+    try {
+      serviceAccount = JSON.parse(process.env.FCM_SERVICE_ACCOUNT);
+    } catch (err) {
+      console.error(
+        "FCM_SERVICE_ACCOUNT is not valid JSON — skipping FCM init:",
+        err instanceof Error ? err.message : String(err),
+      );
+      serviceAccount = null;
+    }
+    if (serviceAccount && !admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
       });

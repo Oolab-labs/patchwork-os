@@ -1,10 +1,18 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  deleteRecipeContent,
   findWebhookRecipe,
   findYamlRecipePath,
+  listInstalledRecipes,
   loadRecipeContent,
   loadRecipePrompt,
   renderWebhookPrompt,
@@ -468,6 +476,77 @@ describe("saveRecipe", () => {
     };
     expect(saved.steps?.[0]?.id).toBe("step-1");
     expect(saved.vars?.[0]?.name).toBe("ticket_id");
+  });
+});
+
+describe("deleteRecipeContent", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "patchwork-delete-"));
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("deletes a yaml recipe and its permissions sidecar", () => {
+    const yamlPath = path.join(tmp, "demo.yaml");
+    writeFileSync(
+      yamlPath,
+      "name: demo\ntrigger:\n  type: manual\nsteps:\n  - id: a\n    agent: true\n    prompt: hi\n",
+    );
+    writeFileSync(`${yamlPath}.permissions.json`, "{}");
+
+    const res = deleteRecipeContent(tmp, "demo");
+    expect(res.ok).toBe(true);
+    expect(existsSync(yamlPath)).toBe(false);
+    expect(existsSync(`${yamlPath}.permissions.json`)).toBe(false);
+  });
+
+  it("returns Recipe not found for unknown name", () => {
+    expect(deleteRecipeContent(tmp, "missing")).toEqual({
+      ok: false,
+      error: "Recipe not found",
+    });
+  });
+
+  it("rejects invalid recipe names", () => {
+    expect(deleteRecipeContent(tmp, "../escape")).toEqual({
+      ok: false,
+      error: "Invalid recipe name",
+    });
+  });
+});
+
+describe("listInstalledRecipes", () => {
+  let tmp: string;
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "patchwork-list-"));
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("includes lint summary and webhookPath in summaries", () => {
+    writeFileSync(
+      path.join(tmp, "ok.yaml"),
+      "name: ok\ntrigger:\n  type: webhook\n  path: /pr-opened\nsteps:\n  - id: s1\n    agent: true\n    prompt: hi\n",
+    );
+    // Recipe with no steps — validateRecipeDefinition flags it as an error.
+    writeFileSync(
+      path.join(tmp, "broken.yaml"),
+      "name: broken\ntrigger:\n  type: manual\nsteps: []\n",
+    );
+
+    const { recipes } = listInstalledRecipes(tmp);
+    const byName = new Map(recipes.map((r) => [r.name, r]));
+
+    const ok = byName.get("ok");
+    expect(ok?.lint?.ok).toBe(true);
+    expect(ok?.webhookPath).toBe("/pr-opened");
+
+    const broken = byName.get("broken");
+    expect(broken?.lint?.ok).toBe(false);
+    expect(broken?.lint?.errorCount ?? 0).toBeGreaterThan(0);
   });
 });
 
