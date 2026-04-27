@@ -11,7 +11,12 @@ export interface BridgeStatus {
   approvalGate?: string;
   uptimeMs?: number;
   activeSessions?: number;
-  patchwork?: { port?: number; workspace?: string; approvalGate?: string };
+  patchwork?: {
+    port?: number;
+    workspace?: string;
+    approvalGate?: string;
+    driver?: string;
+  };
 }
 
 export function useBridgeStatus(): BridgeStatus {
