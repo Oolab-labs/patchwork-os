@@ -2055,7 +2055,10 @@ export class Server extends EventEmitter<ServerEvents> {
             try {
               const body = Buffer.concat(chunks).toString("utf-8");
               const parsed = body
-                ? (JSON.parse(body) as { vars?: Record<string, string>; inputs?: Record<string, string> })
+                ? (JSON.parse(body) as {
+                    vars?: Record<string, string>;
+                    inputs?: Record<string, string>;
+                  })
                 : {};
               const varsRaw = parsed.vars ?? parsed.inputs;
               const vars =

@@ -30,7 +30,8 @@ registerTool({
       },
       blocks: {
         type: "array",
-        description: "Slack Block Kit blocks array (optional, used instead of text)",
+        description:
+          "Slack Block Kit blocks array (optional, used instead of text)",
         items: { type: "object" },
       },
       thread_ts: {
@@ -69,7 +70,13 @@ registerTool({
     const threadTs = params.thread_ts ? String(params.thread_ts) : undefined;
 
     try {
-      const result = await postMessage(channel, text, threadTs, blocks, undefined);
+      const result = await postMessage(
+        channel,
+        text,
+        threadTs,
+        blocks,
+        undefined,
+      );
       return JSON.stringify({
         ok: true,
         ts: result.ts,
