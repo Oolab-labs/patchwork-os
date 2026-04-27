@@ -65,12 +65,19 @@ interface Recipe {
   installedAt?: number;
   source?: string;
   trigger?: string;
+  webhookPath?: string;
   stepCount?: number;
   path?: string;
   hasPermissions?: boolean;
   enabled?: boolean;
   vars?: RecipeVar[];
   lastRun?: number;
+  lint?: {
+    ok: boolean;
+    errorCount: number;
+    warningCount: number;
+    firstError?: string;
+  };
 }
 
 interface RunRecord {
@@ -383,6 +390,65 @@ export default function RecipesPage() {
     setModalRunning(false);
   }
 
+  async function handleDelete(name: string) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`Delete recipe "${name}"? This removes the file from disk.`)
+    ) {
+      return;
+    }
+    try {
+      const res = await fetch(
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}`),
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setErr(body.error ?? `delete failed: ${res.status}`);
+        return;
+      }
+      void load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function handleSendTestWebhook(recipe: Recipe) {
+    const path = recipe.webhookPath;
+    if (!path) return;
+    setRunning((p) => ({ ...p, [recipe.name]: "sending test…" }));
+    try {
+      const res = await fetch(apiPath(`/api/bridge/hooks${path}`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ test: true, sentAt: new Date().toISOString() }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        taskId?: string;
+      };
+      if (res.ok && body.ok !== false) {
+        setRunning((p) => ({
+          ...p,
+          [recipe.name]: body.taskId
+            ? `test queued ${body.taskId.slice(0, 8)}`
+            : "test sent",
+        }));
+      } else {
+        setRunning((p) => ({
+          ...p,
+          [recipe.name]: `test error: ${body.error ?? res.status}`,
+        }));
+      }
+    } catch (e) {
+      setRunning((p) => ({
+        ...p,
+        [recipe.name]: `test error: ${e instanceof Error ? e.message : String(e)}`,
+      }));
+    }
+  }
+
   async function handleModalConfirm(vars: Record<string, string>) {
     if (!modal) return;
     const name = modal.recipe.name;
@@ -527,7 +593,27 @@ export default function RecipesPage() {
                         </button>
                       </td>
                       <td>
-                        <span className="pill muted">{r.trigger ?? "—"}</span>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <span className="pill muted">{r.trigger ?? "—"}</span>
+                          {r.lint && !r.lint.ok && (
+                            <span
+                              className="pill err"
+                              style={{ fontSize: 10 }}
+                              title={r.lint.firstError ?? "Recipe has lint errors"}
+                            >
+                              ✗ {r.lint.errorCount} error{r.lint.errorCount === 1 ? "" : "s"}
+                            </span>
+                          )}
+                          {r.lint?.ok && r.lint.warningCount > 0 && (
+                            <span
+                              className="pill warn"
+                              style={{ fontSize: 10 }}
+                              title={`${r.lint.warningCount} lint warning${r.lint.warningCount === 1 ? "" : "s"}`}
+                            >
+                              ⚠ {r.lint.warningCount}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="mono muted">{r.stepCount ?? "—"}</td>
                       <td>
@@ -584,6 +670,26 @@ export default function RecipesPage() {
                             }}
                           >
                             {r.enabled === false ? "Enable" : "Disable"}
+                          </button>
+                          {r.webhookPath && (
+                            <button
+                              type="button"
+                              className="btn sm ghost"
+                              style={{ fontSize: 11, padding: "2px 8px" }}
+                              title={`Send test POST to ${r.webhookPath}`}
+                              onClick={() => void handleSendTestWebhook(r)}
+                            >
+                              Test
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="btn sm ghost"
+                            style={{ fontSize: 11, padding: "2px 8px", color: "var(--err)" }}
+                            title="Delete recipe file"
+                            onClick={() => void handleDelete(r.name)}
+                          >
+                            Delete
                           </button>
                           {state && (
                             <span
@@ -642,6 +748,29 @@ export default function RecipesPage() {
                                 <span className="pill muted">none</span>
                               )}
                             </div>
+                            {r.webhookPath && (
+                              <div>
+                                <span className="muted">Webhook path</span>
+                                <br />
+                                <code>{r.webhookPath}</code>
+                              </div>
+                            )}
+                            {r.lint && (r.lint.errorCount > 0 || r.lint.warningCount > 0) && (
+                              <div style={{ gridColumn: "1 / -1" }}>
+                                <span className="muted">Lint</span>
+                                <br />
+                                {r.lint.firstError && (
+                                  <span style={{ color: "var(--err)", fontSize: 12 }}>
+                                    {r.lint.firstError}
+                                  </span>
+                                )}
+                                {!r.lint.firstError && r.lint.warningCount > 0 && (
+                                  <span style={{ color: "var(--warn, var(--ink-2))", fontSize: 12 }}>
+                                    {r.lint.warningCount} warning{r.lint.warningCount === 1 ? "" : "s"} — open the editor for details
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             {r.vars && r.vars.length > 0 && (
                               <div style={{ gridColumn: "1 / -1" }}>
                                 <span className="muted">Variables</span>

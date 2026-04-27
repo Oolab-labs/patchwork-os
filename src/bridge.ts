@@ -1280,6 +1280,9 @@ export class Bridge {
           automationEnabled: this.config.automationEnabled,
           port: this.port,
           webhookUrl: this.server.approvalWebhookUrl ?? null,
+          pushServiceUrl: this.server.pushServiceUrl ?? null,
+          pushServiceToken: this.server.pushServiceToken ? "***" : null,
+          pushServiceBaseUrl: this.server.pushServiceBaseUrl ?? null,
         },
       };
     };

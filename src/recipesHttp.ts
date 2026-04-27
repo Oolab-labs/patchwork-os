@@ -3,6 +3,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -340,6 +341,48 @@ export function saveRecipeContent(
 }
 
 /**
+ * Deletes a recipe file (yaml/yml or json) plus any sidecar permissions file.
+ * Returns ok=false with a 404-style error when the recipe cannot be located.
+ */
+export function deleteRecipeContent(
+  recipesDir: string,
+  name: string,
+): { ok: boolean; path?: string; error?: string } {
+  const safeName = name.toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) {
+    return { ok: false, error: "Invalid recipe name" };
+  }
+  const base = path.resolve(recipesDir);
+  let target =
+    findYamlRecipePath(recipesDir, safeName) ??
+    resolveJsonRecipePathByName(recipesDir, safeName);
+  if (!target) {
+    return { ok: false, error: "Recipe not found" };
+  }
+  const resolved = path.resolve(target);
+  if (!resolved.startsWith(base + path.sep)) {
+    return { ok: false, error: "Invalid path" };
+  }
+  try {
+    rmSync(resolved, { force: true });
+    const sidecar = `${resolved}.permissions.json`;
+    if (existsSync(sidecar)) {
+      try {
+        rmSync(sidecar, { force: true });
+      } catch {
+        // sidecar removal best-effort
+      }
+    }
+    return { ok: true, path: resolved };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
  * Lints raw YAML/JSON recipe content without writing to disk. Used by the
  * dashboard edit UI to surface validateRecipeDefinition warnings live, in
  * addition to the warnings returned by saveRecipeContent on save.
@@ -378,6 +421,8 @@ export interface RecipeSummary {
   name: string;
   description?: string;
   trigger?: string;
+  /** For webhook triggers, the configured path (e.g. "/github-pr"). */
+  webhookPath?: string;
   stepCount: number;
   path: string;
   installedAt: number;
@@ -390,6 +435,13 @@ export interface RecipeSummary {
     required?: boolean;
     default?: string;
   }>;
+  /** Lint summary so the dashboard list can flag invalid recipes without N+1 fetches. */
+  lint?: {
+    ok: boolean;
+    errorCount: number;
+    warningCount: number;
+    firstError?: string;
+  };
 }
 
 export interface ListRecipesResult {
@@ -428,7 +480,7 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
       const parsed = (isYaml ? parseYaml(raw) : JSON.parse(raw)) as {
         name?: string;
         description?: string;
-        trigger?: { type?: string };
+        trigger?: { type?: string; path?: string };
         steps?: unknown[];
         vars?: Array<{
           name: string;
@@ -460,10 +512,28 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
       }
       const ext = isYaml ? (f.endsWith(".yml") ? ".yml" : ".yaml") : ".json";
       const parsedName = parsed.name ?? path.basename(f, ext);
+      const lintRes = validateRecipeDefinition(parsed);
+      let errCount = 0;
+      let warnCount = 0;
+      let firstError: string | undefined;
+      for (const issue of lintRes.issues) {
+        if (issue.level === "error") {
+          errCount++;
+          if (!firstError) firstError = issue.message;
+        } else {
+          warnCount++;
+        }
+      }
+      const webhookPath =
+        parsed.trigger?.type === "webhook" &&
+        typeof parsed.trigger?.path === "string"
+          ? parsed.trigger.path
+          : undefined;
       recipes.push({
         name: parsedName,
         description: parsed.description,
         trigger: parsed.trigger?.type,
+        ...(webhookPath ? { webhookPath } : {}),
         stepCount: Array.isArray(parsed.steps) ? parsed.steps.length : 0,
         path: fullPath,
         installedAt: stat.mtimeMs,
@@ -473,6 +543,12 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         ...(Array.isArray(parsed.vars) && parsed.vars.length > 0
           ? { vars: parsed.vars }
           : {}),
+        lint: {
+          ok: errCount === 0,
+          errorCount: errCount,
+          warningCount: warnCount,
+          ...(firstError ? { firstError } : {}),
+        },
       });
     } catch {
       // skip malformed recipe file

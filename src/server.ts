@@ -159,6 +159,10 @@ export class Server extends EventEmitter<ServerEvents> {
         warnings?: string[];
       })
     | null = null;
+  /** Patchwork: set by bridge to delete a recipe by name. */
+  public deleteRecipeContentFn:
+    | ((name: string) => { ok: boolean; path?: string; error?: string })
+    | null = null;
   /** Patchwork: set by bridge to lint raw recipe content without saving. */
   public lintRecipeContentFn:
     | ((content: string) => {
@@ -2320,6 +2324,28 @@ export class Server extends EventEmitter<ServerEvents> {
             res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
           }
         });
+        return;
+      }
+      if (recipeContentMatch && req.method === "DELETE") {
+        const name = decodeURIComponent(recipeContentMatch[1]!);
+        if (!this.deleteRecipeContentFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "Recipe deletion unavailable",
+            }),
+          );
+          return;
+        }
+        const result = this.deleteRecipeContentFn(name);
+        const status = result.ok
+          ? 200
+          : result.error === "Recipe not found"
+            ? 404
+            : 400;
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
         return;
       }
       if (req.url === "/recipes" && req.method === "GET") {

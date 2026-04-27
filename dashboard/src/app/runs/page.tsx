@@ -60,19 +60,31 @@ function statusPill(r: Run): "ok" | "err" | "warn" | "muted" {
   return "warn";
 }
 
+const RUNS_PAGE_SIZE = 100;
+
 export default function RunsPage() {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [err, setErr] = useState<string>();
   const [trigger, setTrigger] = useState<TriggerFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [recipeFilter, setRecipeFilter] = useState("");
+  const [recipeQuery, setRecipeQuery] = useState("");
+  const [limit, setLimit] = useState(RUNS_PAGE_SIZE);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Debounce recipe filter input so we don't refetch on every keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => setRecipeQuery(recipeFilter.trim()), 300);
+    return () => clearTimeout(id);
+  }, [recipeFilter]);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const params = new URLSearchParams({ limit: "100" });
+        const params = new URLSearchParams({ limit: String(limit) });
         if (trigger !== "all") params.set("trigger", trigger);
         if (status !== "all") params.set("status", status);
+        if (recipeQuery) params.set("recipe", recipeQuery);
         const res = await fetch(apiPath(`/api/bridge/runs?${params}`));
         if (!res.ok) throw new Error(`/runs ${res.status}`);
         const data = (await res.json()) as { runs?: Run[] };
@@ -84,7 +96,12 @@ export default function RunsPage() {
     load();
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
-  }, [trigger, status]);
+  }, [trigger, status, recipeQuery, limit]);
+
+  // Reset page size when filters change so we don't accidentally hold a giant fetch.
+  useEffect(() => {
+    setLimit(RUNS_PAGE_SIZE);
+  }, [trigger, status, recipeQuery]);
 
   const stats = useMemo(() => {
     const list = runs ?? [];
@@ -268,6 +285,28 @@ export default function RunsPage() {
               </button>
             ))}
           </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--ink-2)",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              marginBottom: 4,
+            }}
+          >
+            Recipe
+          </div>
+          <input
+            type="search"
+            className="input"
+            placeholder="Filter by recipe name…"
+            value={recipeFilter}
+            onChange={(e) => setRecipeFilter(e.target.value)}
+            style={{ width: "100%", maxWidth: 320 }}
+          />
         </div>
       </div>
 
@@ -526,6 +565,23 @@ export default function RunsPage() {
               })}
             </tbody>
           </table>
+          {runs.length >= limit && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                padding: "var(--s-4) 0",
+              }}
+            >
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setLimit((n) => n + RUNS_PAGE_SIZE)}
+              >
+                Load more (+{RUNS_PAGE_SIZE})
+              </button>
+            </div>
+          )}
         </div>
       )}
     </section>

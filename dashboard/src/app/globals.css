@@ -293,12 +293,20 @@ button { font-family: inherit; }
   height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
   transition: left 500ms ease;
+  pointer-events: none;
+  z-index: 0;
 }
 .sidebar-create:hover::before { left: 140%; }
 .sidebar-create:hover {
   background: var(--orange-hover);
+  color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 1px 0 0 rgba(255,255,255,0.35) inset, 0 4px 16px rgba(var(--orange-rgb), 0.4);
+}
+.sidebar-create svg,
+.sidebar-create span {
+  position: relative;
+  z-index: 1;
 }
 .sidebar-create:active { transform: translateY(0); }
 

@@ -198,10 +198,10 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
 
         <Link href="/recipes/new" className="sidebar-create" style={{ textDecoration: "none" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ position: "relative", zIndex: 1 }}>
             <path d={PATHS.plus} />
           </svg>
-          New recipe
+          <span style={{ position: "relative", zIndex: 1 }}>New recipe</span>
         </Link>
 
         <nav className="app-nav" aria-label="Main navigation">

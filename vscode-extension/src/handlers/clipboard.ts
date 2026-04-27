@@ -7,9 +7,15 @@ export async function handleReadClipboard(): Promise<unknown> {
   const text = await vscode.env.clipboard.readText();
   const byteLength = Buffer.byteLength(text, "utf-8");
   if (byteLength > MAX_READ_BYTES) {
-    const truncated = Buffer.from(text, "utf-8")
-      .slice(0, MAX_READ_BYTES)
-      .toString("utf-8");
+    // Decode with `fatal: false` (default) so a partial multi-byte sequence at
+    // the truncation boundary is replaced with U+FFFD instead of throwing —
+    // and so we don't corrupt earlier valid characters by returning raw bytes.
+    const decoder = new TextDecoder("utf-8");
+    const buf = Buffer.from(text, "utf-8").subarray(0, MAX_READ_BYTES);
+    const truncated = decoder
+      .decode(buf)
+      // Strip a trailing replacement char so we don't leak a half-character.
+      .replace(/\uFFFD$/, "");
     return { text: truncated, byteLength, truncated: true };
   }
   return { text, byteLength, truncated: false };

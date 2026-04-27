@@ -66,7 +66,15 @@ export function compileTemplate(template: string): CompiledTemplate {
     }
 
     const expression = match[1]?.trim();
-    if (!expression) continue;
+    if (!expression) {
+      // Whitespace-only expression like `{{ }}` — preserve as literal so the
+      // surrounding text isn't duplicated on the next iteration. Without
+      // advancing lastIndex, the next slice(lastIndex, match.index) would
+      // re-emit text we already pushed above.
+      parts.push(match[0]);
+      lastIndex = regex.lastIndex;
+      continue;
+    }
     const parsed = parseExpression(expression);
 
     if (!parsed) {

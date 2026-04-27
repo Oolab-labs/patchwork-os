@@ -184,6 +184,117 @@ function HeroStrip({ tasks }: { tasks: Task[] }) {
   );
 }
 
+// ----------------------------------------------------------- quick-task launcher
+
+interface QuickTaskPreset {
+  id: string;
+  label: string;
+  desc: string;
+}
+
+const QUICK_TASK_PRESETS: QuickTaskPreset[] = [
+  { id: "fixErrors", label: "Fix all errors", desc: "Inspect diagnostics and fix every error" },
+  { id: "refactorFile", label: "Refactor active file", desc: "Refactor the active editor file for clarity" },
+  { id: "addTests", label: "Add tests", desc: "Write unit tests for the active file" },
+  { id: "explainCode", label: "Explain code", desc: "Explain the active file or last commit" },
+  { id: "optimizePerf", label: "Optimize performance", desc: "Find + fix the biggest perf hotspot" },
+  { id: "runTests", label: "Run test suite", desc: "Run the full project test suite" },
+  { id: "resumeLastCancelled", label: "Resume cancelled", desc: "Resume the last cancelled task" },
+];
+
+function QuickTaskLauncher({ onLaunched }: { onLaunched: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function launch(preset: QuickTaskPreset) {
+    setBusy(preset.id);
+    setMsg(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/launch-quick-task"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ presetId: preset.id, source: "dashboard" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        taskId?: string;
+        error?: string;
+      };
+      if (res.ok && body.ok) {
+        setMsg({
+          ok: true,
+          text: body.taskId
+            ? `Launched ${preset.label} → task ${body.taskId.slice(0, 8)}`
+            : `Launched ${preset.label}`,
+        });
+        onLaunched();
+      } else {
+        setMsg({ ok: false, text: body.error ?? `Error ${res.status}` });
+      }
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: "16px 20px", marginBottom: "var(--s-5)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink-0)" }}>
+            Quick-task launcher
+          </div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+            Fire a context-aware Claude task. Requires <code>--claude-driver subprocess</code>.
+          </div>
+        </div>
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+          gap: 8,
+        }}
+      >
+        {QUICK_TASK_PRESETS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            disabled={busy !== null}
+            onClick={() => void launch(p)}
+            title={p.desc}
+            style={{
+              textAlign: "left",
+              padding: "8px 10px",
+              background: "var(--bg-2)",
+              border: "1px solid var(--border-default)",
+              borderRadius: "var(--r-2)",
+              cursor: busy !== null ? "not-allowed" : "pointer",
+              opacity: busy === p.id ? 0.6 : 1,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-0)" }}>
+              {busy === p.id ? "Launching…" : p.label}
+            </span>
+            <span style={{ fontSize: 11, color: "var(--fg-3)", lineHeight: 1.3 }}>
+              {p.desc}
+            </span>
+          </button>
+        ))}
+      </div>
+      {msg && (
+        <p style={{ fontSize: 12, marginTop: 8, color: msg.ok ? "var(--ok)" : "var(--err)" }}>
+          {msg.text}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ----------------------------------------------------------- page
 
 async function cancelTask(id: string): Promise<void> {
@@ -274,6 +385,8 @@ export default function TasksPage() {
       </div>
 
       <HeroStrip tasks={tasks} />
+
+      <QuickTaskLauncher onLaunched={() => setTick((t) => t + 1)} />
 
       {/* filter chips */}
       <div className="filter-chips" style={{ marginBottom: "var(--s-4)" }}>
