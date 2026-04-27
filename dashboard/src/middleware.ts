@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD;
+const ALLOW_UNAUTHENTICATED =
+  process.env.DASHBOARD_ALLOW_UNAUTHENTICATED === "1";
 
 export function middleware(req: NextRequest) {
-  // Skip auth if no password configured (local dev)
-  if (!DASHBOARD_PASSWORD) return NextResponse.next();
+  // No password configured.
+  if (!DASHBOARD_PASSWORD) {
+    // In dev, default to open access. In production, refuse to expose
+    // the bridge proxy unless the operator opts in via
+    // DASHBOARD_ALLOW_UNAUTHENTICATED=1 (e.g. behind a reverse proxy
+    // that handles auth).
+    if (process.env.NODE_ENV === "production" && !ALLOW_UNAUTHENTICATED) {
+      return new NextResponse(
+        "Dashboard auth not configured. Set DASHBOARD_PASSWORD or DASHBOARD_ALLOW_UNAUTHENTICATED=1.",
+        { status: 503 },
+      );
+    }
+    return NextResponse.next();
+  }
 
   const auth = req.headers.get("authorization");
   if (auth) {

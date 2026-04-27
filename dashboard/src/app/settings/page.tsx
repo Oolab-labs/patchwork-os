@@ -27,8 +27,8 @@ const DRIVER_OPTIONS = [
   { value: "subprocess", label: "Claude Code", desc: "Runs via Claude Code CLI — no API key needed", comingSoon: false },
   { value: "api", label: "Claude API", desc: "Calls Anthropic API directly — requires API key", comingSoon: false },
   { value: "gemini", label: "Gemini CLI", desc: "Runs via Gemini CLI — requires Google account", comingSoon: false },
-  { value: "openai", label: "OpenAI", desc: "GPT-4o and friends — requires OpenAI API key", comingSoon: true },
-  { value: "grok", label: "Grok (xAI)", desc: "xAI Grok — requires xAI API key", comingSoon: true },
+  { value: "openai", label: "OpenAI", desc: "GPT-4o and friends — requires OpenAI API key", comingSoon: false },
+  { value: "grok", label: "Grok (xAI)", desc: "xAI Grok — requires xAI API key", comingSoon: false },
 ];
 
 const MODEL_OPTIONS = [

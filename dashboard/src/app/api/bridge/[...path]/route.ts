@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { bridgeFetch, findBridge } from "@/lib/bridge";
+import { bridgeFetch, findBridge, resolveBridgeUrl } from "@/lib/bridge";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,7 +17,7 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
         { status: 503 },
       );
     }
-    const upstream = await fetch(`http://127.0.0.1:${lock.port}${target}`, {
+    const upstream = await fetch(resolveBridgeUrl(lock, target), {
       headers: { Authorization: `Bearer ${lock.authToken}` },
     });
     // Wrap the upstream body so we can flush an initial heartbeat comment
