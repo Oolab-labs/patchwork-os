@@ -387,6 +387,67 @@ steps:
       expect(result.valid).toBe(true);
     });
 
+    it("warns when a dotted ref is not exposed by the upstream tool output schema", () => {
+      const recipePath = join(tmpDir, "tool-output-unknown-key.yaml");
+      writeFileSync(
+        recipePath,
+        `name: tool-output-unknown-key
+description: Dotted ref not in registry-flattened schema
+trigger:
+  type: manual
+steps:
+  - tool: file.write
+    path: /tmp/meta.txt
+    content: "hello"
+    into: saved
+  - agent:
+      prompt: |
+        Saved to {{saved.bogusField}}
+      into: summary
+`,
+      );
+
+      const result = runLint(recipePath);
+      // Warning, not error — recipe still passes lint.
+      expect(result.valid).toBe(true);
+      expect(
+        result.issues.some(
+          (issue) =>
+            issue.level === "warning" &&
+            issue.message.includes("'{{saved.bogusField}}'") &&
+            issue.message.includes("file.write"),
+        ),
+      ).toBe(true);
+    });
+
+    it("does not warn on dotted refs for tools without a registered output schema", () => {
+      const recipePath = join(tmpDir, "tool-output-unknown-tool.yaml");
+      writeFileSync(
+        recipePath,
+        `name: tool-output-unknown-tool
+description: Unknown tool, no schema to validate against
+trigger:
+  type: manual
+steps:
+  - tool: notes.lookup_recent_context
+    query: anything
+    into: notes
+  - agent:
+      prompt: "Using {{notes.whatever}}"
+      into: summary
+`,
+      );
+
+      const result = runLint(recipePath);
+      expect(
+        result.issues.some(
+          (issue) =>
+            issue.level === "warning" &&
+            issue.message.includes("'{{notes.whatever}}'"),
+        ),
+      ).toBe(false);
+    });
+
     it("errors when into shadows a built-in context key", () => {
       const recipePath = join(tmpDir, "into-shadow.yaml");
       writeFileSync(
@@ -1053,6 +1114,33 @@ steps:
       expect(formatted).toContain("into: saved");
     });
 
+    it("stamps apiVersion patchwork.sh/v1 when missing", () => {
+      const recipePath = join(tmpDir, "no-api-version.yaml");
+      writeFileSync(
+        recipePath,
+        `name: no-api-version
+description: Recipe without apiVersion
+trigger:
+  type: manual
+steps:
+  - tool: file.write
+    path: /tmp/x.txt
+    content: "hi"
+`,
+      );
+
+      const result = runFmt(recipePath);
+      expect(result.changed).toBe(true);
+
+      const formatted = readFileSync(recipePath, "utf-8");
+      expect(formatted).toContain("apiVersion: patchwork.sh/v1");
+      // Stamped key must come before name to match runFmt's keyOrder.
+      const apiVersionIndex = formatted.indexOf("apiVersion:");
+      const nameIndex = formatted.indexOf("name:");
+      expect(apiVersionIndex).toBeGreaterThanOrEqual(0);
+      expect(apiVersionIndex).toBeLessThan(nameIndex);
+    });
+
     it("check mode does not modify file", () => {
       const recipePath = join(tmpDir, "no-modify.yaml");
       const original = `name: test
@@ -1195,6 +1283,7 @@ steps:
         stepResults,
         summary: { total: 3, succeeded: 2, failed: 1, skipped: 0 },
         errorMessage: "1 step(s) failed",
+        context: {},
       };
       const report = formatRunReport(result, "my-recipe");
       expect(report).toContain("my-recipe");
@@ -1215,6 +1304,7 @@ steps:
         success: true,
         stepResults,
         summary: { total: 2, succeeded: 1, failed: 0, skipped: 1 },
+        context: {},
       };
       const report = formatRunReport(result, "r");
       expect(report).toContain("↷ b");
@@ -1382,6 +1472,56 @@ steps:
           content: "[dry-run:save.path] ([dry-run:save.bytesWritten])",
         },
       });
+    });
+
+    it("includes empty lint arrays for a clean recipe", async () => {
+      const recipePath = join(tmpDir, "dry-run-clean.yaml");
+      writeFileSync(
+        recipePath,
+        `name: dry-run-clean
+description: Clean recipe
+trigger:
+  type: manual
+steps:
+  - tool: file.write
+    path: /tmp/out.txt
+    content: ok
+`,
+      );
+
+      const plan = await runRecipeDryPlan(recipePath);
+
+      expect(plan.lint).toEqual({ errors: [], warnings: [] });
+    });
+
+    it("surfaces dotted-ref / output-schema warnings in plan.lint.warnings", async () => {
+      const recipePath = join(tmpDir, "dry-run-bogus-ref.yaml");
+      writeFileSync(
+        recipePath,
+        `name: dry-run-bogus-ref
+description: Dry run dotted-ref warning
+trigger:
+  type: manual
+steps:
+  - id: save
+    tool: file.write
+    path: /tmp/meta.txt
+    content: "hello"
+    into: saved
+  - tool: file.write
+    path: /tmp/out.txt
+    content: "{{saved.bogusField}}"
+`,
+      );
+
+      const plan = await runRecipeDryPlan(recipePath);
+
+      expect(plan.lint.errors).toEqual([]);
+      expect(
+        plan.lint.warnings.some(
+          (w) => w.includes("saved.bogusField") && w.includes("file.write"),
+        ),
+      ).toBe(true);
     });
 
     it("builds a chained-recipe dry-run plan with step selection metadata", async () => {

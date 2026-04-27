@@ -7,6 +7,7 @@ describe("normalizeRecipeForRuntime — deprecation warnings", () => {
     const warn = vi.fn();
     normalizeRecipeForRuntime(
       {
+        apiVersion: "patchwork.sh/v1",
         name: "test",
         trigger: { type: "cron", at: "0 9 * * *" },
         steps: [{ tool: "shell.run", cmd: "echo hi" }],

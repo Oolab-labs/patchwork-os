@@ -1,3 +1,5 @@
+import { migrateRecipeToCurrent } from "./migrations/index.js";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -24,8 +26,15 @@ export function normalizeRecipeForRuntime(
     return recipe;
   }
 
+  // Apply apiVersion migrations first so downstream field-level
+  // legacy compat operates on a recipe stamped with the current
+  // apiVersion (and so the deprecation warning for missing
+  // apiVersion fires once per call).
+  const migrated = migrateRecipeToCurrent(recipe, warn).recipe;
+  const source = isRecord(migrated) ? migrated : recipe;
+
   const normalized: Record<string, unknown> = {
-    ...recipe,
+    ...source,
   };
 
   if (isRecord(normalized.trigger)) {

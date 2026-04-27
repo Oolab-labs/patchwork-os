@@ -101,11 +101,9 @@ Produced as companion to [`recipe-chaining-wave1-plan.md`](./recipe-chaining-wav
 
 2. **`yaml-language-server` metadata block** ✅ *Shipped* — `patchwork recipe new` writes `# yaml-language-server: $schema=https://patchwork.sh/schema/recipe.v1.json`. Local bridge URL also works in dev.
 
-3. **Schema versioning** — `recipe.v1.json`, `recipe.v2.json`. Recipes declare `apiVersion: patchwork.sh/v1`. Engine supports N-1 (migration layer in `src/recipes/migrations/`).
+3. **Schema versioning** ✅ *Shipped alpha.33* — Recipes declare `apiVersion: patchwork.sh/v1`. Migration layer landed in `src/recipes/migrations/` (`types.ts`, `v1.ts`, `index.ts`) and is invoked from `normalizeRecipeForRuntime(...)` so every load path (yaml-runner load, lint, fmt) routes through it. Unversioned recipes are auto-stamped with a single deprecation warning; unknown future apiVersions pass through unchanged so schema lint enforces the enum. Future versions register additional `RecipeMigration` entries that chain `from` → `to`. Sibling schemas (`recipe.v2.json`, …) remain TODO.
 
-4. **Output-schema-aware linting**
-   - `recipe lint` validates not just YAML shape, but template references against upstream step output schemas.
-   - Missing fields fail before runtime instead of inside step 3 of a live run.
+4. **Output-schema-aware linting** ✅ *Shipped alpha.33* — `recipe lint` now validates dotted template references against the registered tool's `outputSchema` for prior steps. Refs to fields the runtime context-flattener does not expose (e.g. `{{saved.bogusField}}` when `file.write` only exposes `path` / `bytesWritten` / `.json`) emit a warning naming the offending tool and the allowed keys. Tools without a registered `outputSchema` continue to skip the check to avoid false positives.
 
 #### Testing
 - Schema validation unit tests: every `examples/recipes/**/*.yaml` must validate against generated schema.
@@ -130,7 +128,7 @@ Current commands and remaining polish targets in `src/commands/recipe.ts`:
  | Command | Behaviour |
  |---|---|
 | `patchwork recipe new [name]` | Template-based scaffold today. Writes `~/.patchwork/recipes/<name>.yaml` + `$schema` header; interactive connector-aware prompting remains future polish. |
-| `patchwork recipe lint <file>` | Validates against JSON Schema and checks template refs against available recipe context; richer output-schema-aware validation remains future polish. Exit 1 on error. |
+| `patchwork recipe lint <file>` | Validates against JSON Schema, checks template refs against available recipe context, and warns when dotted refs are not exposed by the upstream tool's registered `outputSchema`. Exit 1 on error. |
 | `patchwork recipe test <file>` | Runs recipe against mock connectors (fixtures in `~/.patchwork/fixtures/`). No network. Asserts final output against optional `expect:` block. |
 | `patchwork recipe run <file> --dry-run` | Already spec'd in Wave 1 — formalise output format (JSON execution plan). |
 | `patchwork recipe run <file> --step <id>` | Run a single YAML step selected by `id`, `into`, or `tool`, with optional `--var KEY=VALUE` seed context for template rendering. |

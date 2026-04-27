@@ -298,11 +298,18 @@ export function saveRecipeContent(
   }
 
   const validation = validateRecipeDefinition(parsed);
+  const warnings = validation.issues
+    .filter((issue) => issue.level === "warning")
+    .map((issue) => issue.message);
   const validationError = validation.issues.find(
     (issue) => issue.level === "error",
   );
   if (validationError) {
-    return { ok: false, error: validationError.message };
+    return {
+      ok: false,
+      error: validationError.message,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    };
   }
 
   try {
@@ -319,13 +326,52 @@ export function saveRecipeContent(
       content.endsWith("\n") ? content : `${content}\n`,
       "utf-8",
     );
-    return { ok: true, path: candidate };
+    return {
+      ok: true,
+      path: candidate,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    };
   } catch (err) {
     return {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Lints raw YAML/JSON recipe content without writing to disk. Used by the
+ * dashboard edit UI to surface validateRecipeDefinition warnings live, in
+ * addition to the warnings returned by saveRecipeContent on save.
+ */
+export function lintRecipeContent(content: string): {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+} {
+  if (!content.trim()) {
+    return { ok: false, errors: ["Recipe content is required"], warnings: [] };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(content) as unknown;
+  } catch (err) {
+    return {
+      ok: false,
+      errors: [err instanceof Error ? err.message : String(err)],
+      warnings: [],
+    };
+  }
+
+  const validation = validateRecipeDefinition(parsed);
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  for (const issue of validation.issues) {
+    if (issue.level === "error") errors.push(issue.message);
+    else warnings.push(issue.message);
+  }
+  return { ok: errors.length === 0, errors, warnings };
 }
 
 export interface RecipeSummary {

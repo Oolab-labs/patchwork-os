@@ -152,7 +152,20 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((
         name: string,
         content: string,
-      ) => { ok: boolean; path?: string; error?: string })
+      ) => {
+        ok: boolean;
+        path?: string;
+        error?: string;
+        warnings?: string[];
+      })
+    | null = null;
+  /** Patchwork: set by bridge to lint raw recipe content without saving. */
+  public lintRecipeContentFn:
+    | ((content: string) => {
+        ok: boolean;
+        errors: string[];
+        warnings: string[];
+      })
     | null = null;
   /** Patchwork: set by bridge to save a new recipe draft to disk. */
   public saveRecipeFn:
@@ -2202,6 +2215,46 @@ export class Server extends EventEmitter<ServerEvents> {
           } catch {
             res.writeHead(400, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+          }
+        });
+        return;
+      }
+      if (parsedUrl.pathname === "/recipes/lint" && req.method === "POST") {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          try {
+            const body = JSON.parse(
+              Buffer.concat(chunks).toString("utf-8"),
+            ) as {
+              content?: string;
+            };
+            if (typeof body?.content !== "string") {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "content (string) required",
+                }),
+              );
+              return;
+            }
+            if (!this.lintRecipeContentFn) {
+              res.writeHead(503, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: "Recipe lint unavailable",
+                }),
+              );
+              return;
+            }
+            const result = this.lintRecipeContentFn(body.content);
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(result));
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
           }
         });
         return;
