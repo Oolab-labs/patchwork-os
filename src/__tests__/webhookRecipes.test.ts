@@ -226,10 +226,31 @@ describe("loadRecipeContent / saveRecipeContent", () => {
     expect(result).toEqual({
       ok: true,
       path: path.join(tmp, "yaml-save.yaml"),
+      warnings: ["Missing 'description' field"],
     });
     expect(readFileSync(path.join(tmp, "yaml-save.yaml"), "utf-8")).toBe(
       `${content}\n`,
     );
+  });
+
+  it("returns no warnings field when recipe has none", () => {
+    const content = [
+      "name: yaml-save",
+      "description: clean recipe",
+      "trigger:",
+      "  type: manual",
+      "steps:",
+      "  - tool: file.write",
+      "    path: /tmp/out.txt",
+      "    content: ok",
+    ].join("\n");
+
+    const result = saveRecipeContent(tmp, "yaml-save", content);
+
+    expect(result).toEqual({
+      ok: true,
+      path: path.join(tmp, "yaml-save.yaml"),
+    });
   });
 
   it("rejects invalid YAML recipes with validation errors", () => {
@@ -244,6 +265,7 @@ describe("loadRecipeContent / saveRecipeContent", () => {
     expect(saveRecipeContent(tmp, "yaml-save", content)).toEqual({
       ok: false,
       error: "Step 1: Agent step missing 'prompt'",
+      warnings: ["Missing 'description' field"],
     });
   });
 
@@ -251,6 +273,54 @@ describe("loadRecipeContent / saveRecipeContent", () => {
     expect(saveRecipeContent(tmp, "yaml-save", "   ")).toEqual({
       ok: false,
       error: "Recipe content is required",
+    });
+  });
+});
+
+describe("lintRecipeContent", () => {
+  it("returns errors and warnings without writing", async () => {
+    const { lintRecipeContent } = await import("../recipesHttp.js");
+    const content = [
+      "name: yaml-lint",
+      "trigger:",
+      "  type: manual",
+      "steps:",
+      "  - agent: {}",
+    ].join("\n");
+
+    expect(lintRecipeContent(content)).toEqual({
+      ok: false,
+      errors: ["Step 1: Agent step missing 'prompt'"],
+      warnings: ["Missing 'description' field"],
+    });
+  });
+
+  it("returns empty issues for a clean recipe", async () => {
+    const { lintRecipeContent } = await import("../recipesHttp.js");
+    const content = [
+      "name: yaml-lint",
+      "description: clean recipe",
+      "trigger:",
+      "  type: manual",
+      "steps:",
+      "  - tool: file.write",
+      "    path: /tmp/out.txt",
+      "    content: ok",
+    ].join("\n");
+
+    expect(lintRecipeContent(content)).toEqual({
+      ok: true,
+      errors: [],
+      warnings: [],
+    });
+  });
+
+  it("rejects blank content", async () => {
+    const { lintRecipeContent } = await import("../recipesHttp.js");
+    expect(lintRecipeContent("   ")).toEqual({
+      ok: false,
+      errors: ["Recipe content is required"],
+      warnings: [],
     });
   });
 });

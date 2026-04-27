@@ -786,6 +786,17 @@ export interface RecipeDryRunPlan {
   connectorNamespaces?: string[];
   /** True if any step is registry-tagged as a write/mutation. */
   hasWriteSteps?: boolean;
+  /**
+   * Static lint pass over the recipe definition (validateRecipeDefinition).
+   * Surfaces error- and warning-level issues — including dotted-ref / output
+   * schema warnings — so editors and dashboards consuming the plan see the
+   * same signal as the CLI lint and the dashboard editor. Always present;
+   * arrays may be empty when the recipe is clean.
+   */
+  lint: {
+    errors: string[];
+    warnings: string[];
+  };
 }
 
 function enrichStepFromRegistry(
@@ -841,6 +852,17 @@ export async function runRecipeDryPlan(
     : recipe;
   const generatedAt = new Date().toISOString();
 
+  // Collect lint results for the plan
+  const lintResult = runLint(recipePath);
+  const lint = {
+    errors: lintResult.issues
+      .filter((issue) => issue.level === "error")
+      .map((issue) => issue.message),
+    warnings: lintResult.issues
+      .filter((issue) => issue.level === "warning")
+      .map((issue) => issue.message),
+  };
+
   if (triggerType === "chained") {
     const { generateExecutionPlan } = await import(
       "../recipes/chainedRunner.js"
@@ -870,6 +892,7 @@ export async function runRecipeDryPlan(
       parallelGroups: plan.parallelGroups,
       maxDepth: plan.maxDepth,
       ...summarizePlanSteps(steps),
+      lint,
     };
   }
 
@@ -886,6 +909,7 @@ export async function runRecipeDryPlan(
     ...(selection ? { stepSelection: toStepSelection(selection) } : {}),
     steps,
     ...summarizePlanSteps(steps),
+    lint,
   };
 }
 

@@ -378,6 +378,13 @@ function validateTemplateReferences(
     ? (recipe.steps as Array<Record<string, unknown>>)
     : [];
   const seenIntoKeys = new Map<string, number>();
+  // Per-into output-schema index for tools with a registered outputSchema.
+  // Allows static validation of dotted refs like {{messages.threads}} against
+  // the keys actually exposed by the runtime context-flattener.
+  const outputSchemaIndex = new Map<
+    string,
+    { toolId: string; allowedKeys: Set<string> }
+  >();
 
   for (let index = 0; index < steps.length; index++) {
     const step = steps[index] ?? {};
@@ -388,14 +395,30 @@ function validateTemplateReferences(
         ? new Set([...availableKeys, ...template.extraKeys])
         : availableKeys;
       for (const expression of extractTemplateExpressions(template.value)) {
-        for (const identifier of extractTemplateIdentifiers(expression)) {
-          if (!scopedKeys.has(identifier)) {
+        const refs = extractTemplateDottedPaths(expression);
+        let rootError = false;
+        for (const { root } of refs) {
+          if (!scopedKeys.has(root)) {
             issues.push({
               level: "error",
               message: `Step ${index + 1}: Unknown template reference '{{${expression}}}' in ${template.label}`,
             });
+            rootError = true;
             break;
           }
+        }
+        if (rootError) {
+          continue;
+        }
+        for (const { root, full } of refs) {
+          if (full === root) continue;
+          const schema = outputSchemaIndex.get(root);
+          if (!schema) continue;
+          if (schema.allowedKeys.has(full)) continue;
+          issues.push({
+            level: "warning",
+            message: `Step ${index + 1}: Template reference '{{${full}}}' in ${template.label} is not exposed by tool '${schema.toolId}' output schema (allowed: ${formatAllowedKeys(schema.allowedKeys)})`,
+          });
         }
       }
     }
@@ -420,7 +443,7 @@ function validateTemplateReferences(
       }
     }
 
-    registerStepContextKeys(step, availableKeys);
+    registerStepContextKeys(step, availableKeys, outputSchemaIndex);
   }
 }
 
@@ -482,30 +505,40 @@ function extractTemplateExpressions(template: string): string[] {
   return expressions;
 }
 
-function extractTemplateIdentifiers(expression: string): string[] {
+function extractTemplateDottedPaths(
+  expression: string,
+): Array<{ root: string; full: string }> {
   const reserved = new Set(["true", "false", "null"]);
-  const identifiers = new Set<string>();
+  const paths: Array<{ root: string; full: string }> = [];
+  const seen = new Set<string>();
 
   for (const match of expression.matchAll(
     /\$?[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*/g,
   )) {
-    const rawIdentifier = match[0];
-    if (!rawIdentifier) {
+    const fullPath = match[0];
+    if (!fullPath || seen.has(fullPath)) {
       continue;
     }
-
-    const rootIdentifier = rawIdentifier.split(".")[0] ?? rawIdentifier;
-    if (!reserved.has(rootIdentifier)) {
-      identifiers.add(rootIdentifier);
+    const root = fullPath.split(".")[0] ?? fullPath;
+    if (reserved.has(root)) {
+      continue;
     }
+    seen.add(fullPath);
+    paths.push({ root, full: fullPath });
   }
 
-  return Array.from(identifiers);
+  return paths;
+}
+
+function formatAllowedKeys(keys: Set<string>): string {
+  if (keys.size === 0) return "(none)";
+  return Array.from(keys).sort().join(", ");
 }
 
 function registerStepContextKeys(
   step: Record<string, unknown>,
   availableKeys: Set<string>,
+  outputSchemaIndex?: Map<string, { toolId: string; allowedKeys: Set<string> }>,
 ): void {
   const stepId = typeof step.id === "string" ? step.id : undefined;
   if (stepId) {
@@ -532,8 +565,17 @@ function registerStepContextKeys(
     return;
   }
 
-  for (const key of listToolOutputContextKeys(toolId, intoKey)) {
+  const flattenedKeys = listToolOutputContextKeys(toolId, intoKey);
+  for (const key of flattenedKeys) {
     availableKeys.add(key);
+  }
+
+  // Only register a schema entry for tools that actually expose flattened
+  // dotted keys; otherwise we have nothing to validate against and would
+  // produce false positives for tools without an outputSchema.
+  if (outputSchemaIndex && flattenedKeys.length > 0) {
+    const allowedKeys = new Set<string>([intoKey, ...flattenedKeys]);
+    outputSchemaIndex.set(intoKey, { toolId, allowedKeys });
   }
 }
 

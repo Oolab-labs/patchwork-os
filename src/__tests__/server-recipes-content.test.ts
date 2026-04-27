@@ -103,6 +103,80 @@ describe("Server recipe content routes", () => {
     expect(savedContent).toBe(content);
   });
 
+  it("forwards warnings on PUT /recipes/:name success", async () => {
+    server!.saveRecipeContentFn = () => ({
+      ok: true,
+      path: "/tmp/yaml-draft.yaml",
+      warnings: ["Missing 'description' field"],
+    });
+
+    const { status, body } = await makeRequest(
+      {
+        method: "PUT",
+        path: "/recipes/yaml-draft",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ content: "name: yaml-draft\n" }),
+    );
+
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toEqual({
+      ok: true,
+      path: "/tmp/yaml-draft.yaml",
+      warnings: ["Missing 'description' field"],
+    });
+  });
+
+  it("returns errors+warnings for POST /recipes/lint", async () => {
+    server!.lintRecipeContentFn = (content: string) => ({
+      ok: false,
+      errors: [`parsed:${content.length}`],
+      warnings: ["Missing 'description' field"],
+    });
+
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/lint",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ content: "abc" }),
+    );
+
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toEqual({
+      ok: false,
+      errors: ["parsed:3"],
+      warnings: ["Missing 'description' field"],
+    });
+  });
+
+  it("returns 503 for POST /recipes/lint when lintRecipeContentFn unset", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/lint",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ content: "abc" }),
+    );
+
+    expect(status).toBe(503);
+    expect(JSON.parse(body)).toEqual({
+      ok: false,
+      error: "Recipe lint unavailable",
+    });
+  });
+
   it("returns 400 when saveRecipeContentFn rejects invalid content", async () => {
     server!.saveRecipeContentFn = () => ({
       ok: false,

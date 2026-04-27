@@ -36,8 +36,13 @@ export default function RecipeEditPage({
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [lintErrors, setLintErrors] = useState<string[]>([]);
+  const [lintWarnings, setLintWarnings] = useState<string[]>([]);
+  const [linting, setLinting] = useState(false);
   const { toasts, push } = useToasts();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lintReqIdRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +82,53 @@ export default function RecipeEditPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Debounced live lint while editing — surfaces validateRecipeDefinition
+  // warnings (e.g. dotted refs not in a tool's outputSchema) at edit time.
+  useEffect(() => {
+    if (loading) return;
+    if (lintTimerRef.current) clearTimeout(lintTimerRef.current);
+    if (!content.trim()) {
+      setLintErrors([]);
+      setLintWarnings([]);
+      setLinting(false);
+      return;
+    }
+    lintTimerRef.current = setTimeout(() => {
+      const reqId = ++lintReqIdRef.current;
+      setLinting(true);
+      void fetch("/api/bridge/recipes/lint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      })
+        .then((res) => res.json().catch(() => ({}) as Record<string, unknown>))
+        .then((data) => {
+          if (reqId !== lintReqIdRef.current) return;
+          const errors = Array.isArray((data as { errors?: unknown }).errors)
+            ? (data as { errors: string[] }).errors.filter(
+                (m): m is string => typeof m === "string",
+              )
+            : [];
+          const warnings = Array.isArray((data as { warnings?: unknown }).warnings)
+            ? (data as { warnings: string[] }).warnings.filter(
+                (m): m is string => typeof m === "string",
+              )
+            : [];
+          setLintErrors(errors);
+          setLintWarnings(warnings);
+        })
+        .catch(() => {
+          // ignore lint failures; server may be unavailable
+        })
+        .finally(() => {
+          if (reqId === lintReqIdRef.current) setLinting(false);
+        });
+    }, 400);
+    return () => {
+      if (lintTimerRef.current) clearTimeout(lintTimerRef.current);
+    };
+  }, [content, loading]);
+
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
@@ -89,13 +141,26 @@ export default function RecipeEditPage({
           body: JSON.stringify({ content }),
         },
       );
+      const data = await res.json().catch(() => ({}) as Record<string, unknown>);
+      const warnings = Array.isArray((data as { warnings?: unknown }).warnings)
+        ? ((data as { warnings: string[] }).warnings.filter(
+            (w): w is string => typeof w === "string",
+          ))
+        : [];
       if (res.ok) {
-        push("Saved.", "ok");
+        setLintWarnings(warnings);
+        setLintErrors([]);
+        push(
+          warnings.length > 0
+            ? `Saved with ${warnings.length} warning${warnings.length === 1 ? "" : "s"}.`
+            : "Saved.",
+          "ok",
+        );
       } else {
-        const data = await res.json().catch(() => ({ error: res.statusText }));
         const message =
           (data as { error?: string }).error ?? res.statusText ?? "Save failed";
         setSaveError(message);
+        setLintWarnings(warnings);
         push(`Save failed: ${message}`, "err");
       }
     } catch (e) {
@@ -268,6 +333,57 @@ export default function RecipeEditPage({
         </div>
       )}
 
+      {/* Live lint errors banner */}
+      {lintErrors.length > 0 && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: "var(--s-3)",
+            padding: "var(--s-3) var(--s-4)",
+            borderRadius: "var(--r-2)",
+            background: "var(--err-soft, #3a1a1a)",
+            border: "1px solid var(--err, #f87171)",
+            color: "var(--err, #f87171)",
+            fontSize: 13,
+          }}
+        >
+          <strong style={{ display: "block", marginBottom: 4 }}>
+            {lintErrors.length} lint error{lintErrors.length === 1 ? "" : "s"}
+          </strong>
+          <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            {lintErrors.map((msg, idx) => (
+              <li key={`lint-err-${idx}`}>{msg}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Live lint warnings banner */}
+      {lintWarnings.length > 0 && (
+        <div
+          role="status"
+          style={{
+            marginBottom: "var(--s-3)",
+            padding: "var(--s-3) var(--s-4)",
+            borderRadius: "var(--r-2)",
+            background: "var(--warn-soft, #3a2e1a)",
+            border: "1px solid var(--warn, #fbbf24)",
+            color: "var(--warn, #fbbf24)",
+            fontSize: 13,
+          }}
+        >
+          <strong style={{ display: "block", marginBottom: 4 }}>
+            {lintWarnings.length} lint warning
+            {lintWarnings.length === 1 ? "" : "s"}
+          </strong>
+          <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            {lintWarnings.map((msg, idx) => (
+              <li key={`lint-warn-${idx}`}>{msg}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Editor card */}
       <div className="glass-card" style={{ padding: "var(--s-4)" }}>
         {loading ? (
@@ -340,7 +456,9 @@ export default function RecipeEditPage({
           <span>
             {content.split("\n").length} lines &middot; {content.length} chars
           </span>
-          <span>Tab inserts 2 spaces &middot; Cmd+S to save</span>
+          <span>
+            {linting ? "Linting… " : ""}Tab inserts 2 spaces &middot; Cmd+S to save
+          </span>
         </div>
       </div>
     </section>

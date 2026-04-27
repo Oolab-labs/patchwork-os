@@ -20,6 +20,7 @@ import { RecipeScheduler } from "./recipes/scheduler.js";
 import {
   findWebhookRecipe,
   findYamlRecipePath,
+  lintRecipeContent,
   listInstalledRecipes,
   loadRecipeContent,
   loadRecipePrompt,
@@ -102,6 +103,9 @@ export class RecipeOrchestration {
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
       return saveRecipeContent(recipesDir, name, content);
     };
+
+    server.lintRecipeContentFn = (content: string) =>
+      lintRecipeContent(content);
 
     // biome-ignore lint/suspicious/noExplicitAny: matches Server type
     server.saveRecipeFn = (draft: any) => {
