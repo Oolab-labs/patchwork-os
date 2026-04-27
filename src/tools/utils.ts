@@ -230,6 +230,7 @@ export function success(data: unknown): {
 export function successStructured(data: unknown): {
   content: Array<{ type: string; text: string }>;
   structuredContent: unknown;
+  isError?: undefined;
 } {
   return {
     content: [{ type: "text", text: JSON.stringify(data) }],
@@ -278,6 +279,7 @@ export function successStructuredLarge(data: unknown): {
     _meta?: Record<string, unknown>;
   }>;
   structuredContent: unknown;
+  isError?: undefined;
 } {
   return {
     content: [
