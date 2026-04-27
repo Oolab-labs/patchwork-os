@@ -83,6 +83,22 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Resolve the upstream URL for a given bridge lock + pathname, honoring the
+ * port=0 sentinel that signals a remote VPS deploy. Used by both bridgeFetch()
+ * and the SSE passthrough routes so they cannot drift apart.
+ */
+export function resolveBridgeUrl(
+  lock: Pick<BridgeLock, "port">,
+  pathname: string,
+): string {
+  const remoteUrl = process.env.PATCHWORK_BRIDGE_URL;
+  if (lock.port === 0 && remoteUrl) {
+    return `${remoteUrl.replace(/\/$/, "")}${pathname}`;
+  }
+  return `http://127.0.0.1:${lock.port}${pathname}`;
+}
+
 export async function bridgeFetch(
   pathname: string,
   init?: RequestInit,
@@ -99,12 +115,7 @@ export async function bridgeFetch(
       { status: 503, headers: { "content-type": "application/json" } },
     );
   }
-  // port=0 is the sentinel set by findBridge() when remote env vars are present
-  const remoteUrl = process.env.PATCHWORK_BRIDGE_URL;
-  const url =
-    lock.port === 0 && remoteUrl
-      ? `${remoteUrl.replace(/\/$/, "")}${pathname}`
-      : `http://127.0.0.1:${lock.port}${pathname}`;
+  const url = resolveBridgeUrl(lock, pathname);
   const headers = new Headers(init?.headers);
   headers.set("Authorization", `Bearer ${lock.authToken}`);
   return fetch(url, { ...init, headers, cache: "no-store" });

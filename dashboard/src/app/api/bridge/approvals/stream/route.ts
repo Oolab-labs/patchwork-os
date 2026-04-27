@@ -1,4 +1,4 @@
-import { findBridge } from "@/lib/bridge";
+import { findBridge, resolveBridgeUrl } from "@/lib/bridge";
 import { isDemoModeServer } from "@/lib/demoModeServer";
 
 export const dynamic = "force-dynamic";
@@ -55,11 +55,7 @@ export async function GET(req: Request): Promise<Response> {
   const session = searchParams.get("session");
   const qs = session ? `?session=${encodeURIComponent(session)}` : "";
 
-  const remoteUrl = process.env.PATCHWORK_BRIDGE_URL;
-  const upstreamUrl =
-    lock.port === 0 && remoteUrl
-      ? `${remoteUrl.replace(/\/$/, "")}/approvals/stream${qs}`
-      : `http://127.0.0.1:${lock.port}/approvals/stream${qs}`;
+  const upstreamUrl = resolveBridgeUrl(lock, `/approvals/stream${qs}`);
 
   let upstream: Response;
   try {
