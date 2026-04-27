@@ -7,7 +7,7 @@
 **Wave 2 providers:** Confluence, Zendesk, Intercom, HubSpot, Datadog, Stripe (read-only)
 **Prioritization:** Fills customer gaps after Wave 1 (Jira/Notion/PagerDuty/Drive/Docs) — support surfaces (Zendesk/Intercom), knowledge surfaces (Confluence), CRM/revenue surfaces (HubSpot), ops (Datadog), and billing visibility (Stripe, but read-only until a separate financial-actions milestone hardens compliance and audit controls).
 
-Produced as companion to [`recipe-chaining-wave1-plan.md`](./recipe-chaining-wave1-plan.md). Tracks v0.2.0-alpha.21 state (2026-04-23).
+Produced as companion to [`recipe-chaining-wave1-plan.md`](./recipe-chaining-wave1-plan.md). Tracks v0.2.0-alpha.33 state (2026-04-27).
 
 ---
 
