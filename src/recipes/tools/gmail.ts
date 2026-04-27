@@ -424,7 +424,7 @@ registerTool({
         typeof parsed === "object" &&
         "messages" in (parsed as object)
       ) {
-        messages = ((parsed as { messages: EmailItem[] }).messages) ?? [];
+        messages = (parsed as { messages: EmailItem[] }).messages ?? [];
       } else if (Array.isArray(parsed)) {
         messages = parsed as EmailItem[];
       }
@@ -467,8 +467,7 @@ registerTool({
           body?: string;
         };
         const links = parsed.links ?? [];
-        driveUrl =
-          links.find((l) => l.includes("docs.google.com")) ?? "";
+        driveUrl = links.find((l) => l.includes("docs.google.com")) ?? "";
         if (!driveUrl) {
           // Try extracting from body text
           const bodyMatch = /https?:\/\/docs\.google\.com\/[^\s"'<>]+/.exec(
@@ -518,9 +517,7 @@ registerTool({
         // Prepend the doc's display name as an H1 so the downstream parser
         // can pick it up as the meeting title even when the body is sparse
         // (e.g. an empty Gemini Notes doc generated before the meeting).
-        const titledContent = docName
-          ? `# ${docName}\n\n${content}`
-          : content;
+        const titledContent = docName ? `# ${docName}\n\n${content}` : content;
         results.push({
           emailId: msg.id,
           subject,

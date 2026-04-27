@@ -149,8 +149,11 @@ registerTool({
       const result = await createIssue({
         team: String(params.team),
         title: String(params.title),
-        description: params.description ? String(params.description) : undefined,
-        priority: typeof params.priority === "number" ? params.priority : undefined,
+        description: params.description
+          ? String(params.description)
+          : undefined,
+        priority:
+          typeof params.priority === "number" ? params.priority : undefined,
         labels: Array.isArray(params.labels)
           ? (params.labels as string[])
           : undefined,
@@ -187,7 +190,10 @@ registerTool({
         type: "number",
         description: "Priority: 1=urgent, 2=high, 3=medium, 4=low",
       },
-      state: { type: "string", description: "State name (e.g., 'In Progress')" },
+      state: {
+        type: "string",
+        description: "State name (e.g., 'In Progress')",
+      },
       assignee: {
         type: "string",
         description: "Assignee name or email",
@@ -223,8 +229,11 @@ registerTool({
       const result = await updateIssue({
         id: String(params.id),
         title: params.title ? String(params.title) : undefined,
-        description: params.description ? String(params.description) : undefined,
-        priority: typeof params.priority === "number" ? params.priority : undefined,
+        description: params.description
+          ? String(params.description)
+          : undefined,
+        priority:
+          typeof params.priority === "number" ? params.priority : undefined,
         state: params.state ? String(params.state) : undefined,
         assignee: params.assignee ? String(params.assignee) : undefined,
         labels: Array.isArray(params.labels)

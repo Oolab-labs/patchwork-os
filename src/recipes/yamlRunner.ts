@@ -374,7 +374,8 @@ export async function runYamlRecipe(
   // Resolve recipe-level context blocks (type: env) into seed context
   const envCtx: RunContext = {};
   if (Array.isArray((recipe as unknown as Record<string, unknown>).context)) {
-    for (const block of ((recipe as unknown as Record<string, unknown[]>).context ?? [])) {
+    for (const block of (recipe as unknown as Record<string, unknown[]>)
+      .context ?? []) {
       const b = block as Record<string, unknown>;
       if (b.type === "env" && Array.isArray(b.keys)) {
         for (const key of b.keys as string[]) {
@@ -440,7 +441,9 @@ export async function runYamlRecipe(
           } else {
             // Try to parse as JSON so dot-notation ({{meeting.field}}) works
             try {
-              const jsonMatch = /```(?:json)?\s*([\s\S]*?)```/.exec(stripped) ?? [null, stripped];
+              const jsonMatch = /```(?:json)?\s*([\s\S]*?)```/.exec(
+                stripped,
+              ) ?? [null, stripped];
               const parsed = JSON.parse(jsonMatch[1]!.trim());
               ctx[intoKey] = parsed;
             } catch {
@@ -736,12 +739,20 @@ export function render(template: string, ctx: RunContext): string {
     for (const part of parts) {
       if (val == null) return "";
       if (typeof val === "string") {
-        try { val = JSON.parse(val); } catch { return ""; }
+        try {
+          val = JSON.parse(val);
+        } catch {
+          return "";
+        }
       }
       if (typeof val !== "object") return "";
       val = (val as Record<string, unknown>)[part];
     }
-    return val == null ? "" : typeof val === "object" ? JSON.stringify(val) : String(val);
+    return val == null
+      ? ""
+      : typeof val === "object"
+        ? JSON.stringify(val)
+        : String(val);
   });
 }
 

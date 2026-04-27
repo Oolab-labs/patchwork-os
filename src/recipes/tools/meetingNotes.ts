@@ -35,8 +35,7 @@ const SECTION_PATTERNS: Record<string, RegExp> = {
     /^\s*(?:#+\s*)?(attendees?|participants?|invited|who\s+attended)\s*:?\s*$/im,
   actionItems:
     /^\s*(?:#+\s*)?(action\s+items?|next\s+steps?|suggested\s+next\s+steps?|todos?|follow[\s-]?ups?)\s*:?\s*$/im,
-  decisions:
-    /^\s*(?:#+\s*)?(decisions?|key\s+decisions?|resolved)\s*:?\s*$/im,
+  decisions: /^\s*(?:#+\s*)?(decisions?|key\s+decisions?|resolved)\s*:?\s*$/im,
   openQuestions:
     /^\s*(?:#+\s*)?(open\s+questions?|parking\s+lot|unresolved|questions?)\s*:?\s*$/im,
   summary:
@@ -55,7 +54,8 @@ function extractTitle(text: string): string {
     .split("\n")
     .map((l) => l.replace(/^[#*\->\s]+/, "").trim())
     .filter((l) => l.length > 3);
-  const BOILERPLATE = /^(?:[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*)?(notes|notes by gemini|meeting notes)\s*$/iu;
+  const BOILERPLATE =
+    /^(?:[\p{Emoji_Presentation}\p{Extended_Pictographic}]\s*)?(notes|notes by gemini|meeting notes)\s*$/iu;
   const first = lines.find((l) => !BOILERPLATE.test(l));
   return first ?? lines[0] ?? "";
 }
@@ -180,19 +180,21 @@ function stripMarkdownInline(s: string): string {
 }
 
 function bulletLines(lines: string[]): string[] {
-  return lines
-    // Strip inline Markdown emphasis FIRST. Otherwise the bullet-prefix
-    // stripper below would eat leading `**` and leave an orphan trailing `**`.
-    .map(stripMarkdownInline)
-    // Strip Markdown checkbox markers (`- [ ]`, `* [x]`) before generic
-    // bullet-prefix stripping so the checkbox brackets don't survive.
-    .map((l) => l.replace(/^[\s\-*•>]+\[[ xX]\]\s*/, ""))
-    // Drive's text/plain export renders checkbox bullets as Unicode glyphs
-    // (e.g. ☐ ☑ ▢ □ ◯ ✓ ✔). Strip these too so the assignee bracket regex
-    // in parseActionItems can match the leading `[Person]` token.
-    .map((l) => l.replace(/^\s*[☐☑▢□◯✓✔✗✘]\s*/, ""))
-    .map((l) => l.replace(/^[\s\-*•>]+/, "").trim())
-    .filter((l) => l.length > 0);
+  return (
+    lines
+      // Strip inline Markdown emphasis FIRST. Otherwise the bullet-prefix
+      // stripper below would eat leading `**` and leave an orphan trailing `**`.
+      .map(stripMarkdownInline)
+      // Strip Markdown checkbox markers (`- [ ]`, `* [x]`) before generic
+      // bullet-prefix stripping so the checkbox brackets don't survive.
+      .map((l) => l.replace(/^[\s\-*•>]+\[[ xX]\]\s*/, ""))
+      // Drive's text/plain export renders checkbox bullets as Unicode glyphs
+      // (e.g. ☐ ☑ ▢ □ ◯ ✓ ✔). Strip these too so the assignee bracket regex
+      // in parseActionItems can match the leading `[Person]` token.
+      .map((l) => l.replace(/^\s*[☐☑▢□◯✓✔✗✘]\s*/, ""))
+      .map((l) => l.replace(/^[\s\-*•>]+/, "").trim())
+      .filter((l) => l.length > 0)
+  );
 }
 
 /**
@@ -320,10 +322,7 @@ export function parseMeetingNotes(content: string): ParsedMeeting {
   const attendees = bulletLines(sections.get("attendees") ?? [])
     .flatMap(extractChips)
     .filter(
-      (a) =>
-        a.length > 1 &&
-        a.length < 100 &&
-        !/^attachments?\s*:?$/i.test(a),
+      (a) => a.length > 1 && a.length < 100 && !/^attachments?\s*:?$/i.test(a),
     );
 
   const actionItems = parseActionItems(sections.get("actionItems") ?? []);
@@ -386,10 +385,8 @@ const TEAM_LABELS: Record<TeamKey, string[]> = {
 
 function isUrgentTask(team: TeamKey, task: string): boolean {
   const t = task.toLowerCase();
-  if (team === "Sales")
-    return /follow.?up|proposal|demo|close date/.test(t);
-  if (team === "Marketing")
-    return /deadline|launch|campaign/.test(t);
+  if (team === "Sales") return /follow.?up|proposal|demo|close date/.test(t);
+  if (team === "Marketing") return /deadline|launch|campaign/.test(t);
   // Engineering
   return /bug|incident|fix|deploy|urgent/.test(t);
 }
@@ -398,14 +395,16 @@ function buildTitle(team: TeamKey, meetingTitle: string, task: string): string {
   if (team !== "Sales") return task;
   // Extract company/prospect name from meeting title heuristically:
   // e.g. "Acme Q2 Review" → "[Acme] task"
-  const company = meetingTitle.split(/\s+/).slice(0, 2).join(" ").replace(/[^A-Za-z0-9 ]/g, "").trim();
+  const company = meetingTitle
+    .split(/\s+/)
+    .slice(0, 2)
+    .join(" ")
+    .replace(/[^A-Za-z0-9 ]/g, "")
+    .trim();
   return company ? `[${company}] ${task}` : task;
 }
 
-function buildDescription(
-  meeting: ParsedMeeting,
-  task: string,
-): string {
+function buildDescription(meeting: ParsedMeeting, task: string): string {
   const attendees = meeting.attendees.join(", ") || "—";
   return [
     `**Meeting:** ${meeting.meetingTitle} (${meeting.meetingDate})`,
@@ -494,7 +493,8 @@ registerTool({
       }
       const wanted = team.toLowerCase();
       const exact = teams.find((t) => t.name.toLowerCase() === wanted);
-      const prefix = exact ?? teams.find((t) => t.name.toLowerCase().startsWith(wanted));
+      const prefix =
+        exact ?? teams.find((t) => t.name.toLowerCase().startsWith(wanted));
       const picked = exact ?? prefix ?? teams[0]!;
       resolvedTeam = picked.name;
       if (!exact) {
@@ -575,7 +575,10 @@ registerTool({
         // Assign if we have a non-null assignee
         if (item.assignee) {
           try {
-            await updateIssue({ id: result.identifier, assignee: item.assignee });
+            await updateIssue({
+              id: result.identifier,
+              assignee: item.assignee,
+            });
           } catch {
             // Assignment failure is non-fatal — issue is already created.
           }
@@ -707,7 +710,10 @@ registerTool({
     let meetings: ParsedMeeting[];
     try {
       const raw = params.meetings;
-      meetings = typeof raw === "string" ? JSON.parse(raw as string) : (raw as ParsedMeeting[]);
+      meetings =
+        typeof raw === "string"
+          ? JSON.parse(raw as string)
+          : (raw as ParsedMeeting[]);
       if (!Array.isArray(meetings)) meetings = [meetings];
     } catch {
       return JSON.stringify({ error: "Invalid meetings input" });
@@ -746,7 +752,8 @@ registerTool({
           : issuesRaw;
       if (parsed && typeof parsed === "object") {
         const obj = parsed as { created?: unknown; error?: unknown };
-        if (Array.isArray(obj.created)) createdIssues = obj.created as CreatedIssue[];
+        if (Array.isArray(obj.created))
+          createdIssues = obj.created as CreatedIssue[];
         if (typeof obj.error === "string") issuesError = obj.error;
       }
     } catch {
@@ -756,7 +763,8 @@ registerTool({
 
     const formatIssueBullet = (i: CreatedIssue): string => {
       const task = (i.task ?? "").trim() || "(untitled task)";
-      const assignee = i.assignee && i.assignee.length > 0 ? i.assignee : "unassigned";
+      const assignee =
+        i.assignee && i.assignee.length > 0 ? i.assignee : "unassigned";
       if (i.url && i.identifier) {
         return `• <${i.url}|${i.identifier}> ${task} — ${assignee}`;
       }
