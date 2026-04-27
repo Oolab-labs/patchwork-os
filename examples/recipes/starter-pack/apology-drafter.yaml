@@ -1,11 +1,9 @@
-# Apology drafter: given a situation, draft a non-groveling apology in user's voice; stage for review.
+version: 1.0.0
 name: apology-drafter
-version: "1.0.0"
 description: >
-  On-demand. You type "apology for [situation]" and it drafts a clean apology:
-  name the harm, own it, say what you'll do differently, stop. No groveling,
-  no excuses, no "I just wanted to." Always stages for review.
-
+  On-demand. You type "apology for [situation]" and it drafts a clean apology: name the harm, own
+  it, say what you'll do differently, stop. No groveling, no excuses, no "I just wanted to." Always
+  stages for review.
 trigger:
   type: manual
   inputs:
@@ -17,48 +15,50 @@ trigger:
       required: true
     - name: channel
       type: enum
-      values: ["email", "text", "slack", "in-person-script"]
-      default: "text"
-
+      values:
+        - email
+        - text
+        - slack
+        - in-person-script
+      default: text
 context:
   - type: env
-    keys: [USER_NAME]
+    keys:
+      - USER_NAME
   - type: file
-    path: ~/.patchwork/voice-samples.md   # 3-5 user-written message samples for tone match
-
+    path: ~/.patchwork/voice-samples.md
 steps:
   - id: draft
-    agent: true
-    prompt: |
-      Draft an apology from {{USER_NAME}} to {{recipient}} about: {{situation}}.
-      Channel: {{channel}}. Match the tone in ~/.patchwork/voice-samples.md.
-      Rules:
-        1. Name the specific harm in 1 sentence.
-        2. Own it — no "if you felt", no passive voice.
-        3. State the change (what you'll do differently). Skip if you don't know yet.
-        4. Stop. No explaining, no defending.
-      Max 4 sentences for text/slack, 6 for email, bullet script for in-person.
-    output: draft
     risk: medium
-
+    agent:
+      prompt: |
+        Draft an apology from {{USER_NAME}} to {{recipient}} about: {{situation}}.
+        Channel: {{channel}}. Match the tone in ~/.patchwork/voice-samples.md.
+        Rules:
+          1. Name the specific harm in 1 sentence.
+          2. Own it — no "if you felt", no passive voice.
+          3. State the change (what you'll do differently). Skip if you don't know yet.
+          4. Stop. No explaining, no defending.
+        Max 4 sentences for text/slack, 6 for email, bullet script for in-person.
+      into: draft
   - id: critique
-    agent: true
-    prompt: |
-      Critique {{draft}} for: deflection, excuses, "I just", over-apologizing,
-      centering yourself. Return revised version if needed.
-    output: final
     risk: low
-
+    agent:
+      prompt: |
+        Critique {{draft}} for: deflection, excuses, "I just", over-apologizing,
+        centering yourself. Return revised version if needed.
+      into: final
   - id: present
-    agent: false
     tool: dashboard.render
-    params:
-      title: "Apology draft"
-      body: "{{final}}"
-      approvals: true
-      actions: ["copy", "send", "edit", "discard"]
     risk: medium
-
+    title: Apology draft
+    body: "{{final}}"
+    approvals: true
+    actions:
+      - copy
+      - send
+      - edit
+      - discard
 on_error:
   notify: true
   retry: 0

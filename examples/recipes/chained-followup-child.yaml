@@ -1,10 +1,8 @@
+version: 1.0.0
 name: chained-followup-child
-version: "1.0.0"
 description: Child chained recipe used by the canonical chained follow-up demo.
 trigger:
   type: chained
-maxConcurrency: 1
-maxDepth: 1
 context:
   - type: env
     keys:
@@ -17,3 +15,5 @@ steps:
         Use {{summary}} and {{context_note}} to draft a concise follow-up plan.
         Include the next action, the owner, and the suggested send channel.
     risk: low
+maxConcurrency: 1
+maxDepth: 1

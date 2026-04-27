@@ -1,6 +1,9 @@
 import { Ajv, type ErrorObject } from "ajv";
 import { FLAG_SCHEMA_LINT, isEnabled } from "../featureFlags.js";
-import { normalizeRecipeForRuntime } from "./legacyRecipeCompat.js";
+import {
+  defaultDeprecationWarn,
+  normalizeRecipeForRuntime,
+} from "./legacyRecipeCompat.js";
 import { generateSchemaSet } from "./schemaGenerator.js";
 import { listToolOutputContextKeys } from "./toolRegistry.js";
 
@@ -132,7 +135,7 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
 }
 
 function normalizeRecipeForValidation(recipe: unknown): unknown {
-  const normalized = normalizeRecipeForRuntime(recipe, console.warn);
+  const normalized = normalizeRecipeForRuntime(recipe, defaultDeprecationWarn);
 
   if (
     !normalized ||

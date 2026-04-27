@@ -4,6 +4,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export type WarnFn = (msg: string) => void;
 
+/**
+ * Default deprecation-warning sink for the runtime/validation/fmt callers.
+ * Forwards to `console.warn` outside of tests so users see migration
+ * prompts in CLI output, but stays silent under vitest so the dozens of
+ * intentional legacy-shape regression fixtures don't flood stderr. Tests
+ * that need to assert warnings still pass their own `vi.fn()` directly.
+ */
+export const defaultDeprecationWarn: WarnFn = (msg) => {
+  if (process.env.VITEST || process.env.NODE_ENV === "test") return;
+  console.warn(msg);
+};
+
 export function normalizeRecipeForRuntime(
   recipe: unknown,
   warn?: WarnFn,

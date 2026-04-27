@@ -19,7 +19,10 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import "../recipes/tools/index.js";
 import { loadFixtureLibrary } from "../connectors/fixtureLibrary.js";
 import { MockConnector } from "../connectors/mockConnector.js";
-import { normalizeRecipeForRuntime } from "../recipes/legacyRecipeCompat.js";
+import {
+  defaultDeprecationWarn,
+  normalizeRecipeForRuntime,
+} from "../recipes/legacyRecipeCompat.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
 import {
   getTool,
@@ -447,7 +450,7 @@ export function runFmt(
   const { header: schemaHeader } = extractSchemaHeader(content);
   const recipe = normalizeRecipeForRuntime(
     parseYaml(content),
-    console.warn,
+    defaultDeprecationWarn,
   ) as YamlRecipe;
 
   // Normalize key order

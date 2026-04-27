@@ -1,48 +1,40 @@
-# Reading capture: watch highlights from Kindle/browser, tag by theme, surface weekly synthesis.
+version: 1.0.0
 name: reading-capture
-version: "1.0.0"
 description: >
-  Collects highlights from Kindle emails, Readwise, or browser extension.
-  Tags by theme. Once a week, synthesizes "what you kept highlighting this
-  week" into one short note.
-# requires: readwise-mcp OR gmail-mcp (Kindle "Your Notes" digests)
-
+  Collects highlights from Kindle emails, Readwise, or browser extension. Tags by theme. Once a
+  week, synthesizes "what you kept highlighting this week" into one short note.
 trigger:
   type: event
   on: inbox.new_message
   filter:
-    from: ["no-reply@amazon.com", "readwise@readwise.io"]
-
+    from:
+      - no-reply@amazon.com
+      - readwise@readwise.io
 context:
   - type: env
-    keys: [HIGHLIGHTS_PATH]
-
+    keys:
+      - HIGHLIGHTS_PATH
 steps:
   - id: extract
-    agent: true
-    prompt: |
-      Extract highlights from this message as JSON array:
-      { source, author, quote, location?, date }
-      Input: {{event.message}}
-    output: highlights
     risk: low
-
+    agent:
+      prompt: |
+        Extract highlights from this message as JSON array:
+        { source, author, quote, location?, date }
+        Input: {{event.message}}
+      into: highlights
   - id: tag
-    agent: true
-    prompt: |
-      Tag each of {{highlights}} with 1-3 themes. Use themes consistent with
-      {{HIGHLIGHTS_PATH}}/_themes.md if it exists.
-    output: tagged
     risk: low
-
+    agent:
+      prompt: |
+        Tag each of {{highlights}} with 1-3 themes. Use themes consistent with
+        {{HIGHLIGHTS_PATH}}/_themes.md if it exists.
+      into: tagged
   - id: append
-    agent: false
     tool: file.append
-    params:
-      path: "{{HIGHLIGHTS_PATH}}/{{YYYY-MM}}.md"
-      content: "{{tagged}}"
     risk: low
-
+    path: "{{HIGHLIGHTS_PATH}}/{{YYYY-MM}}.md"
+    content: "{{tagged}}"
 on_error:
   notify: false
   retry: 1

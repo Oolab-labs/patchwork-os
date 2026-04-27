@@ -1,42 +1,32 @@
-# Mood tagger: 3x/day prompt (one emoji + one line); weekly pattern report against calendar.
+version: 1.0.0
 name: mood-tagger
-version: "1.0.0"
 description: >
-  Tiny check-in. 3x/day it pushes "one emoji, one line." Logs locally. Once
-  a week, correlates dips with calendar (meeting X, sleep <6h, Sundays)
-  and reports patterns. No advice — just the shape.
-
+  Tiny check-in. 3x/day it pushes "one emoji, one line." Logs locally. Once a week, correlates dips
+  with calendar (meeting X, sleep <6h, Sundays) and reports patterns. No advice — just the shape.
 trigger:
   type: cron
-  schedule: "0 10,14,20 * * *"   # 10am, 2pm, 8pm
-
+  at: 0 10,14,20 * * *
 context:
   - type: env
-    keys: [MOOD_LOG_PATH]   # default ~/.patchwork/mood.log
-
+    keys:
+      - MOOD_LOG_PATH
 steps:
   - id: prompt_user
-    agent: false
     tool: notify.ask
-    params:
-      title: "One emoji, one line"
-      timeout_seconds: 300
-      schema: { emoji: "string", note: "string" }
-    output: check_in
     risk: low
-
+    title: One emoji, one line
+    timeout_seconds: 300
+    schema:
+      emoji: string
+      note: string
+    into: check_in
   - id: log
-    agent: false
     tool: file.append
-    params:
-      path: "{{MOOD_LOG_PATH}}"
-      line: "{{ISO_NOW}} | {{check_in.emoji}} | {{check_in.note}}"
     skip_if: "{{check_in == null}}"
     risk: low
-
+    path: "{{MOOD_LOG_PATH}}"
+    content: "{{ISO_NOW}} | {{check_in.emoji}} | {{check_in.note}}"
 on_error:
   notify: false
   retry: 0
   fallback: log_only
-
-# See also: mood-weekly-report (separate cron recipe reads this log)

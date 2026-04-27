@@ -1,53 +1,46 @@
-# Quiet hours enforcer: after 9pm, batch non-urgent notifications into one digest delivered next morning.
+version: 1.0.0
 name: quiet-hours-enforcer
-version: "1.0.0"
 description: >
-  Between 21:00 and 07:00, intercepts non-urgent notifications, batches them
-  into one digest delivered with morning-brief. Whitelist for real emergencies
-  (family, on-call). Learns from what you actually respond to.
-
+  Between 21:00 and 07:00, intercepts non-urgent notifications, batches them into one digest
+  delivered with morning-brief. Whitelist for real emergencies (family, on-call). Learns from what
+  you actually respond to.
 trigger:
   type: event
   on: notification.incoming
   filter:
-    time_range: "21:00-07:00"
-
+    time_range: 21:00-07:00
 context:
   - type: env
-    keys: [USER_NAME]
+    keys:
+      - USER_NAME
   - type: file
     path: ~/.patchwork/quiet-hours-whitelist.md
-
 steps:
   - id: classify
-    agent: true
-    prompt: |
-      Is this notification urgent enough to break quiet hours for {{USER_NAME}}?
-      Whitelist: ~/.patchwork/quiet-hours-whitelist.md
-      Urgent = on-call alert, family emergency keyword, known-VIP sender with
-      "urgent"/"asap"/"emergency" in subject.
-      Return JSON: { urgent: bool, reason: string }
-      Input: {{event.notification}}
-    output: verdict
     risk: high
-
+    agent:
+      prompt: |
+        Is this notification urgent enough to break quiet hours for {{USER_NAME}}?
+        Whitelist: ~/.patchwork/quiet-hours-whitelist.md
+        Urgent = on-call alert, family emergency keyword, known-VIP sender with
+        "urgent"/"asap"/"emergency" in subject.
+        Return JSON: { urgent: bool, reason: string }
+        Input: {{event.notification}}
+      into: verdict
   - id: deliver_or_batch
     branch:
       - when: "{{verdict.urgent}}"
         tool: notify.push
-        params:
-          title: "{{event.notification.title}}"
-          body: "{{event.notification.body}}"
-          sound: true
         risk: high
+        title: "{{event.notification.title}}"
+        body: "{{event.notification.body}}"
+        sound: true
       - otherwise:
           tool: queue.append
-          params:
-            queue: "morning-digest"
-            item: "{{event.notification}}"
           risk: low
-
+          queue: morning-digest
+          item: "{{event.notification}}"
 on_error:
   notify: false
   retry: 0
-  fallback: deliver_original   # fail-open: if classifier fails, let notification through
+  fallback: deliver_original

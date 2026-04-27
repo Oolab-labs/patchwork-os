@@ -1,50 +1,43 @@
-# Errand batcher: collect stray "I need to..." mentions from notes/chats; weekly, group by location.
+version: 1.0.0
 name: errand-batcher
-version: "1.0.0"
 description: >
-  Scans notes and recent messages for "I need to / don't forget to / pick up /
-  call / return" mentions. Groups by location or type. Weekly delivers a
-  route-optimized list so you do 5 errands in one trip instead of 5 trips.
-# requires: notes-mcp, optionally maps-mcp for routing
-
+  Scans notes and recent messages for "I need to / don't forget to / pick up / call / return"
+  mentions. Groups by location or type. Weekly delivers a route-optimized list so you do 5 errands
+  in one trip instead of 5 trips.
 trigger:
   type: cron
-  schedule: "0 9 * * 6"   # Saturday morning
-
+  at: 0 9 * * 6
 context:
   - type: env
-    keys: [HOME_AREA]   # e.g. "Nairobi, Kileleshwa"
-
+    keys:
+      - HOME_AREA
 steps:
   - id: scan
-    agent: true
-    prompt: |
-      Scan notes and sent messages from last 14 days for action items:
-      "I need to", "don't forget", "pick up", "drop off", "return", "call",
-      "fix", "buy". Exclude work/code tasks. Return JSON:
-      { item, source, mentioned_at, location_hint? }
-    tools: [notes.search, inbox.search]
-    output: items
+    tools:
+      - notes.search
+      - inbox.search
     risk: low
-
+    agent:
+      prompt: |
+        Scan notes and sent messages from last 14 days for action items:
+        "I need to", "don't forget", "pick up", "drop off", "return", "call",
+        "fix", "buy". Exclude work/code tasks. Return JSON:
+        { item, source, mentioned_at, location_hint? }
+      into: items
   - id: group
-    agent: true
-    prompt: |
-      Group {{items}} by: physical_errand / phone_call / online_order / household.
-      For physical_errand, guess location near {{HOME_AREA}} if possible.
-      Propose a route order for Saturday.
-    output: plan
     risk: low
-
+    agent:
+      prompt: |
+        Group {{items}} by: physical_errand / phone_call / online_order / household.
+        For physical_errand, guess location near {{HOME_AREA}} if possible.
+        Propose a route order for Saturday.
+      into: plan
   - id: present
-    agent: false
     tool: dashboard.render
-    params:
-      title: "{{items.length}} loose errands"
-      body: "{{plan}}"
-      approvals: false
     risk: low
-
+    title: "{{items.length}} loose errands"
+    body: "{{plan}}"
+    approvals: false
 on_error:
   notify: false
   retry: 1
