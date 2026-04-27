@@ -654,6 +654,26 @@ export class Server extends EventEmitter<ServerEvents> {
       }
 
       if (
+        parsedUrl.pathname === "/connections/google-drive/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleDriveCallback } = await import(
+            "./connectors/googleDrive.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleDriveCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
+      if (
         parsedUrl.pathname === "/connections/slack/callback" &&
         req.method === "GET"
       ) {
@@ -1834,6 +1854,79 @@ export class Server extends EventEmitter<ServerEvents> {
             "./connectors/googleCalendar.js"
           );
           const result = await handleCalendarDisconnect();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/google-drive/auth" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleDriveAuthRedirect } = await import(
+            "./connectors/googleDrive.js"
+          );
+          const result = handleDriveAuthRedirect();
+          if (result.redirect) {
+            res.writeHead(302, { Location: result.redirect });
+            res.end();
+          } else {
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          }
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/google-drive/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleDriveCallback } = await import(
+            "./connectors/googleDrive.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleDriveCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/google-drive/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleDriveTest } = await import(
+            "./connectors/googleDrive.js"
+          );
+          const result = await handleDriveTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/google-drive" &&
+        req.method === "DELETE"
+      ) {
+        void (async () => {
+          const { handleDriveDisconnect } = await import(
+            "./connectors/googleDrive.js"
+          );
+          const result = await handleDriveDisconnect();
           res.writeHead(result.status, {
             "Content-Type": result.contentType ?? "application/json",
           });

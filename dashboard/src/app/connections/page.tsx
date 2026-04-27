@@ -38,7 +38,6 @@ const CATALOG: ConnectorDef[] = [
   { id: "jira",             name: "Jira",             initials: "JI", category: "Project",    wave: 1, tools: 8,  bg: "#0052CC" },
   { id: "notion",           name: "Notion",           initials: "NO", category: "Docs",       wave: 1, tools: 6,  bg: "#000000" },
   { id: "pagerduty",        name: "PagerDuty",        initials: "PD", category: "Ops",        wave: 1, tools: 7,  bg: "#06AC38" },
-  { id: "drive",            name: "Drive",            initials: "GD", category: "Files",      wave: 1, tools: 4,  bg: "#4285F4" },
   { id: "docs",             name: "Docs",             initials: "DO", category: "Docs",       wave: 1, tools: 3,  bg: "#4285F4" },
   { id: "confluence",       name: "Confluence",       initials: "CF", category: "Docs",       wave: 1, tools: 5,  bg: "#0052CC" },
   { id: "linear",           name: "Linear",           initials: "LI", category: "Project",    wave: 1, tools: 6,  bg: "#5E6AD2" },
@@ -55,6 +54,7 @@ const CATALOG: ConnectorDef[] = [
   // Wave 3
   { id: "gmail",            name: "Gmail",            initials: "GM", category: "Email",      wave: 3, tools: 5,  bg: "#EA4335" },
   { id: "google-calendar",  name: "Google Calendar",  initials: "GC", category: "Calendar",   wave: 3, tools: 4,  bg: "#4285F4" },
+  { id: "google-drive",     name: "Google Drive",     initials: "GD", category: "Files",      wave: 3, tools: 4,  bg: "#4285F4" },
   { id: "datadog",          name: "Datadog",          initials: "DD", category: "Monitoring", wave: 3, tools: 6,  bg: "#632CA6" },
   { id: "stripe",           name: "Stripe",           initials: "ST", category: "Payments",   wave: 3, tools: 7,  bg: "#635BFF" },
   { id: "sentry",           name: "Sentry",           initials: "SE", category: "Monitoring", wave: 3, tools: 5,  bg: "#362D59" },
@@ -201,6 +201,7 @@ interface TokenModalConfig {
 const SUPPORTED_CONNECTORS = new Set([
   "gmail",
   "google-calendar",
+  "google-drive",
   "github",
   "linear",
   "sentry",
@@ -359,6 +360,7 @@ function logoUrl(id: string): string | null {
     intercom:         `${SI_CDN}/intercom/ffffff`,
     gmail:            `${SI_CDN}/gmail/ffffff`,
     "google-calendar":`${SI_CDN}/googlecalendar/ffffff`,
+    "google-drive":   `${SI_CDN}/googledrive/ffffff`,
     datadog:          `${SI_CDN}/datadog/ffffff`,
     stripe:           `${SI_CDN}/stripe/ffffff`,
     sentry:           `${SI_CDN}/sentry/ffffff`,

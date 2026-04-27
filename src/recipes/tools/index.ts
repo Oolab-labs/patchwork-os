@@ -11,6 +11,7 @@ import "./diagnostics.js";
 
 // Connector-based tools
 import "./gmail.js";
+import "./googleDrive.js";
 import "./github.js";
 import "./linear.js";
 import "./calendar.js";
