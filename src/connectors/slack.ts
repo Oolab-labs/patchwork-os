@@ -22,6 +22,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { escHtml } from "./htmlEscape.js";
 import {
   deleteSecretJsonSync,
   getSecretJsonSync,
@@ -319,7 +320,7 @@ export async function handleSlackCallback(
     return {
       status: 400,
       contentType: "text/html",
-      body: `<html><body><h2>Slack connect failed</h2><pre>${error}</pre></body></html>`,
+      body: `<html><body><h2>Slack connect failed</h2><pre>${escHtml(error)}</pre></body></html>`,
     };
   }
   if (!code || !state) {
@@ -373,13 +374,13 @@ export async function handleSlackCallback(
     return {
       status: 200,
       contentType: "text/html",
-      body: `<html><body><h2>Slack connected to ${(team.name as string) ?? "workspace"}</h2><script>try { window.opener.postMessage('patchwork:slack:connected', '*'); } catch(_) {} window.close();</script></body></html>`,
+      body: `<html><body><h2>Slack connected to ${escHtml((team.name as string) ?? "workspace")}</h2><script>try { window.opener.postMessage('patchwork:slack:connected', '*'); } catch(_) {} window.close();</script></body></html>`,
     };
   } catch (err) {
     return {
       status: 400,
       contentType: "text/html",
-      body: `<html><body><h2>Slack connect failed</h2><pre>${err instanceof Error ? err.message : String(err)}</pre></body></html>`,
+      body: `<html><body><h2>Slack connect failed</h2><pre>${escHtml(err instanceof Error ? err.message : String(err))}</pre></body></html>`,
     };
   }
 }

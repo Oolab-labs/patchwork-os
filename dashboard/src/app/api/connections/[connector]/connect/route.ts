@@ -3,8 +3,10 @@ import { bridgeFetch } from "@/lib/bridge";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// Token-paste connectors only — OAuth vendors (gmail, google-calendar,
+// github, linear, sentry, slack) authenticate via /api/connections/<id>/auth
+// and have no bridge /connections/<id>/connect handler.
 const ALLOWED_CONNECTORS = new Set([
-  "github", "linear", "sentry", "google-calendar",
   "notion", "confluence", "datadog", "hubspot", "intercom", "stripe", "zendesk",
 ]);
 
