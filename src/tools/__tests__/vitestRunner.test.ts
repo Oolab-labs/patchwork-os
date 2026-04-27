@@ -1,8 +1,4 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const execFileAsync = promisify(execFile);
 
 // Test the JSON parsing logic by exercising vitestRunner.run via a fake execSafeStreaming
 vi.mock("../utils.js", async (importOriginal) => {
@@ -66,6 +62,8 @@ describe("vitestRunner JSON parsing", () => {
       exitCode: 0,
       stdout: makeVitestReport(),
       stderr: "",
+      timedOut: false,
+      durationMs: 100,
     });
 
     const results = await vitestRunner.run(workspace);
@@ -88,6 +86,8 @@ describe("vitestRunner JSON parsing", () => {
       exitCode: 0,
       stdout: makeJestReport(),
       stderr: "",
+      timedOut: false,
+      durationMs: 100,
     });
 
     const results = await vitestRunner.run(workspace);
@@ -105,6 +105,8 @@ describe("vitestRunner JSON parsing", () => {
       exitCode: 0,
       stdout: "no json here",
       stderr: "",
+      timedOut: false,
+      durationMs: 100,
     });
 
     const results = await vitestRunner.run(workspace);

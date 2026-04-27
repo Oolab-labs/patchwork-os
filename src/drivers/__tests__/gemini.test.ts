@@ -24,15 +24,29 @@ function makeChild(stdoutLines: string[], exitCode = 0) {
   const child = new EventEmitter() as EventEmitter & {
     stdout: typeof stdout;
     stderr: typeof stderr;
+    stdin: null;
+    stdio: unknown[];
     kill: () => void;
     unref: () => void;
+    killed: boolean;
+    connected: boolean;
+    pid: number;
+    exitCode: number | null;
   };
   child.stdout = stdout;
   child.stderr = stderr;
+  child.stdin = null;
+  child.stdio = [null, stdout, stderr];
+  child.killed = false;
+  child.connected = false;
+  child.pid = 12345;
+  child.exitCode = null;
   child.kill = () => child.emit("close", 1);
   child.unref = () => {};
 
-  vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+  vi.mocked(spawn).mockReturnValueOnce(
+    child as unknown as ReturnType<typeof spawn>,
+  );
 
   // Emit stdout lines on next tick
   setTimeout(() => {
@@ -194,14 +208,28 @@ describe("GeminiSubprocessDriver", () => {
     const child = new EventEmitter() as EventEmitter & {
       stdout: typeof stdout;
       stderr: typeof stderr;
+      stdin: null;
+      stdio: unknown[];
       kill: () => void;
       unref: () => void;
+      killed: boolean;
+      connected: boolean;
+      pid: number;
+      exitCode: number | null;
     };
     child.stdout = stdout;
     child.stderr = stderr;
+    child.stdin = null;
+    child.stdio = [null, stdout, stderr];
+    child.killed = false;
+    child.connected = false;
+    child.pid = 12345;
+    child.exitCode = null;
     child.kill = () => {};
     child.unref = () => {};
-    vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+    vi.mocked(spawn).mockReturnValueOnce(
+      child as unknown as ReturnType<typeof spawn>,
+    );
     setTimeout(() => {
       stderr.emit("data", bigStderr);
       stdout.emit("data", `${RESULT_OK}\n`);
@@ -230,14 +258,28 @@ describe("GeminiSubprocessDriver", () => {
     const child = new EventEmitter() as EventEmitter & {
       stdout: typeof stdout;
       stderr: typeof stderr;
+      stdin: null;
+      stdio: unknown[];
       kill: () => void;
       unref: () => void;
+      killed: boolean;
+      connected: boolean;
+      pid: number;
+      exitCode: number | null;
     };
     child.stdout = stdout;
     child.stderr = stderr;
+    child.stdin = null;
+    child.stdio = [null, stdout, stderr];
+    child.killed = false;
+    child.connected = false;
+    child.pid = 12345;
+    child.exitCode = null;
     child.kill = () => child.emit("close", 1);
     child.unref = () => {};
-    vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+    vi.mocked(spawn).mockReturnValueOnce(
+      child as unknown as ReturnType<typeof spawn>,
+    );
     // Never emit any output — startup timeout will fire
     const driver = new GeminiSubprocessDriver("gemini", log);
     const result = await driver.run({
@@ -268,7 +310,7 @@ describe("GeminiSubprocessDriver", () => {
 
   it("scrubs API keys from stderr tail", async () => {
     // AIza + exactly 35 alphanum chars = valid key pattern
-    const fakeKey = "AIza" + "A".repeat(35);
+    const fakeKey = `AIza${"A".repeat(35)}`;
     const secretStderr = `error: ${fakeKey} is bad`;
     const stdout = new EventEmitter() as EventEmitter & {
       setEncoding: () => void;
@@ -281,14 +323,28 @@ describe("GeminiSubprocessDriver", () => {
     const child = new EventEmitter() as EventEmitter & {
       stdout: typeof stdout;
       stderr: typeof stderr;
+      stdin: null;
+      stdio: unknown[];
       kill: () => void;
       unref: () => void;
+      killed: boolean;
+      connected: boolean;
+      pid: number;
+      exitCode: number | null;
     };
     child.stdout = stdout;
     child.stderr = stderr;
+    child.stdin = null;
+    child.stdio = [null, stdout, stderr];
+    child.killed = false;
+    child.connected = false;
+    child.pid = 12345;
+    child.exitCode = null;
     child.kill = () => {};
     child.unref = () => {};
-    vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+    vi.mocked(spawn).mockReturnValueOnce(
+      child as unknown as ReturnType<typeof spawn>,
+    );
     setTimeout(() => {
       stderr.emit("data", secretStderr);
       child.emit("close", 1);
@@ -317,14 +373,28 @@ describe("GeminiSubprocessDriver", () => {
     const child = new EventEmitter() as EventEmitter & {
       stdout: typeof stdout;
       stderr: typeof stderr;
+      stdin: null;
+      stdio: unknown[];
       kill: () => void;
       unref: () => void;
+      killed: boolean;
+      connected: boolean;
+      pid: number;
+      exitCode: number | null;
     };
     child.stdout = stdout;
     child.stderr = stderr;
+    child.stdin = null;
+    child.stdio = [null, stdout, stderr];
+    child.killed = false;
+    child.connected = false;
+    child.pid = 12345;
+    child.exitCode = null;
     child.kill = () => {};
     child.unref = () => {};
-    vi.mocked(spawn).mockReturnValueOnce(child as ReturnType<typeof spawn>);
+    vi.mocked(spawn).mockReturnValueOnce(
+      child as unknown as ReturnType<typeof spawn>,
+    );
 
     setTimeout(() => {
       ac.abort();

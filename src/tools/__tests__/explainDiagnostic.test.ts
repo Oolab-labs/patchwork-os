@@ -32,7 +32,7 @@ beforeAll(() => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), "explain-diag-test-"));
   fs.writeFileSync(
     path.join(workspace, "sample.ts"),
-    Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join("\n") + "\n",
+    `${Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join("\n")}\n`,
   );
 });
 
