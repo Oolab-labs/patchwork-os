@@ -213,6 +213,7 @@ export async function postMessage(
   channel: string,
   text: string,
   threadTs?: string,
+  blocks?: unknown[],
   signal?: AbortSignal,
 ): Promise<{ ts: string; channel: string }> {
   const tokens = loadTokens();
@@ -222,6 +223,7 @@ export async function postMessage(
     );
   const body: Record<string, unknown> = { channel, text };
   if (threadTs) body.thread_ts = threadTs;
+  if (blocks?.length) body.blocks = blocks;
   const res = await slackPost(
     "chat.postMessage",
     body,

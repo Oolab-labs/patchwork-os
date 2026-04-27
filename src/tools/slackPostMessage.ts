@@ -65,6 +65,7 @@ export function createSlackPostMessageTool() {
           channel,
           text,
           threadTs ?? undefined,
+          undefined,
           signal,
         );
         return successStructured({
