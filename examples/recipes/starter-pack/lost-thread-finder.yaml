@@ -1,59 +1,49 @@
-# Lost thread finder: surface conversations where you promised to follow up and never did.
+version: 1.0.0
 name: lost-thread-finder
-version: "1.0.0"
 description: >
-  Weekly scan for dropped balls. Finds messages you sent that said "I'll get
-  back to you" / "let me check" / "I'll send by Friday" with no follow-through.
-  Lists them with original context and drafts a re-engagement message.
-# requires: gmail-mcp, imessage-mcp (optional), slack-mcp (optional)
-
+  Weekly scan for dropped balls. Finds messages you sent that said "I'll get back to you" / "let me
+  check" / "I'll send by Friday" with no follow-through. Lists them with original context and drafts
+  a re-engagement message.
 trigger:
   type: cron
-  schedule: "0 17 * * 5"   # Friday 17:00
-
+  at: 0 17 * * 5
 context:
   - type: env
-    keys: [USER_NAME]
-
+    keys:
+      - USER_NAME
 steps:
   - id: scan_sent
-    agent: false
     tool: inbox.search
-    params:
-      query: "from:me after:30d (\"I'll get back\" OR \"let me check\" OR \"I'll send\" OR \"by next week\" OR \"by Friday\")"
-    output: promises
     risk: low
-
+    query: from:me after:30d ("I'll get back" OR "let me check" OR "I'll send" OR "by next week" OR "by
+      Friday")
+    into: promises
   - id: check_followups
-    agent: true
-    prompt: |
-      For each message in {{promises}}, check if {{USER_NAME}} followed up
-      (replied again, sent the thing, thread continued with resolution).
-      Return only the dropped ones: { thread_id, recipient, promise_text, days_since }.
-    tools: [inbox.getThread]
-    output: dropped
+    tools:
+      - inbox.getThread
     risk: low
-
+    agent:
+      prompt: |
+        For each message in {{promises}}, check if {{USER_NAME}} followed up
+        (replied again, sent the thing, thread continued with resolution).
+        Return only the dropped ones: { thread_id, recipient, promise_text, days_since }.
+      into: dropped
   - id: draft_re_engage
-    agent: true
-    prompt: |
-      For each in {{dropped}}, draft a short re-engage message in {{USER_NAME}}'s voice.
-      Acknowledge the gap without over-apologizing. Actually deliver the thing
-      if possible, or name a new date. Max 3 sentences.
-    output: drafts
     risk: medium
-
+    agent:
+      prompt: |
+        For each in {{dropped}}, draft a short re-engage message in {{USER_NAME}}'s voice.
+        Acknowledge the gap without over-apologizing. Actually deliver the thing
+        if possible, or name a new date. Max 3 sentences.
+      into: drafts
   - id: present
-    agent: false
     tool: dashboard.render
-    params:
-      title: "{{dropped.length}} dropped threads"
-      sections:
-        - heading: "Re-engage drafts"
-          items: "{{drafts}}"
-          approvals: true
     risk: low
-
+    title: "{{dropped.length}} dropped threads"
+    sections:
+      - heading: Re-engage drafts
+        items: "{{drafts}}"
+        approvals: true
 on_error:
   notify: true
   retry: 1

@@ -1,11 +1,9 @@
-# Awkward message rewriter: paste a draft, get back 2 versions (warmer / firmer) before you hit send.
+version: 1.0.0
 name: awkward-message-rewriter
-version: "1.0.0"
 description: >
-  On-demand. You paste a message you're scared to send; it returns two versions
-  (one warmer, one firmer) plus flags any landmines (passive-aggressive phrasing,
-  over-apologizing, buried lede). You pick or edit. Nothing sends automatically.
-
+  On-demand. You paste a message you're scared to send; it returns two versions (one warmer, one
+  firmer) plus flags any landmines (passive-aggressive phrasing, over-apologizing, buried lede). You
+  pick or edit. Nothing sends automatically.
 trigger:
   type: manual
   inputs:
@@ -15,51 +13,49 @@ trigger:
     - name: recipient_context
       type: string
       required: false
-
 context:
   - type: env
-    keys: [USER_NAME]
+    keys:
+      - USER_NAME
   - type: file
     path: ~/.patchwork/voice-samples.md
-
 steps:
   - id: critique
-    agent: true
-    prompt: |
-      Critique this draft from {{USER_NAME}}:
-      ---
-      {{draft}}
-      ---
-      Recipient context: {{recipient_context}}
-      Flag: passive-aggressive phrasing, over-apology ("sorry to bother", "just"),
-      buried lede, weasel hedges ("I feel like maybe kinda"), tone drift.
-      Return JSON: { landmines: [...], lede: "...", tone: "..." }
-    output: critique
     risk: low
-
+    agent:
+      prompt: |
+        Critique this draft from {{USER_NAME}}:
+        ---
+        {{draft}}
+        ---
+        Recipient context: {{recipient_context}}
+        Flag: passive-aggressive phrasing, over-apology ("sorry to bother", "just"),
+        buried lede, weasel hedges ("I feel like maybe kinda"), tone drift.
+        Return JSON: { landmines: [...], lede: "...", tone: "..." }
+      into: critique
   - id: rewrite
-    agent: true
-    prompt: |
-      Given {{draft}} and {{critique}}, produce two versions matching
-      ~/.patchwork/voice-samples.md:
-        - WARMER: same content, more warmth, no loss of clarity
-        - FIRMER: same content, more direct, no aggression
-      Keep both under original length.
-    output: versions
     risk: low
-
+    agent:
+      prompt: |
+        Given {{draft}} and {{critique}}, produce two versions matching
+        ~/.patchwork/voice-samples.md:
+          - WARMER: same content, more warmth, no loss of clarity
+          - FIRMER: same content, more direct, no aggression
+        Keep both under original length.
+      into: versions
   - id: present
-    agent: false
     tool: dashboard.render
-    params:
-      title: "Two versions + landmines"
-      body:
-        landmines: "{{critique.landmines}}"
-        warmer: "{{versions.warmer}}"
-        firmer: "{{versions.firmer}}"
-      actions: ["copy-warmer", "copy-firmer", "edit", "discard"]
     risk: low
-
+    title: Two versions + landmines
+    body:
+      landmines: "{{critique.landmines}}"
+      warmer: "{{versions.warmer}}"
+      firmer: "{{versions.firmer}}"
+    actions:
+      - copy-warmer
+      - copy-firmer
+      - edit
+      - discard
 on_error:
   notify: true
   retry: 0

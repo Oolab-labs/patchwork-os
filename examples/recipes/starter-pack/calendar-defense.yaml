@@ -1,66 +1,56 @@
-# Calendar defense: scan next 7 days, flag conflicts, low-value meetings, and unprotected deep-work time.
+version: 1.0.0
 name: calendar-defense
-version: "1.0.0"
 description: >
-  Morning sweep of the week's calendar. Detects double-bookings, meetings
-  without agendas, back-to-back stretches with no breaks, and eroded deep-work
-  blocks. Drafts polite decline/reschedule messages for approval.
-# requires: calendar-mcp, gmail-mcp
-
+  Morning sweep of the week's calendar. Detects double-bookings, meetings without agendas,
+  back-to-back stretches with no breaks, and eroded deep-work blocks. Drafts polite
+  decline/reschedule messages for approval.
 trigger:
   type: cron
-  schedule: "0 7 * * 1-5"   # weekdays 07:00
-
+  at: 0 7 * * 1-5
 context:
   - type: env
-    keys: [USER_NAME, USER_ROLE, DEEP_WORK_HOURS]   # e.g. "09:00-12:00"
+    keys:
+      - USER_NAME
+      - USER_ROLE
+      - DEEP_WORK_HOURS
   - type: file
-    path: ~/.patchwork/meeting-rules.md   # e.g. "never stack >3 meetings, no meetings before 9"
-
+    path: ~/.patchwork/meeting-rules.md
 steps:
   - id: fetch_week
-    agent: false
     tool: calendar.list
-    params:
-      range: "next_7_days"
-    output: events
     risk: low
-
+    range: next_7_days
+    into: events
   - id: analyze
-    agent: true
-    prompt: |
-      Review {{events}} against ~/.patchwork/meeting-rules.md.
-      Flag:
-        - CONFLICT: overlapping events
-        - NO_AGENDA: meeting with no description or agenda link
-        - EROSION: meeting booked inside {{DEEP_WORK_HOURS}}
-        - STACKED: 3+ meetings back-to-back with no buffer
-        - LOW_VALUE: recurring meeting {{USER_NAME}} has declined last 2 times
-      For each flag, propose: decline / reschedule / shorten / ask-for-agenda.
-      Return JSON: { flags: Flag[] }
-    output: flags
     risk: low
-
+    agent:
+      prompt: |
+        Review {{events}} against ~/.patchwork/meeting-rules.md.
+        Flag:
+          - CONFLICT: overlapping events
+          - NO_AGENDA: meeting with no description or agenda link
+          - EROSION: meeting booked inside {{DEEP_WORK_HOURS}}
+          - STACKED: 3+ meetings back-to-back with no buffer
+          - LOW_VALUE: recurring meeting {{USER_NAME}} has declined last 2 times
+        For each flag, propose: decline / reschedule / shorten / ask-for-agenda.
+        Return JSON: { flags: Flag[] }
+      into: flags
   - id: draft_messages
-    agent: true
-    prompt: |
-      For each flag in {{flags}} needing outreach, draft a short polite message
-      in {{USER_NAME}}'s voice. Max 3 sentences. No apologizing for protecting time.
-      Stage — do NOT send.
-    output: drafts
     risk: medium
-
+    agent:
+      prompt: |
+        For each flag in {{flags}} needing outreach, draft a short polite message
+        in {{USER_NAME}}'s voice. Max 3 sentences. No apologizing for protecting time.
+        Stage — do NOT send.
+      into: drafts
   - id: present
-    agent: false
     tool: dashboard.render
-    params:
-      title: "Calendar — {{flags.length}} flags this week"
-      sections:
-        - heading: "Needs action"
-          items: "{{drafts}}"
-          approvals: true
     risk: low
-
+    title: Calendar — {{flags.length}} flags this week
+    sections:
+      - heading: Needs action
+        items: "{{drafts}}"
+        approvals: true
 on_error:
   notify: true
   retry: 1

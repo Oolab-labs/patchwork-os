@@ -1,65 +1,55 @@
-# Birthday watcher: 3 days before a contact's birthday, draft a non-generic message tied to recent context.
+version: 1.0.0
 name: birthday-watcher
-version: "1.0.0"
 description: >
-  3 days before any birthday in your people file, drafts a warm message that
-  references something real (recent conversation, shared memory, their kid's
-  name). Not "happy birthday!" — something you'd actually be glad to send.
-# requires: contacts-mcp
-
+  3 days before any birthday in your people file, drafts a warm message that references something
+  real (recent conversation, shared memory, their kid's name). Not "happy birthday!" — something
+  you'd actually be glad to send.
 trigger:
   type: cron
-  schedule: "0 8 * * *"
-
+  at: 0 8 * * *
 context:
   - type: env
-    keys: [USER_NAME]
+    keys:
+      - USER_NAME
   - type: file
     path: ~/.patchwork/people.md
-
 steps:
   - id: upcoming
-    agent: false
     tool: contacts.upcomingDates
-    params:
-      type: "birthday"
-      window_days: 3
-    output: birthdays
     risk: low
-
+    type: birthday
+    window_days: 3
+    into: birthdays
   - id: gather_context
-    agent: true
-    prompt: |
-      For each person in {{birthdays}}, pull:
-        - Last conversation/interaction (inbox, messages, notes)
-        - Notes from ~/.patchwork/people.md
-        - Anything recent they're going through
-    tools: [inbox.search, notes.search]
-    output: contexts
+    tools:
+      - inbox.search
+      - notes.search
     skip_if: "{{birthdays.length == 0}}"
     risk: low
-
+    agent:
+      prompt: |
+        For each person in {{birthdays}}, pull:
+          - Last conversation/interaction (inbox, messages, notes)
+          - Notes from ~/.patchwork/people.md
+          - Anything recent they're going through
+      into: contexts
   - id: draft
-    agent: true
-    prompt: |
-      Draft a birthday message for each person in {{contexts}}, in {{USER_NAME}}'s voice.
-      Rules: reference something specific and real. No generic "hope you have
-      a great day." If you don't have real context, say that and stop at "thinking of you."
-      Max 3 sentences each.
-    output: drafts
     skip_if: "{{birthdays.length == 0}}"
     risk: medium
-
+    agent:
+      prompt: |
+        Draft a birthday message for each person in {{contexts}}, in {{USER_NAME}}'s voice.
+        Rules: reference something specific and real. No generic "hope you have
+        a great day." If you don't have real context, say that and stop at "thinking of you."
+        Max 3 sentences each.
+      into: drafts
   - id: present
-    agent: false
     tool: dashboard.render
-    params:
-      title: "{{birthdays.length}} birthdays in 3 days"
-      items: "{{drafts}}"
-      approvals: true
     skip_if: "{{birthdays.length == 0}}"
     risk: low
-
+    title: "{{birthdays.length}} birthdays in 3 days"
+    items: "{{drafts}}"
+    approvals: true
 on_error:
   notify: false
   retry: 1

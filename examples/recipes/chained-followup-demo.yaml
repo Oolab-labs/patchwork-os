@@ -1,38 +1,39 @@
+version: 1.0.0
 name: chained-followup-demo
-version: "1.0.0"
 description: Demonstrate chained dependencies, gating, optional steps, and nested recipe calls.
 trigger:
   type: chained
-maxConcurrency: 2
-maxDepth: 2
 steps:
   - id: gather_signals
     tool: inbox.fetch_threads
     mailbox: personal
     limit: 25
     risk: low
-
   - id: triage_summary
     agent:
       prompt: |
         Summarize the open follow-up signals in {{gather_signals}}.
         Return a short JSON-style summary of the people, promises, and deadlines.
-    awaits: [gather_signals]
+    awaits:
+      - gather_signals
     when: "{{gather_signals.length > 0}}"
     risk: low
-
   - id: enrich_context
     tool: notes.lookup_recent_context
     subject: "{{triage_summary}}"
-    awaits: [triage_summary]
+    awaits:
+      - triage_summary
     optional: true
     risk: medium
-
   - id: followup_plan
     recipe: chained-followup-child
     vars:
       summary: "{{triage_summary}}"
       context_note: "{{enrich_context}}"
-    output: followup_packet
-    awaits: [triage_summary, enrich_context]
+    awaits:
+      - triage_summary
+      - enrich_context
     risk: medium
+    into: followup_packet
+maxConcurrency: 2
+maxDepth: 2

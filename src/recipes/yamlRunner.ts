@@ -39,7 +39,10 @@ import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
 } from "./agentExecutor.js";
-import { normalizeRecipeForRuntime } from "./legacyRecipeCompat.js";
+import {
+  defaultDeprecationWarn,
+  normalizeRecipeForRuntime,
+} from "./legacyRecipeCompat.js";
 import type { ErrorPolicy } from "./schema.js";
 
 // Import tool registry and trigger tool self-registration
@@ -266,7 +269,7 @@ export function loadYamlRecipe(filePath: string): YamlRecipe {
 }
 
 export function validateYamlRecipe(raw: unknown): YamlRecipe {
-  const normalized = normalizeRecipeForRuntime(raw, console.warn);
+  const normalized = normalizeRecipeForRuntime(raw, defaultDeprecationWarn);
   if (typeof normalized !== "object" || normalized === null) {
     throw new Error("recipe must be an object");
   }

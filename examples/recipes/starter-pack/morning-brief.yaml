@@ -1,56 +1,50 @@
-# Morning brief: weather + first 3 calendar events + 3 urgent inbox items + one sentence from yesterday's notes.
+version: 1.0.0
 name: morning-brief
-version: "1.0.0"
 description: >
-  6am brief. One screen. Weather, first 3 meetings, 3 inbox items that need
-  you today, and one line from yesterday's notes to remind you where you left off.
-# requires: gmail-mcp, calendar-mcp, weather-mcp
-
+  6am brief. One screen. Weather, first 3 meetings, 3 inbox items that need you today, and one line
+  from yesterday's notes to remind you where you left off.
 trigger:
   type: cron
-  schedule: "0 6 * * 1-5"
-
+  at: 0 6 * * 1-5
 context:
   - type: env
-    keys: [USER_NAME, LOCATION]
-
+    keys:
+      - USER_NAME
+      - LOCATION
 steps:
   - id: parallel_fetch
     parallel:
       - tool: weather.today
-        params: { location: "{{LOCATION}}" }
-        output: weather
+        location: "{{LOCATION}}"
+        into: weather
       - tool: calendar.list
-        params: { range: "today", limit: 3 }
-        output: events
+        range: today
+        limit: 3
+        into: events
       - tool: inbox.search
-        params: { query: "is:unread is:important", limit: 3 }
-        output: urgent
+        query: is:unread is:important
+        limit: 3
+        into: urgent
       - tool: notes.last
-        params: { limit: 1 }
-        output: yesterday
+        limit: 1
+        into: yesterday
     risk: low
-
   - id: compose
-    agent: true
-    prompt: |
-      Compose a 6-line morning brief for {{USER_NAME}}:
-        L1: weather ({{weather}})
-        L2-4: three calendar events with times ({{events}})
-        L5: urgent count + top sender ({{urgent}})
-        L6: "yesterday you were on: {{yesterday}}"
-      No greeting. No motivational filler.
-    output: brief
     risk: low
-
+    agent:
+      prompt: |
+        Compose a 6-line morning brief for {{USER_NAME}}:
+          L1: weather ({{weather}})
+          L2-4: three calendar events with times ({{events}})
+          L5: urgent count + top sender ({{urgent}})
+          L6: "yesterday you were on: {{yesterday}}"
+        No greeting. No motivational filler.
+      into: brief
   - id: send
-    agent: false
     tool: notify.push
-    params:
-      title: "Morning brief"
-      body: "{{brief}}"
     risk: low
-
+    title: Morning brief
+    body: "{{brief}}"
 on_error:
   notify: false
   retry: 1

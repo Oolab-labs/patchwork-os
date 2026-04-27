@@ -1,60 +1,53 @@
-# Receipt logger: watch inbox for receipts, extract vendor/amount/category, append to monthly ledger.
+version: 1.0.0
 name: receipt-logger
-version: "1.0.0"
 description: >
   Passive receipt capture. Scans inbox for purchase confirmations, parses
-  vendor/amount/date/category, appends to a plain-text ledger. End of month,
-  totals by category and flags anything weird.
-# requires: gmail-mcp
-
+  vendor/amount/date/category, appends to a plain-text ledger. End of month, totals by category and
+  flags anything weird.
 trigger:
   type: event
   on: inbox.new_message
   filter:
-    subject_contains: ["receipt", "order confirmation", "invoice", "your purchase"]
-
+    subject_contains:
+      - receipt
+      - order confirmation
+      - invoice
+      - your purchase
 context:
   - type: env
-    keys: [LEDGER_PATH]   # default ~/.patchwork/ledger/{{YYYY-MM}}.md
-
+    keys:
+      - LEDGER_PATH
 steps:
   - id: extract
-    agent: true
-    prompt: |
-      From this email, extract: vendor, amount, currency, date, category
-      (groceries / dining / subscription / travel / tools / other), and a
-      1-line note. If it's not actually a receipt, return null.
-      Input: {{event.message}}
-    output: entry
     risk: low
-
+    agent:
+      prompt: |
+        From this email, extract: vendor, amount, currency, date, category
+        (groceries / dining / subscription / travel / tools / other), and a
+        1-line note. If it's not actually a receipt, return null.
+        Input: {{event.message}}
+      into: entry
   - id: append
-    agent: false
     tool: file.append
-    params:
-      path: "{{LEDGER_PATH}}"
-      line: "{{entry.date}} | {{entry.vendor}} | {{entry.amount}} {{entry.currency}} | {{entry.category}} | {{entry.note}}"
     risk: low
     skip_if: "{{entry == null}}"
-
+    path: "{{LEDGER_PATH}}"
+    content: "{{entry.date}} | {{entry.vendor}} | {{entry.amount}} {{entry.currency}} |
+      {{entry.category}} | {{entry.note}}"
   - id: flag_anomaly
-    agent: true
-    prompt: |
-      Compare {{entry}} to the last 30 days in {{LEDGER_PATH}}.
-      If amount > 3x typical for this vendor, OR category is unusual for this time of month,
-      return an alert. Otherwise return null.
-    output: alert
     risk: low
-
+    agent:
+      prompt: |
+        Compare {{entry}} to the last 30 days in {{LEDGER_PATH}}.
+        If amount > 3x typical for this vendor, OR category is unusual for this time of month,
+        return an alert. Otherwise return null.
+      into: alert
   - id: notify_if_weird
-    agent: false
     tool: notify.push
-    params:
-      title: "Receipt looks unusual"
-      body: "{{alert}}"
     skip_if: "{{alert == null}}"
     risk: low
-
+    title: Receipt looks unusual
+    body: "{{alert}}"
 on_error:
   notify: false
   retry: 2
