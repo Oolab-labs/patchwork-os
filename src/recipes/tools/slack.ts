@@ -28,13 +28,18 @@ registerTool({
         type: "string",
         description: "Message text (supports {{template}} substitution)",
       },
+      blocks: {
+        type: "array",
+        description: "Slack Block Kit blocks array (optional, used instead of text)",
+        items: { type: "object" },
+      },
       thread_ts: {
         type: "string",
         description: "Thread timestamp to reply in a thread (optional)",
       },
       into: CommonSchemas.into,
     },
-    required: ["text"],
+    required: [],
   },
   outputSchema: {
     type: "object",
@@ -60,10 +65,11 @@ registerTool({
 
     const channel = params.channel ? String(params.channel) : "general";
     const text = params.text ? String(params.text) : "";
+    const blocks = Array.isArray(params.blocks) ? params.blocks : undefined;
     const threadTs = params.thread_ts ? String(params.thread_ts) : undefined;
 
     try {
-      const result = await postMessage(channel, text, threadTs);
+      const result = await postMessage(channel, text, threadTs, blocks, undefined);
       return JSON.stringify({
         ok: true,
         ts: result.ts,

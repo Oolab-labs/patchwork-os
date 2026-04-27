@@ -76,6 +76,7 @@ describe("createSlackPostMessageTool", () => {
       "C123",
       "Reply",
       "1234.000",
+      undefined,
       signal,
     );
   });
@@ -90,6 +91,7 @@ describe("createSlackPostMessageTool", () => {
     expect(mockPostMessage).toHaveBeenCalledWith(
       "general",
       "Hi",
+      undefined,
       undefined,
       undefined,
     );
