@@ -3,8 +3,10 @@
  * dispatch. Extracted from bridge.ts to reduce god-object surface area.
  */
 
+import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
 import {
@@ -289,12 +291,19 @@ export class RecipeOrchestration {
           error: `Recipe "${name}" not found in ${recipesDir}`,
         };
       }
+      // Merge declared trigger.inputs[].default values with caller-provided vars.
+      // Caller-provided vars always win. This lets dashboard "Run" buttons that
+      // POST with no body still receive the recipe's declared input defaults
+      // (e.g. team=Engineering) instead of empty strings.
+      const mergedVars = applyTriggerInputDefaults(ymlPath, vars);
+
       return this.fireYamlRecipe({
         filePath: ymlPath,
         name,
         taskIdPrefix: `yaml-recipe-${name}`,
         triggerSourceSuffix: `recipe:${name}`,
         logLabel: `"${name}"`,
+        seedContext: mergedVars,
       });
     };
   }
@@ -373,4 +382,38 @@ export class RecipeOrchestration {
       });
     return fireResult;
   }
+}
+
+/**
+ * Read a YAML recipe's trigger.inputs[] declarations and merge any declared
+ * defaults underneath caller-provided vars. Caller vars always win. Tolerates
+ * missing files / malformed YAML / non-array inputs by returning the original
+ * vars untouched.
+ */
+function applyTriggerInputDefaults(
+  ymlPath: string,
+  vars?: Record<string, string>,
+): Record<string, string> | undefined {
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(readFileSync(ymlPath, "utf-8"));
+  } catch {
+    return vars;
+  }
+  const trigger = (parsed as { trigger?: unknown } | null)?.trigger;
+  const inputs = (trigger as { inputs?: unknown } | null)?.inputs;
+  if (!Array.isArray(inputs)) return vars;
+
+  const defaults: Record<string, string> = {};
+  for (const item of inputs) {
+    if (!item || typeof item !== "object") continue;
+    const name = (item as { name?: unknown }).name;
+    const dflt = (item as { default?: unknown }).default;
+    if (typeof name !== "string" || name.length === 0) continue;
+    if (dflt === undefined || dflt === null) continue;
+    defaults[name] = String(dflt);
+  }
+
+  if (Object.keys(defaults).length === 0) return vars;
+  return { ...defaults, ...(vars ?? {}) };
 }
