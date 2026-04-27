@@ -200,6 +200,8 @@ export interface RunnerDeps {
   fetchFn?: FetchFn;
   /** Optional token resolver for Gmail. Defaults to getValidAccessToken(). */
   getGmailToken?: () => Promise<string>;
+  /** Optional token resolver for Google Drive. Defaults to getValidAccessToken(). */
+  getDriveToken?: () => Promise<string>;
   /** Override the ~/.patchwork dir used by RecipeRunLog. Useful for tests. */
   logDir?: string;
   /** Optional Anthropic API caller for agent steps. Defaults to fetch-based impl. */
@@ -368,9 +370,24 @@ export async function runYamlRecipe(
   }
 
   const now = deps.now ? deps.now() : new Date();
+
+  // Resolve recipe-level context blocks (type: env) into seed context
+  const envCtx: RunContext = {};
+  if (Array.isArray((recipe as unknown as Record<string, unknown>).context)) {
+    for (const block of ((recipe as unknown as Record<string, unknown[]>).context ?? [])) {
+      const b = block as Record<string, unknown>;
+      if (b.type === "env" && Array.isArray(b.keys)) {
+        for (const key of b.keys as string[]) {
+          if (process.env[key] !== undefined) envCtx[key] = process.env[key]!;
+        }
+      }
+    }
+  }
+
   const ctx: RunContext = {
     date: now.toISOString().slice(0, 10),
     time: now.toTimeString().slice(0, 5),
+    ...envCtx,
     ...seedContext,
   };
 
@@ -421,7 +438,14 @@ export async function runYamlRecipe(
               durationMs: Date.now() - stepStart,
             });
           } else {
-            ctx[intoKey] = stripped;
+            // Try to parse as JSON so dot-notation ({{meeting.field}}) works
+            try {
+              const jsonMatch = /```(?:json)?\s*([\s\S]*?)```/.exec(stripped) ?? [null, stripped];
+              const parsed = JSON.parse(jsonMatch[1]!.trim());
+              ctx[intoKey] = parsed;
+            } catch {
+              ctx[intoKey] = stripped;
+            }
             outputs.push(intoKey);
             stepResults.push({
               id: stepId,
@@ -663,11 +687,7 @@ export async function executeStep(
     const params: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(step)) {
       if (key === "tool" || key === "agent" || key === "into") continue;
-      if (typeof value === "string") {
-        params[key] = render(value, ctx);
-      } else {
-        params[key] = value;
-      }
+      params[key] = deepRender(value, ctx);
     }
 
     // Check if mock connector is available for this tool
@@ -698,12 +718,45 @@ export async function executeStep(
   return null;
 }
 
-/** Minimal `{{ expr }}` renderer — replaces against flat context map. */
+/** Minimal `{{ expr }}` renderer — flat keys and dot-notation paths. */
 export function render(template: string, ctx: RunContext): string {
   return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr) => {
     const key = expr.trim();
-    return Object.hasOwn(ctx, key) ? (ctx[key] ?? "") : "";
+    const coerce = (v: unknown): string => {
+      if (v == null) return "";
+      if (typeof v === "object") return JSON.stringify(v);
+      return String(v);
+    };
+    // Fast path: flat key exists
+    if (Object.hasOwn(ctx, key)) return coerce(ctx[key]);
+    // Dot-notation: resolve nested path into ctx values (JSON-parse string intermediates)
+    const parts = key.split(".");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let val: any = ctx;
+    for (const part of parts) {
+      if (val == null) return "";
+      if (typeof val === "string") {
+        try { val = JSON.parse(val); } catch { return ""; }
+      }
+      if (typeof val !== "object") return "";
+      val = (val as Record<string, unknown>)[part];
+    }
+    return val == null ? "" : typeof val === "object" ? JSON.stringify(val) : String(val);
   });
+}
+
+/** Recursively render all string leaves in a value (for nested params like blocks). */
+function deepRender(value: unknown, ctx: RunContext): unknown {
+  if (typeof value === "string") return render(value, ctx);
+  if (Array.isArray(value)) return value.map((v) => deepRender(v, ctx));
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = deepRender(v, ctx);
+    }
+    return out;
+  }
+  return value;
 }
 
 function expandHome(p: string): string {
@@ -802,6 +855,14 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
       deps.getGmailToken ??
       (async () => {
         const { getValidAccessToken } = await import("../connectors/gmail.js");
+        return getValidAccessToken();
+      }),
+    getDriveToken:
+      deps.getDriveToken ??
+      (async () => {
+        const { getValidAccessToken } = await import(
+          "../connectors/googleDrive.js"
+        );
         return getValidAccessToken();
       }),
     logDir: deps.logDir,

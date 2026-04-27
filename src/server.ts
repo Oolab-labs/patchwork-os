@@ -2055,13 +2055,14 @@ export class Server extends EventEmitter<ServerEvents> {
             try {
               const body = Buffer.concat(chunks).toString("utf-8");
               const parsed = body
-                ? (JSON.parse(body) as { vars?: Record<string, string> })
+                ? (JSON.parse(body) as { vars?: Record<string, string>; inputs?: Record<string, string> })
                 : {};
+              const varsRaw = parsed.vars ?? parsed.inputs;
               const vars =
-                parsed.vars &&
-                typeof parsed.vars === "object" &&
-                !Array.isArray(parsed.vars)
-                  ? (parsed.vars as Record<string, string>)
+                varsRaw &&
+                typeof varsRaw === "object" &&
+                !Array.isArray(varsRaw)
+                  ? (varsRaw as Record<string, string>)
                   : undefined;
               if (!this.runRecipeFn) {
                 res.writeHead(503, { "Content-Type": "application/json" });
@@ -2232,7 +2233,8 @@ export class Server extends EventEmitter<ServerEvents> {
             res.end(JSON.stringify({ error: "plan_unavailable" }));
             return;
           }
-          const recipeName = run.recipeName as string;
+          // triggerSource appends ":agent" suffix — strip before file lookup
+          const recipeName = (run.recipeName as string).replace(/:agent$/, "");
           const plan = await this.runPlanFn(recipeName);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ plan }));

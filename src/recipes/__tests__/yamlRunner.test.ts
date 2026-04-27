@@ -461,6 +461,149 @@ describe("runYamlRecipe — seed context", () => {
   });
 });
 
+// ── recipe-level context blocks (type: env) ───────────────────────────────────
+
+describe("runYamlRecipe — context: env blocks", () => {
+  it("resolves env vars listed under context[].keys into template scope", async () => {
+    process.env.YAMLRUNNER_TEST_CHANNEL = "C12345";
+    try {
+      const recipe = makeRecipe({
+        // The runner reads `recipe.context` even though it's not part of the
+        // narrow YamlRecipe type, so we cast through `unknown` here.
+        ...({
+          context: [{ type: "env", keys: ["YAMLRUNNER_TEST_CHANNEL"] }],
+        } as unknown as Partial<YamlRecipe>),
+        steps: [
+          {
+            tool: "file.write",
+            path: "/tmp/out.md",
+            content: "channel={{YAMLRUNNER_TEST_CHANNEL}}",
+          },
+        ],
+      });
+      const written: Record<string, string> = {};
+      await runYamlRecipe(recipe, {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      });
+      expect(written["/tmp/out.md"]).toBe("channel=C12345");
+    } finally {
+      delete process.env.YAMLRUNNER_TEST_CHANNEL;
+    }
+  });
+
+  it("seed context overrides env-block values when keys collide", async () => {
+    process.env.YAMLRUNNER_TEST_OVERRIDE = "from-env";
+    try {
+      const recipe = makeRecipe({
+        ...({
+          context: [{ type: "env", keys: ["YAMLRUNNER_TEST_OVERRIDE"] }],
+        } as unknown as Partial<YamlRecipe>),
+        steps: [
+          {
+            tool: "file.write",
+            path: "/tmp/out.md",
+            content: "v={{YAMLRUNNER_TEST_OVERRIDE}}",
+          },
+        ],
+      });
+      const written: Record<string, string> = {};
+      await runYamlRecipe(
+        recipe,
+        {
+          ...noop(),
+          writeFile: (p, c) => {
+            written[p] = c;
+          },
+        },
+        { YAMLRUNNER_TEST_OVERRIDE: "from-seed" },
+      );
+      // Seed context is merged after env block, so it wins on collisions.
+      expect(written["/tmp/out.md"]).toBe("v=from-seed");
+    } finally {
+      delete process.env.YAMLRUNNER_TEST_OVERRIDE;
+    }
+  });
+
+  it("ignores env-block keys that are not set in process.env", async () => {
+    delete process.env.YAMLRUNNER_TEST_MISSING;
+    const recipe = makeRecipe({
+      ...({
+        context: [{ type: "env", keys: ["YAMLRUNNER_TEST_MISSING"] }],
+      } as unknown as Partial<YamlRecipe>),
+      steps: [
+        {
+          tool: "file.write",
+          path: "/tmp/out.md",
+          content: "v={{YAMLRUNNER_TEST_MISSING}}",
+        },
+      ],
+    });
+    const written: Record<string, string> = {};
+    await runYamlRecipe(recipe, {
+      ...noop(),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    // Unset env vars render to empty string (existing render contract), not
+    // the literal `{{...}}` placeholder.
+    expect(written["/tmp/out.md"]).toBe("v=");
+  });
+});
+
+// ── JSON-aware dot-notation on `into` outputs ─────────────────────────────────
+
+describe("runYamlRecipe — JSON parse-on-into for dot-notation lookups", () => {
+  it("lets a downstream step reference fields of a JSON-stringified output", async () => {
+    // file.read returns a string; the runner should parse JSON-shaped strings
+    // before storing under `into` so that `{{data.field}}` works.
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.read", path: "/tmp/in.json", into: "data" },
+        {
+          tool: "file.write",
+          path: "/tmp/out.md",
+          content: "name={{data.name}} count={{data.count}}",
+        },
+      ],
+    });
+    await runYamlRecipe(recipe, {
+      ...noop(),
+      readFile: () => JSON.stringify({ name: "patchwork", count: 7 }),
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(written["/tmp/out.md"]).toBe("name=patchwork count=7");
+  });
+
+  it("falls back to raw string lookup when output is not valid JSON", async () => {
+    const written: Record<string, string> = {};
+    const recipe = makeRecipe({
+      steps: [
+        { tool: "file.read", path: "/tmp/in.txt", into: "data" },
+        {
+          tool: "file.write",
+          path: "/tmp/out.md",
+          content: "raw={{data}}",
+        },
+      ],
+    });
+    await runYamlRecipe(recipe, {
+      ...noop(),
+      readFile: () => "plain text body",
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    expect(written["/tmp/out.md"]).toBe("raw=plain text body");
+  });
+});
+
 // ── ambient-journal template ──────────────────────────────────────────────────
 
 describe("ambient-journal template shape", () => {
