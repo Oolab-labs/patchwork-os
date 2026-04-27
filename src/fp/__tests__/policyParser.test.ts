@@ -32,6 +32,7 @@ describe("parsePolicy", () => {
 
     expect(result.value).toHaveLength(1);
     const node = result.value[0];
+    if (!node) throw new Error("expected first node");
     expect(node._tag).toBe("WithCooldown");
     if (node._tag === "WithCooldown") {
       expect(node.cooldownMs).toBe(30_000);
@@ -63,6 +64,7 @@ describe("parsePolicy", () => {
     if (!result.ok) return;
     expect(result.value).toHaveLength(1);
     const node = result.value[0];
+    if (!node) throw new Error("expected first node");
     expect(node._tag).toBe("WithCooldown");
     if (node._tag === "WithCooldown" && node.program._tag === "Hook") {
       expect(node.program.hookType).toBe("onGitCommit");
@@ -86,6 +88,7 @@ describe("parsePolicy", () => {
 
     expect(result.value).toHaveLength(1);
     const top = result.value[0];
+    if (!top) throw new Error("expected first node");
     // Structure: WithDedup → Hook (no WithCooldown when dedupeByContent=true;
     // dedup provides its own cooldown window so per-file cooldown is skipped)
     expect(top._tag).toBe("WithDedup");
@@ -111,6 +114,7 @@ describe("parsePolicy", () => {
 
     expect(result.value).toHaveLength(1);
     const top = result.value[0];
+    if (!top) throw new Error("expected first node");
     // Structure: WithRetry → WithCooldown → Hook
     expect(top._tag).toBe("WithRetry");
     if (top._tag === "WithRetry") {
@@ -177,6 +181,7 @@ describe("parsePolicy", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const top = result.value[0];
+    if (!top) throw new Error("expected first node");
     if (top._tag === "WithCooldown" && top.program._tag === "Hook") {
       const src = top.program.promptSource;
       expect(src.kind).toBe("named");
@@ -200,6 +205,7 @@ describe("parsePolicy", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const top = result.value[0];
+    if (!top) throw new Error("expected first node");
     if (top._tag === "WithCooldown") {
       expect(top.key).toBe("save:**/*.ts");
     }
@@ -219,6 +225,7 @@ describe("parsePolicy", () => {
       if (!result.ok) return;
       expect(result.value).toHaveLength(1);
       const top = result.value[0];
+      if (!top) throw new Error("expected first node");
       expect(top._tag).toBe("WithCooldown");
       if (top._tag === "WithCooldown") {
         expect(top.cooldownMs).toBe(15_000);
@@ -246,6 +253,7 @@ describe("parsePolicy", () => {
       if (!result.ok) return;
       expect(result.value).toHaveLength(1);
       const top = result.value[0];
+      if (!top) throw new Error("expected first node");
       if (top._tag === "WithCooldown" && top.program._tag === "Hook") {
         const src = top.program.promptSource;
         expect(src.kind).toBe("inline");
@@ -267,6 +275,7 @@ describe("parsePolicy", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       const top = result.value[0];
+      if (!top) throw new Error("expected first node");
       if (top._tag === "WithCooldown") {
         expect(top.cooldownMs).toBe(10_000);
       }
@@ -296,6 +305,7 @@ describe("parsePolicy", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       const top = result.value[0];
+      if (!top) throw new Error("expected first node");
       if (top._tag === "WithCooldown" && top.program._tag === "Hook") {
         const src = top.program.promptSource;
         expect(src.kind).toBe("named");
