@@ -352,9 +352,16 @@ async function callSaveIssue(
   const parsed = McpClient.extractJson<
     SaveIssueResult | { issue: SaveIssueResult }
   >(res);
-  return (
-    (parsed as { issue?: SaveIssueResult }).issue ?? (parsed as SaveIssueResult)
-  );
+  const raw =
+    (parsed as { issue?: SaveIssueResult }).issue ??
+    (parsed as SaveIssueResult);
+  // Linear MCP sometimes returns the human-readable key (e.g. PAT-42) in
+  // `id` and omits `identifier`. Normalize so callers can always rely on
+  // `identifier` being populated when one is recoverable.
+  if (!raw.identifier && raw.id && /^[A-Z]+-\d+$/.test(raw.id)) {
+    return { ...raw, identifier: raw.id };
+  }
+  return raw;
 }
 
 export async function createIssue(

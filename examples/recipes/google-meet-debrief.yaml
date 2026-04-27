@@ -1,0 +1,101 @@
+version: 1.0.0
+name: google-meet-debrief
+description: >
+  After a Google Meet ends, pull the AI-generated summary email, extract action
+  items / decisions / open questions, create Linear issues for each action item
+  routed to the right team (Sales, Marketing, or Engineering), and post a
+  team-specific debrief to Slack. Zero manual effort between meeting end and
+  work items appearing in your tracker.
+trigger:
+  type: manual
+  inputs:
+    - name: team
+      type: enum
+      values: [Sales, Marketing, Engineering]
+      default: Engineering
+      required: true
+context:
+  - type: env
+    keys:
+      - USER_EMAIL
+      - SLACK_CHANNEL_SALES
+      - SLACK_CHANNEL_MARKETING
+      - SLACK_CHANNEL_ENGINEERING
+steps:
+  - id: fetch_summaries
+    tool: gmail.search
+    risk: low
+    query: '(subject:"Notes from" from:meet-recordings-noreply@google.com) OR (subject:"Notes by Gemini") newer_than:24h'
+    max: 10
+    into: emails
+
+  - id: resolve_content
+    tool: gmail.resolveMeetingNotes
+    risk: low
+    params:
+      emails: "{{emails}}"
+    into: resolved
+
+  - id: parse_summaries
+    tool: meetingNotes.parse
+    risk: low
+    params:
+      content: "{{resolved}}"
+    into: meetings
+
+  - id: create_issues
+    tool: meetingNotes.createLinearIssues
+    risk: medium
+    params:
+      meetings: "{{meetings}}"
+      team: "{{team}}"
+    into: issues
+
+  - id: flatten
+    tool: meetingNotes.flatten
+    risk: low
+    params:
+      meetings: "{{meetings}}"
+      team: "{{team}}"
+      slackChannelSales: "C0AUZEY8Y0Y"
+      slackChannelMarketing: "C0AUZEY8Y0Y"
+      slackChannelEngineering: "C0AUZEY8Y0Y"
+      issues: "{{issues}}"
+    into: meeting
+
+  - id: post_slack
+    tool: slack.post_message
+    risk: low
+    channel: "{{meeting.slackChannel}}"
+    blocks:
+      - type: header
+        text: "{{team}} debrief: {{meeting.title}}"
+      - type: section
+        text: |
+          *Date:* {{meeting.date}}
+          *Attendees:* {{meeting.attendees}}
+
+          {{meeting.summary}}
+      - type: section
+        text: |
+          *Decisions:*
+          {{meeting.decisions}}
+      - type: section
+        text: |
+          *Action items created in Linear:*
+          {{meeting.actionItems}}
+      - type: section
+        text: |
+          *Open questions:*
+          {{meeting.openQuestions}}
+
+  - id: notify
+    tool: notify.push
+    risk: low
+    title: "{{team}} debrief: {{meeting.title}}"
+    body: "Action items created in Linear. Slack posted to {{meeting.slackChannel}}."
+
+on_error:
+  notify: true
+  retry: 1
+  fallback: log_only

@@ -23,6 +23,7 @@ import "./intercom.js";
 import "./hubspot.js";
 import "./datadog.js";
 import "./stripe.js";
+import "./meetingNotes.js";
 
 export type {
   RegisteredTool,
