@@ -196,22 +196,25 @@ interface TokenModalConfig {
   tokenKey: string;
 }
 
+// Connectors that have a backend wired in the bridge — anything not listed
+// here renders as "Coming Soon" in the catalog regardless of wave.
+const SUPPORTED_CONNECTORS = new Set([
+  "gmail",
+  "google-calendar",
+  "github",
+  "linear",
+  "sentry",
+  "slack",
+  "notion",
+  "confluence",
+  "datadog",
+  "hubspot",
+  "intercom",
+  "stripe",
+  "zendesk",
+]);
+
 const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
-  linear: {
-    name: "Linear",
-    icon: <IconLinear />,
-    instructions: (
-      <>
-        Create an API key in{" "}
-        <a href="https://linear.app/settings/api" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
-          Linear Settings → API
-        </a>
-        .
-      </>
-    ),
-    placeholder: "lin_api_…",
-    tokenKey: "token",
-  },
   confluence: {
     name: "Confluence",
     icon: <IconConfluence />,
@@ -435,7 +438,7 @@ function ConnectorGridCard({ def, statusEntry, onConnect, onDisconnect, onTest, 
 
   const isConnected = statusEntry.status === "connected";
   const isDegraded = statusEntry.status === "needs_reauth";
-  const isComingSoon = def.wave > 1 && !(def.id in TOKEN_MODAL_CONNECTORS);
+  const isComingSoon = !SUPPORTED_CONNECTORS.has(def.id);
 
   async function handleTest() {
     setTesting(true);

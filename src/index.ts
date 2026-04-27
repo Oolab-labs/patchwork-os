@@ -4,10 +4,15 @@
 // Uses Node 20.6+ native dotenv loader; falls back to manual parse for older Node.
 {
   const { fileURLToPath: _fileURLToPath } = await import("node:url");
-  const envPath = _fileURLToPath(new URL("../.env", import.meta.url));
   try {
     const { readFileSync, existsSync } = await import("node:fs");
-    if (existsSync(envPath)) {
+    // Try both "../.env" (compiled dist/) and ".env" (tsx src/ dev run)
+    const candidates = [
+      _fileURLToPath(new URL("../.env", import.meta.url)),
+      _fileURLToPath(new URL(".env", import.meta.url)),
+    ];
+    const envPath = candidates.find(existsSync);
+    if (envPath) {
       for (const line of readFileSync(envPath, "utf-8").split("\n")) {
         const m = /^([A-Z_][A-Z0-9_]*)=(.*)$/.exec(line.trim());
         if (m?.[1] && !process.env[m[1]]) {

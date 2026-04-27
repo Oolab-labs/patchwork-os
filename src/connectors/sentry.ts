@@ -14,6 +14,7 @@
  * the stack trace string, ready to pass into enrichStackTrace.
  */
 
+import { escHtml } from "./htmlEscape.js";
 import { McpClient } from "./mcpClient.js";
 import {
   completeAuthorize,
@@ -168,7 +169,7 @@ export async function handleSentryCallback(
     return {
       status: 400,
       contentType: "text/html",
-      body: `<html><body><h2>Sentry connect failed</h2><pre>${error}</pre></body></html>`,
+      body: `<html><body><h2>Sentry connect failed</h2><pre>${escHtml(error)}</pre></body></html>`,
     };
   }
   if (!code || !state) {
@@ -211,7 +212,7 @@ export async function handleSentryCallback(
     return {
       status: 400,
       contentType: "text/html",
-      body: `<html><body><h2>Sentry connect failed</h2><pre>${err instanceof Error ? err.message : String(err)}</pre></body></html>`,
+      body: `<html><body><h2>Sentry connect failed</h2><pre>${escHtml(err instanceof Error ? err.message : String(err))}</pre></body></html>`,
     };
   }
 }

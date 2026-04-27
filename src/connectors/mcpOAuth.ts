@@ -52,6 +52,8 @@ export interface VendorConfig {
   preregisteredClientSecret?: string;
   /** Human-friendly client name for dyn-reg. */
   clientName?: string;
+  /** Skip PKCE params — GitHub OAuth Apps don't support code_challenge. */
+  skipPkce?: boolean;
 }
 
 // ── Known vendor configs ─────────────────────────────────────────────────────
@@ -79,6 +81,7 @@ export function vendorConfig(vendor: VendorId): VendorConfig {
         preregisteredClientId: process.env.PATCHWORK_GITHUB_CLIENT_ID ?? "",
         preregisteredClientSecret: process.env.PATCHWORK_GITHUB_CLIENT_SECRET,
         clientName: "Patchwork OS",
+        skipPkce: true, // GitHub OAuth Apps don't support PKCE (GitHub Apps do)
       };
     case "linear":
       return {
@@ -204,7 +207,7 @@ function challenge(verifier: string): string {
 
 interface PendingAuth {
   vendor: VendorId;
-  verifier: string;
+  verifier: string | undefined;
   clientId: string;
   clientSecret?: string;
   expiresAt: number;
@@ -299,7 +302,7 @@ export async function startAuthorize(
     );
   }
 
-  const verifier = genVerifier();
+  const verifier = config.skipPkce ? undefined : genVerifier();
   const state = base64url(crypto.randomBytes(24));
   pending.set(state, {
     vendor: config.vendor,
@@ -314,9 +317,11 @@ export async function startAuthorize(
     client_id: clientId,
     redirect_uri: config.redirectUri,
     state,
-    code_challenge: challenge(verifier),
-    code_challenge_method: "S256",
   });
+  if (verifier) {
+    params.set("code_challenge", challenge(verifier));
+    params.set("code_challenge_method", "S256");
+  }
   if (config.scopes.length) params.set("scope", config.scopes.join(" "));
 
   const authorizeUrl = config.authorizationEndpoint;
@@ -333,7 +338,7 @@ export interface CompleteResult {
 async function exchangeCode(
   config: VendorConfig,
   code: string,
-  verifier: string,
+  verifier: string | undefined,
   clientId: string,
   clientSecret: string | undefined,
 ): Promise<{
@@ -349,8 +354,8 @@ async function exchangeCode(
     code,
     redirect_uri: config.redirectUri,
     client_id: clientId,
-    code_verifier: verifier,
   });
+  if (verifier) body.set("code_verifier", verifier);
   if (clientSecret) body.set("client_secret", clientSecret);
 
   const res = await fetch(config.tokenEndpoint, {

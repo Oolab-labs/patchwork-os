@@ -264,6 +264,42 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   const calendar = getCalendarStatus();
   const slackConnected = isSlackConnected();
   const slackProfile = getSlackProfile();
+
+  // Token-paste connectors expose loadTokens() which returns null when
+  // no credentials are stored. Probe each one so the dashboard reflects
+  // their actual state instead of always-disconnected.
+  const tokenPasteProbes = [
+    { id: "notion", mod: () => import("./notion.js") },
+    { id: "confluence", mod: () => import("./confluence.js") },
+    { id: "datadog", mod: () => import("./datadog.js") },
+    { id: "hubspot", mod: () => import("./hubspot.js") },
+    { id: "intercom", mod: () => import("./intercom.js") },
+    { id: "stripe", mod: () => import("./stripe.js") },
+    { id: "zendesk", mod: () => import("./zendesk.js") },
+    { id: "jira", mod: () => import("./jira.js") },
+  ] as const;
+  const tokenPasteStatuses = await Promise.all(
+    tokenPasteProbes.map(async (probe) => {
+      try {
+        const m = (await probe.mod()) as { loadTokens?: () => unknown };
+        const connected = m.loadTokens ? m.loadTokens() !== null : false;
+        return {
+          id: probe.id,
+          status: connected
+            ? ("connected" as const)
+            : ("disconnected" as const),
+          lastSync: connected ? new Date().toISOString() : undefined,
+        };
+      } catch {
+        return {
+          id: probe.id,
+          status: "disconnected" as const,
+          lastSync: undefined,
+        };
+      }
+    }),
+  );
+
   const connectors: ConnectorStatus[] = [
     {
       id: "gmail",
@@ -296,6 +332,7 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
       lastSync:
         slackConnected && slackProfile ? new Date().toISOString() : undefined,
     },
+    ...tokenPasteStatuses,
   ];
   return {
     status: 200,

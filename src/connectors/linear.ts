@@ -14,6 +14,7 @@
  * that expected { api_key }. Set LINEAR_API_KEY to bypass OAuth for CI/headless.
  */
 
+import { escHtml } from "./htmlEscape.js";
 import { McpClient } from "./mcpClient.js";
 import {
   completeAuthorize,
@@ -204,7 +205,7 @@ export async function handleLinearCallback(
     return {
       status: 400,
       contentType: "text/html",
-      body: `<html><body><h2>Linear connect failed</h2><pre>${error}</pre></body></html>`,
+      body: `<html><body><h2>Linear connect failed</h2><pre>${escHtml(error)}</pre></body></html>`,
     };
   }
   if (!code || !state) {
@@ -243,7 +244,7 @@ export async function handleLinearCallback(
     return {
       status: 400,
       contentType: "text/html",
-      body: `<html><body><h2>Linear connect failed</h2><pre>${err instanceof Error ? err.message : String(err)}</pre></body></html>`,
+      body: `<html><body><h2>Linear connect failed</h2><pre>${escHtml(err instanceof Error ? err.message : String(err))}</pre></body></html>`,
     };
   }
 }

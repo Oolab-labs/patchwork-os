@@ -1,6 +1,6 @@
 {
   "name": "patchwork-os",
-  "version": "0.2.0-alpha.33",
+  "version": "0.2.0-alpha.34",
   "description": "Patchwork OS — proactive, multi-model AI teammate built on the Claude IDE Bridge. One agent, any model, works while you're away.",
   "type": "module",
   "main": "dist/index.js",
