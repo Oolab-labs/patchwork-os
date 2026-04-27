@@ -73,3 +73,12 @@ session-*.md
 # Dogfood / playtest / debug screenshots (ad-hoc, not repo assets)
 /*.png
 screenshots/
+
+# Local meeting note exports (Google Drive doc downloads dropped at repo root
+# while iterating on the meeting-debrief recipe).
+/*Notes by Gemini*.md
+/*Notes from*.md
+
+# Ad-hoc commit helper scripts generated during multi-step changes.
+/commits.sh
+/commits-*.sh

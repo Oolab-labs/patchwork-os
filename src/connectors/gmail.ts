@@ -256,12 +256,14 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   const { getStatus: getSentryStatus } = await import("./sentry.js");
   const { getStatus: getLinearStatus } = await import("./linear.js");
   const { getStatus: getCalendarStatus } = await import("./googleCalendar.js");
+  const { getStatus: getDriveStatus } = await import("./googleDrive.js");
   const { isConnected: isSlackConnected, getProfile: getSlackProfile } =
     await import("./slack.js");
   const gh = getGitHubStatus();
   const sentry = getSentryStatus();
   const linear = getLinearStatus();
   const calendar = getCalendarStatus();
+  const drive = getDriveStatus();
   const slackConnected = isSlackConnected();
   const slackProfile = getSlackProfile();
 
@@ -325,6 +327,11 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
       id: "google-calendar",
       status: calendar.status,
       lastSync: calendar.lastSync,
+    },
+    {
+      id: "google-drive",
+      status: drive.status,
+      lastSync: drive.lastSync,
     },
     {
       id: "slack",

@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 const ALLOWED_CONNECTORS = new Set([
   "gmail",
   "google-calendar",
+  "google-drive",
   "github",
   "linear",
   "sentry",
