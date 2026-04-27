@@ -2,6 +2,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { fmtDuration } from "@/components/time";
+import { useBridgeStatus } from "@/hooks/useBridgeStatus";
 
 interface Task {
   taskId: string;
@@ -205,6 +206,13 @@ const QUICK_TASK_PRESETS: QuickTaskPreset[] = [
 function QuickTaskLauncher({ onLaunched }: { onLaunched: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [open, setOpen] = useState(false);
+  const status = useBridgeStatus();
+  const driver = status.patchwork?.driver;
+  // While status is still loading (driver undefined) we optimistically allow
+  // the panel; the server will reject with a clear error if the driver isn't
+  // subprocess. Once we know the driver, gate strictly.
+  const driverReady = driver === undefined || driver === "subprocess";
 
   async function launch(preset: QuickTaskPreset) {
     setBusy(preset.id);
@@ -239,19 +247,55 @@ function QuickTaskLauncher({ onLaunched }: { onLaunched: () => void }) {
   }
 
   return (
-    <div className="card" style={{ padding: "16px 20px", marginBottom: "var(--s-5)" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+    <div className="card" style={{ padding: "12px 16px", marginBottom: "var(--s-5)" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
         <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink-0)" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-0)" }}>
             Quick-task launcher
           </div>
           <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
-            Fire a context-aware Claude task. Requires <code>--claude-driver subprocess</code>.
+            {driverReady
+              ? "Fire a context-aware Claude task using a preset."
+              : (
+                <>
+                  Unavailable — bridge driver is{" "}
+                  <code>{driver ?? "none"}</code>. Restart with{" "}
+                  <code>--driver subprocess</code> to enable.
+                </>
+              )}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          disabled={!driverReady}
+          aria-expanded={open}
+          style={{
+            fontSize: 12,
+            padding: "6px 12px",
+            background: open ? "var(--bg-3)" : "var(--bg-2)",
+            border: "1px solid var(--border-default)",
+            borderRadius: "var(--r-2)",
+            cursor: driverReady ? "pointer" : "not-allowed",
+            opacity: driverReady ? 1 : 0.6,
+            color: "var(--fg-0)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {open ? "Hide presets" : "Show presets"}
+        </button>
       </div>
+      {open && driverReady && (
       <div
         style={{
+          marginTop: 12,
           display: "grid",
           gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
           gap: 8,
@@ -286,7 +330,8 @@ function QuickTaskLauncher({ onLaunched }: { onLaunched: () => void }) {
           </button>
         ))}
       </div>
-      {msg && (
+      )}
+      {msg && open && (
         <p style={{ fontSize: 12, marginTop: 8, color: msg.ok ? "var(--ok)" : "var(--err)" }}>
           {msg.text}
         </p>
