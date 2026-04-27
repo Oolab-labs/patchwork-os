@@ -140,6 +140,77 @@ async function gmailFetchThread(
   });
 }
 
+async function gmailGetMessage(
+  id: string,
+  deps: {
+    fetchFn?: import("../yamlRunner.js").FetchFn;
+    getGmailToken?: () => Promise<string>;
+  },
+): Promise<string> {
+  const errorResult = (msg: string): string =>
+    JSON.stringify({ id, subject: "", body: "", links: [], error: msg });
+
+  let token: string;
+  try {
+    if (!deps.getGmailToken) return errorResult("Gmail not connected");
+    token = await deps.getGmailToken();
+  } catch (err) {
+    return errorResult(
+      err instanceof Error ? err.message : "Gmail not connected",
+    );
+  }
+
+  const fetch = deps.fetchFn || globalThis.fetch;
+  const res = await fetch(
+    `https://www.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+
+  if (!res.ok) return errorResult("Gmail API error");
+
+  const data = (await res.json()) as {
+    id: string;
+    snippet?: string;
+    payload?: {
+      headers?: Array<{ name: string; value: string }>;
+      body?: { data?: string };
+      parts?: Array<{
+        mimeType: string;
+        body?: { data?: string };
+        parts?: Array<{ mimeType: string; body?: { data?: string } }>;
+      }>;
+    };
+  };
+
+  const hdrs = data.payload?.headers ?? [];
+  const subject = getHeader(hdrs, "Subject");
+
+  function extractText(payload: NonNullable<typeof data.payload>): string {
+    if (payload.body?.data) {
+      return Buffer.from(payload.body.data, "base64url").toString("utf-8");
+    }
+    for (const part of payload.parts ?? []) {
+      if (part.mimeType === "text/plain" && part.body?.data) {
+        return Buffer.from(part.body.data, "base64url").toString("utf-8");
+      }
+      if (part.mimeType === "text/html" && part.body?.data) {
+        return Buffer.from(part.body.data, "base64url").toString("utf-8");
+      }
+      for (const sub of part.parts ?? []) {
+        if (sub.mimeType === "text/plain" && sub.body?.data) {
+          return Buffer.from(sub.body.data, "base64url").toString("utf-8");
+        }
+      }
+    }
+    return data.snippet ?? "";
+  }
+
+  const body = data.payload ? extractText(data.payload) : (data.snippet ?? "");
+  const links = [...body.matchAll(/https?:\/\/[^\s"'<>]+/g)].map((m) => m[0]);
+
+  return JSON.stringify({ id, subject, body: body.slice(0, 16_000), links });
+}
+
 function sinceToGmailQuery(since: string): string {
   if (since.includes("d")) {
     return `${since.replace("d", "")}d`;
@@ -230,6 +301,42 @@ registerTool({
 });
 
 // ============================================================================
+// gmail.getMessage
+// ============================================================================
+
+registerTool({
+  id: "gmail.getMessage",
+  namespace: "gmail",
+  description:
+    "Fetch a single Gmail message by ID with full body text and extracted links.",
+  paramsSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "Gmail message ID" },
+      into: CommonSchemas.into,
+    },
+    required: ["id"],
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      subject: { type: "string" },
+      body: { type: "string" },
+      links: { type: "array", items: { type: "string" } },
+      error: { type: "string" },
+    },
+  },
+  riskDefault: "low",
+  isWrite: false,
+  isConnector: true,
+  execute: async ({ params, deps }) => {
+    const id = String(params.id ?? "");
+    return gmailGetMessage(id, deps);
+  },
+});
+
+// ============================================================================
 // gmail.fetch_thread
 // ============================================================================
 
@@ -262,5 +369,174 @@ registerTool({
   execute: async ({ params, deps }) => {
     const id = String(params.id ?? "");
     return gmailFetchThread(id, deps);
+  },
+});
+
+// ============================================================================
+// gmail.resolveMeetingNotes
+// ============================================================================
+
+registerTool({
+  id: "gmail.resolveMeetingNotes",
+  namespace: "gmail",
+  description:
+    "Takes gmail.search results and resolves the full meeting notes content for each email. For direct Meet summary emails, returns the body. For 'Notes by Gemini' emails with a linked Google Doc, fetches the full message body, extracts the docs.google.com URL, and retrieves the plain-text doc content. Returns a JSON array of { emailId, subject, source, content }.",
+  paramsSchema: {
+    type: "object",
+    properties: {
+      emails: {
+        description:
+          "Output of gmail.search: { count, messages: [{id, subject, from, date, snippet}] } or JSON string thereof.",
+      },
+      into: CommonSchemas.into,
+    },
+    required: ["emails"],
+  },
+  outputSchema: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        emailId: { type: "string" },
+        subject: { type: "string" },
+        source: { type: "string", enum: ["email", "drive"] },
+        content: { type: "string" },
+      },
+    },
+  },
+  riskDefault: "low",
+  isWrite: false,
+  isConnector: true,
+  execute: async ({ params, deps }) => {
+    type EmailItem = {
+      id: string;
+      subject: string;
+      snippet?: string;
+    };
+
+    let messages: EmailItem[] = [];
+    try {
+      const raw = params.emails;
+      const parsed: unknown =
+        typeof raw === "string" ? JSON.parse(raw as string) : raw;
+      if (
+        parsed !== null &&
+        typeof parsed === "object" &&
+        "messages" in (parsed as object)
+      ) {
+        messages = ((parsed as { messages: EmailItem[] }).messages) ?? [];
+      } else if (Array.isArray(parsed)) {
+        messages = parsed as EmailItem[];
+      }
+    } catch {
+      return JSON.stringify([]);
+    }
+
+    const results: Array<{
+      emailId: string;
+      subject: string;
+      source: "email" | "drive";
+      content: string;
+    }> = [];
+
+    for (const msg of messages) {
+      const subject = msg.subject ?? "";
+      const isGemini =
+        /notes by gemini|document shared with you|shared a document|invited you to (?:edit|view|comment)/i.test(
+          subject,
+        ) ||
+        /notes by gemini|docs\.google\.com\/document/i.test(msg.snippet ?? "");
+
+      if (!isGemini) {
+        // Direct Meet summary — use snippet as content
+        results.push({
+          emailId: msg.id,
+          subject,
+          source: "email",
+          content: msg.snippet ?? "",
+        });
+        continue;
+      }
+
+      // Gemini notes — fetch full message to get Drive URL
+      let driveUrl = "";
+      try {
+        const fullMsg = await gmailGetMessage(msg.id, deps);
+        const parsed = JSON.parse(fullMsg) as {
+          links?: string[];
+          body?: string;
+        };
+        const links = parsed.links ?? [];
+        driveUrl =
+          links.find((l) => l.includes("docs.google.com")) ?? "";
+        if (!driveUrl) {
+          // Try extracting from body text
+          const bodyMatch = /https?:\/\/docs\.google\.com\/[^\s"'<>]+/.exec(
+            parsed.body ?? "",
+          );
+          driveUrl = bodyMatch?.[0] ?? "";
+        }
+      } catch {
+        results.push({
+          emailId: msg.id,
+          subject,
+          source: "email",
+          content: msg.snippet ?? "",
+        });
+        continue;
+      }
+
+      if (!driveUrl) {
+        results.push({
+          emailId: msg.id,
+          subject,
+          source: "email",
+          content: msg.snippet ?? "",
+        });
+        continue;
+      }
+
+      // Fetch the Drive doc
+      try {
+        if (!deps.getDriveToken) {
+          results.push({
+            emailId: msg.id,
+            subject,
+            source: "email",
+            content: msg.snippet ?? "",
+          });
+          continue;
+        }
+        const token = await deps.getDriveToken();
+        const { fetchDocContent, fetchDocName } = await import(
+          "../../connectors/googleDrive.js"
+        );
+        const [content, docName] = await Promise.all([
+          fetchDocContent(driveUrl, token),
+          fetchDocName(driveUrl, token),
+        ]);
+        // Prepend the doc's display name as an H1 so the downstream parser
+        // can pick it up as the meeting title even when the body is sparse
+        // (e.g. an empty Gemini Notes doc generated before the meeting).
+        const titledContent = docName
+          ? `# ${docName}\n\n${content}`
+          : content;
+        results.push({
+          emailId: msg.id,
+          subject,
+          source: "drive",
+          content: titledContent,
+        });
+      } catch {
+        results.push({
+          emailId: msg.id,
+          subject,
+          source: "email",
+          content: msg.snippet ?? "",
+        });
+      }
+    }
+
+    return JSON.stringify(results);
   },
 });

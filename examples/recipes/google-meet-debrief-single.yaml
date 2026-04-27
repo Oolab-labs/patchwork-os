@@ -1,0 +1,62 @@
+version: 1.0.0
+name: google-meet-debrief-single
+description: >
+  Parse a single Google Meet / Gemini notes email by message ID.
+  Fetches the full message body, extracts the linked Google Doc,
+  retrieves its content, and returns structured meeting JSON.
+trigger:
+  type: manual
+  inputs:
+    - name: message_id
+      type: string
+      default: "19dcf144f228314e"
+      required: true
+
+steps:
+  - id: fetch_email
+    tool: gmail.getMessage
+    risk: low
+    params:
+      id: "{{message_id}}"
+    into: email
+
+  - id: resolve_content
+    tools:
+      - drive.fetchDoc
+    risk: low
+    agent:
+      prompt: |
+        Email fetched: {{email}}
+
+        Determine the source of the meeting notes content:
+
+        Case A — subject contains "Notes from" (direct Meet summary):
+          Use email.body directly as content. Source = "email".
+
+        Case B — subject contains "Notes by Gemini" or a Google Doc link appears in email.links:
+          Extract the docs.google.com URL from email.links (pick the first match).
+          Call drive.fetchDoc with that URL to retrieve full plain-text content.
+          Source = "drive".
+
+        Return a JSON array with one item:
+        [
+          {
+            "emailId": string,
+            "subject": string,
+            "source": "email" | "drive",
+            "content": string
+          }
+        ]
+      into: resolved
+
+  - id: parse_meeting
+    tool: meetingNotes.parse
+    risk: low
+    params:
+      content: "{{resolved}}"
+    into: meetings
+
+on_error:
+  notify: true
+  retry: 1
+  fallback: log_only
