@@ -782,6 +782,52 @@ if (process.argv[2] === "recipe" && process.argv[3] === "list") {
   })();
 }
 
+// Patchwork: `patchwork recipe enable <name>` / `recipe disable <name>` —
+// flip the disabled marker so scheduled triggers (cron/file-watch) take
+// effect (or stop). Manual `recipe run` is unaffected.
+if (
+  process.argv[2] === "recipe" &&
+  (process.argv[3] === "enable" || process.argv[3] === "disable")
+) {
+  const subcommand = process.argv[3];
+  const name = process.argv[4];
+  if (!name) {
+    process.stderr.write(
+      `Usage: patchwork recipe ${subcommand} <name>\n` +
+        `  See \`patchwork recipe list\` for installed recipe names.\n`,
+    );
+    process.exit(1);
+  }
+  (async () => {
+    try {
+      const { runRecipeEnable, runRecipeDisable } = await import(
+        "./commands/recipeInstall.js"
+      );
+      if (subcommand === "enable") {
+        const r = runRecipeEnable(name);
+        process.stdout.write(
+          r.alreadyEnabled
+            ? `  ℹ ${r.name} is already enabled\n`
+            : `  ✓ enabled ${r.name}\n`,
+        );
+      } else {
+        const r = runRecipeDisable(name);
+        process.stdout.write(
+          r.alreadyDisabled
+            ? `  ℹ ${r.name} is already disabled\n`
+            : `  ✓ disabled ${r.name}\n`,
+        );
+      }
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 // Patchwork: `patchwork recipe run <name>` — runs a recipe locally or via
 // a running bridge's /recipes/run endpoint if one is available.
 if (process.argv[2] === "recipe" && process.argv[3] === "run") {
