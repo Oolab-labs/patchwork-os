@@ -1,20 +1,22 @@
 # SchemaStore PR — Patchwork Recipe Schema
 
-**Status:** Draft — not yet submitted  
-**Target repo:** https://github.com/SchemaStore/schemastore  
-**File to add:** `src/schemas/json/patchwork-recipe.json`  
-**Companion catalog entry:** `src/api/json/catalog.json`
+**Status:** Submitted — [SchemaStore/schemastore#5608](https://github.com/SchemaStore/schemastore/pull/5608) (open, awaiting LGTM from @madskristensen / @hyperupcall as of 2026-04-28)
+**Target repo:** https://github.com/SchemaStore/schemastore
+**Catalog entry:** `src/api/json/catalog.json` (only — schema served externally)
+**External schema URL:** `https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json`
+
+**Note (2026-04-28):** Per maintainer feedback, the in-repo `src/schemas/json/patchwork-recipe.json` and `src/test/patchwork-recipe/` fixtures were dropped — when the catalog points at an external URL, SchemaStore does not need a mirrored copy. PR diff is now a single `catalog.json` entry.
 
 ---
 
 ## Pre-submission checklist
 
 - [x] Add `x-taplo` file-patterns to generated schema (`schemaGenerator.ts` — shipped alpha.22)
-- [ ] Wire upload endpoint + set `PATCHWORK_SCHEMA_UPLOAD_URL` / `PATCHWORK_SCHEMA_UPLOAD_TOKEN` so `prepublishOnly` pushes to `https://patchwork.sh/schema/` (script is written: `scripts/publish-schemas.mjs`; needs the hosting endpoint provisioned)
-- [ ] Confirm `https://patchwork.sh/schema/recipe.v1.json` resolves publicly (SchemaStore validates the URL on PR submission)
-- [ ] Run SchemaStore's local validation: `npm run build` in the schemastore fork passes
-- [ ] Add at least one positive + one negative test fixture under `src/test/`
-- [ ] Confirm `$schema` header in all `examples/recipes/*.yaml` matches the published URL exactly
+- [x] Public schema URL resolves: `raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json` HTTP 200 (used as catalog `url` instead of needing `patchwork.sh` hosting)
+- [x] SchemaStore CI passes — `validate`, `triage`, pre-commit, codeowners-merge all green on commit a85eab5
+- [N/A] Test fixtures — dropped per maintainer guidance (external-URL catalog entries don't need them)
+- [ ] Confirm `$schema` header in all `examples/recipes/*.yaml` matches the catalog URL exactly (only matters once PR merges and `https://www.schemastore.org/json/` redirect resolves)
+- [ ] Decide long-term: keep hosting on `patchworkos/recipes` repo, or migrate to `Oolab-labs/patchwork-os/main/schemas/` (also live, HTTP 200) — currently both work, the former is canonical because catalog points there and `$id` matches
 
 ---
 

@@ -123,6 +123,13 @@ export abstract class BaseConnector {
   /**
    * Perform OAuth 2.0 token refresh.
    * Subclasses can override for provider-specific refresh flows.
+   *
+   * Failure handling distinguishes permanent from transient failures:
+   *   - Permanent (401, or 400 with `error: invalid_grant`) → clear stored
+   *     tokens so the next call drives a fresh authenticate() flow.
+   *   - Transient (network error, 5xx, 4xx without `invalid_grant`) → keep
+   *     tokens; next call will retry. Avoids forcing a full re-OAuth on
+   *     flaky wifi or temporary IdP outages.
    */
   protected async refreshToken(): Promise<AuthContext | null> {
     if (!this.auth?.refreshToken) return null;
@@ -130,48 +137,66 @@ export abstract class BaseConnector {
     const config = this.getOAuthConfig();
     if (!config) return null;
 
-    try {
-      const params = new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: this.auth.refreshToken,
-        client_id: config.clientId,
-        ...(config.clientSecret ? { client_secret: config.clientSecret } : {}),
-      });
+    const params = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: this.auth.refreshToken,
+      client_id: config.clientId,
+      ...(config.clientSecret ? { client_secret: config.clientSecret } : {}),
+    });
 
-      const response = await fetch(config.tokenEndpoint, {
+    let response: Response;
+    try {
+      response = await fetch(config.tokenEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: params.toString(),
       });
-
-      if (!response.ok) {
-        throw new Error(`Token refresh failed: ${response.status}`);
-      }
-
-      const data = (await response.json()) as {
-        access_token: string;
-        refresh_token?: string;
-        expires_in?: number;
-        scope?: string;
-      };
-
-      const newAuth: AuthContext = {
-        token: data.access_token,
-        refreshToken: data.refresh_token ?? this.auth.refreshToken,
-        expiresAt: data.expires_in
-          ? new Date(Date.now() + data.expires_in * 1000)
-          : undefined,
-        scopes: data.scope?.split(" ") ?? this.auth.scopes,
-      };
-
-      this.auth = newAuth;
-      await this.saveTokens();
-      return newAuth;
     } catch {
-      // Refresh failed - clear tokens to force re-auth
-      await this.clearTokens();
+      // Network error / DNS failure / timeout — transient, keep tokens
       return null;
     }
+
+    if (!response.ok) {
+      let errorBody: { error?: string } = {};
+      try {
+        errorBody = (await response.json()) as { error?: string };
+      } catch {
+        // Some IdPs return non-JSON error bodies; fall through with empty
+      }
+      const refreshTokenIsInvalid =
+        response.status === 401 ||
+        (response.status === 400 && errorBody.error === "invalid_grant");
+      if (refreshTokenIsInvalid) {
+        await this.clearTokens();
+      }
+      return null;
+    }
+
+    let data: {
+      access_token: string;
+      refresh_token?: string;
+      expires_in?: number;
+      scope?: string;
+    };
+    try {
+      data = (await response.json()) as typeof data;
+    } catch {
+      // Malformed success response — treat as transient
+      return null;
+    }
+
+    const newAuth: AuthContext = {
+      token: data.access_token,
+      refreshToken: data.refresh_token ?? this.auth.refreshToken,
+      expiresAt: data.expires_in
+        ? new Date(Date.now() + data.expires_in * 1000)
+        : undefined,
+      scopes: data.scope?.split(" ") ?? this.auth.scopes,
+    };
+
+    this.auth = newAuth;
+    await this.saveTokens();
+    return newAuth;
   }
 
   /**
