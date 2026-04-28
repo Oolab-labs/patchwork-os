@@ -1,10 +1,17 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import cron from "node-cron";
 import { parse as parseYaml } from "yaml";
 import type { Logger } from "../logger.js";
 import { loadConfig } from "../patchworkConfig.js";
 import { findYamlRecipePath, loadRecipePrompt } from "../recipesHttp.js";
+
+/**
+ * Per-recipe disabled marker — must match the constant in
+ * src/commands/recipeInstall.ts (kept inline here to avoid a circular
+ * import via commands → recipes back to commands).
+ */
+const DISABLED_MARKER = ".disabled";
 
 /**
  * RecipeScheduler — runs cron-triggered recipes on a simple interval or
@@ -77,18 +84,88 @@ export class RecipeScheduler {
       return [];
     }
 
+    // Build the list of (path, isInstalledDir) pairs to consider:
+    //   - top-level *.json / *.yaml files (legacy, recipes-as-files)
+    //   - subdirectories from `patchwork recipe install` (each with a
+    //     `.disabled` marker that gates this scheduler — see PR #42)
+    type Candidate = {
+      filePath: string;
+      kind: "json" | "yaml";
+      installDir: string | null;
+    };
+    const candidates: Candidate[] = [];
+
     for (const f of entries) {
+      const fullPath = path.join(this.opts.recipesDir, f);
+      let isDir = false;
+      try {
+        isDir = statSync(fullPath).isDirectory();
+      } catch {
+        continue;
+      }
+
+      if (isDir) {
+        // Honor the per-recipe `.disabled` marker written by recipeInstall.
+        if (existsSync(path.join(fullPath, DISABLED_MARKER))) {
+          this.opts.logger?.info?.(
+            `[scheduler] skipping recipe in "${f}" — .disabled marker present`,
+          );
+          continue;
+        }
+        // Locate the recipe entrypoint inside the install dir.
+        // Prefer recipe.json's `recipes.main`, then fall back to first YAML.
+        const manifestPath = path.join(fullPath, "recipe.json");
+        let entrypoint: string | null = null;
+        if (existsSync(manifestPath)) {
+          try {
+            const m = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+              recipes?: { main?: string };
+            };
+            if (m.recipes?.main) {
+              const candidate = path.join(fullPath, m.recipes.main);
+              if (existsSync(candidate)) entrypoint = candidate;
+            }
+          } catch {
+            // malformed manifest — fall through to first-yaml fallback
+          }
+        }
+        if (!entrypoint) {
+          try {
+            const yaml = readdirSync(fullPath).find((x) => /\.ya?ml$/i.test(x));
+            if (yaml) entrypoint = path.join(fullPath, yaml);
+          } catch {
+            // unreadable — skip
+          }
+        }
+        if (entrypoint) {
+          const ext = path.extname(entrypoint).toLowerCase();
+          candidates.push({
+            filePath: entrypoint,
+            kind: ext === ".json" ? "json" : "yaml",
+            installDir: fullPath,
+          });
+        }
+        continue;
+      }
+
       const isJson = f.endsWith(".json") && !f.endsWith(".permissions.json");
       const isYaml = f.endsWith(".yaml") || f.endsWith(".yml");
       if (!isJson && !isYaml) continue;
+      candidates.push({
+        filePath: fullPath,
+        kind: isJson ? "json" : "yaml",
+        installDir: null,
+      });
+    }
 
-      const fullPath = path.join(this.opts.recipesDir, f);
+    for (const cand of candidates) {
+      const f = path.basename(cand.filePath);
       try {
         let name: string;
         let schedule: string | undefined;
 
-        if (isJson) {
-          const raw = readFileSync(fullPath, "utf-8");
+        if (cand.kind === "json") {
+          const raw = readFileSync(cand.filePath, "utf-8");
           const parsed = JSON.parse(raw) as {
             name?: string;
             trigger?: { type?: string; schedule?: string };
@@ -103,7 +180,7 @@ export class RecipeScheduler {
           name = parsed.name ?? path.basename(f, ".json");
         } else {
           // YAML
-          const raw = readFileSync(fullPath, "utf-8");
+          const raw = readFileSync(cand.filePath, "utf-8");
           const parsed = parseYaml(raw) as {
             name?: string;
             trigger?: { type?: string; at?: string; schedule?: string };
@@ -111,11 +188,10 @@ export class RecipeScheduler {
           if (parsed.trigger?.type !== "cron") continue;
           schedule = parsed.trigger.at ?? parsed.trigger.schedule;
           if (!schedule || typeof schedule !== "string") continue;
-          name =
-            parsed.name ?? path.basename(f, isYaml ? path.extname(f) : ".yaml");
+          name = parsed.name ?? path.basename(f, path.extname(f));
         }
 
-        // Apply disabled filter
+        // Apply config-file disabled list (legacy mechanism)
         if (disabled.has(name)) {
           this.opts.logger?.info?.(
             `[scheduler] skipping disabled recipe "${name}"`,

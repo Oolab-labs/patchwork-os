@@ -209,4 +209,135 @@ describe("RecipeScheduler", () => {
     scheduler.fireForTest("scheduled-yaml");
     expect(ran).toEqual(["scheduled-yaml"]);
   });
+
+  // ─── install-dir recipes (recipeInstall) + `.disabled` marker ────────────
+  // PR #42 added the marker file but only `recipe enable/disable` checked it.
+  // The scheduler now also honors it for recipes installed into subdirs.
+
+  function installDirRecipe(
+    dirName: string,
+    yaml: string,
+    opts: { disabled?: boolean; manifestMain?: string } = {},
+  ) {
+    const dir = path.join(tmp, dirName);
+    mkdirSync(dir, { recursive: true });
+    const yamlFile = opts.manifestMain ?? "main.yaml";
+    writeFileSync(path.join(dir, yamlFile), yaml);
+    if (opts.manifestMain) {
+      writeFileSync(
+        path.join(dir, "recipe.json"),
+        JSON.stringify(
+          { name: dirName, version: "1", recipes: { main: opts.manifestMain } },
+          null,
+          2,
+        ),
+      );
+    }
+    if (opts.disabled) {
+      writeFileSync(path.join(dir, ".disabled"), "");
+    }
+    return dir;
+  }
+
+  it("schedules a cron-triggered recipe installed into a subdirectory", () => {
+    installDirRecipe(
+      "morning-brief",
+      [
+        "name: morning-brief",
+        "trigger:",
+        "  type: cron",
+        "  at: '@every 5m'",
+        "steps:",
+        "  - id: main",
+        "    agent: true",
+        "    prompt: brief me",
+      ].join("\n"),
+    );
+
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+      runYaml: async () => {},
+    });
+
+    const scheduled = scheduler.start();
+    expect(scheduled.map((s) => s.name).sort()).toContain("morning-brief");
+    scheduler.stop();
+  });
+
+  it("skips a recipe whose install dir contains a .disabled marker", () => {
+    installDirRecipe(
+      "standup-digest",
+      [
+        "name: standup-digest",
+        "trigger:",
+        "  type: cron",
+        "  at: '@every 1h'",
+        "steps:",
+        "  - id: main",
+        "    agent: true",
+        "    prompt: digest",
+      ].join("\n"),
+      { disabled: true },
+    );
+
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+      runYaml: async () => {},
+    });
+
+    const scheduled = scheduler.start();
+    expect(scheduled.map((s) => s.name)).not.toContain("standup-digest");
+  });
+
+  it("uses recipe.json manifest's `recipes.main` when present", () => {
+    installDirRecipe(
+      "weekly-roundup",
+      [
+        "name: weekly-roundup",
+        "trigger:",
+        "  type: cron",
+        "  at: '@every 7h'",
+        "steps:",
+        "  - id: main",
+        "    agent: true",
+        "    prompt: roll up",
+      ].join("\n"),
+      { manifestMain: "recipe.yaml" },
+    );
+
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+      runYaml: async () => {},
+    });
+
+    const scheduled = scheduler.start();
+    expect(scheduled.map((s) => s.name)).toContain("weekly-roundup");
+  });
+
+  it("does not schedule a manual-trigger recipe in an install dir", () => {
+    installDirRecipe(
+      "manual-only",
+      [
+        "name: manual-only",
+        "trigger:",
+        "  type: manual",
+        "steps:",
+        "  - id: main",
+        "    agent: true",
+        "    prompt: hi",
+      ].join("\n"),
+    );
+
+    const scheduler = new RecipeScheduler({
+      recipesDir: tmp,
+      enqueue: () => "tid",
+      runYaml: async () => {},
+    });
+
+    const scheduled = scheduler.start();
+    expect(scheduled.map((s) => s.name)).not.toContain("manual-only");
+  });
 });
