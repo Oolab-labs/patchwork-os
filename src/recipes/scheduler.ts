@@ -125,8 +125,13 @@ export class RecipeScheduler {
               const candidate = path.join(fullPath, m.recipes.main);
               if (existsSync(candidate)) entrypoint = candidate;
             }
-          } catch {
-            // malformed manifest — fall through to first-yaml fallback
+          } catch (err) {
+            // Malformed manifest — fall through to first-yaml fallback,
+            // but surface the issue so the user can fix it. Silent failures
+            // here led to "why isn't my recipe firing?" confusion.
+            this.opts.logger?.warn?.(
+              `[scheduler] could not parse recipe.json in "${f}" — ${err instanceof Error ? err.message : String(err)}; falling back to first-yaml lookup`,
+            );
           }
         }
         if (!entrypoint) {
@@ -242,8 +247,12 @@ export class RecipeScheduler {
             `[scheduler] "${name}" scheduled with cron expression "${schedule}"`,
           );
         }
-      } catch {
-        // skip malformed recipe
+      } catch (err) {
+        // Malformed recipe file — surface so users can debug rather than
+        // silently dropping the recipe from the schedule.
+        this.opts.logger?.warn?.(
+          `[scheduler] could not load recipe at "${cand.filePath}" — ${err instanceof Error ? err.message : String(err)}; recipe will not be scheduled`,
+        );
       }
     }
     return this.scheduled;
@@ -275,6 +284,26 @@ export class RecipeScheduler {
   }
 
   private fire(name: string): void {
+    // TOCTOU defence: re-check the legacy `cfg.recipes.disabled` list at
+    // fire time. `start()` snapshots it once; if the user runs `recipe
+    // disable <name>` after start (and the recipe is a top-level legacy
+    // file, where the marker file doesn't apply), the timer would
+    // otherwise still fire until next restart(). The `.disabled` marker
+    // case is handled inside findYamlRecipePath / loadRecipePrompt
+    // (skip disabled install dirs) thanks to PR #49.
+    try {
+      const cfg = loadConfig();
+      const disabled = new Set<string>(cfg.recipes?.disabled ?? []);
+      if (disabled.has(name)) {
+        this.opts.logger?.info?.(
+          `[scheduler] skipping "${name}" — disabled via config (TOCTOU re-check)`,
+        );
+        return;
+      }
+    } catch {
+      // proceed if config unreadable — falling back to scan-time snapshot
+    }
+
     // YAML recipe — delegate to runYaml if provided
     const yamlPath = findYamlRecipePath(this.opts.recipesDir, name);
 
@@ -297,8 +326,12 @@ export class RecipeScheduler {
     // JSON recipe — legacy path
     const loaded = loadRecipePrompt(this.opts.recipesDir, name);
     if (!loaded) {
+      // After PR #49, findYamlRecipePath / loadRecipePrompt return null for
+      // recipes whose install dir has a `.disabled` marker — that's the
+      // common case here. "Disappeared" was misleading; prefer a message
+      // that names both possibilities.
       this.opts.logger?.warn?.(
-        `[scheduler] skipped "${name}" — recipe file disappeared`,
+        `[scheduler] skipped "${name}" — recipe not found or disabled`,
       );
       return;
     }
