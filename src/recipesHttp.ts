@@ -13,6 +13,101 @@ import { loadConfig } from "./patchworkConfig.js";
 import { validateRecipeDefinition } from "./recipes/validation.js";
 
 /**
+ * Per-recipe disabled marker — must match the constant in
+ * `src/commands/recipeInstall.ts` and `src/recipes/scheduler.ts` (kept inline
+ * here to avoid a circular import via commands → recipesHttp → commands).
+ *
+ * Absence on a recipe's install dir = enabled (legacy default).
+ * Presence = disabled — `runRecipeInstall` writes one on every fresh install.
+ */
+const DISABLED_MARKER = ".disabled";
+
+/**
+ * Returns true unless `filePath` lives inside an install dir whose
+ * `.disabled` marker is present. Top-level legacy recipes (direct children
+ * of `recipesDir`) are always considered enabled — there's no install dir
+ * to put a marker in. Used by every trigger surface (webhook, manual fire,
+ * automation) so the marker means the same thing everywhere.
+ */
+export function isRecipeFileEnabled(
+  filePath: string,
+  recipesDir: string,
+): boolean {
+  const rel = path.relative(recipesDir, filePath);
+  // Top-level file in recipesDir → no install dir → enabled by default.
+  if (rel === "" || rel.startsWith("..") || !rel.includes(path.sep)) {
+    return true;
+  }
+  const installDirName = rel.split(path.sep)[0];
+  if (!installDirName) return true;
+  const installDir = path.join(recipesDir, installDirName);
+  return !existsSync(path.join(installDir, DISABLED_MARKER));
+}
+
+/**
+ * Iterate one level of subdirectories under `recipesDir` that look like
+ * install dirs (directory containing `recipe.json` or at least one `.yaml`).
+ * Skips dirs whose `.disabled` marker is present so callers automatically
+ * honor the marker without having to remember.
+ *
+ * Yields `{ installDir, entrypointPath }` pairs where `entrypointPath` is the
+ * file the caller should parse:
+ *   - `recipe.json`'s `recipes.main` if a manifest exists
+ *   - otherwise the first `*.yaml` / `*.yml` in the dir
+ *
+ * Used by webhook + manual-fire path resolvers to find recipes installed
+ * via `runRecipeInstall`.
+ */
+function* iterateInstallDirs(
+  recipesDir: string,
+): Generator<{ installDir: string; entrypointPath: string }> {
+  let entries: string[];
+  try {
+    entries = readdirSync(recipesDir);
+  } catch {
+    return;
+  }
+  for (const f of entries) {
+    const fullPath = path.join(recipesDir, f);
+    let isDir = false;
+    try {
+      isDir = statSync(fullPath).isDirectory();
+    } catch {
+      continue;
+    }
+    if (!isDir) continue;
+    if (existsSync(path.join(fullPath, DISABLED_MARKER))) continue;
+
+    let entrypoint: string | null = null;
+    const manifestPath = path.join(fullPath, "recipe.json");
+    if (existsSync(manifestPath)) {
+      try {
+        const m = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+          recipes?: { main?: string };
+        };
+        if (m.recipes?.main) {
+          const candidate = path.join(fullPath, m.recipes.main);
+          if (existsSync(candidate)) entrypoint = candidate;
+        }
+      } catch {
+        // malformed manifest — fall through to first-yaml fallback
+      }
+    }
+    if (!entrypoint) {
+      try {
+        const yaml = readdirSync(fullPath).find((x) => /\.ya?ml$/i.test(x));
+        if (yaml) entrypoint = path.join(fullPath, yaml);
+      } catch {
+        // unreadable
+      }
+    }
+    if (entrypoint) {
+      yield { installDir: fullPath, entrypointPath: entrypoint };
+    }
+  }
+}
+
+/**
  * Patchwork recipes HTTP surface — reads installed recipes from disk so the
  * dashboard Recipes page can list what's available. The bridge does not yet
  * run recipes natively; this endpoint is strictly read-only today.
@@ -238,6 +333,23 @@ function resolveJsonRecipePathByName(
     return null;
   }
 
+  // Also search install dirs from `recipeInstall`. Skips dirs with
+  // `.disabled` marker so the manual-fire / orchestrator path can't
+  // resolve a recipe the user has explicitly disabled.
+  for (const { entrypointPath } of iterateInstallDirs(recipesDir)) {
+    if (!entrypointPath.endsWith(".json")) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(entrypointPath, "utf-8")) as {
+        name?: string;
+      };
+      if (parsed.name?.toLowerCase() === safeName) {
+        return entrypointPath;
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+
   return null;
 }
 
@@ -353,7 +465,7 @@ export function deleteRecipeContent(
     return { ok: false, error: "Invalid recipe name" };
   }
   const base = path.resolve(recipesDir);
-  let target =
+  const target =
     findYamlRecipePath(recipesDir, safeName) ??
     resolveJsonRecipePathByName(recipesDir, safeName);
   if (!target) {
@@ -600,6 +712,23 @@ export function findYamlRecipePath(
     }
   }
 
+  // Also search install dirs from `recipeInstall`. Skips dirs with
+  // `.disabled` marker so the manual-fire / orchestrator path can't
+  // resolve a recipe the user has explicitly disabled.
+  for (const { entrypointPath } of iterateInstallDirs(recipesDir)) {
+    if (!/\.ya?ml$/i.test(entrypointPath)) continue;
+    try {
+      const parsed = parseYaml(readFileSync(entrypointPath, "utf-8")) as {
+        name?: string;
+      };
+      if (parsed.name?.toLowerCase() === safeName) {
+        return entrypointPath;
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+
   return null;
 }
 
@@ -618,6 +747,7 @@ export function findWebhookRecipe(
   } catch {
     return null;
   }
+  // Pass 1 — top-level files (legacy)
   for (const f of entries) {
     const isYaml = f.endsWith(".yaml") || f.endsWith(".yml");
     const isJson = f.endsWith(".json") && !f.endsWith(".permissions.json");
@@ -635,6 +765,33 @@ export function findWebhookRecipe(
           name: parsed.name ?? path.basename(f, path.extname(f)),
           path: requestPath,
           filePath,
+          format: isYaml ? "yaml" : "json",
+        };
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+  // Pass 2 — install dirs (skips dirs marked .disabled).
+  for (const { entrypointPath } of iterateInstallDirs(recipesDir)) {
+    const ext = path.extname(entrypointPath).toLowerCase();
+    const isYaml = ext === ".yaml" || ext === ".yml";
+    const isJson = ext === ".json";
+    if (!isYaml && !isJson) continue;
+    try {
+      const raw = readFileSync(entrypointPath, "utf-8");
+      const parsed = (isYaml ? parseYaml(raw) : JSON.parse(raw)) as {
+        name?: string;
+        trigger?: { type?: string; path?: string };
+      };
+      if (parsed.trigger?.type !== "webhook") continue;
+      if (parsed.trigger.path === requestPath) {
+        return {
+          name:
+            parsed.name ??
+            path.basename(entrypointPath, path.extname(entrypointPath)),
+          path: requestPath,
+          filePath: entrypointPath,
           format: isYaml ? "yaml" : "json",
         };
       }
