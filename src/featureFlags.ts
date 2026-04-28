@@ -57,16 +57,69 @@ export function registerFlag(flag: FeatureFlag): void {
 }
 
 /**
+ * Snapshot of env-derived kill-switch values, populated by `lockKillSwitchEnv()`
+ * at bridge startup. Once locked, kill-switch flags ignore live `process.env`
+ * mutations — defends against a plugin / recipe step trying to disable an
+ * active emergency stop by writing `process.env.PATCHWORK_FLAG_*`.
+ */
+const FROZEN_KILL_SWITCH_ENV: Map<string, boolean | undefined> = new Map();
+let envLocked = false;
+
+/**
+ * Snapshot the current `process.env` values for every registered kill-switch
+ * flag. Called once by `Bridge.start()` after `loadFlags()` so subsequent
+ * env mutations are ignored for kill-switch reads. Idempotent — second call
+ * is a no-op (would otherwise let an attacker re-snapshot a tampered env).
+ *
+ * Non-kill-switch flags remain dynamic so test infrastructure that mutates
+ * env per case continues to work.
+ */
+export function lockKillSwitchEnv(): void {
+  if (envLocked) return;
+  for (const [id, flag] of FLAG_REGISTRY.entries()) {
+    if (!flag.isKillSwitch) continue;
+    const envKey = `PATCHWORK_FLAG_${id.replace(/[.-]/g, "_").toUpperCase()}`;
+    const envVal = process.env[envKey];
+    FROZEN_KILL_SWITCH_ENV.set(
+      id,
+      envVal === undefined
+        ? undefined
+        : envVal === "1" || envVal.toLowerCase() === "true",
+    );
+  }
+  envLocked = true;
+}
+
+/**
+ * TEST ONLY — resets the env lock so tests can exercise both locked and
+ * unlocked paths without process restart. Do not call from production code.
+ */
+export function _resetEnvLockForTesting(): void {
+  envLocked = false;
+  FROZEN_KILL_SWITCH_ENV.clear();
+}
+
+/**
  * Check if a feature flag is enabled.
  * Resolution order (highest to lowest priority):
- *   1. Environment variable (PATCHWORK_FLAG_<ID>)
+ *   1. Environment variable (PATCHWORK_FLAG_<ID>) — frozen at `lockKillSwitchEnv()`
+ *      time for kill-switch flags so post-lock mutations are ignored
  *   2. User config file (~/.patchwork/config/flags.json)
  *   3. Default value from registration
  */
 export function isEnabled(flagId: string): boolean {
   // Check cache first
   if (FLAG_VALUES.has(flagId)) {
-    // Check environment override
+    const flag = FLAG_REGISTRY.get(flagId);
+    // Kill-switch flags read from the frozen snapshot once locked. This
+    // closes the gap where a plugin / recipe step could `process.env[...] = "0"`
+    // to disable an active emergency stop.
+    if (envLocked && flag?.isKillSwitch) {
+      const frozen = FROZEN_KILL_SWITCH_ENV.get(flagId);
+      if (frozen !== undefined) return frozen;
+      return FLAG_VALUES.get(flagId)!;
+    }
+    // Dynamic env read for non-kill-switch flags (test-friendly).
     const envKey = `PATCHWORK_FLAG_${flagId.replace(/[.-]/g, "_").toUpperCase()}`;
     const envVal = process.env[envKey];
     if (envVal !== undefined) {

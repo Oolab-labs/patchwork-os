@@ -17,6 +17,7 @@ import type { Config } from "./config.js";
 import { DecisionTraceLog } from "./decisionTraceLog.js";
 import { createDriver } from "./drivers/index.js";
 import { ExtensionClient } from "./extensionClient.js";
+import { lockKillSwitchEnv } from "./featureFlags.js";
 import { FileLock } from "./fileLock.js";
 import { buildEnforcementReminder } from "./instructionsUtils.js";
 import { LockFileManager } from "./lockfile.js";
@@ -833,7 +834,12 @@ export class Bridge {
     // 0. Initialize OpenTelemetry (no-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset)
     initTelemetry();
 
-    // 0a. Auto-repair .claude/rules/bridge-tools.md if stale (present but missing the
+    // 0a. Snapshot env-derived kill-switch flags. After this, plugins or
+    // recipe steps mutating `process.env.PATCHWORK_FLAG_*` cannot disable an
+    // active emergency stop. Closes MED-2 from the 2026-04-28 audit.
+    lockKillSwitchEnv();
+
+    // 0b. Auto-repair .claude/rules/bridge-tools.md if stale (present but missing the
     // current version sentinel). Older package versions write stale files that may
     // lack new tool substitution rules. Repair is silent on success; falls back to
     // warn-only if the template is missing or the write fails.
