@@ -1,7 +1,7 @@
 {
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
-  "description": "Companion extension for claude-ide-bridge — provides real-time editor state to Claude Code",
+  "description": "MCP bridge between Claude Code and your IDE. 170+ tools — diagnostics, LSP, debugger, terminal, git. Optional Patchwork OS layer adds recipes, oversight, and approval queue.",
   "version": "1.4.10",
   "extensionKind": [
     "workspace"
@@ -11,13 +11,38 @@
   "icon": "icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Oolab-labs/claude-ide-bridge"
+    "url": "https://github.com/Oolab-labs/patchwork-os"
+  },
+  "bugs": {
+    "url": "https://github.com/Oolab-labs/patchwork-os/issues"
+  },
+  "homepage": "https://github.com/Oolab-labs/patchwork-os#readme",
+  "qna": "https://github.com/Oolab-labs/patchwork-os/discussions",
+  "galleryBanner": {
+    "color": "#1f1f1f",
+    "theme": "dark"
   },
   "engines": {
     "vscode": "^1.93.0"
   },
   "categories": [
+    "AI",
+    "Programming Languages",
     "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "mcp-server",
+    "ide",
+    "lsp",
+    "ai",
+    "agent",
+    "automation",
+    "patchwork",
+    "anthropic",
+    "copilot"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -72,7 +97,7 @@
           {
             "id": "configureHook",
             "title": "Configure an automation hook",
-            "description": "Auto-fix lint errors on save with `onDiagnosticsError`.",
+            "description": "Auto-fix lint errors on save with `onDiagnosticsStateChange`.",
             "media": {
               "markdown": "docs/walkthrough-hooks.md"
             }
