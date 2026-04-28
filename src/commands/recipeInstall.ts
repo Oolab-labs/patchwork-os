@@ -63,6 +63,66 @@ export function isSafeBasename(name: unknown): boolean {
   return true;
 }
 
+/**
+ * GitHub repo and owner names. Lenient enough for real-world usage but
+ * strict enough that the value can be string-interpolated into a URL path
+ * without changing semantics. Rejects: empty, leading dash, leading dot,
+ * `..`, anything outside [A-Za-z0-9_.-], length > 100.
+ */
+function isValidGitHubName(name: string): boolean {
+  if (!name || name.length > 100) return false;
+  if (name.startsWith("-") || name.startsWith(".")) return false;
+  if (name.includes("..")) return false;
+  return /^[A-Za-z0-9_.-]+$/.test(name);
+}
+
+/**
+ * Subdir segment (one piece of a `/`-joined path). Must be non-empty,
+ * not `.`/`..`, and contain only chars safe for URL path interpolation.
+ */
+function isValidSubdirSegment(segment: string): boolean {
+  if (!segment || segment === "." || segment === "..") return false;
+  return /^[A-Za-z0-9_.-]+$/.test(segment);
+}
+
+/**
+ * Git ref (branch / tag / SHA / `feature/foo`). Mirrors `isValidRef` from
+ * `src/tools/git-utils.ts` (we don't import it to avoid pulling tools-layer
+ * deps into commands).
+ *
+ * Rejects: leading dash (CLI-flag injection territory), `..` (range syntax /
+ * traversal), shell/URL metacharacters. Allows `/` for `feature/xyz`-style refs.
+ */
+function isValidGitRef(ref: string): boolean {
+  if (!ref || ref.startsWith("-") || ref.includes("..")) return false;
+  return /^[\w./\-^~@{}]+$/.test(ref);
+}
+
+/**
+ * Allowlist for `httpsGet` redirect targets. The recipe-install fetch path
+ * resolves user-supplied identifiers into GitHub API URLs and follows
+ * redirects, so a malicious source could otherwise cause a server-side
+ * fetch against an attacker host. Restrict redirects to the small set of
+ * GitHub-owned hosts the installer actually needs, over HTTPS only.
+ *
+ * Exported for testing.
+ */
+export function isAllowedRedirectHost(url: string): boolean {
+  if (typeof url !== "string" || !url) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  return (
+    parsed.hostname === "api.github.com" ||
+    parsed.hostname === "raw.githubusercontent.com" ||
+    parsed.hostname === "codeload.github.com"
+  );
+}
+
 // ============================================================================
 // Source parsing
 // ============================================================================
@@ -128,13 +188,13 @@ export function parseInstallSource(source: string): InstallSource {
     if (!owner || !repo) {
       throw new Error(`Invalid GitHub URL: ${source}`);
     }
-    return {
+    return validateGitHubSource({
       type: "github",
       owner,
       repo,
       ...(subdir ? { subdir } : {}),
       ...(ref ? { ref } : {}),
-    };
+    });
   }
 
   throw new Error(
@@ -170,13 +230,48 @@ function parseGithubShorthand(shorthand: string): GitHubInstallSource {
   if (!owner || !repo) {
     throw new Error(`Invalid github shorthand: "${shorthand}"`);
   }
-  return {
+  return validateGitHubSource({
     type: "github",
     owner,
     repo,
     ...(subdirParts.length > 0 ? { subdir: subdirParts.join("/") } : {}),
     ...(ref ? { ref } : {}),
-  };
+  });
+}
+
+/**
+ * Validate a parsed GitHubInstallSource — every field that flows into a URL
+ * must be safe for path interpolation. Throws with a descriptive message
+ * naming the offending field. Returns the same source on success so callers
+ * can chain.
+ */
+function validateGitHubSource(s: GitHubInstallSource): GitHubInstallSource {
+  if (!isValidGitHubName(s.owner)) {
+    throw new Error(
+      `Invalid GitHub owner "${s.owner}": must be [A-Za-z0-9_.-], no leading dash/dot, no "..", ≤ 100 chars`,
+    );
+  }
+  if (!isValidGitHubName(s.repo)) {
+    throw new Error(
+      `Invalid GitHub repo "${s.repo}": must be [A-Za-z0-9_.-], no leading dash/dot, no "..", ≤ 100 chars`,
+    );
+  }
+  if (s.ref !== undefined && !isValidGitRef(s.ref)) {
+    throw new Error(
+      `Invalid git ref "${s.ref}": must be a valid branch/tag/SHA without shell or URL metacharacters`,
+    );
+  }
+  if (s.subdir !== undefined) {
+    const segments = s.subdir.split("/");
+    for (const seg of segments) {
+      if (!isValidSubdirSegment(seg)) {
+        throw new Error(
+          `Invalid subdir segment "${seg}" in "${s.subdir}": must be [A-Za-z0-9_.-], not "." or ".."`,
+        );
+      }
+    }
+  }
+  return s;
 }
 
 // ============================================================================
@@ -211,6 +306,11 @@ export function determineInstallName(
 // ============================================================================
 
 async function httpsGet(url: string): Promise<Buffer> {
+  // Reject the initial URL too — defense in depth in case a caller bypasses
+  // parseInstallSource validation (e.g., raw download_url from API responses).
+  if (!isAllowedRedirectHost(url)) {
+    throw new Error(`Refused fetch: host not in GitHub allowlist (${url})`);
+  }
   return new Promise((resolve, reject) => {
     const req = https.get(
       url,
@@ -221,13 +321,23 @@ async function httpsGet(url: string): Promise<Buffer> {
         },
       },
       (res) => {
-        // Follow redirects
+        // Follow redirects — but only to other GitHub-owned hosts over HTTPS.
+        // A 30x to an attacker-controlled URL would otherwise be silently
+        // followed and the body parsed/written to disk.
         if (
           res.statusCode &&
           res.statusCode >= 300 &&
           res.statusCode < 400 &&
           res.headers.location
         ) {
+          if (!isAllowedRedirectHost(res.headers.location)) {
+            reject(
+              new Error(
+                `Refused redirect to non-allowlisted host: ${res.headers.location}`,
+              ),
+            );
+            return;
+          }
           httpsGet(res.headers.location).then(resolve).catch(reject);
           return;
         }
@@ -261,7 +371,15 @@ async function listGitHubContents(
   dirPath: string,
   ref: string,
 ): Promise<GitHubContentItem[]> {
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${dirPath}?ref=${ref}`;
+  // URL-encode every interpolated component so user-controlled values can't
+  // change URL semantics (extra query params, path traversal, fragment).
+  // Note: `dirPath` is encoded per-segment so legitimate `/` separators
+  // survive while reserved chars inside segments get encoded.
+  const encodedOwner = encodeURIComponent(owner);
+  const encodedRepo = encodeURIComponent(repo);
+  const encodedPath = dirPath.split("/").map(encodeURIComponent).join("/");
+  const encodedRef = encodeURIComponent(ref);
+  const url = `https://api.github.com/repos/${encodedOwner}/${encodedRepo}/contents/${encodedPath}?ref=${encodedRef}`;
   const body = await httpsGet(url);
   const parsed = JSON.parse(body.toString("utf-8")) as unknown;
   if (!Array.isArray(parsed)) {
