@@ -9,10 +9,6 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
-import {
-  loadConfig as loadPatchworkConfig,
-  saveConfig as savePatchworkConfig,
-} from "./patchworkConfig.js";
 import type { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
 import type {
   SchedulerEnqueue,
@@ -30,6 +26,7 @@ import {
   renderWebhookPrompt,
   saveRecipe,
   saveRecipeContent,
+  setRecipeEnabled,
 } from "./recipesHttp.js";
 import type { RecipeRunLog } from "./runLog.js";
 import type { Server } from "./server.js";
@@ -122,28 +119,14 @@ export class RecipeOrchestration {
     };
 
     server.setRecipeEnabledFn = (name: string, enabled: boolean) => {
-      try {
-        const cfg = loadPatchworkConfig();
-        const disabled = new Set<string>(
-          (cfg as { recipes?: { disabled?: string[] } }).recipes?.disabled ??
-            [],
-        );
-        if (enabled) disabled.delete(name);
-        else disabled.add(name);
-        savePatchworkConfig({
-          ...cfg,
-          recipes: {
-            ...(cfg as { recipes?: Record<string, unknown> }).recipes,
-            disabled: [...disabled],
-          },
-        } as Parameters<typeof savePatchworkConfig>[0]);
-        return { ok: true };
-      } catch (err) {
-        return {
-          ok: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
+      // Routes through `setRecipeEnabled` (recipesHttp.ts) which writes the
+      // per-install `.disabled` marker for marketplace-installed recipes
+      // and falls back to the legacy `cfg.recipes.disabled` config list
+      // for top-level legacy files. Both surfaces (CLI + dashboard) now
+      // converge on the same enable/disable semantics — fixes Bug #2 from
+      // the 2026-04-28 audit where the dashboard "Disable" button silently
+      // did nothing for install-dir recipes.
+      return setRecipeEnabled(name, enabled);
     };
 
     server.runsFn = (q: {

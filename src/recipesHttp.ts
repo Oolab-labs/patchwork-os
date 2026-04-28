@@ -7,6 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { loadConfig } from "./patchworkConfig.js";
@@ -60,7 +61,9 @@ export function isRecipeFileEnabled(
  */
 function* iterateInstallDirs(
   recipesDir: string,
-): Generator<{ installDir: string; entrypointPath: string }> {
+  options: { includeDisabled?: boolean } = {},
+): Generator<{ installDir: string; entrypointPath: string; enabled: boolean }> {
+  const includeDisabled = options.includeDisabled === true;
   let entries: string[];
   try {
     entries = readdirSync(recipesDir);
@@ -76,7 +79,8 @@ function* iterateInstallDirs(
       continue;
     }
     if (!isDir) continue;
-    if (existsSync(path.join(fullPath, DISABLED_MARKER))) continue;
+    const enabled = !existsSync(path.join(fullPath, DISABLED_MARKER));
+    if (!enabled && !includeDisabled) continue;
 
     let entrypoint: string | null = null;
     const manifestPath = path.join(fullPath, "recipe.json");
@@ -102,8 +106,106 @@ function* iterateInstallDirs(
       }
     }
     if (entrypoint) {
-      yield { installDir: fullPath, entrypointPath: entrypoint };
+      yield { installDir: fullPath, entrypointPath: entrypoint, enabled };
     }
+  }
+}
+
+/**
+ * Locate an install dir by the *recipe name* declared inside its entrypoint
+ * (not the directory name). The dashboard reports recipes by the parsed
+ * `name` field, while `runRecipeEnable` looks them up by dir name —
+ * the two are usually different (`morning-pkg` vs `morning-brief`). Includes
+ * disabled dirs so re-enabling actually finds them.
+ */
+function findInstallDirByRecipeName(
+  recipesDir: string,
+  name: string,
+): string | null {
+  for (const { installDir, entrypointPath } of iterateInstallDirs(recipesDir, {
+    includeDisabled: true,
+  })) {
+    try {
+      const ext = path.extname(entrypointPath).toLowerCase();
+      const raw = readFileSync(entrypointPath, "utf-8");
+      const parsed = (ext === ".json" ? JSON.parse(raw) : parseYaml(raw)) as {
+        name?: string;
+      };
+      if (parsed.name === name) return installDir;
+    } catch {
+      // skip malformed
+    }
+  }
+  return null;
+}
+
+/**
+ * Unified enable/disable for install-dir AND legacy top-level recipes.
+ *
+ * Routing:
+ *   1. Try to find an install dir whose entrypoint declares this `name`.
+ *      If found, write/remove the `.disabled` marker on that dir. This
+ *      matches CLI `recipe enable/disable` and the trigger-side
+ *      enforcement landed in PRs #43 / #49.
+ *   2. Otherwise the recipe is a top-level legacy file — fall back to
+ *      the legacy `cfg.recipes.disabled` config-file array, which the
+ *      scheduler already honors as a parallel mechanism (it checks both).
+ *
+ * Replaces the old dashboard-only `setRecipeEnabledFn` that wrote ONLY to
+ * the legacy config — which silently did nothing for install-dir recipes.
+ */
+export function setRecipeEnabled(
+  name: string,
+  enabled: boolean,
+  options: {
+    recipesDir?: string;
+    loadConfigFn?: typeof loadConfig;
+    saveConfigFn?: (cfg: unknown) => void;
+  } = {},
+): { ok: boolean; error?: string } {
+  const recipesDir =
+    options.recipesDir ?? path.join(os.homedir(), ".patchwork", "recipes");
+
+  try {
+    const installDir = findInstallDirByRecipeName(recipesDir, name);
+    if (installDir) {
+      const markerPath = path.join(installDir, DISABLED_MARKER);
+      if (enabled) {
+        if (existsSync(markerPath)) rmSync(markerPath);
+      } else {
+        writeFileSync(markerPath, "");
+      }
+      return { ok: true };
+    }
+
+    // Legacy top-level path — fall back to config-file disabled list
+    const cfg = (options.loadConfigFn ?? loadConfig)();
+    const disabled = new Set<string>(
+      (cfg as { recipes?: { disabled?: string[] } }).recipes?.disabled ?? [],
+    );
+    if (enabled) disabled.delete(name);
+    else disabled.add(name);
+    const next = {
+      ...(cfg as object),
+      recipes: {
+        ...((cfg as { recipes?: Record<string, unknown> }).recipes ?? {}),
+        disabled: [...disabled],
+      },
+    };
+    if (options.saveConfigFn) options.saveConfigFn(next);
+    else {
+      // Dynamic import to avoid coupling at module-load time and to keep
+      // tests able to swap the saver via options.saveConfigFn.
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic require shape
+      const mod = require("./patchworkConfig.js");
+      mod.savePatchworkConfig(next);
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -651,6 +753,8 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         installedAt: stat.mtimeMs,
         hasPermissions,
         source,
+        // Top-level legacy recipes don't have install dirs to put a marker
+        // in, so the `enabled` field still comes from the legacy config list.
         enabled: !disabledSet.has(parsedName),
         ...(Array.isArray(parsed.vars) && parsed.vars.length > 0
           ? { vars: parsed.vars }
@@ -664,6 +768,87 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
       });
     } catch {
       // skip malformed recipe file
+    }
+  }
+
+  // Second pass — recipes installed via `runRecipeInstall` into subdirs.
+  // `enabled` reflects the per-install `.disabled` marker; the legacy
+  // config disabled list is a top-level concern (we still apply it as a
+  // safety belt in case a name collides).
+  for (const {
+    installDir,
+    entrypointPath,
+    enabled: installEnabled,
+  } of iterateInstallDirs(recipesDir, { includeDisabled: true })) {
+    try {
+      const ext = path.extname(entrypointPath).toLowerCase();
+      const isYaml = ext === ".yaml" || ext === ".yml";
+      const isJson = ext === ".json";
+      if (!isYaml && !isJson) continue;
+
+      const raw = readFileSync(entrypointPath, "utf-8");
+      const parsed = (isYaml ? parseYaml(raw) : JSON.parse(raw)) as {
+        name?: string;
+        description?: string;
+        trigger?: { type?: string; path?: string };
+        steps?: unknown[];
+        vars?: Array<{
+          name: string;
+          description?: string;
+          required?: boolean;
+          default?: string;
+        }>;
+      };
+      const stat = statSync(entrypointPath);
+      const parsedName =
+        parsed.name ??
+        path.basename(entrypointPath, path.extname(entrypointPath));
+      const lintRes = validateRecipeDefinition(parsed);
+      let errCount = 0;
+      let warnCount = 0;
+      let firstError: string | undefined;
+      for (const issue of lintRes.issues) {
+        if (issue.level === "error") {
+          errCount++;
+          if (!firstError) firstError = issue.message;
+        } else {
+          warnCount++;
+        }
+      }
+      const webhookPath =
+        parsed.trigger?.type === "webhook" &&
+        typeof parsed.trigger?.path === "string"
+          ? parsed.trigger.path
+          : undefined;
+      recipes.push({
+        name: parsedName,
+        description: parsed.description,
+        trigger: parsed.trigger?.type,
+        ...(webhookPath ? { webhookPath } : {}),
+        stepCount: Array.isArray(parsed.steps) ? parsed.steps.length : 0,
+        path: entrypointPath,
+        installedAt: stat.mtimeMs,
+        hasPermissions: false,
+        source: "user",
+        // Disabled if EITHER the install marker is set OR the legacy config
+        // names this recipe — defence-in-depth so a stale config entry can't
+        // accidentally re-enable a recipe the user explicitly disabled, and
+        // the dashboard can't accidentally enable one disabled by an admin
+        // through the legacy file.
+        enabled: installEnabled && !disabledSet.has(parsedName),
+        ...(Array.isArray(parsed.vars) && parsed.vars.length > 0
+          ? { vars: parsed.vars }
+          : {}),
+        lint: {
+          ok: errCount === 0,
+          errorCount: errCount,
+          warningCount: warnCount,
+          ...(firstError ? { firstError } : {}),
+        },
+      });
+      void installDir;
+    } catch {
+      // skip malformed install dir
     }
   }
 
