@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://patchworkos.com/schema/recipe.v1.json",
+  "$id": "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json",
   "title": "Patchwork Recipe",
   "description": "YAML recipe schema for Patchwork automation",
   "x-taplo": {
@@ -163,6 +163,14 @@
                 "type": "string",
                 "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
               },
+              "retry": {
+                "type": "number",
+                "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+              },
+              "retryDelay": {
+                "type": "number",
+                "description": "Milliseconds to wait between retries (default 1000)"
+              },
               "agent": {
                 "type": "object",
                 "required": ["prompt"],
@@ -229,6 +237,14 @@
                 "type": "string",
                 "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
               },
+              "retry": {
+                "type": "number",
+                "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+              },
+              "retryDelay": {
+                "type": "number",
+                "description": "Milliseconds to wait between retries (default 1000)"
+              },
               "tool": {
                 "type": "string",
                 "not": {
@@ -242,7 +258,14 @@
           },
           {
             "type": "object",
-            "required": ["recipe"],
+            "anyOf": [
+              {
+                "required": ["recipe"]
+              },
+              {
+                "required": ["chain"]
+              }
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -272,9 +295,21 @@
                 "type": "string",
                 "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
               },
+              "retry": {
+                "type": "number",
+                "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+              },
+              "retryDelay": {
+                "type": "number",
+                "description": "Milliseconds to wait between retries (default 1000)"
+              },
               "recipe": {
                 "type": "string",
                 "description": "Nested recipe name or path"
+              },
+              "chain": {
+                "type": "string",
+                "description": "Alias for nested recipe name or path"
               },
               "vars": {
                 "type": "object",
@@ -286,6 +321,220 @@
               "output": {
                 "type": "string",
                 "description": "Output key for the nested recipe result"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["parallel"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Optional group id — used as awaits target by later steps"
+              },
+              "awaits": {
+                "type": "array",
+                "description": "Step IDs that must complete before this group starts",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "parallel": {
+                "type": "array",
+                "description": "Run these steps concurrently. All must finish before later steps that await this group.",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["agent"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Unique chained step identifier used for outputs and dependencies"
+                        },
+                        "awaits": {
+                          "type": "array",
+                          "description": "Step IDs that must complete before this step runs",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "when": {
+                          "type": "string",
+                          "description": "Template condition that controls whether this step runs"
+                        },
+                        "optional": {
+                          "type": "boolean",
+                          "description": "Whether step failure should be tolerated"
+                        },
+                        "risk": {
+                          "type": "string",
+                          "enum": ["low", "medium", "high"],
+                          "description": "Risk level for this step"
+                        },
+                        "transform": {
+                          "type": "string",
+                          "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
+                        },
+                        "retry": {
+                          "type": "number",
+                          "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+                        },
+                        "retryDelay": {
+                          "type": "number",
+                          "description": "Milliseconds to wait between retries (default 1000)"
+                        },
+                        "agent": {
+                          "type": "object",
+                          "required": ["prompt"],
+                          "description": "Agent step configuration",
+                          "properties": {
+                            "prompt": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "driver": {
+                              "type": "string",
+                              "enum": [
+                                "claude",
+                                "claude-code",
+                                "api",
+                                "openai",
+                                "grok",
+                                "gemini",
+                                "anthropic"
+                              ]
+                            },
+                            "into": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": ["tool"],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Unique chained step identifier used for outputs and dependencies"
+                        },
+                        "awaits": {
+                          "type": "array",
+                          "description": "Step IDs that must complete before this step runs",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "when": {
+                          "type": "string",
+                          "description": "Template condition that controls whether this step runs"
+                        },
+                        "optional": {
+                          "type": "boolean",
+                          "description": "Whether step failure should be tolerated"
+                        },
+                        "risk": {
+                          "type": "string",
+                          "enum": ["low", "medium", "high"],
+                          "description": "Risk level for this step"
+                        },
+                        "transform": {
+                          "type": "string",
+                          "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
+                        },
+                        "retry": {
+                          "type": "number",
+                          "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+                        },
+                        "retryDelay": {
+                          "type": "number",
+                          "description": "Milliseconds to wait between retries (default 1000)"
+                        },
+                        "tool": {
+                          "type": "string",
+                          "not": {
+                            "enum": []
+                          }
+                        },
+                        "into": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "anyOf": [
+                        {
+                          "required": ["recipe"]
+                        },
+                        {
+                          "required": ["chain"]
+                        }
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Unique chained step identifier used for outputs and dependencies"
+                        },
+                        "awaits": {
+                          "type": "array",
+                          "description": "Step IDs that must complete before this step runs",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "when": {
+                          "type": "string",
+                          "description": "Template condition that controls whether this step runs"
+                        },
+                        "optional": {
+                          "type": "boolean",
+                          "description": "Whether step failure should be tolerated"
+                        },
+                        "risk": {
+                          "type": "string",
+                          "enum": ["low", "medium", "high"],
+                          "description": "Risk level for this step"
+                        },
+                        "transform": {
+                          "type": "string",
+                          "description": "Template rendered after tool execution. Use $result to reference the tool output. Supports all template expressions."
+                        },
+                        "retry": {
+                          "type": "number",
+                          "description": "Number of times to retry this step on failure (overrides recipe-level on_error.retry)"
+                        },
+                        "retryDelay": {
+                          "type": "number",
+                          "description": "Milliseconds to wait between retries (default 1000)"
+                        },
+                        "recipe": {
+                          "type": "string",
+                          "description": "Nested recipe name or path"
+                        },
+                        "chain": {
+                          "type": "string",
+                          "description": "Alias for nested recipe name or path"
+                        },
+                        "vars": {
+                          "type": "object",
+                          "description": "Template variables passed into a nested recipe step",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "output": {
+                          "type": "string",
+                          "description": "Output key for the nested recipe result"
+                        }
+                      }
+                    }
+                  ]
+                }
               }
             }
           }
@@ -336,17 +585,22 @@
       "properties": {
         "retry": {
           "type": "number",
-          "description": "Number of retries",
+          "description": "Number of retries per failing step (overridden by step.retry)",
           "default": 0
+        },
+        "retryDelay": {
+          "type": "number",
+          "description": "Milliseconds between retries (overridden by step.retryDelay)",
+          "default": 1000
         },
         "fallback": {
           "type": "string",
           "enum": ["log_only", "abort", "deliver_original"],
-          "description": "Fallback action on error"
+          "description": "log_only / deliver_original: treat step failure as non-fatal (like optional); fail-open. abort (default): propagate failure."
         },
         "notify": {
           "type": "boolean",
-          "description": "Whether to notify on error",
+          "description": "Reserved. yamlRunner currently posts Slack notifications on any step failure when slack is connected; gating on this flag is not yet wired.",
           "default": true
         }
       }
