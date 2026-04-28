@@ -2,7 +2,7 @@
   "name": "claude-ide-bridge-extension",
   "displayName": "Claude IDE Bridge",
   "description": "MCP bridge between Claude Code and your IDE. 170+ tools — diagnostics, LSP, debugger, terminal, git. Optional Patchwork OS layer adds recipes, oversight, and approval queue.",
-  "version": "1.4.10",
+  "version": "1.4.11",
   "extensionKind": [
     "workspace"
   ],
