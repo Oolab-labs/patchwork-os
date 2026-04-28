@@ -828,6 +828,39 @@ if (
   })();
 }
 
+// Patchwork: `patchwork recipe uninstall <name>` — remove an installed recipe
+// directory and all its files. Sister to `recipe install`. Idempotent on
+// success (subsequent uninstalls error with "no installed recipe").
+if (process.argv[2] === "recipe" && process.argv[3] === "uninstall") {
+  const name = process.argv[4];
+  if (!name) {
+    process.stderr.write(
+      "Usage: patchwork recipe uninstall <name>\n" +
+        "  See `patchwork recipe list` for installed recipe names.\n",
+    );
+    process.exit(1);
+  }
+  (async () => {
+    try {
+      const { runRecipeUninstall } = await import(
+        "./commands/recipeInstall.js"
+      );
+      const r = runRecipeUninstall(name);
+      if (!r.ok) {
+        process.stderr.write(`Error: ${r.error}\n`);
+        process.exit(1);
+      }
+      process.stdout.write(`  ✓ Uninstalled ${name} (${r.installDir})\n`);
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 // Patchwork: `patchwork recipe run <name>` — runs a recipe locally or via
 // a running bridge's /recipes/run endpoint if one is available.
 if (process.argv[2] === "recipe" && process.argv[3] === "run") {

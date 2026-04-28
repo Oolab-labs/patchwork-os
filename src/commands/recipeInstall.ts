@@ -383,9 +383,25 @@ export async function runRecipeInstall(
     const installName = determineInstallName(manifest, source);
     const installDir = path.join(recipesDir, installName);
 
-    if (!existsSync(installDir)) {
-      mkdirSync(installDir, { recursive: true });
+    // Reinstall correctness: detect whether this is an upgrade in place,
+    // and snapshot the existing enabled state so the upgrade doesn't
+    // silently re-disable a recipe the user explicitly opted into.
+    const isReinstall = existsSync(installDir);
+    const wasEnabled = isReinstall
+      ? !existsSync(path.join(installDir, DISABLED_MARKER))
+      : false;
+
+    if (isReinstall) {
+      // Clear stale files from the previous version so files dropped from
+      // the new manifest don't linger. We rebuild the install dir wholesale
+      // rather than overlay the new files on top of the old.
+      try {
+        rmSync(installDir, { recursive: true, force: true });
+      } catch {
+        // best-effort; mkdirSync below will throw with a clearer error
+      }
     }
+    mkdirSync(installDir, { recursive: true });
 
     // Copy files
     for (const file of filesToCopy) {
@@ -399,11 +415,14 @@ export async function runRecipeInstall(
       cpSync(src, dest);
     }
 
-    // New installs start disabled — user must run `recipe enable <name>`
-    // before scheduled triggers (cron/file-watch) take effect. Manual
-    // `recipe run <name>` still works regardless, since that's an explicit
-    // user invocation.
-    writeFileSync(path.join(installDir, DISABLED_MARKER), "");
+    // Write the disabled-marker policy:
+    //   - Fresh install: start disabled (per the wave2 plan's safety story).
+    //   - Reinstall (upgrade in place): preserve whatever the user had set.
+    //     If the recipe was enabled before, leave it enabled; if disabled,
+    //     leave it disabled. Don't silently revoke an explicit user opt-in.
+    if (!isReinstall || !wasEnabled) {
+      writeFileSync(path.join(installDir, DISABLED_MARKER), "");
+    }
 
     return {
       name: installName,
@@ -566,6 +585,30 @@ export function runRecipeDisable(
   }
   writeFileSync(markerPath, "");
   return { name, installDir, alreadyDisabled: false };
+}
+
+/**
+ * Uninstall a recipe — removes its install directory entirely.
+ *
+ * Returns `{ ok: false, error }` when the recipe isn't found rather than
+ * throwing, so the CLI can surface a clean error message instead of a
+ * stack trace. Path-traversal attempts in `name` still throw via
+ * `findInstalledRecipeDir`'s validator (HIGH-2 hardening from #46).
+ */
+export function runRecipeUninstall(
+  name: string,
+  options: { recipesDir?: string } = {},
+): { ok: boolean; installDir?: string; error?: string } {
+  const recipesDir = options.recipesDir ?? INSTALL_RECIPES_DIR;
+  const installDir = findInstalledRecipeDir(name, recipesDir);
+  if (!installDir) {
+    return {
+      ok: false,
+      error: `No installed recipe named "${name}". Run \`patchwork recipe list\` to see installed recipes.`,
+    };
+  }
+  rmSync(installDir, { recursive: true, force: true });
+  return { ok: true, installDir };
 }
 
 export function listInstalledRecipes(
