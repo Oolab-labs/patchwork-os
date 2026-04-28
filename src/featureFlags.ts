@@ -157,23 +157,8 @@ function persistFlags(): void {
 /** Kill switch for ALL write-tier operations */
 export const KILL_SWITCH_WRITES = "kill-switch.writes";
 
-/** Enable visual recipe debugger (A3) */
-export const FLAG_DEBUGGER = "ui.recipe-debugger";
-
-/** Enable CLI test/watch commands (A2) */
-export const FLAG_CLI_UX = "ui.cli-ux-commands";
-
-/** Enable mock connector harness (A4) */
-export const FLAG_MOCK_HARNESS = "experimental.mock-harness";
-
-/** Enable Wave 2 connectors (A5) */
-export const FLAG_WAVE2_CONNECTORS = "connector.wave2";
-
 /** Enable recipe lint with schema validation (A1) */
 export const FLAG_SCHEMA_LINT = "ui.schema-lint";
-
-/** Enable community recipe gallery (M5) */
-export const FLAG_COMMUNITY_GALLERY = "experimental.community-gallery";
 
 // Register built-in flags
 registerFlag({
@@ -187,51 +172,10 @@ registerFlag({
 });
 
 registerFlag({
-  id: FLAG_DEBUGGER,
-  description: "Visual recipe debugger at /runs/[seq] with step timeline",
-  defaultValue: false,
-  category: "ui",
-  requiresOptIn: true,
-});
-
-registerFlag({
-  id: FLAG_CLI_UX,
-  description: "Enhanced CLI commands: new, lint, test, watch, record, fmt",
-  defaultValue: false,
-  category: "ui",
-  requiresOptIn: true,
-});
-
-registerFlag({
-  id: FLAG_MOCK_HARNESS,
-  description: "Mock connector harness with fixture recording and VCR replay",
-  defaultValue: false,
-  category: "experimental",
-  requiresOptIn: true,
-});
-
-registerFlag({
-  id: FLAG_WAVE2_CONNECTORS,
-  description:
-    "Wave 2 connectors: Confluence, Zendesk, Intercom, HubSpot, Datadog, Stripe",
-  defaultValue: false,
-  category: "connector",
-  requiresOptIn: true,
-});
-
-registerFlag({
   id: FLAG_SCHEMA_LINT,
   description: "Recipe linting with JSON Schema validation",
   defaultValue: false,
   category: "ui",
-  requiresOptIn: true,
-});
-
-registerFlag({
-  id: FLAG_COMMUNITY_GALLERY,
-  description: "Community recipe gallery and GitHub-backed install",
-  defaultValue: false,
-  category: "experimental",
   requiresOptIn: true,
 });
 
