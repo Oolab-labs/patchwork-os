@@ -9,6 +9,7 @@
  *   - Namespace isolation for connectors
  */
 
+import { assertWriteAllowed } from "../featureFlags.js";
 import type { RunContext, StepDeps } from "./yamlRunner.js";
 
 export interface ToolMetadata {
@@ -99,6 +100,11 @@ export function getNamespaces(): string[] {
 
 /**
  * Execute a tool by ID. Throws if tool not found.
+ *
+ * Refuses to execute write-tier tools when the global write kill switch is
+ * active (`kill-switch.writes` flag — set via `PATCHWORK_FLAG_KILL_SWITCH_WRITES=1`
+ * env var or persisted flag). Read-tier tools are always allowed; the kill
+ * switch is a one-way emergency brake on mutating operations.
  */
 export async function executeTool(
   id: string,
@@ -107,6 +113,9 @@ export async function executeTool(
   const tool = getTool(id);
   if (!tool) {
     throw new Error(`Unknown tool: "${id}"`);
+  }
+  if (tool.isWrite) {
+    assertWriteAllowed(id);
   }
   return tool.execute(context);
 }
