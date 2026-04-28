@@ -25,23 +25,37 @@
     "claude",
     "claude-code",
     "mcp",
+    "mcp-server",
     "ide",
+    "ide-bridge",
     "vscode",
+    "cursor",
+    "windsurf",
     "lsp",
     "debugging",
     "terminal",
     "git",
     "github",
     "ai",
+    "agent",
+    "ai-agent",
+    "automation",
+    "approval-queue",
+    "oversight",
+    "recipes",
+    "patchwork",
+    "anthropic",
+    "ollama",
+    "local-first",
     "coding-assistant"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Oolab-labs/claude-ide-bridge.git"
+    "url": "git+https://github.com/Oolab-labs/patchwork-os.git"
   },
-  "homepage": "https://github.com/Oolab-labs/claude-ide-bridge#readme",
+  "homepage": "https://github.com/Oolab-labs/patchwork-os#readme",
   "bugs": {
-    "url": "https://github.com/Oolab-labs/claude-ide-bridge/issues"
+    "url": "https://github.com/Oolab-labs/patchwork-os/issues"
   },
   "files": [
     "dist",

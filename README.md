@@ -1,6 +1,69 @@
-# Patchwork OS
+# Claude IDE Bridge & Patchwork OS
 
-**Proactive AI automation that runs on your machine. Oversight built in. No vendor lock-in.**
+**One npm package. Two products.** Pick the layer you need.
+
+| | What you get | Install | Best for |
+|---|---|---|---|
+| **🔌 Claude IDE Bridge** | MCP bridge connecting Claude Code to your IDE. 170+ tools — diagnostics, LSP, debugger, terminal, git, GitHub, file ops. | `npm i -g patchwork-os` then run `claude-ide-bridge` | Anyone who wants Claude Code to see and act on their editor state |
+| **🤖 Patchwork OS** | Everything in the bridge **plus** YAML recipes, approval queue, oversight dashboard, mobile push approvals, multi-model providers, JetBrains companion. | Same package, run `patchwork patchwork-init` | Power users running automation, agent workflows, or background tasks |
+
+Same codebase. Bridge is the foundation; Patchwork OS is the optional layer on top. **No vendor lock-in. Runs on your machine.**
+
+---
+
+## 🔌 Claude IDE Bridge — Quick Start
+
+```bash
+# 1. Install the npm package
+npm install -g patchwork-os
+
+# 2. Install the VS Code / Cursor / Windsurf extension
+#    Search "Claude IDE Bridge" on OpenVSX, or:
+claude-ide-bridge install-extension
+
+# 3. Start the bridge for your workspace
+claude-ide-bridge --workspace .
+
+# 4. Connect Claude Code (in another terminal)
+CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide
+```
+
+Type `/ide` in Claude Code to confirm the connection. That's it — Claude now sees your diagnostics, open files, and editor state, and can call 170+ tools to act on them.
+
+**What the bridge gives Claude:**
+
+- Diagnostics, LSP navigation (goto / references / call hierarchy), refactoring with risk analysis
+- Terminal — run commands, read output, wait for async work
+- Git — status, diff, commit, push, blame, checkout, branch list
+- GitHub — open PRs, list issues, post reviews, fetch run logs
+- Debugger — set breakpoints, evaluate expressions, inspect runtime state
+- Files — read, edit by line range, search and replace, capture screenshots
+- Code quality — `auditDependencies`, `detectUnusedCode`, `getCodeCoverage`, `getGitHotspots`
+
+The bridge runs without any flags. No recipes, no automation, no dashboard — just the IDE-Claude connection.
+
+**Compatible IDEs:** VS Code, Cursor, Windsurf, Google Antigravity. JetBrains IDEs via [companion plugin](#jetbrains-plugin).
+
+**Transport layers:**
+
+| Client | Protocol |
+|---|---|
+| Claude Code CLI | WebSocket `ws://127.0.0.1:<port>` |
+| Claude Desktop | stdio shim → WebSocket |
+| Remote (claude.ai, Codex CLI) | Streamable HTTP + Bearer token |
+
+**Tool modes:**
+
+| Mode | Tools | When to use |
+|---|---|---|
+| Full _(default)_ | ~170 | All git, GitHub, terminal, file ops, orchestration |
+| Slim (`--slim`) | ~60 | LSP + debugger + editor state only |
+
+Bridge-only docs: [documents/platform-docs.md](documents/platform-docs.md)
+
+---
+
+## 🤖 Patchwork OS — Quick Start
 
 ```bash
 npx patchwork-os@alpha patchwork-init
@@ -8,9 +71,7 @@ npx patchwork-os@alpha patchwork-init
 
 Sets up 5 local recipes, detects Ollama, and opens a terminal dashboard — under 90 seconds.
 
----
-
-## What it is
+### What it adds on top of the bridge
 
 Patchwork OS is a local automation platform that watches your workspace for events, runs AI-powered recipes in response, and routes anything risky through an approval queue before it goes anywhere.
 
@@ -20,44 +81,30 @@ Think of it as a background agent that acts on your behalf — but asks before s
 - Customer email arrives → draft reply in your voice, pending your approval
 - Field-trip permission form flagged → reply drafted to the teacher, waiting for your nod
 
----
-
-## How it works
-
 **Recipes** are plain YAML files. They declare a trigger (cron, file save, git commit, test run, webhook) and an action (run a prompt, write to inbox, call a connector). No code required. Share them like dotfiles.
 
 **Models** are yours. Claude, GPT, Gemini, Grok, or local Ollama. Swap at any time. Nothing phones home.
 
 **Oversight** is non-negotiable. Every write or external action lands in `~/.patchwork/inbox/` for approval. The web UI at `http://localhost:3100` shows pending approvals, live sessions, recipe run history, and analytics.
 
----
-
-## Quickstart
+### Patchwork commands
 
 ```bash
-# Install globally
-npm install -g patchwork-os
-
 # One-command setup: extension + CLAUDE.md + starter recipes
-patchwork-os patchwork-init
+patchwork patchwork-init
 
 # Explore
-patchwork-os recipe list                      # installed recipes
-patchwork-os recipe run daily-status         # run one now
-patchwork-os recipe run morning-brief --local # run with local Ollama
-patchwork-os tools list                      # browse 170+ tools
-patchwork-os                                 # open terminal dashboard
+patchwork recipe list                      # installed recipes
+patchwork recipe run daily-status         # run one now
+patchwork recipe run morning-brief --local # run with local Ollama
+patchwork tools list                      # browse 170+ tools
+patchwork                                 # open terminal dashboard
+
+# Web UI — bridge + extension watcher in tmux
+patchwork start-all                       # then http://localhost:3100
 ```
 
-**Web UI** — start the bridge, then open `http://localhost:3100`
-
-```bash
-patchwork-os start-all    # bridge + extension watcher in tmux
-```
-
----
-
-## Starter recipes
+### Starter recipes
 
 No external API keys needed for these:
 
@@ -70,44 +117,65 @@ No external API keys needed for these:
 | `stale-branches` | cron weekly | Lists branches older than 30 days |
 | `morning-brief` | cron 08:00 | Commits + Linear issues + Calendar events |
 | `sentry-to-linear` | manual | Sentry issue → Linear ticket (one-shot) |
+| `google-meet-debrief` | manual | Meeting notes → Linear + Slack |
 
-Connectors (Linear, Sentry, Slack, Google Calendar) require API keys and approval-gated writes.
+Connectors (Linear, Sentry, Slack, Google Calendar, Intercom, HubSpot, Datadog, Stripe) require API keys and approval-gated writes.
+
+### Automation hooks
+
+Event-driven hooks trigger Claude tasks automatically. Activate with `--automation --automation-policy <path.json> --claude-driver subprocess`.
+
+Key hooks:
+
+| Hook | Fires when |
+|---|---|
+| `onFileSave` | Matching files saved |
+| `onDiagnosticsStateChange` | Errors appear or clear |
+| `onRecipeSave` | Any `.yaml`/`.yml` saved — runs preflight |
+| `onGitCommit` / `onGitPush` / `onGitPull` | Git tools succeed |
+| `onTestRun` | Test run completes (filter: any/failure/pass-after-fail) |
+| `onBranchCheckout` | After branch switch |
+| `onPullRequest` | After `githubCreatePR` succeeds |
+| `onCompaction` | Before/after Claude context compaction |
+| `onTaskCreated` / `onTaskSuccess` | Orchestrator task lifecycle |
+
+All hooks support inline prompts, named prompt references, and a minimum 5s cooldown. Full reference: [documents/platform-docs.md → Automation Hooks](documents/platform-docs.md)
 
 ---
 
 ## Architecture
 
 ```
-patchwork-os CLI
-├── Recipe runner          YAML triggers → LLM prompt → action
-├── Claude IDE Bridge      MCP server — 170+ tools over WebSocket/HTTP
-│   ├── VS Code extension  LSP, debugger, editor state, live diagnostics
-│   ├── Git / GitHub       gitCommit, gitPush, githubCreatePR, …
-│   ├── Terminal           runInTerminal, getTerminalOutput, …
-│   ├── Connectors         Linear, Sentry, Slack, Google Calendar
-│   └── Orchestrator       Claude subprocess tasks, automation hooks
-├── Oversight inbox        ~/.patchwork/inbox/ — approval queue
-└── Web dashboard          http://localhost:3100 — approvals, sessions, analytics
+patchwork-os (npm package)
+│
+├── claude-ide-bridge          ← run alone for bridge-only mode
+│   ├── MCP server             170+ tools over WebSocket / HTTP / stdio
+│   ├── VS Code extension      LSP, debugger, editor state, live diagnostics
+│   ├── Git / GitHub           gitCommit, gitPush, githubCreatePR, …
+│   ├── Terminal               runInTerminal, getTerminalOutput, …
+│   └── Code quality           auditDependencies, detectUnusedCode, getCodeCoverage
+│
+└── patchwork                  ← run for full Patchwork OS layer
+    ├── Recipe runner          YAML triggers → LLM prompt → action
+    ├── Connectors             Linear, Sentry, Slack, Google Calendar, +
+    ├── Orchestrator           Claude subprocess tasks, automation hooks
+    ├── Oversight inbox        ~/.patchwork/inbox/ — approval queue
+    └── Web dashboard          http://localhost:3100 — approvals, sessions, analytics
 ```
 
-**Transport layers:**
+The npm package ships **three CLI binaries** that share the same code:
 
-| Client | Protocol |
+| Binary | Default behavior |
 |---|---|
-| Claude Code CLI | WebSocket `ws://127.0.0.1:<port>` |
-| Claude Desktop | stdio shim → WebSocket |
-| Remote (claude.ai, Codex) | Streamable HTTP + Bearer token |
+| `claude-ide-bridge` | Bridge only — no automation, no recipe runner, no dashboard |
+| `patchwork` | Full Patchwork OS — automation + recipes + dashboard |
+| `patchwork-os` | Alias for `patchwork` |
 
-**Tool modes:**
-
-| Mode | Tools | When to use |
-|---|---|---|
-| Full _(default)_ | ~170 | All git, GitHub, terminal, file ops, orchestration |
-| Slim (`--slim`) | ~60 | LSP + debugger + editor state only |
+Use whichever fits your mental model.
 
 ---
 
-## Tool surface (v0.2.0-alpha.33)
+## Tool surface (v0.2.0-alpha.35)
 
 170+ MCP tools across 15 categories. Highlights:
 
@@ -126,38 +194,16 @@ Full reference: [documents/platform-docs.md](documents/platform-docs.md)
 
 ---
 
-## Automation hooks
-
-Event-driven hooks trigger Claude tasks automatically. Activate with `--automation --automation-policy <path.json> --claude-driver subprocess`.
-
-Key hooks:
-
-| Hook | Fires when |
-|---|---|
-| `onFileSave` | Matching files saved |
-| `onDiagnosticsStateChange` | Errors appear or clear |
-| `onRecipeSave` | Any `.yaml`/`.yml` saved — runs preflight |
-| `onGitCommit` | After successful commit |
-| `onTestRun` | After test run completes |
-| `onBranchCheckout` | After branch switch |
-| `onCompaction` | Before/after Claude context compaction |
-
-All hooks support inline prompts, named prompt references, and a minimum 5s cooldown.
-
-Full reference: [documents/platform-docs.md → Automation Hooks](documents/platform-docs.md)
-
----
-
 ## Plugin system
 
 Extend the tool surface without forking the bridge.
 
 ```bash
 # Scaffold a new plugin
-patchwork-os gen-plugin-stub ./my-plugin --name "org/name" --prefix "myPrefix"
+patchwork gen-plugin-stub ./my-plugin --name "org/name" --prefix "myPrefix"
 
 # Load at runtime
-patchwork-os --plugin ./my-plugin
+claude-ide-bridge --plugin ./my-plugin
 ```
 
 Plugins register MCP tools in-process. Publish to npm with keyword `claude-ide-bridge-plugin`.
@@ -166,12 +212,22 @@ Full reference: [documents/plugin-authoring.md](documents/plugin-authoring.md)
 
 ---
 
+## JetBrains plugin
+
+Companion IntelliJ plugin (v1.0.0) on the JetBrains Marketplace. Covers 49 handlers: core tools, PSI-based LSP (goto, references, hover, rename, symbols, format), XDebugger integration, and code style tools.
+
+Use the same bridge from VS Code and JetBrains IDEs simultaneously — IntelliJ IDEA, PyCharm, GoLand, WebStorm, and other IntelliJ-platform editors.
+
+Source: [intellij-plugin/](intellij-plugin/)
+
+---
+
 ## Remote deployment
 
-Patchwork runs headless on a VPS with full tool support via VS Code Remote-SSH.
+Run headless on a VPS with full tool support via VS Code Remote-SSH.
 
 ```bash
-patchwork-os --bind 0.0.0.0 \
+claude-ide-bridge --bind 0.0.0.0 \
   --issuer-url https://your-domain.com \
   --fixed-token <uuid> \
   --vps
@@ -185,20 +241,18 @@ Systemd service and deploy scripts in [`deploy/`](deploy/). Full guide: [docs/re
 
 | Feature | Status |
 |---|---|
+| 170+ MCP tools (LSP, git, tests, debugger, diagnostics) | **shipped** |
+| VS Code / Cursor / Windsurf / Antigravity extension | **shipped** |
+| JetBrains plugin (49 handlers) | **shipped** |
 | `patchwork-init` — one-command setup | **shipped** |
 | Terminal dashboard | **shipped** |
 | Web oversight UI (approvals, sessions, recipes) | **shipped** |
 | Recipe runner (YAML, cron, manual, webhook) | **shipped** |
 | Multi-provider LLM (Claude, Gemini, OpenAI, Grok, Ollama) | **shipped** |
-| 170+ MCP tools (LSP, git, tests, debugger, diagnostics) | **shipped** |
-| Linear connector (read + approval-gated write) | **shipped** |
-| Sentry connector | **shipped** |
-| Google Calendar connector (read-only) | **shipped** |
-| Slack connector | **shipped** |
+| Connectors: Linear, Sentry, Slack, Google Calendar, Intercom, HubSpot, Datadog, Stripe | **shipped** |
 | Cross-session memory (traces, handoff notes) | **shipped** |
-| JetBrains plugin | **shipped** (marketplace review) |
-| Mobile oversight PWA | in progress |
-| Community recipe marketplace | Q3 |
+| Mobile oversight PWA (push approvals) | **shipped (alpha)** |
+| Community recipe marketplace | Q3 2026 |
 
 ---
 
@@ -213,7 +267,7 @@ npm install && npm run build
 # Symlink installs break the macOS LaunchAgent (EPERM at startup)
 npm pack
 npm install -g patchwork-os-*.tgz
-patchwork-os patchwork-init
+patchwork patchwork-init
 ```
 
 ---
