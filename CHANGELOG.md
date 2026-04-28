@@ -1,22 +1,100 @@
 # Changelog
 
-All notable changes to claude-ide-bridge are documented here.
+All notable changes to Patchwork OS / Claude IDE Bridge are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased]
+## [0.2.0-alpha.35] — 2026-04-27
 
 ### Added
 
-- **`RecipeOrchestrator.fire()`** — new method with process-wide in-flight dedup (`dedupPolicy: "reject"|"allow"`). All recipe entry paths (HTTP webhook, CLI, scheduler, automation hooks) share one dedup `Set`; concurrent identical-name runs are rejected by default. Exposes `isInFlight(name)` and `listInFlight()`.
-- **`src/recipes/agentExecutor.ts`** — unified agent driver dispatch extracted from the two divergent call sites in `yamlRunner.ts`. Superset behavior: chained recipes now correctly route `driver:"local"` and `~/.patchwork/config model:local` to localFn (Ollama/LM Studio). Previously both paths were silently missing from the chained runner.
+- **`google-meet-debrief` recipe** — turns meeting notes into Linear issues + Slack updates in one shot. Demonstrates connector chaining across Drive → Linear → Slack.
+- **Recipe env context + JSON dot-notation** — recipes can read environment variables via `${env.FOO}` and step outputs via `${steps.previous.result.field.nested}` (full dot-notation into JSON results).
+- **Recipe trigger defaults** — common trigger options (`cooldownMs`, `dedup`) inherit sensible defaults so authors don't have to repeat them in every recipe.
 
 ### Changed
 
-- **`providerDriverCache` is now per-run** — previously a process-level module singleton; each recipe run now gets an isolated driver cache via `makeProviderDriverFn()`. Prevents credential/state leakage across concurrent runs.
+- **Dashboard Quick-task launcher** — collapsed by default; gated on `driver=subprocess`. Hides UI affordances that don't function without orchestration enabled.
+
+### Fixed
+
+- Biome formatting pass across recipe tools, `yamlRunner`, and server modules.
+
+---
+
+## [0.2.0-alpha.34] — 2026-04-27
+
+### Added
+
+- **Google Drive OAuth connector** (`src/connectors/googleDrive.ts`) — full OAuth 2.0 flow with PKCE, refresh-token rotation, and approval-gated writes. Joins the existing Calendar + Slack connectors under `BaseConnector`.
+- **Slack block-kit forwarding** — `chat.postMessage` now forwards the full `blocks` array, enabling rich block-kit messages (sections, dividers, action buttons, image blocks) instead of plain text only.
+- **Recipe `apiVersion` migration layer** — recipes declare `apiVersion: "v1"`; runtime translates legacy field shapes (`onSave` → `onFileSave`, etc.) to the canonical form. Future schema bumps land cleanly without breaking deployed recipe libraries.
+
+### Fixed
+
+- **OAuth security hardening** — `redirect_uri` validated against client-registered set, PKCE `S256` enforced, XSS sinks in approval page sanitized, connection catalog now gate-checks `enabled` flag before exposing OAuth metadata.
+- **67 test-side type errors** in `policyParser.test.ts` and 200-error source fix in test files — typecheck pipeline green.
+
+---
+
+## [0.2.0-alpha.32 – 0.2.0-alpha.33] — 2026-04-27
+
+### Added
+
+- **Bridge `GET /templates` + `POST /recipes/install`** — dashboard marketplace can list and install recipe templates server-side. Removes the "Coming soon" badge.
+- **Connections page UX** — wave grouping (read-only / approval-gated), progress bars, filter tabs.
+- **Live SSE activity feed** on dashboard home — recipe runs, approvals, and tool invocations stream in real time.
+- **Marketplace download counts + explicit install route**.
+
+### Changed
+
+- **Root README rewritten from scratch** — Patchwork OS narrative, recipes-first quickstart, architecture diagram.
+- **Recipe deprecation noise silenced at test time** — examples migrated to canonical hook names.
+
+### Fixed
+
+- **Recipes fall back to `anthropicFn`** when CLI probe fails — recipe execution no longer aborts when `claude` binary is missing.
+- **Dashboard error boundaries, trigger filters, demo-mode SSE bypass**.
+- **Shim + extension WS startup race** — `shim --workspace` no longer crashes with NaN port.
+- **Biome cleanup pass** across `src/`.
+
+---
+
+## [0.2.0-alpha.31] — 2026-04-25
+
+### Added
+
+- **`RecipeOrchestration` extracted** to `src/recipeOrchestration.ts` — bridge.ts wires to the new module; reduces coupling and enables independent testing of the orchestrator's dedup, run-log, and dispatch logic.
+
+### Fixed
+
+- Remaining items from the alpha.30 dashboard audit: error boundaries on Recipe pages, trigger-filter consistency, response-type drift, demo-mode SSE.
+
+---
+
+## [0.2.0-alpha.30] — 2026-04-25
+
+### Added
+
+- **`RecipeOrchestrator.fire()`** — process-wide in-flight dedup (`dedupPolicy: "reject"|"allow"`). All recipe entry paths (HTTP webhook, CLI, scheduler, automation hooks) share one dedup `Set`; concurrent identical-name runs are rejected by default. Exposes `isInFlight(name)` and `listInFlight()`.
+- **`src/recipes/agentExecutor.ts`** — unified agent driver dispatch extracted from the two divergent call sites in `yamlRunner.ts`. Superset behavior: chained recipes now correctly route `driver:"local"` and `~/.patchwork/config model:local` to localFn (Ollama/LM Studio). Previously both paths were silently missing from the chained runner.
+- **`bridge._fireYamlRecipe` extracted** — eliminates ~80 lines of duplication; delegates to `RecipeOrchestrator`.
+- **Deprecation warnings on `legacyRecipeCompat`** — paves the way for removal once migration completes.
+- **28-issue dashboard audit sweep** — UI bugs, security findings, UX polish across the oversight UI.
+
+### Changed
+
+- **`providerDriverCache` is now per-run** — previously a process-level module singleton; each recipe run gets an isolated driver cache via `makeProviderDriverFn()`. Prevents credential/state leakage across concurrent runs.
 - **`bridge._fireYamlRecipe` delegates to `RecipeOrchestrator`** — `this.recipeOrchestrator` is the shared dedup authority; per-call `claudeCodeFn` is injected via `FireRequest.dispatchFn`.
+
+### Fixed
+
+- **Chained recipes now write to `RecipeRunLog`** — previously skipped, breaking observability for chained workflows.
+- **Recipe run-button URL mismatch** — name-in-path routing aligned between dashboard and bridge handler.
+- **Random master key for token-file fallback** — closes a security finding where unencrypted fallback used a static key.
+- **Test perf**: real retry delays in `lsp.test.ts` replaced with fake timers — suite faster, less flaky.
 
 ### Breaking (chained recipes only)
 
