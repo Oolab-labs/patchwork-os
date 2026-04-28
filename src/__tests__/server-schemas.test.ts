@@ -55,7 +55,9 @@ describe("GET /schemas/*", () => {
     expect(status).toBe(200);
     expect(contentType).toContain("application/schema+json");
     const parsed = JSON.parse(body);
-    expect(parsed.$id).toBe("https://patchworkos.com/schema/recipe.v1.json");
+    expect(parsed.$id).toBe(
+      "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json",
+    );
   });
 
   it("serves the dry-run plan schema", async () => {
@@ -64,7 +66,7 @@ describe("GET /schemas/*", () => {
     expect(status).toBe(200);
     const parsed = JSON.parse(body);
     expect(parsed.$id).toBe(
-      "https://patchworkos.com/schema/dry-run-plan.v1.json",
+      "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/dry-run-plan.v1.json",
     );
     expect(parsed.properties.schemaVersion.const).toBe(1);
   });
@@ -74,7 +76,9 @@ describe("GET /schemas/*", () => {
     const { status, body } = await get("/schemas/tools/file.json");
     expect(status).toBe(200);
     const parsed = JSON.parse(body);
-    expect(parsed.$id).toBe("https://patchworkos.com/schema/tools/file.json");
+    expect(parsed.$id).toBe(
+      "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/tools/file.json",
+    );
   });
 
   it("returns an index at /schemas/", async () => {

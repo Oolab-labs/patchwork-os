@@ -67,7 +67,7 @@ export function generateDryRunPlanSchema(): unknown {
 
   return {
     $schema: "http://json-schema.org/draft-07/schema#",
-    $id: "https://patchworkos.com/schema/dry-run-plan.v1.json",
+    $id: "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/dry-run-plan.v1.json",
     title: "Patchwork Recipe Dry-Run Plan",
     description:
       "Stable machine-readable output of `patchwork recipe run --dry-run`. Pin consumers on schemaVersion.",
@@ -267,7 +267,7 @@ function generateRecipeSchema(
 
   return {
     $schema: "http://json-schema.org/draft-07/schema#",
-    $id: "https://patchworkos.com/schema/recipe.v1.json",
+    $id: "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json",
     title: "Patchwork Recipe",
     description: "YAML recipe schema for Patchwork automation",
     // taplo formatter: auto-associates *.patchwork.yaml files
@@ -549,7 +549,7 @@ function generateNamespaceSchema(namespace: string): unknown {
 
   return {
     $schema: "http://json-schema.org/draft-07/schema#",
-    $id: `https://patchworkos.com/schema/tools/${namespace}.json`,
+    $id: `https://raw.githubusercontent.com/patchworkos/recipes/main/schema/tools/${namespace}.json`,
     title: `${capitalize(namespace)} Tools`,
     description: `Tool parameters for ${namespace} namespace`,
     definitions,
