@@ -251,6 +251,19 @@ export abstract class BaseConnector {
       }
     }
 
+    // After auth resolution above, this.auth is guaranteed non-null —
+    // every "auth still null" branch returned an error and exited.
+    // Narrow the type so `fn` gets a `string` instead of `string | undefined`.
+    if (!this.auth) {
+      return {
+        error: {
+          code: "provider_error",
+          message: "auth resolution did not populate this.auth",
+          retryable: false,
+        },
+      };
+    }
+
     // Apply rate limit backoff
     if (this.rateLimit.backoffMs > 0) {
       await sleep(this.rateLimit.backoffMs);
@@ -259,7 +272,7 @@ export abstract class BaseConnector {
     // Execute with retry
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const result = await fn(this.auth?.token);
+        const result = await fn(this.auth.token);
         return { data: result };
       } catch (err) {
         const normalized = this.normalizeError(err);
