@@ -127,15 +127,37 @@ export abstract class BaseConnector {
    * Failure handling distinguishes permanent from transient failures:
    *   - Permanent (401, or 400 with `error: invalid_grant`) → clear stored
    *     tokens so the next call drives a fresh authenticate() flow.
-   *   - Transient (network error, 5xx, 4xx without `invalid_grant`) → keep
+   *   - Transient (network error, 5xx, 4xx without `invalid_grant`,
+   *     misconfigured tokenEndpoint, malformed response body) → keep
    *     tokens; next call will retry. Avoids forcing a full re-OAuth on
    *     flaky wifi or temporary IdP outages.
+   *
+   * Security guarantees:
+   *   - `tokenEndpoint` MUST be HTTPS — refresh tokens are never sent over
+   *     plain HTTP, even if a buggy/hostile config supplies one.
+   *   - The response is validated before adoption: `access_token` must be a
+   *     non-empty string and `expires_in` (when present) must fall within
+   *     [1s, 1 year]. Otherwise the existing tokens are kept and the result
+   *     is treated as transient.
    */
   protected async refreshToken(): Promise<AuthContext | null> {
     if (!this.auth?.refreshToken) return null;
 
     const config = this.getOAuthConfig();
     if (!config) return null;
+
+    // Refuse to send the refresh token to a non-HTTPS endpoint. A connector
+    // subclass that derives `tokenEndpoint` from user-modifiable config
+    // could otherwise be tricked into POSTing the secret to an attacker.
+    let endpointUrl: URL;
+    try {
+      endpointUrl = new URL(config.tokenEndpoint);
+    } catch {
+      return null;
+    }
+    if (endpointUrl.protocol !== "https:") {
+      return null;
+    }
 
     const params = new URLSearchParams({
       grant_type: "refresh_token",
@@ -173,10 +195,10 @@ export abstract class BaseConnector {
     }
 
     let data: {
-      access_token: string;
-      refresh_token?: string;
-      expires_in?: number;
-      scope?: string;
+      access_token?: unknown;
+      refresh_token?: unknown;
+      expires_in?: unknown;
+      scope?: unknown;
     };
     try {
       data = (await response.json()) as typeof data;
@@ -185,13 +207,42 @@ export abstract class BaseConnector {
       return null;
     }
 
+    // Validate the success body before adopting any of it. A 200 with
+    // `{}` or `{access_token: null}` would otherwise persist `Bearer
+    // undefined` to the OS keychain.
+    if (
+      typeof data.access_token !== "string" ||
+      data.access_token.length === 0
+    ) {
+      return null;
+    }
+    let expiresAt: Date | undefined;
+    if (data.expires_in !== undefined) {
+      // Reject negative, zero, NaN, or absurdly long lifetimes (> 1 year).
+      const ONE_YEAR_S = 60 * 60 * 24 * 365;
+      const seconds = data.expires_in;
+      if (
+        typeof seconds !== "number" ||
+        !Number.isFinite(seconds) ||
+        seconds <= 0 ||
+        seconds > ONE_YEAR_S
+      ) {
+        return null;
+      }
+      expiresAt = new Date(Date.now() + seconds * 1000);
+    }
+
     const newAuth: AuthContext = {
       token: data.access_token,
-      refreshToken: data.refresh_token ?? this.auth.refreshToken,
-      expiresAt: data.expires_in
-        ? new Date(Date.now() + data.expires_in * 1000)
-        : undefined,
-      scopes: data.scope?.split(" ") ?? this.auth.scopes,
+      refreshToken:
+        typeof data.refresh_token === "string" && data.refresh_token.length > 0
+          ? data.refresh_token
+          : this.auth.refreshToken,
+      expiresAt,
+      scopes:
+        typeof data.scope === "string"
+          ? data.scope.split(" ")
+          : (this.auth.scopes ?? undefined),
     };
 
     this.auth = newAuth;
