@@ -51,7 +51,7 @@ import { findYamlRecipePath } from "../recipesHttp.js";
 const RECIPES_DIR = join(os.homedir(), ".patchwork", "recipes");
 const FIXTURES_DIR = join(os.homedir(), ".patchwork", "fixtures");
 const RECIPE_SCHEMA_HEADER =
-  "# yaml-language-server: $schema=https://patchworkos.com/schema/recipe.v1.json";
+  "# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json";
 const RECIPE_API_VERSION = "patchwork.sh/v1";
 
 // ============================================================================
