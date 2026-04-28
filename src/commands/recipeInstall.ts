@@ -46,6 +46,23 @@ export const INSTALL_RECIPES_DIR = path.join(
  */
 const DISABLED_MARKER = ".disabled";
 
+/**
+ * Reject path components that aren't a single safe basename — used at every
+ * boundary where externally-sourced filenames are joined onto a trusted
+ * directory (manifest fields, GitHub API responses, CLI args).
+ *
+ * Rejects empty/".."/".", any path separator, and control chars (NUL/newline/tab).
+ * Exported for testing and reuse.
+ */
+export function isSafeBasename(name: unknown): boolean {
+  if (typeof name !== "string" || name.length === 0) return false;
+  if (name === "." || name === "..") return false;
+  if (name.includes("/") || name.includes("\\")) return false;
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: explicit control-char check
+  if (/[\x00-\x1F\x7F]/.test(name)) return false;
+  return true;
+}
+
 // ============================================================================
 // Source parsing
 // ============================================================================
@@ -279,9 +296,23 @@ async function downloadGitHubDir(
       continue;
     }
     if (!item.download_url) continue;
+    // GitHub Contents API responses are not implicitly trusted: a hostile
+    // repo (or a redirect-to-attacker) could supply names like `../etc/x`.
+    // The existing extension filter above already blocks the most obvious
+    // payloads, but we explicitly reject anything that isn't a single
+    // basename so a future change to the filter doesn't reopen the gap.
+    if (!isSafeBasename(item.name)) {
+      continue;
+    }
 
     const content = await fetchGitHubFile(item.download_url);
     const destPath = path.join(destDir, item.name);
+    // Belt-and-suspenders: confirm the resolved write path lives inside destDir.
+    if (
+      !path.resolve(destPath).startsWith(`${path.resolve(destDir)}${path.sep}`)
+    ) {
+      continue;
+    }
     writeFileSync(destPath, content);
     written.push(item.name);
   }
@@ -459,12 +490,32 @@ export function isRecipeEnabled(installDir: string): boolean {
 
 /**
  * Locate an installed recipe directory by name. Returns null if not found.
+ *
+ * Validates `name` is a safe basename to defend against `recipe enable
+ * ../../../etc/foo` and similar — even though the on-disk effect would be
+ * limited to the `.disabled` filename, an arbitrary-path file write under
+ * the user's privilege is still a real attack surface.
  */
 function findInstalledRecipeDir(
   name: string,
   recipesDir: string,
 ): string | null {
+  if (!isSafeBasename(name)) {
+    throw new Error(
+      `Invalid recipe name "${name}" — must be a single directory name without path separators or control characters.`,
+    );
+  }
   const direct = path.join(recipesDir, name);
+  // Defense-in-depth: even with the basename check above, confirm the resolved
+  // path lives under recipesDir. Symlinks inside recipesDir could in principle
+  // escape, so this catches that too.
+  const resolvedRoot = path.resolve(recipesDir);
+  const resolvedDir = path.resolve(direct);
+  if (!resolvedDir.startsWith(`${resolvedRoot}${path.sep}`)) {
+    throw new Error(
+      `Resolved recipe path escapes recipes directory: "${name}"`,
+    );
+  }
   if (existsSync(direct) && statSync(direct).isDirectory()) {
     return direct;
   }
