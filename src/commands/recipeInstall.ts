@@ -18,6 +18,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import https from "node:https";
@@ -35,6 +36,15 @@ export const INSTALL_RECIPES_DIR = path.join(
   ".patchwork",
   "recipes",
 );
+
+/**
+ * Marker file written into a recipe install dir to mark it as disabled.
+ * Absence = enabled (the default for legacy installs predating this marker).
+ * `runRecipeInstall` writes one on every fresh install so new recipes start
+ * disabled per the wave2 plan's safety story; user runs `patchwork recipe
+ * enable <name>` to remove it.
+ */
+const DISABLED_MARKER = ".disabled";
 
 // ============================================================================
 // Source parsing
@@ -358,6 +368,12 @@ export async function runRecipeInstall(
       cpSync(src, dest);
     }
 
+    // New installs start disabled — user must run `recipe enable <name>`
+    // before scheduled triggers (cron/file-watch) take effect. Manual
+    // `recipe run <name>` still works regardless, since that's an explicit
+    // user invocation.
+    writeFileSync(path.join(installDir, DISABLED_MARKER), "");
+
     return {
       name: installName,
       version: manifest?.version,
@@ -429,6 +445,76 @@ export interface InstalledRecipeEntry {
   mainRecipe?: string;
   yamlFiles?: string[];
   hasManifest: boolean;
+  enabled: boolean;
+}
+
+/**
+ * Returns true if the install dir does not contain the disabled marker.
+ * Recipes installed before this marker existed have no marker and are
+ * therefore considered enabled — preserves backwards compatibility.
+ */
+export function isRecipeEnabled(installDir: string): boolean {
+  return !existsSync(path.join(installDir, DISABLED_MARKER));
+}
+
+/**
+ * Locate an installed recipe directory by name. Returns null if not found.
+ */
+function findInstalledRecipeDir(
+  name: string,
+  recipesDir: string,
+): string | null {
+  const direct = path.join(recipesDir, name);
+  if (existsSync(direct) && statSync(direct).isDirectory()) {
+    return direct;
+  }
+  return null;
+}
+
+/**
+ * Enable a recipe — removes the .disabled marker so triggers can fire.
+ * Idempotent: enabling an already-enabled recipe is a no-op.
+ */
+export function runRecipeEnable(
+  name: string,
+  options: { recipesDir?: string } = {},
+): { name: string; installDir: string; alreadyEnabled: boolean } {
+  const recipesDir = options.recipesDir ?? INSTALL_RECIPES_DIR;
+  const installDir = findInstalledRecipeDir(name, recipesDir);
+  if (!installDir) {
+    throw new Error(
+      `No installed recipe named "${name}". Run \`patchwork recipe list\` to see installed recipes.`,
+    );
+  }
+  const markerPath = path.join(installDir, DISABLED_MARKER);
+  if (!existsSync(markerPath)) {
+    return { name, installDir, alreadyEnabled: true };
+  }
+  unlinkSync(markerPath);
+  return { name, installDir, alreadyEnabled: false };
+}
+
+/**
+ * Disable a recipe — writes the .disabled marker so triggers stop firing.
+ * Idempotent: disabling an already-disabled recipe is a no-op.
+ */
+export function runRecipeDisable(
+  name: string,
+  options: { recipesDir?: string } = {},
+): { name: string; installDir: string; alreadyDisabled: boolean } {
+  const recipesDir = options.recipesDir ?? INSTALL_RECIPES_DIR;
+  const installDir = findInstalledRecipeDir(name, recipesDir);
+  if (!installDir) {
+    throw new Error(
+      `No installed recipe named "${name}". Run \`patchwork recipe list\` to see installed recipes.`,
+    );
+  }
+  const markerPath = path.join(installDir, DISABLED_MARKER);
+  if (existsSync(markerPath)) {
+    return { name, installDir, alreadyDisabled: true };
+  }
+  writeFileSync(markerPath, "");
+  return { name, installDir, alreadyDisabled: false };
 }
 
 export function listInstalledRecipes(
@@ -459,6 +545,7 @@ export function listInstalledRecipes(
           connectors: manifest.connectors,
           mainRecipe: manifest.recipes.main,
           hasManifest: true,
+          enabled: isRecipeEnabled(itemPath),
         });
       } else {
         const yamlFiles = readdirSync(itemPath).filter((f) =>
@@ -469,6 +556,7 @@ export function listInstalledRecipes(
             name: entryName,
             yamlFiles,
             hasManifest: false,
+            enabled: isRecipeEnabled(itemPath),
           });
         } else {
           // Recurse one level for namespaced dirs like "owner/repo"
@@ -500,6 +588,10 @@ export function printInstallResult(result: InstallResult): void {
     );
   }
 
+  console.log(
+    `  Status: disabled (run \`patchwork recipe enable ${result.name}\` to activate scheduled triggers)`,
+  );
+
   const mainRecipe = result.manifest?.recipes.main ?? result.filesInstalled[0];
   if (mainRecipe) {
     console.log(
@@ -522,20 +614,23 @@ export function printInstalledList(entries: InstalledRecipeEntry[]): void {
     7,
   );
 
-  const header = `${"Name".padEnd(maxName)}  ${"Version".padEnd(maxVersion)}  Description / Files`;
+  const header = `${"Name".padEnd(maxName)}  ${"Version".padEnd(maxVersion)}  Status    Description / Files`;
   console.log(header);
   console.log("-".repeat(Math.min(header.length, 100)));
 
   for (const entry of entries) {
     const version = (entry.version ?? "—").padEnd(maxVersion);
+    const status = (entry.enabled ? "enabled" : "disabled").padEnd(8);
     const detail = entry.hasManifest
       ? (entry.description ?? "")
       : `[${(entry.yamlFiles ?? []).join(", ")}]`;
-    console.log(`${entry.name.padEnd(maxName)}  ${version}  ${detail}`);
+    console.log(
+      `${entry.name.padEnd(maxName)}  ${version}  ${status}  ${detail}`,
+    );
 
     if (entry.connectors && entry.connectors.length > 0) {
       console.log(
-        `${"".padEnd(maxName)}  ${"".padEnd(maxVersion)}  connectors: ${entry.connectors.join(", ")}`,
+        `${"".padEnd(maxName)}  ${"".padEnd(maxVersion)}  ${"".padEnd(8)}  connectors: ${entry.connectors.join(", ")}`,
       );
     }
   }
