@@ -62,11 +62,17 @@ export type InstallSource = GitHubInstallSource | LocalInstallSource;
  *
  * Supported forms:
  *   github:owner/repo
+ *   github:owner/repo@<ref>           — pin to branch, tag, or commit SHA
  *   github:owner/repo/subdir
+ *   github:owner/repo/subdir@<ref>
+ *   gh:owner/repo[@<ref>]             — short alias for github:
  *   https://github.com/owner/repo
- *   https://github.com/owner/repo/tree/branch/subdir
+ *   https://github.com/owner/repo/tree/<ref>/subdir   — ref captured from URL
  *   ./relative/path
  *   /absolute/path
+ *
+ * `@<ref>` accepts any value that's valid as a git ref (branch, tag, SHA).
+ * Empty ref (`...@`) is rejected.
  */
 export function parseInstallSource(source: string): InstallSource {
   // Local path: starts with . or /
@@ -78,35 +84,54 @@ export function parseInstallSource(source: string): InstallSource {
     return { type: "local", path: source };
   }
 
-  // github: prefix
+  // github:/gh: prefix
   if (source.startsWith("github:")) {
     return parseGithubShorthand(source.slice("github:".length));
   }
+  if (source.startsWith("gh:")) {
+    return parseGithubShorthand(source.slice("gh:".length));
+  }
 
-  // Full GitHub URL
+  // Full GitHub URL — captures owner, repo, optional ref (tree/<ref>), optional subdir
   const githubUrlMatch = source.match(
-    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)(?:\/tree\/[^/]+\/(.+))?(?:\.git)?$/,
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/tree\/([^/]+)(?:\/(.+))?)?\/?$/,
   );
   if (githubUrlMatch) {
-    const [, owner, repo, subdir] = githubUrlMatch;
+    const [, owner, repo, ref, subdir] = githubUrlMatch;
     if (!owner || !repo) {
       throw new Error(`Invalid GitHub URL: ${source}`);
     }
     return {
       type: "github",
       owner,
-      repo: repo.replace(/\.git$/, ""),
+      repo,
       ...(subdir ? { subdir } : {}),
+      ...(ref ? { ref } : {}),
     };
   }
 
   throw new Error(
     `Unrecognized install source: "${source}"\n` +
-      `Supported: github:owner/repo, github:owner/repo/subdir, https://github.com/owner/repo, ./local/path`,
+      `Supported: github:owner/repo[@ref], github:owner/repo/subdir[@ref], gh:owner/repo[@ref], https://github.com/owner/repo, ./local/path`,
   );
 }
 
 function parseGithubShorthand(shorthand: string): GitHubInstallSource {
+  // Extract trailing @<ref> if present. The ref is opaque to us — git accepts
+  // branches, tags, and commit SHAs in the same slot, and the GitHub API
+  // (which is what we ultimately call with this value) does too.
+  let ref: string | undefined;
+  const atIdx = shorthand.lastIndexOf("@");
+  if (atIdx !== -1) {
+    ref = shorthand.slice(atIdx + 1);
+    shorthand = shorthand.slice(0, atIdx);
+    if (!ref) {
+      throw new Error(
+        `Invalid github shorthand: empty ref after "@" in "${shorthand}@"`,
+      );
+    }
+  }
+
   // owner/repo or owner/repo/subdir (may have multiple path segments)
   const parts = shorthand.split("/");
   if (parts.length < 2) {
@@ -123,6 +148,7 @@ function parseGithubShorthand(shorthand: string): GitHubInstallSource {
     owner,
     repo,
     ...(subdirParts.length > 0 ? { subdir: subdirParts.join("/") } : {}),
+    ...(ref ? { ref } : {}),
   };
 }
 

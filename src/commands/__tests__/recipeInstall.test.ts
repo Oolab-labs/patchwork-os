@@ -64,7 +64,7 @@ describe("parseInstallSource", () => {
       });
     });
 
-    it("parses URL with tree/branch/subdir", () => {
+    it("parses URL with tree/branch/subdir and captures ref", () => {
       const result = parseInstallSource(
         "https://github.com/user/repo/tree/main/subdir",
       );
@@ -73,11 +73,82 @@ describe("parseInstallSource", () => {
         owner: "user",
         repo: "repo",
         subdir: "subdir",
+        ref: "main",
+      });
+    });
+
+    it("captures ref from tree/<tag> URL with no subdir", () => {
+      const result = parseInstallSource(
+        "https://github.com/user/repo/tree/v1.2.3",
+      );
+      expect(result).toEqual({
+        type: "github",
+        owner: "user",
+        repo: "repo",
+        ref: "v1.2.3",
       });
     });
 
     it("handles .git suffix", () => {
       const result = parseInstallSource("https://github.com/user/repo.git");
+      expect(result).toEqual({
+        type: "github",
+        owner: "user",
+        repo: "repo",
+      });
+    });
+  });
+
+  describe("@<ref> version pinning", () => {
+    it("pins to a tag via github:owner/repo@v1.0.0", () => {
+      const result = parseInstallSource("github:user/repo@v1.0.0");
+      expect(result).toEqual({
+        type: "github",
+        owner: "user",
+        repo: "repo",
+        ref: "v1.0.0",
+      });
+    });
+
+    it("pins to a commit SHA", () => {
+      const result = parseInstallSource("github:user/repo@a1b2c3d4");
+      expect(result).toEqual({
+        type: "github",
+        owner: "user",
+        repo: "repo",
+        ref: "a1b2c3d4",
+      });
+    });
+
+    it("supports @<ref> after subdir: github:owner/repo/subdir@v1", () => {
+      const result = parseInstallSource("github:user/repo/subdir@v1");
+      expect(result).toEqual({
+        type: "github",
+        owner: "user",
+        repo: "repo",
+        subdir: "subdir",
+        ref: "v1",
+      });
+    });
+
+    it("rejects empty ref after @", () => {
+      expect(() => parseInstallSource("github:user/repo@")).toThrow(
+        /empty ref/,
+      );
+    });
+
+    it("supports the gh: alias", () => {
+      const result = parseInstallSource("gh:user/repo@v2.0.0");
+      expect(result).toEqual({
+        type: "github",
+        owner: "user",
+        repo: "repo",
+        ref: "v2.0.0",
+      });
+    });
+
+    it("gh: without ref still works", () => {
+      const result = parseInstallSource("gh:user/repo");
       expect(result).toEqual({
         type: "github",
         owner: "user",
