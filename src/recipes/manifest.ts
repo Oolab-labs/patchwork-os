@@ -37,8 +37,19 @@ const NAME_RE = /^(@[a-z0-9-]+\/)?[a-z0-9][a-z0-9\-_.]*$/;
 const VERSION_RE = /^\d+\.\d+\.\d+/;
 const YAML_EXT_RE = /\.ya?ml$/;
 
-function isYamlFile(filename: unknown): filename is string {
-  return typeof filename === "string" && YAML_EXT_RE.test(filename);
+/**
+ * Recipe filenames in the manifest must be plain basenames, not paths.
+ * Rejects "../escape.yaml", "subdir/foo.yaml", "/etc/passwd.yaml", control
+ * characters, and so on — anything that could resolve outside the install
+ * directory when the consumer does `path.join(installDir, recipes.main)`.
+ */
+function isSafeRecipeBasename(filename: unknown): filename is string {
+  if (typeof filename !== "string" || filename.length === 0) return false;
+  if (filename === "." || filename === "..") return false;
+  if (filename.includes("/") || filename.includes("\\")) return false;
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: explicit control-char check
+  if (/[\x00-\x1F\x7F]/.test(filename)) return false;
+  return YAML_EXT_RE.test(filename);
 }
 
 /**
@@ -85,9 +96,9 @@ export function validateManifest(manifest: unknown): RecipeManifest {
   }
   const recipes = m.recipes as Record<string, unknown>;
 
-  if (!isYamlFile(recipes.main)) {
+  if (!isSafeRecipeBasename(recipes.main)) {
     throw new Error(
-      `recipe.json: "recipes.main" must be a .yaml or .yml filename — got "${recipes.main}"`,
+      `recipe.json: "recipes.main" must be a .yaml or .yml basename without path separators or control characters — got "${recipes.main}"`,
     );
   }
 
@@ -96,9 +107,9 @@ export function validateManifest(manifest: unknown): RecipeManifest {
       throw new Error('recipe.json: "recipes.children" must be an array');
     }
     for (let i = 0; i < recipes.children.length; i++) {
-      if (!isYamlFile(recipes.children[i])) {
+      if (!isSafeRecipeBasename(recipes.children[i])) {
         throw new Error(
-          `recipe.json: "recipes.children[${i}]" must be a .yaml or .yml filename — got "${recipes.children[i]}"`,
+          `recipe.json: "recipes.children[${i}]" must be a .yaml or .yml basename without path separators or control characters — got "${recipes.children[i]}"`,
         );
       }
     }
