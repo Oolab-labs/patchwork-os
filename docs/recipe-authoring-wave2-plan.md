@@ -72,9 +72,11 @@ Produced as companion to [`recipe-chaining-wave1-plan.md`](./recipe-chaining-wav
    - Next: finish moving remaining dry-run, authoring, and documentation consumers onto the same source of truth.
    - Target state: tool metadata lives in one place and drives runner dispatch, schema generation, dry-run mocking, and dashboard docs.
 
-2. **OAuth 2.0 refresh primitives in `BaseConnector`**
-   - Add standard refresh-token lifecycle handling before Wave 2 agents start.
-   - Store refresh/access tokens in OS keychain via `keytar`, not plain JSON files.
+2. **OAuth 2.0 refresh primitives in `BaseConnector`** ✅ *Shipped*
+   - `BaseConnector.refreshToken()` (`src/connectors/baseConnector.ts:127-175`) implements the RFC 6749 refresh_token grant; `apiCall<T>` (`:198-278`) refreshes preemptively when expired and again on `auth_expired` mid-call before falling back to full re-auth.
+   - Tokens persisted via `src/connectors/tokenStorage.ts` to OS keychain — native CLIs (`security` on macOS, DPAPI/PowerShell on Windows, `secret-tool` on Linux) with AES-256-GCM encrypted-file fallback. **No `keytar` dependency** (avoids unmaintained native module + Electron rebuild pain).
+   - All Wave 2 candidates (Zendesk, Stripe, Datadog, Intercom, HubSpot, Confluence, Notion, Jira) extend `BaseConnector` and implement `getOAuthConfig()`.
+   - **Remaining gap (test coverage, ~1 day):** only `gmailRefresh.test.ts` exercises the refresh path today; per-Wave-2-connector refresh tests + a direct `BaseConnector.refreshToken()` unit test are needed before merging Wave 2 connectors. See "Testing" section below.
 
 3. **Feature flags + rollback hooks**
    - Every new surface ships behind `bridge.config.features.<featureName>`.
