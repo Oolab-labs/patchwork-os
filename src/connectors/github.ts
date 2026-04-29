@@ -151,8 +151,16 @@ export async function listIssues(
     const arr = Array.isArray(parsed) ? parsed : (parsed.items ?? []);
     const fallbackRepo = opts.repo ?? "";
     return arr.map((i) => coerceIssue(i, fallbackRepo));
-  } catch {
-    return [];
+  } catch (err) {
+    // Pre-fix this swallowed everything to `[]`. A token expiry, rate
+    // limit, or MCP outage looked identical to "no issues this week"
+    // — the recipe agent then summarized "no work" with confidence.
+    // Throw real failures so the recipe-tool wrapper can return a
+    // `{count:0, issues:[], error}` shape that the runner's silent-
+    // fail detector flags as a step error (PR #72).
+    throw new Error(
+      `github list_issues failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
@@ -187,8 +195,11 @@ export async function listPRs(opts: ListPRsOpts = {}): Promise<GitHubPR[]> {
       isDraft: Boolean(p.draft ?? p.isDraft ?? false),
       reviewDecision: p.review_decision ?? p.reviewDecision ?? "",
     }));
-  } catch {
-    return [];
+  } catch (err) {
+    // Same antipattern as listIssues — see comment there.
+    throw new Error(
+      `github list_pull_requests failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 

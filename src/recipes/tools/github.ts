@@ -36,6 +36,7 @@ registerTool({
     properties: {
       count: { type: "number" },
       issues: { type: "array" },
+      error: { type: "string" },
     },
   },
   riskDefault: "low",
@@ -46,8 +47,21 @@ registerTool({
     const repo = params.repo ? String(params.repo) : undefined;
     const assignee = params.assignee ? String(params.assignee) : "@me";
     const limit = typeof params.max === "number" ? params.max : 20;
-    const issues = await listIssues({ repo, assignee, limit });
-    return JSON.stringify({ count: issues.length, issues });
+    try {
+      const issues = await listIssues({ repo, assignee, limit });
+      return JSON.stringify({ count: issues.length, issues });
+    } catch (err) {
+      // Translate connector throw into the {count:0, items:[], error}
+      // shape that the runner's silent-fail detector (PR #72) catches
+      // as a step error. Pre-fix this just propagated as a thrown
+      // error which the runner caught fine — but the connector
+      // itself used to silently `[]`-swallow all failures.
+      return JSON.stringify({
+        count: 0,
+        issues: [],
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   },
 });
 
@@ -81,6 +95,7 @@ registerTool({
     properties: {
       count: { type: "number" },
       prs: { type: "array" },
+      error: { type: "string" },
     },
   },
   riskDefault: "low",
@@ -91,7 +106,15 @@ registerTool({
     const repo = params.repo ? String(params.repo) : undefined;
     const author = params.author ? String(params.author) : "@me";
     const limit = typeof params.max === "number" ? params.max : 20;
-    const prs = await listPRs({ repo, author, limit });
-    return JSON.stringify({ count: prs.length, prs });
+    try {
+      const prs = await listPRs({ repo, author, limit });
+      return JSON.stringify({ count: prs.length, prs });
+    } catch (err) {
+      return JSON.stringify({
+        count: 0,
+        prs: [],
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   },
 });
