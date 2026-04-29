@@ -46,9 +46,11 @@ function needsConnect(status: string | undefined): boolean {
 
 interface Props {
   connectors: string[];
+  /** Override the default top margin (var(--s-6)). Use 0 inside flex-gap layouts. */
+  marginTop?: string | number;
 }
 
-export function ConnectorHealthPanel({ connectors }: Props) {
+export function ConnectorHealthPanel({ connectors, marginTop }: Props) {
   const [statusMap, setStatusMap] = useState<StatusMap | null>(null);
   const [fetchErr, setFetchErr] = useState<string>();
 
@@ -105,7 +107,7 @@ export function ConnectorHealthPanel({ connectors }: Props) {
   return (
     <div
       className="glass-card"
-      style={{ padding: "var(--s-5)", marginTop: "var(--s-6)" }}
+      style={{ padding: "var(--s-5)", marginTop: marginTop ?? "var(--s-6)" }}
     >
       <div
         style={{
