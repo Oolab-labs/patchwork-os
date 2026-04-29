@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { StepDiffHover } from "@/components/StepDiffHover";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
-import { diffForStep } from "@/lib/registryDiff";
+import { diffForStep, previewMockedReplay } from "@/lib/registryDiff";
 
 // ------------------------------------------------------------------ types
 
@@ -168,13 +168,22 @@ function StepRow({
 }) {
   const [open, setOpen] = useState(false);
   const [hover, setHover] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Hover-on with 200ms grace so quick mouse passes don't flicker the
   // panel. Hover-off clears the panel and any pending timer immediately.
+  // Captures the wrapper's bounding rect at hover-fire time so the
+  // portal-mounted panel can position relative to it.
   const onEnter = () => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = setTimeout(() => setHover(true), 200);
+    hoverTimerRef.current = setTimeout(() => {
+      if (wrapperRef.current) {
+        setAnchorRect(wrapperRef.current.getBoundingClientRect());
+      }
+      setHover(true);
+    }, 200);
   };
   const onLeave = () => {
     if (hoverTimerRef.current) {
@@ -182,6 +191,7 @@ function StepRow({
       hoverTimerRef.current = null;
     }
     setHover(false);
+    setAnchorRect(null);
   };
   useEffect(() => {
     return () => {
@@ -193,9 +203,10 @@ function StepRow({
   // show the unavailable empty state for older runs. For now: skip the
   // panel entirely on `running` steps (capture isn't there yet) and on
   // skipped steps (no semantically meaningful diff).
-  const hoverEligible =
-    step.status === "ok" || step.status === "error";
-  const diff = hoverEligible ? diffForStep(allSteps, index) : null;
+  const hoverEligible = step.status === "ok" || step.status === "error";
+  const diffResult = hoverEligible
+    ? diffForStep(allSteps, index)
+    : { kind: "unavailable" as const };
   const showPanel = hover && hoverEligible;
 
   const barWidth =
@@ -205,6 +216,7 @@ function StepRow({
 
   return (
     <div
+      ref={wrapperRef}
       style={{
         position: "relative",
         borderBottom: "1px solid var(--border-subtle)",
@@ -291,9 +303,10 @@ function StepRow({
       )}
       {showPanel && (
         <StepDiffHover
-          diff={diff}
+          result={diffResult}
           resolvedParams={step.resolvedParams}
           output={step.output}
+          anchorRect={anchorRect}
           onClose={() => setHover(false)}
         />
       )}
@@ -728,13 +741,69 @@ export default function RunDetailPage() {
           >
             <h3 style={{ marginTop: 0, marginBottom: 8 }}>Replay this run?</h3>
             <p style={{ fontSize: 13, color: "var(--ink-2)", margin: "0 0 12px" }}>
-              All tool and agent steps will return the captured output from
-              this run. No external API calls, no write side effects. Useful
-              for verifying template/transform changes without re-hitting
-              connected services.
+              Re-runs the recipe with each step's tool / agent call replaced
+              by its captured output from this run. Templates, transforms, and
+              <code className="mono"> when:</code> conditions re-evaluate against
+              the new state — useful for verifying recipe edits without
+              re-hitting connected services.
             </p>
+            {(() => {
+              const preflight = previewMockedReplay(run?.stepResults ?? []);
+              if (preflight.unmocked.length === 0) {
+                return (
+                  <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 16px" }}>
+                    All {preflight.mocked.length} step
+                    {preflight.mocked.length === 1 ? "" : "s"} will be mocked
+                    from captures. No external API calls.
+                  </p>
+                );
+              }
+              return (
+                <div
+                  style={{
+                    fontSize: 12,
+                    margin: "0 0 16px",
+                    padding: "8px 10px",
+                    borderRadius: "var(--r-1, 4px)",
+                    border: "1px solid var(--amber, #fbbf24)",
+                    background: "rgba(251,191,36,0.08)",
+                    color: "var(--amber, #fbbf24)",
+                  }}
+                >
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                    {preflight.unmocked.length} step
+                    {preflight.unmocked.length === 1 ? "" : "s"} will run for
+                    real (no usable capture)
+                  </div>
+                  <ul
+                    style={{
+                      margin: "4px 0 0",
+                      paddingLeft: 20,
+                      color: "var(--ink-2)",
+                    }}
+                  >
+                    {preflight.unmocked.slice(0, 8).map((u) => (
+                      <li key={u.id} className="mono" style={{ fontSize: 11 }}>
+                        {u.tool ? `${u.tool} ` : ""}
+                        <span style={{ color: "var(--ink-3)" }}>({u.id})</span>
+                        {" — "}
+                        {u.reason === "truncated"
+                          ? "output >8 KB, will fire real tool"
+                          : "no capture"}
+                      </li>
+                    ))}
+                    {preflight.unmocked.length > 8 && (
+                      <li style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                        …and {preflight.unmocked.length - 8} more
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              );
+            })()}
             <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 16px" }}>
-              A new run will be created with <code className="mono">triggerSource:replay:{seq}</code>.
+              A new run will be created with{" "}
+              <code className="mono">replay:{seq}</code> in its taskId.
             </p>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button

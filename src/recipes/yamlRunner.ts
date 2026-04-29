@@ -1271,6 +1271,8 @@ export async function dispatchRecipe(
       runLogDir: deps.chainedOptions?.runLogDir,
       runLog: deps.chainedOptions?.runLog,
       activityLog: deps.chainedOptions?.activityLog,
+      mockedOutputs: deps.chainedOptions?.mockedOutputs,
+      taskIdPrefix: deps.chainedOptions?.taskIdPrefix,
     };
     if (!deps.chainedDeps) {
       throw new Error(

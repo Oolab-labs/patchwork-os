@@ -100,6 +100,14 @@ export interface RunOptions {
    * every step the recipe will visit.
    */
   mockedOutputs?: Map<string, unknown>;
+  /**
+   * Override the prefix used in the run log's `taskId`. Default is
+   * `chained` → `chained:<recipeName>:<startTs>`. Replay sets this to
+   * `replay:<originalSeq>` so the audit trail is searchable
+   * (`taskId LIKE 'replay:%'`) — fixes BUG-4 from the post-merge
+   * dogfood where replay runs were indistinguishable from fresh ones.
+   */
+  taskIdPrefix?: string;
 }
 
 export interface StepExecutionContext {
@@ -619,11 +627,13 @@ export async function runChainedRecipe(
       ? recipeTriggerKind
       : "recipe"
   ) as "cron" | "webhook" | "recipe";
+  const taskIdPrefix = options.taskIdPrefix ?? "chained";
+  const runTaskId = `${taskIdPrefix}:${recipe.name}:${runStartedAt}`;
   let runSeq: number | undefined;
   if (depth === 0 && options.runLog) {
     try {
       runSeq = options.runLog.startRun({
-        taskId: `chained:${recipe.name}:${runStartedAt}`,
+        taskId: runTaskId,
         recipeName: recipe.name,
         trigger: triggerKind,
         createdAt: runStartedAt,
@@ -924,7 +934,7 @@ export async function runChainedRecipe(
         const { RecipeRunLog } = await import("../runLog.js");
         const log = new RecipeRunLog({ dir: options.runLogDir });
         log.appendDirect({
-          taskId: `chained:${recipe.name}:${runStartedAt}`,
+          taskId: runTaskId,
           recipeName: recipe.name,
           trigger: triggerKind,
           status: result.success ? "done" : "error",
