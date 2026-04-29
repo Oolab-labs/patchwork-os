@@ -452,7 +452,8 @@ export default function MarketplacePage() {
     return (
       r.name.toLowerCase().includes(q) ||
       r.description.toLowerCase().includes(q) ||
-      r.tags.some((t) => t.toLowerCase().includes(q))
+      r.tags.some((t) => t.toLowerCase().includes(q)) ||
+      r.connectors.some((c) => c.toLowerCase().includes(q))
     );
   });
 
@@ -536,7 +537,7 @@ export default function MarketplacePage() {
         <input
           type="search"
           className="input"
-          placeholder="Search recipes…"
+          placeholder="Search recipes (name, tags, connectors)…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ maxWidth: 360 }}
