@@ -103,17 +103,38 @@ function useApprovalCount(): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
     let alive = true;
+    let failures = 0;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    const BASE = 5000;
+    const MAX = 30_000;
+
+    const schedule = (ms: number) => {
+      if (!alive) return;
+      timerId = setTimeout(tick, ms);
+    };
+
     const tick = async () => {
+      let ok = false;
       try {
         const res = await fetch(apiPath("/api/bridge/approvals"));
-        if (!res.ok) return;
-        const data = await res.json();
-        if (alive && Array.isArray(data)) setCount(data.length);
+        if (res.ok) {
+          const data = await res.json();
+          if (alive && Array.isArray(data)) setCount(data.length);
+          ok = true;
+        }
       } catch { /* offline */ }
+      if (ok) failures = 0;
+      else failures++;
+      // Exponential backoff with ±20% jitter, cap 30s
+      const exp = Math.min(BASE * 2 ** failures, MAX);
+      schedule(ok ? BASE : exp * (0.8 + Math.random() * 0.4));
     };
+
     tick();
-    const id = setInterval(tick, 5000);
-    return () => { alive = false; clearInterval(id); };
+    return () => {
+      alive = false;
+      if (timerId !== null) clearTimeout(timerId);
+    };
   }, []);
   return count;
 }
