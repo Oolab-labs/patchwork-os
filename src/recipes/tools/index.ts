@@ -14,6 +14,7 @@ import "./asana.js";
 import "./gmail.js";
 import "./googleDrive.js";
 import "./github.js";
+import "./gitlab.js";
 import "./linear.js";
 import "./calendar.js";
 import "./slack.js";
