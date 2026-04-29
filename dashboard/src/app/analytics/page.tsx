@@ -38,6 +38,10 @@ function relTime(ms: number): string {
 }
 
 function fmtDuration(ms: number): string {
+  // Coalesce NaN / Infinity to em-dash so the percentile cells don't render
+  // the literal "NaNs" string. Single-sample tools (one observation, no
+  // percentile defined) are the realistic source of NaN here.
+  if (!Number.isFinite(ms)) return "—";
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
