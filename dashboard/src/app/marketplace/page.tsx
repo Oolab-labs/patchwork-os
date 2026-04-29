@@ -3,24 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { apiPath } from "@/lib/api";
-
-// ------------------------------------------------------------------ types
-
-interface RegistryRecipe {
-  name: string;
-  version: string;
-  description: string;
-  tags: string[];
-  connectors: string[];
-  install: string;
-  downloads: number;
-}
-
-interface RegistryData {
-  version: string;
-  updated_at: string;
-  recipes: RegistryRecipe[];
-}
+import { type RegistryData, type RegistryRecipe, shortName } from "@/lib/registry";
 
 // ------------------------------------------------------------------ fallback data (shown when bridge offline)
 
@@ -113,10 +96,6 @@ const CATEGORY_TAG_MAP: Record<string, string[]> = {
 };
 
 // ------------------------------------------------------------------ helpers
-
-function shortName(name: string): string {
-  return name.replace(/^@[^/]+\//, "");
-}
 
 function connectorInitials(id: string): string {
   const norm = id.toLowerCase().replace(/[^a-z]/g, "");
