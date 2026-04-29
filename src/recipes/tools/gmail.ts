@@ -211,14 +211,31 @@ async function gmailGetMessage(
   return JSON.stringify({ id, subject, body: body.slice(0, 16_000), links });
 }
 
-function sinceToGmailQuery(since: string): string {
-  if (since.includes("d")) {
-    return `${since.replace("d", "")}d`;
+// Exported for test coverage of the regression fix.
+//
+// Pre-fix this function silently coerced any unrecognized format
+// (`"2026-01-01"`, `"1 week ago"`, free text) → `"1d"`. The audit
+// caught this in `morning-brief*` and `inbox-triage` recipes — users
+// specifying an explicit date got the last 24 hours instead with no
+// indication anything was wrong.
+//
+// It also broke on `"7days"` because the naive `.replace("d", "")`
+// stripped EVERY 'd' in the string → `"7days".replace("d","") + "d"`
+// = `"7aysd"`. Two bugs masking each other.
+//
+// Gmail's `newer_than:` operator accepts `<number><unit>` where unit
+// is one of `d` (days), `h` (hours), `m` (months), `y` (years).
+// Anything else throws so the runner's error path triggers loudly.
+export function sinceToGmailQuery(since: string): string {
+  const trimmed = since.trim();
+  // Strict regex: one or more digits + a single valid unit.
+  const match = /^(\d+)([dhmy])$/.exec(trimmed);
+  if (match) {
+    return `${match[1]}${match[2]}`;
   }
-  if (since.includes("h")) {
-    return `${since.replace("h", "")}h`;
-  }
-  return "1d";
+  throw new Error(
+    `invalid since='${since}' for gmail.fetch_unread — expected '<N>(d|h|m|y)' (e.g. '24h', '7d'), got unparseable input`,
+  );
 }
 
 // ============================================================================
