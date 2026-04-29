@@ -127,6 +127,17 @@ function IconNotion() {
   );
 }
 
+function IconAsana() {
+  // Asana brand mark — three dots arranged in a triangle (top, bottom-left, bottom-right).
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <circle cx="10" cy="6" r="2.5" fill="currentColor" />
+      <circle cx="5.5" cy="13" r="2.5" fill="currentColor" />
+      <circle cx="14.5" cy="13" r="2.5" fill="currentColor" />
+    </svg>
+  );
+}
+
 function IconConfluence() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
@@ -229,6 +240,7 @@ interface TokenModalConfig {
 // Connectors that have a backend wired in the bridge — anything not listed
 // here renders as "Coming Soon" in the catalog regardless of wave.
 const SUPPORTED_CONNECTORS = new Set([
+  "asana",
   "gmail",
   "google-calendar",
   "google-drive",
@@ -384,6 +396,7 @@ const PROVIDERS: {
   { id: "linear",          name: "Linear",          description: "Read and manage issues.",                                                                          icon: IconLinear },
   { id: "slack",           name: "Slack",           description: "Post messages and list channels.",                                                                  icon: IconSlack },
   { id: "discord",         name: "Discord",         description: "Read messages, channels, and guilds.",                                                              icon: IconDiscord },
+  { id: "asana",           name: "Asana",           description: "Read workspaces, projects, and tasks.",                                                              icon: IconAsana },
   { id: "notion",          name: "Notion",          description: "Query databases, read pages, and create content.",                                                  icon: IconNotion },
   { id: "confluence",      name: "Confluence",      description: "Read and write Confluence pages and spaces.",                                                       icon: IconConfluence },
   { id: "datadog",         name: "Datadog",         description: "Query monitors, dashboards, and events.",                                                          icon: IconDatadog },

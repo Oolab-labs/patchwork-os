@@ -271,6 +271,7 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
   // no credentials are stored. Probe each one so the dashboard reflects
   // their actual state instead of always-disconnected.
   const tokenPasteProbes = [
+    { id: "asana", mod: () => import("./asana.js") },
     { id: "notion", mod: () => import("./notion.js") },
     { id: "confluence", mod: () => import("./confluence.js") },
     { id: "datadog", mod: () => import("./datadog.js") },

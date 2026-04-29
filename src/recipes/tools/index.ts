@@ -10,6 +10,7 @@ import "./git.js";
 import "./diagnostics.js";
 
 // Connector-based tools
+import "./asana.js";
 import "./gmail.js";
 import "./googleDrive.js";
 import "./github.js";
