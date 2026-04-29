@@ -291,6 +291,25 @@ export class StreamableHttpHandler {
     private instructionsProvider:
       | (() => Promise<string> | string)
       | null = null,
+    /**
+     * Tail-end deps that `registerAllTools` needs for the Patchwork-layer
+     * tools (`ctxSaveTrace`, `ctxQueryTraces`, recipe-run helpers,
+     * disconnect-aware compaction tools, etc.). Without these, those
+     * tools were silently NOT registered for Streamable-HTTP MCP sessions
+     * — they DID register on the WebSocket path because that call site
+     * passes them. This is the parity fix.
+     *
+     * Caught dogfooding `ctx-loop-test` against a remote MCP client.
+     */
+    private toolDeps: {
+      automationHooks?: import("./automation.js").AutomationHooks;
+      getDisconnectInfo?: () => import("./tools/bridgeStatus.js").DisconnectInfo;
+      onContextCacheUpdated?: (generatedAt: string) => void;
+      getExtensionDisconnectCount?: () => number;
+      commitIssueLinkLog?: import("./commitIssueLinkLog.js").CommitIssueLinkLog;
+      recipeRunLog?: import("./runLog.js").RecipeRunLog;
+      decisionTraceLog?: import("./decisionTraceLog.js").DecisionTraceLog;
+    } = {},
   ) {
     // Prune idle sessions every 2 minutes.
     // .unref() prevents this timer from keeping the Node process alive when
@@ -702,6 +721,17 @@ export class StreamableHttpHandler {
         | null,
       id,
       pluginTools,
+      // Parity with the WebSocket call in bridge.ts — without these,
+      // `ctxSaveTrace`, `ctxQueryTraces`, and any tool gated on the
+      // remaining deps silently fail to register for Streamable-HTTP
+      // MCP sessions.
+      this.toolDeps.automationHooks,
+      this.toolDeps.getDisconnectInfo,
+      this.toolDeps.onContextCacheUpdated,
+      this.toolDeps.getExtensionDisconnectCount,
+      this.toolDeps.commitIssueLinkLog,
+      this.toolDeps.recipeRunLog,
+      this.toolDeps.decisionTraceLog,
     );
 
     transport.attach(adapter as unknown as import("ws").WebSocket);

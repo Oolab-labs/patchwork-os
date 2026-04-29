@@ -1401,6 +1401,31 @@ export class Bridge {
         await this.refreshRecentTracesDigest();
         return this.buildInstructions();
       },
+      // Tail-end deps so `registerAllTools` registers the same tool set
+      // on Streamable-HTTP sessions as on WebSocket. Without this object,
+      // `ctxSaveTrace`, `ctxQueryTraces`, and any tool gated on the
+      // remaining deps silently failed to register over Streamable HTTP
+      // (caught dogfooding `ctx-loop-test` from a remote MCP client).
+      {
+        automationHooks: this.automationHooks,
+        getDisconnectInfo: () => ({
+          at: this.lastDisconnectAt,
+          code: this.lastDisconnectCode,
+          reason: this.lastDisconnectReason,
+        }),
+        onContextCacheUpdated: (generatedAt: string) => {
+          this._lastContextCachedAt = generatedAt;
+          this._emitLiveState();
+        },
+        getExtensionDisconnectCount: () => this.extensionDisconnectCount,
+        ...(this.commitIssueLinkLog && {
+          commitIssueLinkLog: this.commitIssueLinkLog,
+        }),
+        ...(this.recipeRunLog && { recipeRunLog: this.recipeRunLog }),
+        ...(this.decisionTraceLog && {
+          decisionTraceLog: this.decisionTraceLog,
+        }),
+      },
     );
     this.server.httpMcpHandler = (req, res) =>
       this.httpMcpHandler?.handle(req, res) ?? Promise.resolve();
