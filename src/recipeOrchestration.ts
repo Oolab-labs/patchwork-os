@@ -41,6 +41,13 @@ export interface RecipeOrchestrationDeps {
   getOrchestrator: () => ClaudeOrchestrator | null;
   recipeOrchestrator: RecipeOrchestrator;
   recipeRunLog: RecipeRunLog | null;
+  /**
+   * Bridge ActivityLog used to broadcast `recipe_step_start` /
+   * `recipe_step_done` events for live-tail SSE consumers (dashboard
+   * `/runs/[seq]` page). Optional — when absent, recipes still run, just
+   * without live-tail.
+   */
+  activityLog?: import("./activityLog.js").ActivityLog;
   workdir: string;
   logger: { info?: (s: string) => void; warn?: (s: string) => void };
 }
@@ -329,9 +336,15 @@ export class RecipeOrchestration {
     // dashboard reads the same instance, so /runs surfaces the live entry
     // immediately. CLI invocations don't go through here — they fall back to
     // `runLogDir` + `appendDirect` (pre-VD-1 behavior, no live-tail).
+    //
+    // The `activityLog` enables VD-1B live-tail: when set, chainedRunner
+    // broadcasts `recipe_step_start` / `recipe_step_done` events tagged with
+    // `runSeq` so the dashboard's `/runs/[seq]` SSE subscription receives
+    // them in real time.
     const chainedOptions = {
       sourcePath: opts.filePath,
       runLog: this.deps.recipeRunLog ?? undefined,
+      activityLog: this.deps.activityLog,
     };
     const fireResult = await this.deps.recipeOrchestrator
       .fire({

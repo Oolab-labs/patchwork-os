@@ -1,15 +1,16 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiPath } from '@/lib/api';
+import { useBridgeStream } from "@/hooks/useBridgeStream";
 
 // ------------------------------------------------------------------ types
 
 interface StepResult {
   id: string;
   tool?: string;
-  status: "ok" | "skipped" | "error";
+  status: "running" | "ok" | "skipped" | "error";
   error?: string;
   durationMs: number;
 }
@@ -134,9 +135,17 @@ function AssertionFailuresPanel({ failures }: { failures: AssertionFailure[] }) 
 // ------------------------------------------------------------------ step-result row
 
 function stepStatusClass(status: StepResult["status"]): string {
+  if (status === "running") return "running";
   if (status === "ok") return "ok";
   if (status === "error") return "err";
   return "muted";
+}
+
+function stepStatusLabel(status: StepResult["status"]): string {
+  if (status === "running") return "running";
+  if (status === "ok") return "ok";
+  if (status === "error") return "error";
+  return "skipped";
 }
 
 function StepRow({
@@ -223,7 +232,7 @@ function StepRow({
             className={`pill ${stepStatusClass(step.status)}`}
             style={{ fontSize: 10 }}
           >
-            {step.status === "ok" ? "ok" : step.status === "error" ? "error" : "skipped"}
+            {stepStatusLabel(step.status)}
           </span>
         </div>
         <span className="mono muted" style={{ fontSize: 11, minWidth: 40, textAlign: "right" }}>
@@ -403,6 +412,9 @@ export default function RunDetailPage() {
 
     doFetch().then((initialRun) => {
       if (!initialRun || initialRun.status !== "running") return;
+      // Slower polling now that SSE delivers the live step deltas — polling
+      // is just a backstop to canonicalize when the run transitions to
+      // terminal (no `recipe_run_done` event yet; keep this until VD-1C).
       intervalId = setInterval(() => {
         doFetch().then((r) => {
           if (!r || r.status !== "running") {
@@ -410,13 +422,84 @@ export default function RunDetailPage() {
             intervalId = undefined;
           }
         });
-      }, 3000);
+      }, 5000);
     });
 
     return () => {
       if (intervalId !== undefined) clearInterval(intervalId);
     };
   }, [seq]);
+
+  // VD-1B live-tail: subscribe to ActivityLog SSE while the run is in flight
+  // and merge `recipe_step_start` / `recipe_step_done` events into the local
+  // step state. The bridge tags every event with `runSeq` so we filter to
+  // events for this page's run only.
+  const onStreamEvent = useCallback(
+    (type: string, raw: unknown) => {
+      if (type !== "lifecycle") return;
+      const data = raw as
+        | {
+            event?: string;
+            metadata?: {
+              runSeq?: number;
+              stepId?: string;
+              tool?: string;
+              status?: "ok" | "error";
+              error?: string;
+              durationMs?: number;
+            };
+          }
+        | undefined;
+      const md = data?.metadata;
+      if (!md || md.runSeq !== Number(seq)) return;
+      const stepId = md.stepId;
+      if (!stepId) return;
+
+      if (data.event === "recipe_step_start") {
+        setRun((prev) => {
+          if (!prev) return prev;
+          const existing = prev.stepResults ?? [];
+          if (existing.some((s) => s.id === stepId)) return prev;
+          return {
+            ...prev,
+            stepResults: [
+              ...existing,
+              {
+                id: stepId,
+                tool: md.tool,
+                status: "running",
+                durationMs: 0,
+              },
+            ],
+          };
+        });
+      } else if (data.event === "recipe_step_done") {
+        setRun((prev) => {
+          if (!prev) return prev;
+          const existing = prev.stepResults ?? [];
+          const idx = existing.findIndex((s) => s.id === stepId);
+          const updated: StepResult = {
+            id: stepId,
+            tool: md.tool,
+            status: md.status === "error" ? "error" : "ok",
+            ...(md.error !== undefined && { error: md.error }),
+            durationMs: md.durationMs ?? 0,
+          };
+          if (idx === -1) {
+            return { ...prev, stepResults: [...existing, updated] };
+          }
+          const next = existing.slice();
+          next[idx] = updated;
+          return { ...prev, stepResults: next };
+        });
+      }
+    },
+    [seq],
+  );
+
+  useBridgeStream("/api/bridge/stream", onStreamEvent, {
+    enabled: run?.status === "running",
+  });
 
   // Load plan lazily when tab is switched to "plan"
   useEffect(() => {

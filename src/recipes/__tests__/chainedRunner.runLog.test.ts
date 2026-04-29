@@ -208,3 +208,149 @@ describe("runChainedRecipe — runLog (singleton) path", () => {
     expect(readRunLog()).toHaveLength(1);
   });
 });
+
+// ── VD-1B: live-tail step events via ActivityLog ───────────────────────────
+
+describe("runChainedRecipe — ActivityLog step event broadcast", () => {
+  it("emits recipe_step_start + recipe_step_done with runSeq when activityLog provided", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const { ActivityLog } = await import("../../activityLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    const activityLog = new ActivityLog();
+
+    const events: Array<{ event: string; metadata: Record<string, unknown> }> =
+      [];
+    activityLog.subscribe((kind, entry) => {
+      if (kind !== "lifecycle") return;
+      const e = entry as { event: string; metadata?: Record<string, unknown> };
+      if (e.event.startsWith("recipe_step_")) {
+        events.push({ event: e.event, metadata: e.metadata ?? {} });
+      }
+    });
+
+    const twoStepRecipe: ChainedRecipe & { trigger: { type: string } } = {
+      name: "two-step",
+      trigger: { type: "chained" },
+      steps: [
+        { id: "s1", tool: "noop.tool" },
+        { id: "s2", tool: "noop.tool", awaits: ["s1"] },
+      ],
+    };
+
+    const result = await runChainedRecipe(
+      twoStepRecipe,
+      optsWithLog({ runLog: log, runLogDir: undefined, activityLog }),
+      okDeps,
+    );
+    expect(result.success).toBe(true);
+
+    // Should have emitted: s1.start, s1.done, s2.start, s2.done.
+    expect(events).toHaveLength(4);
+    expect(events.map((e) => e.event)).toEqual([
+      "recipe_step_start",
+      "recipe_step_done",
+      "recipe_step_start",
+      "recipe_step_done",
+    ]);
+
+    const seqs = new Set(events.map((e) => e.metadata.runSeq));
+    expect(seqs.size).toBe(1);
+    const allRuns = log.query();
+    expect([...seqs][0]).toBe(allRuns[0]?.seq);
+
+    expect(events[0]?.metadata.stepId).toBe("s1");
+    expect(events[1]?.metadata.stepId).toBe("s1");
+    expect(events[1]?.metadata.status).toBe("ok");
+    expect(typeof events[1]?.metadata.durationMs).toBe("number");
+  });
+
+  it("emits recipe_step_done with status:'error' when a step fails", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const { ActivityLog } = await import("../../activityLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    const activityLog = new ActivityLog();
+
+    const events: Array<{ event: string; metadata: Record<string, unknown> }> =
+      [];
+    activityLog.subscribe((kind, entry) => {
+      if (kind !== "lifecycle") return;
+      const e = entry as { event: string; metadata?: Record<string, unknown> };
+      if (e.event.startsWith("recipe_step_")) {
+        events.push({ event: e.event, metadata: e.metadata ?? {} });
+      }
+    });
+
+    const failingDeps: ExecutionDeps = {
+      executeTool: vi.fn().mockRejectedValue(new Error("boom")),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+
+    await runChainedRecipe(
+      chainedRecipe(),
+      optsWithLog({ runLog: log, runLogDir: undefined, activityLog }),
+      failingDeps,
+    );
+
+    const done = events.find((e) => e.event === "recipe_step_done");
+    expect(done).toBeDefined();
+    expect(done?.metadata.status).toBe("error");
+    expect(done?.metadata.error).toBe("boom");
+  });
+
+  it("does NOT emit step events when activityLog is omitted", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    await runChainedRecipe(
+      chainedRecipe(),
+      optsWithLog({ runLog: log, runLogDir: undefined }),
+      okDeps,
+    );
+    expect(log.query()).toHaveLength(1);
+    expect(log.query()[0]?.status).toBe("done");
+  });
+
+  it("only broadcasts step events for the depth-0 run (nested runs are silent)", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const { ActivityLog } = await import("../../activityLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    const activityLog = new ActivityLog();
+
+    const events: Array<{ event: string; metadata: Record<string, unknown> }> =
+      [];
+    activityLog.subscribe((kind, entry) => {
+      if (kind !== "lifecycle") return;
+      const e = entry as { event: string; metadata?: Record<string, unknown> };
+      if (e.event.startsWith("recipe_step_")) {
+        events.push({ event: e.event, metadata: e.metadata ?? {} });
+      }
+    });
+
+    const nestedRecipe: ChainedRecipe = {
+      name: "nested",
+      trigger: { type: "chained" } as never,
+      steps: [{ id: "inner", tool: "noop.tool" }],
+    };
+    const depsWithNested: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue("ok"),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(nestedRecipe),
+    };
+    const outer: ChainedRecipe & { trigger: { type: string } } = {
+      name: "outer",
+      trigger: { type: "chained" },
+      steps: [{ id: "call-nested", recipe: "nested" }],
+    };
+    await runChainedRecipe(
+      outer,
+      optsWithLog({ runLog: log, runLogDir: undefined, activityLog }),
+      depsWithNested,
+    );
+    expect(events.length).toBeGreaterThan(0);
+    const outerSeq = log.query()[0]?.seq;
+    for (const e of events) {
+      expect(e.metadata.runSeq).toBe(outerSeq);
+      expect(e.metadata.recipeName).toBe("outer");
+    }
+  });
+});

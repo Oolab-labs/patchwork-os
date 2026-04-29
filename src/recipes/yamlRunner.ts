@@ -1270,6 +1270,7 @@ export async function dispatchRecipe(
       onStepComplete: deps.chainedOptions?.onStepComplete,
       runLogDir: deps.chainedOptions?.runLogDir,
       runLog: deps.chainedOptions?.runLog,
+      activityLog: deps.chainedOptions?.activityLog,
     };
     if (!deps.chainedDeps) {
       throw new Error(

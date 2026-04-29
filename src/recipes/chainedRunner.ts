@@ -81,6 +81,13 @@ export interface RunOptions {
    * Takes precedence over `runLogDir`.
    */
   runLog?: import("../runLog.js").RecipeRunLog;
+  /**
+   * Bridge `ActivityLog` for VD-1 live-tail. When set together with
+   * `runLog`, the runner broadcasts `recipe_step_start` and
+   * `recipe_step_done` lifecycle events tagged with `runSeq` so the
+   * dashboard `/runs/[seq]` page can subscribe via SSE instead of polling.
+   */
+  activityLog?: import("../activityLog.js").ActivityLog;
 }
 
 export interface StepExecutionContext {
@@ -614,11 +621,65 @@ export async function runChainedRecipe(
     { durationMs: number; skipped?: boolean }
   >();
 
+  // VD-1 live-tail: when an `activityLog` is provided AND we have a `runSeq`
+  // (depth 0, runLog supplied), broadcast `recipe_step_start` /
+  // `recipe_step_done` events so the dashboard `/runs/[seq]` page can
+  // subscribe to step changes via SSE instead of 3s polling.
+  const broadcastActivity = options.activityLog;
+  const broadcastSeq = runSeq;
+  const broadcastName = recipe.name;
+  const stepStartTimes = new Map<string, number>();
+
+  const wrappedOnStepStart =
+    broadcastActivity && broadcastSeq !== undefined
+      ? (stepId: string) => {
+          const ts = Date.now();
+          stepStartTimes.set(stepId, ts);
+          try {
+            broadcastActivity.recordEvent("recipe_step_start", {
+              runSeq: broadcastSeq,
+              recipeName: broadcastName,
+              stepId,
+              tool: stepMap.get(stepId)?.tool,
+              ts,
+            });
+          } catch {
+            // never let live-tail failure break the run
+          }
+          options.onStepStart?.(stepId);
+        }
+      : options.onStepStart;
+
+  const wrappedOnStepComplete =
+    broadcastActivity && broadcastSeq !== undefined
+      ? (stepId: string, error?: Error) => {
+          const ts = Date.now();
+          const startedAt = stepStartTimes.get(stepId);
+          try {
+            broadcastActivity.recordEvent("recipe_step_done", {
+              runSeq: broadcastSeq,
+              recipeName: broadcastName,
+              stepId,
+              tool: stepMap.get(stepId)?.tool,
+              status: error ? "error" : "ok",
+              ...(error?.message !== undefined && { error: error.message }),
+              ...(startedAt !== undefined && {
+                durationMs: ts - startedAt,
+              }),
+              ts,
+            });
+          } catch {
+            // never let live-tail failure break the run
+          }
+          options.onStepComplete?.(stepId, error);
+        }
+      : options.onStepComplete;
+
   // Execute with dependency tracking
   const execOptions: ExecutionOptions = {
     maxConcurrency: options.maxConcurrency,
-    onStepStart: options.onStepStart,
-    onStepComplete: options.onStepComplete,
+    onStepStart: wrappedOnStepStart,
+    onStepComplete: wrappedOnStepComplete,
   };
 
   const stepExecutor: StepExecutor = async (stepId: string) => {
