@@ -178,6 +178,88 @@ export class RecipeOrchestration {
       >;
     };
 
+    // VD-4 mocked replay: load the original run, re-parse its recipe
+    // from disk (so a later edit replays against the new logic), and
+    // re-fire through chainedRunner with `mockedOutputs` populated from
+    // the captured per-step `output` (VD-2). No external IO; no side
+    // effects.
+    server.runReplayFn = async (seq: number) => {
+      if (!this.deps.recipeRunLog) {
+        return { ok: false, error: "run_log_unavailable" };
+      }
+      const original = this.deps.recipeRunLog.getBySeq(seq);
+      if (!original) {
+        return { ok: false, error: "run_not_found" };
+      }
+      // Strip ":agent" suffix that triggerSource may carry.
+      const recipeName = original.recipeName.replace(/:agent$/, "");
+
+      try {
+        const { findYamlRecipePath } = await import("./recipesHttp.js");
+        const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+        const recipePath = findYamlRecipePath(recipesDir, recipeName);
+        if (!recipePath) {
+          return { ok: false, error: "recipe_file_missing" };
+        }
+        const { readFileSync } = await import("node:fs");
+        const { parse: parseYaml } = await import("yaml");
+        const recipeYaml = parseYaml(readFileSync(recipePath, "utf-8"));
+        // Only chained recipes have per-step capture today; flag others.
+        const triggerType = (
+          recipeYaml as { trigger?: { type?: string } } | undefined
+        )?.trigger?.type;
+        if (triggerType !== "chained") {
+          return {
+            ok: false,
+            error: "replay_only_supported_for_chained_recipes",
+          };
+        }
+        const { replayMockedRun } = await import("./recipes/replayRun.js");
+        const { buildChainedDeps } = await import("./recipes/yamlRunner.js");
+        // Reuse the orchestrator's claudeCodeFn for any step that falls
+        // through to real execution (unmocked steps — caller is told).
+        const orch = this.deps.getOrchestrator();
+        const claudeCodeFn = async (prompt: string): Promise<string> => {
+          if (!orch) return "";
+          const task = await orch.runAndWait({
+            prompt,
+            triggerSource: `replay:${seq}:agent`,
+            timeoutMs: 600_000,
+          });
+          return task.output ?? task.errorMessage ?? "";
+        };
+        const runnerDeps = { workdir: this.deps.workdir, claudeCodeFn };
+        // buildChainedDeps just primes default tool/agent/recipe loaders.
+        void buildChainedDeps;
+        const result = await replayMockedRun({
+          originalRun: original as unknown as import("./runLog.js").RecipeRun,
+          recipe:
+            recipeYaml as unknown as import("./recipes/chainedRunner.js").ChainedRecipe,
+          ...(recipePath !== undefined && { sourcePath: recipePath }),
+          deps: {
+            runLog: this.deps.recipeRunLog,
+            ...(this.deps.activityLog !== undefined && {
+              activityLog: this.deps.activityLog,
+            }),
+            runnerDeps,
+          },
+        });
+        return {
+          ok: result.ok,
+          ...(result.newSeq !== undefined && { newSeq: result.newSeq }),
+          ...(result.unmockedSteps !== undefined && {
+            unmockedSteps: result.unmockedSteps,
+          }),
+          ...(result.error !== undefined && { error: result.error }),
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    };
+
     server.webhookFn = async (hookPath: string, payload: unknown) => {
       if (!this.deps.getOrchestrator()) {
         return {
@@ -185,7 +267,9 @@ export class RecipeOrchestration {
           error: "orchestrator_unavailable",
         };
       }
-      const orchestrator = this.deps.getOrchestrator()!;
+      const orchestrator = this.deps.getOrchestrator();
+      if (!orchestrator)
+        return { ok: false, error: "orchestrator_unavailable" };
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
       const match = findWebhookRecipe(recipesDir, hookPath);
       if (!match) {
@@ -251,7 +335,9 @@ export class RecipeOrchestration {
             "Orchestrator unavailable — start bridge with --claude-driver subprocess",
         };
       }
-      const orchestrator = this.deps.getOrchestrator()!;
+      const orchestrator = this.deps.getOrchestrator();
+      if (!orchestrator)
+        return { ok: false, error: "orchestrator_unavailable" };
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
 
       // Try JSON recipe first (legacy path: enqueue prompt as a task).
@@ -318,7 +404,10 @@ export class RecipeOrchestration {
     if (!this.deps.recipeOrchestrator) {
       return { ok: false, error: "recipe orchestrator unavailable" };
     }
-    const orch = this.deps.getOrchestrator()!;
+    const orch = this.deps.getOrchestrator();
+    if (!orch) {
+      return { ok: false, error: "orchestrator_unavailable" };
+    }
     const { buildChainedDeps, dispatchRecipe } = await import(
       "./recipes/yamlRunner.js"
     );

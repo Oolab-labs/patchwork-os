@@ -442,6 +442,44 @@ export default function RunDetailPage() {
   const [plan, setPlan] = useState<DryRunPlan | null>(null);
   const [planErr, setPlanErr] = useState<string>();
   const [planLoading, setPlanLoading] = useState(false);
+  const [replayState, setReplayState] = useState<
+    "idle" | "confirming" | "running" | "done" | "error"
+  >("idle");
+  const [replayMessage, setReplayMessage] = useState<string>();
+
+  const handleReplay = async () => {
+    if (!seq) return;
+    setReplayState("running");
+    setReplayMessage(undefined);
+    try {
+      const res = await fetch(apiPath(`/api/bridge/runs/${seq}/replay`), {
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        newSeq?: number;
+        unmockedSteps?: string[];
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        setReplayState("error");
+        setReplayMessage(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setReplayState("done");
+      const warnSuffix = data.unmockedSteps?.length
+        ? ` (${data.unmockedSteps.length} step${data.unmockedSteps.length === 1 ? "" : "s"} ran without mocked output: ${data.unmockedSteps.join(", ")})`
+        : "";
+      setReplayMessage(
+        data.newSeq
+          ? `Replayed as run #${data.newSeq}${warnSuffix}`
+          : `Replay queued${warnSuffix}`,
+      );
+    } catch (e) {
+      setReplayState("error");
+      setReplayMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   useEffect(() => {
     if (!seq) return;
@@ -632,9 +670,104 @@ export default function RunDetailPage() {
             <span style={{ fontSize: 11, color: "var(--ink-3)", marginLeft: 4 }}>
               {fmtTs(run.createdAt)}
             </span>
+            {/* VD-4: replay button (mocked-only). Real replay TBD. */}
+            {run.status !== "running" && (
+              <button
+                type="button"
+                onClick={() => setReplayState("confirming")}
+                disabled={replayState === "running"}
+                title="Re-run the recipe with all tool/agent calls mocked from this run's captured outputs. No external IO, no side effects."
+                style={{
+                  fontSize: 11,
+                  padding: "4px 10px",
+                  borderRadius: "var(--r-1, 4px)",
+                  border: "1px solid var(--line-2)",
+                  background: "transparent",
+                  color: "var(--ink-1)",
+                  cursor: replayState === "running" ? "wait" : "pointer",
+                }}
+              >
+                {replayState === "running" ? "Replaying…" : "Replay (mocked)"}
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {/* Replay status banner */}
+      {replayMessage && (
+        <div
+          role="status"
+          className={`alert-${replayState === "error" ? "err" : "ok"}`}
+          style={{ marginBottom: 12 }}
+        >
+          {replayMessage}
+        </div>
+      )}
+
+      {/* Replay confirm modal */}
+      {replayState === "confirming" && (
+        <div
+          role="dialog"
+          aria-label="Confirm mocked replay"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 100,
+          }}
+          onClick={() => setReplayState("idle")}
+        >
+          <div
+            className="card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 480, padding: 20 }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Replay this run?</h3>
+            <p style={{ fontSize: 13, color: "var(--ink-2)", margin: "0 0 12px" }}>
+              All tool and agent steps will return the captured output from
+              this run. No external API calls, no write side effects. Useful
+              for verifying template/transform changes without re-hitting
+              connected services.
+            </p>
+            <p style={{ fontSize: 12, color: "var(--ink-3)", margin: "0 0 16px" }}>
+              A new run will be created with <code className="mono">triggerSource:replay:{seq}</code>.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setReplayState("idle")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "var(--r-1, 4px)",
+                  border: "1px solid var(--line-2)",
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleReplay()}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "var(--r-1, 4px)",
+                  border: "1px solid var(--blue, #3b82f6)",
+                  background: "var(--blue, #3b82f6)",
+                  color: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                Replay (mocked)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {runErr && <div className="alert-err">Failed to load run: {runErr}</div>}
       {!run && !runErr && <div className="empty-state"><p>Loading…</p></div>}

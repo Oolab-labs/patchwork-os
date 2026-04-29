@@ -192,6 +192,16 @@ export class Server extends EventEmitter<ServerEvents> {
   public runPlanFn:
     | ((recipeName: string) => Promise<Record<string, unknown>>)
     | null = null;
+  /** Patchwork (VD-4): mocked replay of an existing run. Returns the new
+   *  run's seq plus any unmocked steps the caller may want to surface. */
+  public runReplayFn:
+    | ((seq: number) => Promise<{
+        ok: boolean;
+        newSeq?: number;
+        unmockedSteps?: string[];
+        error?: string;
+      }>)
+    | null = null;
   /** Patchwork: set by bridge to launch a named recipe via the orchestrator. */
   public runRecipeFn:
     | ((
@@ -2217,6 +2227,39 @@ export class Server extends EventEmitter<ServerEvents> {
         }
         return;
       }
+      // POST /runs/:seq/replay — VD-4 mocked replay. Re-runs the recipe
+      // with all tool/agent execution intercepted to return captured
+      // outputs from the original run. No external IO, no side effects.
+      // Real-mode replay is not exposed here yet — must ship separately
+      // with confirmation UX + kill-switch interaction.
+      const runReplayMatch =
+        req.method === "POST"
+          ? /^\/runs\/(\d+)\/replay$/.exec(parsedUrl.pathname)
+          : null;
+      if (runReplayMatch?.[1]) {
+        const seq = Number.parseInt(runReplayMatch[1], 10);
+        try {
+          if (!this.runReplayFn) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "replay_unavailable" }));
+            return;
+          }
+          const result = await this.runReplayFn(seq);
+          if (result.error === "run_not_found") {
+            res.writeHead(404, { "Content-Type": "application/json" });
+          } else if (!result.ok) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+          } else {
+            res.writeHead(200, { "Content-Type": "application/json" });
+          }
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: msg }));
+        }
+        return;
+      }
       // GET /runs/:seq/plan — dry-run plan for the recipe that produced this run
       const runPlanMatch =
         req.method === "GET"
@@ -2286,7 +2329,7 @@ export class Server extends EventEmitter<ServerEvents> {
       }
       const recipePatchMatch = /^\/recipes\/([^/]+)$/.exec(parsedUrl.pathname);
       if (recipePatchMatch && req.method === "PATCH") {
-        const name = decodeURIComponent(recipePatchMatch[1]!);
+        const name = decodeURIComponent(recipePatchMatch[1] ?? "");
         const chunks: Buffer[] = [];
         req.on("data", (c: Buffer) => chunks.push(c));
         req.on("end", () => {
@@ -2365,7 +2408,7 @@ export class Server extends EventEmitter<ServerEvents> {
         parsedUrl.pathname,
       );
       if (recipeContentMatch && req.method === "GET") {
-        const name = decodeURIComponent(recipeContentMatch[1]!);
+        const name = decodeURIComponent(recipeContentMatch[1] ?? "");
         if (!this.loadRecipeContentFn) {
           res.writeHead(503, { "Content-Type": "application/json" });
           res.end(
@@ -2384,7 +2427,7 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
       if (recipeContentMatch && req.method === "PUT") {
-        const name = decodeURIComponent(recipeContentMatch[1]!);
+        const name = decodeURIComponent(recipeContentMatch[1] ?? "");
         const chunks: Buffer[] = [];
         req.on("data", (c: Buffer) => chunks.push(c));
         req.on("end", () => {
@@ -2425,7 +2468,7 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
       if (recipeContentMatch && req.method === "DELETE") {
-        const name = decodeURIComponent(recipeContentMatch[1]!);
+        const name = decodeURIComponent(recipeContentMatch[1] ?? "");
         if (!this.deleteRecipeContentFn) {
           res.writeHead(503, { "Content-Type": "application/json" });
           res.end(
