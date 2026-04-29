@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { fmtDuration } from "@/components/time";
 import { apiPath } from "@/lib/api";
 
 interface StatusResponse {
@@ -340,16 +341,15 @@ export default function SettingsPage() {
               value={settings.patchwork?.automationEnabled ? "enabled" : "off"}
             />
             <Row
-              label="Active sessions"
+              label="Claude Code sessions"
               value={(settings.activeSessions ?? 0).toString()}
               mono
+              tooltip="Active Claude Code WebSocket sessions only. MCP-over-HTTP clients (e.g. Claude Desktop) aren't included."
             />
             <Row
               label="Uptime"
               value={
-                settings.uptimeMs != null
-                  ? `${Math.floor(settings.uptimeMs / 1000)}s`
-                  : "—"
+                settings.uptimeMs != null ? fmtDuration(settings.uptimeMs) : "—"
               }
               mono
             />
@@ -1096,11 +1096,13 @@ function Row({
   value,
   mono,
   pill,
+  tooltip,
 }: {
   label: string;
   value: string;
   mono?: boolean;
   pill?: "ok" | "warn";
+  tooltip?: string;
 }) {
   return (
     <div
@@ -1114,7 +1116,12 @@ function Row({
         alignItems: "center",
       }}
     >
-      <span style={{ color: "var(--fg-2)" }}>{label}</span>
+      <span
+        style={{ color: "var(--fg-2)", cursor: tooltip ? "help" : undefined }}
+        title={tooltip}
+      >
+        {label}
+      </span>
       <span
         className={mono ? "mono" : undefined}
         style={{ color: "var(--fg-0)", display: "flex", alignItems: "center", gap: 6 }}

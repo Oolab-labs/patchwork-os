@@ -931,10 +931,10 @@ export default function HomePage() {
               }
             />
             <StatCard
-              label="Tool calls today"
+              label="Tool calls"
               value={data.recentActivity}
               delta={data.toolCallDelta}
-              foot="Total this session"
+              foot="This session"
               href="/activity"
               icon={
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(var(--orange-rgb), 0.12)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--orange)" }}>

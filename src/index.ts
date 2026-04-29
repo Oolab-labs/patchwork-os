@@ -1203,7 +1203,10 @@ if (process.argv[2] === "recipe" && process.argv[3] === "new") {
   const recipeName = args[0];
   if (!recipeName) {
     process.stderr.write(
-      "Usage: patchwork recipe new <name> [--template <name>] [--desc <description>]\n",
+      "Usage: patchwork recipe new <name> [--template <name>] [--desc <description>] [--out <dir>]\n" +
+        "  --out <dir>  Write the recipe to <dir>/<name>.yaml.\n" +
+        "               Defaults to ~/.patchwork/recipes/ — pass `--out .` to\n" +
+        "               write into the current directory instead.\n",
     );
     process.stderr.write("\nTemplates:\n");
     (async () => {
@@ -1223,11 +1226,17 @@ if (process.argv[2] === "recipe" && process.argv[3] === "new") {
         const description =
           (descIdx >= 0 ? args[descIdx + 1] : undefined) ??
           `Recipe: ${recipeName}`;
+        const outIdx = args.indexOf("--out");
+        const outRaw = outIdx >= 0 ? args[outIdx + 1] : undefined;
+        // `--out .` is the common case for "scaffold in cwd" — resolve so
+        // the success message shows the absolute path the user can open.
+        const outputDir = outRaw ? path.resolve(outRaw) : undefined;
 
         const result = runNew({
           name: recipeName,
           description,
           ...(template ? { template } : {}),
+          ...(outputDir ? { outputDir } : {}),
         });
         process.stdout.write(`  ✓ Created ${result.path}\n`);
         process.exit(0);
@@ -2645,157 +2654,168 @@ if (process.argv[2] === "launchd") {
   }
 }
 
-const config = parseConfig(process.argv);
+// Skip the bridge-mode tail entirely when a subcommand IIFE will own the
+// process. `parseConfig` validates argv against the bridge's known-flag list
+// and raises "Unknown option" for subcommand-specific flags (e.g. `recipe
+// new --out .`); without this guard that throw kills the process before
+// the IIFE's microtask runs. The subcommand handles its own arg parsing.
+if (__subcommandWillRun) {
+  // Subcommand IIFE is in flight or about to fire; sit tight until it
+  // process.exits. Empty body — control naturally falls past end-of-file
+  // and Node keeps the process alive on the IIFE's pending microtask.
+} else {
+  const config = parseConfig(process.argv);
 
-// Patchwork: resolve --model flag (optional, non-invasive) — stashes the
-// configured adapter on globalThis for consumers that opt into the adapter
-// layer. Bridge subprocess driver still works when --model is absent.
-try {
-  const { resolveModel } = await import("./patchworkCli.js");
-  const resolved = resolveModel(process.argv);
-  if (resolved) {
-    (globalThis as { __patchworkAdapter?: unknown }).__patchworkAdapter =
-      resolved.adapter;
-    process.stderr.write(
-      `[patchwork] model adapter initialized: ${resolved.adapter.name}\n`,
-    );
-  }
-} catch (err) {
-  process.stderr.write(
-    `[patchwork] adapter init failed: ${err instanceof Error ? err.message : String(err)}\n`,
-  );
-}
-
-// If --analytics flag was passed, persist the preference immediately
-if (config.analyticsEnabled !== null) {
-  setAnalyticsPref(config.analyticsEnabled);
-}
-
-// Auto-tmux: if requested and not already inside tmux or screen, re-exec inside a tmux session
-if (
-  config.autoTmux &&
-  !process.env.TMUX &&
-  !process.env.STY &&
-  !process.env.ZELLIJ &&
-  !process.env.ZELLIJ_SESSION_NAME
-) {
-  const ws = config.workspace.replace(/[^a-zA-Z0-9]/g, "").slice(-8);
-  const hash = crypto
-    .createHash("sha256")
-    .update(config.workspace)
-    .digest("hex")
-    .slice(0, 6);
-  const sessionName = `claude-bridge-${ws}${hash}`;
-
-  // Check if tmux is available
-  const tmuxCheck = spawnSync("which", ["tmux"], { stdio: "ignore" });
-  if (tmuxCheck.status !== 0) {
-    process.stderr.write(
-      "WARNING: --auto-tmux requested but tmux is not installed. Running without tmux.\n",
-    );
-  } else {
-    // Strip --auto-tmux from argv to avoid infinite re-exec loop
-    const newArgv = process.argv.filter((a) => a !== "--auto-tmux");
-    // Pass each argv token as a separate tmux argument so paths with spaces work correctly
-    const result = spawnSync(
-      "tmux",
-      ["new-session", "-d", "-s", sessionName, ...newArgv],
-      { stdio: "inherit", timeout: 5000 },
-    );
-
-    if (result.status === 0) {
+  // Patchwork: resolve --model flag (optional, non-invasive) — stashes the
+  // configured adapter on globalThis for consumers that opt into the adapter
+  // layer. Bridge subprocess driver still works when --model is absent.
+  try {
+    const { resolveModel } = await import("./patchworkCli.js");
+    const resolved = resolveModel(process.argv);
+    if (resolved) {
+      (globalThis as { __patchworkAdapter?: unknown }).__patchworkAdapter =
+        resolved.adapter;
       process.stderr.write(
-        `Bridge launched in tmux session '${sessionName}'.\n`,
-      );
-      process.stderr.write(`  Attach with: tmux attach -t ${sessionName}\n`);
-      process.exit(0);
-    } else {
-      // tmux session likely already exists — attach to it or fall through
-      process.stderr.write(
-        `WARNING: Could not create tmux session '${sessionName}' (already exists?). Running without auto-tmux.\n`,
+        `[patchwork] model adapter initialized: ${resolved.adapter.name}\n`,
       );
     }
+  } catch (err) {
+    process.stderr.write(
+      `[patchwork] adapter init failed: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
   }
-}
 
-// Skip bridge boot when a subcommand IIFE is doing the work — avoids the
-// race where bridge.start() began initialising in parallel with the
-// subcommand's async path. See the KNOWN_SUBCOMMANDS / __subcommandWillRun
-// gate at the top of this file.
-if (__subcommandWillRun) {
-  // intentionally empty — subcommand IIFE owns the process from here.
-}
-// --watch: supervisor mode — spawn this binary as a child (without --watch) and restart on crash
-else if (config.watch) {
-  const childArgv = process.argv.filter((a) => a !== "--watch");
-  const STABLE_THRESHOLD_MS = 60_000;
-  const BASE_DELAY_MS = 2_000;
-  const MAX_DELAY_MS = 30_000;
-  let delay = BASE_DELAY_MS;
-  let stopping = false;
+  // If --analytics flag was passed, persist the preference immediately
+  if (config.analyticsEnabled !== null) {
+    setAnalyticsPref(config.analyticsEnabled);
+  }
 
-  function runChild(): void {
-    if (stopping) return;
-    const startAt = Date.now();
-    process.stderr.write("[supervisor] starting bridge\n");
-    const [cmd, ...args] = childArgv;
-    if (!cmd) return;
-    const child = spawn(cmd, args, {
-      stdio: "inherit",
-    });
+  // Auto-tmux: if requested and not already inside tmux or screen, re-exec inside a tmux session
+  if (
+    config.autoTmux &&
+    !process.env.TMUX &&
+    !process.env.STY &&
+    !process.env.ZELLIJ &&
+    !process.env.ZELLIJ_SESSION_NAME
+  ) {
+    const ws = config.workspace.replace(/[^a-zA-Z0-9]/g, "").slice(-8);
+    const hash = crypto
+      .createHash("sha256")
+      .update(config.workspace)
+      .digest("hex")
+      .slice(0, 6);
+    const sessionName = `claude-bridge-${ws}${hash}`;
 
-    for (const sig of ["SIGTERM", "SIGINT"] as const) {
-      process.once(sig, () => {
-        stopping = true;
-        child.kill(sig);
+    // Check if tmux is available
+    const tmuxCheck = spawnSync("which", ["tmux"], { stdio: "ignore" });
+    if (tmuxCheck.status !== 0) {
+      process.stderr.write(
+        "WARNING: --auto-tmux requested but tmux is not installed. Running without tmux.\n",
+      );
+    } else {
+      // Strip --auto-tmux from argv to avoid infinite re-exec loop
+      const newArgv = process.argv.filter((a) => a !== "--auto-tmux");
+      // Pass each argv token as a separate tmux argument so paths with spaces work correctly
+      const result = spawnSync(
+        "tmux",
+        ["new-session", "-d", "-s", sessionName, ...newArgv],
+        { stdio: "inherit", timeout: 5000 },
+      );
+
+      if (result.status === 0) {
+        process.stderr.write(
+          `Bridge launched in tmux session '${sessionName}'.\n`,
+        );
+        process.stderr.write(`  Attach with: tmux attach -t ${sessionName}\n`);
+        process.exit(0);
+      } else {
+        // tmux session likely already exists — attach to it or fall through
+        process.stderr.write(
+          `WARNING: Could not create tmux session '${sessionName}' (already exists?). Running without auto-tmux.\n`,
+        );
+      }
+    }
+  }
+
+  // Skip bridge boot when a subcommand IIFE is doing the work — avoids the
+  // race where bridge.start() began initialising in parallel with the
+  // subcommand's async path. See the KNOWN_SUBCOMMANDS / __subcommandWillRun
+  // gate at the top of this file.
+  if (__subcommandWillRun) {
+    // intentionally empty — subcommand IIFE owns the process from here.
+  }
+  // --watch: supervisor mode — spawn this binary as a child (without --watch) and restart on crash
+  else if (config.watch) {
+    const childArgv = process.argv.filter((a) => a !== "--watch");
+    const STABLE_THRESHOLD_MS = 60_000;
+    const BASE_DELAY_MS = 2_000;
+    const MAX_DELAY_MS = 30_000;
+    let delay = BASE_DELAY_MS;
+    let stopping = false;
+
+    function runChild(): void {
+      if (stopping) return;
+      const startAt = Date.now();
+      process.stderr.write("[supervisor] starting bridge\n");
+      const [cmd, ...args] = childArgv;
+      if (!cmd) return;
+      const child = spawn(cmd, args, {
+        stdio: "inherit",
+      });
+
+      for (const sig of ["SIGTERM", "SIGINT"] as const) {
+        process.once(sig, () => {
+          stopping = true;
+          child.kill(sig);
+        });
+      }
+
+      child.on("exit", (code, signal) => {
+        if (stopping) {
+          process.stderr.write("[supervisor] bridge stopped\n");
+          process.exit(0);
+        }
+        const uptime = Date.now() - startAt;
+        if (uptime >= STABLE_THRESHOLD_MS) {
+          delay = BASE_DELAY_MS; // reset backoff after a stable run
+        }
+        process.stderr.write(
+          `[supervisor] bridge exited (code=${code ?? signal}), restarting in ${delay / 1000}s\n`,
+        );
+        setTimeout(() => {
+          delay = Math.min(delay * 2, MAX_DELAY_MS);
+          runChild();
+        }, delay);
       });
     }
 
-    child.on("exit", (code, signal) => {
-      if (stopping) {
-        process.stderr.write("[supervisor] bridge stopped\n");
-        process.exit(0);
-      }
-      const uptime = Date.now() - startAt;
-      if (uptime >= STABLE_THRESHOLD_MS) {
-        delay = BASE_DELAY_MS; // reset backoff after a stable run
-      }
-      process.stderr.write(
-        `[supervisor] bridge exited (code=${code ?? signal}), restarting in ${delay / 1000}s\n`,
-      );
-      setTimeout(() => {
-        delay = Math.min(delay * 2, MAX_DELAY_MS);
-        runChild();
-      }, delay);
+    runChild();
+  } else {
+    const bridge = new Bridge(config);
+
+    bridge.start().catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`Error: ${message}\n`);
+      process.exit(1);
     });
+
+    // F5: Silent self-update nudge (fire-and-forget)
+    import("node:child_process")
+      .then(({ exec }) => {
+        exec(
+          "npm view claude-ide-bridge version",
+          { timeout: 5000 },
+          (err, stdout) => {
+            if (err || !stdout) return;
+            const latest = stdout.trim();
+            if (latest && semverGt(latest, PACKAGE_VERSION)) {
+              console.log(
+                `\n  Bridge v${latest} available — run: npm update -g claude-ide-bridge\n`,
+              );
+            }
+          },
+        );
+      })
+      .catch(() => {});
   }
-
-  runChild();
-} else {
-  const bridge = new Bridge(config);
-
-  bridge.start().catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`Error: ${message}\n`);
-    process.exit(1);
-  });
-
-  // F5: Silent self-update nudge (fire-and-forget)
-  import("node:child_process")
-    .then(({ exec }) => {
-      exec(
-        "npm view claude-ide-bridge version",
-        { timeout: 5000 },
-        (err, stdout) => {
-          if (err || !stdout) return;
-          const latest = stdout.trim();
-          if (latest && semverGt(latest, PACKAGE_VERSION)) {
-            console.log(
-              `\n  Bridge v${latest} available — run: npm update -g claude-ide-bridge\n`,
-            );
-          }
-        },
-      );
-    })
-    .catch(() => {});
-}
+} // end of `else` for `if (__subcommandWillRun)` (bridge-mode block)
