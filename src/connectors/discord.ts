@@ -10,8 +10,16 @@
  *   - Stored: getSecretJsonSync("discord") → DiscordTokens
  *   - Header: Authorization: Bearer <access_token>
  *
- * Tools (read-only this PR): getCurrentUser, listGuilds, listChannels,
- *   listMessages. Write methods (sendMessage) deferred to a follow-up PR.
+ * Tools: getCurrentUser, listGuilds, listChannels, listMessages (read);
+ *   sendMessage (write).
+ *
+ * NOTE on writes: Discord's REST API does NOT permit user-context OAuth tokens
+ * to send messages on behalf of the user — only bot-scope tokens can hit
+ * `POST /channels/{id}/messages`. The current connector authenticates as a
+ * regular user (scopes: identify, guilds, messages.read), so `sendMessage`
+ * will return a `permission_denied` error until the user re-authenticates
+ * with the `bot` scope. The method is wired correctly; the gap is the auth
+ * scope, which is left to operators to upgrade when they want write access.
  *
  * HTTP routes (wired in src/server.ts):
  *   GET    /connections/discord/auth     — redirect to Discord consent
@@ -251,7 +259,8 @@ export class DiscordConnector extends BaseConnector {
       if (s === 403)
         return {
           code: "permission_denied",
-          message: "Insufficient Discord permissions for this resource",
+          message:
+            "Discord write requires bot scope — re-authenticate with the bot scope to enable sendMessage. (Other 403s indicate insufficient permissions for this resource.)",
           retryable: false,
         };
       if (s === 404)
@@ -371,6 +380,54 @@ export class DiscordConnector extends BaseConnector {
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as DiscordMessage[];
+  }
+
+  /**
+   * Send a message to a Discord channel.
+   *
+   * Caveat: requires bot-scope OAuth — regular user-context tokens cannot
+   * send via this endpoint. On 403 the connector surfaces a
+   * `permission_denied` error pointing at the bot-scope requirement.
+   *
+   * @param channelId Discord channel id (non-empty)
+   * @param body { content (≤2000 chars), tts? defaults false }
+   */
+  async sendMessage(
+    channelId: string,
+    body: { content: string; tts?: boolean },
+  ): Promise<DiscordMessage> {
+    if (!channelId || typeof channelId !== "string") {
+      throw new Error("sendMessage requires a non-empty channelId");
+    }
+    if (!body?.content || typeof body.content !== "string") {
+      throw new Error("sendMessage requires a non-empty content string");
+    }
+    if (body.content.length > 2000) {
+      throw new Error(
+        `sendMessage content exceeds Discord's 2000-character limit (${body.content.length})`,
+      );
+    }
+    const payload = {
+      content: body.content,
+      tts: body.tts ?? false,
+    };
+
+    const result = await this.apiCall(async (token) => {
+      const res = await fetch(
+        `${DISCORD_API_BASE}/channels/${encodeURIComponent(channelId)}/messages`,
+        {
+          method: "POST",
+          headers: this.buildHeaders(token),
+          body: JSON.stringify(payload),
+        },
+      );
+      this.captureRateLimit(res);
+      if (!res.ok) throw res;
+      return res.json() as Promise<DiscordMessage>;
+    });
+
+    if ("error" in result) throw new Error(result.error.message);
+    return result.data as DiscordMessage;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

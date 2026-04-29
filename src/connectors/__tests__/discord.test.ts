@@ -446,3 +446,234 @@ describe("handleDiscordDisconnect", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 });
+
+// ── writes (sendMessage) ─────────────────────────────────────────────────────
+
+describe("DiscordConnector.sendMessage (writes)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  function mockOk(json: unknown) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => json,
+      headers: { get: () => null },
+    };
+  }
+
+  function mockResponseStatus(status: number) {
+    const r = {
+      ok: false,
+      status,
+      headers: { get: () => null },
+    };
+    Object.setPrototypeOf(r, Response.prototype);
+    return r;
+  }
+
+  async function makeConnector() {
+    const { DiscordConnector } = await import("../discord.js");
+    const conn = new DiscordConnector();
+    vi.spyOn(
+      conn as unknown as {
+        authenticate: () => Promise<{ token: string; scopes: string[] }>;
+      },
+      "authenticate",
+    ).mockResolvedValue({ token: "k", scopes: [] });
+    return conn;
+  }
+
+  it("happy path: POSTs to /channels/{id}/messages with {content, tts:false}", async () => {
+    const sent = {
+      id: "m99",
+      channel_id: "c1",
+      content: "hello",
+      timestamp: "2026-04-29T12:00:00Z",
+      author: { id: "u1", username: "alice" },
+    };
+    const fetchSpy = vi.fn().mockResolvedValueOnce(mockOk(sent));
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const conn = await makeConnector();
+    const result = await conn.sendMessage("c1", { content: "hello" });
+    expect(result).toEqual(sent);
+
+    const url = String(fetchSpy.mock.calls[0]?.[0] ?? "");
+    expect(url).toContain("/channels/c1/messages");
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      content: "hello",
+      tts: false,
+    });
+  });
+
+  it("rejects empty channelId", async () => {
+    const conn = await makeConnector();
+    await expect(conn.sendMessage("", { content: "x" })).rejects.toThrow(
+      /channelId/,
+    );
+  });
+
+  it("rejects empty content", async () => {
+    const conn = await makeConnector();
+    await expect(conn.sendMessage("c1", { content: "" })).rejects.toThrow(
+      /content/,
+    );
+  });
+
+  it("rejects content longer than 2000 chars", async () => {
+    const conn = await makeConnector();
+    const long = "a".repeat(2001);
+    await expect(conn.sendMessage("c1", { content: long })).rejects.toThrow(
+      /2000/,
+    );
+  });
+
+  it("403 surfaces permission_denied with bot-scope guidance", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(mockResponseStatus(403));
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const conn = await makeConnector();
+    await expect(conn.sendMessage("c1", { content: "hi" })).rejects.toThrow(
+      /bot scope/i,
+    );
+  });
+
+  it("404 surfaces not_found", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(mockResponseStatus(404));
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const conn = await makeConnector();
+    await expect(conn.sendMessage("c1", { content: "hi" })).rejects.toThrow(
+      /not found/i,
+    );
+  });
+
+  it("honors explicit tts: true", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      mockOk({
+        id: "m1",
+        channel_id: "c1",
+        content: "spoken",
+        timestamp: "2026-04-29T12:00:00Z",
+        author: { id: "u1", username: "alice" },
+      }),
+    );
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const conn = await makeConnector();
+    await conn.sendMessage("c1", { content: "spoken", tts: true });
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      content: "spoken",
+      tts: true,
+    });
+  });
+});
+
+// ── writes: refresh-on-401 ───────────────────────────────────────────────────
+
+describe("DiscordConnector.sendMessage refresh on 401", () => {
+  const tmpDir = join(
+    os.tmpdir(),
+    `patchwork-discord-write-refresh-${Date.now()}`,
+  );
+  const homeDir = join(tmpDir, "home");
+  const patchworkHome = join(homeDir, ".patchwork");
+  const tokensDir = join(patchworkHome, "tokens");
+
+  beforeEach(() => {
+    process.env.HOME = homeDir;
+    process.env.PATCHWORK_HOME = patchworkHome;
+    process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
+    process.env.DISCORD_CLIENT_ID = "cid";
+    process.env.DISCORD_CLIENT_SECRET = "csecret";
+    mkdirSync(tokensDir, { recursive: true });
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    delete process.env.HOME;
+    delete process.env.PATCHWORK_HOME;
+    delete process.env.PATCHWORK_TOKEN_STORAGE_BACKEND;
+    delete process.env.DISCORD_CLIENT_ID;
+    delete process.env.DISCORD_CLIENT_SECRET;
+    if (existsSync(tmpDir)) {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("on 401, refreshes token and retries the POST once", async () => {
+    const expired = {
+      ok: false,
+      status: 401,
+      headers: { get: () => null },
+    };
+    Object.setPrototypeOf(expired, Response.prototype);
+
+    const fetchSpy = vi
+      .fn()
+      // initial POST: 401
+      .mockResolvedValueOnce(expired)
+      // refresh: 200
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: "new-access",
+          refresh_token: "new-refresh",
+          expires_in: 604800,
+          scope: "identify guilds messages.read",
+          token_type: "Bearer",
+        }),
+        headers: { get: () => null },
+      })
+      // retry POST: 200 with the message
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "m42",
+          channel_id: "c1",
+          content: "after-refresh",
+          timestamp: "2026-04-29T12:00:00Z",
+          author: { id: "u1", username: "alice" },
+        }),
+        headers: { get: () => null },
+      });
+
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { DiscordConnector, saveTokens, loadTokens } = await import(
+      "../discord.js"
+    );
+    saveTokens({
+      access_token: "stale-access",
+      refresh_token: "stale-refresh",
+      expires_at: Date.now() + 60_000,
+      scope: "identify guilds messages.read",
+      token_type: "Bearer",
+      _client_id: "cid",
+      _client_secret: "csecret",
+      connected_at: new Date().toISOString(),
+    });
+
+    const conn = new DiscordConnector();
+    const result = await conn.sendMessage("c1", { content: "after-refresh" });
+
+    expect(result.id).toBe("m42");
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    const url1 = String(fetchSpy.mock.calls[0]?.[0] ?? "");
+    const url2 = String(fetchSpy.mock.calls[1]?.[0] ?? "");
+    const url3 = String(fetchSpy.mock.calls[2]?.[0] ?? "");
+    expect(url1).toContain("/channels/c1/messages");
+    expect(url2).toContain("/oauth2/token");
+    expect(url3).toContain("/channels/c1/messages");
+
+    const stored = loadTokens();
+    expect(stored?.access_token).toBe("new-access");
+  });
+});
