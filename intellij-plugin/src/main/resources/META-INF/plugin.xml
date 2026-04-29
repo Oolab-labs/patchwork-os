@@ -4,58 +4,111 @@
     <vendor url="https://patchwork.sh">Patchwork</vendor>
 
     <description><![CDATA[
-<h2>Patchwork Bridge for JetBrains IDEs</h2>
+<h2>Claude IDE Bridge — JetBrains companion</h2>
 
-<p>Connects IntelliJ IDEA (and other JetBrains IDEs) to the
-<a href="https://patchwork.sh">Patchwork OS bridge</a>, giving Claude Code and
-other AI assistants live access to your IDE state over the MCP protocol.</p>
+<p><b>MCP bridge between Claude Code and your JetBrains IDE.</b> Gives Claude Code real-time
+visibility into your editor — open files, diagnostics, terminal output, debug state — and
+lets it act on all of it through 170+ MCP tools.</p>
 
-<h3>What this plugin does</h3>
+<p>Fix a bug from your phone. Let Claude run your tests and commit the result. Ask Claude
+what lint errors are in your workspace without copy-pasting anything. This plugin makes all
+of that work in IntelliJ IDEA, PyCharm, GoLand, WebStorm, RubyMine, Rider, Android Studio,
+and other JetBrains IDEs — wire-compatible with the
+<a href="https://marketplace.visualstudio.com/items?itemName=patchwork.claude-ide-bridge">VS Code companion</a>.</p>
 
-<p>Once installed, your running Patchwork bridge can ask IntelliJ to:</p>
+<h3>Two ways to use it</h3>
 
 <ul>
-  <li><b>Read editor state</b> — current selection, open files, file content, dirty state</li>
-  <li><b>Navigate</b> — go to definition, declaration, type definition, find references and implementations</li>
-  <li><b>Inspect</b> — hover documentation, document symbols, call hierarchy, workspace symbol search</li>
-  <li><b>Edit</b> — apply text edits, replace blocks, create/rename/delete files</li>
-  <li><b>Refactor</b> — rename symbols, prepare rename, format document, organize imports, fix lint errors</li>
-  <li><b>Diagnostics</b> — read errors and warnings across the workspace or per file</li>
-  <li><b>Terminal</b> — list, create, dispose terminals; send commands; run and capture command output</li>
-  <li><b>Debug</b> — read debug state, set breakpoints, evaluate expressions, start/stop sessions</li>
-  <li><b>Clipboard</b> — read and write the system clipboard</li>
+  <li><b>Bridge only (default).</b> 170 MCP tools — LSP, diagnostics, debugger, terminal, git, GitHub, file ops. For anyone who wants Claude Code to see and act on their IDE.</li>
+  <li><b>Patchwork OS layer (opt-in).</b> All bridge tools plus YAML recipes, an approval queue, oversight dashboard, mobile push approvals, and multi-model orchestration. For automation, agent workflows, and background tasks.</li>
 </ul>
 
-<p>49 handlers in total. Wire-compatible with the VS Code companion extension — the same
-Claude Code MCP tools work against both IDEs without any AI-side changes.</p>
+<p>The bridge runs without flags. Add <code>--automation --claude-driver subprocess</code>
+to enable the Patchwork OS layer.</p>
+
+<h3>Quick start</h3>
+
+<ol>
+  <li><b>Install this plugin.</b> Settings → Plugins → Marketplace → search "Patchwork Bridge".</li>
+  <li><b>Start the bridge.</b> <code>npm install -g patchwork-os &amp;&amp; claude-ide-bridge --workspace /your/project</code> (or run <code>patchwork start-all</code>).</li>
+  <li><b>Connect Claude Code.</b> In your project: <code>CLAUDE_CODE_IDE_SKIP_VALID_CHECK=true claude --ide</code>. Type <code>/ide</code> in Claude Code to confirm.</li>
+</ol>
+
+<p>The plugin auto-discovers the bridge via the lock file at <code>~/.claude/ide/&lt;port&gt;.lock</code>,
+opens a WebSocket to the local process, and handles JSON-RPC 2.0 requests. No data leaves your
+machine. No cloud accounts required.</p>
+
+<h3>What Claude can do once connected</h3>
+
+<ul>
+  <li><b>Read your diagnostics</b> — "fix all errors in this file" works because Claude calls <code>getDiagnostics</code> directly.</li>
+  <li><b>Navigate code</b> — go to definition / declaration / type definition, find references, find implementations, call hierarchy, document &amp; workspace symbols.</li>
+  <li><b>Edit and save files</b> — open files in the editor, apply edits, replace blocks, create / rename / delete files.</li>
+  <li><b>Refactor safely</b> — rename symbol, prepare rename, format document / range, organize imports, fix lint errors, code actions.</li>
+  <li><b>Run and read terminal output</b> — list / create / dispose terminals, send commands, wait for output.</li>
+  <li><b>Set breakpoints and inspect debug state</b> — start / stop sessions, set breakpoints, evaluate expressions in the XDebugger.</li>
+  <li><b>Commit, push, and open PRs</b> — full Git workflow via the bridge's structured tools.</li>
+  <li><b>Run tests and check coverage</b> — run the test suite, read failures, re-run.</li>
+  <li><b>Spawn background Claude tasks</b> — <code>runClaudeTask</code>, <code>getClaudeTaskStatus</code>, <code>cancelClaudeTask</code>, <code>listClaudeTasks</code> for headless orchestration.</li>
+  <li><b>Edit transactions</b> — <code>beginTransaction</code> / <code>stageEdit</code> / <code>commitTransaction</code> / <code>rollbackTransaction</code> for atomic multi-file edits.</li>
+  <li><b>Environment health</b> — <code>bridgeDoctor</code> verifies plugin connection, git, linter, test runner, lock file, GitHub CLI.</li>
+</ul>
+
+<p>This plugin contributes 49 IDE-side handlers (core, LSP, debugger, terminal, code style).
+The bridge ships an additional ~120 transport-level tools (git, GitHub, search, formatting,
+project info, Claude orchestration, etc.) that work the moment the bridge is running — even
+without the IDE plugin connected.</p>
+
+<h3>Patchwork OS — opt-in automation layer</h3>
+
+<p>When started with <code>--automation</code>, the bridge becomes a background agent that
+watches your workspace, runs YAML recipes on events, and routes risky actions through an
+approval queue.</p>
+
+<ul>
+  <li><b>Automation hooks</b> — <code>onDiagnosticsStateChange</code>, <code>onFileSave</code>, <code>onTestRun</code>, <code>onGitCommit</code>, <code>onPullRequest</code>, <code>onCompaction</code>, <code>onPermissionDenied</code>, and more.</li>
+  <li><b>Recipes</b> — plain YAML files that declare a trigger and an action. Examples: <code>daily-status</code>, <code>watch-failing-tests</code>, <code>lint-on-save</code>, <code>morning-brief</code>, <code>sentry-to-linear</code>.</li>
+  <li><b>Mobile oversight</b> — install the dashboard as a PWA, subscribe to push notifications, approve / reject Claude actions from the notification tray.</li>
+  <li><b>Multi-model orchestration</b> — drive Claude, Gemini, OpenAI, or Grok subprocesses from the same recipe.</li>
+</ul>
 
 <h3>Requirements</h3>
 
 <ul>
-  <li>Patchwork bridge running locally (<code>patchwork start</code> or <code>npm start</code>)</li>
-  <li>IntelliJ IDEA 2024.1 or later (Community or Ultimate). Also works in Android Studio, GoLand, PyCharm, Rider, RubyMine, WebStorm — any 2024.1+ JetBrains IDE.</li>
+  <li>JetBrains IDE 2024.1 or later (build 241+) — IntelliJ IDEA Community / Ultimate, PyCharm, GoLand, WebStorm, RubyMine, Rider, Android Studio</li>
+  <li>Patchwork bridge running locally — <code>patchwork start-all</code> or <code>claude-ide-bridge --workspace /path</code></li>
+  <li>Node.js 20+ on <code>PATH</code> (for the bridge auto-installer)</li>
 </ul>
 
-<h3>How it works</h3>
+<h3>Links</h3>
 
-<p>The plugin reads the bridge lock file at <code>~/.claude/ide/&lt;port&gt;.lock</code>,
-opens a WebSocket to the local bridge process, and handles JSON-RPC 2.0 requests.
-No data leaves your machine. No cloud accounts required.</p>
+<ul>
+  <li><a href="https://github.com/Oolab-labs/patchwork-os">GitHub — Oolab-labs/patchwork-os</a></li>
+  <li><a href="https://www.npmjs.com/package/patchwork-os">npm — patchwork-os</a></li>
+  <li><a href="https://marketplace.visualstudio.com/items?itemName=patchwork.claude-ide-bridge">VS Code companion extension</a></li>
+  <li><a href="https://github.com/Oolab-labs/patchwork-os/issues">Report an issue</a></li>
+</ul>
 
-<h3>Protocol version</h3>
-<p><code>1.1.0</code> — compatible with Patchwork bridge v0.2.0-alpha.18 and later.</p>
+<p><i>Protocol version <code>1.1.0</code> — compatible with Patchwork bridge v0.2.0-alpha.18 and later.</i></p>
     ]]></description>
 
     <change-notes><![CDATA[
-<h3>1.0.0 — 2026-04-22</h3>
-<p>Initial release. 49 real handlers across five groups:</p>
+<h3>1.0.1 — 2026-04-28</h3>
 <ul>
-  <li><b>Core (23)</b>: selection, open files, file content, open/save/close, create/delete/rename, editText, replaceBlock, clipboard, diagnostics, workspace folders, isDirty</li>
-  <li><b>LSP (18)</b>: goToDefinition/Declaration/TypeDefinition, findReferences/Implementations, getHover, getCodeActions, renameSymbol, searchSymbols, getDocumentSymbols, getCallHierarchy, prepareRename, formatRange, signatureHelp, foldingRanges, selectionRanges</li>
-  <li><b>Debug (5)</b>: getDebugState, evaluateInDebugger, setDebugBreakpoints, startDebugging, stopDebugging</li>
-  <li><b>Terminal (7)</b>: listTerminals, createTerminal, disposeTerminal, sendTerminalCommand, getTerminalOutput, waitForTerminalOutput, executeInTerminal</li>
-  <li><b>Code style (3)</b>: formatDocument, organizeImports, fixAllLintErrors</li>
+  <li><b>Fix</b>: <code>evaluateInDebugger</code> handler — restored missing <code>CaptureNode</code> class so debugger expression evaluation works at runtime (regression introduced after 1.0.0 build).</li>
+  <li><b>Docs</b>: marketplace listing rewritten to match the VS Code companion extension — bridge-first positioning, two-modes (Bridge only / Patchwork OS), quick-start steps, what-Claude-can-do reference.</li>
 </ul>
+
+<h3>1.0.0 — 2026-04-22</h3>
+<p>Initial release. 49 IDE-side handlers across five groups, wire-compatible with the VS Code companion extension:</p>
+<ul>
+  <li><b>Core (23)</b> — selection, open files, file content, open / save / close, create / delete / rename, editText, replaceBlock, clipboard, diagnostics, workspace folders, isDirty</li>
+  <li><b>LSP (18)</b> — goToDefinition / Declaration / TypeDefinition, findReferences / Implementations, getHover, getCodeActions, renameSymbol, searchSymbols, getDocumentSymbols, getCallHierarchy, prepareRename, formatRange, signatureHelp, foldingRanges, selectionRanges</li>
+  <li><b>Debug (5)</b> — getDebugState, evaluateInDebugger, setDebugBreakpoints, startDebugging, stopDebugging</li>
+  <li><b>Terminal (7)</b> — listTerminals, createTerminal, disposeTerminal, sendTerminalCommand, getTerminalOutput, waitForTerminalOutput, executeInTerminal</li>
+  <li><b>Code style (3)</b> — formatDocument, organizeImports, fixAllLintErrors</li>
+</ul>
+<p>Same Claude Code MCP tools work against both VS Code and JetBrains without any AI-side changes.</p>
     ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
