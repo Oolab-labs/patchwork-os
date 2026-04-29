@@ -548,3 +548,255 @@ describe("handleAsanaDisconnect", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 });
+
+// ── writes ───────────────────────────────────────────────────────────────────
+
+/**
+ * Build a minimal mocked-fetch Response stub the connector can read.
+ * Supports `clone()` (used by attachErrorDetail) and a synthetic header bag.
+ */
+function makeJsonResponse(body: unknown, status = 200) {
+  const r = {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    clone() {
+      return this;
+    },
+    headers: { get: () => null },
+  };
+  Object.setPrototypeOf(r, Response.prototype);
+  return r;
+}
+
+function mockAuthenticate(conn: { authenticate?: unknown }) {
+  vi.spyOn(
+    conn as unknown as {
+      authenticate: () => Promise<{ token: string; scopes: string[] }>;
+    },
+    "authenticate",
+  ).mockResolvedValue({ token: "k", scopes: [] });
+}
+
+describe("AsanaConnector writes", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  // ── createTask ─────────────────────────────────────────────────────────────
+
+  it("createTask happy path: POSTs `{data:{...}}` and unwraps response", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      makeJsonResponse({
+        data: {
+          gid: "t100",
+          name: "New task",
+          resource_type: "task",
+          completed: false,
+        },
+      }),
+    );
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    mockAuthenticate(conn);
+
+    const task = await conn.createTask({
+      workspaceGid: "w1",
+      name: "New task",
+    });
+
+    expect(task.gid).toBe("t100");
+    expect(task.name).toBe("New task");
+
+    const call = fetchSpy.mock.calls[0];
+    expect(String(call?.[0])).toContain("/tasks");
+    const init = call?.[1] as { method?: string; body?: string };
+    expect(init?.method).toBe("POST");
+    const sent = JSON.parse(init?.body ?? "{}");
+    expect(sent).toEqual({
+      data: { workspace: "w1", name: "New task" },
+    });
+  });
+
+  it("createTask rejects when name is missing", async () => {
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    await expect(
+      conn.createTask({ workspaceGid: "w1", name: "" }),
+    ).rejects.toThrow(/name/);
+  });
+
+  it("createTask rejects when workspaceGid is missing", async () => {
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    await expect(
+      conn.createTask({ workspaceGid: "", name: "x" }),
+    ).rejects.toThrow(/workspaceGid/);
+  });
+
+  it("createTask only includes optional fields when provided", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeJsonResponse({ data: { gid: "t101", name: "Full" } }),
+      );
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    mockAuthenticate(conn);
+
+    await conn.createTask({
+      workspaceGid: "w1",
+      name: "Full",
+      projectGid: "p1",
+      notes: "details",
+      assigneeGid: "u1",
+      dueOn: "2026-05-01",
+      parentTaskGid: "t99",
+    });
+
+    const init = fetchSpy.mock.calls[0]?.[1] as { body?: string };
+    const sent = JSON.parse(init?.body ?? "{}");
+    expect(sent.data).toEqual({
+      workspace: "w1",
+      name: "Full",
+      projects: ["p1"],
+      notes: "details",
+      assignee: "u1",
+      due_on: "2026-05-01",
+      parent: "t99",
+    });
+  });
+
+  // ── updateTask ─────────────────────────────────────────────────────────────
+
+  it("updateTask happy path: PUT with only provided fields, unwraps data", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      makeJsonResponse({
+        data: { gid: "t1", name: "Renamed", completed: false },
+      }),
+    );
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    mockAuthenticate(conn);
+
+    const task = await conn.updateTask("t1", { name: "Renamed" });
+
+    expect(task.gid).toBe("t1");
+    expect(task.name).toBe("Renamed");
+
+    const call = fetchSpy.mock.calls[0];
+    expect(String(call?.[0])).toContain("/tasks/t1");
+    const init = call?.[1] as { method?: string; body?: string };
+    expect(init?.method).toBe("PUT");
+
+    const sent = JSON.parse(init?.body ?? "{}");
+    // Only `name` should be present — no `undefined` keys leaked.
+    expect(sent).toEqual({ data: { name: "Renamed" } });
+    expect(Object.keys(sent.data)).toEqual(["name"]);
+  });
+
+  it("updateTask rejects when no update fields provided", async () => {
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    await expect(conn.updateTask("t1", {})).rejects.toThrow(
+      /at least one field/i,
+    );
+  });
+
+  it("updateTask normalizes 404 into not_found error", async () => {
+    const r404 = {
+      ok: false,
+      status: 404,
+      headers: { get: () => null },
+      clone() {
+        return this;
+      },
+      json: async () => ({ errors: [{ message: "Not found" }] }),
+    };
+    Object.setPrototypeOf(r404, Response.prototype);
+    // apiCall does not retry on 404 (retryable=false), so a single mock is enough.
+    global.fetch = vi.fn().mockResolvedValue(r404) as unknown as typeof fetch;
+
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    mockAuthenticate(conn);
+
+    await expect(conn.updateTask("missing", { name: "x" })).rejects.toThrow(
+      /not found/i,
+    );
+  });
+
+  // ── completeTask ───────────────────────────────────────────────────────────
+
+  it("completeTask sends `completed: true` via updateTask", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      makeJsonResponse({
+        data: { gid: "t1", name: "Task", completed: true },
+      }),
+    );
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    mockAuthenticate(conn);
+
+    const task = await conn.completeTask("t1");
+
+    expect(task.completed).toBe(true);
+
+    const init = fetchSpy.mock.calls[0]?.[1] as {
+      method?: string;
+      body?: string;
+    };
+    expect(init?.method).toBe("PUT");
+    const sent = JSON.parse(init?.body ?? "{}");
+    expect(sent).toEqual({ data: { completed: true } });
+  });
+
+  // ── addTaskComment ─────────────────────────────────────────────────────────
+
+  it("addTaskComment posts `{data:{text, type:'comment'}}` and unwraps", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      makeJsonResponse({
+        data: {
+          gid: "s1",
+          type: "comment",
+          text: "hi",
+          created_at: "2026-04-29T00:00:00.000Z",
+        },
+      }),
+    );
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    mockAuthenticate(conn);
+
+    const story = await conn.addTaskComment("t1", { text: "hi" });
+
+    expect(story.gid).toBe("s1");
+    expect(story.text).toBe("hi");
+
+    const call = fetchSpy.mock.calls[0];
+    expect(String(call?.[0])).toContain("/tasks/t1/stories");
+    const init = call?.[1] as { method?: string; body?: string };
+    expect(init?.method).toBe("POST");
+
+    const sent = JSON.parse(init?.body ?? "{}");
+    expect(sent).toEqual({ data: { text: "hi", type: "comment" } });
+  });
+
+  it("addTaskComment rejects when text is empty", async () => {
+    const { AsanaConnector } = await import("../asana.js");
+    const conn = new AsanaConnector();
+    await expect(conn.addTaskComment("t1", { text: "" })).rejects.toThrow(
+      /text/,
+    );
+  });
+});
