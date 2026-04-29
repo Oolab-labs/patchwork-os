@@ -191,10 +191,45 @@ export class RecipeRunLog {
     return out.slice(0, limit);
   }
 
-  /** Return a single run by its monotonic seq, or null if not found. */
+  /**
+   * Return a single run by its monotonic seq, or null if not found.
+   *
+   * Fast path: in-memory ring lookup (the latest `memoryCap` runs).
+   * Slow path: scan `runs.jsonl` once when the seq isn't in memory —
+   * this is what makes older runs (evicted from the ring buffer)
+   * accessible. The dashboard's `/runs/<seq>` page would otherwise
+   * 404 for any recipe older than the last `memoryCap` (default 500).
+   *
+   * The on-disk scan reads the whole file but doesn't allocate the
+   * full set in memory: we parse line-by-line and short-circuit on
+   * the first match. Malformed lines are skipped silently, matching
+   * `loadExisting` / `syncFromDisk` behaviour.
+   */
   getBySeq(seq: number): RecipeRun | null {
     this.syncFromDisk();
-    return this.runs.find((r) => r.seq === seq) ?? null;
+    const inMem = this.runs.find((r) => r.seq === seq);
+    if (inMem) return inMem;
+    return this.readFromDiskBySeq(seq);
+  }
+
+  private readFromDiskBySeq(seq: number): RecipeRun | null {
+    let raw: string;
+    try {
+      raw = readFileSync(this.file, "utf-8");
+    } catch {
+      return null;
+    }
+    const lines = raw.split("\n");
+    for (const line of lines) {
+      if (!line) continue;
+      try {
+        const parsed = JSON.parse(line) as RecipeRun;
+        if (parsed.seq === seq) return parsed;
+      } catch {
+        // skip malformed line — never let one bad row break lookup
+      }
+    }
+    return null;
   }
 
   /** Test/inspection helper — current in-memory size. */
