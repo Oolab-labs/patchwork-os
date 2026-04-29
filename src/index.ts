@@ -141,6 +141,64 @@ async function downloadVsixFromOpenVsx(): Promise<string> {
   return tmpPath;
 }
 
+// Closes the race where bridge.start() began initialising in parallel with
+// a subcommand's async work — observed in the 2026-04-29 dogfood pass
+// where `recipe install` errors interleaved with bridge "Tools: full"
+// startup logs.
+//
+// Every subcommand `if`-block below dispatches via an `(async () => {...})()`
+// IIFE that ends with `process.exit`. The IIFE invocation returns
+// synchronously, so without this gate, control immediately falls through
+// to the bridge.start() block at end-of-file and starts initialising
+// alongside the subcommand's async work. process.exit fires *eventually*
+// after the await chain, but the bridge has already begun in parallel.
+// Two IIFEs (patchwork no-args dashboard, recipe watch) lack process.exit
+// entirely — without this gate they would run alongside the bridge
+// indefinitely.
+//
+// Single source of truth for "is this argv invoking a subcommand?" — the
+// same list is also used by the unknown-command suggester at L2570.
+const KNOWN_SUBCOMMANDS = [
+  "init",
+  "patchwork-init",
+  "start-all",
+  "install-extension",
+  "gen-claude-md",
+  "print-token",
+  "gen-plugin-stub",
+  "notify",
+  "install",
+  "marketplace",
+  "status",
+  "shim",
+  "recipe",
+  "dashboard",
+  "launchd",
+] as const;
+
+const __invokedSubcommand = (() => {
+  const sub = process.argv[2];
+  if (!sub || sub.startsWith("-")) return null;
+  // Treat KNOWN_SUBCOMMANDS as the dispatch source. The bare-binary
+  // dashboard launcher (no argv) is handled separately below.
+  return KNOWN_SUBCOMMANDS.includes(sub as (typeof KNOWN_SUBCOMMANDS)[number])
+    ? sub
+    : null;
+})();
+
+const __invokedBareBinaryDashboard = (() => {
+  if (process.argv[2]) return false;
+  const binName = path.basename(process.argv[1] ?? "");
+  return (
+    binName === "patchwork-os" ||
+    binName === "patchwork" ||
+    binName === "patchwork.js"
+  );
+})();
+
+const __subcommandWillRun =
+  __invokedSubcommand !== null || __invokedBareBinaryDashboard;
+
 // Handle --version flag — print package version and exit.
 if (process.argv[2] === "--version" || process.argv[2] === "-v") {
   console.log(`claude-ide-bridge ${PACKAGE_VERSION}`);
@@ -2548,28 +2606,15 @@ if (process.argv[2] === "launchd") {
 }
 
 {
-  const KNOWN_COMMANDS = [
-    "init",
-    "patchwork-init",
-    "start-all",
-    "install-extension",
-    "gen-claude-md",
-    "print-token",
-    "gen-plugin-stub",
-    "notify",
-    "install",
-    "marketplace",
-    "status",
-    "shim",
-    "recipe",
-    "dashboard",
-    "launchd",
-  ];
+  // Reuses the KNOWN_SUBCOMMANDS list from the top of this file as a single
+  // source of truth for "what subcommand argv tokens are recognized".
   const unknownSub = process.argv[2];
   if (
     unknownSub &&
     !unknownSub.startsWith("-") &&
-    !KNOWN_COMMANDS.includes(unknownSub)
+    !KNOWN_SUBCOMMANDS.includes(
+      unknownSub as (typeof KNOWN_SUBCOMMANDS)[number],
+    )
   ) {
     const lev = (a: string, b: string): number => {
       const dp: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
@@ -2590,7 +2635,7 @@ if (process.argv[2] === "launchd") {
       // biome-ignore lint/style/noNonNullAssertion: dp is fully pre-allocated
       return dp[a.length]![b.length]!;
     };
-    const closest = [...KNOWN_COMMANDS].sort(
+    const closest = [...KNOWN_SUBCOMMANDS].sort(
       (a, b) => lev(unknownSub, a) - lev(unknownSub, b),
     )[0];
     console.error(
@@ -2673,8 +2718,15 @@ if (
   }
 }
 
+// Skip bridge boot when a subcommand IIFE is doing the work — avoids the
+// race where bridge.start() began initialising in parallel with the
+// subcommand's async path. See the KNOWN_SUBCOMMANDS / __subcommandWillRun
+// gate at the top of this file.
+if (__subcommandWillRun) {
+  // intentionally empty — subcommand IIFE owns the process from here.
+}
 // --watch: supervisor mode — spawn this binary as a child (without --watch) and restart on crash
-if (config.watch) {
+else if (config.watch) {
   const childArgv = process.argv.filter((a) => a !== "--watch");
   const STABLE_THRESHOLD_MS = 60_000;
   const BASE_DELAY_MS = 2_000;
