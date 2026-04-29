@@ -30,6 +30,37 @@ import javax.swing.Icon
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Minimal XValueNode that captures the string value from computePresentation. */
+private class CaptureNode : XValueNode {
+    var type: String? = null
+    var value: String? = null
+
+    override fun isObsolete() = false
+    override fun setFullValueEvaluator(evaluator: com.intellij.xdebugger.frame.XFullValueEvaluator) {}
+
+    override fun setPresentation(icon: Icon?, type: String?, value: String, hasChildren: Boolean) {
+        this.type = type
+        this.value = value
+    }
+
+    override fun setPresentation(icon: Icon?, presentation: XValuePresentation, hasChildren: Boolean) {
+        this.type = presentation.type
+        val sb = StringBuilder()
+        presentation.renderValue(object : XValuePresentation.XValueTextRenderer {
+            override fun renderValue(value: String) { sb.append(value) }
+            override fun renderValue(value: String, key: com.intellij.openapi.editor.colors.TextAttributesKey) { sb.append(value) }
+            override fun renderStringValue(value: String) { sb.append('"').append(value).append('"') }
+            override fun renderStringValue(value: String, additionalSpecialCharsToHighlight: String?, maxLength: Int) { sb.append('"').append(value).append('"') }
+            override fun renderNumericValue(value: String) { sb.append(value) }
+            override fun renderKeywordValue(value: String) { sb.append(value) }
+            override fun renderComment(comment: String) {}
+            override fun renderSpecialSymbol(symbol: String) { sb.append(symbol) }
+            override fun renderError(error: String) { sb.append("<error: $error>") }
+        })
+        this.value = sb.toString()
+    }
+}
+
 private fun currentSession(project: Project) =
     XDebuggerManager.getInstance(project).currentSession
 
