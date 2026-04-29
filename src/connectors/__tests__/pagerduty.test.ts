@@ -274,3 +274,210 @@ describe("handlePagerDutyDisconnect", () => {
     expect(JSON.parse(result.body).ok).toBe(true);
   });
 });
+
+// ─── writes ────────────────────────────────────────────────────────────────
+
+describe("PagerDutyConnector writes", () => {
+  const FROM = "ops@example.com";
+
+  // Build a connector with stub auth + spied fetch.
+  async function makeConn(fetchImpl: ReturnType<typeof vi.fn>) {
+    global.fetch = fetchImpl as unknown as typeof fetch;
+    vi.resetModules();
+    const { PagerDutyConnector } = await import("../pagerduty.js");
+    const conn = new PagerDutyConnector();
+    (conn as unknown as { tokens: object }).tokens = {
+      token: "k",
+      connected_at: new Date().toISOString(),
+    };
+    vi.spyOn(
+      conn as unknown as {
+        authenticate: () => Promise<{ token: string; scopes: string[] }>;
+      },
+      "authenticate",
+    ).mockResolvedValue({ token: "k", scopes: [] });
+    return conn;
+  }
+
+  function jsonOk<T>(payload: T) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => payload,
+      headers: { get: () => null },
+    };
+  }
+
+  function jsonErr(status: number) {
+    const fake = { ok: false, status, headers: { get: () => null } };
+    Object.setPrototypeOf(fake, Response.prototype);
+    return fake;
+  }
+
+  beforeEach(() => {
+    process.env.PAGERDUTY_FROM_EMAIL = FROM;
+  });
+
+  afterEach(() => {
+    delete process.env.PAGERDUTY_FROM_EMAIL;
+    vi.restoreAllMocks();
+  });
+
+  it("acknowledgeIncident PUTs correct status and includes From header", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      jsonOk({
+        incident: { id: "P1", status: "acknowledged", incident_number: 1 },
+      }),
+    );
+    const conn = await makeConn(fetchSpy);
+
+    const result = await conn.acknowledgeIncident("P1");
+
+    expect(result.id).toBe("P1");
+    expect(result.status).toBe("acknowledged");
+    const call = fetchSpy.mock.calls[0];
+    expect(String(call?.[0])).toContain("/incidents/P1");
+    expect(call?.[1]?.method).toBe("PUT");
+    const body = JSON.parse(call?.[1]?.body as string);
+    expect(body.incident.status).toBe("acknowledged");
+    expect(body.incident.type).toBe("incident_reference");
+    const headers = call?.[1]?.headers as Record<string, string>;
+    expect(headers.From).toBe(FROM);
+  });
+
+  it("acknowledgeIncident 404 → not_found error message", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(jsonErr(404));
+    const conn = await makeConn(fetchSpy);
+    await expect(conn.acknowledgeIncident("PXX")).rejects.toThrow(/not found/i);
+  });
+
+  it("acknowledgeIncident throws if PAGERDUTY_FROM_EMAIL unset and no override", async () => {
+    delete process.env.PAGERDUTY_FROM_EMAIL;
+    const fetchSpy = vi.fn(); // never called
+    const conn = await makeConn(fetchSpy);
+    await expect(conn.acknowledgeIncident("P1")).rejects.toThrow(
+      /PAGERDUTY_FROM_EMAIL/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("resolveIncident sends resolution string in body", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      jsonOk({
+        incident: { id: "P2", status: "resolved", incident_number: 2 },
+      }),
+    );
+    const conn = await makeConn(fetchSpy);
+
+    const result = await conn.resolveIncident("P2", {
+      resolution: "fixed by rolling back deploy abc123",
+    });
+
+    expect(result.status).toBe("resolved");
+    const call = fetchSpy.mock.calls[0];
+    const body = JSON.parse(call?.[1]?.body as string);
+    expect(body.incident.status).toBe("resolved");
+    expect(body.incident.resolution).toBe(
+      "fixed by rolling back deploy abc123",
+    );
+    const headers = call?.[1]?.headers as Record<string, string>;
+    expect(headers.From).toBe(FROM);
+  });
+
+  it("addIncidentNote POSTs note content", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      jsonOk({
+        note: {
+          id: "N1",
+          content: "Investigating",
+          created_at: "2026-04-29T00:00:00Z",
+        },
+      }),
+    );
+    const conn = await makeConn(fetchSpy);
+
+    const result = await conn.addIncidentNote("P3", {
+      content: "Investigating",
+    });
+
+    expect(result.id).toBe("N1");
+    expect(result.content).toBe("Investigating");
+    const call = fetchSpy.mock.calls[0];
+    expect(String(call?.[0])).toContain("/incidents/P3/notes");
+    expect(call?.[1]?.method).toBe("POST");
+    const body = JSON.parse(call?.[1]?.body as string);
+    expect(body.note.content).toBe("Investigating");
+    const headers = call?.[1]?.headers as Record<string, string>;
+    expect(headers.From).toBe(FROM);
+  });
+
+  it("createIncident defaults urgency to 'high' and sends From header", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      jsonOk({
+        incident: {
+          id: "P4",
+          incident_number: 4,
+          status: "triggered",
+          urgency: "high",
+        },
+      }),
+    );
+    const conn = await makeConn(fetchSpy);
+
+    const result = await conn.createIncident({
+      title: "DB down",
+      serviceId: "SVC1",
+    });
+
+    expect(result.id).toBe("P4");
+    const call = fetchSpy.mock.calls[0];
+    expect(String(call?.[0])).toContain("/incidents");
+    expect(call?.[1]?.method).toBe("POST");
+    const body = JSON.parse(call?.[1]?.body as string);
+    expect(body.incident.urgency).toBe("high");
+    expect(body.incident.title).toBe("DB down");
+    expect(body.incident.service.id).toBe("SVC1");
+    expect(body.incident.service.type).toBe("service_reference");
+    const headers = call?.[1]?.headers as Record<string, string>;
+    expect(headers.From).toBe(FROM);
+  });
+
+  it("createIncident rejects when serviceId missing", async () => {
+    const fetchSpy = vi.fn();
+    const conn = await makeConn(fetchSpy);
+    await expect(
+      conn.createIncident({
+        title: "x",
+        serviceId: "",
+      }),
+    ).rejects.toThrow(/serviceId/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("createIncident respects explicit urgency=low and includes body", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(
+      jsonOk({
+        incident: {
+          id: "P5",
+          incident_number: 5,
+          status: "triggered",
+          urgency: "low",
+        },
+      }),
+    );
+    const conn = await makeConn(fetchSpy);
+
+    await conn.createIncident({
+      title: "minor blip",
+      serviceId: "SVC2",
+      urgency: "low",
+      body: "intermittent 502s on edge",
+    });
+
+    const call = fetchSpy.mock.calls[0];
+    const body = JSON.parse(call?.[1]?.body as string);
+    expect(body.incident.urgency).toBe("low");
+    expect(body.incident.body.type).toBe("incident_body");
+    expect(body.incident.body.details).toBe("intermittent 502s on edge");
+  });
+});

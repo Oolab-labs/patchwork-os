@@ -7,8 +7,12 @@
  *   - Header: Authorization: Token token=<key>   (PagerDuty's specific format —
  *     not Bearer.)
  *
- * Tools (read-only this PR): listIncidents, getIncident, listServices, listOnCalls.
- * Write methods (createIncident / ack / resolve) deferred to a follow-up PR.
+ * Read tools: listIncidents, getIncident, listServices, listOnCalls.
+ * Write tools: acknowledgeIncident, resolveIncident, addIncidentNote, createIncident.
+ *
+ * Writes require a `From` header (PagerDuty API requirement) sourced from
+ * PAGERDUTY_FROM_EMAIL env var. Identity is NOT exposed via recipe params —
+ * recipes can't spoof who performed the action.
  *
  * Extends BaseConnector for unified auth, retry, rate-limit, error handling.
  */
@@ -67,6 +71,21 @@ export interface PagerDutyOnCall {
   escalation_level: number;
   start?: string;
   end?: string;
+}
+
+export interface PagerDutyNote {
+  id: string;
+  content: string;
+  created_at: string;
+  user?: { id: string; summary: string; type: string };
+}
+
+export interface CreateIncidentParams {
+  title: string;
+  serviceId: string;
+  urgency?: "high" | "low";
+  body?: string;
+  fromEmail?: string;
 }
 
 export class PagerDutyConnector extends BaseConnector {
@@ -254,15 +273,152 @@ export class PagerDutyConnector extends BaseConnector {
     return result.data as { oncalls: PagerDutyOnCall[] };
   }
 
+  // ── Write methods ──────────────────────────────────────────────────────────
+  // All writes require a `From` header set to the email of the user performing
+  // the action. Read from PAGERDUTY_FROM_EMAIL env var (or per-call override).
+  // Identity is intentionally NOT exposed to recipe tools — recipes shouldn't
+  // be able to spoof identity.
+
+  async acknowledgeIncident(
+    incidentId: string,
+    options: { fromEmail?: string } = {},
+  ): Promise<PagerDutyIncident> {
+    const fromEmail = resolveFromEmail(options.fromEmail);
+    const result = await this.apiCall(async (token) => {
+      const res = await fetch(`${PAGERDUTY_BASE}/incidents/${incidentId}`, {
+        method: "PUT",
+        headers: this.buildHeaders(token, fromEmail),
+        body: JSON.stringify({
+          incident: {
+            type: "incident_reference",
+            status: "acknowledged",
+          },
+        }),
+      });
+      if (!res.ok) throw res;
+      const data = (await res.json()) as { incident: PagerDutyIncident };
+      return data.incident;
+    });
+
+    if ("error" in result) throw new Error(result.error.message);
+    return result.data as PagerDutyIncident;
+  }
+
+  async resolveIncident(
+    incidentId: string,
+    options: { fromEmail?: string; resolution?: string } = {},
+  ): Promise<PagerDutyIncident> {
+    const fromEmail = resolveFromEmail(options.fromEmail);
+    const result = await this.apiCall(async (token) => {
+      const incident: Record<string, unknown> = {
+        type: "incident_reference",
+        status: "resolved",
+      };
+      if (options.resolution) incident.resolution = options.resolution;
+
+      const res = await fetch(`${PAGERDUTY_BASE}/incidents/${incidentId}`, {
+        method: "PUT",
+        headers: this.buildHeaders(token, fromEmail),
+        body: JSON.stringify({ incident }),
+      });
+      if (!res.ok) throw res;
+      const data = (await res.json()) as { incident: PagerDutyIncident };
+      return data.incident;
+    });
+
+    if ("error" in result) throw new Error(result.error.message);
+    return result.data as PagerDutyIncident;
+  }
+
+  async addIncidentNote(
+    incidentId: string,
+    options: { content: string; fromEmail?: string },
+  ): Promise<PagerDutyNote> {
+    const fromEmail = resolveFromEmail(options.fromEmail);
+    const result = await this.apiCall(async (token) => {
+      const res = await fetch(
+        `${PAGERDUTY_BASE}/incidents/${incidentId}/notes`,
+        {
+          method: "POST",
+          headers: this.buildHeaders(token, fromEmail),
+          body: JSON.stringify({ note: { content: options.content } }),
+        },
+      );
+      if (!res.ok) throw res;
+      const data = (await res.json()) as { note: PagerDutyNote };
+      return data.note;
+    });
+
+    if ("error" in result) throw new Error(result.error.message);
+    return result.data as PagerDutyNote;
+  }
+
+  async createIncident(
+    params: CreateIncidentParams,
+  ): Promise<PagerDutyIncident> {
+    if (!params.serviceId) {
+      throw new Error("serviceId is required to create a PagerDuty incident");
+    }
+    if (!params.title) {
+      throw new Error("title is required to create a PagerDuty incident");
+    }
+    const fromEmail = resolveFromEmail(params.fromEmail);
+    const urgency = params.urgency ?? "high";
+
+    const result = await this.apiCall(async (token) => {
+      const incident: Record<string, unknown> = {
+        type: "incident",
+        title: params.title,
+        service: { id: params.serviceId, type: "service_reference" },
+        urgency,
+      };
+      if (params.body) {
+        incident.body = { type: "incident_body", details: params.body };
+      }
+
+      const res = await fetch(`${PAGERDUTY_BASE}/incidents`, {
+        method: "POST",
+        headers: this.buildHeaders(token, fromEmail),
+        body: JSON.stringify({ incident }),
+      });
+      if (!res.ok) throw res;
+      const data = (await res.json()) as { incident: PagerDutyIncident };
+      return data.incident;
+    });
+
+    if ("error" in result) throw new Error(result.error.message);
+    return result.data as PagerDutyIncident;
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  private buildHeaders(token: string): Record<string, string> {
-    return {
+  private buildHeaders(
+    token: string,
+    fromEmail?: string,
+  ): Record<string, string> {
+    const headers: Record<string, string> = {
       Authorization: `Token token=${token}`,
       Accept: PAGERDUTY_ACCEPT,
       "Content-Type": "application/json",
     };
+    if (fromEmail) headers.From = fromEmail;
+    return headers;
   }
+}
+
+/**
+ * Resolve identity (`From` header value) for a PagerDuty write.
+ * Per-call override > PAGERDUTY_FROM_EMAIL env var. Throws if neither set.
+ */
+function resolveFromEmail(override?: string): string {
+  const fromEmail = override ?? process.env.PAGERDUTY_FROM_EMAIL;
+  if (!fromEmail) {
+    throw new Error(
+      "PagerDuty write methods require an identity. Set PAGERDUTY_FROM_EMAIL " +
+        "to the email of the user performing the action.",
+    );
+  }
+  return fromEmail;
 }
 
 // ── Token persistence ────────────────────────────────────────────────────────
