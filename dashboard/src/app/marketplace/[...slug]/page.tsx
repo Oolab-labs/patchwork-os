@@ -22,8 +22,28 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps) {
   const fullName = decodeURIComponent(params.slug.join("/"));
+  const registry = await fetchRegistry();
+  const recipe = registry?.recipes.find((r) => r.name === fullName);
+
+  if (!recipe) {
+    return { title: "Not found — Marketplace · Patchwork OS" };
+  }
+
+  const title = `${shortName(recipe.name)} — Marketplace · Patchwork OS`;
   return {
-    title: `${shortName(fullName)} — Marketplace · Patchwork OS`,
+    title,
+    description: recipe.description,
+    openGraph: {
+      title: shortName(recipe.name),
+      description: recipe.description,
+      type: "article",
+      tags: recipe.tags,
+    },
+    twitter: {
+      card: "summary",
+      title: shortName(recipe.name),
+      description: recipe.description,
+    },
   };
 }
 
