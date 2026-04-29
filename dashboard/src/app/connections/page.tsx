@@ -164,6 +164,15 @@ function IconHubspot() {
   );
 }
 
+function IconPagerduty() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M10 2a4 4 0 00-4 4v3a3 3 0 01-1.5 2.6L3 13h14l-1.5-1.4A3 3 0 0114 9V6a4 4 0 00-4-4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M8.5 16a1.5 1.5 0 003 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function IconIntercom() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
@@ -221,6 +230,7 @@ const SUPPORTED_CONNECTORS = new Set([
   "hubspot",
   "intercom",
   "jira",
+  "pagerduty",
   "stripe",
   "zendesk",
 ]);
@@ -301,6 +311,21 @@ const TOKEN_MODAL_CONNECTORS: Record<string, TokenModalConfig> = {
     placeholder: "Atlassian API token",
     tokenKey: "token",
   },
+  pagerduty: {
+    name: "PagerDuty",
+    icon: <IconPagerduty />,
+    instructions: (
+      <>
+        Generate a personal or general API access key in{" "}
+        <a href="https://support.pagerduty.com/docs/api-access-keys" target="_blank" rel="noreferrer" style={{ color: "var(--info)" }}>
+          PagerDuty → Integrations → API Access Keys
+        </a>
+        . Read-only keys are sufficient for this PR's incident, service, and on-call queries.
+      </>
+    ),
+    placeholder: "PagerDuty API key",
+    tokenKey: "token",
+  },
   stripe: {
     name: "Stripe",
     icon: <IconStripe />,
@@ -351,6 +376,7 @@ const PROVIDERS: {
   { id: "hubspot",         name: "HubSpot",         description: "Read contacts, deals, and companies.",                                                             icon: IconHubspot },
   { id: "intercom",        name: "Intercom",        description: "Read conversations and customer data.",                                                             icon: IconIntercom },
   { id: "jira",            name: "Jira",            description: "Read and create Jira issues across projects.",                                                       icon: IconJira },
+  { id: "pagerduty",       name: "PagerDuty",       description: "Read incidents, services, and on-call rotations.",                                                  icon: IconPagerduty },
   { id: "stripe",          name: "Stripe",          description: "Read payment events, customers, and subscriptions.",                                               icon: IconStripe },
   { id: "zendesk",         name: "Zendesk",         description: "Read support tickets and customer context.",                                                        icon: IconZendesk },
   { id: "google-calendar", name: "Google Calendar", description: "View your schedule.",                                                                              icon: IconCalendar },
