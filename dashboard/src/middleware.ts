@@ -3,8 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD;
 const ALLOW_UNAUTHENTICATED =
   process.env.DASHBOARD_ALLOW_UNAUTHENTICATED === "1";
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 export function middleware(req: NextRequest) {
+  // Demo mode is the public face of the dashboard — no real bridge data is
+  // ever served, so auth is unnecessary and gating behind a 503 just means
+  // first-time visitors hit "Dashboard auth not configured" on every route
+  // except /marketplace.
+  if (DEMO_MODE) {
+    return NextResponse.next();
+  }
+
   // No password configured.
   if (!DASHBOARD_PASSWORD) {
     // In dev, default to open access. In production, refuse to expose
