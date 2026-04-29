@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://patchworkos.com/schema/recipe.v1.json",
+  "$id": "https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json",
   "title": "Patchwork Recipe",
   "description": "YAML recipe schema for Patchwork automation",
   "x-taplo": {

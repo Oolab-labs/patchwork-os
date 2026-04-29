@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://patchworkos.com/schema/recipe.v1.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json
 apiVersion: patchwork.sh/v1
 name: project-health-check
 description: Fetch git activity, open issues, and diagnostics in parallel, then write a health summary.
