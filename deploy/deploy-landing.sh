@@ -9,9 +9,16 @@ NGINX_CONF="/etc/nginx/sites-available/patchworkos"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "==> Copying landing page to VPS..."
+echo "==> Copying landing page + assets to VPS..."
 ssh "$VPS" "mkdir -p $LANDING_DIR"
-scp "$REPO_ROOT/landing/index.html" "$VPS:$LANDING_DIR/index.html"
+# index.html plus the favicon + manifest browsers probe at apex. Without
+# these the browser console fills with /favicon.svg and /manifest.json
+# 401s on every page load (nginx falls through to the dashboard middleware
+# for paths that don't have an explicit `location`).
+scp "$REPO_ROOT/landing/index.html"   "$VPS:$LANDING_DIR/index.html"
+scp "$REPO_ROOT/landing/favicon.ico"  "$VPS:$LANDING_DIR/favicon.ico"
+scp "$REPO_ROOT/landing/favicon.svg"  "$VPS:$LANDING_DIR/favicon.svg"
+scp "$REPO_ROOT/landing/manifest.json" "$VPS:$LANDING_DIR/manifest.json"
 
 echo "==> Updating nginx to serve landing page at root..."
 ssh "$VPS" bash <<'REMOTE'
@@ -68,6 +75,56 @@ print("nginx: landing + bridge location blocks inserted")
 PYEOF
 else
   echo "nginx: landing location already present, skipping"
+fi
+
+# Independent idempotency block for the apex asset locations — these were
+# added after the original landing block, so existing installs miss them.
+if ! grep -q "location = /favicon.ico" "$NGINX_CONF"; then
+  python3 - "$NGINX_CONF" <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+with open(path) as f:
+    content = f.read()
+
+asset_blocks = """
+    # Apex assets — favicon + PWA manifest browsers probe at root
+    location = /favicon.ico {
+        root /var/www/patchwork-landing;
+        try_files /favicon.ico =404;
+        access_log off;
+    }
+    location = /favicon.svg {
+        root /var/www/patchwork-landing;
+        try_files /favicon.svg =404;
+        access_log off;
+    }
+    location = /manifest.json {
+        root /var/www/patchwork-landing;
+        try_files /manifest.json =404;
+        access_log off;
+    }
+"""
+
+# Insert immediately after the existing `location = /` block
+marker = '    location = / {'
+idx = content.find(marker)
+if idx == -1:
+    print("WARN: could not find `location = /` to anchor; appending to end", flush=True)
+    idx = content.rfind('\n}')
+    new_content = content[:idx] + asset_blocks + content[idx:]
+else:
+    # find end of the location = / block
+    end = content.find('    }', idx)
+    end = content.find('\n', end) + 1 if end != -1 else idx
+    new_content = content[:end] + asset_blocks + content[end:]
+
+with open(path, 'w') as f:
+    f.write(new_content)
+print("nginx: apex asset location blocks inserted")
+PYEOF
+else
+  echo "nginx: apex asset locations already present, skipping"
 fi
 
 nginx -t && systemctl reload nginx
