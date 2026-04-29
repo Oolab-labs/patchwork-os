@@ -542,6 +542,59 @@ function findInstalledRecipeDir(
 }
 
 /**
+ * Resolve an install-dir-name (the directory `runRecipeInstall` created) to
+ * the YAML entrypoint inside it. Used by `recipe run <name>` so the user can
+ * pass the name they see in `recipe list` rather than having to dig into the
+ * install directory layout.
+ *
+ * Resolution order:
+ *   1. `recipe.json` manifest's `recipes.main`, if the manifest exists and
+ *      the file it points at exists on disk.
+ *   2. First `*.yaml` / `*.yml` in the install dir.
+ *
+ * Returns null if `name` doesn't correspond to an install dir, or the dir
+ * exists but contains no resolvable entrypoint. Path-traversal `name` values
+ * (e.g. `../../etc`) throw via the underlying `findInstalledRecipeDir` —
+ * same defence as enable/disable/uninstall.
+ */
+export function findInstalledRecipeEntrypoint(
+  name: string,
+  options: { recipesDir?: string } = {},
+): string | null {
+  const recipesDir = options.recipesDir ?? INSTALL_RECIPES_DIR;
+  const installDir = findInstalledRecipeDir(name, recipesDir);
+  if (!installDir) return null;
+
+  const manifestPath = path.join(installDir, "recipe.json");
+  if (existsSync(manifestPath)) {
+    try {
+      const m = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+        recipes?: { main?: string };
+      };
+      if (m.recipes?.main && isSafeBasename(m.recipes.main)) {
+        const candidate = path.join(installDir, m.recipes.main);
+        if (existsSync(candidate)) return candidate;
+      }
+    } catch {
+      // Malformed manifest → fall through to first-yaml lookup. The
+      // scheduler does the same; surfacing the parse error here would
+      // shadow the top-level "recipe not found" error from the CLI.
+    }
+  }
+
+  try {
+    for (const entry of readdirSync(installDir)) {
+      if (/\.ya?ml$/i.test(entry)) {
+        return path.join(installDir, entry);
+      }
+    }
+  } catch {
+    // unreadable
+  }
+  return null;
+}
+
+/**
  * Enable a recipe — removes the .disabled marker so triggers can fire.
  * Idempotent: enabling an already-enabled recipe is a no-op.
  */
