@@ -25,7 +25,9 @@ import "./intercom.js";
 import "./hubspot.js";
 import "./datadog.js";
 import "./discord.js";
+import "./jira.js";
 import "./pagerduty.js";
+import "./sentry.js";
 import "./stripe.js";
 import "./meetingNotes.js";
 
