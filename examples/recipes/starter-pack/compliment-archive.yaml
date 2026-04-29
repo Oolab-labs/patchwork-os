@@ -1,3 +1,7 @@
+# vision-tier — this recipe references integrations that are not yet
+# bundled with patchwork-os. Steps that depend on a missing tool will
+# `skip` (with a warning) rather than crash; see ./README.md for status.
+# requires: gmail-mcp, log-mcp
 version: 1.0.0
 name: compliment-archive
 description: >

@@ -1,5 +1,13 @@
 # Starter Pack — 20 Recipes for the Rest of Your Life
 
+> **Vision tier.** Most recipes here reference MCP integrations that are
+> not yet bundled with `patchwork-os` — `gmail-mcp`, `calendar-mcp`,
+> `notify-mcp`, `dashboard-mcp`, `notes-mcp`, etc. They're shipped here
+> as design artifacts: the shape of what daily-life automation in
+> Patchwork should look like once those integrations land. You can read,
+> fork, and reason about them today — but expect most steps to skip
+> (with a warning) when run, because their tools aren't registered yet.
+
 Recipes are the connective tissue of Patchwork OS. This pack covers the
 non-coder parts of daily life: the inbox, the calendar, the money, the
 relationships, the self-observation that lives in the margins of notebooks.
@@ -8,11 +16,29 @@ Each recipe is a single YAML file with a trigger, steps, and an approval
 surface. Nothing here sends or deletes without a human tap, except where
 explicitly marked `risk: low` and reversible (appending to a log file, etc.).
 
-Recipes that depend on unbuilt integrations are marked with a
-`# requires: <mcp-name>` comment at the top. You can still read, fork, and
-reason about them — they'll run once the integration lands.
+Every recipe in this pack carries a `# requires: <mcp-1>, <mcp-2>, …`
+comment at the top listing which integrations it depends on. You can
+still read, fork, and reason about them today — they'll run end-to-end
+once the integrations land.
 
-## Install
+## What works today vs. what's vision-tier
+
+The core `patchwork-os` runner ships with a registered tool set covering
+**git, github, gmail, slack, notion, confluence, zendesk, intercom,
+hubspot, datadog, stripe, calendar.list_events, googleDrive, file, git,
+diagnostics, meetingNotes**. Recipes that ONLY use those work today.
+
+Anything in this `starter-pack/` directory references at least one tool
+namespace not yet in the registry (`inbox.*`, `notes.*`, `dashboard.render`,
+`notify.*`, `weather.*`, `contacts.*`, `queue.*`, `scheduler.*`, etc.). The
+runner will skip those steps gracefully — see [`docs/dogfood/recipe-inventory.md`](../../../docs/dogfood/recipe-inventory.md)
+for the full classification.
+
+For runnable recipes today, see the sibling [`examples/recipes/`](../) directory
+or [`templates/recipes/`](../../../templates/recipes/) (which ships in the
+npm package).
+
+## Install (when integrations land)
 
 ```bash
 patchwork recipe install examples/recipes/starter-pack/*.yaml
@@ -23,6 +49,9 @@ Or pick individual ones:
 ```bash
 patchwork recipe install examples/recipes/starter-pack/sunday-reset.yaml
 ```
+
+> Until then, installing them will succeed but most steps will report
+> `skipped` (with a warning naming the missing tool) on every run.
 
 ## The 20, by category
 
