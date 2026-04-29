@@ -172,9 +172,16 @@ export async function listIssues(
     if (Array.isArray(parsed)) return parsed;
     return parsed.issues ?? parsed.nodes ?? [];
   } catch (err) {
-    if (err instanceof Error && err.message.includes("not connected"))
-      throw err;
-    return [];
+    // Pre-fix only "not connected" was rethrown; all other errors
+    // (auth expiry, network, rate limit, MCP outage) became `[]` and
+    // looked like "no issues" to downstream agents. Throw real failures
+    // so the recipe-tool wrapper translates them into `{count:0,
+    // issues:[], error}` for the silent-fail detector (PR #72) to catch.
+    throw new Error(
+      err instanceof Error
+        ? err.message
+        : `linear list_issues failed: ${String(err)}`,
+    );
   }
 }
 

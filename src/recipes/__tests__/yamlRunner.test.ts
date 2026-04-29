@@ -8,10 +8,23 @@ vi.mock("../../connectors/linear.js", () => ({
   listIssues: vi.fn(),
 }));
 
+vi.mock("../../connectors/github.js", () => ({
+  // Only listIssues + listPRs are imported by the github recipe-tool
+  // wrappers; the rest of the connector surface stays unmocked.
+  listIssues: vi.fn(),
+  listPRs: vi.fn(),
+}));
+
+import {
+  listIssues as listGithubIssues,
+  listPRs as listGithubPRs,
+} from "../../connectors/github.js";
 import { listIssues, loadTokens } from "../../connectors/linear.js";
 
 const mockLoadTokens = vi.mocked(loadTokens);
 const mockListIssues = vi.mocked(listIssues);
+const mockListGithubIssues = vi.mocked(listGithubIssues);
+const mockListGithubPRs = vi.mocked(listGithubPRs);
 
 import {
   buildChainedDeps,
@@ -1392,6 +1405,108 @@ describe("linear.list_issues step", () => {
     };
     expect(out.count).toBe(0);
     expect(out.error).toContain("unauthorized");
+  });
+});
+
+// ── github.list_issues / github.list_prs (regression for swallow-to-[]) ──────
+//
+// Pre-fix: the github connector caught ALL errors and returned `[]`.
+// Token expiry, rate limits, MCP outages all looked like "no issues this
+// week" — agents in `morning-brief*` recipes summarized "you're caught
+// up" with confidence. Now the connector throws and the recipe-tool
+// wrapper translates to `{count:0, items:[], error}` JSON, which the
+// runner's silent-fail detector (PR #72) flags as a step error.
+
+describe("github.list_issues step", () => {
+  it("happy path: writes count + issues to context", async () => {
+    mockListGithubIssues.mockResolvedValue([
+      { id: 1, title: "issue 1" } as never,
+      { id: 2, title: "issue 2" } as never,
+    ]);
+    const written: Record<string, string> = {};
+    await runYamlRecipe(
+      makeRecipe({
+        steps: [
+          { tool: "github.list_issues", into: "gh" },
+          {
+            tool: "file.write",
+            path: "/tmp/gh.md",
+            content: "{{gh}}",
+          },
+        ],
+      }),
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+    );
+    const out = JSON.parse(written["/tmp/gh.md"] ?? "{}") as {
+      count: number;
+      issues: unknown[];
+    };
+    expect(out.count).toBe(2);
+    expect(out.issues).toHaveLength(2);
+  });
+
+  it("connector throw → recipe step is `error` with the reason (no silent empty)", async () => {
+    mockListGithubIssues.mockRejectedValue(
+      new Error("github list_issues failed: 401 unauthorized"),
+    );
+    const result = await runYamlRecipe(
+      makeRecipe({
+        steps: [{ tool: "github.list_issues", into: "gh" }],
+      }),
+      noop(),
+    );
+    // The recipe-tool catches the throw and returns {count:0, error}
+    // JSON; the runner's silent-fail detector flags it as a step error.
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(result.stepResults[0]?.error).toMatch(/unauthorized|silent-fail/i);
+  });
+});
+
+describe("github.list_prs step", () => {
+  it("happy path: writes count + prs", async () => {
+    mockListGithubPRs.mockResolvedValue([
+      { id: 1, title: "pr 1", isDraft: false } as never,
+    ]);
+    const written: Record<string, string> = {};
+    await runYamlRecipe(
+      makeRecipe({
+        steps: [
+          { tool: "github.list_prs", into: "prs" },
+          { tool: "file.write", path: "/tmp/prs.md", content: "{{prs}}" },
+        ],
+      }),
+      {
+        ...noop(),
+        writeFile: (p, c) => {
+          written[p] = c;
+        },
+      },
+    );
+    const out = JSON.parse(written["/tmp/prs.md"] ?? "{}") as {
+      count: number;
+      prs: unknown[];
+    };
+    expect(out.count).toBe(1);
+    expect(out.prs).toHaveLength(1);
+  });
+
+  it("connector throw → recipe step is `error` (no silent empty)", async () => {
+    mockListGithubPRs.mockRejectedValue(
+      new Error("github list_pull_requests failed: rate limited"),
+    );
+    const result = await runYamlRecipe(
+      makeRecipe({
+        steps: [{ tool: "github.list_prs", into: "prs" }],
+      }),
+      noop(),
+    );
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(result.stepResults[0]?.error).toMatch(/rate limited|silent-fail/i);
   });
 });
 
