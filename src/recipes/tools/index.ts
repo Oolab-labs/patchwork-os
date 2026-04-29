@@ -22,6 +22,7 @@ import "./zendesk.js";
 import "./intercom.js";
 import "./hubspot.js";
 import "./datadog.js";
+import "./discord.js";
 import "./pagerduty.js";
 import "./stripe.js";
 import "./meetingNotes.js";
