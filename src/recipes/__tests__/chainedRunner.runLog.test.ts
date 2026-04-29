@@ -310,6 +310,134 @@ describe("runChainedRecipe — ActivityLog step event broadcast", () => {
     expect(log.query()[0]?.status).toBe("done");
   });
 
+  // ── VD-2: per-step capture ─────────────────────────────────────────────
+  // The runner records `resolvedParams`, `output`, and `registrySnapshot`
+  // for each step at depth 0 when a `runLog` is provided. Sensitive keys
+  // are redacted; values >8 KB are truncated. Older `runs.jsonl` rows
+  // without these fields still parse — backwards-compatible.
+
+  it("captures resolvedParams + output + registrySnapshot per step", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    const captureDeps: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue({ count: 42, label: "ok" }),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    // Recipes typically inline params as top-level step keys (see
+    // examples/recipes/morning-inbox-triage.yaml). Non-meta keys flow
+    // straight to executeTool's `params` arg.
+    const recipeWithParams: ChainedRecipe & { trigger: { type: string } } = {
+      name: "with-params",
+      trigger: { type: "chained" },
+      steps: [
+        {
+          id: "fetch",
+          tool: "noop.tool",
+          url: "https://example.com",
+          limit: 10,
+        },
+      ],
+    };
+    await runChainedRecipe(
+      recipeWithParams,
+      optsWithLog({ runLog: log, runLogDir: undefined }),
+      captureDeps,
+    );
+
+    const run = log.query()[0];
+    expect(run?.stepResults).toHaveLength(1);
+    const step = run?.stepResults?.[0] as Record<string, unknown> | undefined;
+    expect(step?.resolvedParams).toEqual({
+      url: "https://example.com",
+      limit: 10,
+    });
+    expect(step?.output).toEqual({ count: 42, label: "ok" });
+    expect(step?.registrySnapshot).toMatchObject({
+      fetch: { status: "success", data: { count: 42, label: "ok" } },
+    });
+    expect(typeof step?.startedAt).toBe("number");
+  });
+
+  it("redacts sensitive keys in captured resolvedParams", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    // headers / body are still nested objects in real recipes.
+    const recipeWithSecrets: ChainedRecipe & { trigger: { type: string } } = {
+      name: "with-secrets",
+      trigger: { type: "chained" },
+      steps: [
+        {
+          id: "call-api",
+          tool: "http.request",
+          url: "https://api.example.com",
+          headers: { Authorization: "Bearer sk-ABC123" },
+          body: { password: "p4$$" },
+        },
+      ],
+    };
+    await runChainedRecipe(
+      recipeWithSecrets,
+      optsWithLog({ runLog: log, runLogDir: undefined }),
+      okDeps,
+    );
+    const step = log.query()[0]?.stepResults?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    const params = step?.resolvedParams as
+      | {
+          url?: string;
+          headers?: Record<string, unknown>;
+          body?: Record<string, unknown>;
+        }
+      | undefined;
+    expect(params?.url).toBe("https://api.example.com");
+    expect(params?.headers?.Authorization).toBe("[REDACTED]");
+    expect(params?.body?.password).toBe("[REDACTED]");
+  });
+
+  it("captures the outer step of a nested-recipe call", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    const nestedRecipe: ChainedRecipe = {
+      name: "nested",
+      trigger: { type: "chained" } as never,
+      steps: [{ id: "inner", tool: "noop.tool" }],
+    };
+    const depsWithNested: ExecutionDeps = {
+      executeTool: vi.fn().mockResolvedValue("inner-result"),
+      executeAgent: vi.fn(),
+      // loadNestedRecipe returns {recipe, sourcePath?} — not the recipe alone.
+      loadNestedRecipe: vi
+        .fn()
+        .mockResolvedValue({ recipe: nestedRecipe, sourcePath: undefined }),
+    };
+    const outer: ChainedRecipe & { trigger: { type: string } } = {
+      name: "outer",
+      trigger: { type: "chained" },
+      steps: [{ id: "call-nested", recipe: "nested" }],
+    };
+    await runChainedRecipe(
+      outer,
+      optsWithLog({ runLog: log, runLogDir: undefined }),
+      depsWithNested,
+    );
+
+    // Outer run logged with one step ("call-nested"); inner step does NOT
+    // bubble up. resolvedParams is undefined for nested-recipe steps
+    // (they aren't tool/agent invocations). Output is the synthetic
+    // `{recipe, childSummary, childOutputs}` shape from the nested-call
+    // path — captured for the outer's audit trail.
+    const run = log.query()[0];
+    expect(run?.recipeName).toBe("outer");
+    expect(run?.stepResults).toHaveLength(1);
+    const step = run?.stepResults?.[0] as
+      | { id: string; output?: Record<string, unknown> }
+      | undefined;
+    expect(step?.id).toBe("call-nested");
+    expect(step?.output).toMatchObject({ recipe: "nested" });
+  });
+
   it("only broadcasts step events for the depth-0 run (nested runs are silent)", async () => {
     const { RecipeRunLog } = await import("../../runLog.js");
     const { ActivityLog } = await import("../../activityLog.js");
