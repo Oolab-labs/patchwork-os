@@ -1,5 +1,6 @@
 /**
- * Linear tools — linear.list_issues, linear.createIssue, linear.updateIssue
+ * Linear tools — linear.list_issues, linear.createIssue, linear.updateIssue,
+ * linear.addComment.
  *
  * Self-registering tool module for the recipe tool registry.
  */
@@ -243,6 +244,82 @@ registerTool({
       return JSON.stringify(result);
     } catch (err) {
       return JSON.stringify({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  },
+});
+
+// ============================================================================
+// linear.addComment  (write-gated)
+// ============================================================================
+
+registerTool({
+  id: "linear.addComment",
+  namespace: "linear",
+  description:
+    "Append a comment to a Linear issue's timeline. Body supports Markdown.",
+  paramsSchema: {
+    type: "object",
+    required: ["issue_id", "body"],
+    properties: {
+      issue_id: {
+        type: "string",
+        description: "Issue identifier (e.g., 'ENG-42'), UUID, or full URL",
+      },
+      body: {
+        type: "string",
+        description: "Comment body (Markdown supported, non-empty)",
+        minLength: 1,
+      },
+      into: CommonSchemas.into,
+    },
+  },
+  outputSchema: {
+    type: "object",
+    properties: {
+      ok: { type: "boolean" },
+      id: { type: "string" },
+      body: { type: "string" },
+      url: { type: "string" },
+      error: { type: "string" },
+    },
+  },
+  riskDefault: "low",
+  isWrite: true,
+  isConnector: true,
+  execute: async ({ params }) => {
+    const { loadTokens, addComment } = await import(
+      "../../connectors/linear.js"
+    );
+    if (!loadTokens()) {
+      return JSON.stringify({ ok: false, error: "Linear not connected" });
+    }
+    const issueId = typeof params.issue_id === "string" ? params.issue_id : "";
+    const body = typeof params.body === "string" ? params.body : "";
+    if (!issueId) {
+      return JSON.stringify({
+        ok: false,
+        error: "addComment requires issue_id",
+      });
+    }
+    if (!body) {
+      return JSON.stringify({
+        ok: false,
+        error: "addComment requires non-empty body",
+      });
+    }
+    try {
+      const comment = await addComment(issueId, body);
+      return JSON.stringify({
+        ok: true,
+        id: comment.id,
+        body: comment.body,
+        url: comment.url,
+      });
+    } catch (err) {
+      return JSON.stringify({
+        ok: false,
         error: err instanceof Error ? err.message : String(err),
       });
     }

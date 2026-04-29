@@ -14,11 +14,13 @@ vi.mock("node:fs", async (importOriginal) => {
 
 import * as fs from "node:fs";
 import {
+  addComment,
   getStatus,
   handleLinearDisconnect,
   handleLinearTest,
   loadTokens,
 } from "../linear.js";
+import { McpClient } from "../mcpClient.js";
 
 const MOCK_TOKEN_FILE = {
   vendor: "linear",
@@ -88,5 +90,88 @@ describe("handleLinearDisconnect", () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
     const result = await handleLinearDisconnect();
     expect(result.status).toBe(200);
+  });
+});
+
+describe("addComment", () => {
+  beforeEach(() => {
+    process.env.LINEAR_API_KEY = "lin_api_test";
+  });
+
+  it("calls create_comment MCP tool with correct args and unwraps comment", async () => {
+    const callTool = vi
+      .spyOn(McpClient.prototype, "callTool")
+      .mockResolvedValue({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              id: "cmt-1",
+              body: "hello",
+              url: "https://linear.app/c/cmt-1",
+            }),
+          },
+        ],
+      } as never);
+
+    const result = await addComment("ENG-42", "hello");
+    expect(result.id).toBe("cmt-1");
+    expect(result.body).toBe("hello");
+    expect(callTool).toHaveBeenCalledWith(
+      "create_comment",
+      { issueId: "ENG-42", body: "hello" },
+      expect.any(Object),
+    );
+    callTool.mockRestore();
+  });
+
+  it("unwraps `comment` envelope when MCP returns wrapped shape", async () => {
+    const callTool = vi
+      .spyOn(McpClient.prototype, "callTool")
+      .mockResolvedValue({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              comment: { id: "cmt-2", body: "nudge" },
+            }),
+          },
+        ],
+      } as never);
+    const result = await addComment("ENG-7", "nudge");
+    expect(result.id).toBe("cmt-2");
+    expect(result.body).toBe("nudge");
+    callTool.mockRestore();
+  });
+
+  it("rejects empty issueId", async () => {
+    await expect(addComment("", "hi")).rejects.toThrow(/issueId/i);
+    await expect(addComment("   ", "hi")).rejects.toThrow(/issueId/i);
+  });
+
+  it("rejects empty body", async () => {
+    await expect(addComment("ENG-42", "")).rejects.toThrow(/body/i);
+    await expect(addComment("ENG-42", "   ")).rejects.toThrow(/body/i);
+  });
+
+  it("rejects malformed issue ref before calling MCP", async () => {
+    const callTool = vi.spyOn(McpClient.prototype, "callTool");
+    await expect(addComment("not-an-issue", "hi")).rejects.toThrow(
+      /Cannot parse Linear issue ID/,
+    );
+    expect(callTool).not.toHaveBeenCalled();
+    callTool.mockRestore();
+  });
+
+  it("propagates MCP error (e.g. issue not found)", async () => {
+    const callTool = vi
+      .spyOn(McpClient.prototype, "callTool")
+      .mockRejectedValue(
+        new Error("tools/call create_comment: Entity not found: Issue"),
+      );
+    await expect(addComment("ENG-99999", "hi")).rejects.toThrow(
+      /Entity not found/,
+    );
+    callTool.mockRestore();
   });
 });
