@@ -106,20 +106,24 @@ patchwork start-all                       # then http://localhost:3100
 
 ### Starter recipes
 
-No external API keys needed for these:
+The package ships these in `templates/recipes/`. Recipes that need API keys are noted; the rest are zero-config.
 
-| Recipe | Trigger | What it does |
-|---|---|---|
-| `ambient-journal` | git commit | Appends one line to `~/.patchwork/journal/` |
-| `daily-status` | cron 08:00 | Morning brief from yesterday's commits |
-| `watch-failing-tests` | test run | Drops triage note to inbox on failure |
-| `lint-on-save` | file save | Surfaces new TS/JS diagnostics to inbox |
-| `stale-branches` | cron weekly | Lists branches older than 30 days |
-| `morning-brief` | cron 08:00 | Commits + Linear issues + Calendar events |
-| `sentry-to-linear` | manual | Sentry issue → Linear ticket (one-shot) |
-| `google-meet-debrief` | manual | Meeting notes → Linear + Slack |
+| Recipe | Trigger | What it does | Needs |
+|---|---|---|---|
+| `ambient-journal` | git commit | Appends one line to `~/.patchwork/journal/` | — |
+| `daily-status` | cron 08:00 | Morning brief from yesterday's commits | — |
+| `lint-on-save` | file save | Surfaces new TS/JS diagnostics to inbox | — |
+| `stale-branches` | cron weekly | Lists branches older than 30 days | — |
+| `watch-failing-tests` | test run | Drops triage note to inbox on failure | — |
+| `project-health-check` | manual | Snapshot of repo health + flagged risks | — |
+| `ctx-loop-test` | manual | Smoke test for context-platform end-to-end | — |
+| `morning-brief` | cron 08:00 | Gmail + Linear + Slack + Calendar digest | Gmail, Linear, Slack, Google Calendar |
+| `morning-brief-slack` | cron 08:00 | Same brief but only posts to Slack | Linear, Slack |
+| `gmail-health-check` | manual | Verify Gmail connector + token state | Gmail |
+| `inbox-triage` | manual | Triage Gmail unread → suggest archive/reply | Gmail |
+| `sentry-to-linear` | manual | Sentry issue → Linear ticket (one-shot) | Sentry, Linear |
 
-Connectors (Linear, Sentry, Slack, Google Calendar, Intercom, HubSpot, Datadog, Stripe) require API keys and approval-gated writes.
+**Connectors available** (all approval-gated for writes): Slack, GitHub, Linear, Gmail, Google Calendar, Google Drive, Sentry, Notion, Confluence, Datadog, HubSpot, Intercom, Stripe, Zendesk, Jira, PagerDuty, Discord, Asana, GitLab.
 
 ### Automation hooks
 
