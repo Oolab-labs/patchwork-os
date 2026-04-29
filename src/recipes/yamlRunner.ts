@@ -866,7 +866,19 @@ function parseSinceToGitArg(since: string): string {
   return unit.toLowerCase() === "h" ? `${num} hours ago` : `${num} days ago`;
 }
 
-function defaultGitLogSince(since: string, workdir?: string): string {
+// Exported for test coverage of the regression fix (was returning the
+// `(git log unavailable)` placeholder string on any failure, which
+// silently looked like success to pre-#72 runners).
+export function defaultGitLogSince(since: string, workdir?: string): string {
+  // Same antipattern that broke `defaultGitStaleBranches` (PR #70): on
+  // any error this used to return `(git log unavailable)`. The runner
+  // saw that as success-with-empty-data and downstream agents
+  // summarized "no recent commits" — false signal.
+  //
+  // Fix: return a JSON `{ok: false, error}` shape on failure so the
+  // runner's existing JSON-error detection (yamlRunner step-error
+  // block) flags the step as `error`. Successful runs still return
+  // bare git output text.
   try {
     const sinceArg = parseSinceToGitArg(since);
     const result = spawnSync(
@@ -878,10 +890,25 @@ function defaultGitLogSince(since: string, workdir?: string): string {
         timeout: 5000,
       },
     );
-    if (result.error || result.status !== 0) return "(git log unavailable)";
+    if (result.error) {
+      return JSON.stringify({
+        ok: false,
+        error: `git log failed: ${result.error.message}`,
+      });
+    }
+    if (result.status !== 0) {
+      const stderr = (result.stderr ?? "").toString().trim().slice(0, 200);
+      return JSON.stringify({
+        ok: false,
+        error: `git log exited ${result.status}${stderr ? `: ${stderr}` : ""}`,
+      });
+    }
     return (result.stdout ?? "").trim();
-  } catch {
-    return "(git log unavailable)";
+  } catch (err) {
+    return JSON.stringify({
+      ok: false,
+      error: `git log threw: ${err instanceof Error ? err.message : String(err)}`,
+    });
   }
 }
 
@@ -968,7 +995,20 @@ function resolveStepDeps(deps: RunnerDeps): StepDeps {
     workdir,
     gitLogSince: deps.gitLogSince ?? defaultGitLogSince,
     gitStaleBranches: deps.gitStaleBranches ?? defaultGitStaleBranches,
-    getDiagnostics: deps.getDiagnostics ?? (() => ""),
+    // The `diagnostics.get` recipe tool is registered (src/recipes/tools/
+    // diagnostics.ts) but only meaningful when the bridge wires a real
+    // `getDiagnostics` impl backed by the LSP / extension client. CLI runs
+    // and tests have no bridge to ask, so the default returns a JSON error
+    // shape that the step-error detector flags as `error` instead of the
+    // pre-fix empty string that silently passed as success.
+    getDiagnostics:
+      deps.getDiagnostics ??
+      (() =>
+        JSON.stringify({
+          ok: false,
+          error:
+            "diagnostics.get unavailable (no bridge / no `deps.getDiagnostics` injected)",
+        })),
     fetchFn: deps.fetchFn ?? (globalThis.fetch as FetchFn),
     claudeFn: deps.claudeFn ?? defaultClaudeFn,
     claudeCodeFn: deps.claudeCodeFn ?? defaultClaudeCodeFn,
