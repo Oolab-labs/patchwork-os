@@ -1140,7 +1140,8 @@ describe("runYamlRecipe — agent step with driver: claude-code", () => {
       });
       // Do NOT provide claudeFn — only claudeCodeFn. The runner will probe for claude CLI
       // and if found, call claudeCodeFn. In CI without claude CLI, it falls through to
-      // defaultClaudeFn (which returns skip message). Either way, stepsRun is 1.
+      // defaultClaudeFn (which returns the skip-message placeholder). Either way,
+      // stepsRun is 1.
       const result = await runYamlRecipe(recipe, {
         ...noop(),
         claudeCodeFn: async (p) => {
@@ -1148,9 +1149,21 @@ describe("runYamlRecipe — agent step with driver: claude-code", () => {
           return "cli fallback response";
         },
       });
-      // The step ran regardless of which path was taken
+      // The step ran regardless of which path was taken.
       expect(result.stepsRun).toBe(1);
-      expect(result.context.out).toBeDefined();
+      // CLI present (local dev) → claudeCodeFn ran → context.out is defined.
+      // CLI absent (CI) → defaultClaudeFn returned the skip-message, which the
+      // P1 silent-fail detector now flags as a step error → context.out is
+      // undefined. Both outcomes are valid for THIS test (we're only proving
+      // the fallback wiring exists, not which branch fires).
+      if (claudeCodeCalls.length > 0) {
+        expect(result.context.out).toBeDefined();
+      } else {
+        // The default-claude-fn path: detector caught the skip-message as
+        // a step error — that's the new correct behavior post-P1.
+        expect(result.stepResults[0]?.status).toBe("error");
+        expect(result.stepResults[0]?.error).toMatch(/silent-fail|skip/i);
+      }
     } finally {
       if (origKey !== undefined) process.env.ANTHROPIC_API_KEY = origKey;
     }
