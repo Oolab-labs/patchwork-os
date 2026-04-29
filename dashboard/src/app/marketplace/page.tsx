@@ -1,25 +1,9 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { apiPath } from "@/lib/api";
-
-// ------------------------------------------------------------------ types
-
-interface RegistryRecipe {
-  name: string;
-  version: string;
-  description: string;
-  tags: string[];
-  connectors: string[];
-  install: string;
-  downloads: number;
-}
-
-interface RegistryData {
-  version: string;
-  updated_at: string;
-  recipes: RegistryRecipe[];
-}
+import { type RegistryData, type RegistryRecipe, shortName } from "@/lib/registry";
 
 // ------------------------------------------------------------------ fallback data (shown when bridge offline)
 
@@ -112,10 +96,6 @@ const CATEGORY_TAG_MAP: Record<string, string[]> = {
 };
 
 // ------------------------------------------------------------------ helpers
-
-function shortName(name: string): string {
-  return name.replace(/^@[^/]+\//, "");
-}
 
 function connectorInitials(id: string): string {
   const norm = id.toLowerCase().replace(/[^a-z]/g, "");
@@ -215,17 +195,20 @@ function RecipeCard({
           marginBottom: "var(--s-2)",
         }}
       >
-        <div
+        <Link
+          href={`/marketplace/${recipe.name}`}
           style={{
             fontWeight: 600,
             fontSize: 14,
             color: "var(--fg-0)",
             wordBreak: "break-word",
             lineHeight: 1.4,
+            textDecoration: "none",
           }}
+          aria-label={`View details for ${shortName(recipe.name)}`}
         >
           {shortName(recipe.name)}
-        </div>
+        </Link>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end", flexShrink: 0 }}>
           {displayTags.map((tag) => (
             <span key={tag} className="tag-pill">
@@ -448,7 +431,8 @@ export default function MarketplacePage() {
     return (
       r.name.toLowerCase().includes(q) ||
       r.description.toLowerCase().includes(q) ||
-      r.tags.some((t) => t.toLowerCase().includes(q))
+      r.tags.some((t) => t.toLowerCase().includes(q)) ||
+      r.connectors.some((c) => c.toLowerCase().includes(q))
     );
   });
 
@@ -532,7 +516,7 @@ export default function MarketplacePage() {
         <input
           type="search"
           className="input"
-          placeholder="Search recipes…"
+          placeholder="Search recipes (name, tags, connectors)…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ maxWidth: 360 }}
