@@ -42,6 +42,7 @@ const CATALOG: ConnectorDef[] = [
   { id: "confluence",       name: "Confluence",       initials: "CF", category: "Docs",       wave: 1, tools: 5,  bg: "#0052CC" },
   { id: "linear",           name: "Linear",           initials: "LI", category: "Project",    wave: 1, tools: 6,  bg: "#5E6AD2" },
   { id: "slack",            name: "Slack",            initials: "SL", category: "Comms",      wave: 1, tools: 7,  bg: "#4A154B" },
+  { id: "discord",          name: "Discord",          initials: "DC", category: "Comms",      wave: 1, tools: 6,  bg: "#5865F2" },
   // Wave 2
   { id: "zendesk",          name: "Zendesk",          initials: "ZD", category: "Support",    wave: 2, tools: 6,  bg: "#03363D" },
   { id: "github",           name: "GitHub",           initials: "GH", category: "Dev",        wave: 2, tools: 10, bg: "#24292E" },
@@ -135,6 +136,17 @@ function IconConfluence() {
   );
 }
 
+function IconDiscord() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <rect x="2" y="4" width="16" height="12" rx="3" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="7.5" cy="10" r="1" fill="currentColor" />
+      <circle cx="12.5" cy="10" r="1" fill="currentColor" />
+      <path d="M5 16l1.5 2M15 16l-1.5 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function IconJira() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
@@ -224,6 +236,7 @@ const SUPPORTED_CONNECTORS = new Set([
   "linear",
   "sentry",
   "slack",
+  "discord",
   "notion",
   "confluence",
   "datadog",
@@ -370,6 +383,7 @@ const PROVIDERS: {
   { id: "github",          name: "GitHub",          description: "Read open issues and pull requests via GitHub's official MCP server.",                             icon: IconGitHub },
   { id: "linear",          name: "Linear",          description: "Read and manage issues.",                                                                          icon: IconLinear },
   { id: "slack",           name: "Slack",           description: "Post messages and list channels.",                                                                  icon: IconSlack },
+  { id: "discord",         name: "Discord",         description: "Read messages, channels, and guilds.",                                                              icon: IconDiscord },
   { id: "notion",          name: "Notion",          description: "Query databases, read pages, and create content.",                                                  icon: IconNotion },
   { id: "confluence",      name: "Confluence",      description: "Read and write Confluence pages and spaces.",                                                       icon: IconConfluence },
   { id: "datadog",         name: "Datadog",         description: "Query monitors, dashboards, and events.",                                                          icon: IconDatadog },
@@ -402,6 +416,7 @@ function logoUrl(id: string): string | null {
     confluence:       `${SI_CDN}/confluence/ffffff`,
     linear:           `${SI_CDN}/linear/ffffff`,
     slack:            `${SI_V13}/slack.svg`,
+    discord:          `${SI_CDN}/discord/ffffff`,
     zendesk:          `${SI_CDN}/zendesk/ffffff`,
     github:           `${SI_CDN}/github/ffffff`,
     gitlab:           `${SI_CDN}/gitlab/ffffff`,

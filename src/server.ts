@@ -1428,6 +1428,77 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── Discord connector routes ───────────────────────────────────
+      if (
+        (parsedUrl.pathname === "/connections/discord/auth" ||
+          parsedUrl.pathname === "/connections/discord/authorize") &&
+        req.method === "GET"
+      ) {
+        const { handleDiscordAuthorize } = await import(
+          "./connectors/discord.js"
+        );
+        const result = handleDiscordAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/discord/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleDiscordCallback } = await import(
+            "./connectors/discord.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleDiscordCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "text/html",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/discord/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleDiscordTest } = await import("./connectors/discord.js");
+          const result = await handleDiscordTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/discord" &&
+        req.method === "DELETE"
+      ) {
+        void (async () => {
+          const { handleDiscordDisconnect } = await import(
+            "./connectors/discord.js"
+          );
+          const result = await handleDiscordDisconnect();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
       // ── Notion routes ──────────────────────────────────────────────
       if (
         parsedUrl.pathname === "/connections/notion/connect" &&
