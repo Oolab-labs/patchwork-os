@@ -24,7 +24,7 @@ interface Run {
   taskId: string;
   recipeName: string;
   trigger: string;
-  status: "done" | "error" | "cancelled" | "interrupted";
+  status: "running" | "done" | "error" | "cancelled" | "interrupted";
   createdAt: number;
   startedAt?: number;
   doneAt: number;
@@ -36,7 +36,13 @@ interface Run {
 }
 
 type TriggerFilter = "all" | "cron" | "webhook" | "recipe" | "manual" | "git_hook";
-type StatusFilter = "all" | "done" | "error" | "cancelled" | "interrupted";
+type StatusFilter =
+  | "all"
+  | "running"
+  | "done"
+  | "error"
+  | "cancelled"
+  | "interrupted";
 
 function fmtWhen(ms: number): string {
   const diff = Date.now() - ms;
@@ -53,7 +59,8 @@ function fmtDur(ms: number): string {
   return `${(ms / 60_000).toFixed(1)}m`;
 }
 
-function statusPill(r: Run): "ok" | "err" | "warn" | "muted" {
+function statusPill(r: Run): "ok" | "err" | "warn" | "muted" | "running" {
+  if (r.status === "running") return "running";
   if (r.assertionFailures && r.assertionFailures.length > 0) return "err";
   if (r.status === "done") return "ok";
   if (r.status === "error") return "err";
@@ -130,6 +137,7 @@ export default function RunsPage() {
   ];
   const statusChips: { k: StatusFilter; label: string }[] = [
     { k: "all", label: "Any" },
+    { k: "running", label: "Running" },
     { k: "done", label: "Done" },
     { k: "error", label: "Error" },
     { k: "cancelled", label: "Cancelled" },
@@ -361,7 +369,13 @@ export default function RunsPage() {
                       }
                       style={{ cursor: "pointer" }}
                     >
-                      <td className="mono muted">{fmtWhen(r.doneAt)}</td>
+                      <td className="mono muted">
+                        {fmtWhen(
+                          r.status === "running"
+                            ? r.startedAt ?? r.createdAt
+                            : r.doneAt,
+                        )}
+                      </td>
                       <td className="mono">
                         <Link
                           href={`/runs/${r.seq}`}
@@ -379,7 +393,9 @@ export default function RunsPage() {
                           className={`pill ${sClass}`}
                           style={{ fontSize: 11 }}
                         >
-                          <span className="pill-dot" />
+                          {sClass !== "running" && (
+                            <span className="pill-dot" />
+                          )}
                           {r.status}
                           {r.assertionFailures &&
                             r.assertionFailures.length > 0 &&
@@ -401,8 +417,9 @@ export default function RunsPage() {
                             <div
                               className="progress-fill"
                               style={{
-                                width: `${pct}%`,
+                                width: r.status === "running" ? "100%" : `${pct}%`,
                                 background: barColor,
+                                opacity: r.status === "running" ? 0.4 : 1,
                               }}
                             />
                           </div>
@@ -415,7 +432,9 @@ export default function RunsPage() {
                               textAlign: "right",
                             }}
                           >
-                            {fmtDur(r.durationMs)}
+                            {r.status === "running"
+                              ? fmtDur(Date.now() - (r.startedAt ?? r.createdAt))
+                              : fmtDur(r.durationMs)}
                           </span>
                         </div>
                       </td>

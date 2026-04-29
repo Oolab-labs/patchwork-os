@@ -260,6 +260,139 @@ describe("RecipeRunLog.record", () => {
     expect(log.getBySeq(99)).toBeNull(); // non-existent seq, must not throw
   });
 
+  // ── VD-0: running-state run entries ──────────────────────────────────────
+  // Recipe runs are now visible while in flight. `startRun` allocates a seq
+  // and adds a `status:"running"` entry to the in-memory ring (no disk write,
+  // since running entries are ephemeral and don't survive bridge restart).
+  // `completeRun` updates the entry to a terminal status and persists to
+  // disk. This is the foundation for VD-1 live-tail.
+
+  it("startRun allocates seq + adds running entry (memory only)", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const seq = log.startRun({
+      taskId: "chained:foo:1700000000000",
+      recipeName: "foo",
+      trigger: "recipe",
+      createdAt: 1_000,
+    });
+    expect(seq).toBe(1);
+    expect(log.size()).toBe(1);
+    const run = log.getBySeq(seq);
+    expect(run?.status).toBe("running");
+    expect(run?.recipeName).toBe("foo");
+    expect(run?.taskId).toBe("chained:foo:1700000000000");
+    // No JSONL write yet — running entries are in-memory only.
+    expect(() => readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")).toThrow();
+  });
+
+  it("completeRun finalizes running entry + persists to disk", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const seq = log.startRun({
+      taskId: "chained:foo:1",
+      recipeName: "foo",
+      trigger: "recipe",
+      createdAt: 1_000,
+    });
+    log.completeRun(seq, {
+      status: "done",
+      doneAt: 2_500,
+      durationMs: 1_500,
+      stepResults: [
+        { id: "step1", status: "ok", durationMs: 800 },
+        { id: "step2", status: "ok", durationMs: 700 },
+      ],
+    });
+    const run = log.getBySeq(seq);
+    expect(run?.status).toBe("done");
+    expect(run?.doneAt).toBe(2_500);
+    expect(run?.durationMs).toBe(1_500);
+    expect(run?.stepResults).toHaveLength(2);
+    // Now on disk.
+    const lines = readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")
+      .trim()
+      .split("\n");
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0]!);
+    expect(parsed.seq).toBe(seq);
+    expect(parsed.status).toBe("done");
+  });
+
+  it("query() returns running entries alongside terminal ones", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    log.appendDirect({
+      taskId: "done-1",
+      recipeName: "old",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 100,
+      doneAt: 200,
+      durationMs: 100,
+    });
+    log.startRun({
+      taskId: "running-1",
+      recipeName: "active",
+      trigger: "recipe",
+      createdAt: 300,
+    });
+    const all = log.query();
+    expect(all).toHaveLength(2);
+    expect(all.map((r) => r.status)).toContain("running");
+    expect(all.map((r) => r.status)).toContain("done");
+  });
+
+  it("query({status: 'running'}) filters to running runs only", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    log.appendDirect({
+      taskId: "done-1",
+      recipeName: "old",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 100,
+      doneAt: 200,
+      durationMs: 100,
+    });
+    const seq = log.startRun({
+      taskId: "running-1",
+      recipeName: "active",
+      trigger: "recipe",
+      createdAt: 300,
+    });
+    const running = log.query({ status: "running" });
+    expect(running).toHaveLength(1);
+    expect(running[0]!.seq).toBe(seq);
+  });
+
+  it("completeRun with non-existent seq is a no-op (does not throw)", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    expect(() =>
+      log.completeRun(999, {
+        status: "done",
+        doneAt: 100,
+        durationMs: 50,
+        stepResults: [],
+      }),
+    ).not.toThrow();
+  });
+
+  it("updateRunSteps appends step results to a running entry incrementally", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const seq = log.startRun({
+      taskId: "t",
+      recipeName: "r",
+      trigger: "recipe",
+      createdAt: 100,
+    });
+    log.updateRunSteps(seq, [{ id: "s1", status: "ok", durationMs: 50 }]);
+    expect(log.getBySeq(seq)?.stepResults).toHaveLength(1);
+    log.updateRunSteps(seq, [
+      { id: "s1", status: "ok", durationMs: 50 },
+      { id: "s2", status: "ok", durationMs: 75 },
+    ]);
+    expect(log.getBySeq(seq)?.stepResults).toHaveLength(2);
+    // Still no disk write — only completeRun persists.
+    expect(() => readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")).toThrow();
+  });
+
   it("tolerates malformed JSONL lines on reload", () => {
     const file = path.join(tmp, "runs.jsonl");
     // Seed with one bad line and one good.
