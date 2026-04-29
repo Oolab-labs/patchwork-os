@@ -18,11 +18,15 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+// Favicon paths must include the `/dashboard/` basePath explicitly — Next.js
+// metadata icons aren't auto-prefixed for absolute URLs, so without this the
+// browser fetches `/favicon.svg` (404, no basePath) instead of
+// `/dashboard/favicon.svg`. Same for the manifest file.
 export const metadata = {
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico" },
+      { url: "/dashboard/favicon.svg", type: "image/svg+xml" },
+      { url: "/dashboard/favicon.ico" },
     ],
   },
   title: "Patchwork",
