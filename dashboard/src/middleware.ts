@@ -41,7 +41,9 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    // Protect all routes except Next.js internals, public schema files, and marketplace
-    "/((?!_next/static|_next/image|favicon.ico|schema/|marketplace).*)",
+    // Protect all routes except Next.js internals, public assets, and marketplace.
+    // Includes favicon.svg + manifest.json + robots.txt so PWA / browser asset
+    // requests don't 401 on every page load.
+    "/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|manifest\\.json|robots\\.txt|schema/|marketplace).*)",
   ],
 };

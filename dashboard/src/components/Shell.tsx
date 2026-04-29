@@ -188,9 +188,23 @@ export function Shell({ children }: { children: ReactNode }) {
   const approvalCount = useApprovalCount();
   const { dark, toggle } = useTheme();
   const { demo, toggle: toggleDemo } = useDemo();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell${mobileOpen ? " mobile-open" : ""}`}>
       <CardGlow />
+      <button
+        type="button"
+        className="mobile-scrim"
+        aria-label="Close navigation"
+        onClick={() => setMobileOpen(false)}
+        tabIndex={mobileOpen ? 0 : -1}
+      />
       <aside className="app-sidebar" aria-label="Primary navigation">
         <div className="app-brand">
           <BrandMark />
@@ -251,6 +265,17 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="app-main">
         <header className="app-header">
           <div className="app-header-left">
+            <button
+              type="button"
+              className="mobile-menu-btn"
+              aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+              aria-expanded={mobileOpen}
+              onClick={() => setMobileOpen((v) => !v)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 6h18M3 12h18M3 18h18" />
+              </svg>
+            </button>
             <div className="app-header-title">{pageTitle(pathname ?? "/")}</div>
             <TopbarNav pathname={pathname ?? "/"} />
           </div>
