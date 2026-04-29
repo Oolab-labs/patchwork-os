@@ -47,6 +47,7 @@ import {
   type YamlStep,
 } from "../recipes/yamlRunner.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
+import { findInstalledRecipeEntrypoint } from "./recipeInstall.js";
 
 const RECIPES_DIR = join(os.homedir(), ".patchwork", "recipes");
 const FIXTURES_DIR = join(os.homedir(), ".patchwork", "fixtures");
@@ -1098,6 +1099,21 @@ function resolveRecipePath(recipeRef: string): string {
     if (existsSync(candidate) && statSync(candidate).isFile()) {
       return candidate;
     }
+  }
+
+  // Install-dir resolution (DB-4): `recipe install` puts each recipe in
+  // its own subdir at `<RECIPES_DIR>/<install-name>/<entrypoint>.yaml`.
+  // Without this fallback, `recipe run <install-name>` errors with
+  // "not found" even though `recipe list` displays the recipe — observed
+  // in the 2026-04-29 dogfood pass.
+  try {
+    const entrypoint = findInstalledRecipeEntrypoint(normalizedRef);
+    if (entrypoint) return entrypoint;
+  } catch {
+    // findInstalledRecipeEntrypoint throws on path-traversal `name`
+    // values via its underlying validator. That's a security boundary,
+    // not a UX one — fall through to the standard "not found" error
+    // rather than leaking the validator message to a normal user typo.
   }
 
   throw new Error(
