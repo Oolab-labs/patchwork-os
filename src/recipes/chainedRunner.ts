@@ -7,6 +7,7 @@
  *   - Dry-run mode
  */
 
+import { captureForRunlog } from "./captureForRunlog.js";
 import type { ExecutionOptions, StepExecutor } from "./dependencyGraph.js";
 import {
   buildDependencyGraph,
@@ -232,6 +233,9 @@ export async function executeChainedStep(
   skipped?: boolean;
   data?: unknown;
   error?: string;
+  /** VD-2: resolved params after template substitution — captured by the
+   *  runner for the dashboard's per-step view. */
+  resolvedParams?: unknown;
 }> {
   const { registry, step, options, depth } = ctx;
   const { dryRun } = options;
@@ -400,7 +404,7 @@ export async function executeChainedStep(
           console.warn(`transform failed for step ${step.id}: ${err}`);
         }
       }
-      return { success: true, data: result };
+      return { success: true, data: result, resolvedParams: resolved };
     } else if (step.tool) {
       // Tool step
       let result: unknown = await deps.executeTool(step.tool, resolved);
@@ -411,7 +415,7 @@ export async function executeChainedStep(
           console.warn(`transform failed for step ${step.id}: ${err}`);
         }
       }
-      return { success: true, data: result };
+      return { success: true, data: result, resolvedParams: resolved };
     } else {
       return { success: false, error: "Step has no tool, agent, or recipe" };
     }
@@ -421,27 +425,22 @@ export async function executeChainedStep(
   }
 }
 
-async function withRetry(
-  fn: () => Promise<{
-    success: boolean;
-    skipped?: boolean;
-    data?: unknown;
-    error?: string;
-  }>,
-  maxRetries: number,
-  delayMs: number,
-): Promise<{
+interface StepExecResult {
   success: boolean;
   skipped?: boolean;
   data?: unknown;
   error?: string;
-}> {
-  let last: {
-    success: boolean;
-    skipped?: boolean;
-    data?: unknown;
-    error?: string;
-  } = { success: false };
+  /** VD-2: forwarded from `executeChainedStep` so the runner can capture
+   *  what params actually flew at the tool/agent. */
+  resolvedParams?: unknown;
+}
+
+async function withRetry(
+  fn: () => Promise<StepExecResult>,
+  maxRetries: number,
+  delayMs: number,
+): Promise<StepExecResult> {
+  let last: StepExecResult = { success: false };
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) {
       await new Promise((r) => setTimeout(r, delayMs));
@@ -621,6 +620,19 @@ export async function runChainedRecipe(
     { durationMs: number; skipped?: boolean }
   >();
 
+  // VD-2: per-step capture (resolved params + output + registry snapshot).
+  // Populated at the `registry.set(...)` site during step execution and
+  // attached to the final `RunStepResult` written via `completeRun`.
+  const capturedStepData = new Map<
+    string,
+    {
+      resolvedParams?: unknown;
+      output?: unknown;
+      registrySnapshot?: Record<string, unknown>;
+      startedAt: number;
+    }
+  >();
+
   // VD-1 live-tail: when an `activityLog` is provided AND we have a `runSeq`
   // (depth 0, runLog supplied), broadcast `recipe_step_start` /
   // `recipe_step_done` events so the dashboard `/runs/[seq]` page can
@@ -736,6 +748,32 @@ export async function runChainedRecipe(
       data: result.data,
     });
 
+    // VD-2: capture per-step inputs/outputs/registry snapshot for the
+    // dashboard's diff hover + replay. Only at depth 0 (nested steps are
+    // part of their parent's audit) and only when we have a runSeq +
+    // runLog to push into. Sensitive keys are redacted; large values
+    // truncated to 8 KB.
+    if (depth === 0 && options.runLog && runSeq !== undefined) {
+      try {
+        const snapshot: Record<string, unknown> = {};
+        for (const k of registry.keys()) {
+          const v = registry.get(k);
+          if (v !== undefined) snapshot[k] = v;
+        }
+        capturedStepData.set(stepId, {
+          resolvedParams: captureForRunlog(result.resolvedParams),
+          output: captureForRunlog(result.data),
+          registrySnapshot: captureForRunlog(snapshot) as
+            | Record<string, unknown>
+            | undefined,
+          startedAt: stepStart,
+        });
+      } catch {
+        // Capture is best-effort — never let a serialization failure
+        // break the run.
+      }
+    }
+
     // Optional steps must not propagate failure to the executor
     if (!effectiveSuccess) {
       throw new Error(result.error ?? `Step ${stepId} failed`);
@@ -799,15 +837,31 @@ export async function runChainedRecipe(
         status: "ok" | "skipped" | "error";
         error?: string;
         durationMs: number;
+        // VD-2 capture (only attached when present in `capturedStepData`).
+        resolvedParams?: unknown;
+        output?: unknown;
+        registrySnapshot?: Record<string, unknown>;
+        startedAt?: number;
       }> = [];
       for (const [id, r] of enrichedResults) {
         const step = stepMap.get(id);
+        const captured = capturedStepData.get(id);
         stepResultsList.push({
           id,
           tool: step?.tool,
           status: r.skipped ? "skipped" : r.success ? "ok" : "error",
           error: r.error?.message,
           durationMs: r.durationMs ?? 0,
+          ...(captured?.resolvedParams !== undefined && {
+            resolvedParams: captured.resolvedParams,
+          }),
+          ...(captured?.output !== undefined && { output: captured.output }),
+          ...(captured?.registrySnapshot !== undefined && {
+            registrySnapshot: captured.registrySnapshot,
+          }),
+          ...(captured?.startedAt !== undefined && {
+            startedAt: captured.startedAt,
+          }),
         });
       }
       const outputTail = stepResultsList

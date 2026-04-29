@@ -393,6 +393,38 @@ describe("RecipeRunLog.record", () => {
     expect(() => readFileSync(path.join(tmp, "runs.jsonl"), "utf-8")).toThrow();
   });
 
+  it("VD-2: pre-VD-2 runs.jsonl rows load fine (no resolvedParams/output/registrySnapshot)", () => {
+    // Simulates a runs.jsonl from a bridge that pre-dates VD-2 capture.
+    // The new fields on RunStepResult are all optional; old rows must
+    // round-trip without error.
+    const file = path.join(tmp, "runs.jsonl");
+    const oldStyleRun = {
+      seq: 1,
+      taskId: "old:nightly:1700000000000",
+      recipeName: "nightly",
+      trigger: "cron",
+      status: "done",
+      createdAt: 1_700_000_000_000,
+      doneAt: 1_700_000_001_500,
+      durationMs: 1_500,
+      stepResults: [
+        // No resolvedParams / output / registrySnapshot / startedAt.
+        { id: "fetch", tool: "noop.tool", status: "ok", durationMs: 200 },
+        { id: "summarize", tool: "noop.tool", status: "ok", durationMs: 800 },
+      ],
+    };
+    require("node:fs").writeFileSync(file, `${JSON.stringify(oldStyleRun)}\n`);
+    const log = new RecipeRunLog({ dir: tmp });
+    expect(log.size()).toBe(1);
+    const run = log.getBySeq(1);
+    expect(run?.recipeName).toBe("nightly");
+    expect(run?.stepResults).toHaveLength(2);
+    expect(run?.stepResults?.[0]?.resolvedParams).toBeUndefined();
+    expect(run?.stepResults?.[0]?.output).toBeUndefined();
+    expect(run?.stepResults?.[0]?.registrySnapshot).toBeUndefined();
+    expect(run?.stepResults?.[0]?.startedAt).toBeUndefined();
+  });
+
   it("tolerates malformed JSONL lines on reload", () => {
     const file = path.join(tmp, "runs.jsonl");
     // Seed with one bad line and one good.
