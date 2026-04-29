@@ -110,6 +110,15 @@
     }
     .nav-pill:hover { border-color: var(--accent); color: var(--accent); }
 
+    /* Mobile nav: hide the inline text links so the install pill keeps fitting.
+       The hero's primary CTAs ("Install in 30 seconds", "Star on GitHub") cover
+       the same affordances a few hundred px below — no hamburger needed. */
+    @media (max-width: 600px) {
+      .nav-links a { display: none; }
+      .nav-links { gap: 0.5rem; }
+      .nav-pill { padding: 0.25rem 0.7rem; font-size: 0.7rem; }
+    }
+
     /* ── HERO ── */
     .hero {
       position: relative;
@@ -707,7 +716,7 @@
 
 <!-- ── HERO ── -->
 <section class="hero">
-  <div class="eyebrow"><span class="dot"></span>v0.2.0-alpha.26 &middot; now in alpha</div>
+  <div class="eyebrow"><span class="dot"></span>v0.2.0-alpha.35 &middot; now in alpha</div>
   <div class="hero-wordmark">Patchwork OS</div>
   <h1>AI that works while<br/>you're away.</h1>
   <p class="subhead">Watches for things that matter, acts, and asks before anything risky goes out. Runs on your machine. Doesn't lock you in.</p>
@@ -992,7 +1001,7 @@
 <!-- ── FOOTER ── -->
 <footer>
   <div class="footer-inner">
-    <div class="footer-brand">patchwork OS &middot; v0.2.0-alpha.26</div>
+    <div class="footer-brand">patchwork OS &middot; v0.2.0-alpha.35</div>
     <div class="footer-links">
       <a href="https://github.com/patchworkos/recipes" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/patchworkos/recipes/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
