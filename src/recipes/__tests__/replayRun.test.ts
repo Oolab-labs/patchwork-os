@@ -217,6 +217,26 @@ describe("runChainedRecipe — mockedOutputs interception", () => {
     expect(result.context.s1).toBe("hello, world");
   });
 
+  it("taskIdPrefix override produces matching taskId in run log (BUG-4)", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    await runChainedRecipe(
+      recipe(),
+      opts({ runLog: log, taskIdPrefix: "replay:42" }),
+      realDeps(),
+    );
+    const run = log.query()[0];
+    expect(run?.taskId).toMatch(/^replay:42:test:\d+$/);
+  });
+
+  it("default taskIdPrefix is 'chained' (back-compat)", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    await runChainedRecipe(recipe(), opts({ runLog: log }), realDeps());
+    const run = log.query()[0];
+    expect(run?.taskId).toMatch(/^chained:test:\d+$/);
+  });
+
   it("does not invoke executeAgent for mocked agent steps", async () => {
     const deps = realDeps();
     const mocked = new Map<string, unknown>([

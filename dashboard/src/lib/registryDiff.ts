@@ -12,6 +12,58 @@ export interface StepWithSnapshot {
   registrySnapshot?: Record<string, unknown>;
 }
 
+/**
+ * Step shape needed for the replay pre-flight (BUG-3 fix). Mirrors
+ * what `buildMockedOutputs` looks at on the bridge side.
+ */
+export interface StepForReplayPreflight {
+  id: string;
+  status: "ok" | "skipped" | "error" | "running";
+  tool?: string;
+  output?: unknown;
+}
+
+/**
+ * Pre-flight a mocked replay: classify each step into "mocked" (will
+ * return its captured output) vs "unmocked" (will fall through to REAL
+ * execution because we have no usable capture). Mirrors `buildMockedOutputs`
+ * in `src/recipes/replayRun.ts` so the dashboard can show the user
+ * up-front what side effects to expect, instead of warning after the
+ * fact (BUG-3 from the post-merge dogfood).
+ */
+export interface ReplayPreflight {
+  mocked: string[];
+  unmocked: Array<{ id: string; tool?: string; reason: "no-capture" | "truncated" }>;
+}
+
+export function previewMockedReplay(
+  steps: StepForReplayPreflight[],
+): ReplayPreflight {
+  const mocked: string[] = [];
+  const unmocked: ReplayPreflight["unmocked"] = [];
+  for (const s of steps) {
+    if (s.status === "skipped") continue; // skipped steps aren't replayed
+    if (s.output === undefined) {
+      unmocked.push({
+        id: s.id,
+        ...(s.tool !== undefined && { tool: s.tool }),
+        reason: "no-capture",
+      });
+      continue;
+    }
+    if (isTruncatedSnapshot(s.output)) {
+      unmocked.push({
+        id: s.id,
+        ...(s.tool !== undefined && { tool: s.tool }),
+        reason: "truncated",
+      });
+      continue;
+    }
+    mocked.push(s.id);
+  }
+  return { mocked, unmocked };
+}
+
 export interface RegistryDiff {
   added: Record<string, unknown>;
   modified: Array<{ key: string; before: unknown; after: unknown }>;
@@ -19,6 +71,21 @@ export interface RegistryDiff {
 }
 
 const EMPTY: RegistryDiff = { added: {}, modified: [], removed: [] };
+
+/**
+ * True if a snapshot value is the truncation envelope produced by
+ * `captureForRunlog` for >8 KB payloads (`{[truncated]:true,bytes,preview}`).
+ * When EITHER side of a diff is the envelope, a key-by-key comparison
+ * produces meaningless noise (`bytes 15084 → 16215`), so callers should
+ * short-circuit to a "truncated" empty state instead.
+ */
+export function isTruncatedSnapshot(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as Record<string, unknown>)["[truncated]"] === true
+  );
+}
 
 /**
  * Diff between two snapshots. `prev` may be undefined (first step or
@@ -51,20 +118,33 @@ export function diffSnapshots(
 }
 
 /**
+ * Result of `diffForStep`. Discriminated so the UI can render a distinct
+ * empty-state for truncated snapshots vs missing capture.
+ */
+export type StepDiffResult =
+  | { kind: "diff"; diff: RegistryDiff }
+  | { kind: "truncated" }
+  | { kind: "unavailable" };
+
+/**
  * Compute the diff for the step at `index` in completion order. Pulls
  * the previous step's snapshot from the array — if no prior step has a
  * snapshot, treat as initial state (everything in this step's snapshot
  * is "added").
  *
- * Returns null if the step has no `registrySnapshot` (pre-VD-2 row, or
- * runner without capture). Caller renders an "unavailable" state.
+ * Returns:
+ *  - `{kind:"unavailable"}` — step has no `registrySnapshot` (pre-VD-2
+ *    row, or runner without capture).
+ *  - `{kind:"truncated"}` — either snapshot is the >8 KB truncation
+ *    envelope; key-by-key diff would be meaningless.
+ *  - `{kind:"diff",diff}` — usable diff.
  */
 export function diffForStep(
   steps: StepWithSnapshot[],
   index: number,
-): RegistryDiff | null {
+): StepDiffResult {
   const step = steps[index];
-  if (!step?.registrySnapshot) return null;
+  if (!step?.registrySnapshot) return { kind: "unavailable" };
 
   // Walk back to find the most recent prior step with a snapshot —
   // skipped/error steps may have no snapshot, so we don't blindly use
@@ -77,7 +157,15 @@ export function diffForStep(
       break;
     }
   }
-  return diffSnapshots(prev, step.registrySnapshot);
+
+  if (
+    isTruncatedSnapshot(step.registrySnapshot) ||
+    (prev !== undefined && isTruncatedSnapshot(prev))
+  ) {
+    return { kind: "truncated" };
+  }
+
+  return { kind: "diff", diff: diffSnapshots(prev, step.registrySnapshot) };
 }
 
 /**
