@@ -40,6 +40,7 @@ import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
 } from "./agentExecutor.js";
+import { detectSilentFail } from "./detectSilentFail.js";
 import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
@@ -66,6 +67,14 @@ export interface YamlStep {
   /** Delay in ms between retries (default 1000). */
   retryDelay?: number;
   transform?: string; // template rendered after tool execution; $result = raw tool output
+  /**
+   * Disable silent-fail detection for this step. Default `true` (detection
+   * ON) — runner flags steps whose output matches known placeholder patterns
+   * (`(git branches unavailable)`, `[agent step skipped: ...]`,
+   * `{count:0,error:"…"}`, etc.) as `error`. Set to `false` if your tool
+   * legitimately returns one of those shapes as a successful result.
+   */
+  silentFailDetection?: boolean;
   [key: string]: unknown;
 }
 
@@ -454,13 +463,23 @@ export async function runYamlRecipe(
           },
           buildAgentExecutorDeps(stepDeps, deps),
         );
-        if (agentResult.startsWith("[agent step failed:")) {
-          runError = runError ?? agentResult;
+        // Catch both `[agent step failed: ...]` (existing) and the
+        // silent-fail patterns `[agent step skipped: ...]` etc. via the
+        // shared detector. Per-step opt-out via `silentFailDetection: false`.
+        const agentSilentFail =
+          step.silentFailDetection !== false
+            ? detectSilentFail(agentResult)
+            : null;
+        if (agentResult.startsWith("[agent step failed:") || agentSilentFail) {
+          const reason = agentSilentFail
+            ? `silent-fail detected (${agentSilentFail.reason}): ${agentSilentFail.matched}`
+            : agentResult;
+          runError = runError ?? reason;
           stepResults.push({
             id: stepId,
             tool: "agent",
             status: "error",
-            error: agentResult,
+            error: reason,
             durationMs: Date.now() - stepStart,
           });
         } else {
@@ -535,6 +554,22 @@ export async function runYamlRecipe(
             }
           } catch {
             /* non-JSON result is fine */
+          }
+        }
+        // Silent-fail detection: tools that return string placeholders
+        // (`(git branches unavailable)`, `[agent step skipped: ...]`)
+        // or empty list-tool error shapes (`{count:0,error:"..."}`)
+        // succeed with bad data — flag them as `error` so the runner
+        // doesn't quietly hand garbage to a downstream agent. Per-step
+        // opt-out via `silentFailDetection: false`.
+        if (
+          !stepError &&
+          result !== null &&
+          step.silentFailDetection !== false
+        ) {
+          const detected = detectSilentFail(result);
+          if (detected) {
+            stepError = `silent-fail detected (${detected.reason}): ${detected.matched}`;
           }
         }
       } catch (err) {
