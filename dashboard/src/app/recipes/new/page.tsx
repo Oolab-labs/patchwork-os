@@ -107,7 +107,7 @@ function hasValidationErrors(errors: ValidationState): boolean {
 }
 
 const RECIPE_SCHEMA_HEADER =
-  "# yaml-language-server: $schema=https://patchworkos.com/schema/recipe.v1.json";
+  "# yaml-language-server: $schema=https://raw.githubusercontent.com/patchworkos/recipes/main/schema/recipe.v1.json";
 const RECIPE_API_VERSION = "patchwork.sh/v1";
 const SIMPLE_YAML_VALUE_RE = /^[A-Za-z0-9_./:@%+-]+$/;
 const AMBIGUOUS_YAML_VALUE_RE = /^(true|false|null|~|-?\d+(\.\d+)?)$/i;
