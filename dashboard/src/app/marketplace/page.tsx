@@ -298,7 +298,7 @@ function RecipeCard({
             </button>
           ) : (
             <a
-              href="https://github.com/Oolab-labs/claude-ide-bridge#installation"
+              href="https://patchworkos.com/#install"
               target="_blank"
               rel="noopener noreferrer"
               className="btn sm"
@@ -460,7 +460,7 @@ export default function MarketplacePage() {
             Browsing in preview mode — bridge not connected. Install Patchwork OS to install recipes directly.
           </span>
           <a
-            href="https://github.com/Oolab-labs/claude-ide-bridge#installation"
+            href="https://patchworkos.com/#install"
             target="_blank"
             rel="noopener noreferrer"
             style={{

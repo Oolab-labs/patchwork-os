@@ -48,7 +48,7 @@ export function DemoBanner() {
         showing sample data. Run Patchwork OS locally for live approvals, recipes, and activity.
       </span>
       <a
-        href="https://github.com/Oolab-labs/claude-ide-bridge#installation"
+        href="https://patchworkos.com/#install"
         target="_blank"
         rel="noopener noreferrer"
         style={{
