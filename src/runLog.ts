@@ -31,6 +31,19 @@ export interface RunStepResult {
   status: "ok" | "skipped" | "error";
   error?: string;
   durationMs: number;
+  // VD-2: per-step capture for diff hover + replay. All optional —
+  // older `runs.jsonl` rows that pre-date VD-2 round-trip unchanged. Each
+  // value passes through `captureForRunlog` (sensitive-key redaction +
+  // 8 KB cap + truncation envelope).
+  /** Step-input params after `{{template}}` substitution. */
+  resolvedParams?: unknown;
+  /** Step output value (`result.data` from the executor). */
+  output?: unknown;
+  /** Snapshot of `OutputRegistry` AFTER this step completed —
+   *  `Map<stepId, StepOutput>`. Used by Phase-3 diff hover. */
+  registrySnapshot?: Record<string, unknown>;
+  /** Step start time (ms epoch) — useful for live-tail correlation. */
+  startedAt?: number;
 }
 
 export interface RecipeRun {
