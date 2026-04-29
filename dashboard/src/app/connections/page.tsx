@@ -101,6 +101,16 @@ function IconGitHub() {
   );
 }
 
+function IconGitlab() {
+  // Stylized geometric mark — three triangles converging on a center line.
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M10 17l-7-9 2-5 2 5h6l2-5 2 5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M10 17L7 8M10 17l3-9" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IconLinear() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
@@ -245,6 +255,7 @@ const SUPPORTED_CONNECTORS = new Set([
   "google-calendar",
   "google-drive",
   "github",
+  "gitlab",
   "linear",
   "sentry",
   "slack",
@@ -393,6 +404,7 @@ const PROVIDERS: {
 }[] = [
   { id: "gmail",           name: "Gmail",           description: "Read and triage your inbox.",                                                                     icon: IconEnvelope },
   { id: "github",          name: "GitHub",          description: "Read open issues and pull requests via GitHub's official MCP server.",                             icon: IconGitHub },
+  { id: "gitlab",          name: "GitLab",          description: "Read projects, issues, and merge requests.",                                                       icon: IconGitlab },
   { id: "linear",          name: "Linear",          description: "Read and manage issues.",                                                                          icon: IconLinear },
   { id: "slack",           name: "Slack",           description: "Post messages and list channels.",                                                                  icon: IconSlack },
   { id: "discord",         name: "Discord",         description: "Read messages, channels, and guilds.",                                                              icon: IconDiscord },
