@@ -150,11 +150,21 @@ function ProviderIcon({ name, size = 28 }: { name: string; size?: number }) {
 // Greeting
 // ---------------------------------------------------------------------------
 
-function greeting(): string {
-  const h = new Date().getHours();
+function greetingFromHour(h: number): string {
   if (h < 12) return "Good morning";
   if (h < 18) return "Good afternoon";
   return "Good evening";
+}
+
+function useGreeting(): string {
+  // Compute on the client only — server SSR can't know the user's local hour
+  // and rendering it during SSR creates a hydration mismatch when the client
+  // mounts in a different time bucket. Empty string until hydrated, then real.
+  const [g, setG] = useState("");
+  useEffect(() => {
+    setG(greetingFromHour(new Date().getHours()));
+  }, []);
+  return g;
 }
 
 // ---------------------------------------------------------------------------
@@ -709,7 +719,7 @@ export default function HomePage() {
     unsupportedValue: null,
   });
 
-  const greet = greeting();
+  const greet = useGreeting();
   const recipeCount = data.activeRecipes;
   const pendingCount = data.pendingApprovals;
   const toolCalls = data.recentActivity;
