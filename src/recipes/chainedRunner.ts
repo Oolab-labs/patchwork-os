@@ -69,11 +69,18 @@ export interface RunOptions {
   onStepStart?: (stepId: string) => void;
   onStepComplete?: (stepId: string, error?: Error) => void;
   /**
-   * Directory holding `runs.jsonl`. When set, top-level (depth 0) runs are
-   * appended so the dashboard Runs page shows chained recipes alongside
-   * yamlRunner runs. Omit in tests to avoid filesystem writes.
+   * Directory holding `runs.jsonl`. When set (and `runLog` is not), the
+   * runner constructs a local `RecipeRunLog` and uses `appendDirect` at the
+   * end. Use for CLI invocations where there's no long-lived log instance.
    */
   runLogDir?: string;
+  /**
+   * Long-lived `RecipeRunLog` instance. When set, the runner uses
+   * `startRun` + `completeRun` so the dashboard sees the run as `"running"`
+   * while it's in flight. Bridge-driven recipes pass this; CLI runs don't.
+   * Takes precedence over `runLogDir`.
+   */
+  runLog?: import("../runLog.js").RecipeRunLog;
 }
 
 export interface StepExecutionContext {
@@ -557,6 +564,32 @@ export async function runChainedRecipe(
 
   const runStartedAt = Date.now();
 
+  // Open a `running`-state run-log entry so the dashboard sees the recipe
+  // as in flight (depth 0 only — nested recipes are part of their parent
+  // run). The seq is used by VD-1 live-tail to correlate step events.
+  const recipeTriggerKind =
+    (recipe as unknown as { trigger?: { type?: string } }).trigger?.type ??
+    "recipe";
+  const triggerKind = (
+    ["cron", "webhook", "recipe"].includes(recipeTriggerKind)
+      ? recipeTriggerKind
+      : "recipe"
+  ) as "cron" | "webhook" | "recipe";
+  let runSeq: number | undefined;
+  if (depth === 0 && options.runLog) {
+    try {
+      runSeq = options.runLog.startRun({
+        taskId: `chained:${recipe.name}:${runStartedAt}`,
+        recipeName: recipe.name,
+        trigger: triggerKind,
+        createdAt: runStartedAt,
+        startedAt: runStartedAt,
+      });
+    } catch {
+      // Non-fatal — run-log failures must never break recipe execution.
+    }
+  }
+
   if (depGraph.hasCycles) {
     return {
       success: false,
@@ -687,18 +720,18 @@ export async function runChainedRecipe(
     context,
   };
 
-  // Mirror yamlRunner: write to RecipeRunLog so the dashboard Runs page shows
-  // chained executions. Only top-level (depth 0) runs are logged — nested
-  // recipe calls are part of their parent's run. Failures here must never
-  // break recipe execution.
-  if (options.runLogDir && depth === 0) {
+  // Write to RecipeRunLog so the dashboard Runs page shows chained executions.
+  // Only top-level (depth 0) runs are logged — nested recipe calls are part of
+  // their parent's run. Failures here must never break recipe execution.
+  //
+  // Two paths:
+  //  - `options.runLog` (bridge-driven): we already called `startRun` above.
+  //    Finalize via `completeRun` so the dashboard sees the live status flip.
+  //  - `options.runLogDir` (CLI): construct a local log + `appendDirect`.
+  //    No live-tail, but back-compat with the pre-VD-1 CLI flow.
+  if (depth === 0 && (options.runLog || options.runLogDir)) {
     try {
-      const { RecipeRunLog } = await import("../runLog.js");
-      const log = new RecipeRunLog({ dir: options.runLogDir });
       const doneAt = Date.now();
-      const trigger =
-        (recipe as unknown as { trigger?: { type?: string } }).trigger?.type ??
-        "recipe";
       const stepResultsList: Array<{
         id: string;
         tool?: string;
@@ -723,21 +756,34 @@ export async function runChainedRecipe(
         )
         .join("\n")
         .slice(0, 2000);
-      log.appendDirect({
-        taskId: `chained:${recipe.name}:${runStartedAt}`,
-        recipeName: recipe.name,
-        trigger: (["cron", "webhook", "recipe"].includes(trigger)
-          ? trigger
-          : "recipe") as "cron" | "webhook" | "recipe",
-        status: result.success ? "done" : "error",
-        createdAt: runStartedAt,
-        startedAt: runStartedAt,
-        doneAt,
-        durationMs: doneAt - runStartedAt,
-        outputTail,
-        errorMessage: result.errorMessage,
-        stepResults: stepResultsList,
-      });
+      if (options.runLog && runSeq !== undefined) {
+        options.runLog.completeRun(runSeq, {
+          status: result.success ? "done" : "error",
+          doneAt,
+          durationMs: doneAt - runStartedAt,
+          stepResults: stepResultsList,
+          outputTail,
+          ...(result.errorMessage !== undefined && {
+            errorMessage: result.errorMessage,
+          }),
+        });
+      } else if (options.runLogDir) {
+        const { RecipeRunLog } = await import("../runLog.js");
+        const log = new RecipeRunLog({ dir: options.runLogDir });
+        log.appendDirect({
+          taskId: `chained:${recipe.name}:${runStartedAt}`,
+          recipeName: recipe.name,
+          trigger: triggerKind,
+          status: result.success ? "done" : "error",
+          createdAt: runStartedAt,
+          startedAt: runStartedAt,
+          doneAt,
+          durationMs: doneAt - runStartedAt,
+          outputTail,
+          errorMessage: result.errorMessage,
+          stepResults: stepResultsList,
+        });
+      }
     } catch {
       // Non-fatal — run log write failure must never break recipe execution
     }

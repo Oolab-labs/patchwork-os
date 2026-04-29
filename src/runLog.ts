@@ -15,7 +15,15 @@ import type { Logger } from "./logger.js";
  */
 
 export type RunTrigger = "cron" | "webhook" | "recipe";
-export type RunStatus = "done" | "error" | "cancelled" | "interrupted";
+export type RunStatus =
+  | "running"
+  | "done"
+  | "error"
+  | "cancelled"
+  | "interrupted";
+
+/** Terminal statuses — `"running"` excluded. */
+export type TerminalRunStatus = Exclude<RunStatus, "running">;
 
 export interface RunStepResult {
   id: string;
@@ -245,6 +253,97 @@ export class RecipeRunLog {
     this.append(full);
     this.runs.push(full);
     if (this.runs.length > this.memoryCap) this.runs.shift();
+  }
+
+  /**
+   * Begin a run. Allocates a monotonic seq, adds an in-memory entry with
+   * `status: "running"`, and returns the seq so the caller can correlate
+   * step events. The entry is NOT persisted to disk — running runs are
+   * ephemeral and don't survive a bridge restart (recipes-in-flight don't
+   * survive restart anyway). Use `completeRun(seq, …)` when the run finishes
+   * to upgrade the entry to a terminal status and persist it.
+   */
+  startRun(opts: {
+    taskId: string;
+    recipeName: string;
+    trigger: RunTrigger;
+    createdAt: number;
+    startedAt?: number;
+    model?: string;
+  }): number {
+    const seq = ++this.seq;
+    const run: RecipeRun = {
+      seq,
+      taskId: opts.taskId,
+      recipeName: opts.recipeName,
+      trigger: opts.trigger,
+      status: "running",
+      createdAt: opts.createdAt,
+      ...(opts.startedAt !== undefined && { startedAt: opts.startedAt }),
+      ...(opts.model !== undefined && { model: opts.model }),
+      // doneAt + durationMs are placeholders until completeRun fires —
+      // dashboard treats `status:"running"` as the source of truth.
+      doneAt: opts.createdAt,
+      durationMs: 0,
+      stepResults: [],
+    };
+    this.runs.push(run);
+    if (this.runs.length > this.memoryCap) this.runs.shift();
+    return seq;
+  }
+
+  /**
+   * Replace the in-memory step list for a running entry. Called as steps
+   * complete so the dashboard's `/runs/[seq]` page can render progress
+   * without waiting for `completeRun`. No-op if the seq is unknown or
+   * already terminal.
+   */
+  updateRunSteps(seq: number, stepResults: RunStepResult[]): void {
+    const idx = this.runs.findIndex((r) => r.seq === seq);
+    if (idx === -1) return;
+    const run = this.runs[idx];
+    if (!run || run.status !== "running") return;
+    this.runs[idx] = { ...run, stepResults: [...stepResults] };
+  }
+
+  /**
+   * Finalize a running entry: update status + duration, append step results,
+   * and persist the row to JSONL. No-op if the seq is unknown (e.g. the run
+   * was started in a previous process before a restart).
+   */
+  completeRun(
+    seq: number,
+    opts: {
+      status: TerminalRunStatus;
+      doneAt: number;
+      durationMs: number;
+      stepResults: RunStepResult[];
+      outputTail?: string;
+      errorMessage?: string;
+      assertionFailures?: RecipeRun["assertionFailures"];
+    },
+  ): void {
+    const idx = this.runs.findIndex((r) => r.seq === seq);
+    if (idx === -1) return;
+    const prev = this.runs[idx];
+    if (!prev || prev.status !== "running") return;
+    const finalized: RecipeRun = {
+      ...prev,
+      status: opts.status,
+      doneAt: opts.doneAt,
+      durationMs: opts.durationMs,
+      stepResults: opts.stepResults,
+      ...(opts.outputTail !== undefined && { outputTail: opts.outputTail }),
+      ...(opts.errorMessage !== undefined && {
+        errorMessage: opts.errorMessage,
+      }),
+      ...(opts.assertionFailures !== undefined && {
+        assertionFailures: opts.assertionFailures,
+      }),
+    };
+    this.runs[idx] = finalized;
+    mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
+    this.append(finalized);
   }
 
   private append(run: RecipeRun): void {

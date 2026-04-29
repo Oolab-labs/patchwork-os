@@ -143,7 +143,12 @@ export class RecipeOrchestration {
           trigger: q.trigger as "cron" | "webhook" | "recipe",
         }),
         ...(q.status !== undefined && {
-          status: q.status as "done" | "error" | "cancelled" | "interrupted",
+          status: q.status as
+            | "running"
+            | "done"
+            | "error"
+            | "cancelled"
+            | "interrupted",
         }),
         ...(q.recipe !== undefined && { recipe: q.recipe }),
         ...(q.after !== undefined && { after: q.after }),
@@ -319,11 +324,14 @@ export class RecipeOrchestration {
       return task.output ?? task.errorMessage ?? "";
     };
     const runnerDeps = { workdir: this.deps.workdir, claudeCodeFn };
+    // Pass the bridge's long-lived RecipeRunLog so chainedRunner can flip the
+    // run from `running` → terminal in-place via startRun/completeRun. The
+    // dashboard reads the same instance, so /runs surfaces the live entry
+    // immediately. CLI invocations don't go through here — they fall back to
+    // `runLogDir` + `appendDirect` (pre-VD-1 behavior, no live-tail).
     const chainedOptions = {
       sourcePath: opts.filePath,
-      runLogDir: this.deps.recipeRunLog
-        ? path.join(os.homedir(), ".patchwork")
-        : undefined,
+      runLog: this.deps.recipeRunLog ?? undefined,
     };
     const fireResult = await this.deps.recipeOrchestrator
       .fire({

@@ -35,6 +35,7 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
+import type { RecipeRunLog } from "../runLog.js";
 import {
   executeAgent as _executeAgent,
   type AgentExecutorDeps,
@@ -204,6 +205,13 @@ export interface RunnerDeps {
   getDriveToken?: () => Promise<string>;
   /** Override the ~/.patchwork dir used by RecipeRunLog. Useful for tests. */
   logDir?: string;
+  /**
+   * Long-lived `RecipeRunLog` instance. When set, the runner uses
+   * `startRun` + `completeRun` so the dashboard sees the run as `"running"`
+   * while it's in flight. Bridge-driven recipes pass this; CLI runs don't
+   * (they fall back to constructing a local log + `appendDirect`).
+   */
+  runLog?: RecipeRunLog;
   /** Optional Anthropic API caller for agent steps. Defaults to fetch-based impl. */
   claudeFn?: (prompt: string, model: string) => Promise<string>;
   /** Optional Claude Code CLI caller for agent steps with driver: claude-code. */
@@ -247,11 +255,12 @@ export type StepResult = {
 };
 
 export type StepDeps = Required<
-  Omit<RunnerDeps, "now" | "logDir" | "recordFixturesDir">
+  Omit<RunnerDeps, "now" | "logDir" | "recordFixturesDir" | "runLog">
 > & {
   workdir: string;
   logDir?: string;
   recordFixturesDir?: string;
+  runLog?: RecipeRunLog;
   testMode: boolean;
 };
 
@@ -393,6 +402,33 @@ export async function runYamlRecipe(
   };
 
   const stepDeps = resolveStepDeps(deps);
+
+  // Open a `running`-state run-log entry so the dashboard sees the recipe
+  // as in flight. Only when a long-lived `runLog` is provided (bridge path);
+  // CLI runs fall back to `appendDirect` at end via the existing logDir
+  // path. Skip in test mode.
+  const recipeStartedAt = now.getTime();
+  const recipeTriggerKind =
+    (recipe.trigger as { type?: string } | undefined)?.type ?? "manual";
+  const yamlTriggerKind = (
+    ["cron", "webhook", "recipe"].includes(recipeTriggerKind)
+      ? recipeTriggerKind
+      : "recipe"
+  ) as "cron" | "webhook" | "recipe";
+  let runSeq: number | undefined;
+  if (deps.runLog && !stepDeps.testMode) {
+    try {
+      runSeq = deps.runLog.startRun({
+        taskId: `yaml:${recipe.name}:${recipeStartedAt}`,
+        recipeName: recipe.name,
+        trigger: yamlTriggerKind,
+        createdAt: recipeStartedAt,
+        startedAt: recipeStartedAt,
+      });
+    } catch {
+      // Non-fatal — run-log failures must never break recipe execution.
+    }
+  }
 
   const outputs: string[] = [];
   const stepResults: StepResult[] = [];
@@ -580,15 +616,11 @@ export async function runYamlRecipe(
       )
     : [];
 
-  // Write to RecipeRunLog so the dashboard Runs page shows this execution
+  // Write to RecipeRunLog so the dashboard Runs page shows this execution.
+  // Bridge path: completeRun on the running entry opened above (live-tail).
+  // CLI path: construct a local log + appendDirect (no live-tail).
   if (!stepDeps.testMode) {
     try {
-      const { RecipeRunLog } = await import("../runLog.js");
-      const { homedir } = await import("node:os");
-      const resolvedLogDir = deps.logDir ?? path.join(homedir(), ".patchwork");
-      const log = new RecipeRunLog({ dir: resolvedLogDir });
-      const trigger = (recipe.trigger as { type?: string })?.type ?? "manual";
-      const createdAt = now.getTime();
       const doneAt = Date.now();
       const outputTail = stepResults
         .map(
@@ -597,28 +629,44 @@ export async function runYamlRecipe(
         )
         .join("\n")
         .slice(0, 2000);
-      log.appendDirect({
-        taskId: `yaml:${recipe.name}:${createdAt}`,
-        recipeName: recipe.name,
-        trigger: (["cron", "webhook", "recipe"].includes(trigger)
-          ? trigger
-          : "recipe") as "cron" | "webhook" | "recipe",
-        status: runError ? "error" : "done",
-        createdAt,
-        startedAt: createdAt,
-        doneAt,
-        durationMs: doneAt - createdAt,
-        outputTail,
-        errorMessage: runError,
-        stepResults: stepResults.map((s) => ({
-          id: s.id,
-          tool: s.tool,
-          status: s.status,
-          error: s.error,
-          durationMs: s.durationMs,
-        })),
-        ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
-      });
+      const finalStepResults = stepResults.map((s) => ({
+        id: s.id,
+        tool: s.tool,
+        status: s.status,
+        error: s.error,
+        durationMs: s.durationMs,
+      }));
+      if (deps.runLog && runSeq !== undefined) {
+        deps.runLog.completeRun(runSeq, {
+          status: runError ? "error" : "done",
+          doneAt,
+          durationMs: doneAt - recipeStartedAt,
+          stepResults: finalStepResults,
+          outputTail,
+          ...(runError !== undefined && { errorMessage: runError }),
+          ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
+        });
+      } else {
+        const { RecipeRunLog } = await import("../runLog.js");
+        const { homedir } = await import("node:os");
+        const resolvedLogDir =
+          deps.logDir ?? path.join(homedir(), ".patchwork");
+        const log = new RecipeRunLog({ dir: resolvedLogDir });
+        log.appendDirect({
+          taskId: `yaml:${recipe.name}:${recipeStartedAt}`,
+          recipeName: recipe.name,
+          trigger: yamlTriggerKind,
+          status: runError ? "error" : "done",
+          createdAt: recipeStartedAt,
+          startedAt: recipeStartedAt,
+          doneAt,
+          durationMs: doneAt - recipeStartedAt,
+          outputTail,
+          errorMessage: runError,
+          stepResults: finalStepResults,
+          ...(assertionFailures.length > 0 ? { assertionFailures } : {}),
+        });
+      }
     } catch {
       // Non-fatal — run log write failure should never break recipe execution
     }
@@ -1221,6 +1269,7 @@ export async function dispatchRecipe(
       onStepStart: deps.chainedOptions?.onStepStart,
       onStepComplete: deps.chainedOptions?.onStepComplete,
       runLogDir: deps.chainedOptions?.runLogDir,
+      runLog: deps.chainedOptions?.runLog,
     };
     if (!deps.chainedDeps) {
       throw new Error(
@@ -1229,7 +1278,15 @@ export async function dispatchRecipe(
     }
     return runChainedRecipe(chainedRecipe, options, deps.chainedDeps);
   }
-  return runYamlRecipe(recipe, deps, seedContext);
+  // For non-chained recipes, lift `runLog` from chainedOptions onto the
+  // RunnerDeps so runYamlRecipe gets the bridge's singleton too.
+  return runYamlRecipe(
+    recipe,
+    deps.chainedOptions?.runLog
+      ? { ...deps, runLog: deps.chainedOptions.runLog }
+      : deps,
+    seedContext,
+  );
 }
 
 /** List all YAML recipes in a directory. Returns names. */

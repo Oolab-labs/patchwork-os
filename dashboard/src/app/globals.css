@@ -912,6 +912,29 @@ button { font-family: inherit; }
 .pill.err  { background: var(--red-soft);   color: var(--red);   border-color: transparent; }
 .pill.info { background: var(--blue-soft);  color: var(--blue);  border-color: transparent; }
 .pill.muted { color: var(--ink-3); background: var(--recess); border-color: transparent; }
+.pill.running {
+  background: var(--blue-soft);
+  color: var(--blue);
+  border-color: transparent;
+  position: relative;
+  padding-left: 18px;
+}
+.pill.running::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: var(--blue);
+  animation: pill-pulse 1.4s ease-in-out infinite;
+}
+@keyframes pill-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.7); }
+}
 
 /* Prototype color name aliases */
 .pill.green  { background: var(--green-soft);  color: var(--green);  border-color: transparent; }

@@ -134,3 +134,77 @@ describe("runChainedRecipe — RecipeRunLog write (bug fix)", () => {
     expect(runs[0]!.recipeName).toBe("outer");
   });
 });
+
+// ── VD-1 foundation: bridge-singleton runLog path ──────────────────────────
+// When the caller passes a long-lived `runLog`, the runner uses
+// startRun/completeRun so the dashboard sees the recipe as `running`
+// while it's in flight. Verifies the wiring through the `runLog` option.
+
+describe("runChainedRecipe — runLog (singleton) path", () => {
+  it("opens a 'running' entry on start and finalizes to 'done' on success", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+
+    let observedDuringRun: { status: string; seq: number } | null = null;
+    const slowDeps: ExecutionDeps = {
+      executeTool: vi.fn().mockImplementation(async () => {
+        // Snapshot the run state mid-execution: should be `running`.
+        const all = log.query();
+        if (all[0])
+          observedDuringRun = { status: all[0].status, seq: all[0].seq };
+        return "ok";
+      }),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+
+    const result = await runChainedRecipe(
+      chainedRecipe(),
+      optsWithLog({ runLog: log, runLogDir: undefined }),
+      slowDeps,
+    );
+    expect(result.success).toBe(true);
+    expect(observedDuringRun).not.toBeNull();
+    expect(observedDuringRun!.status).toBe("running");
+
+    // Final state: same seq, terminal status.
+    const finalRun = log.getBySeq(observedDuringRun!.seq);
+    expect(finalRun?.status).toBe("done");
+    expect((finalRun?.stepResults ?? []).length).toBeGreaterThan(0);
+    // Disk persists exactly one row (the completed one — running entries
+    // don't hit disk).
+    expect(readRunLog()).toHaveLength(1);
+  });
+
+  it("finalizes to 'error' status when a step fails", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    const failingDeps: ExecutionDeps = {
+      executeTool: vi.fn().mockRejectedValue(new Error("boom")),
+      executeAgent: vi.fn(),
+      loadNestedRecipe: vi.fn().mockResolvedValue(null),
+    };
+    const result = await runChainedRecipe(
+      chainedRecipe(),
+      optsWithLog({ runLog: log, runLogDir: undefined }),
+      failingDeps,
+    );
+    expect(result.success).toBe(false);
+    const runs = log.query();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.status).toBe("error");
+  });
+
+  it("runLog option takes precedence over runLogDir (no double-write)", async () => {
+    const { RecipeRunLog } = await import("../../runLog.js");
+    const log = new RecipeRunLog({ dir: tmpDir });
+    await runChainedRecipe(
+      chainedRecipe(),
+      optsWithLog({ runLog: log }),
+      okDeps,
+    );
+    // Singleton has 1 run; disk file (written via completeRun) has 1 row.
+    expect(log.query()).toHaveLength(1);
+    expect(readRunLog()).toHaveLength(1);
+  });
+});
