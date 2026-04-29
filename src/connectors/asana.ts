@@ -1,5 +1,6 @@
 /**
- * Asana connector — read workspaces, projects, tasks, and current user.
+ * Asana connector — read workspaces, projects, tasks, and current user, plus
+ * writes (createTask, updateTask, completeTask, addTaskComment).
  *
  * OAuth 2.0 Authorization Code Grant. Asana is a confidential client (bridge
  * holds client secret), so PKCE is not used. Refresh tokens are issued; access
@@ -12,12 +13,14 @@
  *
  * Scope note: Asana's only OAuth scope is `default`, which grants read+write
  * combined — there is no read-only-only scope. Defense lives at the recipe-tool
- * layer where every tool declares `isWrite: false`. Newer Asana accounts may
- * also expose granular scopes; we set `default` for compatibility.
+ * layer where each tool declares `isWrite: true|false`. Newer Asana accounts
+ * may also expose granular scopes; we set `default` for compatibility.
  *
- * Tools (read-only this PR): getCurrentUser, listWorkspaces, listProjects,
- *   listTasks, getTask. Write methods (createTask, updateTask) deferred to a
- *   follow-up PR.
+ * Read tools: getCurrentUser, listWorkspaces, listProjects, listTasks, getTask.
+ * Write tools: createTask, updateTask, completeTask, addTaskComment.
+ *
+ * Idempotency: Asana doesn't honor an Idempotency-Key header. Writes simply
+ * throw on error — callers must dedupe via app-level checks if needed.
  *
  * HTTP routes (wired in src/server.ts):
  *   GET    /connections/asana/auth     — redirect to Asana consent
@@ -98,6 +101,35 @@ export interface AsanaTask {
   assignee?: { gid: string; name?: string } | null;
   due_on?: string | null;
   notes?: string;
+}
+
+export interface AsanaStory {
+  gid: string;
+  resource_type?: string;
+  type?: string;
+  text?: string;
+  created_at?: string;
+  created_by?: { gid: string; name?: string } | null;
+}
+
+export interface CreateTaskParams {
+  workspaceGid: string;
+  name: string;
+  projectGid?: string;
+  notes?: string;
+  assigneeGid?: string;
+  /** ISO date YYYY-MM-DD */
+  dueOn?: string;
+  parentTaskGid?: string;
+}
+
+export interface UpdateTaskParams {
+  name?: string;
+  notes?: string;
+  completed?: boolean;
+  assigneeGid?: string;
+  /** ISO date YYYY-MM-DD */
+  dueOn?: string;
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -434,6 +466,118 @@ export class AsanaConnector extends BaseConnector {
 
     if ("error" in result) throw new Error(result.error.message);
     return result.data as AsanaTask;
+  }
+
+  // ── Write methods ──────────────────────────────────────────────────────────
+  // Asana wraps both request and response bodies in `{ data: ... }`. We
+  // unwrap the response consistently here so recipe-tool wrappers see the
+  // clean object. Required-param validation happens up front so recipe
+  // authors get a clear error instead of an Asana 400.
+
+  async createTask(params: CreateTaskParams): Promise<AsanaTask> {
+    if (!params.name) throw new Error("createTask requires name");
+    if (!params.workspaceGid) {
+      throw new Error("createTask requires workspaceGid");
+    }
+    const result = await this.apiCall(async (token) => {
+      const data: Record<string, unknown> = {
+        workspace: params.workspaceGid,
+        name: params.name,
+      };
+      if (params.projectGid) data.projects = [params.projectGid];
+      if (params.notes !== undefined) data.notes = params.notes;
+      if (params.assigneeGid) data.assignee = params.assigneeGid;
+      if (params.dueOn) data.due_on = params.dueOn;
+      if (params.parentTaskGid) data.parent = params.parentTaskGid;
+
+      const res = await fetch(`${ASANA_API_BASE}/tasks`, {
+        method: "POST",
+        headers: this.buildHeaders(token),
+        body: JSON.stringify({ data }),
+      });
+      this.captureRateLimit(res);
+      if (!res.ok) throw await this.attachErrorDetail(res);
+      const json = (await res.json()) as { data: AsanaTask };
+      return json.data;
+    });
+
+    if ("error" in result) throw new Error(result.error.message);
+    return result.data as AsanaTask;
+  }
+
+  async updateTask(
+    taskGid: string,
+    updates: UpdateTaskParams,
+  ): Promise<AsanaTask> {
+    if (!taskGid) throw new Error("updateTask requires taskGid");
+    // Strip undefined keys — Asana interprets `undefined`-stringified values
+    // differently than missing keys. Only forward fields that were explicitly
+    // provided by the caller.
+    const data: Record<string, unknown> = {};
+    if (updates.name !== undefined) data.name = updates.name;
+    if (updates.notes !== undefined) data.notes = updates.notes;
+    if (updates.completed !== undefined) data.completed = updates.completed;
+    if (updates.assigneeGid !== undefined) data.assignee = updates.assigneeGid;
+    if (updates.dueOn !== undefined) data.due_on = updates.dueOn;
+
+    if (Object.keys(data).length === 0) {
+      throw new Error("updateTask requires at least one field to update");
+    }
+
+    const result = await this.apiCall(async (token) => {
+      const res = await fetch(
+        `${ASANA_API_BASE}/tasks/${encodeURIComponent(taskGid)}`,
+        {
+          method: "PUT",
+          headers: this.buildHeaders(token),
+          body: JSON.stringify({ data }),
+        },
+      );
+      this.captureRateLimit(res);
+      if (!res.ok) throw await this.attachErrorDetail(res);
+      const json = (await res.json()) as { data: AsanaTask };
+      return json.data;
+    });
+
+    if ("error" in result) throw new Error(result.error.message);
+    return result.data as AsanaTask;
+  }
+
+  /**
+   * Convenience wrapper around updateTask that flips `completed: true`. Lower
+   * risk than other updates since it's a single, well-known state transition.
+   */
+  async completeTask(taskGid: string): Promise<AsanaTask> {
+    if (!taskGid) throw new Error("completeTask requires taskGid");
+    return this.updateTask(taskGid, { completed: true });
+  }
+
+  async addTaskComment(
+    taskGid: string,
+    options: { text: string },
+  ): Promise<AsanaStory> {
+    if (!taskGid) throw new Error("addTaskComment requires taskGid");
+    if (!options.text)
+      throw new Error("addTaskComment requires non-empty text");
+    const result = await this.apiCall(async (token) => {
+      const res = await fetch(
+        `${ASANA_API_BASE}/tasks/${encodeURIComponent(taskGid)}/stories`,
+        {
+          method: "POST",
+          headers: this.buildHeaders(token),
+          body: JSON.stringify({
+            data: { text: options.text, type: "comment" },
+          }),
+        },
+      );
+      this.captureRateLimit(res);
+      if (!res.ok) throw await this.attachErrorDetail(res);
+      const json = (await res.json()) as { data: AsanaStory };
+      return json.data;
+    });
+
+    if ("error" in result) throw new Error(result.error.message);
+    return result.data as AsanaStory;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
