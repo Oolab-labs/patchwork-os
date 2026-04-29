@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
+import { isDemoModeServer } from "@/lib/demoModeServer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,6 +12,16 @@ export async function POST(req: NextRequest): Promise<Response> {
       status: 403,
       headers: { "content-type": "application/json" },
     });
+  }
+
+  if (isDemoModeServer()) {
+    return new Response(
+      JSON.stringify({
+        error:
+          "Install requires a running Patchwork bridge. Run `npm i -g patchwork-os && patchwork start` locally, then revisit this page.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
   }
 
   const body = await req.text();
