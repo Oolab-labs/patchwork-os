@@ -329,6 +329,104 @@ describe("runYamlRecipe — git.stale_branches", () => {
   });
 });
 
+describe("runYamlRecipe — silent-fail detection (P1)", () => {
+  // Catches the entire class of bugs surfaced in the post-merge
+  // dogfood: tools returning string placeholders or empty-list-with-
+  // error shapes that the runner used to hand on as success.
+
+  it("flags '(... unavailable)' placeholder as step error", async () => {
+    const recipe = makeRecipe({
+      steps: [{ tool: "git.stale_branches", days: 30, into: "stale" }],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitStaleBranches: () => "(git branches unavailable)",
+    });
+    expect(result.stepResults).toHaveLength(1);
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(result.stepResults[0]?.error).toMatch(/silent-fail detected/);
+    expect(result.stepResults[0]?.error).toContain("unavailable");
+    expect(result.errorMessage).toBeDefined();
+  });
+
+  it("flags '[agent step skipped: ...]' as step error", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          agent: {
+            prompt: "summarize",
+            model: "claude-haiku-4-5-20251001",
+            into: "summary",
+          },
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      claudeFn: async () => "[agent step skipped: ANTHROPIC_API_KEY not set]",
+    });
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(result.stepResults[0]?.error).toMatch(/agent step skipped/);
+  });
+
+  it("does NOT flag legitimate output that contains 'unavailable' as prose", async () => {
+    const recipe = makeRecipe({
+      steps: [{ tool: "git.log_since", since: "1 week ago", into: "log" }],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitLogSince: () => "feat: handle the unavailable-resource path",
+    });
+    expect(result.stepResults[0]?.status).toBe("ok");
+    expect(result.stepResults[0]?.error).toBeUndefined();
+  });
+
+  it("respects per-step opt-out (silentFailDetection: false)", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "git.stale_branches",
+          days: 30,
+          into: "stale",
+          silentFailDetection: false,
+        },
+      ],
+    });
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitStaleBranches: () => "(git branches unavailable)",
+    });
+    // With detection off, the placeholder string passes through as "ok".
+    expect(result.stepResults[0]?.status).toBe("ok");
+  });
+
+  it("respects step-level optional:true (failOpen) — placeholder still detected but doesn't fail run", async () => {
+    const recipe = makeRecipe({
+      steps: [
+        {
+          tool: "git.stale_branches",
+          days: 30,
+          into: "stale",
+          optional: true,
+        },
+        { tool: "file.write", path: "/tmp/x.md", content: "ok" },
+      ],
+    });
+    const written: Record<string, string> = {};
+    const result = await runYamlRecipe(recipe, {
+      ...noop(),
+      gitStaleBranches: () => "(git branches unavailable)",
+      writeFile: (p, c) => {
+        written[p] = c;
+      },
+    });
+    // Step 1 marked error (silent-fail caught) but optional → run proceeds.
+    expect(result.stepResults[0]?.status).toBe("error");
+    expect(written["/tmp/x.md"]).toBe("ok");
+    expect(result.errorMessage).toBeUndefined();
+  });
+});
+
 describe("runYamlRecipe — on_error retry + fallback", () => {
   function deps(readFile: () => string): RunnerDeps {
     return { ...noop(), readFile };
@@ -934,9 +1032,18 @@ describe("runYamlRecipe — agent step", () => {
     expect(models[0]).toBe("claude-haiku-4-5-20251001");
   });
 
-  it("stores skip message gracefully when claudeFn returns skip message", async () => {
+  it("stores skip message gracefully when claudeFn returns skip message (opt-out)", async () => {
+    // Pre-P1 behavior is preserved when the step opts out of silent-fail
+    // detection. Without `silentFailDetection: false`, the skip-message
+    // marker is now flagged as an error (see "silent-fail detection (P1)"
+    // describe block above) — that's the intentional fix.
     const recipe = makeRecipe({
-      steps: [{ agent: { prompt: "Hi", into: "out" } }],
+      steps: [
+        {
+          agent: { prompt: "Hi", into: "out" },
+          silentFailDetection: false,
+        },
+      ],
     });
     const result = await runYamlRecipe(recipe, {
       ...noop(),
