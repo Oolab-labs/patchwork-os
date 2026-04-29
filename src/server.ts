@@ -1566,6 +1566,77 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── GitLab connector routes ────────────────────────────────────
+      if (
+        (parsedUrl.pathname === "/connections/gitlab/auth" ||
+          parsedUrl.pathname === "/connections/gitlab/authorize") &&
+        req.method === "GET"
+      ) {
+        const { handleGitLabAuthorize } = await import(
+          "./connectors/gitlab.js"
+        );
+        const result = handleGitLabAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/gitlab/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleGitLabCallback } = await import(
+            "./connectors/gitlab.js"
+          );
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleGitLabCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "text/html",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/gitlab/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleGitLabTest } = await import("./connectors/gitlab.js");
+          const result = await handleGitLabTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/gitlab" &&
+        req.method === "DELETE"
+      ) {
+        void (async () => {
+          const { handleGitLabDisconnect } = await import(
+            "./connectors/gitlab.js"
+          );
+          const result = await handleGitLabDisconnect();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
       // ── Notion routes ──────────────────────────────────────────────
       if (
         parsedUrl.pathname === "/connections/notion/connect" &&
