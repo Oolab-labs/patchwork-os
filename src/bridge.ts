@@ -986,6 +986,7 @@ export class Bridge {
           getOrchestrator: () => this.orchestrator,
           recipeOrchestrator: this.recipeOrchestrator,
           recipeRunLog: this.recipeRunLog,
+          activityLog: this.activityLog,
           workdir: this.config.workspace,
           logger: this.logger,
         });
