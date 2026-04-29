@@ -92,9 +92,12 @@ describe("diffForStep", () => {
   test("first step → all of its snapshot is added", () => {
     const steps = [{ id: "s1", registrySnapshot: { s1: { data: 1 } } }];
     expect(diffForStep(steps, 0)).toEqual({
-      added: { s1: { data: 1 } },
-      modified: [],
-      removed: [],
+      kind: "diff",
+      diff: {
+        added: { s1: { data: 1 } },
+        modified: [],
+        removed: [],
+      },
     });
   });
 
@@ -103,11 +106,15 @@ describe("diffForStep", () => {
       { id: "s1", registrySnapshot: { s1: { data: 1 } } },
       { id: "s2", registrySnapshot: { s1: { data: 1 }, s2: { data: 2 } } },
     ];
-    expect(diffForStep(steps, 1)).toEqual({
-      added: { s2: { data: 2 } },
-      modified: [],
-      removed: [],
-    });
+    const result = diffForStep(steps, 1);
+    expect(result.kind).toBe("diff");
+    if (result.kind === "diff") {
+      expect(result.diff).toEqual({
+        added: { s2: { data: 2 } },
+        modified: [],
+        removed: [],
+      });
+    }
   });
 
   test("walks back past steps without snapshots", () => {
@@ -118,22 +125,77 @@ describe("diffForStep", () => {
       { id: "s2" }, // no snapshot
       { id: "s3", registrySnapshot: { s1: { data: 1 }, s3: { data: 3 } } },
     ];
-    expect(diffForStep(steps, 2)).toEqual({
-      added: { s3: { data: 3 } },
-      modified: [],
-      removed: [],
-    });
+    const result = diffForStep(steps, 2);
+    expect(result.kind).toBe("diff");
+    if (result.kind === "diff") {
+      expect(result.diff).toEqual({
+        added: { s3: { data: 3 } },
+        modified: [],
+        removed: [],
+      });
+    }
   });
 
-  test("step without snapshot → null (caller renders 'unavailable')", () => {
+  test("step without snapshot → 'unavailable'", () => {
     const steps = [{ id: "s1" }];
-    expect(diffForStep(steps, 0)).toBeNull();
+    expect(diffForStep(steps, 0)).toEqual({ kind: "unavailable" });
   });
 
-  test("respects bounds — index out of range → null", () => {
+  test("respects bounds — index out of range → 'unavailable'", () => {
     const steps = [{ id: "s1", registrySnapshot: { s1: 1 } }];
-    expect(diffForStep(steps, 5)).toBeNull();
-    expect(diffForStep(steps, -1)).toBeNull();
+    expect(diffForStep(steps, 5)).toEqual({ kind: "unavailable" });
+    expect(diffForStep(steps, -1)).toEqual({ kind: "unavailable" });
+  });
+
+  // BUG-2 (post-merge dogfood): when the registry as a whole exceeds 8 KB,
+  // VD-2's `captureForRunlog` returns a truncation envelope
+  // (`{[truncated]:true,bytes,preview}`) for `registrySnapshot`. Diffing
+  // two envelopes produces meaningless modifications like
+  // `bytes 15084 → 16215`. We short-circuit to "truncated" so the panel
+  // can render a clean empty state instead.
+
+  test("truncated current snapshot → kind:'truncated'", () => {
+    const steps = [
+      { id: "s1", registrySnapshot: { s1: { data: 1 } } },
+      {
+        id: "s2",
+        registrySnapshot: {
+          "[truncated]": true,
+          bytes: 15000,
+          preview: "...",
+        } as Record<string, unknown>,
+      },
+    ];
+    expect(diffForStep(steps, 1)).toEqual({ kind: "truncated" });
+  });
+
+  test("truncated previous snapshot → kind:'truncated'", () => {
+    const steps = [
+      {
+        id: "s1",
+        registrySnapshot: {
+          "[truncated]": true,
+          bytes: 15000,
+          preview: "...",
+        } as Record<string, unknown>,
+      },
+      { id: "s2", registrySnapshot: { s2: { data: 2 } } },
+    ];
+    expect(diffForStep(steps, 1)).toEqual({ kind: "truncated" });
+  });
+
+  test("truncated first step → kind:'truncated' (no prev to compare)", () => {
+    const steps = [
+      {
+        id: "s1",
+        registrySnapshot: {
+          "[truncated]": true,
+          bytes: 15000,
+          preview: "...",
+        } as Record<string, unknown>,
+      },
+    ];
+    expect(diffForStep(steps, 0)).toEqual({ kind: "truncated" });
   });
 });
 

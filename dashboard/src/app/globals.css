@@ -913,13 +913,12 @@ button { font-family: inherit; }
 .pill.info { background: var(--blue-soft);  color: var(--blue);  border-color: transparent; }
 .pill.muted { color: var(--ink-3); background: var(--recess); border-color: transparent; }
 /* ── VD-3: per-step hover diff panel ─────────────────────────────── */
+/* Position is set inline (fixed coordinates from the anchor row's
+ * getBoundingClientRect) — the panel renders into a React Portal at
+ * document.body so it escapes the steps card's overflow:hidden clip
+ * (BUG-1 from the post-merge dogfood). */
 .step-diff-hover {
-  position: absolute;
   z-index: 50;
-  top: 100%;
-  left: 56px;
-  right: 16px;
-  margin-top: 4px;
   background: var(--bg-1, #1a1a1a);
   border: 1px solid var(--line-2, #333);
   border-radius: var(--r-2, 6px);

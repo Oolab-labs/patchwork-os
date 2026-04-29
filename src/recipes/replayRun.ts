@@ -115,6 +115,9 @@ export async function replayMockedRun(opts: {
     runLog: deps.runLog,
     ...(deps.activityLog !== undefined && { activityLog: deps.activityLog }),
     mockedOutputs: outputs,
+    // BUG-4 fix: tag the new run's taskId so it's distinguishable from a
+    // fresh run. Searchable as `taskId LIKE 'replay:<seq>:%'`.
+    taskIdPrefix: `replay:${originalRun.seq}`,
   };
 
   try {
