@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
 import {
   fetchManifest,
   fetchRecipeYaml,
@@ -57,6 +58,8 @@ export default async function RecipeDetailPage({ params }: PageProps) {
       <Description recipe={recipe} manifest={manifest} />
 
       <InstallPanel install={recipe.install} name={recipe.name} />
+
+      <ConnectorHealthPanel connectors={recipe.connectors} marginTop={0} />
 
       <Variables manifest={manifest} />
 
