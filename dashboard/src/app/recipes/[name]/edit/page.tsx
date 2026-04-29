@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { apiPath } from "@/lib/api";
 
 interface Toast {
   id: number;
@@ -50,7 +51,7 @@ export default function RecipeEditPage({
       setLoading(true);
       try {
         const res = await fetch(
-          `/api/bridge/recipes/${encodeURIComponent(name)}`,
+          apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}`),
         );
         if (res.ok) {
           const data = (await res.json()) as { content?: string } | string;
@@ -96,7 +97,7 @@ export default function RecipeEditPage({
     lintTimerRef.current = setTimeout(() => {
       const reqId = ++lintReqIdRef.current;
       setLinting(true);
-      void fetch("/api/bridge/recipes/lint", {
+      void fetch(apiPath("/api/bridge/recipes/lint"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
@@ -134,7 +135,7 @@ export default function RecipeEditPage({
     setSaveError(null);
     try {
       const res = await fetch(
-        `/api/bridge/recipes/${encodeURIComponent(name)}`,
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}`),
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -176,7 +177,7 @@ export default function RecipeEditPage({
     setRunning(true);
     try {
       const res = await fetch(
-        `/api/bridge/recipes/${encodeURIComponent(name)}/run`,
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}/run`),
         { method: "POST" },
       );
       if (res.ok) {
