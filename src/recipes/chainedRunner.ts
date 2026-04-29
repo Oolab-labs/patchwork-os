@@ -89,6 +89,17 @@ export interface RunOptions {
    * dashboard `/runs/[seq]` page can subscribe via SSE instead of polling.
    */
   activityLog?: import("../activityLog.js").ActivityLog;
+  /**
+   * VD-4 mocked replay: when set, the runner intercepts tool/agent
+   * execution and returns the captured output for each step from this
+   * map instead of calling the real executor. Pure-mocked: no external
+   * IO, no side effects. Used by `POST /runs/:seq/replay`.
+   *
+   * If a step's id is NOT in the map, the runner falls through to real
+   * execution — callers wanting strict mocked-only mode pre-populate
+   * every step the recipe will visit.
+   */
+  mockedOutputs?: Map<string, unknown>;
 }
 
 export interface StepExecutionContext {
@@ -300,6 +311,33 @@ export async function executeChainedStep(
     } catch {
       return rawResult;
     }
+  }
+
+  // VD-4 mocked replay: short-circuit BEFORE executing tool/agent. The
+  // step still runs through template + condition resolution + transform
+  // (so the user sees how upstream outputs flow downstream) but tool /
+  // agent / nested-recipe execution is replaced with the captured
+  // output from the original run. Templates may still re-resolve to
+  // different values if the recipe was edited — that's expected; it's
+  // what makes mocked replay useful for debugging template wiring.
+  if (options.mockedOutputs?.has(step.id)) {
+    let mockedData: unknown = options.mockedOutputs.get(step.id);
+    if (step.transform) {
+      try {
+        mockedData = applyTransform(
+          step.transform,
+          mockedData,
+          templateContext,
+        );
+      } catch (err) {
+        console.warn(`transform failed for step ${step.id}: ${err}`);
+      }
+    }
+    return {
+      success: true,
+      data: mockedData,
+      resolvedParams: resolved,
+    };
   }
 
   // Execute based on step type
