@@ -203,6 +203,63 @@ describe("RecipeRunLog.record", () => {
     expect(parsed.stepResults).toHaveLength(3);
   });
 
+  it("getBySeq finds runs evicted from the in-memory ring (DB-3 read-on-miss)", () => {
+    // Append more runs than the ring cap can hold. The first ones get
+    // evicted from memory but stay on disk in runs.jsonl. getBySeq must
+    // still find them — without this, the dashboard's run-detail page
+    // 404s every recipe older than the latest 500.
+    const log = new RecipeRunLog({ dir: tmp, memoryCap: 3 });
+    for (let i = 0; i < 8; i++) {
+      log.record({
+        id: `t${i}`,
+        triggerSource: "recipe:foo",
+        status: "done",
+        createdAt: i * 100,
+        doneAt: i * 100 + 10,
+      });
+    }
+    expect(log.size()).toBe(3); // ring evicted 5 older runs
+
+    // Latest seqs (still in memory) — fast path
+    expect(log.getBySeq(8)?.taskId).toBe("t7");
+    expect(log.getBySeq(7)?.taskId).toBe("t6");
+
+    // Older seqs (evicted from ring, must come from disk)
+    expect(log.getBySeq(1)?.taskId).toBe("t0");
+    expect(log.getBySeq(2)?.taskId).toBe("t1");
+    expect(log.getBySeq(3)?.taskId).toBe("t2");
+
+    // Unknown seqs still return null
+    expect(log.getBySeq(99)).toBeNull();
+    expect(log.getBySeq(0)).toBeNull();
+  });
+
+  it("getBySeq read-on-miss handles malformed lines without throwing", () => {
+    // Seed a file with one valid run (seq=1) plus a malformed line, then
+    // ask for a seq that's not in the in-memory ring (we'll use a fresh
+    // log that won't load from disk by default — but constructor's
+    // loadExisting reads everything anyway). Use a non-existent seq to
+    // force the on-miss disk scan to run, prove it doesn't blow up on
+    // the malformed line.
+    const file = path.join(tmp, "runs.jsonl");
+    const valid = {
+      seq: 1,
+      taskId: "v",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+    };
+    require("node:fs").writeFileSync(
+      file,
+      `${JSON.stringify(valid)}\nnot-json\n`,
+    );
+    const log = new RecipeRunLog({ dir: tmp });
+    expect(log.getBySeq(99)).toBeNull(); // non-existent seq, must not throw
+  });
+
   it("tolerates malformed JSONL lines on reload", () => {
     const file = path.join(tmp, "runs.jsonl");
     // Seed with one bad line and one good.
