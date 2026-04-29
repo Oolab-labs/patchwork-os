@@ -616,7 +616,20 @@ export default function RecipesPage() {
                         </div>
                       </td>
                       <td className="mono muted">{r.stepCount ?? "—"}</td>
-                      <td>
+                      <td
+                        style={{
+                          // Clamp long descriptions to two lines so a single
+                          // verbose recipe (e.g. ctx-loop-test) doesn't push
+                          // every other row into a vertical pile. Hover/focus
+                          // the row to read the full text via the title attr.
+                          maxWidth: 480,
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical" as const,
+                          overflow: "hidden",
+                        }}
+                        title={r.description ?? ""}
+                      >
                         {r.description ?? <span className="muted">—</span>}
                       </td>
                       <td className="muted" style={{ fontSize: 12 }}>
