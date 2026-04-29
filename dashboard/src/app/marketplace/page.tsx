@@ -507,6 +507,16 @@ export default function MarketplacePage() {
               {filtered.length} recipe{filtered.length !== 1 ? "s" : ""}
             </span>
           )}
+          <a
+            href="https://github.com/patchworkos/recipes/blob/main/CONTRIBUTING.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn sm ghost"
+            style={{ textDecoration: "none", fontSize: 12 }}
+            aria-label="Submit a recipe to the marketplace"
+          >
+            Submit a recipe →
+          </a>
         </div>
       </div>
 
