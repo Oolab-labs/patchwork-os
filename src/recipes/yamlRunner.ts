@@ -388,7 +388,8 @@ export async function runYamlRecipe(
       const b = block as Record<string, unknown>;
       if (b.type === "env" && Array.isArray(b.keys)) {
         for (const key of b.keys as string[]) {
-          if (process.env[key] !== undefined) envCtx[key] = process.env[key]!;
+          const v = process.env[key];
+          if (v !== undefined) envCtx[key] = v;
         }
       }
     }
@@ -480,7 +481,7 @@ export async function runYamlRecipe(
               const jsonMatch = /```(?:json)?\s*([\s\S]*?)```/.exec(
                 stripped,
               ) ?? [null, stripped];
-              const parsed = JSON.parse(jsonMatch[1]!.trim());
+              const parsed = JSON.parse((jsonMatch[1] ?? "").trim());
               ctx[intoKey] = parsed;
             } catch {
               ctx[intoKey] = stripped;
@@ -782,7 +783,7 @@ export function render(template: string, ctx: RunContext): string {
     if (Object.hasOwn(ctx, key)) return coerce(ctx[key]);
     // Dot-notation: resolve nested path into ctx values (JSON-parse string intermediates)
     const parts = key.split(".");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: resolved values are dynamic JSON shapes
     let val: any = ctx;
     for (const part of parts) {
       if (val == null) return "";
@@ -849,19 +850,33 @@ function defaultGitLogSince(since: string, workdir?: string): string {
   }
 }
 
-function defaultGitStaleBranches(days: number, workdir?: string): string {
+// Exported for test coverage of the regression fix (was using `git branch
+// --since=<date>` which isn't a real flag).
+export function defaultGitStaleBranches(
+  days: number,
+  workdir?: string,
+): string {
+  // Two bugs were caught dogfooding the `branch-health` recipe:
+  //   1) `git branch --since=<date>` is NOT a valid flag — git exits 129
+  //      with "unknown option `since=...`". The function used to ALWAYS
+  //      fall through to the "(git branches unavailable)" placeholder.
+  //   2) Even if `--since` had been a real flag, its semantics ("commits
+  //      since") would have produced the OPPOSITE list of what
+  //      "stale_branches" implies — branches with recent activity, not
+  //      ones that have gone quiet.
+  //
+  // Fix: use `git for-each-ref` with a `committerdate` format, parse the
+  // ISO date in JS, and emit branches whose last commit is OLDER than
+  // the cutoff. Output is one per line: `<short-name>  <YYYY-MM-DD>`.
   try {
-    const cutoff = new Date(Date.now() - days * 86_400_000)
-      .toISOString()
-      .slice(0, 10);
+    const cutoffMs = Date.now() - days * 86_400_000;
     const r = spawnSync(
       "git",
       [
-        "branch",
-        "--no-column",
-        "--sort=-committerdate",
-        "--format=%(refname:short)",
-        `--since=${cutoff}`,
+        "for-each-ref",
+        "--sort=committerdate",
+        "--format=%(refname:short)\t%(committerdate:iso-strict)",
+        "refs/heads/",
       ],
       {
         cwd: workdir ?? process.cwd(),
@@ -870,7 +885,23 @@ function defaultGitStaleBranches(days: number, workdir?: string): string {
       },
     );
     if (r.error || r.status !== 0) return "(git branches unavailable)";
-    return (r.stdout ?? "").trim();
+    const lines = (r.stdout ?? "").split("\n").filter(Boolean);
+    const stale: string[] = [];
+    for (const line of lines) {
+      const tab = line.indexOf("\t");
+      if (tab < 0) continue;
+      const name = line.slice(0, tab);
+      const dateStr = line.slice(tab + 1);
+      const ts = Date.parse(dateStr);
+      if (Number.isNaN(ts)) continue;
+      if (ts < cutoffMs) {
+        stale.push(`${name}\t${dateStr.slice(0, 10)}`);
+      }
+    }
+    if (stale.length === 0) {
+      return `(no branches inactive >${days}d)`;
+    }
+    return stale.join("\n");
   } catch {
     return "(git branches unavailable)";
   }
