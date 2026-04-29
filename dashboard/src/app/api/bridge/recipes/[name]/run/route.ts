@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
+import { isDemoModeServer } from "@/lib/demoModeServer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,6 +17,17 @@ export async function POST(
       status: 403,
       headers: { "content-type": "application/json" },
     });
+  }
+  if (isDemoModeServer()) {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        demo: true,
+        taskId: `demo-${Date.now()}`,
+        message: `Demo mode — recipe '${ctx.params.name}' run skipped (no live bridge)`,
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
   }
   const name = encodeURIComponent(ctx.params.name);
   const body = await req.text();
