@@ -40,9 +40,12 @@ mkdir -p "${BRIDGE_HOME}"
 chown "${BRIDGE_USER}:${BRIDGE_USER}" "${BRIDGE_HOME}"
 
 # ── 4. Install bridge globally ────────────────────────────────────────────────
-info "Installing claude-ide-bridge from npm..."
-npm install -g claude-ide-bridge 2>&1 | tail -5
-BRIDGE_BIN="$(which claude-ide-bridge)"
+info "Installing patchwork-os from npm..."
+npm install -g patchwork-os@alpha 2>&1 | tail -5
+# `patchwork-os` ships three bin aliases: `patchwork` (preferred),
+# `patchwork-os`, and the legacy `claude-ide-bridge`. Use the canonical
+# `patchwork` name for the systemd unit + nginx config below.
+BRIDGE_BIN="$(which patchwork)"
 info "Bridge binary: ${BRIDGE_BIN}"
 
 # ── 5. Generate fixed token ───────────────────────────────────────────────────
