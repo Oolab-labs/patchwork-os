@@ -1499,6 +1499,73 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── Asana connector routes ─────────────────────────────────────
+      if (
+        (parsedUrl.pathname === "/connections/asana/auth" ||
+          parsedUrl.pathname === "/connections/asana/authorize") &&
+        req.method === "GET"
+      ) {
+        const { handleAsanaAuthorize } = await import("./connectors/asana.js");
+        const result = handleAsanaAuthorize();
+        if (result.redirect) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        }
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/asana/callback" &&
+        req.method === "GET"
+      ) {
+        void (async () => {
+          const { handleAsanaCallback } = await import("./connectors/asana.js");
+          const code = parsedUrl.searchParams.get("code");
+          const state = parsedUrl.searchParams.get("state");
+          const error = parsedUrl.searchParams.get("error");
+          const result = await handleAsanaCallback(code, state, error);
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "text/html",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/asana/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handleAsanaTest } = await import("./connectors/asana.js");
+          const result = await handleAsanaTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+      if (
+        parsedUrl.pathname === "/connections/asana" &&
+        req.method === "DELETE"
+      ) {
+        void (async () => {
+          const { handleAsanaDisconnect } = await import(
+            "./connectors/asana.js"
+          );
+          const result = await handleAsanaDisconnect();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
       // ── Notion routes ──────────────────────────────────────────────
       if (
         parsedUrl.pathname === "/connections/notion/connect" &&
