@@ -1,9 +1,11 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { apiPath } from '@/lib/api';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { apiPath } from "@/lib/api";
+import { StepDiffHover } from "@/components/StepDiffHover";
 import { useBridgeStream } from "@/hooks/useBridgeStream";
+import { diffForStep } from "@/lib/registryDiff";
 
 // ------------------------------------------------------------------ types
 
@@ -13,6 +15,11 @@ interface StepResult {
   status: "running" | "ok" | "skipped" | "error";
   error?: string;
   durationMs: number;
+  // VD-2 capture (all optional — pre-VD-2 runs don't have these).
+  resolvedParams?: unknown;
+  output?: unknown;
+  registrySnapshot?: Record<string, unknown>;
+  startedAt?: number;
 }
 
 interface AssertionFailure {
@@ -152,12 +159,45 @@ function StepRow({
   step,
   index,
   totalDurationMs,
+  allSteps,
 }: {
   step: StepResult;
   index: number;
   totalDurationMs: number;
+  allSteps: StepResult[];
 }) {
   const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState(false);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Hover-on with 200ms grace so quick mouse passes don't flicker the
+  // panel. Hover-off clears the panel and any pending timer immediately.
+  const onEnter = () => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => setHover(true), 200);
+  };
+  const onLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setHover(false);
+  };
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, []);
+
+  // Hover panel only renders if VD-2 capture is present OR we want to
+  // show the unavailable empty state for older runs. For now: skip the
+  // panel entirely on `running` steps (capture isn't there yet) and on
+  // skipped steps (no semantically meaningful diff).
+  const hoverEligible =
+    step.status === "ok" || step.status === "error";
+  const diff = hoverEligible ? diffForStep(allSteps, index) : null;
+  const showPanel = hover && hoverEligible;
+
   const barWidth =
     totalDurationMs > 0
       ? Math.max(2, Math.round((step.durationMs / totalDurationMs) * 100))
@@ -166,10 +206,13 @@ function StepRow({
   return (
     <div
       style={{
+        position: "relative",
         borderBottom: "1px solid var(--border-subtle)",
         cursor: step.error ? "pointer" : "default",
       }}
       onClick={() => step.error && setOpen((v) => !v)}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
     >
       <div
         style={{
@@ -245,6 +288,14 @@ function StepRow({
             {step.error}
           </pre>
         </div>
+      )}
+      {showPanel && (
+        <StepDiffHover
+          diff={diff}
+          resolvedParams={step.resolvedParams}
+          output={step.output}
+          onClose={() => setHover(false)}
+        />
       )}
     </div>
   );
@@ -630,6 +681,7 @@ export default function RunDetailPage() {
                       step={step}
                       index={i}
                       totalDurationMs={run.durationMs}
+                      allSteps={run.stepResults ?? []}
                     />
                   ))}
                 </div>

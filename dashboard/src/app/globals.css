@@ -912,6 +912,78 @@ button { font-family: inherit; }
 .pill.err  { background: var(--red-soft);   color: var(--red);   border-color: transparent; }
 .pill.info { background: var(--blue-soft);  color: var(--blue);  border-color: transparent; }
 .pill.muted { color: var(--ink-3); background: var(--recess); border-color: transparent; }
+/* ── VD-3: per-step hover diff panel ─────────────────────────────── */
+.step-diff-hover {
+  position: absolute;
+  z-index: 50;
+  top: 100%;
+  left: 56px;
+  right: 16px;
+  margin-top: 4px;
+  background: var(--bg-1, #1a1a1a);
+  border: 1px solid var(--line-2, #333);
+  border-radius: var(--r-2, 6px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 12px 14px;
+  max-height: 360px;
+  overflow-y: auto;
+  font-size: 12px;
+  pointer-events: auto;
+}
+.step-diff-section { margin-bottom: 12px; }
+.step-diff-section:last-child { margin-bottom: 0; }
+.step-diff-heading {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.step-diff-value {
+  background: var(--recess, #0d0d0d);
+  border: 1px solid var(--line-2, #333);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.step-diff-empty {
+  color: var(--ink-3, #666);
+  font-style: italic;
+  font-size: 11px;
+}
+.step-diff-group { margin-bottom: 8px; }
+.step-diff-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.step-diff-added    { color: var(--green, #4ade80); }
+.step-diff-modified { color: var(--amber, #fbbf24); }
+.step-diff-removed  { color: var(--red, #f87171); }
+.step-diff-row {
+  display: flex;
+  gap: 12px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+.step-diff-key {
+  flex-shrink: 0;
+  color: var(--ink-1, #ddd);
+  font-weight: 500;
+  min-width: 80px;
+}
+.step-diff-value-inline {
+  color: var(--ink-2, #888);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pill.running {
   background: var(--blue-soft);
   color: var(--blue);
