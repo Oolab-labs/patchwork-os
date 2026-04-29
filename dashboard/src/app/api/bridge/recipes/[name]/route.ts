@@ -1,15 +1,28 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch } from "@/lib/bridge";
+import { isDemoModeServer } from "@/lib/demoModeServer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type RouteContext = { params: { name: string } };
 
+const demoOk = () =>
+  new Response(JSON.stringify({ ok: true, demo: true }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+
 export async function GET(
   _req: NextRequest,
   ctx: RouteContext,
 ): Promise<Response> {
+  if (isDemoModeServer()) {
+    return new Response(
+      JSON.stringify({ name: ctx.params.name, demo: true, content: "" }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }
   const name = encodeURIComponent(ctx.params.name);
   const res = await bridgeFetch(`/recipes/${name}`);
   const text = await res.text();
@@ -30,6 +43,7 @@ export async function PUT(
       headers: { "content-type": "application/json" },
     });
   }
+  if (isDemoModeServer()) return demoOk();
   const name = encodeURIComponent(ctx.params.name);
   const body = await req.text();
   const res = await bridgeFetch(`/recipes/${name}`, {
@@ -55,6 +69,7 @@ export async function PATCH(
       headers: { "content-type": "application/json" },
     });
   }
+  if (isDemoModeServer()) return demoOk();
   const name = encodeURIComponent(ctx.params.name);
   const body = await req.text();
   const res = await bridgeFetch(`/recipes/${name}`, {

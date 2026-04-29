@@ -1,12 +1,51 @@
 import type { NextRequest } from "next/server";
 import { bridgeFetch, findBridge, resolveBridgeUrl } from "@/lib/bridge";
+import { isDemoModeServer } from "@/lib/demoModeServer";
+import { mockBridgeResponse } from "@/lib/mockData";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+/** SSE stream that emits an immediate empty snapshot then heartbeats — used in
+ *  demo mode where there's no real bridge to forward from. Without this the
+ *  client polls indefinitely against a stream that doesn't exist. */
+function demoStream(req: Request): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(": connected\n\n"));
+      const id = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(": heartbeat\n\n"));
+        } catch {
+          clearInterval(id);
+        }
+      }, 15_000);
+      req.signal.addEventListener("abort", () => {
+        clearInterval(id);
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+      });
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
 async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
   const qs = req.nextUrl.search;
   const target = `/${segments.join("/")}${qs}`;
+  const demo = isDemoModeServer();
 
   // SSE passthrough for /stream — stream the response body back to the client.
   // Browsers only initiate EventSource over GET; reject other methods up-front
@@ -18,6 +57,7 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
         headers: { "content-type": "application/json", allow: "GET, HEAD" },
       });
     }
+    if (demo) return demoStream(req);
     const lock = findBridge();
     if (!lock) {
       return new Response(
@@ -72,6 +112,14 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
         headers: { "Content-Type": "application/json" },
       });
     }
+  }
+
+  // In demo mode short-circuit to fixture data instead of hitting a bridge
+  // that isn't there. Without this every dashboard route below /marketplace
+  // shows raw 401 banners on the public demo site.
+  if (demo) {
+    const mock = mockBridgeResponse(`/${segments.join("/")}${qs}`, req.method);
+    if (mock) return mock;
   }
 
   const body =
