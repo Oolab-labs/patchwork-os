@@ -276,6 +276,7 @@ export async function handleConnectionsList(): Promise<ConnectorHandlerResult> {
     { id: "datadog", mod: () => import("./datadog.js") },
     { id: "hubspot", mod: () => import("./hubspot.js") },
     { id: "intercom", mod: () => import("./intercom.js") },
+    { id: "pagerduty", mod: () => import("./pagerduty.js") },
     { id: "stripe", mod: () => import("./stripe.js") },
     { id: "zendesk", mod: () => import("./zendesk.js") },
     { id: "jira", mod: () => import("./jira.js") },

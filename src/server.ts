@@ -1746,6 +1746,62 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
+      // ── PagerDuty routes ───────────────────────────────────────────
+      if (
+        parsedUrl.pathname === "/connections/pagerduty/connect" &&
+        req.method === "POST"
+      ) {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          void (async () => {
+            const { handlePagerDutyConnect } = await import(
+              "./connectors/pagerduty.js"
+            );
+            const result = await handlePagerDutyConnect(
+              Buffer.concat(chunks).toString("utf-8"),
+            );
+            res.writeHead(result.status, {
+              "Content-Type": result.contentType ?? "application/json",
+            });
+            res.end(result.body);
+          })();
+        });
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/pagerduty/test" &&
+        req.method === "POST"
+      ) {
+        void (async () => {
+          const { handlePagerDutyTest } = await import(
+            "./connectors/pagerduty.js"
+          );
+          const result = await handlePagerDutyTest();
+          res.writeHead(result.status, {
+            "Content-Type": result.contentType ?? "application/json",
+          });
+          res.end(result.body);
+        })();
+        return;
+      }
+
+      if (
+        parsedUrl.pathname === "/connections/pagerduty" &&
+        req.method === "DELETE"
+      ) {
+        const { handlePagerDutyDisconnect } = await import(
+          "./connectors/pagerduty.js"
+        );
+        const result = handlePagerDutyDisconnect();
+        res.writeHead(result.status, {
+          "Content-Type": result.contentType ?? "application/json",
+        });
+        res.end(result.body);
+        return;
+      }
+
       // ── Stripe routes ───────────────────────────────────────────────
       if (
         parsedUrl.pathname === "/connections/stripe/connect" &&
