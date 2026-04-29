@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="8" fill="#1a1917"/>
+  <!-- Patchwork "P" lettermark with accent dot -->
+  <text x="7" y="23" font-family="'Albert Sans', system-ui, sans-serif" font-weight="800" font-size="20" fill="#ffffff">P</text>
+  <circle cx="25" cy="9" r="4" fill="#e8622a"/>
+</svg>

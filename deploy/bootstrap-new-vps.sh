@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # deploy/bootstrap-new-vps.sh
-# Full fresh-server setup for claude-ide-bridge on a NEW VPS.
+# Full fresh-server setup for patchwork-os on a NEW VPS.
 # Handles everything from Node.js install to running HTTPS service.
 #
 # Usage (run as root on a fresh Ubuntu 22.04/24.04 VPS):
-#   curl -fsSL https://raw.githubusercontent.com/Oolab-labs/claude-ide-bridge/main/deploy/bootstrap-new-vps.sh | \
+#   curl -fsSL https://raw.githubusercontent.com/Oolab-labs/patchwork-os/main/deploy/bootstrap-new-vps.sh | \
 #     DOMAIN=bridge.example.com bash
 #
 #   Or after cloning:
@@ -14,9 +14,9 @@
 #   DOMAIN        Subdomain for the bridge  (e.g. bridge.example.com)
 #
 # Optional environment variables:
-#   REPO_URL      Git repo URL              (default: https://github.com/Oolab-labs/claude-ide-bridge)
-#   INSTALL_DIR   Where to clone the repo   (default: /opt/claude-ide-bridge)
-#   SERVICE_USER  System user to run bridge (default: claude-bridge)
+#   REPO_URL      Git repo URL              (default: https://github.com/Oolab-labs/patchwork-os)
+#   INSTALL_DIR   Where to clone the repo   (default: /opt/patchwork-os)
+#   SERVICE_USER  System user to run bridge (default: patchwork)
 #   PORT          Bridge port               (default: 9000)
 #   BRANCH        Git branch to clone       (default: main)
 #   SKIP_CERTBOT  Set to 1 to skip TLS cert (useful if DNS not yet set)
@@ -25,13 +25,13 @@ set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DOMAIN="${DOMAIN:-}"
-REPO_URL="${REPO_URL:-https://github.com/Oolab-labs/claude-ide-bridge}"
-INSTALL_DIR="${INSTALL_DIR:-/opt/claude-ide-bridge}"
-SERVICE_USER="${SERVICE_USER:-claude-bridge}"
+REPO_URL="${REPO_URL:-https://github.com/Oolab-labs/patchwork-os}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/patchwork-os}"
+SERVICE_USER="${SERVICE_USER:-patchwork}"
 PORT="${PORT:-9000}"
 BRANCH="${BRANCH:-main}"
 SKIP_CERTBOT="${SKIP_CERTBOT:-0}"
-SERVICE_NAME="claude-ide-bridge"
+SERVICE_NAME="patchwork-os"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info()    { echo -e "${GREEN}✓${NC} $*"; }
@@ -163,8 +163,8 @@ section "Systemd service"
 # Generate service file from template (parameterised for this install)
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<SERVICE
 [Unit]
-Description=Claude IDE Bridge MCP Server
-Documentation=https://github.com/Oolab-labs/claude-ide-bridge
+Description=Patchwork OS bridge
+Documentation=https://github.com/Oolab-labs/patchwork-os
 After=network.target
 StartLimitIntervalSec=120
 StartLimitBurst=5
@@ -193,7 +193,7 @@ RestartSec=5
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=claude-ide-bridge
+SyslogIdentifier=patchwork-os
 
 NoNewPrivileges=true
 PrivateTmp=true
