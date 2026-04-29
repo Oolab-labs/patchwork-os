@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { apiPath } from "@/lib/api";
@@ -215,17 +216,20 @@ function RecipeCard({
           marginBottom: "var(--s-2)",
         }}
       >
-        <div
+        <Link
+          href={`/marketplace/${recipe.name}`}
           style={{
             fontWeight: 600,
             fontSize: 14,
             color: "var(--fg-0)",
             wordBreak: "break-word",
             lineHeight: 1.4,
+            textDecoration: "none",
           }}
+          aria-label={`View details for ${shortName(recipe.name)}`}
         >
           {shortName(recipe.name)}
-        </div>
+        </Link>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end", flexShrink: 0 }}>
           {displayTags.map((tag) => (
             <span key={tag} className="tag-pill">
