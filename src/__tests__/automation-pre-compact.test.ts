@@ -91,12 +91,14 @@ describe("AutomationHooks.onPreCompact", () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
 
-    await hooks.handlePreCompact();
+    hooks.handlePreCompact();
+    await hooks.flush();
     expect(orch.list().length).toBe(1);
 
     vi.setSystemTime(Date.now() + 10_000);
 
-    await hooks.handlePreCompact();
+    hooks.handlePreCompact();
+    await hooks.flush();
     expect(orch.list().length).toBe(2);
   });
 

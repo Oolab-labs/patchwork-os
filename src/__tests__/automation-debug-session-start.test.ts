@@ -118,6 +118,7 @@ describe("AutomationHooks.onDebugSessionStart", () => {
     const hooks = new AutomationHooks(BASE_POLICY, orch, () => {});
 
     await hooks.handleDebugSessionStart(BASE_RESULT);
+    await hooks.flush();
     expect(orch.list().length).toBe(1);
 
     vi.setSystemTime(Date.now() + 10_000);
@@ -127,6 +128,7 @@ describe("AutomationHooks.onDebugSessionStart", () => {
       sessionName: "App2",
       sessionType: "python",
     });
+    await hooks.flush();
     expect(orch.list().length).toBe(2);
   });
 
