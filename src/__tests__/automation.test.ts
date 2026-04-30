@@ -532,7 +532,13 @@ describe("AutomationHooks.handleCwdChanged", () => {
     expect(orch.list().length).toBe(1);
   });
 
-  it("different cwd values each get their own cooldown", () => {
+  it("two cwd events within the cooldown window — second is suppressed", async () => {
+    // Note: onCwdChanged uses a static cooldown key ("cwdchanged"), not a
+    // per-cwd-value key, so the cooldown applies across cwd values. Before
+    // the `_runInterpreter` serialization fix, two concurrent events both
+    // observed an empty cooldown state and both fired — that was a race,
+    // not a feature. With the fix, the second event correctly waits for
+    // the first to write the cooldown record and is suppressed.
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(
       {
@@ -547,7 +553,8 @@ describe("AutomationHooks.handleCwdChanged", () => {
     );
     hooks.handleCwdChanged("/workspace/a");
     hooks.handleCwdChanged("/workspace/b");
-    expect(orch.list().length).toBe(2);
+    await hooks.flush();
+    expect(orch.list().length).toBe(1);
   });
 
   it("getStatus includes onCwdChanged", () => {
@@ -2730,7 +2737,7 @@ describe("AutomationHooks — promptName support", () => {
 // ── B2: onDiagnosticsCleared tests ───────────────────────────────────────────
 
 describe("AutomationHooks.handleDiagnosticsCleared (B2)", () => {
-  it("fires when transitioning from non-zero to zero errors", () => {
+  it("fires when transitioning from non-zero to zero errors", async () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(
       {
@@ -2744,8 +2751,10 @@ describe("AutomationHooks.handleDiagnosticsCleared (B2)", () => {
       () => {},
     );
     hooks.handleDiagnosticsChanged("/src/foo.ts", errorDiag);
+    await hooks.flush();
     expect(orch.list().length).toBe(0); // onDiagnosticsError not configured
     hooks.handleDiagnosticsChanged("/src/foo.ts", []);
+    await hooks.flush();
     expect(orch.list().length).toBe(1);
     expect(orch.list()[0]?.prompt).toContain("foo.ts");
   });
@@ -4075,7 +4084,7 @@ describe("AutomationHooks — hook metadata prefix", () => {
     expect(prompt).toContain("| file: N/A");
   });
 
-  it("onDiagnosticsCleared metadata includes the cleared file path", () => {
+  it("onDiagnosticsCleared metadata includes the cleared file path", async () => {
     const orch = makeInstantOrchestrator();
     const hooks = new AutomationHooks(
       {
@@ -4091,6 +4100,7 @@ describe("AutomationHooks — hook metadata prefix", () => {
     // Seed errors first so the transition non-zero → zero fires the hook
     hooks.handleDiagnosticsChanged("/src/cleared.ts", errorDiag);
     hooks.handleDiagnosticsChanged("/src/cleared.ts", []);
+    await hooks.flush();
     const prompt = orch.list()[0]?.prompt ?? "";
     expect(prompt).toContain("@@ HOOK: onDiagnosticsCleared");
     expect(prompt).toContain("cleared.ts");
@@ -4456,7 +4466,7 @@ describe("token-efficiency: _enqueueAutomationTask passes model/effort/systemPro
 // ── F3: phantom counter fix ───────────────────────────────────────────────────
 
 describe("_enqueueAutomationTask: tasksThisHour does not phantom-increment on enqueue failure", () => {
-  it("does not increment taskTimestamps when orchestrator.enqueue throws", () => {
+  it("does not increment taskTimestamps when orchestrator.enqueue throws", async () => {
     let enqueueCount = 0;
     const failOrch = {
       enqueue: () => {
@@ -4481,10 +4491,12 @@ describe("_enqueueAutomationTask: tasksThisHour does not phantom-increment on en
     );
     // The hook swallows the error; tasksThisHour should not have incremented.
     hooks.handleFileSaved("id1", "save", "/src/foo.ts");
+    await hooks.flush();
     expect(enqueueCount).toBe(1); // enqueue was attempted
     // Fire again — if the timestamp was NOT phantom-pushed, the rate-limit
     // counter is still 0 and a second attempt goes through.
     hooks.handleFileSaved("id2", "save", "/src/bar.ts");
+    await hooks.flush();
     expect(enqueueCount).toBe(2);
   });
 
@@ -4926,6 +4938,38 @@ describe("interpreter shadow mode", () => {
 
     // Neither old path (disabled) nor interpreter (disabled) should enqueue
     expect(orch.list().length).toBe(0);
+    hooks.destroy();
+  });
+});
+
+// ── Race regression: two concurrent events with shared cooldown key ──────────
+//
+// Pre-fix: handlers overwrote `_lastRunPromise` instead of chaining, so two
+// events arriving in the same tick both observed `_automationState` before
+// either had recorded its cooldown trigger. Both bypassed cooldown and fired,
+// burning the cooldown invariant.
+describe("race regression — concurrent events with shared cooldown key", () => {
+  it("two onFileSave events in the same tick: second is suppressed by cooldown", async () => {
+    const orch = makeInstantOrchestrator();
+    const hooks = new AutomationHooks(
+      {
+        onFileSave: {
+          enabled: true,
+          patterns: ["**/*.ts"],
+          prompt: "Review {{file}}",
+          cooldownMs: 5_000,
+        },
+      },
+      orch,
+      () => {},
+    );
+
+    // Two saves dispatched synchronously, no awaits between them.
+    hooks.handleFileSaved("id1", "save", "/workspace/a.ts");
+    hooks.handleFileSaved("id2", "save", "/workspace/b.ts");
+    await hooks.flush();
+
+    expect(orch.list().length).toBe(1);
     hooks.destroy();
   });
 });

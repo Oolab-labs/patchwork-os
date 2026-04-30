@@ -119,6 +119,7 @@ describe("AutomationHooks.onDebugSessionEnd", () => {
       sessionName: "App",
       sessionType: "node",
     });
+    await hooks.flush();
     expect(orch.list().length).toBe(1);
 
     vi.setSystemTime(Date.now() + 10_000);
@@ -127,6 +128,7 @@ describe("AutomationHooks.onDebugSessionEnd", () => {
       sessionName: "App2",
       sessionType: "python",
     });
+    await hooks.flush();
     expect(orch.list().length).toBe(2);
   });
 

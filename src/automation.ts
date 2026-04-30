@@ -1295,6 +1295,74 @@ export class AutomationHooks {
     }
   }
 
+  /**
+   * Tracks whether `_lastRunPromise` represents a still-running interpreter
+   * call. When false, we know the prior promise is settled and can start the
+   * next run synchronously (preserving start-sync semantics tests depend on).
+   * When true, we chain via `.then()` so the new run reads the post-state of
+   * the prior one — fixing the race where two concurrent events both observed
+   * stale `_automationState` and the second writer clobbered the first.
+   */
+  private _chainBusy = false;
+
+  /**
+   * Enqueue an interpreter run, serializing it after any prior in-flight run.
+   *
+   * Concurrent events (e.g. a file save and a diagnostic update in the same
+   * tick) used to overwrite `_lastRunPromise`, so both runs read the same
+   * stale `_automationState` and the second writer's `updatedState` clobbered
+   * the first's. Cooldown/dedup writes from one event were silently lost;
+   * orphaned tasks accumulated in `activeTasks`.
+   *
+   * Chain through `_lastRunPromise` so each run sees the post-state of the
+   * previous one. We start the next run synchronously when the chain is idle
+   * (preserves the contract that `_runInterpreter` body executes up to its
+   * first await before this call returns); only when a run is in flight do
+   * we defer via `.then()`.
+   */
+  private _enqueueRun(
+    eventType: string,
+    eventData: Record<string, string>,
+  ): void {
+    if (this._chainBusy) {
+      this._lastRunPromise = this._lastRunPromise
+        .catch(() => {})
+        .then(() => {
+          this._chainBusy = true;
+          return this._runInterpreter(eventType, eventData);
+        })
+        .finally(() => {
+          this._chainBusy = false;
+        });
+    } else {
+      this._chainBusy = true;
+      this._lastRunPromise = this._runInterpreter(eventType, eventData).finally(
+        () => {
+          this._chainBusy = false;
+        },
+      );
+    }
+  }
+
+  /**
+   * Enqueue a synchronous state mutation to run after any in-flight
+   * interpreter call. Without this, handler-side `_automationState =
+   * setLatestDiagnostics(...)` writes done synchronously between
+   * `_enqueueRun` calls would be overwritten when the first run's
+   * `result.value.updatedState` writeback fires (the writeback replaces
+   * the full state, including the handler's incremental change).
+   *
+   * When the chain is idle, run the mutation synchronously to preserve
+   * test ergonomics that assume state is observable on the next line.
+   */
+  private _enqueueMutation(fn: () => void): void {
+    if (this._chainBusy) {
+      this._lastRunPromise = this._lastRunPromise.catch(() => {}).then(fn);
+    } else {
+      fn();
+    }
+  }
+
   private async _runInterpreter(
     eventType: string,
     eventData: Record<string, string>,
@@ -1387,12 +1455,14 @@ export class AutomationHooks {
       const rank = severityToNum[d.severity] ?? 3;
       return rank < min ? rank : min;
     }, 4); // 4 = no diagnostics / below hint
-    this._automationState = setLatestDiagnostics(
-      this._automationState,
-      normalizedFile,
-      maxSeverityNum,
-      diagnostics.length,
-    );
+    this._enqueueMutation(() => {
+      this._automationState = setLatestDiagnostics(
+        this._automationState,
+        normalizedFile,
+        maxSeverityNum,
+        diagnostics.length,
+      );
+    });
 
     // Build diagnostics text for {{diagnostics}} placeholder (capped at 20)
     const diagsForPrompt = diagnostics.slice(0, 20);
@@ -1416,29 +1486,19 @@ export class AutomationHooks {
 
     const diagnosticSig = diagnosticSignature(diagnostics);
 
-    // Fire onDiagnosticsCleared if transitioning from non-zero → zero; chain
-    // the interpreter runs so flush() awaits both and state is updated correctly.
+    // Fire onDiagnosticsCleared if transitioning from non-zero → zero. Two
+    // consecutive _enqueueRun calls append to the chain in order, so cleared
+    // settles before error and state is observed correctly.
     if (prevErrorCount > 0 && currentErrorCount === 0) {
-      this._lastRunPromise = this._runInterpreter("onDiagnosticsCleared", {
-        file: normalizedFile,
-      }).then(() =>
-        this._runInterpreter("onDiagnosticsError", {
-          file: normalizedFile,
-          diagnostics: diagnosticsText,
-          diagnosticSources,
-          diagnosticSig,
-          count: String(diagnostics.length),
-        }),
-      );
-    } else {
-      this._lastRunPromise = this._runInterpreter("onDiagnosticsError", {
-        file: normalizedFile,
-        diagnostics: diagnosticsText,
-        diagnosticSources,
-        diagnosticSig,
-        count: String(diagnostics.length),
-      });
+      this._enqueueRun("onDiagnosticsCleared", { file: normalizedFile });
     }
+    this._enqueueRun("onDiagnosticsError", {
+      file: normalizedFile,
+      diagnostics: diagnosticsText,
+      diagnosticSources,
+      diagnosticSig,
+      count: String(diagnostics.length),
+    });
   }
 
   /**
@@ -1446,9 +1506,7 @@ export class AutomationHooks {
    * Fires when CC's working directory changes — useful for re-snapshotting workspace context.
    */
   handleCwdChanged(newCwd: string): void {
-    this._lastRunPromise = this._runInterpreter("onCwdChanged", {
-      cwd: newCwd,
-    });
+    this._enqueueRun("onCwdChanged", { cwd: newCwd });
   }
 
   /**
@@ -1457,7 +1515,7 @@ export class AutomationHooks {
    * write a handoff note before Claude loses context.
    */
   handlePreCompact(): void {
-    this._lastRunPromise = this._runInterpreter("onPreCompact", {});
+    this._enqueueRun("onPreCompact", {});
   }
 
   /**
@@ -1465,7 +1523,7 @@ export class AutomationHooks {
    * Re-enqueues the configured prompt so Claude can re-snapshot IDE state after losing context.
    */
   handlePostCompact(): void {
-    this._lastRunPromise = this._runInterpreter("onPostCompact", {});
+    this._enqueueRun("onPostCompact", {});
   }
 
   /**
@@ -1473,20 +1531,16 @@ export class AutomationHooks {
    * Fires once per session; injects bridge status / tool capability summary at start.
    */
   handleInstructionsLoaded(): void {
-    this._lastRunPromise = this._runInterpreter("onInstructionsLoaded", {});
+    this._enqueueRun("onInstructionsLoaded", {});
   }
 
   handleFileSaved(_id: string, type: string, file: string): void {
     if (type !== "save") return;
     const normalizedFile = path.resolve(file);
-    this._lastRunPromise = this._runInterpreter("onFileSave", {
-      file: normalizedFile,
-    });
+    this._enqueueRun("onFileSave", { file: normalizedFile });
     // Also fire onRecipeSave for .yaml files
     if (normalizedFile.endsWith(".yaml") || normalizedFile.endsWith(".yml")) {
-      this._lastRunPromise = this._runInterpreter("onRecipeSave", {
-        file: normalizedFile,
-      });
+      this._enqueueRun("onRecipeSave", { file: normalizedFile });
     }
   }
 
@@ -1498,9 +1552,7 @@ export class AutomationHooks {
   handleFileChanged(_id: string, type: string, file: string): void {
     if (type !== "change") return;
     const normalizedFile = path.resolve(file);
-    this._lastRunPromise = this._runInterpreter("onFileChanged", {
-      file: normalizedFile,
-    });
+    this._enqueueRun("onFileChanged", { file: normalizedFile });
   }
 
   /**
@@ -1517,12 +1569,15 @@ export class AutomationHooks {
     for (const runner of result.runners) {
       const prev = this.lastTestOutcomeByRunner.get(runner);
       this.lastTestOutcomeByRunner.set(runner, current);
-      // Feed interpreter state
-      this._automationState = setTestRunnerStatus(
-        this._automationState,
-        runner,
-        current,
-      );
+      // Feed interpreter state through the chain so the writeback from any
+      // in-flight `_runInterpreter` doesn't clobber it.
+      this._enqueueMutation(() => {
+        this._automationState = setTestRunnerStatus(
+          this._automationState,
+          runner,
+          current,
+        );
+      });
       if (prev === "fail" && current === "pass") {
         passAfterFailRunners.push(runner);
       }
@@ -1537,25 +1592,13 @@ export class AutomationHooks {
       durationMs: String(result.summary.durationMs ?? ""),
     };
 
-    // Chain interpreter runs so flush() awaits all of them and state is updated
-    // sequentially. If any runner had a fail→pass transition, run that first so
-    // its cooldown state is visible to subsequent runs within the same flush.
-    if (passAfterFailRunners.length > 0) {
-      let chain = Promise.resolve();
-      for (const runner of passAfterFailRunners) {
-        chain = chain.then(() =>
-          this._runInterpreter("onTestPassAfterFailure", { runner }),
-        );
-      }
-      this._lastRunPromise = chain.then(() =>
-        this._runInterpreter("onTestRun", testRunEventData),
-      );
-    } else {
-      this._lastRunPromise = this._runInterpreter(
-        "onTestRun",
-        testRunEventData,
-      );
+    // Enqueue per-runner pass-after-fail transitions first so their cooldown
+    // state is visible to the subsequent onTestRun. Each _enqueueRun appends
+    // to the shared chain in order.
+    for (const runner of passAfterFailRunners) {
+      this._enqueueRun("onTestPassAfterFailure", { runner });
     }
+    this._enqueueRun("onTestRun", testRunEventData);
   }
 
   /**
@@ -1563,7 +1606,7 @@ export class AutomationHooks {
    * Fires the onGitCommit automation hook if configured.
    */
   async handleGitCommit(result: GitCommitResult): Promise<void> {
-    this._lastRunPromise = this._runInterpreter("onGitCommit", {
+    this._enqueueRun("onGitCommit", {
       hash: result.hash,
       branch: result.branch,
       message: result.message,
@@ -1577,7 +1620,7 @@ export class AutomationHooks {
    * Fires the onGitPush automation hook if configured.
    */
   handleGitPush(result: GitPushResult): void {
-    this._lastRunPromise = this._runInterpreter("onGitPush", {
+    this._enqueueRun("onGitPush", {
       branch: result.branch,
       remote: result.remote,
       hash: result.hash,
@@ -1588,7 +1631,7 @@ export class AutomationHooks {
    * Fires the onGitPull automation hook if configured.
    */
   handleGitPull(result: GitPullResult): void {
-    this._lastRunPromise = this._runInterpreter("onGitPull", {
+    this._enqueueRun("onGitPull", {
       branch: result.branch,
       remote: result.remote,
     });
@@ -1599,7 +1642,7 @@ export class AutomationHooks {
    * Fires the onBranchCheckout automation hook if configured.
    */
   handleBranchCheckout(result: BranchCheckoutResult): void {
-    this._lastRunPromise = this._runInterpreter("onBranchCheckout", {
+    this._enqueueRun("onBranchCheckout", {
       branch: result.branch,
       previousBranch: result.previousBranch ?? "(detached HEAD)",
       created: String(result.created),
@@ -1610,7 +1653,7 @@ export class AutomationHooks {
    * Fires the onPullRequest automation hook if configured.
    */
   handlePullRequest(result: PullRequestResult): void {
-    this._lastRunPromise = this._runInterpreter("onPullRequest", {
+    this._enqueueRun("onPullRequest", {
       title: result.title,
       url: result.url,
       branch: result.branch,
@@ -1619,14 +1662,14 @@ export class AutomationHooks {
   }
 
   handleTaskCreated(result: TaskCreatedResult): void {
-    this._lastRunPromise = this._runInterpreter("onTaskCreated", {
+    this._enqueueRun("onTaskCreated", {
       taskId: result.taskId,
       prompt: result.prompt,
     });
   }
 
   handlePermissionDenied(result: PermissionDeniedResult): void {
-    this._lastRunPromise = this._runInterpreter("onPermissionDenied", {
+    this._enqueueRun("onPermissionDenied", {
       tool: result.tool,
       reason: result.reason,
     });
@@ -1637,7 +1680,7 @@ export class AutomationHooks {
    * Called internally by handleDiagnosticsChanged.
    */
   handleDiagnosticsCleared(normalizedFile: string): void {
-    this._lastRunPromise = this._runInterpreter("onDiagnosticsCleared", {
+    this._enqueueRun("onDiagnosticsCleared", {
       file: normalizedFile,
       diagnosticSig: "",
     });
@@ -1648,7 +1691,7 @@ export class AutomationHooks {
    * Call from bridge.ts when a task transitions to done.
    */
   handleTaskSuccess(result: TaskSuccessResult): void {
-    this._lastRunPromise = this._runInterpreter("onTaskSuccess", {
+    this._enqueueRun("onTaskSuccess", {
       taskId: result.taskId,
       output: result.output,
     });
@@ -1659,7 +1702,7 @@ export class AutomationHooks {
    * Fires the onDebugSessionEnd automation hook if configured.
    */
   async handleDebugSessionEnd(result: DebugSessionEndResult): Promise<void> {
-    this._lastRunPromise = this._runInterpreter("onDebugSessionEnd", {
+    this._enqueueRun("onDebugSessionEnd", {
       sessionName: result.sessionName,
       sessionType: result.sessionType,
     });
@@ -1672,7 +1715,7 @@ export class AutomationHooks {
   async handleDebugSessionStart(
     result: DebugSessionStartResult,
   ): Promise<void> {
-    this._lastRunPromise = this._runInterpreter("onDebugSessionStart", {
+    this._enqueueRun("onDebugSessionStart", {
       sessionName: result.sessionName,
       sessionType: result.sessionType,
       breakpointCount: String(result.breakpointCount),
