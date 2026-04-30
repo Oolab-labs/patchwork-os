@@ -145,9 +145,12 @@ function buildHook(
     extras?.kind === "diagnosticsError" &&
     extras.dedupeByContent;
 
+  // Enforce min 5s cooldown at runtime — schema validators may pass 0 or
+  // sub-5000 values past AJV (callers can construct hooks programmatically).
+  const safeCooldownMs = Math.max(5_000, cooldownMs);
   let program: AutomationProgram = useDedup
     ? hookNode
-    : withCooldown(key, cooldownMs, hookNode);
+    : withCooldown(key, safeCooldownMs, hookNode);
 
   // Wrap WithRetry around WithCooldown if retryCount > 0
   const retryCount = src.retryCount ?? 0;

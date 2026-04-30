@@ -315,9 +315,17 @@ export abstract class BaseConnector {
       };
     }
 
-    // Apply rate limit backoff
+    // Apply rate limit backoff. Clear it once the reset window has elapsed —
+    // otherwise a single 429 with `Retry-After: 60` causes every subsequent
+    // request to wait 60s indefinitely.
     if (this.rateLimit.backoffMs > 0) {
-      await sleep(this.rateLimit.backoffMs);
+      const resetAt = this.rateLimit.resetAt?.getTime();
+      if (resetAt && Date.now() >= resetAt) {
+        this.rateLimit.backoffMs = 0;
+      } else {
+        await sleep(this.rateLimit.backoffMs);
+        this.rateLimit.backoffMs = 0;
+      }
     }
 
     // Execute with retry
