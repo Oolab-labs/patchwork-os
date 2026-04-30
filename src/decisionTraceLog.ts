@@ -1,4 +1,10 @@
-import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import type { Logger } from "./logger.js";
 
@@ -37,6 +43,14 @@ export interface DecisionTrace {
 }
 
 const DEFAULT_MEMORY_CAP = 2_000;
+
+/**
+ * Disk rotation thresholds. Without these, decision_traces.jsonl grows
+ * unbounded as agents call `ctxSaveTrace`; on a busy bridge this fills
+ * `~/.claude/ide/` and OOMs `loadExisting` at next boot.
+ */
+const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB
+const MAX_PERSIST_LINES = 10_000;
 const MAX_PROBLEM_LEN = 500;
 const MAX_SOLUTION_LEN = 500;
 const MAX_TAGS = 10;
@@ -82,7 +96,7 @@ export class DecisionTraceLog {
     this.memoryCap = opts.memoryCap ?? DEFAULT_MEMORY_CAP;
     this.now = opts.now ?? Date.now;
     try {
-      mkdirSync(opts.dir, { recursive: true });
+      mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
     } catch (err) {
       opts.logger?.warn?.(
         `[dtrace-log] could not create ${opts.dir}: ${err instanceof Error ? err.message : String(err)}`,
@@ -165,10 +179,42 @@ export class DecisionTraceLog {
 
   private append(trace: DecisionTrace): void {
     try {
+      try {
+        const st = statSync(this.file);
+        if (st.size > MAX_PERSIST_BYTES) this.rotateDisk();
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") throw err;
+      }
       appendFileSync(this.file, `${JSON.stringify(trace)}\n`, { mode: 0o600 });
     } catch (err) {
       this.opts.logger?.warn?.(
         `[dtrace-log] append failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Trim decision_traces.jsonl to the most recent MAX_PERSIST_LINES (or
+   * whatever fits under MAX_PERSIST_BYTES). Best-effort — failure logs and
+   * the next append proceeds against the un-rotated file.
+   */
+  private rotateDisk(): void {
+    try {
+      const raw = readFileSync(this.file, "utf-8");
+      let lines = raw.split("\n").filter((l) => l.trim());
+      if (lines.length > MAX_PERSIST_LINES) {
+        lines = lines.slice(-MAX_PERSIST_LINES);
+      }
+      let joined = lines.join("\n");
+      while (joined.length + 1 > MAX_PERSIST_BYTES && lines.length > 1) {
+        lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
+        joined = lines.join("\n");
+      }
+      writeFileSync(this.file, `${joined}\n`, { mode: 0o600 });
+    } catch (err) {
+      this.opts.logger?.warn?.(
+        `[dtrace-log] rotate failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
