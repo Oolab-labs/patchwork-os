@@ -3,33 +3,171 @@
  *
  * Owns every `/connections/*` HTTP endpoint (auth start / OAuth callback /
  * test ping / disconnect / connect-with-body) for the 18 supported
- * connectors. Server.ts delegates with a single `tryHandleConnectorRoute`
- * call, collapsing ~1090 lines of route boilerplate into one line at the
- * call site.
+ * connectors.
+ *
+ * Two entrypoints — the split exists because OAuth callbacks must run
+ * BEFORE the bearer-auth gate (they're browser redirects from the vendor
+ * with no Patchwork token), while CRUD routes must run AFTER it:
+ *
+ *   - `tryHandlePublicConnectorRoute` — `/connections/<vendor>/callback`
+ *     routes. Server.ts calls this BEFORE bearer-auth.
+ *   - `tryHandleConnectorRoute` — auth/test/disconnect/connect routes.
+ *     Server.ts calls this AFTER bearer-auth.
  *
  * Mechanical lift — no behavior change:
- *   - The handler bodies are byte-identical to the original block save for
- *     wrapping the few non-IIFE calls (slack-auth, slack-disconnect,
- *     notion-disconnect, confluence-disconnect, zendesk-disconnect,
- *     intercom-disconnect, hubspot-test, hubspot-disconnect, datadog-
- *     disconnect, stripe-test, stripe-disconnect) in `void (async()=>...)()`
- *     so this module is sync (returns boolean rather than Promise<boolean>).
- *   - The microtask delay this introduces is invisible to clients — the
- *     parent request handler `return`s on a true result either way, and
- *     `res.end()` has always been async.
- *
- * Out of scope (deferred): the connector OAuth-callback routes that live up
- * at server.ts lines 590-720 are NOT moved here. They run inside the OAuth
- * authentication flow and have ordering constraints with bearer-auth gating;
- * a follow-up PR can consolidate them once we've verified the seam holds.
+ *   - Handler bodies are byte-identical to the original blocks save for
+ *     wrapping a few non-IIFE call sites in `void (async()=>{...})()` so
+ *     both functions can return boolean synchronously rather than
+ *     Promise<boolean>. The microtask delay this introduces is invisible
+ *     to clients — the parent request handler `return`s on a true result
+ *     either way, and `res.end()` has always been async.
+ *   - Pre-extraction grep confirmed zero `this.` references in either
+ *     block, so no dependency injection was needed.
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
- * Try to handle a `/connections/*` route. Returns true if the route was
- * dispatched (caller should `return` from the request handler), false if
- * no route matched (caller should fall through to other route checks).
+ * Try to handle a `/connections/<vendor>/callback` route. These are
+ * unauthenticated browser redirects from the OAuth vendor and MUST run
+ * before the bearer-auth gate. Returns true if the route was dispatched.
+ */
+export function tryHandlePublicConnectorRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  parsedUrl: URL,
+): boolean {
+  if (
+    parsedUrl.pathname === "/connections/github/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      const { handleGithubCallback } = await import("./connectors/github.js");
+      const code = parsedUrl.searchParams.get("code");
+      const state = parsedUrl.searchParams.get("state");
+      const error = parsedUrl.searchParams.get("error");
+      const result = await handleGithubCallback(code, state, error);
+      res.writeHead(result.status, {
+        "Content-Type": result.contentType ?? "application/json",
+      });
+      res.end(result.body);
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/linear/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      const { handleLinearCallback } = await import("./connectors/linear.js");
+      const code = parsedUrl.searchParams.get("code");
+      const state = parsedUrl.searchParams.get("state");
+      const error = parsedUrl.searchParams.get("error");
+      const result = await handleLinearCallback(code, state, error);
+      res.writeHead(result.status, {
+        "Content-Type": result.contentType ?? "application/json",
+      });
+      res.end(result.body);
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/sentry/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      const { handleSentryCallback } = await import("./connectors/sentry.js");
+      const code = parsedUrl.searchParams.get("code");
+      const state = parsedUrl.searchParams.get("state");
+      const error = parsedUrl.searchParams.get("error");
+      const result = await handleSentryCallback(code, state, error);
+      res.writeHead(result.status, {
+        "Content-Type": result.contentType ?? "application/json",
+      });
+      res.end(result.body);
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/google-calendar/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      const { handleCalendarCallback } = await import(
+        "./connectors/googleCalendar.js"
+      );
+      const code = parsedUrl.searchParams.get("code");
+      const state = parsedUrl.searchParams.get("state");
+      const error = parsedUrl.searchParams.get("error");
+      const result = await handleCalendarCallback(code, state, error);
+      res.writeHead(result.status, {
+        "Content-Type": result.contentType ?? "application/json",
+      });
+      res.end(result.body);
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/google-drive/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      const { handleDriveCallback } = await import(
+        "./connectors/googleDrive.js"
+      );
+      const code = parsedUrl.searchParams.get("code");
+      const state = parsedUrl.searchParams.get("state");
+      const error = parsedUrl.searchParams.get("error");
+      const result = await handleDriveCallback(code, state, error);
+      res.writeHead(result.status, {
+        "Content-Type": result.contentType ?? "application/json",
+      });
+      res.end(result.body);
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/slack/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      const { handleSlackCallback } = await import("./connectors/slack.js");
+      const code = parsedUrl.searchParams.get("code");
+      const state = parsedUrl.searchParams.get("state");
+      const error = parsedUrl.searchParams.get("error");
+      const result = await handleSlackCallback(code, state, error);
+      res.writeHead(result.status, {
+        "Content-Type": result.contentType ?? "application/json",
+      });
+      res.end(result.body);
+    })();
+    return true;
+  }
+  if (
+    parsedUrl.pathname === "/connections/gmail/callback" &&
+    req.method === "GET"
+  ) {
+    void (async () => {
+      const { handleGmailCallback } = await import("./connectors/gmail.js");
+      const code = parsedUrl.searchParams.get("code");
+      const state = parsedUrl.searchParams.get("state");
+      const error = parsedUrl.searchParams.get("error");
+      const result = await handleGmailCallback(code, state, error);
+      res.writeHead(result.status, {
+        "Content-Type": result.contentType ?? "text/html",
+      });
+      res.end(result.body);
+    })();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Try to handle a `/connections/*` route (auth start / test / disconnect /
+ * connect-with-body). Returns true if the route was dispatched (caller
+ * should `return` from the request handler), false if no route matched
+ * (caller should fall through to other route checks).
  *
  * The actual response is written asynchronously inside an IIFE; this
  * function returns synchronously as soon as the route is recognized.

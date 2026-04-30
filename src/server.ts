@@ -10,7 +10,10 @@ import {
 import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
 import { saveBridgeConfigDriver } from "./config.js";
-import { tryHandleConnectorRoute } from "./connectorRoutes.js";
+import {
+  tryHandleConnectorRoute,
+  tryHandlePublicConnectorRoute,
+} from "./connectorRoutes.js";
 import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import type { Logger } from "./logger.js";
@@ -586,137 +589,10 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
-      // ── Connector OAuth callbacks (unauthenticated — browser redirect from vendor) ──
-      if (
-        parsedUrl.pathname === "/connections/github/callback" &&
-        req.method === "GET"
-      ) {
-        void (async () => {
-          const { handleGithubCallback } = await import(
-            "./connectors/github.js"
-          );
-          const code = parsedUrl.searchParams.get("code");
-          const state = parsedUrl.searchParams.get("state");
-          const error = parsedUrl.searchParams.get("error");
-          const result = await handleGithubCallback(code, state, error);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        })();
-        return;
-      }
-      if (
-        parsedUrl.pathname === "/connections/linear/callback" &&
-        req.method === "GET"
-      ) {
-        void (async () => {
-          const { handleLinearCallback } = await import(
-            "./connectors/linear.js"
-          );
-          const code = parsedUrl.searchParams.get("code");
-          const state = parsedUrl.searchParams.get("state");
-          const error = parsedUrl.searchParams.get("error");
-          const result = await handleLinearCallback(code, state, error);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        })();
-        return;
-      }
-      if (
-        parsedUrl.pathname === "/connections/sentry/callback" &&
-        req.method === "GET"
-      ) {
-        void (async () => {
-          const { handleSentryCallback } = await import(
-            "./connectors/sentry.js"
-          );
-          const code = parsedUrl.searchParams.get("code");
-          const state = parsedUrl.searchParams.get("state");
-          const error = parsedUrl.searchParams.get("error");
-          const result = await handleSentryCallback(code, state, error);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        })();
-        return;
-      }
-      if (
-        parsedUrl.pathname === "/connections/google-calendar/callback" &&
-        req.method === "GET"
-      ) {
-        void (async () => {
-          const { handleCalendarCallback } = await import(
-            "./connectors/googleCalendar.js"
-          );
-          const code = parsedUrl.searchParams.get("code");
-          const state = parsedUrl.searchParams.get("state");
-          const error = parsedUrl.searchParams.get("error");
-          const result = await handleCalendarCallback(code, state, error);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        })();
-        return;
-      }
-
-      if (
-        parsedUrl.pathname === "/connections/google-drive/callback" &&
-        req.method === "GET"
-      ) {
-        void (async () => {
-          const { handleDriveCallback } = await import(
-            "./connectors/googleDrive.js"
-          );
-          const code = parsedUrl.searchParams.get("code");
-          const state = parsedUrl.searchParams.get("state");
-          const error = parsedUrl.searchParams.get("error");
-          const result = await handleDriveCallback(code, state, error);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        })();
-        return;
-      }
-
-      if (
-        parsedUrl.pathname === "/connections/slack/callback" &&
-        req.method === "GET"
-      ) {
-        void (async () => {
-          const { handleSlackCallback } = await import("./connectors/slack.js");
-          const code = parsedUrl.searchParams.get("code");
-          const state = parsedUrl.searchParams.get("state");
-          const error = parsedUrl.searchParams.get("error");
-          const result = await handleSlackCallback(code, state, error);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "application/json",
-          });
-          res.end(result.body);
-        })();
-        return;
-      }
-
-      if (
-        parsedUrl.pathname === "/connections/gmail/callback" &&
-        req.method === "GET"
-      ) {
-        void (async () => {
-          const { handleGmailCallback } = await import("./connectors/gmail.js");
-          const code = parsedUrl.searchParams.get("code");
-          const state = parsedUrl.searchParams.get("state");
-          const error = parsedUrl.searchParams.get("error");
-          const result = await handleGmailCallback(code, state, error);
-          res.writeHead(result.status, {
-            "Content-Type": result.contentType ?? "text/html",
-          });
-          res.end(result.body);
-        })();
+      // ── Connector OAuth callbacks (extracted to src/connectorRoutes.ts) ──
+      // Unauthenticated — browser redirects from vendor must run BEFORE the
+      // bearer-auth gate.
+      if (tryHandlePublicConnectorRoute(req, res, parsedUrl)) {
         return;
       }
 
