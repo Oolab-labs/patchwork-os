@@ -17,7 +17,6 @@ import {
   clearPendingRetry,
   isDeduped,
   isOnCooldown,
-  mergeAutomationStates,
   recordDedup,
   recordPendingRetry,
   recordTrigger,
@@ -463,36 +462,35 @@ async function interpret(
     }
 
     case "Parallel": {
-      const initialState = acc.state;
-      const results = await Promise.allSettled(
-        program.programs.map((p) =>
-          interpret(p, { ...ctx, state: initialState }, emptyAcc(initialState)),
-        ),
-      );
-
-      let merged = acc;
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          merged = {
-            taskIds: [...merged.taskIds, ...result.value.taskIds],
-            skipped: [...merged.skipped, ...result.value.skipped],
-            errors: [...merged.errors, ...result.value.errors],
-            // Merge branch state into accumulator: keep max timestamp per key
-            // and union maps so cooldowns / dedup / triggers from each branch
-            // are preserved (prior code overwrote via last-wins).
-            state: mergeAutomationStates(merged.state, result.value.state),
-          };
-        } else {
-          merged = {
-            ...merged,
+      // Walk Parallel children sequentially, threading state forward exactly
+      // like Sequence. Prior implementation used Promise.allSettled with each
+      // branch seeded from the same `initialState`, which meant both branches
+      // observed cooldown/dedup state BEFORE either branch had recorded its
+      // trigger — so both bypassed cooldown and fired. The "merge max
+      // timestamp per key" reconciliation then arbitrarily picked one
+      // recorded trigger and threw the other away.
+      //
+      // Sequential semantics are correct: each branch reads state mutated by
+      // the previous branch, so a cooldown recorded in branch A is visible
+      // to branch B. The wall-clock cost is small in practice — the
+      // expensive work (LLM dispatch) happens inside the orchestrator queue,
+      // which is already serialized; only the synchronous predicate /
+      // state-update pass changes from parallel to sequential.
+      let current = acc;
+      for (const p of program.programs) {
+        try {
+          current = await interpret(p, ctx, current);
+        } catch (err) {
+          current = {
+            ...current,
             errors: [
-              ...merged.errors,
-              { message: String(result.reason), hook: "parallel" },
+              ...current.errors,
+              { message: String(err), hook: "parallel" },
             ],
           };
         }
       }
-      return merged;
+      return current;
     }
 
     case "WithCooldown": {
