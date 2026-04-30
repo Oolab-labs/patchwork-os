@@ -19,6 +19,7 @@ import { renderDashboardHtml } from "./dashboard.js";
 import { tryHandleInboxRoute } from "./inboxRoutes.js";
 import type { Logger } from "./logger.js";
 import type { OAuthServer } from "./oauth.js";
+import { tryHandleOAuthRoute } from "./oauthRoutes.js";
 import {
   loadConfig as loadPatchworkConfig,
   type PatchworkConfig,
@@ -388,110 +389,14 @@ export class Server extends EventEmitter<ServerEvents> {
 
       const parsedUrl = new URL(req.url ?? "/", "http://localhost");
 
-      // ── OAuth 2.0 endpoints (unauthenticated — handled before bearer check) ──
-
-      // RFC 8414 discovery document
+      // ── OAuth 2.0 endpoints (extracted to src/oauthRoutes.ts) ────────────
+      // Unauthenticated — must run BEFORE the bearer-auth gate.
       if (
-        parsedUrl.pathname === "/.well-known/oauth-authorization-server" &&
-        req.method === "GET"
+        tryHandleOAuthRoute(req, res, parsedUrl, {
+          oauthServer: this.oauthServer,
+          oauthIssuerUrl: this.oauthIssuerUrl,
+        })
       ) {
-        if (this.oauthServer) {
-          this.oauthServer.handleDiscovery(res);
-        } else {
-          res.writeHead(404, { "Content-Type": "text/plain" });
-          res.end("OAuth not configured");
-        }
-        return;
-      }
-
-      // RFC 9396 Protected Resource Metadata — Claude.ai probes this to discover
-      // which authorization server protects this resource. Both the bare and
-      // resource-path variants are handled.
-      if (
-        req.method === "GET" &&
-        (parsedUrl.pathname === "/.well-known/oauth-protected-resource" ||
-          parsedUrl.pathname.startsWith(
-            "/.well-known/oauth-protected-resource/",
-          ))
-      ) {
-        if (this.oauthServer && this.oauthIssuerUrl) {
-          res.writeHead(200, {
-            "Content-Type": "application/json",
-            "Cache-Control": "no-store",
-          });
-          res.end(
-            JSON.stringify({
-              resource: this.oauthIssuerUrl,
-              authorization_servers: [this.oauthIssuerUrl],
-            }),
-          );
-        } else {
-          res.writeHead(404, { "Content-Type": "text/plain" });
-          res.end("OAuth not configured");
-        }
-        return;
-      }
-
-      // Authorization endpoint
-      if (
-        parsedUrl.pathname === "/oauth/authorize" &&
-        (req.method === "GET" || req.method === "POST")
-      ) {
-        if (this.oauthServer) {
-          this.oauthServer.handleAuthorize(req, res);
-        } else {
-          res.writeHead(404, { "Content-Type": "text/plain" });
-          res.end("OAuth not configured");
-        }
-        return;
-      }
-
-      // Dynamic Client Registration endpoint (RFC 7591)
-      if (parsedUrl.pathname === "/oauth/register") {
-        if (this.oauthServer) {
-          this.oauthServer.handleRegister(req, res).catch((err) => {
-            if (!res.headersSent) {
-              res.writeHead(500, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: String(err) }));
-            }
-          });
-        } else {
-          res.writeHead(404, { "Content-Type": "text/plain" });
-          res.end("OAuth not configured");
-        }
-        return;
-      }
-
-      // Token endpoint
-      if (parsedUrl.pathname === "/oauth/token" && req.method === "POST") {
-        if (this.oauthServer) {
-          this.oauthServer.handleToken(req, res).catch((err) => {
-            if (!res.headersSent) {
-              res.writeHead(500, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ error: String(err) }));
-            }
-          });
-        } else {
-          res.writeHead(404, { "Content-Type": "text/plain" });
-          res.end("OAuth not configured");
-        }
-        return;
-      }
-
-      // Revocation endpoint (RFC 7009)
-      if (parsedUrl.pathname === "/oauth/revoke" && req.method === "POST") {
-        if (this.oauthServer) {
-          this.oauthServer.handleRevoke(req, res).catch(() => {
-            // RFC 7009: always 200
-            if (!res.headersSent) {
-              res.writeHead(200, { "Content-Type": "application/json" });
-              res.end("{}");
-            }
-          });
-        } else {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end("{}");
-        }
         return;
       }
 
