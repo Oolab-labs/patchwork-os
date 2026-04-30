@@ -5,13 +5,17 @@
  * Self-registering tool module for the recipe tool registry.
  */
 
-import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import {
+  CommonSchemas,
+  type RegisteredTool,
+  registerTool,
+} from "../toolRegistry.js";
 
 // ============================================================================
 // linear.list_issues
 // ============================================================================
 
-registerTool({
+const linearListIssues: RegisteredTool = {
   id: "linear.list_issues",
   namespace: "linear",
   description:
@@ -90,7 +94,11 @@ registerTool({
       });
     }
   },
-});
+};
+
+registerTool(linearListIssues);
+// camelCase alias — older recipes reference `linear.listIssues`.
+registerTool({ ...linearListIssues, id: "linear.listIssues" });
 
 // ============================================================================
 // linear.createIssue

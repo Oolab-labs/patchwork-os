@@ -5,13 +5,17 @@
  */
 
 import { assertWriteAllowed } from "../../featureFlags.js";
-import { CommonSchemas, registerTool } from "../toolRegistry.js";
+import {
+  CommonSchemas,
+  type RegisteredTool,
+  registerTool,
+} from "../toolRegistry.js";
 
 // ============================================================================
 // slack.post_message
 // ============================================================================
 
-registerTool({
+const slackPostMessage: RegisteredTool = {
   id: "slack.post_message",
   namespace: "slack",
   description:
@@ -89,4 +93,9 @@ registerTool({
       });
     }
   },
-});
+};
+
+registerTool(slackPostMessage);
+// camelCase alias — older recipes (registry/, examples/) reference
+// `slack.postMessage`. Aliased to the snake_case canonical impl.
+registerTool({ ...slackPostMessage, id: "slack.postMessage" });

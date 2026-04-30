@@ -530,7 +530,7 @@ export async function runYamlRecipe(
     }
 
     const stepStart = Date.now();
-    const stepId = step.into ?? step.tool ?? `step_${stepsRun}`;
+    const stepId = step.into ?? `step_${stepsRun}`;
     // Resolve retry policy: step-level overrides recipe-level.
     const retryCount = step.retry ?? recipe.on_error?.retry ?? 0;
     const retryDelayMs = step.retryDelay ?? recipe.on_error?.retryDelay ?? 1000;

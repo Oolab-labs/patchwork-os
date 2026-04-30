@@ -645,6 +645,38 @@ export async function runChainedRecipe(
   }
 
   if (depGraph.hasCycles) {
+    if (depth === 0) {
+      const doneAt = Date.now();
+      const durationMs = doneAt - runStartedAt;
+      try {
+        if (options.runLog && runSeq !== undefined) {
+          options.runLog.completeRun(runSeq, {
+            status: "error",
+            doneAt,
+            durationMs,
+            stepResults: [],
+            errorMessage: "Recipe has circular dependencies",
+          });
+        } else if (options.runLogDir) {
+          const { RecipeRunLog } = await import("../runLog.js");
+          const log = new RecipeRunLog({ dir: options.runLogDir });
+          log.appendDirect({
+            taskId: runTaskId,
+            recipeName: recipe.name,
+            trigger: triggerKind,
+            status: "error",
+            createdAt: runStartedAt,
+            startedAt: runStartedAt,
+            doneAt,
+            durationMs,
+            errorMessage: "Recipe has circular dependencies",
+            stepResults: [],
+          });
+        }
+      } catch {
+        // Non-fatal — run-log failures must never break recipe execution.
+      }
+    }
     return {
       success: false,
       stepResults: new Map(),
