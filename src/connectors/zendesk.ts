@@ -336,7 +336,12 @@ export class ZendeskConnector extends BaseConnector {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   private baseUrl(): string {
-    return `https://${this.tokens?.subdomain}.zendesk.com`;
+    const sub = this.tokens?.subdomain;
+    if (!sub) throw new Error("Zendesk not connected");
+    if (!/^[a-z0-9-]{1,63}$/i.test(sub)) {
+      throw new Error("Zendesk subdomain has invalid format");
+    }
+    return `https://${sub}.zendesk.com`;
   }
 
   private buildHeaders(token: string): Record<string, string> {
@@ -448,6 +453,19 @@ export async function handleZendeskConnect(
     apiToken = parsed.apiToken;
     email = parsed.email;
     subdomain = parsed.subdomain.replace(/\.zendesk\.com$/, ""); // strip if full domain given
+    // Validate subdomain shape after suffix strip — prevents URL injection /
+    // SSRF via `https://${subdomain}.zendesk.com` interpolation in baseUrl().
+    if (!/^[a-z0-9-]{1,63}$/i.test(subdomain)) {
+      return {
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error:
+            "subdomain must be 1-63 alphanumeric/hyphen characters (no dots, slashes, or special chars)",
+        }),
+      };
+    }
   } catch {
     return {
       status: 400,

@@ -206,9 +206,12 @@ export function recordDedup(
   now: number,
 ): AutomationState {
   const newMap = new Map(state.deduplicationWindow);
+  // Delete-then-set so re-recording an existing key bumps it to the most
+  // recent insertion-order slot (LRU semantics under FIFO eviction). Without
+  // this, hot keys can be evicted while cold keys survive.
+  newMap.delete(key);
   newMap.set(key, now);
   if (newMap.size > DEDUP_MAX_SIZE) {
-    // Evict oldest by insertion order (Map preserves insertion order)
     const firstKey = newMap.keys().next().value as string;
     newMap.delete(firstKey);
   }

@@ -130,8 +130,13 @@ async function exchangeCode(code: string): Promise<GmailTokens> {
     }).toString(),
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Token exchange failed: ${res.status} ${body}`);
+    // Body may echo client_secret in malformed-grant responses — log code only.
+    const body = await res.text().catch(() => "");
+    let code = "unknown";
+    try {
+      code = (JSON.parse(body) as { error?: string }).error ?? "unknown";
+    } catch {}
+    throw new Error(`Token exchange failed: ${res.status} (${code})`);
   }
   const json = (await res.json()) as {
     access_token: string;
@@ -172,8 +177,12 @@ async function refreshAccessToken(tokens: GmailTokens): Promise<GmailTokens> {
     }).toString(),
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Token refresh failed: ${res.status} ${body}`);
+    const body = await res.text().catch(() => "");
+    let code = "unknown";
+    try {
+      code = (JSON.parse(body) as { error?: string }).error ?? "unknown";
+    } catch {}
+    throw new Error(`Token refresh failed: ${res.status} (${code})`);
   }
   const json = (await res.json()) as {
     access_token: string;
