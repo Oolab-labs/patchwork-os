@@ -1,4 +1,9 @@
-import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import type { RiskTier } from "./riskTier.js";
 
 /**
@@ -37,10 +42,46 @@ export type ApprovalDecision = "approved" | "rejected" | "expired";
 interface Entry extends PendingApproval {
   resolve: (d: ApprovalDecision) => void;
   timer: ReturnType<typeof setTimeout>;
+  /**
+   * Stable key derived from `(sessionId, toolName, params)`. Multiple `request()`
+   * calls with the same key share the entry's promise instead of creating a
+   * new one each time. Without this, a buggy/malicious agent firing the same
+   * approval call N times spawns N queue entries and N push notifications.
+   */
+  inflightKey: string;
+  /** Promise resolvers attached to the same dedup key after the first call. */
+  pendingPromises: Array<(d: ApprovalDecision) => void>;
+}
+
+/**
+ * Stable canonical JSON used to compute the `inflightKey`. Sorts object
+ * keys at every level so logically-identical params with different key
+ * order hash the same. Returns "[uncloneable]" if input contains circular
+ * references — those won't dedup, but the queue still works.
+ */
+function canonicalJson(value: unknown): string {
+  const seen = new WeakSet<object>();
+  const stringify = (v: unknown): unknown => {
+    if (v === null || typeof v !== "object") return v;
+    if (seen.has(v as object)) return "[circular]";
+    seen.add(v as object);
+    if (Array.isArray(v)) return v.map(stringify);
+    const obj = v as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(obj).sort()) out[k] = stringify(obj[k]);
+    return out;
+  };
+  try {
+    return JSON.stringify(stringify(value));
+  } catch {
+    return "[uncloneable]";
+  }
 }
 
 export class ApprovalQueue {
   private readonly entries = new Map<string, Entry>();
+  /** inflightKey → callId, for dedup lookup on `request()`. */
+  private readonly inflight = new Map<string, string>();
   private readonly ttlMs: number;
   private readonly listeners = new Set<() => void>();
 
@@ -72,6 +113,35 @@ export class ApprovalQueue {
     approvalToken?: string;
     promise: Promise<ApprovalDecision>;
   } {
+    // Dedup: if an identical (sessionId, toolName, params) request is already
+    // queued, return its existing promise instead of allocating a fresh
+    // callId + push notification. Prevents a buggy/malicious agent that
+    // spams the same call N times from generating N prompts.
+    const inflightKey = createHash("sha256")
+      .update(input.sessionId ?? "")
+      .update("\0")
+      .update(input.toolName)
+      .update("\0")
+      .update(canonicalJson(input.params))
+      .digest("hex");
+    const existingCallId = this.inflight.get(inflightKey);
+    if (existingCallId) {
+      const existing = this.entries.get(existingCallId);
+      if (existing) {
+        const promise = new Promise<ApprovalDecision>((res) => {
+          existing.pendingPromises.push(res);
+        });
+        return {
+          callId: existing.callId,
+          approvalToken: existing.approvalToken,
+          promise,
+        };
+      }
+      // Stale inflight entry pointing at a callId that no longer exists —
+      // fall through and create a fresh request.
+      this.inflight.delete(inflightKey);
+    }
+
     const callId = randomUUID();
     const requestedAt = Date.now();
     const approvalToken = opts.withToken
@@ -85,7 +155,9 @@ export class ApprovalQueue {
       const entry = this.entries.get(callId);
       if (!entry) return;
       this.entries.delete(callId);
+      this.inflight.delete(entry.inflightKey);
       entry.resolve("expired");
+      for (const r of entry.pendingPromises) r("expired");
       this.notify();
     }, this.ttlMs);
     if (typeof timer === "object" && "unref" in timer) timer.unref();
@@ -96,8 +168,11 @@ export class ApprovalQueue {
       resolve: resolveFn,
       timer,
       approvalToken,
+      inflightKey,
+      pendingPromises: [],
       ...input,
     });
+    this.inflight.set(inflightKey, callId);
     this.notify();
     return { callId, approvalToken, promise };
   }
@@ -158,7 +233,10 @@ export class ApprovalQueue {
     if (!entry) return false;
     clearTimeout(entry.timer);
     this.entries.delete(callId);
+    this.inflight.delete(entry.inflightKey);
     entry.resolve(decision);
+    // Wake up any duplicate callers who joined this entry via dedup.
+    for (const r of entry.pendingPromises) r(decision);
     this.notify();
     return true;
   }

@@ -460,6 +460,40 @@ export class McpTransport {
     return count;
   }
 
+  /**
+   * Soft cleanup of stale per-connection state, used by the bridge's
+   * grace-period resumption path BEFORE calling `attach(ws)` with a new
+   * WebSocket. Unlike `detach()`, this does NOT abort in-flight tool calls
+   * or zero `activeToolCalls` — grace-period semantics preserve those
+   * across the reconnect. It only:
+   *
+   *  1. Removes the old WebSocket's "message" listener so it can't fire
+   *     against the new connection's state.
+   *  2. Rejects any pending elicitation requests, because the original
+   *     client that issued them may not be the one reattaching, and an
+   *     unrelated client should not be allowed to answer another client's
+   *     elicitation by id collision.
+   *
+   * Without this, two leaks survive a resumption:
+   *  - The old `ws.on("message", ...)` listener accumulates (gen-guarded
+   *    so it no-ops, but still attached to the now-closed socket).
+   *  - `pendingElicitations` from the old connection persist in the map;
+   *    the elicit timer keeps ticking and resolving against the NEW
+   *    `activeWs`, surfacing prompts to a client that didn't request them.
+   */
+  detachSoft(): void {
+    if (this.activeWs && this.activeListener) {
+      this.activeWs.removeListener("message", this.activeListener);
+      this.activeListener = null;
+    }
+    for (const [, pending] of this.pendingElicitations) {
+      pending.reject(
+        new Error("Client disconnected before responding to elicitation"),
+      );
+    }
+    this.pendingElicitations.clear();
+  }
+
   detach(): void {
     // Remove listener from old WebSocket to prevent accumulation
     if (this.activeWs && this.activeListener) {

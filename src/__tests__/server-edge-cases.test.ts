@@ -104,6 +104,63 @@ describe("Server: DNS rebinding protection", () => {
     expect(closeCode).not.toBe(1000);
     expect(closeCode).not.toBe(1001);
   });
+
+  it("rejects HTTP requests with an external Host header (DNS rebinding)", async () => {
+    const http = await import("node:http");
+    server = new Server("test-token", logger);
+    const port = await server.findAndListen(null);
+
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/health",
+          method: "GET",
+          headers: {
+            host: "evil.com",
+            authorization: "Bearer test-token",
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode ?? 0));
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    expect(status).toBe(403);
+  });
+
+  it("accepts HTTP requests with Host: 127.0.0.1", async () => {
+    const http = await import("node:http");
+    server = new Server("test-token", logger);
+    const port = await server.findAndListen(null);
+
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/health",
+          method: "GET",
+          headers: {
+            host: `127.0.0.1:${port}`,
+            authorization: "Bearer test-token",
+          },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode ?? 0));
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    // Whatever the route returns, the Host check should not have rejected it as 403.
+    expect(status).not.toBe(403);
+  });
 });
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
