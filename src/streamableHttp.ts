@@ -253,6 +253,41 @@ interface HttpSession {
   inFlight: number;
   /** X-Claude-Code-Session-Id from the initialize request, if present. */
   claudeCodeSessionId: string | null;
+  /**
+   * Per-session ownership secret returned in the initialize response as
+   * `Mcp-Session-Token`. Subsequent POST/GET/DELETE requests must echo it
+   * in the same header. Closes the session-takeover hole where any caller
+   * with a valid bridge bearer plus a known `Mcp-Session-Id` could DELETE
+   * the session, hijack its SSE stream via GET, or impersonate POST
+   * traffic. 32 bytes hex (256-bit). Necessary because the bridge often
+   * runs with a single shared bearer token, so bearer-binding alone is
+   * insufficient.
+   */
+  ownershipToken: string;
+}
+
+/** Constant-time hex-string comparison; both inputs must be same length. */
+function hexEquals(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verifies the `Mcp-Session-Token` header matches the session's ownership
+ * token. Returns `true` if authorized.
+ */
+function checkOwnership(
+  req: http.IncomingMessage,
+  session: { ownershipToken: string },
+): boolean {
+  const presented = req.headers["mcp-session-token"];
+  if (typeof presented !== "string") return false;
+  return hexEquals(presented, session.ownershipToken);
 }
 
 /** Handles POST/GET/DELETE /mcp for all HTTP sessions. */
@@ -341,9 +376,12 @@ export class StreamableHttpHandler {
       );
       res.setHeader(
         "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, Mcp-Session-Id",
+        "Content-Type, Authorization, Mcp-Session-Id, Mcp-Session-Token",
       );
-      res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+      res.setHeader(
+        "Access-Control-Expose-Headers",
+        "Mcp-Session-Id, Mcp-Session-Token",
+      );
     }
 
     // OPTIONS is handled by server.ts before auth — this handler only sees POST/GET/DELETE.
@@ -466,6 +504,10 @@ export class StreamableHttpHandler {
         session.transport.claudeCodeSessionId = ccSessionId;
       }
       res.setHeader("Mcp-Session-Id", session.id);
+      // Per-session ownership secret — required on subsequent
+      // POST/GET/DELETE so a known session ID alone is not enough to
+      // hijack the session under shared-bridge-token deployments.
+      res.setHeader("Mcp-Session-Token", session.ownershipToken);
     } else {
       if (typeof sessionId !== "string") {
         res.writeHead(400, { "Content-Type": "application/json" });
@@ -488,6 +530,22 @@ export class StreamableHttpHandler {
             error: {
               code: -32000,
               message: "Session not found or expired — re-initialize",
+            },
+          }),
+        );
+        return;
+      }
+      // Verify the caller owns this session (Mcp-Session-Token header
+      // matches what was returned in the initialize response).
+      if (!checkOwnership(req, session)) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg.id ?? null,
+            error: {
+              code: -32000,
+              message: "Mcp-Session-Token missing or invalid",
             },
           }),
         );
@@ -573,6 +631,11 @@ export class StreamableHttpHandler {
       res.end("Session not found");
       return;
     }
+    if (!checkOwnership(req, session)) {
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      res.end("Mcp-Session-Token missing or invalid");
+      return;
+    }
 
     // Establish SSE stream for server→client notifications.
     // Disable the per-request timeout for this long-lived stream only.
@@ -615,13 +678,18 @@ export class StreamableHttpHandler {
       res.end("Missing Mcp-Session-Id header");
       return;
     }
-    if (!this.sessions.has(sessionId)) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Session not found");
       return;
     }
-    const session = this.sessions.get(sessionId);
-    if (session && session.inFlight > 0) {
+    if (!checkOwnership(req, session)) {
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      res.end("Mcp-Session-Token missing or invalid");
+      return;
+    }
+    if (session.inFlight > 0) {
       res.writeHead(409, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "request in progress" }));
       return;
@@ -648,6 +716,7 @@ export class StreamableHttpHandler {
     denyTools: Set<string>,
   ): Promise<HttpSession> {
     const id = crypto.randomUUID();
+    const ownershipToken = crypto.randomBytes(32).toString("hex");
     const session = {
       id,
       adapter: null as unknown,
@@ -657,6 +726,7 @@ export class StreamableHttpHandler {
       lastActivity: Date.now(),
       inFlight: 0,
       claudeCodeSessionId: null,
+      ownershipToken,
     } as HttpSession;
     const adapter = new HttpAdapter(
       (msg) => this.logger.warn(msg),

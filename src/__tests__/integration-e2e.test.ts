@@ -318,12 +318,15 @@ describe("Streamable HTTP — session lifecycle", () => {
 
     expect(res.status).toBe(200);
     const sessionId = res.headers["mcp-session-id"];
+    const sessionToken = res.headers["mcp-session-token"];
     expect(typeof sessionId).toBe("string");
+    expect(typeof sessionToken).toBe("string");
 
-    // DELETE to close the session
+    // DELETE to close the session — must echo the per-session ownership token.
     const del = await httpDelete(`http://127.0.0.1:${port}/mcp`, {
       Authorization: `Bearer ${authToken}`,
       "Mcp-Session-Id": sessionId as string,
+      "Mcp-Session-Token": sessionToken as string,
     });
     expect(del.status).toBe(204);
 

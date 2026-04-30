@@ -31,23 +31,34 @@ const INIT = {
 
 console.log("\n[CAT-5] Streamable HTTP transport");
 
-// 5.1 POST /mcp initialize → 200 + session header
+// 5.1 POST /mcp initialize → 200 + session header + ownership token
 let sessionId;
+let sessionToken;
 {
   const r = await httpPost(`${BASE}/mcp`, INIT, { ...AUTH, ...CT_JSON });
   assertEq(r.status, 200, "5.1 initialize → 200");
   sessionId = r.headers["mcp-session-id"];
+  sessionToken = r.headers["mcp-session-token"];
   assert(
     typeof sessionId === "string" && sessionId.length > 0,
     "5.1 Mcp-Session-Id header set",
   );
+  assert(
+    typeof sessionToken === "string" && sessionToken.length > 0,
+    "5.1 Mcp-Session-Token header set",
+  );
 }
+
+const SESSION_HEADERS = {
+  "Mcp-Session-Id": sessionId,
+  "Mcp-Session-Token": sessionToken,
+};
 
 // Send notifications/initialized (required by MCP protocol before other requests)
 await httpPost(
   `${BASE}/mcp`,
   { jsonrpc: "2.0", method: "notifications/initialized" },
-  { ...AUTH, ...CT_JSON, "Mcp-Session-Id": sessionId },
+  { ...AUTH, ...CT_JSON, ...SESSION_HEADERS },
 );
 
 // 5.2 Reuse session — tools/list
@@ -55,7 +66,7 @@ await httpPost(
   const r = await httpPost(
     `${BASE}/mcp`,
     { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
-    { ...AUTH, ...CT_JSON, "Mcp-Session-Id": sessionId },
+    { ...AUTH, ...CT_JSON, ...SESSION_HEADERS },
   );
   assertEq(r.status, 200, "5.2 session reuse → 200");
   const body = JSON.parse(r.body);
@@ -75,7 +86,7 @@ await httpPost(
         headers: {
           ...AUTH,
           Accept: "text/event-stream",
-          "Mcp-Session-Id": sessionId,
+          ...SESSION_HEADERS,
         },
       },
       (res) => {
@@ -97,7 +108,7 @@ await httpPost(
 {
   const r = await httpDelete(`${BASE}/mcp`, {
     ...AUTH,
-    "Mcp-Session-Id": sessionId,
+    ...SESSION_HEADERS,
   });
   assert(
     r.status === 200 || r.status === 204,
@@ -110,7 +121,7 @@ await httpPost(
   const r = await httpPost(
     `${BASE}/mcp`,
     { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} },
-    { ...AUTH, ...CT_JSON, "Mcp-Session-Id": sessionId },
+    { ...AUTH, ...CT_JSON, ...SESSION_HEADERS },
   );
   assertEq(r.status, 404, `5.5 deleted session → 404 (got ${r.status})`);
 }
@@ -120,7 +131,11 @@ await httpPost(
   const sessions = [];
   for (let i = 0; i < 5; i++) {
     const r = await httpPost(`${BASE}/mcp`, INIT, { ...AUTH, ...CT_JSON });
-    if (r.status === 200) sessions.push(r.headers["mcp-session-id"]);
+    if (r.status === 200)
+      sessions.push({
+        sid: r.headers["mcp-session-id"],
+        token: r.headers["mcp-session-token"],
+      });
   }
   // 6th session: either 200 (oldest idle evicted) or 503
   const r6 = await httpPost(`${BASE}/mcp`, INIT, { ...AUTH, ...CT_JSON });
@@ -129,10 +144,12 @@ await httpPost(
     `5.6 6th session → 200 (eviction) or 503 (no idle) (got ${r6.status})`,
   );
   // Cleanup
-  for (const sid of sessions) {
-    await httpDelete(`${BASE}/mcp`, { ...AUTH, "Mcp-Session-Id": sid }).catch(
-      () => {},
-    );
+  for (const s of sessions) {
+    await httpDelete(`${BASE}/mcp`, {
+      ...AUTH,
+      "Mcp-Session-Id": s.sid,
+      "Mcp-Session-Token": s.token,
+    }).catch(() => {});
   }
 }
 
