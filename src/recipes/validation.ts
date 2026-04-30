@@ -84,24 +84,17 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
         message: "Recipe must have at least one step",
       });
     } else {
-      const triggerType =
-        r.trigger && typeof r.trigger === "object"
-          ? (r.trigger as Record<string, unknown>).type
-          : undefined;
-      const allowNestedRecipeSteps = triggerType === "chained";
-
       for (let i = 0; i < r.steps.length; i++) {
         const step = r.steps[i] as Record<string, unknown>;
         const hasTool = typeof step.tool === "string";
         const hasAgent = !!step.agent;
         const hasNestedRecipe =
-          allowNestedRecipeSteps &&
-          (typeof step.recipe === "string" || typeof step.chain === "string");
+          typeof step.recipe === "string" || typeof step.chain === "string";
 
         if (!hasTool && !hasAgent && !hasNestedRecipe) {
           issues.push({
             level: "error",
-            message: `Step ${i + 1}: Must have 'tool' or 'agent' field${allowNestedRecipeSteps ? " (or 'recipe'/'chain' for chained recipes)" : ""}`,
+            message: `Step ${i + 1}: Must have 'tool', 'agent', 'recipe', or 'chain' field`,
           });
         }
         if (step.agent && typeof step.agent === "object") {
@@ -297,7 +290,7 @@ function registerRecipeContextKeys(
     availableKeys.add("branch");
   }
 
-  if (trigger?.type === "on_file_save") {
+  if (trigger?.type === "on_file_save" || trigger?.type === "file_watch") {
     availableKeys.add("file");
   }
 
