@@ -20,10 +20,13 @@
  */
 
 import crypto from "node:crypto";
+import dns from "node:dns/promises";
 import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { URL } from "node:url";
+import ipaddr from "ipaddr.js";
+import { Agent, fetch as undiciFetch } from "undici";
 import {
   getSecretJsonSync,
   storeSecretJsonSync,
@@ -75,23 +78,52 @@ interface PersistedTokenSnapshot {
  * CIMD URLs must be public HTTPS — rejecting private addresses prevents
  * SSRF via a crafted client_id URL.
  */
+/**
+ * Returns true if `addr` is an IP that should never be reachable from the
+ * CIMD-fetch path. Uses `ipaddr.js` so decimal/octal/hex IPv4 normalization
+ * and IPv4-mapped IPv6 addresses are handled correctly — string-prefix
+ * checks miss `2130706433`, `0x7f000001`, `[::ffff:127.0.0.1]`, etc.
+ *
+ * Blocked ranges (IPv4 / IPv6):
+ *   unspecified (0.0.0.0/8, ::/128), loopback (127/8, ::1),
+ *   private (10/8, 172.16/12, 192.168/16, fc00::/7),
+ *   link-local (169.254/16 — covers GCP/EC2 metadata, fe80::/10),
+ *   carrier-grade NAT (100.64/10), benchmarking (198.18/15),
+ *   reserved, multicast, broadcast, ipv4Mapped (recursed).
+ */
+function isPrivateIp(addr: string): boolean {
+  let parsed: ReturnType<typeof ipaddr.parse>;
+  try {
+    parsed = ipaddr.parse(addr);
+  } catch {
+    return false;
+  }
+  if (parsed.kind() === "ipv6") {
+    const v6 = parsed as ipaddr.IPv6;
+    if (v6.isIPv4MappedAddress()) {
+      return isPrivateIp(v6.toIPv4Address().toString());
+    }
+  }
+  const range = parsed.range();
+  // ipaddr.js range names: "unicast" (IPv4) and "unicast" / "ipv4Mapped"
+  // covered separately are the only globally routable IPv4 case.
+  // Everything else (private, loopback, linkLocal, multicast, reserved,
+  // carrierGradeNat, benchmarking, broadcast, unspecified, etc.) is blocked.
+  // For IPv6, unicast is the only routable global range we accept.
+  return range !== "unicast";
+}
+
+/**
+ * Returns true if a CIMD client_id host string should be rejected pre-DNS.
+ * Catches:
+ *   - literal `localhost`
+ *   - any IP literal (parsed via ipaddr.js) that falls in a blocked range,
+ *     including decimal / hex / octal IPv4, IPv4-mapped IPv6, etc.
+ */
 function isPrivateCimdHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[|]$/g, ""); // strip IPv6 brackets
-  if (
-    h === "localhost" ||
-    h.startsWith("127.") ||
-    h.startsWith("10.") ||
-    h.startsWith("192.168.") ||
-    h === "::1" ||
-    // IPv6 ULA fc00::/7 — gated on `:` so hostnames like "fcompany.com" or
-    // "fd-cdn.example.com" aren't false-positively blocked.
-    ((h.startsWith("fc") || h.startsWith("fd")) && h.includes(":")) ||
-    h.startsWith("169.254.")
-  )
-    return true;
-  // 172.16.0.0/12
-  const m = /^172\.(\d+)\./.exec(h);
-  if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
+  const h = hostname.toLowerCase().replace(/^\[|]$/g, "");
+  if (h === "localhost") return true;
+  if (ipaddr.isValid(h)) return isPrivateIp(h);
   return false;
 }
 
@@ -149,6 +181,9 @@ export class OAuthServerImpl implements OAuthServer {
   >();
   private static readonly CIMD_CACHE_TTL_MS = 5 * 60 * 1_000; // 5 min
   private static readonly CIMD_MAX_BYTES = 8_192; // 8 KB max for metadata doc
+  private static readonly CIMD_MAX_CONCURRENT = 4;
+  /** Number of CIMD fetches currently in flight (concurrency cap). */
+  private cimdInflight = 0;
 
   /** Legacy file path for migration; null when persistence is disabled. */
   private readonly tokenStorePath: string | null;
@@ -912,28 +947,75 @@ export class OAuthServerImpl implements OAuthServer {
       return null;
     }
     if (parsed.protocol !== "https:") return null;
+    // Reject userinfo (e.g. https://user:pass@evil/), non-default ports, and
+    // hostnames that resolve to a blocklisted range pre-DNS.
+    if (parsed.username || parsed.password) return null;
+    if (parsed.port && parsed.port !== "443") return null;
     if (isPrivateCimdHost(parsed.hostname)) return null;
 
+    // Concurrency cap: prevents an attacker from amplifying SSRF attempts /
+    // DoS-ing the OAuth server by triggering thousands of CIMD fetches via
+    // unauthenticated /authorize GET requests.
+    if (this.cimdInflight >= OAuthServerImpl.CIMD_MAX_CONCURRENT) {
+      return null;
+    }
+    this.cimdInflight++;
+
     try {
+      // DNS pre-resolution + lookup pinning: defends against DNS rebinding.
+      // Resolve all addresses ONCE, validate every one, then bind the
+      // connection's lookup to the validated address so the connect dial
+      // can't re-resolve to a different IP after our check.
+      const host = parsed.hostname.replace(/^\[|]$/g, "");
+      let pinnedAddr: string;
+      let pinnedFamily: 4 | 6;
+      if (ipaddr.isValid(host)) {
+        // Already validated by isPrivateCimdHost above.
+        pinnedAddr = host;
+        pinnedFamily = host.includes(":") ? 6 : 4;
+      } else {
+        let resolved: { address: string; family: number }[];
+        try {
+          resolved = await dns.lookup(host, { all: true, verbatim: true });
+        } catch {
+          return null;
+        }
+        if (resolved.length === 0) return null;
+        // If ANY address falls in a blocked range, refuse — prevents
+        // split-horizon DNS from sneaking a private address past us.
+        for (const r of resolved) {
+          if (isPrivateIp(r.address)) return null;
+        }
+        const first = resolved[0];
+        if (!first) return null;
+        pinnedAddr = first.address;
+        pinnedFamily = first.family === 6 ? 6 : 4;
+      }
+
+      const dispatcher = new Agent({
+        connect: {
+          lookup: (_hostname, _options, callback) => {
+            // Pinned to our validated address — Node's connect() never gets
+            // a chance to issue a fresh DNS query that an attacker could
+            // race against our pre-resolution check.
+            callback(null, pinnedAddr, pinnedFamily);
+          },
+        },
+      });
+
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5_000);
       let body: string;
       try {
-        // No redirects — CIMD metadata documents must be served directly at
-        // the registered client_id URL. Following Location headers from an
-        // attacker-controlled server could bypass the isPrivateCimdHost() guard
-        // regardless of per-hop re-validation.
-        const resp = await fetch(clientIdUrl, {
+        const resp = await undiciFetch(clientIdUrl, {
           signal: controller.signal,
           headers: { Accept: "application/json" },
           redirect: "error",
+          dispatcher,
         });
         if (!resp.ok) return null;
-        // Reject non-JSON responses — prevents an attacker-controlled HTTPS
-        // endpoint from serving a JSON-shaped HTML/script body.
         const ct = resp.headers.get("content-type") ?? "";
         if (!/^application\/json\b/i.test(ct)) return null;
-        // Stream with size cap to prevent OOM
         const reader = resp.body?.getReader();
         if (!reader) return null;
         const chunks: Uint8Array[] = [];
@@ -951,6 +1033,7 @@ export class OAuthServerImpl implements OAuthServer {
         body = Buffer.concat(chunks).toString("utf8");
       } finally {
         clearTimeout(timeout);
+        dispatcher.close().catch(() => {});
       }
 
       const doc = JSON.parse(body) as Record<string, unknown>;
@@ -965,6 +1048,8 @@ export class OAuthServerImpl implements OAuthServer {
       return redirectUris;
     } catch {
       return null;
+    } finally {
+      this.cimdInflight--;
     }
   }
 
@@ -994,17 +1079,29 @@ export class OAuthServerImpl implements OAuthServer {
     // CIMD: if client_id is an HTTPS URL, fetch its metadata document to get
     // redirect_uris dynamically (SEP-991 / Claude Code v2.1.81+).
     // Otherwise fall back to the pre-registered client map.
+    //
+    // Trust-on-first-fetch: the redirect_uris snapshot from the FIRST GET
+    // /authorize is pinned in registeredClients and reused by the POST and
+    // token-exchange paths. Re-fetching at token time would let an attacker
+    // who controls the CIMD URL rotate redirect_uris between the user's
+    // approval and the code-exchange — exfiltrating the auth code to a URI
+    // the user never saw on the approval page. The 5-minute cache is too
+    // long to be a trust boundary; the OAuth flow itself is the boundary.
     let allowedRedirectUris: string[] | undefined;
     if (clientId.startsWith("https://")) {
-      const cimdUris = await this.fetchCimd(clientId);
-      if (!cimdUris) return { error: "invalid_client" };
-      allowedRedirectUris = cimdUris;
-      // Register the client dynamically so the POST handler can look it up
-      if (!this.registeredClients.has(clientId)) {
+      const existing = this.registeredClients.get(clientId);
+      if (existing) {
+        // Reuse the pinned snapshot from first registration; ignore any
+        // currently cached CIMD content that may have rotated.
+        allowedRedirectUris = existing.redirectUris;
+      } else {
+        const cimdUris = await this.fetchCimd(clientId);
+        if (!cimdUris) return { error: "invalid_client" };
         this.registeredClients.set(clientId, {
           redirectUris: cimdUris,
           issuedAt: Date.now(),
         });
+        allowedRedirectUris = cimdUris;
       }
     } else {
       const registered = this.registeredClients.get(clientId);
