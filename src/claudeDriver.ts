@@ -130,6 +130,20 @@ export interface IClaudeDriver {
 
 const OUTPUT_CAP = 50 * 1024; // 50KB
 
+/**
+ * Truncate `text` to at most `cap` UTF-8 bytes without splitting a multi-byte
+ * codepoint mid-sequence. `String.slice(0, cap)` operates on UTF-16 code
+ * units, so a 50K cap can store ~50K code points but emit up to ~200KB of
+ * UTF-8 wire bytes for CJK / emoji content — and may produce a lone
+ * surrogate at the boundary. `Buffer.toString("utf8")` substitutes U+FFFD
+ * for incomplete trailing sequences instead.
+ */
+function truncateUtf8Bytes(text: string, cap: number): string {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.length <= cap) return text;
+  return buf.subarray(0, cap).toString("utf8");
+}
+
 /** Shape of a parsed stream-json event from `claude -p --output-format stream-json`. */
 interface StreamJsonEvent {
   type: "system" | "assistant" | "result" | string;
@@ -292,6 +306,30 @@ export class SubprocessDriver implements IClaudeDriver {
       detached: true,
     });
 
+    /**
+     * Kill the entire process group, not just the direct child. Because we
+     * spawned with `detached: true`, the child runs in its own process group.
+     * `child.kill()` and Node's AbortSignal-driven kill both target only the
+     * direct child PID, leaving grandchildren (claude's own tool subprocesses)
+     * orphaned and surviving bridge shutdown. Negative PID = process group.
+     */
+    const killProcessGroup = (signal: NodeJS.Signals = "SIGTERM"): void => {
+      if (typeof child.pid !== "number") return;
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        // ESRCH = group already dead, EPERM = permission lost. Either way,
+        // no further action available.
+      }
+    };
+
+    // When AbortController fires (timeout, manual cancel, shutdown), Node
+    // sends SIGTERM to child PID only — escalate to the process group so
+    // grandchildren go too. Listener removed automatically when child exits.
+    const onAbort = () => killProcessGroup("SIGTERM");
+    input.signal.addEventListener("abort", onAbort, { once: true });
+    child.on("close", () => input.signal.removeEventListener("abort", onAbort));
+
     // JSONL output state
     // -------------------------------------------------------------------
     // With --output-format stream-json, claude emits one JSON object per line.
@@ -301,9 +339,27 @@ export class SubprocessDriver implements IClaudeDriver {
     // Accumulated text from assistant events — used as fallback for final text if
     // the result event is missing (old binary, crash before result, etc.)
     let accumulated = "";
-    // outputBytesSent tracks how many bytes have been forwarded to onChunk so we
+    // outputBytesSent tracks how many bytes (UTF-8) have been forwarded to onChunk so we
     // can apply OUTPUT_CAP without truncating the accumulated text used for analysis.
+    // Counted in bytes (not UTF-16 code units) because OUTPUT_CAP is a byte budget —
+    // a string slice would let multi-byte CJK / emoji content overshoot the cap by 4×.
     let outputBytesSent = 0;
+    /**
+     * Truncate `text` so it adds at most `remaining` UTF-8 bytes to the
+     * stream and never splits a multi-byte codepoint mid-sequence. Returns
+     * the safely-truncated slice plus its actual byte length.
+     */
+    const truncateToBytes = (
+      text: string,
+      remaining: number,
+    ): { send: string; bytes: number } => {
+      const buf = Buffer.from(text, "utf8");
+      if (buf.length <= remaining) return { send: text, bytes: buf.length };
+      // Buffer.toString("utf8") substitutes U+FFFD for incomplete trailing
+      // sequences, which is the correct UTF-8 truncation behavior.
+      const sliced = buf.subarray(0, remaining).toString("utf8");
+      return { send: sliced, bytes: Buffer.byteLength(sliced, "utf8") };
+    };
     // firstAssistantAt: set on the first assistant event; used to compute startupMs.
     let firstAssistantAt: number | undefined;
     // doneFromResult: set when a result event is received so the abort path can
@@ -331,10 +387,13 @@ export class SubprocessDriver implements IClaudeDriver {
           const text = `${line}\n`;
           accumulated += text;
           if (outputBytesSent < OUTPUT_CAP) {
-            const send = text.slice(0, OUTPUT_CAP - outputBytesSent);
-            if (send.length > 0) {
+            const { send, bytes } = truncateToBytes(
+              text,
+              OUTPUT_CAP - outputBytesSent,
+            );
+            if (bytes > 0) {
               input.onChunk?.(send);
-              outputBytesSent += send.length;
+              outputBytesSent += bytes;
             }
           }
           continue;
@@ -353,10 +412,13 @@ export class SubprocessDriver implements IClaudeDriver {
             if (text.length > 0) {
               accumulated += text;
               if (outputBytesSent < OUTPUT_CAP) {
-                const send = text.slice(0, OUTPUT_CAP - outputBytesSent);
-                if (send.length > 0) {
+                const { send, bytes } = truncateToBytes(
+                  text,
+                  OUTPUT_CAP - outputBytesSent,
+                );
+                if (bytes > 0) {
                   input.onChunk?.(send);
-                  outputBytesSent += send.length;
+                  outputBytesSent += bytes;
                 }
               }
             }
@@ -375,10 +437,13 @@ export class SubprocessDriver implements IClaudeDriver {
     let stderr = "";
     child.stderr.setEncoding("utf-8");
     child.stderr.on("data", (chunk: string) => {
-      // Apply the same cap to stderr to prevent unbounded memory growth
-      if (stderr.length < OUTPUT_CAP) {
+      // Apply the same byte-budget cap to stderr to prevent unbounded
+      // memory growth on multi-byte UTF-8 output.
+      if (Buffer.byteLength(stderr, "utf8") < OUTPUT_CAP) {
         stderr += chunk;
-        if (stderr.length > OUTPUT_CAP) stderr = stderr.slice(0, OUTPUT_CAP);
+        if (Buffer.byteLength(stderr, "utf8") > OUTPUT_CAP) {
+          stderr = truncateUtf8Bytes(stderr, OUTPUT_CAP);
+        }
       }
     });
 
@@ -396,7 +461,9 @@ export class SubprocessDriver implements IClaudeDriver {
       ? setTimeout(() => {
           if (firstAssistantAt === undefined && !doneFromResult) {
             startupTimedOut = true;
-            child.kill();
+            // Kill the whole group so grandchildren don't survive — same
+            // reason as in the abort handler above.
+            killProcessGroup("SIGTERM");
           }
         }, input.startupTimeoutMs)
       : null;
@@ -414,7 +481,7 @@ export class SubprocessDriver implements IClaudeDriver {
       // rather than returning wasAborted: true with partial output.
       if (doneFromResult) {
         return {
-          text: resultText.slice(0, OUTPUT_CAP),
+          text: truncateUtf8Bytes(resultText, OUTPUT_CAP),
           exitCode: resultIsError ? 1 : 0,
           durationMs: Date.now() - start,
           stderrTail: stderrTailOf(stderr),
@@ -428,7 +495,7 @@ export class SubprocessDriver implements IClaudeDriver {
         // Return rather than throw so the orchestrator can surface partial
         // output, stderrTail, and wasAborted to callers (e.g. /tasks).
         return {
-          text: accumulated.slice(0, OUTPUT_CAP),
+          text: truncateUtf8Bytes(accumulated, OUTPUT_CAP),
           exitCode: -1,
           durationMs: Date.now() - start,
           stderrTail: stderrTailOf(stderr),
@@ -469,7 +536,7 @@ export class SubprocessDriver implements IClaudeDriver {
     }
 
     return {
-      text: finalText.slice(0, OUTPUT_CAP),
+      text: truncateUtf8Bytes(finalText, OUTPUT_CAP),
       exitCode: effectiveExitCode,
       durationMs: Date.now() - start,
       stderrTail: stderrTailOf(stderr),
@@ -547,7 +614,7 @@ export class ApiDriver implements IClaudeDriver {
     _input.onChunk?.(text);
 
     return {
-      text: text.slice(0, OUTPUT_CAP),
+      text: truncateUtf8Bytes(text, OUTPUT_CAP),
       exitCode: 0,
       durationMs: Date.now() - start,
     };

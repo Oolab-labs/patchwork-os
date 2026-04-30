@@ -18,6 +18,19 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Config } from "./config.js";
 import type { Logger } from "./logger.js";
+import { TOOL_CATEGORIES } from "./tools/index.js";
+
+/**
+ * Names of all built-in tools. Plugins are forbidden from registering a
+ * tool with one of these names — without this guard, a plugin declaring
+ * `toolNamePrefix: "git_"` could register `git_status` and silently shadow
+ * the built-in. `TOOL_CATEGORIES` keys are the canonical source of truth
+ * (every built-in tool is categorized for the dashboard).
+ */
+function getBuiltInToolNames(): string[] {
+  return Object.keys(TOOL_CATEGORIES);
+}
+
 import type {
   PluginContext,
   PluginManifest,
@@ -157,7 +170,12 @@ export async function loadPluginsFull(
   if (pluginSpecs.length === 0) return [];
 
   const loadedPlugins: LoadedPlugin[] = [];
-  const registeredNames = new Set<string>(); // collision guard across plugins
+  // Seed the collision guard with built-in tool names so a plugin can't
+  // shadow a built-in (e.g. declaring prefix `git_` and registering
+  // `git_status`). Without this, `registeredNames` only tracks other
+  // plugins and a plugin would silently overwrite the built-in registration
+  // depending on registration order.
+  const registeredNames = new Set<string>(getBuiltInToolNames());
 
   // Deduplicate resolved paths before loading
   const seen = new Set<string>();
@@ -283,10 +301,30 @@ export async function loadOnePluginFull(
   // 5. Dynamic import
   const entrypointPath = path.resolve(pluginDir, manifest.entrypoint);
 
-  // Prevent entrypoint path traversal — the resolved path must stay inside pluginDir
-  if (path.relative(pluginDir, entrypointPath).startsWith("..")) {
+  // Prevent entrypoint path traversal. We compare the *real* paths (after
+  // symlink resolution) so a symlinked entrypoint or a symlinked pluginDir
+  // can't escape lexically while pointing at attacker-controlled code
+  // outside the directory. `path.relative` alone is fooled by symlinks.
+  let realPluginDir: string;
+  let realEntrypoint: string;
+  try {
+    realPluginDir = fs.realpathSync(pluginDir);
+    realEntrypoint = fs.realpathSync(entrypointPath);
+  } catch (err) {
     logger.warn(
-      `Plugin "${manifest.name}" — entrypoint path "${manifest.entrypoint}" escapes plugin directory (resolved to ${entrypointPath})`,
+      `Plugin "${manifest.name}" — failed to resolve real path for entrypoint or plugin dir: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+  const escapesLexically = path
+    .relative(pluginDir, entrypointPath)
+    .startsWith("..");
+  const escapesViaSymlink = path
+    .relative(realPluginDir, realEntrypoint)
+    .startsWith("..");
+  if (escapesLexically || escapesViaSymlink) {
+    logger.warn(
+      `Plugin "${manifest.name}" — entrypoint path "${manifest.entrypoint}" escapes plugin directory (resolved to ${realEntrypoint})`,
     );
     return null;
   }

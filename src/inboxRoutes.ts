@@ -54,9 +54,14 @@ export function tryHandleInboxRoute(
               .filter((l) => !l.startsWith("#"))
               .join("\n")
               .trim();
+            // `path` intentionally omitted — leaking the absolute filesystem
+            // path (which includes the user's home dir / username) is a
+            // low-impact info-disclosure if the dashboard is ever proxied to
+            // an untrusted client (shared screen, screenshots, browser
+            // extensions reading the DOM). Callers identify items by `name`,
+            // and the read endpoint joins it back to inboxDir on the server.
             return {
               name,
-              path: filePath,
               modifiedAt: stats.mtime.toISOString(),
               preview: stripped.slice(0, 200),
             };
