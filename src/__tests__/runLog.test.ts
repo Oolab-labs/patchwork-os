@@ -446,4 +446,43 @@ describe("RecipeRunLog.record", () => {
     expect(log.size()).toBe(1);
     expect(log.query()[0]!.taskId).toBe("x");
   });
+
+  it("rotates runs.jsonl when it exceeds the byte cap", () => {
+    const file = path.join(tmp, "runs.jsonl");
+    // Pre-seed > 1 MB so the next append triggers rotation.
+    const fs = require("node:fs") as typeof import("node:fs");
+    const longRun = JSON.stringify({
+      seq: 0,
+      taskId: "x".repeat(2000),
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+    });
+    const lines: string[] = [];
+    for (let i = 0; i < 600; i++) lines.push(longRun);
+    fs.writeFileSync(file, `${lines.join("\n")}\n`);
+    expect(fs.statSync(file).size).toBeGreaterThan(1024 * 1024);
+
+    const log = new RecipeRunLog({ dir: tmp });
+    log.appendDirect({
+      taskId: "fresh",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      startedAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+    });
+
+    // After rotation + append, file must be roughly under the cap and
+    // still contain the fresh line we can read back.
+    const sizeAfter = fs.statSync(file).size;
+    expect(sizeAfter).toBeLessThan(1024 * 1024 + longRun.length + 1024);
+    const text = fs.readFileSync(file, "utf8");
+    expect(text).toContain('"taskId":"fresh"');
+  });
 });

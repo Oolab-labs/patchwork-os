@@ -75,8 +75,12 @@ export async function dispatchToUser(
   const title = buildTitle(payload.toolName, payload.tier);
   const body = buildBody(payload.toolName, payload.summary);
 
-  const approveUrl = `${payload.bridgeCallbackBase}/approve/${payload.callId}?token=${payload.approvalToken}`;
-  const rejectUrl = `${payload.bridgeCallbackBase}/reject/${payload.callId}?token=${payload.approvalToken}`;
+  // Token is sent in the FCM/APNS data payload (out of the URL) so it does
+  // not appear in HTTP access logs, browser history, or Referer headers.
+  // The service worker pulls `approvalToken` from `data` and sends it as
+  // an `x-approval-token` header on the approve/reject POST.
+  const approveUrl = `${payload.bridgeCallbackBase}/approve/${payload.callId}`;
+  const rejectUrl = `${payload.bridgeCallbackBase}/reject/${payload.callId}`;
 
   const fcmDevices = devices.filter((d) => d.platform === "fcm");
   const apnsDevices = devices.filter((d) => d.platform === "apns");
