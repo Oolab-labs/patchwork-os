@@ -297,20 +297,29 @@ try {
     `6.6 OAuth access token authorizes HTTP MCP initialize (got ${initResp.status})`,
   );
   const sessionId = initResp.headers["mcp-session-id"];
+  const sessionToken = initResp.headers["mcp-session-token"];
   assert(
     typeof sessionId === "string",
     "6.6 initialize returns Mcp-Session-Id",
   );
+  assert(
+    typeof sessionToken === "string",
+    "6.6 initialize returns Mcp-Session-Token",
+  );
+  const SESSION_HEADERS = {
+    "Mcp-Session-Id": sessionId,
+    "Mcp-Session-Token": sessionToken,
+  };
   // Send notifications/initialized then tools/list
   await httpPostJson(
     `${ISSUER}/mcp`,
     { jsonrpc: "2.0", method: "notifications/initialized" },
-    { ...CT_JSON, ...BEARER, "Mcp-Session-Id": sessionId },
+    { ...CT_JSON, ...BEARER, ...SESSION_HEADERS },
   );
   const toolsHttpResp = await httpPostJson(
     `${ISSUER}/mcp`,
     { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
-    { ...CT_JSON, ...BEARER, "Mcp-Session-Id": sessionId },
+    { ...CT_JSON, ...BEARER, ...SESSION_HEADERS },
   );
   assert(
     Array.isArray(toolsHttpResp.body?.result?.tools),
