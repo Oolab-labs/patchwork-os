@@ -200,12 +200,27 @@ async function refreshAccessToken(tokens: DriveTokens): Promise<DriveTokens> {
   return updated;
 }
 
+/**
+ * In-flight refresh promise. Prevents concurrent expired-token callers from
+ * both burning the same refresh token (Google rotates on use).
+ */
+let refreshInflight: Promise<DriveTokens> | null = null;
+
 export async function getValidAccessToken(): Promise<string> {
   let tokens = loadTokens();
   if (!tokens) throw new Error("Google Drive not connected");
   const bufferMs = 60_000;
   if (!tokens.expiry_date || Date.now() > tokens.expiry_date - bufferMs) {
-    tokens = await refreshAccessToken(tokens);
+    if (!refreshInflight) {
+      refreshInflight = (async () => {
+        try {
+          return await refreshAccessToken(tokens as DriveTokens);
+        } finally {
+          refreshInflight = null;
+        }
+      })();
+    }
+    tokens = await refreshInflight;
   }
   return tokens.access_token;
 }
