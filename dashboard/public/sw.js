@@ -60,12 +60,20 @@ self.addEventListener("push", (event) => {
     return;
   }
 
-  const { callId, toolName, tier, summary, approveUrl, rejectUrl, expiresAt } = data;
+  const {
+    callId,
+    toolName,
+    tier,
+    summary,
+    approveUrl,
+    rejectUrl,
+    approvalToken,
+    expiresAt,
+  } = data;
   const urgency = tier === "high" ? "⚠️ " : "";
   const title = `${urgency}Approval required`;
   const body = summary ?? `Tool: ${toolName}`;
   const tag = `approval-${callId}`;
-  const ttl = expiresAt ? Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)) : 300;
 
   event.waitUntil(
     self.registration.showNotification(title, {
@@ -74,7 +82,8 @@ self.addEventListener("push", (event) => {
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
       requireInteraction: true,
-      data: { callId, approveUrl, rejectUrl },
+      // expiresAt is consulted on click — see notificationclick handler.
+      data: { callId, approveUrl, rejectUrl, approvalToken, expiresAt },
       actions: [
         { action: "approve", title: "Approve" },
         { action: "reject", title: "Reject" },
@@ -83,22 +92,40 @@ self.addEventListener("push", (event) => {
       silent: tier !== "high",
     }),
   );
-  void ttl; // used for future expiry hint
 });
 
 // ── Notification click ────────────────────────────────────────────────────
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const { callId, approveUrl, rejectUrl } = event.notification.data ?? {};
+  const { callId, approveUrl, rejectUrl, approvalToken, expiresAt } =
+    event.notification.data ?? {};
+
+  // Stale notification: token-clearing path on the bridge runs single-use,
+  // so a click after expiry would 401 anyway, but we short-circuit to avoid
+  // surfacing failure noise to the user / log.
+  if (typeof expiresAt === "number" && Date.now() >= expiresAt) {
+    return;
+  }
+
+  // The bridge reads the approval token from the `x-approval-token` header,
+  // NOT from a query-string. The token in `approveUrl`/`rejectUrl` is
+  // ignored server-side and would leak to access logs / Referer if used in
+  // the URL. Send it as a header instead, with `credentials: "omit"` so a
+  // future cookie-auth dashboard can't accidentally CSRF it.
+  const fetchOpts = {
+    method: "POST",
+    credentials: "omit",
+    headers: approvalToken ? { "x-approval-token": approvalToken } : {},
+  };
 
   // Inline approve/reject actions — no need to open browser
   if (event.action === "approve" && approveUrl) {
-    event.waitUntil(fetch(approveUrl, { method: "POST" }).catch(() => {}));
+    event.waitUntil(fetch(approveUrl, fetchOpts).catch(() => {}));
     return;
   }
   if (event.action === "reject" && rejectUrl) {
-    event.waitUntil(fetch(rejectUrl, { method: "POST" }).catch(() => {}));
+    event.waitUntil(fetch(rejectUrl, fetchOpts).catch(() => {}));
     return;
   }
 

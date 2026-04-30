@@ -1,4 +1,10 @@
-import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import type { Logger } from "./logger.js";
 
@@ -85,6 +91,16 @@ export interface RecipeRun {
 const MAX_OUTPUT_TAIL = 2_000;
 const DEFAULT_MEMORY_CAP = 500;
 
+/**
+ * Disk rotation thresholds. The file grows append-only via `appendFileSync`
+ * on every recipe run; without rotation a busy automation policy will fill
+ * `~/.claude/ide/` over time and OOM the bridge at next boot via
+ * `loadExisting`'s full `readFileSync`. We rotate at either limit, keeping
+ * the most recent N lines.
+ */
+const MAX_PERSIST_BYTES = 1024 * 1024; // 1 MB
+const MAX_PERSIST_LINES = 10_000;
+
 export interface RunLogOptions {
   /** Directory holding runs.jsonl. Created if missing. */
   dir: string;
@@ -117,7 +133,11 @@ export class RecipeRunLog {
     this.memoryCap = opts.memoryCap ?? DEFAULT_MEMORY_CAP;
     this.now = opts.now ?? Date.now;
     try {
-      mkdirSync(opts.dir, { recursive: true });
+      // 0o700 — restrict directory listing to the bridge's user. Without
+      // an explicit mode here we fall through to the umask, which is
+      // typically 0o022 → world-traversable dir. File entries are 0o600
+      // so contents are safe; only listing leaks.
+      mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
     } catch (err) {
       opts.logger?.warn?.(
         `[runlog] could not create ${opts.dir}: ${err instanceof Error ? err.message : String(err)}`,
@@ -361,10 +381,46 @@ export class RecipeRunLog {
 
   private append(run: RecipeRun): void {
     try {
+      // Rotate first if the file is over the limit. Cheap stat call; only
+      // rewrites when needed. Without this, runs.jsonl grows unbounded.
+      try {
+        const st = statSync(this.file);
+        if (st.size > MAX_PERSIST_BYTES) this.rotateDisk();
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") throw err;
+      }
       appendFileSync(this.file, `${JSON.stringify(run)}\n`, { mode: 0o600 });
     } catch (err) {
       this.opts.logger?.warn?.(
         `[runlog] append failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Trim runs.jsonl to the most recent MAX_PERSIST_LINES (or whatever
+   * fits under MAX_PERSIST_BYTES). Lines beyond the cap are dropped from
+   * disk; in-memory `runs[]` is unaffected (separately bounded by
+   * memoryCap). Best-effort — failure is logged and the next append
+   * proceeds against the un-rotated file.
+   */
+  private rotateDisk(): void {
+    try {
+      const raw = readFileSync(this.file, "utf8");
+      let lines = raw.split("\n").filter((l) => l.trim());
+      if (lines.length > MAX_PERSIST_LINES) {
+        lines = lines.slice(-MAX_PERSIST_LINES);
+      }
+      let joined = lines.join("\n");
+      while (joined.length + 1 > MAX_PERSIST_BYTES && lines.length > 1) {
+        lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
+        joined = lines.join("\n");
+      }
+      writeFileSync(this.file, `${joined}\n`, { mode: 0o600 });
+    } catch (err) {
+      this.opts.logger?.warn?.(
+        `[runlog] rotate failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

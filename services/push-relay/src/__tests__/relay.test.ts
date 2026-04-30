@@ -143,6 +143,11 @@ describe("POST /push", () => {
     expect(data.callId).toBe("abc-123");
     expect(data.approvalToken).toBe("token-xyz");
     expect(data.approveUrl).toContain("/approve/abc-123");
+    // Token must NOT appear in the URL — it leaks to access logs and Referer.
+    // The service worker pulls `approvalToken` from the data payload and
+    // sends it as an `x-approval-token` header on the approve POST.
+    expect(data.approveUrl).not.toContain("token=");
+    expect(data.approveUrl).not.toContain("token-xyz");
   });
 
   it("rejects missing callId", async () => {
