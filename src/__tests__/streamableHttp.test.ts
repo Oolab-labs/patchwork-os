@@ -62,6 +62,7 @@ async function post(
   port: number,
   data: Record<string, unknown>,
   sessionId?: string,
+  ownershipToken?: string,
 ): Promise<{
   status: number;
   headers: http.IncomingHttpHeaders;
@@ -74,6 +75,7 @@ async function post(
       Authorization: `Bearer ${TOKEN}`,
     };
     if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+    if (ownershipToken) headers["Mcp-Session-Token"] = ownershipToken;
 
     const req = http.request(
       { hostname: "127.0.0.1", port, path: "/mcp", method: "POST", headers },
@@ -97,6 +99,7 @@ async function httpReq(
   port: number,
   method: string,
   sessionId?: string,
+  ownershipToken?: string,
 ): Promise<{
   status: number;
   headers: http.IncomingHttpHeaders;
@@ -107,6 +110,7 @@ async function httpReq(
       Authorization: `Bearer ${TOKEN}`,
     };
     if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+    if (ownershipToken) headers["Mcp-Session-Token"] = ownershipToken;
 
     const req = http.request(
       { hostname: "127.0.0.1", port, path: "/mcp", method, headers },
@@ -125,8 +129,10 @@ async function httpReq(
   });
 }
 
-/** Initialize a session, returning the Mcp-Session-Id. */
-async function initSession(port: number): Promise<string> {
+/** Initialize a session, returning the Mcp-Session-Id and Mcp-Session-Token. */
+async function initSession(
+  port: number,
+): Promise<{ sid: string; token: string }> {
   const res = await post(port, {
     jsonrpc: "2.0",
     id: 1,
@@ -138,9 +144,12 @@ async function initSession(port: number): Promise<string> {
     },
   });
   const sid = res.headers["mcp-session-id"];
+  const token = res.headers["mcp-session-token"];
   if (typeof sid !== "string")
     throw new Error("No session ID in initialize response");
-  return sid;
+  if (typeof token !== "string")
+    throw new Error("No ownership token in initialize response");
+  return { sid, token };
 }
 
 // ── Test suite ─────────────────────────────────────────────────────────────────
@@ -225,10 +234,10 @@ describe("Streamable HTTP: session lifecycle", () => {
   });
 
   it("DELETE destroys a session", async () => {
-    const sid = await initSession(port);
+    const { sid, token } = await initSession(port);
 
     // DELETE the session
-    const del = await httpReq(port, "DELETE", sid);
+    const del = await httpReq(port, "DELETE", sid, token);
     expect(del.status).toBe(204);
 
     // Subsequent request should 404
@@ -236,6 +245,7 @@ describe("Streamable HTTP: session lifecycle", () => {
       port,
       { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
       sid,
+      token,
     );
     expect(res.status).toBe(404);
   });
@@ -248,6 +258,46 @@ describe("Streamable HTTP: session lifecycle", () => {
   it("DELETE returns 404 for unknown session", async () => {
     const res = await httpReq(port, "DELETE", "nonexistent");
     expect(res.status).toBe(404);
+  });
+});
+
+// ── Ownership token ───────────────────────────────────────────────────────────
+
+describe("Streamable HTTP: per-session ownership token", () => {
+  it("DELETE without Mcp-Session-Token returns 403", async () => {
+    const { sid } = await initSession(port);
+    const res = await httpReq(port, "DELETE", sid); // no token
+    expect(res.status).toBe(403);
+  });
+
+  it("DELETE with wrong Mcp-Session-Token returns 403", async () => {
+    const { sid } = await initSession(port);
+    const wrongToken = "0".repeat(64);
+    const res = await httpReq(port, "DELETE", sid, wrongToken);
+    expect(res.status).toBe(403);
+  });
+
+  it("GET without Mcp-Session-Token returns 403", async () => {
+    const { sid } = await initSession(port);
+    const res = await httpReq(port, "GET", sid); // no token
+    expect(res.status).toBe(403);
+  });
+
+  it("POST on existing session without Mcp-Session-Token returns 403", async () => {
+    const { sid } = await initSession(port);
+    const res = await post(
+      port,
+      { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
+      sid, // no token
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("session A's token cannot DELETE session B (cross-session takeover)", async () => {
+    const a = await initSession(port);
+    const b = await initSession(port);
+    const res = await httpReq(port, "DELETE", b.sid, a.token);
+    expect(res.status).toBe(403);
   });
 });
 
@@ -282,12 +332,13 @@ describe("Streamable HTTP: capacity guard", () => {
 
 describe("Streamable HTTP: notifications", () => {
   it("notification (no id) returns 202", async () => {
-    const sid = await initSession(port);
+    const { sid, token } = await initSession(port);
 
     const res = await post(
       port,
       { jsonrpc: "2.0", method: "notifications/initialized" },
       sid,
+      token,
     );
 
     expect(res.status).toBe(202);
@@ -479,12 +530,14 @@ function collectSseLines(
   sessionId: string,
   collectMs: number,
   lastEventId?: number,
+  ownershipToken?: string,
 ): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${TOKEN}`,
       "Mcp-Session-Id": sessionId,
     };
+    if (ownershipToken) headers["Mcp-Session-Token"] = ownershipToken;
     if (lastEventId !== undefined) {
       headers["Last-Event-ID"] = String(lastEventId);
     }
@@ -530,10 +583,10 @@ function getAdapter(
 
 describe("Streamable HTTP: SSE event IDs", () => {
   it("notifications sent over SSE include a monotonic id: field", async () => {
-    const sid = await initSession(port);
+    const { sid, token } = await initSession(port);
 
     // Open SSE stream first, give TCP time to establish before injecting.
-    const linesPromise = collectSseLines(port, sid, 250);
+    const linesPromise = collectSseLines(port, sid, 250, undefined, token);
     await new Promise((r) => setTimeout(r, 50));
 
     // Inject a server-initiated notification directly via the adapter.
@@ -563,7 +616,7 @@ describe("Streamable HTTP: SSE event IDs", () => {
   });
 
   it("reconnect with Last-Event-ID replays missed notifications", async () => {
-    const sid = await initSession(port);
+    const { sid, token } = await initSession(port);
 
     // Inject 3 notifications directly via the internal adapter (no SSE stream attached).
     // They land in the buffer; replay is triggered when the GET includes Last-Event-ID.
@@ -577,7 +630,7 @@ describe("Streamable HTTP: SSE event IDs", () => {
     adapter.send(notif("test/third")); // id: 2
 
     // Reconnect with Last-Event-ID: 0 — should replay events with id > 0 (i.e. 1 and 2)
-    const lines = await collectSseLines(port, sid, 150, 0);
+    const lines = await collectSseLines(port, sid, 150, 0, token);
 
     const dataLines = lines.filter((l) => l.startsWith("data:"));
     expect(dataLines.length).toBeGreaterThanOrEqual(2);
@@ -599,7 +652,7 @@ describe("Streamable HTTP: SSE event IDs", () => {
     // fake clock stays in effect throughout the check.
     vi.useFakeTimers({ now: Date.now() });
 
-    const sid = await initSession(port);
+    const { sid, token } = await initSession(port);
     const adapter = getAdapter(handler!, sid);
 
     adapter.send(
@@ -624,7 +677,7 @@ describe("Streamable HTTP: SSE event IDs", () => {
   });
 
   it("buffer caps at 100 events — oldest are dropped", async () => {
-    const sid = await initSession(port);
+    const { sid, token } = await initSession(port);
 
     const adapter = getAdapter(handler!, sid);
 
@@ -640,7 +693,7 @@ describe("Streamable HTTP: SSE event IDs", () => {
     }
 
     // Reconnect with Last-Event-ID: -1 to request all buffered events
-    const lines = await collectSseLines(port, sid, 300, -1);
+    const lines = await collectSseLines(port, sid, 300, -1, token);
 
     const dataLines = lines.filter((l) => l.startsWith("data:"));
     // Should have at most 100 (the cap), so events 0-9 are dropped
@@ -674,7 +727,7 @@ describe("Streamable HTTP: GET SSE", () => {
   });
 
   it("GET establishes SSE stream with text/event-stream content type", async () => {
-    const sid = await initSession(port);
+    const { sid, token } = await initSession(port);
 
     const { status, contentType } = await new Promise<{
       status: number;
@@ -689,6 +742,7 @@ describe("Streamable HTTP: GET SSE", () => {
           headers: {
             Authorization: `Bearer ${TOKEN}`,
             "Mcp-Session-Id": sid,
+            "Mcp-Session-Token": token,
           },
         },
         (res) => {
@@ -717,12 +771,13 @@ describe("HttpAdapter: send routing", () => {
   // responses (with id) go to POST resolver, notifications go to SSE.
 
   it("tools/list request returns a response via POST", async () => {
-    const sid = await initSession(port);
+    const { sid, token } = await initSession(port);
     // Send initialized notification
     await post(
       port,
       { jsonrpc: "2.0", method: "notifications/initialized" },
       sid,
+      token,
     );
 
     // Request tools/list
@@ -730,6 +785,7 @@ describe("HttpAdapter: send routing", () => {
       port,
       { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
       sid,
+      token,
     );
 
     expect(res.status).toBe(200);
@@ -775,8 +831,8 @@ describe("Streamable HTTP: body size limit", () => {
 
 describe("Streamable HTTP: session close", () => {
   it("handler.close() destroys all sessions", async () => {
-    const sid1 = await initSession(port);
-    const sid2 = await initSession(port);
+    const session1 = await initSession(port);
+    const session2 = await initSession(port);
 
     handler!.close();
 
@@ -784,12 +840,14 @@ describe("Streamable HTTP: session close", () => {
     const res1 = await post(
       port,
       { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} },
-      sid1,
+      session1.sid,
+      session1.token,
     );
     const res2 = await post(
       port,
       { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} },
-      sid2,
+      session2.sid,
+      session2.token,
     );
     expect(res1.status).toBe(404);
     expect(res2.status).toBe(404);
@@ -873,13 +931,14 @@ describe("Streamable HTTP: auth", () => {
 
 describe("Streamable HTTP: idle pruning", () => {
   it("prunes sessions that exceed TTL", async () => {
-    const sid = await initSession(port);
+    const { sid, token } = await initSession(port);
 
     // Verify session works
     const res1 = await post(
       port,
       { jsonrpc: "2.0", method: "notifications/initialized" },
       sid,
+      token,
     );
     expect(res1.status).toBe(202);
 
@@ -897,9 +956,8 @@ describe("Streamable HTTP: idle pruning", () => {
 describe("Streamable HTTP: session overflow eviction", () => {
   it("evicts oldest idle session when at capacity rather than returning 503", async () => {
     // Fill all 5 session slots
-    const sessionIds: string[] = [];
     for (let i = 0; i < 5; i++) {
-      sessionIds.push(await initSession(port));
+      await initSession(port);
     }
 
     // Make the first session appear idle by backdating its lastActivity
@@ -910,7 +968,7 @@ describe("Streamable HTTP: session overflow eviction", () => {
     firstSession.lastActivity = Date.now() - 120_000; // idle for 2 minutes > 60s threshold
 
     // A 6th initialize should succeed (evicting the stale session) rather than return 503
-    const newSid = await initSession(port);
+    const { sid: newSid } = await initSession(port);
     expect(typeof newSid).toBe("string");
 
     // Total sessions should still be 5 (evicted 1, added 1)
