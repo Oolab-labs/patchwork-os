@@ -281,6 +281,11 @@ export class OAuthServerImpl implements OAuthServer {
           this.sendJson(res, 400, { error: "invalid_redirect_uri" });
           return;
         }
+        // RFC 6749 §3.1.2 — redirect_uri MUST NOT include a fragment.
+        if (u.hash) {
+          this.sendJson(res, 400, { error: "invalid_redirect_uri" });
+          return;
+        }
       } catch {
         this.sendJson(res, 400, { error: "invalid_redirect_uri" });
         return;
@@ -402,6 +407,7 @@ export class OAuthServerImpl implements OAuthServer {
       "Content-Security-Policy":
         "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
       "X-Frame-Options": "DENY",
+      "Referrer-Policy": "no-referrer",
     });
     res.end(
       this.approvalPage({
@@ -472,6 +478,8 @@ export class OAuthServerImpl implements OAuthServer {
       const u = new URL(redirectUri);
       u.searchParams.set("error", "access_denied");
       if (state) u.searchParams.set("state", state);
+      // RFC 9207 — echo iss to mitigate authorization-server mix-up attacks.
+      u.searchParams.set("iss", this.issuerUrl);
       res.writeHead(302, { Location: u.toString() });
       res.end();
       return;
@@ -523,6 +531,8 @@ export class OAuthServerImpl implements OAuthServer {
     const dest = new URL(redirectUri);
     dest.searchParams.set("code", code);
     if (state) dest.searchParams.set("state", state);
+    // RFC 9207 — echo iss to mitigate authorization-server mix-up attacks.
+    dest.searchParams.set("iss", this.issuerUrl);
     res.writeHead(302, { Location: dest.toString() });
     res.end();
   }
@@ -919,6 +929,10 @@ export class OAuthServerImpl implements OAuthServer {
           redirect: "error",
         });
         if (!resp.ok) return null;
+        // Reject non-JSON responses — prevents an attacker-controlled HTTPS
+        // endpoint from serving a JSON-shaped HTML/script body.
+        const ct = resp.headers.get("content-type") ?? "";
+        if (!/^application\/json\b/i.test(ct)) return null;
         // Stream with size cap to prevent OOM
         const reader = resp.body?.getReader();
         if (!reader) return null;
@@ -973,6 +987,9 @@ export class OAuthServerImpl implements OAuthServer {
     if (!clientId || !redirectUri || !codeChallenge)
       return { error: "invalid_request" };
     if (codeChallengeMethod !== "S256") return { error: "invalid_request" };
+    // Cap state length to prevent memory amplification via huge reflected
+    // query strings.
+    if (state && state.length > 512) return { error: "invalid_request" };
 
     // CIMD: if client_id is an HTTPS URL, fetch its metadata document to get
     // redirect_uris dynamically (SEP-991 / Claude Code v2.1.81+).
