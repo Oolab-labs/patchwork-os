@@ -63,6 +63,14 @@ export abstract class BaseConnector {
     backoffMs: 0,
   };
   protected oauthConfig: OAuthConfig | null = null;
+  /**
+   * In-flight refresh promise. When set, concurrent callers await the same
+   * promise instead of POSTing to the IdP a second time. Cleared in `finally`
+   * so the next caller (after success or failure) gets a fresh attempt.
+   * Prevents double-refresh races where two concurrent 401s both burn the same
+   * refresh token — fatal on IdPs that rotate refresh tokens (Google).
+   */
+  private refreshInflight: Promise<AuthContext | null> | null = null;
 
   abstract readonly providerName: string;
 
@@ -251,6 +259,29 @@ export abstract class BaseConnector {
   }
 
   /**
+   * Refresh the access token, deduplicating concurrent calls. Two callers
+   * hitting an expired token simultaneously share the same refresh promise
+   * instead of POSTing twice to the IdP. Critical for Google (refresh tokens
+   * rotate on use — second concurrent refresh would invalidate the connector).
+   *
+   * The cache is cleared in `finally` so the next caller after settle (success
+   * or failure) gets a fresh attempt. On refresh failure, all concurrent
+   * waiters see the same rejection and the caller's normal auth-fallback path
+   * (full re-authenticate) takes over.
+   */
+  protected refreshTokenDeduped(): Promise<AuthContext | null> {
+    if (this.refreshInflight) return this.refreshInflight;
+    this.refreshInflight = (async () => {
+      try {
+        return await this.refreshToken();
+      } finally {
+        this.refreshInflight = null;
+      }
+    })();
+    return this.refreshInflight;
+  }
+
+  /**
    * Health check — validates token is valid without side effects.
    * Default implementation: make lightweight API call (e.g., /me or /user).
    */
@@ -281,7 +312,7 @@ export abstract class BaseConnector {
     if (!this.auth || this.isTokenExpired()) {
       // Try OAuth refresh if we have a refresh token
       if (this.auth?.refreshToken) {
-        const refreshed = await this.refreshToken();
+        const refreshed = await this.refreshTokenDeduped();
         if (refreshed) {
           this.auth = refreshed;
         } else {
@@ -348,7 +379,7 @@ export abstract class BaseConnector {
         // Token might have expired mid-call - try refresh first
         if (normalized.code === "auth_expired") {
           if (this.auth?.refreshToken) {
-            const refreshed = await this.refreshToken();
+            const refreshed = await this.refreshTokenDeduped();
             if (refreshed) {
               this.auth = refreshed;
               continue; // Retry with new token

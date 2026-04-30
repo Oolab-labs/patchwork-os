@@ -200,13 +200,30 @@ async function refreshAccessToken(tokens: GmailTokens): Promise<GmailTokens> {
   return updated;
 }
 
+/**
+ * In-flight refresh promise. Prevents two concurrent expired-token callers
+ * from both POSTing to Google's token endpoint and burning the same refresh
+ * token (Google rotates refresh tokens on use — second call would invalidate
+ * the connector). Cleared in `finally` so retry-after-failure works.
+ */
+let refreshInflight: Promise<GmailTokens> | null = null;
+
 /** Returns a valid access token, refreshing if needed. */
 export async function getValidAccessToken(): Promise<string> {
   let tokens = loadTokens();
   if (!tokens) throw new Error("Gmail not connected");
   const bufferMs = 60_000;
   if (!tokens.expiry_date || Date.now() > tokens.expiry_date - bufferMs) {
-    tokens = await refreshAccessToken(tokens);
+    if (!refreshInflight) {
+      refreshInflight = (async () => {
+        try {
+          return await refreshAccessToken(tokens as GmailTokens);
+        } finally {
+          refreshInflight = null;
+        }
+      })();
+    }
+    tokens = await refreshInflight;
   }
   return tokens.access_token;
 }
