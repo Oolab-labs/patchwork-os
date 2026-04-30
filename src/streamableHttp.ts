@@ -253,11 +253,52 @@ interface HttpSession {
   inFlight: number;
   /** X-Claude-Code-Session-Id from the initialize request, if present. */
   claudeCodeSessionId: string | null;
+  /**
+   * Per-session ownership secret returned in the initialize response as
+   * `Mcp-Session-Token`. Subsequent POST/GET/DELETE requests must echo this
+   * value in the same header. Prevents session takeover when bridge auth is
+   * a single shared static token: without this, any caller who learns
+   * another's `Mcp-Session-Id` could DELETE the session, hijack its SSE
+   * stream via GET, or impersonate its POST traffic. 32 bytes hex (256-bit).
+   */
+  ownershipToken: string;
+}
+
+/** Constant-time hex-string comparison; both inputs must be same length. */
+function hexEquals(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verifies the `Mcp-Session-Token` header matches the session's ownership
+ * token. Returns `true` if authorized, `false` otherwise. Logs nothing —
+ * caller is responsible for the 403 response.
+ */
+function checkOwnership(
+  req: http.IncomingMessage,
+  session: { ownershipToken: string },
+): boolean {
+  const presented = req.headers["mcp-session-token"];
+  if (typeof presented !== "string") return false;
+  return hexEquals(presented, session.ownershipToken);
 }
 
 /** Handles POST/GET/DELETE /mcp for all HTTP sessions. */
 export class StreamableHttpHandler {
   private sessions = new Map<string, HttpSession>();
+  /**
+   * Number of `createSession` calls currently in flight. Folded into the
+   * capacity check so two concurrent POSTs that both observe `sessions.size
+   * < MAX` cannot both pass the guard, await `instructionsProvider`, and
+   * `sessions.set` past the cap.
+   */
+  private pendingSessionCreates = 0;
   private cleanupTimer: ReturnType<typeof setInterval>;
   /**
    * Shared token-bucket for all HTTP sessions.
@@ -334,9 +375,12 @@ export class StreamableHttpHandler {
       );
       res.setHeader(
         "Access-Control-Allow-Headers",
-        "Content-Type, Authorization, Mcp-Session-Id",
+        "Content-Type, Authorization, Mcp-Session-Id, Mcp-Session-Token",
       );
-      res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+      res.setHeader(
+        "Access-Control-Expose-Headers",
+        "Mcp-Session-Id, Mcp-Session-Token",
+      );
     }
 
     // OPTIONS is handled by server.ts before auth — this handler only sees POST/GET/DELETE.
@@ -405,11 +449,15 @@ export class StreamableHttpHandler {
     let sessionIsNew = false;
 
     if (msg.method === "initialize") {
-      // Capacity guard — try to evict the oldest idle session before rejecting.
-      // If a client crashed without sending DELETE, its session lingers until
-      // the TTL prune fires. Eviction here gives new connections a seat without
-      // waiting up to 10 minutes for the idle sweep.
-      if (this.sessions.size >= MAX_HTTP_SESSIONS) {
+      // Capacity guard — fold `pendingSessionCreates` into the count so two
+      // concurrent initializes can't both pass the check, await
+      // `instructionsProvider`, then `sessions.set` past MAX. Try to evict
+      // the oldest idle session before rejecting; clients that crashed
+      // without sending DELETE leave sessions lingering until the TTL prune.
+      if (
+        this.sessions.size + this.pendingSessionCreates >=
+        MAX_HTTP_SESSIONS
+      ) {
         if (!this.evictOldestIdleSession()) {
           res.writeHead(503, { "Content-Type": "application/json" });
           res.end(
@@ -455,6 +503,10 @@ export class StreamableHttpHandler {
         session.transport.claudeCodeSessionId = ccSessionId;
       }
       res.setHeader("Mcp-Session-Id", session.id);
+      // Per-session ownership secret — required on subsequent
+      // POST/GET/DELETE so a known session ID alone is not enough to
+      // hijack the session under shared-bridge-token deployments.
+      res.setHeader("Mcp-Session-Token", session.ownershipToken);
     } else {
       if (typeof sessionId !== "string") {
         res.writeHead(400, { "Content-Type": "application/json" });
@@ -477,6 +529,24 @@ export class StreamableHttpHandler {
             error: {
               code: -32000,
               message: "Session not found or expired — re-initialize",
+            },
+          }),
+        );
+        return;
+      }
+      // Verify the caller owns this session (Mcp-Session-Token header
+      // matches what was returned in the initialize response). Without
+      // this check, any caller with a valid bridge token who learns the
+      // session's UUID could hijack POST traffic on someone else's session.
+      if (!checkOwnership(req, session)) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg.id ?? null,
+            error: {
+              code: -32000,
+              message: "Mcp-Session-Token missing or invalid",
             },
           }),
         );
@@ -562,6 +632,11 @@ export class StreamableHttpHandler {
       res.end("Session not found");
       return;
     }
+    if (!checkOwnership(req, session)) {
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      res.end("Mcp-Session-Token missing or invalid");
+      return;
+    }
 
     // Establish SSE stream for server→client notifications.
     // Disable the per-request timeout for this long-lived stream only.
@@ -604,13 +679,18 @@ export class StreamableHttpHandler {
       res.end("Missing Mcp-Session-Id header");
       return;
     }
-    if (!this.sessions.has(sessionId)) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Session not found");
       return;
     }
-    const session = this.sessions.get(sessionId);
-    if (session && session.inFlight > 0) {
+    if (!checkOwnership(req, session)) {
+      res.writeHead(403, { "Content-Type": "text/plain" });
+      res.end("Mcp-Session-Token missing or invalid");
+      return;
+    }
+    if (session.inFlight > 0) {
       res.writeHead(409, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "request in progress" }));
       return;
@@ -624,7 +704,20 @@ export class StreamableHttpHandler {
     scope: string | null = null,
     denyTools: Set<string> = new Set(),
   ): Promise<HttpSession> {
+    this.pendingSessionCreates++;
+    try {
+      return await this.createSessionImpl(scope, denyTools);
+    } finally {
+      this.pendingSessionCreates--;
+    }
+  }
+
+  private async createSessionImpl(
+    scope: string | null,
+    denyTools: Set<string>,
+  ): Promise<HttpSession> {
     const id = crypto.randomUUID();
+    const ownershipToken = crypto.randomBytes(32).toString("hex");
     const session = {
       id,
       adapter: null as unknown,
@@ -634,6 +727,7 @@ export class StreamableHttpHandler {
       lastActivity: Date.now(),
       inFlight: 0,
       claudeCodeSessionId: null,
+      ownershipToken,
     } as HttpSession;
     const adapter = new HttpAdapter(
       (msg) => this.logger.warn(msg),
@@ -692,55 +786,72 @@ export class StreamableHttpHandler {
 
     // Join the plugin watcher BEFORE registerAllTools so that if a reload fires
     // between the two, this transport is already tracked and will receive fresh tools.
+    // If anything between here and `sessions.set` throws (e.g. pluginTools getter
+    // or registerAllTools), the watcher tracks a transport that never made it into
+    // `sessions` — clean up explicitly via the catch below.
     this.getPluginWatcher()?.addTransport(transport);
-    const pluginTools = this.getPluginTools();
+    try {
+      const pluginTools = this.getPluginTools();
 
-    registerAllTools(
-      transport,
-      this.config,
-      session.openedFiles,
-      this.probes,
-      this.extensionClient,
-      this.activityLog,
-      terminalPrefix,
-      this.fileLock,
-      this.allSessions as Map<
-        string,
-        {
-          id: string;
-          transport: McpTransport;
-          openedFiles: Set<string>;
-          terminalPrefix: string;
-          graceTimer: ReturnType<typeof setTimeout> | null;
-          connectedAt: number;
-          ws: import("ws").WebSocket;
-        }
-      >,
-      this.orchestrator as
-        | import("./claudeOrchestrator.js").ClaudeOrchestrator
-        | null,
-      id,
-      pluginTools,
-      // Parity with the WebSocket call in bridge.ts — without these,
-      // `ctxSaveTrace`, `ctxQueryTraces`, and any tool gated on the
-      // remaining deps silently fail to register for Streamable-HTTP
-      // MCP sessions.
-      this.toolDeps.automationHooks,
-      this.toolDeps.getDisconnectInfo,
-      this.toolDeps.onContextCacheUpdated,
-      this.toolDeps.getExtensionDisconnectCount,
-      this.toolDeps.commitIssueLinkLog,
-      this.toolDeps.recipeRunLog,
-      this.toolDeps.decisionTraceLog,
-    );
+      registerAllTools(
+        transport,
+        this.config,
+        session.openedFiles,
+        this.probes,
+        this.extensionClient,
+        this.activityLog,
+        terminalPrefix,
+        this.fileLock,
+        this.allSessions as Map<
+          string,
+          {
+            id: string;
+            transport: McpTransport;
+            openedFiles: Set<string>;
+            terminalPrefix: string;
+            graceTimer: ReturnType<typeof setTimeout> | null;
+            connectedAt: number;
+            ws: import("ws").WebSocket;
+          }
+        >,
+        this.orchestrator as
+          | import("./claudeOrchestrator.js").ClaudeOrchestrator
+          | null,
+        id,
+        pluginTools,
+        // Parity with the WebSocket call in bridge.ts — without these,
+        // `ctxSaveTrace`, `ctxQueryTraces`, and any tool gated on the
+        // remaining deps silently fail to register for Streamable-HTTP
+        // MCP sessions.
+        this.toolDeps.automationHooks,
+        this.toolDeps.getDisconnectInfo,
+        this.toolDeps.onContextCacheUpdated,
+        this.toolDeps.getExtensionDisconnectCount,
+        this.toolDeps.commitIssueLinkLog,
+        this.toolDeps.recipeRunLog,
+        this.toolDeps.decisionTraceLog,
+      );
 
-    transport.attach(adapter as unknown as import("ws").WebSocket);
+      transport.attach(adapter as unknown as import("ws").WebSocket);
 
-    this.sessions.set(id, session);
-    this.logger.info(
-      `HTTP session created (${id.slice(0, 8)}) — ${this.sessions.size} HTTP sessions`,
-    );
-    return session;
+      this.sessions.set(id, session);
+      this.logger.info(
+        `HTTP session created (${id.slice(0, 8)}) — ${this.sessions.size} HTTP sessions`,
+      );
+      return session;
+    } catch (err) {
+      // Roll back the partial session. The pluginWatcher is the only external
+      // registration so far; transport.detach is a no-op if attach() never ran;
+      // adapter.close releases SSE resources if any heartbeat was set up.
+      this.getPluginWatcher()?.removeTransport(transport);
+      try {
+        transport.detach();
+      } catch {}
+      try {
+        adapter.close();
+      } catch {}
+      throw err;
+    }
   }
 
   private destroySession(id: string): void {
