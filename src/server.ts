@@ -18,6 +18,7 @@ import { timingSafeStringEqual } from "./crypto.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import { tryHandleInboxRoute } from "./inboxRoutes.js";
 import type { Logger } from "./logger.js";
+import { tryHandleMcpRoute } from "./mcpRoutes.js";
 import type { OAuthServer } from "./oauth.js";
 import { tryHandleOAuthRoute } from "./oauthRoutes.js";
 import {
@@ -26,11 +27,7 @@ import {
   defaultConfigPath as patchworkConfigPath,
   saveConfig as savePatchworkConfig,
 } from "./patchworkConfig.js";
-import {
-  BRIDGE_PROTOCOL_VERSION,
-  PACKAGE_LICENSE,
-  PACKAGE_VERSION,
-} from "./version.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const SESSION_ID_RE =
@@ -62,32 +59,11 @@ interface ServerEvents {
   extension: [ws: WebSocket];
 }
 
-/**
- * Return the CORS origin to reflect, or null if the origin is untrusted.
- * Loopback origins are always allowed. Additional origins can be passed via
- * --cors-origin (e.g. https://claude.ai for remote deployments).
- */
-export function corsOrigin(
-  requestOrigin: string | undefined,
-  extraOrigins: string[] = [],
-): string | null {
-  if (!requestOrigin) return null;
-  if (extraOrigins.includes(requestOrigin)) return requestOrigin;
-  try {
-    const { hostname, protocol } = new URL(requestOrigin);
-    if (
-      protocol === "http:" &&
-      (hostname === "localhost" ||
-        hostname === "127.0.0.1" ||
-        hostname === "[::1]")
-    ) {
-      return requestOrigin;
-    }
-  } catch {
-    // malformed origin — deny
-  }
-  return null;
-}
+import { corsOrigin } from "./cors.js";
+
+// Re-exported for streamableHttp.ts and any external callers; new code
+// should import directly from "./cors.js".
+export { corsOrigin };
 
 // Re-export canonical constant-time comparison for use in this module.
 // Implementation lives in src/crypto.ts — see there for security notes.
@@ -400,55 +376,13 @@ export class Server extends EventEmitter<ServerEvents> {
         return;
       }
 
-      // ── MCP server-card (public) ──────────────────────────────────────────
-
+      // ── MCP server-card + CORS preflight (extracted to src/mcpRoutes.ts) ─
+      // Unauthenticated — must run BEFORE the bearer-auth gate.
       if (
-        req.url === "/.well-known/mcp/server-card.json" ||
-        req.url === "/.well-known/mcp"
+        tryHandleMcpRoute(req, res, parsedUrl, {
+          extraCorsOrigins: this.extraCorsOrigins,
+        })
       ) {
-        const card = {
-          name: "claude-ide-bridge",
-          version: BRIDGE_PROTOCOL_VERSION,
-          description:
-            "MCP bridge providing full IDE integration for Claude Code — LSP, diagnostics, file operations, terminal, debug adapters, and AI task orchestration",
-          homepage: "https://github.com/Oolab-labs/claude-ide-bridge",
-          transport: ["websocket", "stdio", "streamable-http"],
-          capabilities: {
-            tools: true,
-            resources: true,
-            prompts: true,
-            elicitation: true,
-          },
-          author: "Oolab Labs",
-          license: PACKAGE_LICENSE,
-          repository: "https://github.com/Oolab-labs/claude-ide-bridge",
-        };
-        res.writeHead(200, {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        });
-        res.end(JSON.stringify(card, null, 2));
-        return;
-      }
-
-      // CORS preflight for /mcp — browsers (and Claude Desktop's web renderer) send
-      // OPTIONS before POST. Respond without requiring auth so the preflight succeeds.
-      if (req.method === "OPTIONS" && parsedUrl.pathname === "/mcp") {
-        const origin = corsOrigin(req.headers.origin, this.extraCorsOrigins);
-        if (origin) {
-          res.setHeader("Access-Control-Allow-Origin", origin);
-          res.setHeader(
-            "Access-Control-Allow-Methods",
-            "GET, POST, DELETE, OPTIONS",
-          );
-          res.setHeader(
-            "Access-Control-Allow-Headers",
-            "Content-Type, Authorization, Mcp-Session-Id",
-          );
-          res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
-        }
-        res.writeHead(204);
-        res.end();
         return;
       }
 
