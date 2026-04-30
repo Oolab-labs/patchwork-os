@@ -258,6 +258,13 @@ interface HttpSession {
 /** Handles POST/GET/DELETE /mcp for all HTTP sessions. */
 export class StreamableHttpHandler {
   private sessions = new Map<string, HttpSession>();
+  /**
+   * Number of `createSession` calls currently in flight. Folded into the
+   * capacity check so two concurrent POSTs that both observe `sessions.size
+   * < MAX` cannot both pass the guard, await `instructionsProvider`, and
+   * `sessions.set` past the cap.
+   */
+  private pendingSessionCreates = 0;
   private cleanupTimer: ReturnType<typeof setInterval>;
   /**
    * Shared token-bucket for all HTTP sessions.
@@ -405,11 +412,15 @@ export class StreamableHttpHandler {
     let sessionIsNew = false;
 
     if (msg.method === "initialize") {
-      // Capacity guard — try to evict the oldest idle session before rejecting.
-      // If a client crashed without sending DELETE, its session lingers until
-      // the TTL prune fires. Eviction here gives new connections a seat without
-      // waiting up to 10 minutes for the idle sweep.
-      if (this.sessions.size >= MAX_HTTP_SESSIONS) {
+      // Capacity guard — fold `pendingSessionCreates` into the count so two
+      // concurrent initializes can't both pass the check, await
+      // `instructionsProvider`, then `sessions.set` past MAX. Try to evict
+      // the oldest idle session before rejecting; clients that crashed
+      // without sending DELETE leave sessions lingering until the TTL prune.
+      if (
+        this.sessions.size + this.pendingSessionCreates >=
+        MAX_HTTP_SESSIONS
+      ) {
         if (!this.evictOldestIdleSession()) {
           res.writeHead(503, { "Content-Type": "application/json" });
           res.end(
@@ -624,6 +635,18 @@ export class StreamableHttpHandler {
     scope: string | null = null,
     denyTools: Set<string> = new Set(),
   ): Promise<HttpSession> {
+    this.pendingSessionCreates++;
+    try {
+      return await this.createSessionImpl(scope, denyTools);
+    } finally {
+      this.pendingSessionCreates--;
+    }
+  }
+
+  private async createSessionImpl(
+    scope: string | null,
+    denyTools: Set<string>,
+  ): Promise<HttpSession> {
     const id = crypto.randomUUID();
     const session = {
       id,
@@ -692,55 +715,72 @@ export class StreamableHttpHandler {
 
     // Join the plugin watcher BEFORE registerAllTools so that if a reload fires
     // between the two, this transport is already tracked and will receive fresh tools.
+    // If anything between here and `sessions.set` throws (e.g. pluginTools getter
+    // or registerAllTools), the watcher tracks a transport that never made it into
+    // `sessions` — clean up explicitly via the catch below.
     this.getPluginWatcher()?.addTransport(transport);
-    const pluginTools = this.getPluginTools();
+    try {
+      const pluginTools = this.getPluginTools();
 
-    registerAllTools(
-      transport,
-      this.config,
-      session.openedFiles,
-      this.probes,
-      this.extensionClient,
-      this.activityLog,
-      terminalPrefix,
-      this.fileLock,
-      this.allSessions as Map<
-        string,
-        {
-          id: string;
-          transport: McpTransport;
-          openedFiles: Set<string>;
-          terminalPrefix: string;
-          graceTimer: ReturnType<typeof setTimeout> | null;
-          connectedAt: number;
-          ws: import("ws").WebSocket;
-        }
-      >,
-      this.orchestrator as
-        | import("./claudeOrchestrator.js").ClaudeOrchestrator
-        | null,
-      id,
-      pluginTools,
-      // Parity with the WebSocket call in bridge.ts — without these,
-      // `ctxSaveTrace`, `ctxQueryTraces`, and any tool gated on the
-      // remaining deps silently fail to register for Streamable-HTTP
-      // MCP sessions.
-      this.toolDeps.automationHooks,
-      this.toolDeps.getDisconnectInfo,
-      this.toolDeps.onContextCacheUpdated,
-      this.toolDeps.getExtensionDisconnectCount,
-      this.toolDeps.commitIssueLinkLog,
-      this.toolDeps.recipeRunLog,
-      this.toolDeps.decisionTraceLog,
-    );
+      registerAllTools(
+        transport,
+        this.config,
+        session.openedFiles,
+        this.probes,
+        this.extensionClient,
+        this.activityLog,
+        terminalPrefix,
+        this.fileLock,
+        this.allSessions as Map<
+          string,
+          {
+            id: string;
+            transport: McpTransport;
+            openedFiles: Set<string>;
+            terminalPrefix: string;
+            graceTimer: ReturnType<typeof setTimeout> | null;
+            connectedAt: number;
+            ws: import("ws").WebSocket;
+          }
+        >,
+        this.orchestrator as
+          | import("./claudeOrchestrator.js").ClaudeOrchestrator
+          | null,
+        id,
+        pluginTools,
+        // Parity with the WebSocket call in bridge.ts — without these,
+        // `ctxSaveTrace`, `ctxQueryTraces`, and any tool gated on the
+        // remaining deps silently fail to register for Streamable-HTTP
+        // MCP sessions.
+        this.toolDeps.automationHooks,
+        this.toolDeps.getDisconnectInfo,
+        this.toolDeps.onContextCacheUpdated,
+        this.toolDeps.getExtensionDisconnectCount,
+        this.toolDeps.commitIssueLinkLog,
+        this.toolDeps.recipeRunLog,
+        this.toolDeps.decisionTraceLog,
+      );
 
-    transport.attach(adapter as unknown as import("ws").WebSocket);
+      transport.attach(adapter as unknown as import("ws").WebSocket);
 
-    this.sessions.set(id, session);
-    this.logger.info(
-      `HTTP session created (${id.slice(0, 8)}) — ${this.sessions.size} HTTP sessions`,
-    );
-    return session;
+      this.sessions.set(id, session);
+      this.logger.info(
+        `HTTP session created (${id.slice(0, 8)}) — ${this.sessions.size} HTTP sessions`,
+      );
+      return session;
+    } catch (err) {
+      // Roll back the partial session. The pluginWatcher is the only external
+      // registration so far; transport.detach is a no-op if attach() never ran;
+      // adapter.close releases SSE resources if any heartbeat was set up.
+      this.getPluginWatcher()?.removeTransport(transport);
+      try {
+        transport.detach();
+      } catch {}
+      try {
+        adapter.close();
+      } catch {}
+      throw err;
+    }
   }
 
   private destroySession(id: string): void {
