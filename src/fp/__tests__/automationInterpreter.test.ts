@@ -578,6 +578,41 @@ describe("Parallel state merge", () => {
     expect(result.value.updatedState.lastTrigger.get("B")).toBeDefined();
   });
 
+  it("two branches sharing one cooldown key — second branch is suppressed", async () => {
+    // Regression: prior implementation seeded each branch from the same
+    // initialState, so both saw an empty cooldown record and both fired.
+    // With sequential semantics, branch B reads state mutated by branch A
+    // and is correctly suppressed.
+    const backend = new TestBackend();
+    const sharedKey = "shared-cooldown";
+    const branchA = withCooldown(
+      sharedKey,
+      60_000,
+      hook({
+        hookType: "onFileSave",
+        enabled: true,
+        promptSource: INLINE_SOURCE,
+      }),
+    );
+    const branchB = withCooldown(
+      sharedKey,
+      60_000,
+      hook({
+        hookType: "onFileSave",
+        enabled: true,
+        promptSource: INLINE_SOURCE,
+      }),
+    );
+    const par = parallel([branchA, branchB]);
+    const ctx = makeCtx({ backend });
+    const result = await executeAutomationPolicy([par], ctx);
+    if (!result.ok) throw new Error("not ok");
+    expect(result.value.taskIds.length).toBe(1);
+    expect(
+      result.value.skipped.some((s) => s.reason.startsWith("cooldown:")),
+    ).toBe(true);
+  });
+
   it("unions taskIds from all branches", async () => {
     const backend = new TestBackend();
     const mkHook = () =>
