@@ -212,6 +212,15 @@ export class Bridge {
           existing.graceTimer = null;
           existing.ws = ws;
           existing.wsAlive = true;
+          // Clean up old WS listener + reject stale pending elicitations
+          // before attaching the new socket. Without this, the previous
+          // listener accumulates and pending elicitations from the old
+          // client can resolve against the new connection's `activeWs`,
+          // surfacing prompts to a client that didn't request them.
+          // Intentionally NOT calling `detach()` — that would abort
+          // in-flight tool calls, but grace-period semantics preserve
+          // those across the reconnect.
+          existing.transport.detachSoft();
           existing.transport.attach(ws);
           ws.on("pong", () => {
             existing.wsAlive = true;

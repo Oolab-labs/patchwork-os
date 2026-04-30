@@ -188,3 +188,137 @@ describe("ApprovalQueue — approval tokens", () => {
     expect((item as Record<string, unknown>).approvalToken).toBeUndefined();
   });
 });
+
+describe("ApprovalQueue dedup (inflight key)", () => {
+  it("identical requests return the same callId and one queue entry", () => {
+    const q = new ApprovalQueue();
+    const r1 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    const r2 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    expect(r2.callId).toBe(r1.callId);
+    expect(q.list()).toHaveLength(1);
+  });
+
+  it("dedups regardless of param key order", () => {
+    const q = new ApprovalQueue();
+    const r1 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    const r2 = q.request({
+      toolName: "gitPush",
+      params: { branch: "main", remote: "origin" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    expect(r2.callId).toBe(r1.callId);
+  });
+
+  it("different params do NOT dedup", () => {
+    const q = new ApprovalQueue();
+    const r1 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    const r2 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "feature" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    expect(r2.callId).not.toBe(r1.callId);
+    expect(q.list()).toHaveLength(2);
+  });
+
+  it("different sessionIds do NOT dedup", () => {
+    const q = new ApprovalQueue();
+    const r1 = q.request({
+      toolName: "gitPush",
+      params: {},
+      tier: "high",
+      sessionId: "s1",
+    });
+    const r2 = q.request({
+      toolName: "gitPush",
+      params: {},
+      tier: "high",
+      sessionId: "s2",
+    });
+    expect(r2.callId).not.toBe(r1.callId);
+  });
+
+  it("approve() resolves both deduped promises", async () => {
+    const q = new ApprovalQueue();
+    const r1 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    const r2 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    q.approve(r1.callId);
+    await expect(r1.promise).resolves.toBe("approved");
+    await expect(r2.promise).resolves.toBe("approved");
+  });
+
+  it("expired timer resolves both deduped promises", async () => {
+    vi.useFakeTimers();
+    try {
+      const q = new ApprovalQueue({ ttlMs: 100 });
+      const r1 = q.request({
+        toolName: "gitPush",
+        params: {},
+        tier: "high",
+        sessionId: "s1",
+      });
+      const r2 = q.request({
+        toolName: "gitPush",
+        params: {},
+        tier: "high",
+        sessionId: "s1",
+      });
+      vi.advanceTimersByTime(150);
+      await expect(r1.promise).resolves.toBe("expired");
+      await expect(r2.promise).resolves.toBe("expired");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("after resolve, identical request creates a fresh entry", async () => {
+    const q = new ApprovalQueue();
+    const r1 = q.request({
+      toolName: "gitPush",
+      params: {},
+      tier: "high",
+      sessionId: "s1",
+    });
+    q.approve(r1.callId);
+    await r1.promise;
+    const r2 = q.request({
+      toolName: "gitPush",
+      params: {},
+      tier: "high",
+      sessionId: "s1",
+    });
+    expect(r2.callId).not.toBe(r1.callId);
+  });
+});

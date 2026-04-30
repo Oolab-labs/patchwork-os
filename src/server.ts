@@ -355,6 +355,26 @@ export class Server extends EventEmitter<ServerEvents> {
         res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
       }
 
+      // DNS rebinding defense: validate Host header on every HTTP request,
+      // mirroring the WS upgrade handler below. Without this, attacker DNS
+      // can rebind a public hostname to 127.0.0.1 in the victim's browser
+      // and reach `/dashboard`, `/health`, `/metrics`, `/mcp`, OAuth
+      // endpoints, etc. with arbitrary Host headers. CORS gates browser
+      // *reads* of responses but does NOT gate top-level navigations or
+      // simple side-effect-bearing POSTs (e.g. `/oauth/authorize`).
+      const rawHost = req.headers.host ?? "";
+      const host = rawHost.startsWith("[")
+        ? rawHost.slice(0, rawHost.indexOf("]") + 1)
+        : rawHost.replace(/:\d+$/, "");
+      if (!host || !this.allowedHosts.has(host)) {
+        this.logger.warn(
+          `Rejected HTTP request with invalid Host header: ${rawHost}`,
+        );
+        res.writeHead(403, { "Content-Type": "text/plain" });
+        res.end("Invalid Host header");
+        return;
+      }
+
       const parsedUrl = new URL(req.url ?? "/", "http://localhost");
 
       // ── OAuth 2.0 endpoints (extracted to src/oauthRoutes.ts) ────────────
