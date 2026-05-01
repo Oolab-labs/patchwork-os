@@ -1,0 +1,9 @@
+apiVersion: patchwork.sh/v1
+name: exploit-null-byte
+description: Path containing a null byte must be rejected before any FS call.
+trigger:
+  type: manual
+steps:
+  - tool: file.write
+    path: "~/.patchwork/inbox/foo\0.txt"
+    content: "PWNED via null-byte truncation"

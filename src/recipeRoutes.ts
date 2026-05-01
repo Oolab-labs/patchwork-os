@@ -41,6 +41,76 @@ import type { RecipeDraft } from "./recipesHttp.js";
 let templatesCache: unknown = null;
 let templatesCacheTs = 0;
 
+// G-security R2 C-3 / I-3 / F-02: HTTP `vars` validation.
+//
+// The post-render path jail in `src/recipes/resolveRecipePath.ts` is the
+// actual defense against template-driven traversal — but rejecting bad
+// vars at the HTTP layer is cheaper and gives the caller a precise 400
+// instead of a generic 500 from the runner. Validation rules:
+//
+//   - keys      — `/^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/`     (identifier-ish, ≤64)
+//   - values    — `/^[\w\-. :+@,]+$/u`                  (no `/`, no `..`, no
+//                                                        `~`, no control chars)
+//   - type      — strings only; numbers/objects/arrays → 400 (type-strict
+//                 per R3 amendment 4 / I-3, prevents JSON.stringify smuggling
+//                 a `..` segment into a coerced value at render time).
+const VARS_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
+const VARS_VALUE_RE = /^[\w\-. :+@,]+$/u;
+
+export interface VarsValidationError {
+  ok: false;
+  error: string;
+  field: "key" | "value" | "type";
+  offendingKey?: string;
+}
+
+/** Validate the HTTP-supplied `vars` object. Returns null on success. */
+export function validateRecipeVars(vars: unknown): VarsValidationError | null {
+  if (vars == null) return null;
+  if (typeof vars !== "object" || Array.isArray(vars)) {
+    return {
+      ok: false,
+      error: "vars must be a plain object of string→string entries",
+      field: "type",
+    };
+  }
+  for (const [key, value] of Object.entries(vars as Record<string, unknown>)) {
+    if (!VARS_KEY_RE.test(key)) {
+      return {
+        ok: false,
+        error: `vars key "${key}" must match /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/`,
+        field: "key",
+        offendingKey: key,
+      };
+    }
+    if (typeof value !== "string") {
+      return {
+        ok: false,
+        error: `vars["${key}"] must be a string (got ${Array.isArray(value) ? "array" : typeof value})`,
+        field: "type",
+        offendingKey: key,
+      };
+    }
+    if (value.length === 0 || value.length > 1024) {
+      return {
+        ok: false,
+        error: `vars["${key}"] must be a non-empty string ≤ 1024 chars`,
+        field: "value",
+        offendingKey: key,
+      };
+    }
+    if (!VARS_VALUE_RE.test(value)) {
+      return {
+        ok: false,
+        error: `vars["${key}"] contains disallowed characters (no "/", "..", "~", or control chars)`,
+        field: "value",
+        offendingKey: key,
+      };
+    }
+  }
+  return null;
+}
+
 export interface RecipeRouteDeps {
   recipesFn: (() => Record<string, unknown>) | null;
   loadRecipeContentFn:
@@ -132,6 +202,12 @@ export function tryHandleRecipeRoute(
               })
             : {};
           const varsRaw = parsed.vars ?? parsed.inputs;
+          const varsErr = validateRecipeVars(varsRaw);
+          if (varsErr) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(varsErr));
+            return;
+          }
           const vars =
             varsRaw && typeof varsRaw === "object" && !Array.isArray(varsRaw)
               ? (varsRaw as Record<string, string>)
@@ -173,6 +249,12 @@ export function tryHandleRecipeRoute(
             vars?: Record<string, string>;
           };
           const name = parsed.name;
+          const varsErr = validateRecipeVars(parsed.vars);
+          if (varsErr) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(varsErr));
+            return;
+          }
           const vars =
             parsed.vars &&
             typeof parsed.vars === "object" &&

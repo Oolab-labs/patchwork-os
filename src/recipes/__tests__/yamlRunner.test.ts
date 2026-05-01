@@ -289,8 +289,17 @@ describe("runYamlRecipe — file.read", () => {
   });
 
   it("non-optional sets errorMessage on missing file", async () => {
+    // Path must be inside the recipe jail (G-security A-PR1) — point at a
+    // tmpdir leaf that definitely doesn't exist on disk so we exercise the
+    // ENOENT branch, not the jail branch.
     const recipe = makeRecipe({
-      steps: [{ tool: "file.read", path: "/nonexistent", into: "data" }],
+      steps: [
+        {
+          tool: "file.read",
+          path: path.join(os.tmpdir(), "nonexistent-file-read-test.bin"),
+          into: "data",
+        },
+      ],
     });
     const result = await runYamlRecipe(recipe, noop());
     expect(result.errorMessage).toMatch(/could not read/);
@@ -2122,10 +2131,16 @@ describe("buildChainedDeps executeTool", () => {
     const deps = buildChainedDeps({
       ...noop(),
       testMode: true,
+      // Override writeFile so the test stays hermetic — the recipe-runner
+      // path jail (G-security A-PR1) rejects `/dev/null` as out-of-jail
+      // even though the kernel would have absorbed the write silently.
+      writeFile: () => {},
     });
-    // file.write is a registered tool — should run and return a string
+    // file.write is a registered tool — should run and return a string.
+    // Use a tmpdir path so the jail accepts it (CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL=1
+    // is set globally in src/__tests__/testEnvSetup.ts).
     const result = await deps.executeTool("file.write", {
-      path: "/dev/null",
+      path: path.join(os.tmpdir(), "buildChainedDeps-executeTool.txt"),
       content: "test",
     });
     expect(typeof result).toBe("string");

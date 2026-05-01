@@ -2,18 +2,22 @@
  * File tools — file.read, file.write, file.append
  *
  * Self-registering tool module for the recipe tool registry.
+ *
+ * Path containment is enforced via `resolveRecipePath` (see
+ * `../resolveRecipePath.ts`) — every path passed in by a recipe is
+ * normalized, symlink-resolved, and asserted inside the recipe jail
+ * roots before any FS call. Closes G-security F-01 / F-02 / F-10 + R2
+ * C-1.
  */
 
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { assertWriteAllowed } from "../../featureFlags.js";
+import { resolveRecipePath } from "../resolveRecipePath.js";
 import { CommonSchemas, registerTool } from "../toolRegistry.js";
 
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) {
-    return `${process.env.HOME ?? process.env.USERPROFILE}${p.slice(1)}`;
-  }
-  return p;
+function jailedPath(p: string, workspace: string, write: boolean): string {
+  return resolveRecipePath(p, { workspace, write });
 }
 
 function ensureDir(p: string): void {
@@ -48,7 +52,7 @@ registerTool({
   riskDefault: "low",
   isWrite: false,
   execute: async ({ params, step, deps }) => {
-    const p = expandHome(params.path as string);
+    const p = jailedPath(params.path as string, deps.workdir, false);
     const optional = (step.optional as boolean) ?? false;
     try {
       return deps.readFile(p);
@@ -90,7 +94,7 @@ registerTool({
   isWrite: true,
   execute: async ({ params, deps }) => {
     assertWriteAllowed("file.write");
-    const p = expandHome(params.path as string);
+    const p = jailedPath(params.path as string, deps.workdir, true);
     const content = params.content as string;
     ensureDir(p);
     deps.writeFile(p, content);
@@ -131,7 +135,7 @@ registerTool({
   isWrite: true,
   execute: async ({ params, step, deps }) => {
     assertWriteAllowed("file.append");
-    const p = expandHome(params.path as string);
+    const p = jailedPath(params.path as string, deps.workdir, true);
     const content = params.content as string;
     // 'when' condition is evaluated before executeStep is called in yamlRunner
     // but we check here too for direct registry usage

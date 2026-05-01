@@ -1,0 +1,9 @@
+apiVersion: patchwork.sh/v1
+name: valid-write-inside-jail
+description: Baseline — write inside ~/.patchwork/inbox/ should succeed.
+trigger:
+  type: manual
+steps:
+  - tool: file.write
+    path: "~/.patchwork/inbox/recipe-dogfood-A-PR1-baseline.txt"
+    content: "Inside-jail write — must succeed."

@@ -23,6 +23,7 @@ import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "../recipes/legacyRecipeCompat.js";
+import { tryResolveRecipePath } from "../recipes/resolveRecipePath.js";
 import { generateSchemaSet, writeSchemas } from "../recipes/schemaGenerator.js";
 import {
   getTool,
@@ -1077,9 +1078,28 @@ export function runPreflightWatch(options: PreflightWatchOptions): () => void {
   return runWatch(watchOptions);
 }
 
+/**
+ * Exported for the cli-warns-when-out-of-jail.test regression suite —
+ * the warn path is what we assert on, not the path-resolution behaviour.
+ * Internal callers should keep using the local symbol.
+ */
+export function resolveRecipeRefForCli(recipeRef: string): string {
+  return resolveRecipePath(recipeRef);
+}
+
 function resolveRecipePath(recipeRef: string): string {
   const directPath = resolve(recipeRef);
   if (existsSync(directPath) && statSync(directPath).isFile()) {
+    // F-10 CLI warn: a recipe file outside the recipe jail (e.g. a YAML
+    // dragged in from /tmp) still loads — but emit a stderr notice so the
+    // user knows they're loading a recipe whose tool dispatches will hit
+    // the jail check at runtime. The jail roots default to ~/.patchwork +
+    // CWD; /tmp is opt-in via CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL=1.
+    if (tryResolveRecipePath(directPath) === null) {
+      console.warn(
+        `warning: recipe file "${directPath}" lives outside the recipe jail (~/.patchwork, workspace). Tool dispatches that touch the filesystem will be rejected unless the path is inside the jail. Set CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL=1 to opt /tmp into the jail.`,
+      );
+    }
     return directPath;
   }
 
