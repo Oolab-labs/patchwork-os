@@ -165,6 +165,49 @@ function consumeState(): string | null {
 
 // ── API helper ────────────────────────────────────────────────────────────────
 
+/**
+ * Thrown when Slack signals the bot token is no longer usable. Slack bot
+ * tokens don't normally expire, but they can be revoked from the workspace
+ * admin panel or by an org-wide app uninstall. Without a structured signal,
+ * a revoked-token error from `slackGet`/`slackPost` would surface as a
+ * generic `Slack API X error: invalid_auth` and the dashboard would have
+ * no path to prompt the user to reconnect.
+ *
+ * Mirrors `BaseConnector`'s `auth_expired` ConnectorError code so callers
+ * can branch uniformly on either path.
+ */
+export class SlackAuthExpiredError extends Error {
+  readonly code = "auth_expired" as const;
+  constructor(slackError: string, method: string) {
+    super(
+      `Slack ${method}: ${slackError} — token revoked or workspace uninstalled. Reconnect via /connections/slack/auth.`,
+    );
+    this.name = "SlackAuthExpiredError";
+  }
+}
+
+// Slack error codes that mean "the token won't work — re-auth needed". The
+// remaining `!json.ok` codes are recoverable / parameter errors and shouldn't
+// trigger a reconnect flow.
+//
+// References:
+//   https://api.slack.com/methods/auth.test#errors
+//   https://api.slack.com/authentication/token-types#bot
+const SLACK_AUTH_DEAD_ERRORS = new Set([
+  "invalid_auth",
+  "not_authed",
+  "token_revoked",
+  "token_expired",
+  "account_inactive",
+  "no_permission",
+]);
+
+function isAuthDeadError(slackError: string | undefined): boolean {
+  return (
+    typeof slackError === "string" && SLACK_AUTH_DEAD_ERRORS.has(slackError)
+  );
+}
+
 async function slackGet(
   method: string,
   params: Record<string, string>,
@@ -177,10 +220,16 @@ async function slackGet(
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     signal,
   });
+  if (res.status === 401) {
+    throw new SlackAuthExpiredError(`HTTP 401`, method);
+  }
   if (!res.ok) throw new Error(`Slack API ${method} HTTP ${res.status}`);
   const json = (await res.json()) as Record<string, unknown>;
-  if (!json.ok)
-    throw new Error(`Slack API ${method} error: ${json.error ?? "unknown"}`);
+  if (!json.ok) {
+    const err = typeof json.error === "string" ? json.error : "unknown";
+    if (isAuthDeadError(err)) throw new SlackAuthExpiredError(err, method);
+    throw new Error(`Slack API ${method} error: ${err}`);
+  }
   return json;
 }
 
@@ -200,10 +249,16 @@ async function slackPost(
     body: JSON.stringify(body),
     signal,
   });
+  if (res.status === 401) {
+    throw new SlackAuthExpiredError(`HTTP 401`, method);
+  }
   if (!res.ok) throw new Error(`Slack API ${method} HTTP ${res.status}`);
   const json = (await res.json()) as Record<string, unknown>;
-  if (!json.ok)
-    throw new Error(`Slack API ${method} error: ${json.error ?? "unknown"}`);
+  if (!json.ok) {
+    const err = typeof json.error === "string" ? json.error : "unknown";
+    if (isAuthDeadError(err)) throw new SlackAuthExpiredError(err, method);
+    throw new Error(`Slack API ${method} error: ${err}`);
+  }
   return json;
 }
 
