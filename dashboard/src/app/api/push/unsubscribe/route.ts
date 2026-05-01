@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { removeSubscription } from "@/lib/pushStore";
+import { requireSameOrigin } from "@/lib/csrf";
 
 export async function POST(req: NextRequest) {
+  const guard = requireSameOrigin(req);
+  if (guard) return guard;
   let body: Record<string, unknown>;
   try {
     body = await req.json();

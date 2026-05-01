@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireSameOrigin } from "@/lib/csrf";
 import { addSubscription } from "@/lib/pushStore";
 import type { PushSubscription } from "web-push";
 
 export async function POST(req: NextRequest) {
+  const guard = requireSameOrigin(req);
+  if (guard) return guard;
+
   let body: unknown;
   try {
     body = await req.json();

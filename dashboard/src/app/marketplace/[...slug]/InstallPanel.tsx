@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { assertValidInstallSource } from "@/lib/registry";
 
 interface Props {
   install: string;
@@ -55,6 +56,10 @@ export default function InstallPanel({ install, name }: Props) {
     setBusy(true);
     setErr(null);
     try {
+      // Defense in depth: refuse to forward anything that isn't a
+      // github:owner/repo[/path]@ref shape. Tampered registry indexes
+      // could otherwise pass opaque strings (https://, file://, etc).
+      assertValidInstallSource(install);
       const res = await fetch(apiPath("/api/bridge/recipes/install"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { apiPath } from "@/lib/api";
-import { type RegistryData, type RegistryRecipe, shortName } from "@/lib/registry";
+import { assertValidInstallSource, type RegistryData, type RegistryRecipe, shortName } from "@/lib/registry";
 
 // ------------------------------------------------------------------ fallback data (shown when bridge offline)
 
@@ -399,6 +399,10 @@ export default function MarketplacePage() {
   }, []);
 
   async function handleInstall(recipe: RegistryRecipe) {
+    // Defense in depth: refuse to forward anything that isn't a github:owner/repo[/path]@ref
+    // shape. The bridge also validates server-side; this blocks the obvious tampered-registry
+    // attack at the dashboard layer before the request leaves the browser.
+    assertValidInstallSource(recipe.install);
     const res = await fetch(apiPath("/api/bridge/recipes/install"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
