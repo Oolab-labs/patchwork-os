@@ -116,10 +116,22 @@ async function main() {
   const tokenStore = new EnvTokenStore(authTokens);
   const app = express();
   app.use(express.json());
+
+  // /health is mounted BEFORE the bearer middleware so uptime checkers
+  // (Cloud Run, k8s liveness probes, ELB target groups) can hit it without
+  // a token. The body is intentionally minimal — just `{ok:true}` — to
+  // avoid leaking deployment shape (which providers are configured) to
+  // unauthenticated callers.
+  app.get("/health", (_req, res) => {
+    res.json({ ok: true });
+  });
+
   app.use(bearerAuthMiddleware(tokenStore));
   app.use(buildRouter(registry, { fcm, apns, apnsTopic }));
 
-  app.get("/health", (_req, res) => {
+  // Authenticated extended-status endpoint for the dashboard / settings page
+  // when it wants to know which adapters are live.
+  app.get("/status", (_req, res) => {
     res.json({ ok: true, fcm: !!fcm, apns: !!apns });
   });
 
