@@ -17,6 +17,7 @@ import express from "express";
 import { bearerAuthMiddleware, EnvTokenStore } from "./auth.js";
 import { InMemoryRegistry, RedisRegistry } from "./deviceRegistry.js";
 import type { ApnsAdapter, FcmAdapter } from "./dispatcher.js";
+import { logErrorSafe } from "./redact.js";
 import { buildRouter } from "./routes.js";
 
 async function main() {
@@ -24,7 +25,7 @@ async function main() {
   const authTokens = process.env.RELAY_AUTH_TOKENS ?? "";
 
   if (!authTokens) {
-    console.error(
+    logErrorSafe(
       "RELAY_AUTH_TOKENS env var required (format: token:userId,...)",
     );
     process.exit(1);
@@ -55,12 +56,16 @@ async function main() {
     try {
       serviceAccount = JSON.parse(process.env.FCM_SERVICE_ACCOUNT);
     } catch (err) {
-      console.error(
+      logErrorSafe(
         "FCM_SERVICE_ACCOUNT is not valid JSON — skipping FCM init:",
         err instanceof Error ? err.message : String(err),
       );
       serviceAccount = null;
     }
+    // Don't keep the JSON service account string in process.env after we've
+    // parsed it — child processes / `process.env` dumps would otherwise carry
+    // the credential.
+    delete process.env.FCM_SERVICE_ACCOUNT;
     if (serviceAccount && !admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
@@ -104,6 +109,8 @@ async function main() {
       process.env.APNS_PRODUCTION === "true",
       ")",
     );
+    // Don't keep the PEM in process.env — the apn provider has captured it.
+    delete process.env.APNS_KEY;
   }
 
   const tokenStore = new EnvTokenStore(authTokens);
@@ -122,6 +129,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  logErrorSafe(err);
   process.exit(1);
 });
