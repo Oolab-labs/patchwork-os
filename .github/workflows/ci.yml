@@ -78,6 +78,8 @@ jobs:
         run: node scripts/audit-lsp-tools.mjs
       - name: Audit shape safety (proxy<T> usage)
         run: node scripts/audit-shape-safety.mjs
+      - name: Audit IntelliJ ↔ VSCode wire-method parity
+        run: node scripts/audit-intellij-parity.mjs
 
   plugin-validate:
     name: Validate plugin manifest

@@ -747,7 +747,20 @@ class FormatRangeHandler : BridgeHandler {
 // ---------------------------------------------------------------------------
 
 class SignatureHelpHandler : BridgeHandler {
-    override fun handle(params: JsonObject?, project: Project?): JsonElement = JsonNull.INSTANCE
+    /**
+     * Bridge expects `{signatures, activeSignature, activeParameter}`. Returning
+     * JsonNull made callers unable to distinguish "no signature here" from
+     * "not implemented" — the wrapped tool would surface the result as null
+     * and downstream `tryRequest` / `validatedRequest` couldn't tell whether
+     * to fall back. Emit an empty `{signatures:[]}` shape instead, matching
+     * the convention used by `getCodeActions` (line 700) and other stubs.
+     */
+    override fun handle(params: JsonObject?, project: Project?): JsonElement =
+        JsonObject().apply {
+            add("signatures", JsonArray())
+            addProperty("activeSignature", -1)
+            addProperty("activeParameter", -1)
+        }
 }
 
 // ---------------------------------------------------------------------------
