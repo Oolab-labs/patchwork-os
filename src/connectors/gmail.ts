@@ -247,12 +247,17 @@ async function fetchUserEmail(accessToken: string): Promise<string> {
 
 // ── State map (in-memory CSRF protection) ────────────────────────────────────
 
-const pendingStates = new Set<string>();
+import { createOAuthStateStore } from "./oauthStateStore.js";
+
+const pendingStates = createOAuthStateStore();
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");
-  pendingStates.add(state);
-  setTimeout(() => pendingStates.delete(state), 10 * 60 * 1000); // 10 min TTL
+  if (!pendingStates.add(state)) {
+    throw new Error(
+      "OAuth state store full — too many concurrent authorize requests",
+    );
+  }
   return state;
 }
 
@@ -410,14 +415,13 @@ export async function handleGmailCallback(
       ),
     };
   }
-  if (!code || !state || !pendingStates.has(state)) {
+  if (!code || !state || !pendingStates.consume(state)) {
     return {
       status: 400,
       contentType: "text/html",
       body: callbackHtml("Invalid request", "Missing or expired state.", false),
     };
   }
-  pendingStates.delete(state);
   try {
     const tokens = await exchangeCode(code);
     saveTokens(tokens);

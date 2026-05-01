@@ -12,10 +12,12 @@
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -304,7 +306,31 @@ function setEncryptedFileSync(key: string, value: string): void {
   }
 
   const encrypted = encrypt(value);
-  writeFileSync(join(dir, `${key}.enc`), encrypted, { mode: 0o600 });
+  const finalPath = join(dir, `${key}.enc`);
+
+  // Atomic write: tmp file + rename. Without this a concurrent reader can
+  // observe torn ciphertext mid-write → decrypt() returns null → caller
+  // treats the connector as disconnected and triggers a full re-auth.
+  // The macOS keychain backend is already atomic at OS level; this guard
+  // is for the file backend.
+  const tmpPath = `${finalPath}.tmp.${process.pid}.${crypto
+    .randomBytes(8)
+    .toString("hex")}`;
+  try {
+    writeFileSync(tmpPath, encrypted, { mode: 0o600 });
+    // Belt-and-braces: writeFileSync honours mode on file create, but if
+    // the file pre-existed with a permissive mode we'd inherit it. Force
+    // 0o600 before rename takes the inode.
+    chmodSync(tmpPath, 0o600);
+    renameSync(tmpPath, finalPath);
+  } catch (err) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      // tmp may not exist — best-effort cleanup
+    }
+    throw err;
+  }
 }
 
 function getEncryptedFileSync(key: string): string | null {
