@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import webpush from "web-push";
 import { getSubscriptions } from "@/lib/pushStore";
+import { requireSameOrigin } from "@/lib/csrf";
 
 const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY ?? "";
 const vapidSubject = process.env.VAPID_SUBJECT ?? "mailto:admin@example.com";
 
-export async function POST() {
+export async function POST(req: Request) {
+  const guard = requireSameOrigin(req);
+  if (guard) return guard;
   if (!vapidPublicKey || !vapidPrivateKey) {
     return NextResponse.json({ error: "VAPID keys not configured" }, { status: 503 });
   }

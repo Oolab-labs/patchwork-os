@@ -1,4 +1,5 @@
 import { bridgeFetch } from "@/lib/bridge";
+import { requireSameOrigin } from "@/lib/csrf";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,6 +15,8 @@ export async function POST(
   req: Request,
   ctx: { params: { connector: string } },
 ): Promise<Response> {
+  const guard = requireSameOrigin(req);
+  if (guard) return guard;
   const { connector } = ctx.params;
   if (!ALLOWED_CONNECTORS.has(connector)) {
     return new Response(JSON.stringify({ error: "Unknown connector" }), {
