@@ -35,6 +35,7 @@ import {
   loadMetrics as loadActivationMetrics,
 } from "./activationMetrics.js";
 import type { RecipeDraft } from "./recipesHttp.js";
+import { validateSafeUrl } from "./ssrfGuard.js";
 
 // 5-minute cache of the public template registry from the patchworkos/recipes
 // GitHub repo. Process-wide; hoisted out of Server class state.
@@ -110,6 +111,127 @@ export function validateRecipeVars(vars: unknown): VarsValidationError | null {
   }
   return null;
 }
+
+// ---------------------------------------------------------------------
+// BEGIN A-PR2 EDIT BLOCK — body-cap helpers (dogfood R2 M-1 / F-08)
+//
+// Per-route caps; install is the strictest because the request only carries
+// a single `source` field. See PR description for sizing rationale.
+// Coordination note: A-PR1 also touches `recipeRoutes.ts` for `vars`
+// validation; the helper APIs here are exclusively A-PR2's.
+// ---------------------------------------------------------------------
+export const RECIPE_ROUTE_BODY_CAPS = {
+  /** /recipes/install — `{ source: string }` body. */
+  install: 4 * 1024,
+  /** /recipes/:name/run + /recipes/run — vars envelope. */
+  run: 32 * 1024,
+  /** /recipes (POST), PUT/PATCH /recipes/:name, /recipes/lint — yaml content. */
+  content: 256 * 1024,
+} as const;
+
+/**
+ * Read an HTTP request body up to `max` bytes, parse as JSON, return result.
+ *
+ * Returns one of three discriminated shapes:
+ *   - `{ ok: true, value }` — body parsed successfully.
+ *   - `{ ok: false, code: "too_large" }` — body exceeded `max`; request was
+ *     destroyed eagerly and the response should be 413.
+ *   - `{ ok: false, code: "invalid_json" }` — body was valid bytes but failed
+ *     `JSON.parse`; response should be 400.
+ *
+ * Bytes are accumulated into a single Buffer so the helper can enforce the
+ * cap incrementally — a 1 GB upload is rejected after the first overflowing
+ * chunk rather than after the full body lands in memory.
+ */
+export function readJsonBody<T = unknown>(
+  req: IncomingMessage,
+  max: number,
+): Promise<
+  { ok: true; value: T } | { ok: false; code: "too_large" | "invalid_json" }
+> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let aborted = false;
+
+    const onData = (chunk: Buffer) => {
+      if (aborted) return;
+      total += chunk.byteLength;
+      if (total > max) {
+        aborted = true;
+        // Resolve immediately so the route can write 413; do NOT destroy the
+        // socket here — destroying mid-upload races with the response write
+        // and the client sees EPIPE/ECONNRESET before reading the body.
+        // Subsequent chunks land in `onData` again but the `aborted` guard
+        // discards them, draining the upload until the client emits `end`.
+        resolve({ ok: false, code: "too_large" });
+        // Force the underlying stream to keep flowing so buffered upload
+        // data drains naturally. Without this Node may pause the stream
+        // when nothing is consuming chunks, leaving the socket half-open.
+        try {
+          req.resume();
+        } catch {
+          // best-effort
+        }
+        return;
+      }
+      chunks.push(chunk);
+    };
+
+    const onEnd = () => {
+      if (aborted) return;
+      const raw = Buffer.concat(chunks).toString("utf-8");
+      if (raw.length === 0) {
+        // Empty bodies are passed through as `undefined`; callers decide
+        // whether that's an error (most parse `{...}` immediately).
+        resolve({ ok: true, value: undefined as unknown as T });
+        return;
+      }
+      try {
+        resolve({ ok: true, value: JSON.parse(raw) as T });
+      } catch {
+        resolve({ ok: false, code: "invalid_json" });
+      }
+    };
+
+    const onError = () => {
+      if (aborted) return;
+      aborted = true;
+      resolve({ ok: false, code: "invalid_json" });
+    };
+
+    req.on("data", onData);
+    req.once("end", onEnd);
+    req.once("error", onError);
+  });
+}
+
+/**
+ * Standard 413 helper used by the routes when `readJsonBody` overflows.
+ *
+ * Note: we do NOT destroy the underlying socket — `res.end()` is sufficient.
+ * Destroying mid-upload is fragile across platforms (macOS races
+ * EPIPE/ECONNRESET to the client before the 413 body is delivered).
+ * The matching `readJsonBody` no-op-data drain keeps the upload flowing
+ * until the client emits `end`, so the server returns the response cleanly.
+ */
+function respond413(res: ServerResponse, max: number): void {
+  res.writeHead(413, { "Content-Type": "application/json" });
+  res.end(
+    JSON.stringify({
+      ok: false,
+      error: `Request body exceeds ${max}-byte limit`,
+      code: "body_too_large",
+    }),
+  );
+}
+
+/** Standard 400 helper for malformed JSON. */
+function respondInvalidJson(res: ServerResponse): void {
+  res.writeHead(400, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+}
+// END A-PR2 EDIT BLOCK
 
 export interface RecipeRouteDeps {
   recipesFn: (() => Record<string, unknown>) | null;
@@ -188,106 +310,112 @@ export function tryHandleRecipeRoute(
       ? /^\/recipes\/([^/]+)\/run$/.exec(parsedUrl.pathname)
       : null;
   if (recipeNameRunMatch) {
+    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.run (32 KB).
     const nameFromPath = decodeURIComponent(recipeNameRunMatch[1] ?? "");
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const body = Buffer.concat(chunks).toString("utf-8");
-          const parsed = body
-            ? (JSON.parse(body) as {
-                vars?: Record<string, string>;
-                inputs?: Record<string, string>;
-              })
-            : {};
-          const varsRaw = parsed.vars ?? parsed.inputs;
-          const varsErr = validateRecipeVars(varsRaw);
-          if (varsErr) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify(varsErr));
-            return;
-          }
-          const vars =
-            varsRaw && typeof varsRaw === "object" && !Array.isArray(varsRaw)
-              ? (varsRaw as Record<string, string>)
-              : undefined;
-          if (!deps.runRecipeFn) {
-            res.writeHead(503, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                ok: false,
-                error:
-                  "Recipe execution unavailable — requires --claude-driver subprocess",
-              }),
-            );
-            return;
-          }
-          const result = await deps.runRecipeFn(nameFromPath, vars);
-          res.writeHead(result.ok ? 200 : 400, {
-            "Content-Type": "application/json",
-          });
-          res.end(JSON.stringify(result));
-        } catch {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+    void (async () => {
+      const parsedBody = await readJsonBody<{
+        vars?: Record<string, string>;
+        inputs?: Record<string, string>;
+      }>(req, RECIPE_ROUTE_BODY_CAPS.run);
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.run);
+        } else {
+          respondInvalidJson(res);
         }
-      })();
-    });
+        return;
+      }
+      try {
+        const parsed = parsedBody.value ?? {};
+        const varsRaw = parsed.vars ?? parsed.inputs;
+        const varsErr = validateRecipeVars(varsRaw);
+        if (varsErr) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(varsErr));
+          return;
+        }
+        const vars =
+          varsRaw && typeof varsRaw === "object" && !Array.isArray(varsRaw)
+            ? (varsRaw as Record<string, string>)
+            : undefined;
+        if (!deps.runRecipeFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error:
+                "Recipe execution unavailable — requires --claude-driver subprocess",
+            }),
+          );
+          return;
+        }
+        const result = await deps.runRecipeFn(nameFromPath, vars);
+        res.writeHead(result.ok ? 200 : 400, {
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify(result));
+      } catch {
+        respondInvalidJson(res);
+      }
+    })();
     return true;
   }
 
   if (parsedUrl.pathname === "/recipes/run" && req.method === "POST") {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      void (async () => {
-        try {
-          const body = Buffer.concat(chunks).toString("utf-8");
-          const parsed = JSON.parse(body || "{}") as {
-            name?: string;
-            vars?: Record<string, string>;
-          };
-          const name = parsed.name;
-          const varsErr = validateRecipeVars(parsed.vars);
-          if (varsErr) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify(varsErr));
-            return;
-          }
-          const vars =
-            parsed.vars &&
-            typeof parsed.vars === "object" &&
-            !Array.isArray(parsed.vars)
-              ? (parsed.vars as Record<string, string>)
-              : undefined;
-          if (typeof name !== "string" || !name) {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ok: false, error: "name required" }));
-            return;
-          }
-          if (!deps.runRecipeFn) {
-            res.writeHead(503, { "Content-Type": "application/json" });
-            res.end(
-              JSON.stringify({
-                ok: false,
-                error:
-                  "Recipe execution unavailable — requires --claude-driver subprocess",
-              }),
-            );
-            return;
-          }
-          const result = await deps.runRecipeFn(name, vars);
-          res.writeHead(result.ok ? 200 : 400, {
-            "Content-Type": "application/json",
-          });
-          res.end(JSON.stringify(result));
-        } catch {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.run (32 KB).
+    void (async () => {
+      const parsedBody = await readJsonBody<{
+        name?: string;
+        vars?: Record<string, string>;
+      }>(req, RECIPE_ROUTE_BODY_CAPS.run);
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.run);
+        } else {
+          respondInvalidJson(res);
         }
-      })();
-    });
+        return;
+      }
+      try {
+        const parsed = parsedBody.value ?? {};
+        const name = parsed.name;
+        const varsErr = validateRecipeVars(parsed.vars);
+        if (varsErr) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(varsErr));
+          return;
+        }
+        const vars =
+          parsed.vars &&
+          typeof parsed.vars === "object" &&
+          !Array.isArray(parsed.vars)
+            ? (parsed.vars as Record<string, string>)
+            : undefined;
+        if (typeof name !== "string" || !name) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "name required" }));
+          return;
+        }
+        if (!deps.runRecipeFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error:
+                "Recipe execution unavailable — requires --claude-driver subprocess",
+            }),
+          );
+          return;
+        }
+        const result = await deps.runRecipeFn(name, vars);
+        res.writeHead(result.ok ? 200 : 400, {
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify(result));
+      } catch {
+        respondInvalidJson(res);
+      }
+    })();
     return true;
   }
 
@@ -437,12 +565,22 @@ export function tryHandleRecipeRoute(
   }
 
   if (req.url === "/recipes" && req.method === "POST") {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
+    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.content (256 KB).
+    void (async () => {
+      const parsedBody = await readJsonBody<RecipeDraft>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.content,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.content);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
       try {
-        const body = Buffer.concat(chunks).toString("utf-8");
-        const draft = JSON.parse(body || "{}") as RecipeDraft;
+        const draft = (parsedBody.value ?? ({} as RecipeDraft)) as RecipeDraft;
         if (typeof draft.name !== "string" || !draft.name) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: "name required" }));
@@ -464,23 +602,31 @@ export function tryHandleRecipeRoute(
         });
         res.end(JSON.stringify(result));
       } catch {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+        respondInvalidJson(res);
       }
-    });
+    })();
     return true;
   }
 
   const recipePatchMatch = /^\/recipes\/([^/]+)$/.exec(parsedUrl.pathname);
   if (recipePatchMatch && req.method === "PATCH") {
+    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.content (256 KB).
     const name = decodeURIComponent(recipePatchMatch[1] ?? "");
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
+    void (async () => {
+      const parsedBody = await readJsonBody<{ enabled?: boolean }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.content,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.content);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
       try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as {
-          enabled?: boolean;
-        };
+        const body = parsedBody.value ?? {};
         if (typeof body.enabled !== "boolean") {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(
@@ -502,21 +648,29 @@ export function tryHandleRecipeRoute(
         });
         res.end(JSON.stringify(result));
       } catch {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+        respondInvalidJson(res);
       }
-    });
+    })();
     return true;
   }
 
   if (parsedUrl.pathname === "/recipes/lint" && req.method === "POST") {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
+    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.content (256 KB).
+    void (async () => {
+      const parsedBody = await readJsonBody<{ content?: string }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.content,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.content);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
       try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as {
-          content?: string;
-        };
+        const body = parsedBody.value ?? {};
         if (typeof body?.content !== "string") {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(
@@ -541,10 +695,9 @@ export function tryHandleRecipeRoute(
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));
       } catch {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+        respondInvalidJson(res);
       }
-    });
+    })();
     return true;
   }
 
@@ -570,14 +723,23 @@ export function tryHandleRecipeRoute(
   }
 
   if (recipeContentMatch && req.method === "PUT") {
+    // A-PR2: bounded JSON read at RECIPE_ROUTE_BODY_CAPS.content (256 KB).
     const name = decodeURIComponent(recipeContentMatch[1] ?? "");
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
+    void (async () => {
+      const parsedBody = await readJsonBody<{ content?: string }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.content,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.content);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
       try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as {
-          content?: string;
-        };
+        const body = parsedBody.value ?? {};
         if (typeof body.content !== "string") {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(
@@ -604,10 +766,9 @@ export function tryHandleRecipeRoute(
         });
         res.end(JSON.stringify(result));
       } catch {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Invalid JSON body" }));
+        respondInvalidJson(res);
       }
-    });
+    })();
     return true;
   }
 
@@ -680,14 +841,34 @@ export function tryHandleRecipeRoute(
   }
 
   if (parsedUrl.pathname === "/recipes/install" && req.method === "POST") {
-    let body = "";
-    req.on("data", (chunk: Buffer) => {
-      body += chunk.toString();
-    });
-    req.on("end", async () => {
+    // ---------------------------------------------------------------------
+    // BEGIN A-PR2 EDIT BLOCK — `/recipes/install` rework.
+    //
+    // Replaces the previous let-body-string accumulator with `readJsonBody`
+    // (4 KB cap), default-denies non-github sources via
+    // `CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS`, and translates fetch errors
+    // into proper 4xx status codes (R2 H-routes Bug 2 — was always 500).
+    //
+    // SSRF guard runs AFTER allowlist match per R3 DP-2 sub-issue: this means
+    // an explicitly-allowlisted hostname STILL has to clear the SSRF check
+    // (so an admin can't accidentally allowlist `localhost`).
+    // ---------------------------------------------------------------------
+    void (async () => {
+      const parsedBody = await readJsonBody<{ source?: string }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.install,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.install);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
       try {
-        const { source } = JSON.parse(body) as { source?: string };
-        if (!source) {
+        const source = (parsedBody.value ?? {}).source;
+        if (!source || typeof source !== "string") {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: "Missing source field" }));
           return;
@@ -697,8 +878,81 @@ export function tryHandleRecipeRoute(
         let recipeName: string;
         if (source.startsWith(githubPrefix)) {
           recipeName = source.slice(githubPrefix.length);
+          // The constructed URL is internal — recipeName must be a safe
+          // single-segment so we don't end up encoding `../etc/passwd` into
+          // the path. Reuse the strict basename predicate from `recipeInstall`.
+          const { isSafeBasename } = await import(
+            "./commands/recipeInstall.js"
+          );
+          if (!isSafeBasename(recipeName)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: "Invalid recipe name in source",
+              }),
+            );
+            return;
+          }
           fetchUrl = `https://raw.githubusercontent.com/patchworkos/recipes/main/recipes/${recipeName}/${recipeName}.yaml`;
         } else if (source.startsWith("https://")) {
+          // Non-github source: must clear the env-var allowlist AND the SSRF
+          // guard. Default-deny when env var unset (R3 DP-2 confirmed).
+          let parsedSource: URL;
+          try {
+            parsedSource = new URL(source);
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: "Invalid source URL",
+                code: "invalid_source_url",
+              }),
+            );
+            return;
+          }
+          // Built-in github/raw.githubusercontent hosts are always permitted
+          // — they match the github: shorthand surface above.
+          const ALWAYS_ALLOWED = new Set([
+            "github.com",
+            "www.github.com",
+            "raw.githubusercontent.com",
+          ]);
+          const envAllowed = (
+            process.env["CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS"] ?? ""
+          )
+            .split(",")
+            .map((h) => h.trim().toLowerCase())
+            .filter(Boolean);
+          const hostLower = parsedSource.hostname.toLowerCase();
+          const inAllowlist =
+            ALWAYS_ALLOWED.has(hostLower) || envAllowed.includes(hostLower);
+          if (!inAllowlist) {
+            res.writeHead(403, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: `Host "${parsedSource.hostname}" is not in the install allowlist. Set CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS to opt in.`,
+                code: "host_not_allowlisted",
+              }),
+            );
+            return;
+          }
+          // SSRF guard runs AFTER allowlist — defends against operator-misuse
+          // (allowlisting localhost or an internal mirror).
+          const ssrf = await validateSafeUrl(source);
+          if (!ssrf.ok) {
+            res.writeHead(403, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: `Host blocked by SSRF guard: ${ssrf.detail ?? ssrf.reason ?? "unknown"}`,
+                code: "ssrf_blocked",
+              }),
+            );
+            return;
+          }
           fetchUrl = source;
           const urlParts = fetchUrl.split("/");
           recipeName = (urlParts[urlParts.length - 1] ?? "recipe").replace(
@@ -711,17 +965,95 @@ export function tryHandleRecipeRoute(
             JSON.stringify({
               ok: false,
               error: "Unsupported source format",
+              code: "unsupported_source",
             }),
           );
           return;
         }
-        const yamlRes = await fetch(fetchUrl);
-        if (!yamlRes.ok) {
-          throw new Error(
-            `Fetch failed: ${yamlRes.status} ${yamlRes.statusText}`,
+
+        // Bounded fetch — 1 MB hard cap on the response body so a malicious
+        // host can't pin the install request open with a 1 GB stream.
+        const fetchCtl = new AbortController();
+        const fetchTimeout = setTimeout(() => fetchCtl.abort(), 30_000);
+        let yamlRes: Response;
+        try {
+          yamlRes = await fetch(fetchUrl, {
+            signal: fetchCtl.signal,
+            redirect: "follow",
+          });
+        } catch (err) {
+          clearTimeout(fetchTimeout);
+          // Network-level error → 502 (upstream unreachable), not 500.
+          res.writeHead(502, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: `Fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+              code: "fetch_network_error",
+            }),
           );
+          return;
         }
-        const yamlText = await yamlRes.text();
+        clearTimeout(fetchTimeout);
+
+        if (!yamlRes.ok) {
+          // Translate upstream HTTP into proper status — 404→404, 403→403,
+          // 5xx→502 (don't leak the upstream 500 as our 500). R2 H-routes Bug 2.
+          let outStatus = 502;
+          if (yamlRes.status === 404) outStatus = 404;
+          else if (yamlRes.status === 403) outStatus = 403;
+          else if (yamlRes.status >= 400 && yamlRes.status < 500)
+            outStatus = 400;
+          res.writeHead(outStatus, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: `Upstream returned ${yamlRes.status} ${yamlRes.statusText}`,
+              code: "fetch_upstream_error",
+              upstreamStatus: yamlRes.status,
+            }),
+          );
+          return;
+        }
+
+        // Streamed read with 1 MB cap (mirrors `httpClient` pattern).
+        const MAX_RECIPE_BYTES = 1024 * 1024;
+        const reader = yamlRes.body?.getReader();
+        const chunks: Uint8Array[] = [];
+        let totalBytes = 0;
+        let truncated = false;
+        if (reader) {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done || value === undefined) break;
+              if (totalBytes + value.byteLength > MAX_RECIPE_BYTES) {
+                truncated = true;
+                await reader.cancel();
+                break;
+              }
+              chunks.push(value);
+              totalBytes += value.byteLength;
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        }
+        if (truncated) {
+          res.writeHead(413, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: `Recipe body exceeded ${MAX_RECIPE_BYTES}-byte limit`,
+              code: "recipe_too_large",
+            }),
+          );
+          return;
+        }
+        const yamlText = Buffer.concat(
+          chunks.map((c) => Buffer.from(c)),
+        ).toString("utf-8");
+
         const tmpFile = path.join(
           os.tmpdir(),
           `patchwork-install-${Date.now()}-${recipeName}.yaml`,
@@ -751,15 +1083,18 @@ export function tryHandleRecipeRoute(
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, ...result }));
       } catch (err) {
+        // Truly unexpected — installer crash, manifest validation throw, etc.
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             ok: false,
             error: err instanceof Error ? err.message : String(err),
+            code: "install_internal_error",
           }),
         );
       }
-    });
+    })();
+    // END A-PR2 EDIT BLOCK
     return true;
   }
 

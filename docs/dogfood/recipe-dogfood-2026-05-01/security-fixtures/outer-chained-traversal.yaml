@@ -1,0 +1,8 @@
+apiVersion: patchwork.sh/v1
+name: outer-chained
+description: outer
+trigger:
+  type: chained
+steps:
+  - id: call-inner
+    recipe: /tmp/dogfood-G2/inner-write.yaml
