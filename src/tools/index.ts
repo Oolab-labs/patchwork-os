@@ -977,7 +977,8 @@ export const TOOL_CATEGORIES: Record<string, string[]> = {
   generateAPIDocumentation: ["analysis"],
   findRelatedTests: ["analysis"],
   getDependencyTree: ["analysis"],
-  getGitHotspot: ["analysis", "git"],
+  // (getGitHotspots is canonically listed above with categories ["git","analysis"];
+  // a stray "getGitHotspot" typo was here historically and never matched.)
   screenshotAndAnnotate: ["analysis", "editor"],
   // GitHub
   githubCreatePR: ["github"],
