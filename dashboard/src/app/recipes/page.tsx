@@ -68,7 +68,6 @@ interface Recipe {
   webhookPath?: string;
   stepCount?: number;
   path?: string;
-  hasPermissions?: boolean;
   enabled?: boolean;
   vars?: RecipeVar[];
   lastRun?: number;
@@ -752,14 +751,15 @@ export default function RecipesPage() {
                                 {r.source ?? "—"}
                               </span>
                             </div>
-                            <div>
-                              <span className="muted">Permissions</span>
-                              <br />
-                              {r.hasPermissions ? (
-                                <span className="pill ok">✓ granted</span>
-                              ) : (
-                                <span className="pill muted">none</span>
-                              )}
+                            <div style={{ gridColumn: "1 / -1" }}>
+                              <span className="muted" style={{ fontSize: 11 }}>
+                                Patchwork does not enforce per-recipe
+                                permissions; configure tool gating in
+                                {" "}
+                                <code>~/.claude/settings.json</code>.
+                                {/* TODO(C-PR4): drop never-shipped POST /recipes/:name/permissions
+                                    route (DP-7 follow-up from PLAN-MASTER-V2 A-PR4). */}
+                              </span>
                             </div>
                             {r.webhookPath && (
                               <div>
