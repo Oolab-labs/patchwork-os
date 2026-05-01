@@ -439,6 +439,16 @@ export async function completeAuthorize(
 
 // ── Token refresh ────────────────────────────────────────────────────────────
 
+/**
+ * In-flight refresh coalescing per vendor.
+ *
+ * Without this, N concurrent `getAccessToken("linear")` calls each fire a
+ * refresh POST. Linear/Sentry/GitHub MCP rotate refresh tokens — the second
+ * call burns the rotation from the first and invalidates the connector.
+ * BaseConnector + Gmail/Google* already have this pattern; mcpOAuth was missed.
+ */
+const refreshInflight = new Map<VendorId, Promise<McpTokenFile>>();
+
 async function refreshIfNeeded(
   config: VendorConfig,
   file: McpTokenFile,
@@ -456,14 +466,33 @@ async function refreshIfNeeded(
   }
   if (!config.tokenEndpoint) return file;
 
+  const inflight = refreshInflight.get(file.vendor);
+  if (inflight) return inflight;
+
+  const promise = doRefresh(config, file).finally(() => {
+    refreshInflight.delete(file.vendor);
+  });
+  refreshInflight.set(file.vendor, promise);
+  return promise;
+}
+
+async function doRefresh(
+  config: VendorConfig,
+  file: McpTokenFile,
+): Promise<McpTokenFile> {
+  // Guarded by refreshIfNeeded — these are non-null when this fn is called.
+  const refreshToken = file.refresh_token;
+  const tokenEndpoint = config.tokenEndpoint;
+  if (!refreshToken || !tokenEndpoint) return file;
+
   const body = new URLSearchParams({
     grant_type: "refresh_token",
-    refresh_token: file.refresh_token,
+    refresh_token: refreshToken,
     client_id: file.client_id,
   });
   if (file.client_secret) body.set("client_secret", file.client_secret);
 
-  const res = await fetch(config.tokenEndpoint, {
+  const res = await fetch(tokenEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",

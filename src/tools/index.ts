@@ -324,8 +324,16 @@ export interface ToolContext {
   orchestrator?: ClaudeOrchestrator | null;
   sessionId?: string;
   pluginTools?: LoadedPluginTool[];
+  automationHooks?: AutomationHooks;
+  getDisconnectInfo?: () => DisconnectInfo;
+  onContextCacheUpdated?: (generatedAt: string) => void;
+  getExtensionDisconnectCount?: () => number;
+  commitIssueLinkLog?: import("../commitIssueLinkLog.js").CommitIssueLinkLog;
+  recipeRunLog?: import("../runLog.js").RecipeRunLog;
+  decisionTraceLog?: import("../decisionTraceLog.js").DecisionTraceLog;
 }
 
+export function registerAllTools(ctx: ToolContext): void;
 export function registerAllTools(
   transport: McpTransport,
   config: Config,
@@ -333,20 +341,94 @@ export function registerAllTools(
   probes: ProbeResults,
   extensionClient: ExtensionClient,
   activityLog?: ActivityLog,
-  terminalPrefix = "",
+  terminalPrefix?: string,
   fileLock?: FileLock,
   sessions?: Map<string, unknown>,
-  orchestrator: ClaudeOrchestrator | null = null,
-  sessionId = "",
-  pluginTools: LoadedPluginTool[] = [],
-  automationHooks: AutomationHooks | undefined = undefined,
+  orchestrator?: ClaudeOrchestrator | null,
+  sessionId?: string,
+  pluginTools?: LoadedPluginTool[],
+  automationHooks?: AutomationHooks | undefined,
   getDisconnectInfo?: () => DisconnectInfo,
   onContextCacheUpdated?: (generatedAt: string) => void,
   getExtensionDisconnectCount?: () => number,
   commitIssueLinkLog?: import("../commitIssueLinkLog.js").CommitIssueLinkLog,
   recipeRunLog?: import("../runLog.js").RecipeRunLog,
   decisionTraceLog?: import("../decisionTraceLog.js").DecisionTraceLog,
+): void;
+export function registerAllTools(
+  transportOrCtx: McpTransport | ToolContext,
+  configArg?: Config,
+  openedFilesArg?: Set<string>,
+  probesArg?: ProbeResults,
+  extensionClientArg?: ExtensionClient,
+  activityLogArg?: ActivityLog,
+  terminalPrefixArg = "",
+  fileLockArg?: FileLock,
+  sessionsArg?: Map<string, unknown>,
+  orchestratorArg: ClaudeOrchestrator | null = null,
+  sessionIdArg = "",
+  pluginToolsArg: LoadedPluginTool[] = [],
+  automationHooksArg: AutomationHooks | undefined = undefined,
+  getDisconnectInfoArg?: () => DisconnectInfo,
+  onContextCacheUpdatedArg?: (generatedAt: string) => void,
+  getExtensionDisconnectCountArg?: () => number,
+  commitIssueLinkLogArg?: import("../commitIssueLinkLog.js").CommitIssueLinkLog,
+  recipeRunLogArg?: import("../runLog.js").RecipeRunLog,
+  decisionTraceLogArg?: import("../decisionTraceLog.js").DecisionTraceLog,
 ): void {
+  // Options-object form: unpack and re-dispatch through the positional path.
+  if (
+    transportOrCtx &&
+    typeof transportOrCtx === "object" &&
+    "transport" in transportOrCtx &&
+    "config" in transportOrCtx
+  ) {
+    const ctx = transportOrCtx as ToolContext;
+    registerAllTools(
+      ctx.transport,
+      ctx.config,
+      ctx.openedFiles,
+      ctx.probes,
+      ctx.extensionClient,
+      ctx.activityLog,
+      ctx.terminalPrefix ?? "",
+      ctx.fileLock,
+      ctx.sessions,
+      ctx.orchestrator ?? null,
+      ctx.sessionId ?? "",
+      ctx.pluginTools ?? [],
+      ctx.automationHooks,
+      ctx.getDisconnectInfo,
+      ctx.onContextCacheUpdated,
+      ctx.getExtensionDisconnectCount,
+      ctx.commitIssueLinkLog,
+      ctx.recipeRunLog,
+      ctx.decisionTraceLog,
+    );
+    return;
+  }
+
+  // Positional form — bind locals to original names so the body below is unchanged.
+  const transport = transportOrCtx as McpTransport;
+  const config = configArg as Config;
+  const openedFiles = openedFilesArg as Set<string>;
+  const probes = probesArg as ProbeResults;
+  const extensionClient = extensionClientArg as ExtensionClient;
+  const activityLog = activityLogArg;
+  const terminalPrefix = terminalPrefixArg;
+  const fileLock = fileLockArg;
+  const sessions = sessionsArg;
+  const orchestrator = orchestratorArg;
+  const sessionId = sessionIdArg;
+  const pluginTools = pluginToolsArg;
+  const automationHooks = automationHooksArg;
+  const getDisconnectInfo = getDisconnectInfoArg;
+  const onContextCacheUpdated = onContextCacheUpdatedArg;
+  const getExtensionDisconnectCount = getExtensionDisconnectCountArg;
+  const commitIssueLinkLog = commitIssueLinkLogArg;
+  const recipeRunLog = recipeRunLogArg;
+  const decisionTraceLog = decisionTraceLogArg;
+
   const workspace = config.workspace;
   const workspaceFolders = config.workspaceFolders;
 

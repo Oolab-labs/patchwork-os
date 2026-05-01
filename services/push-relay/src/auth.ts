@@ -5,9 +5,15 @@
  * For MVP we support a single RELAY_AUTH_TOKEN env var mapped to a single
  * RELAY_USER_ID (self-hosted). Multi-tenant token management (DB-backed) is
  * a Pro hosted dashboard concern.
+ *
+ * Tokens are NEVER stored plaintext at rest. At construction we generate a
+ * per-process HMAC key (32 random bytes) and store HMAC-SHA256(key, token)
+ * keyed by base64. On lookup we hash the inbound token with the same key
+ * and `timingSafeEqual` the digests. This means a heap dump leaks digests,
+ * not credentials.
  */
 
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 
 export interface TokenStore {
@@ -16,31 +22,42 @@ export interface TokenStore {
 }
 
 export class EnvTokenStore implements TokenStore {
+  // Per-process HMAC key. Random per startup, in-memory only — never written
+  // to disk or env. Used to derive at-rest digests for stored tokens.
+  private readonly hmacKey: Buffer;
+  // Map<digest-base64, userId>. Keys are HMAC-SHA256 outputs, never plaintext.
   private readonly tokens: Map<string, string>;
 
   constructor(envTokens: string) {
+    this.hmacKey = randomBytes(32);
+    this.tokens = new Map();
     // Format: "token1:userId1,token2:userId2"
-    this.tokens = new Map(
-      envTokens
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s.includes(":"))
-        .map((s) => {
-          const idx = s.indexOf(":");
-          return [s.slice(0, idx), s.slice(idx + 1)] as [string, string];
-        }),
-    );
+    for (const raw of envTokens.split(",")) {
+      const s = raw.trim();
+      if (!s.includes(":")) continue;
+      const idx = s.indexOf(":");
+      const token = s.slice(0, idx);
+      const userId = s.slice(idx + 1);
+      if (!token || !userId) continue;
+      this.tokens.set(this.digest(token), userId);
+    }
+  }
+
+  private digest(token: string): string {
+    return createHmac("sha256", this.hmacKey)
+      .update(token, "utf8")
+      .digest("base64");
   }
 
   lookup(token: string): string | null {
+    if (!token) return null;
+    const candidate = this.digest(token);
+    const candBuf = Buffer.from(candidate, "base64");
     for (const [stored, userId] of this.tokens) {
-      if (stored.length !== token.length) continue;
-      try {
-        if (timingSafeEqual(Buffer.from(stored), Buffer.from(token))) {
-          return userId;
-        }
-      } catch {
-        // length mismatch already guarded above — shouldn't happen
+      const storedBuf = Buffer.from(stored, "base64");
+      if (storedBuf.length !== candBuf.length) continue;
+      if (timingSafeEqual(storedBuf, candBuf)) {
+        return userId;
       }
     }
     return null;

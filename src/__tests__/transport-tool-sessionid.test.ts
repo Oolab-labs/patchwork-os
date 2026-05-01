@@ -68,8 +68,10 @@ describe("transport tool-call sessionId wiring", () => {
     const calls = findActivityLogRecordCalls(src);
     expect(
       calls.length,
-      "expected at least 3 activityLog.record sites in transport.ts",
-    ).toBeGreaterThanOrEqual(3);
+      "expected at least 2 activityLog.record sites in transport.ts (success + error). " +
+        "Approval-rejection now uses recordEvent('approval_rejected') and is intentionally " +
+        "not a record() site — see Bug E fix.",
+    ).toBeGreaterThanOrEqual(2);
 
     const missingSessionId = calls.filter(
       (args) => !/this\.sessionId/.test(args),

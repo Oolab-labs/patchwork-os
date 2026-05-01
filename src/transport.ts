@@ -109,6 +109,15 @@ export class McpTransport {
   private activeListener: ((data: Buffer) => void) | null = null;
   private inFlightControllers = new Map<string | number, AbortController>();
   private inFlightToolNames = new Map<string | number, string>();
+  /**
+   * Snapshot of in-flight tool-call ids captured at `detachSoft()` time.
+   * Used by the per-call `finally` clause to clean up `inFlightControllers`
+   * + `activeToolCalls` even after attach() bumped `this.generation`. Without
+   * this set, an old-gen tool that settles after grace-period reattach would
+   * leak its slot in inFlightControllers AND its activeToolCalls count,
+   * which in turn makes HTTP eviction skip the session forever.
+   */
+  private detachSoftInflight = new Set<string | number>();
   /** Pending elicitation/create requests waiting for a client response. */
   private pendingElicitations = new Map<
     string | number,
@@ -124,6 +133,13 @@ export class McpTransport {
   private activeToolCalls = 0;
   private callCount = 0;
   private errorCount = 0;
+  /**
+   * Tool calls rejected/expired by the human approval gate. Tracked
+   * separately from errorCount so dashboard stats and getSessionUsage can
+   * distinguish "human said no" from "tool blew up". Rejections never
+   * increment errorCount and never produce a tool-stats entry.
+   */
+  private approvalRejectionCount = 0;
   private generation = 0; // incremented on each attach; stale handlers check this
   private readonly sessionStartedAt = Date.now();
   private readonly resultSizeTracker = new Map<string, number>();
@@ -492,6 +508,14 @@ export class McpTransport {
       );
     }
     this.pendingElicitations.clear();
+    // Snapshot in-flight ids so the per-call finally can clean them up after
+    // attach() flips `this.generation`. Merge into the existing set rather
+    // than replacing it — multiple back-to-back grace-period reconnects can
+    // leave several "old" generations of tool calls in flight, and a later
+    // detachSoft must not lose ids carried over from an earlier one.
+    for (const id of this.inFlightControllers.keys()) {
+      this.detachSoftInflight.add(id);
+    }
   }
 
   detach(): void {
@@ -506,6 +530,9 @@ export class McpTransport {
     }
     this.inFlightControllers.clear();
     this.inFlightToolNames.clear();
+    // Hard detach also drops any pending detachSoft snapshot — those calls
+    // are aborted, their finally clauses can no longer leak.
+    this.detachSoftInflight.clear();
     // Reject all pending elicitation requests so callers don't hang after disconnect
     for (const [, pending] of this.pendingElicitations) {
       pending.reject(
@@ -528,6 +555,7 @@ export class McpTransport {
   getStats(): {
     callCount: number;
     errorCount: number;
+    approvalRejectionCount: number;
     activeToolCalls: number;
     inFlightTools: string[];
     startedAt: number;
@@ -535,6 +563,7 @@ export class McpTransport {
     return {
       callCount: this.callCount,
       errorCount: this.errorCount,
+      approvalRejectionCount: this.approvalRejectionCount,
       activeToolCalls: this.activeToolCalls,
       inFlightTools: [...this.inFlightToolNames.values()],
       startedAt: this.sessionStartedAt,
@@ -1170,7 +1199,11 @@ export class McpTransport {
                 },
               };
             } else {
-              const startTime = Date.now();
+              // startTime is captured AFTER the approval gate (below) so that
+              // human-decision wait time is excluded from tool stats. Capturing
+              // it here would inflate avgDurationMs / p95 / p99 by the entire
+              // approval wait — see fix for approval-gate stats pollution bug.
+              let startTime = 0;
               const callId = Math.random().toString(36).slice(2, 10);
               const callLog = this.logger.child({ tool: params.name, callId });
               let timedOut = false;
@@ -1275,14 +1308,15 @@ export class McpTransport {
                     this.activeToolCalls--;
                     this.inFlightToolNames.delete(msg.id);
                     this.inFlightControllers.delete(msg.id);
-                    this.errorCount++;
-                    this.activityLog?.record(
-                      params.name,
-                      Date.now() - startTime,
-                      "error",
-                      undefined,
-                      this.sessionId ?? undefined,
-                    );
+                    // Approval rejections/expiries are NOT tool failures — track
+                    // them on a dedicated counter and record a lifecycle event
+                    // (not a tool entry) so stats() avg/p95/p99 stay clean.
+                    this.approvalRejectionCount++;
+                    this.activityLog?.recordEvent("approval_rejected", {
+                      tool: params.name,
+                      decision,
+                      sessionId: this.sessionId ?? undefined,
+                    });
                     response = {
                       jsonrpc: "2.0",
                       id: msg.id,
@@ -1302,6 +1336,10 @@ export class McpTransport {
                     break;
                   }
                 }
+                // Start the duration clock now — AFTER the approval gate has
+                // resolved — so stats reflect actual tool execution time, not
+                // the time the human spent thinking about the approval.
+                startTime = Date.now();
                 try {
                   const effectiveTimeout = tool.timeoutMs ?? TOOL_TIMEOUT_MS;
                   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -1422,11 +1460,19 @@ export class McpTransport {
                   }
                 } finally {
                   if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-                  // Only touch shared state if we're still on the same generation.
-                  // detach() clears inFlightControllers and resets activeToolCalls for
-                  // new connections; an orphaned finally from a previous generation must
-                  // not delete the new session's controller or skew its counter.
-                  if (gen === this.generation) {
+                  // Only touch shared state if we're still on the same generation,
+                  // OR if this id was snapshotted by detachSoft() (grace-period
+                  // resumption). detach() clears inFlightControllers and resets
+                  // activeToolCalls for hard reconnects; an orphaned finally
+                  // from a previous generation must not delete the new session's
+                  // controller or skew its counter — UNLESS detachSoft preserved
+                  // this id, in which case its slot in inFlightControllers and
+                  // its activeToolCalls count survived the reattach and MUST be
+                  // released now that the call has settled.
+                  const wasSoftPreserved = this.detachSoftInflight.delete(
+                    msg.id,
+                  );
+                  if (gen === this.generation || wasSoftPreserved) {
                     this.inFlightControllers.delete(msg.id);
                     this.inFlightToolNames.delete(msg.id);
                     this.activeToolCalls = Math.max(

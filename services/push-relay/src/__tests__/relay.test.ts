@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { bearerAuthMiddleware, EnvTokenStore } from "../auth.js";
 import { InMemoryRegistry } from "../deviceRegistry.js";
 import type { ApnsAdapter, FcmAdapter } from "../dispatcher.js";
+import { redactSecrets } from "../redact.js";
 import { buildRouter } from "../routes.js";
 
 function buildApp(fcm?: FcmAdapter, apns?: ApnsAdapter) {
@@ -51,6 +52,26 @@ describe("auth", () => {
     );
     expect(res.status).toBe(401);
   });
+
+  it("accepts correct token after at-rest hashing", async () => {
+    // EnvTokenStore should hash tokens internally; lookup still resolves
+    // the original plaintext correctly.
+    const store = new EnvTokenStore("plain-token-abc:user42");
+    expect(store.lookup("plain-token-abc")).toBe("user42");
+    expect(store.lookup("not-this-one")).toBeNull();
+  });
+
+  it("does not retain plaintext tokens in heap-visible map", async () => {
+    // After construction, no map field on the store should contain the
+    // raw token value as a key. We allow private fields but require they
+    // store HMAC digests, not plaintext.
+    const store = new EnvTokenStore("super-secret-plain:user1");
+    const json = JSON.stringify(store, (_k, v) => {
+      if (v instanceof Map) return [...v.keys()];
+      return v;
+    });
+    expect(json).not.toContain("super-secret-plain");
+  });
 });
 
 describe("device registry routes", () => {
@@ -79,6 +100,20 @@ describe("device registry routes", () => {
     expect(count.body.count).toBe(0);
   });
 
+  it("removes device with special chars (slashes/colons) via body", async () => {
+    const { app } = buildApp();
+    const fcmTok = "abc/def:ghi+jkl=";
+    await req(app, "post", "/devices/register", {
+      token: fcmTok,
+      platform: "fcm",
+    });
+    expect((await req(app, "get", "/devices/count")).body.count).toBe(1);
+    // New endpoint: DELETE /devices with token in body
+    const del = await req(app, "delete", "/devices", { token: fcmTok });
+    expect(del.status).toBe(200);
+    expect((await req(app, "get", "/devices/count")).body.count).toBe(0);
+  });
+
   it("rejects invalid platform", async () => {
     const { app } = buildApp();
     const res = await req(app, "post", "/devices/register", {
@@ -86,6 +121,22 @@ describe("device registry routes", () => {
       platform: "web",
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rate-limits registrations: 6th in 60s rejected", async () => {
+    const { app } = buildApp();
+    for (let i = 0; i < 5; i++) {
+      const r = await req(app, "post", "/devices/register", {
+        token: `fcm-${i}`,
+        platform: "fcm",
+      });
+      expect(r.status).toBe(200);
+    }
+    const sixth = await req(app, "post", "/devices/register", {
+      token: "fcm-6",
+      platform: "fcm",
+    });
+    expect(sixth.status).toBe(429);
   });
 });
 
@@ -133,16 +184,19 @@ describe("POST /push", () => {
       token: "fcm-device",
       platform: "fcm",
     });
-    await req(app, "post", "/push", validPayload);
+    await req(app, "post", "/push", {
+      ...validPayload,
+      callId: "fcm-call-1",
+    });
     // Allow fire-and-forget to settle
     await new Promise((r) => setTimeout(r, 20));
     expect(sent).toHaveLength(1);
     const msg = sent[0] as Record<string, unknown>;
     expect(msg.token).toBe("fcm-device");
     const data = msg.data as Record<string, string>;
-    expect(data.callId).toBe("abc-123");
+    expect(data.callId).toBe("fcm-call-1");
     expect(data.approvalToken).toBe("token-xyz");
-    expect(data.approveUrl).toContain("/approve/abc-123");
+    expect(data.approveUrl).toContain("/approve/fcm-call-1");
     // Token must NOT appear in the URL — it leaks to access logs and Referer.
     // The service worker pulls `approvalToken` from the data payload and
     // sends it as an `x-approval-token` header on the approve POST.
@@ -158,6 +212,103 @@ describe("POST /push", () => {
       approvalToken: "tok",
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rejects duplicate (replay) within window — 409", async () => {
+    const { app } = buildApp();
+    await req(app, "post", "/devices/register", {
+      token: "fcm-x",
+      platform: "fcm",
+    });
+    const payload = {
+      ...validPayload,
+      callId: "replay-test-1",
+      approvalToken: "replay-tok-1",
+    };
+    const first = await req(app, "post", "/push", payload);
+    expect(first.status).toBe(200);
+    const second = await req(app, "post", "/push", payload);
+    expect(second.status).toBe(409);
+  });
+
+  it("clamps oversized expiresAt to now+5min", async () => {
+    const captured: unknown[] = [];
+    const fcm: FcmAdapter = {
+      sendEach: vi.fn().mockImplementation(async (msgs) => {
+        captured.push(...msgs);
+        return { responses: msgs.map(() => ({ success: true })) };
+      }),
+    };
+    const { app } = buildApp(fcm);
+    await req(app, "post", "/devices/register", {
+      token: "fcm-clamp",
+      platform: "fcm",
+    });
+    const before = Date.now();
+    const farFuture = before + 60 * 60_000; // 1 hour
+    await req(app, "post", "/push", {
+      ...validPayload,
+      callId: "clamp-test-1",
+      approvalToken: "clamp-tok-1",
+      expiresAt: farFuture,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const after = Date.now();
+    expect(captured).toHaveLength(1);
+    const msg = captured[0] as Record<string, unknown>;
+    const data = msg.data as Record<string, string>;
+    const reportedExpiry = parseInt(data.expiresAt, 10);
+    // Clamp ~ now + 5min; allow loose lower bound (could be slightly less
+    // than before+5min since "now" is captured inside the route)
+    expect(reportedExpiry).toBeLessThanOrEqual(after + 5 * 60_000 + 100);
+    expect(reportedExpiry).toBeGreaterThanOrEqual(before + 4 * 60_000);
+    // Definitely not the unclamped 1hr value
+    expect(reportedExpiry).toBeLessThan(farFuture);
+  });
+
+  it("rejects already-expired expiresAt", async () => {
+    const { app } = buildApp();
+    await req(app, "post", "/devices/register", {
+      token: "fcm-exp",
+      platform: "fcm",
+    });
+    const past = Date.now() - 60_000;
+    const res = await req(app, "post", "/push", {
+      ...validPayload,
+      callId: "expired-test-1",
+      approvalToken: "expired-tok-1",
+      expiresAt: past,
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("redactSecrets", () => {
+  it("redacts PEM blocks", () => {
+    const s = `Error: failed to parse: -----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEAxxyyzz
+abc123longbase64isheresoonenough
+-----END RSA PRIVATE KEY-----
+trailing context`;
+    const out = redactSecrets(s);
+    expect(out).toContain("[redacted PEM]");
+    expect(out).not.toContain("MIIEowIBAAKCAQEAxxyyzz");
+    expect(out).not.toContain("BEGIN RSA PRIVATE KEY");
+  });
+
+  it("redacts long base64-ish token sequences", () => {
+    const s = "token=ya29.A0ARrdaM_AbcDEF1234567890XyZAbCdEfGhIjKlMnOpQrStUv";
+    const out = redactSecrets(s);
+    expect(out).toContain("[redacted token]");
+    expect(out).not.toContain(
+      "ya29.A0ARrdaM_AbcDEF1234567890XyZAbCdEfGhIjKlMnOpQrStUv",
+    );
+  });
+
+  it("leaves short strings alone", () => {
+    expect(redactSecrets("plain error: not found")).toBe(
+      "plain error: not found",
+    );
   });
 });
 
