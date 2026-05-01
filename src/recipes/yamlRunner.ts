@@ -45,6 +45,7 @@ import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "./legacyRecipeCompat.js";
+import { resolveRecipePath } from "./resolveRecipePath.js";
 import type { ErrorPolicy } from "./schema.js";
 
 // Import tool registry and trigger tool self-registration
@@ -260,6 +261,13 @@ export type StepResult = {
   tool?: string;
   status: "ok" | "skipped" | "error";
   error?: string;
+  /**
+   * Structured error code propagated from a thrown step error. Currently
+   * populated for `recipe_path_jail_escape` (G-security A-PR1) so tests
+   * and the dashboard can branch on err.code rather than message text
+   * (R2 M-4). Other codes may follow.
+   */
+  errorCode?: string;
   durationMs: number;
 };
 
@@ -537,12 +545,14 @@ export async function runYamlRecipe(
     let result: string | null = null;
     let stepError: string | undefined;
     let thrownError: string | undefined;
+    let thrownErrorCode: string | undefined;
     for (let attempt = 0; attempt <= retryCount; attempt++) {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, retryDelayMs));
       }
       stepError = undefined;
       thrownError = undefined;
+      thrownErrorCode = undefined;
       try {
         result = await executeStep(step, ctx, stepDeps);
         // Detect tool-level errors reported as JSON {ok: false, error: ...}
@@ -574,6 +584,11 @@ export async function runYamlRecipe(
         }
       } catch (err) {
         thrownError = err instanceof Error ? err.message : String(err);
+        // Preserve structured error codes (e.g. recipe_path_jail_escape)
+        // so callers and tests can branch on `err.code` per R2 M-4
+        // without scraping the message string.
+        const code = (err as { code?: unknown })?.code;
+        if (typeof code === "string") thrownErrorCode = code;
         result = null;
       }
       if (!stepError && !thrownError) break;
@@ -592,6 +607,7 @@ export async function runYamlRecipe(
         tool: step.tool,
         status: "error",
         error: thrownError,
+        ...(thrownErrorCode ? { errorCode: thrownErrorCode } : {}),
         durationMs: Date.now() - stepStart,
       });
       if (!failOpen) {
@@ -639,7 +655,17 @@ export async function runYamlRecipe(
         }
       }
       if (step.tool === "file.write" || step.tool === "file.append") {
-        outputs.push(render(step.path as string, ctx));
+        // R2 C-1 / F-02: re-validate the rendered path against the jail so a
+        // template substitution that survived earlier checks (e.g. via a
+        // chained sub-recipe deps override) cannot smuggle an out-of-jail
+        // path into the run log / dashboard outputs list.
+        const renderedPath = render(step.path as string, ctx);
+        outputs.push(
+          resolveRecipePath(renderedPath, {
+            workspace: stepDeps.workdir,
+            write: true,
+          }),
+        );
       }
     }
   }
@@ -854,11 +880,6 @@ function deepRender(value: unknown, ctx: RunContext): unknown {
   return value;
 }
 
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
-  return p;
-}
-
 function parseSinceToGitArg(since: string): string {
   const m = /^(\d+)(h|d)$/i.exec(since.trim());
   if (!m) return since;
@@ -972,26 +993,35 @@ export function defaultGitStaleBranches(
 /** Resolve all RunnerDeps to concrete StepDeps with production defaults filled in. */
 function resolveStepDeps(deps: RunnerDeps): StepDeps {
   const workdir = deps.workdir ?? process.cwd();
+  // Defense-in-depth: even if a file.* tool somehow forgets to call
+  // resolveRecipePath in its execute(), the default StepDeps file ops will
+  // jail the path before touching the filesystem (G-security F-01 / R2 C-1
+  // chained-runner third-substitution-site coverage).
   return {
     readFile:
-      deps.readFile ?? ((p: string) => readFileSync(expandHome(p), "utf-8")),
+      deps.readFile ??
+      ((p: string) =>
+        readFileSync(resolveRecipePath(p, { workspace: workdir }), "utf-8")),
     writeFile:
       deps.writeFile ??
       ((p: string, content: string) => {
-        const abs = expandHome(p);
+        const abs = resolveRecipePath(p, { workspace: workdir, write: true });
         mkdirSync(path.dirname(abs), { recursive: true });
         writeFileSync(abs, content);
       }),
     appendFile:
       deps.appendFile ??
       ((p: string, content: string) => {
-        const abs = expandHome(p);
+        const abs = resolveRecipePath(p, { workspace: workdir, write: true });
         mkdirSync(path.dirname(abs), { recursive: true });
         appendFileSync(abs, content);
       }),
     mkdir:
       deps.mkdir ??
-      ((p: string) => mkdirSync(expandHome(p), { recursive: true })),
+      ((p: string) =>
+        mkdirSync(resolveRecipePath(p, { workspace: workdir, write: true }), {
+          recursive: true,
+        })),
     workdir,
     gitLogSince: deps.gitLogSince ?? defaultGitLogSince,
     gitStaleBranches: deps.gitStaleBranches ?? defaultGitStaleBranches,
@@ -1253,6 +1283,28 @@ export function buildChainedDeps(
     tool: string,
     params: Record<string, unknown>,
   ): Promise<unknown> => {
+    // R2 C-1 third-substitution-site coverage: the chained runner has its
+    // own template-resolution path (`chainedRunner.ts:194-205`). By the
+    // time we reach this dispatch point the params have been rendered
+    // *and* JSON-parsed, so a `path` field that survived the chained
+    // substitution may have just been promoted from inside-jail to
+    // outside-jail. Re-jail any `path` field on file.* tools here so that
+    // chained sub-recipes can't bypass the per-tool jail in `tools/file.ts`
+    // by injecting `..` segments via outer-recipe vars.
+    if (
+      (tool === "file.read" ||
+        tool === "file.write" ||
+        tool === "file.append") &&
+      typeof params.path === "string"
+    ) {
+      params = {
+        ...params,
+        path: resolveRecipePath(params.path, {
+          workspace: stepDeps.workdir,
+          write: tool !== "file.read",
+        }),
+      };
+    }
     // Construct a YamlStep-compatible object so we can reuse executeStep.
     const step: YamlStep = { tool, ...params };
     // executeStep uses a RunContext for {{}} rendering — by the time executeTool
