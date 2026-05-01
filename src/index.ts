@@ -1153,10 +1153,16 @@ if (process.argv[2] === "recipe" && process.argv[3] === "install") {
         const result = installRecipeFromFile(path.resolve(source), {
           recipesDir,
         });
+        // alpha.36+ — sidecar `<name>.permissions.json` is no longer written
+        // (was decorative, never read by toolRegistry). Print the suggested
+        // permissions snippet inline so users can hand-merge into settings.
         process.stdout.write(
           `  ✓ ${result.action} ${result.installedPath}\n` +
-            `  ℹ permissions snippet written to ${result.installedPath}.permissions.json\n` +
-            `    Review + merge into ~/.claude/settings.json to pre-approve recipe steps.\n`,
+            `  ℹ Patchwork does not enforce per-recipe permissions; configure tool gating in ~/.claude/settings.json.\n` +
+            `    Suggested permissions snippet:\n${result.permissionsJson
+              .split("\n")
+              .map((l) => `      ${l}`)
+              .join("\n")}\n`,
         );
       } else {
         // Marketplace install: github:, https://, ./local/

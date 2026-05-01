@@ -87,14 +87,14 @@ export function installRecipeFromFile(
   }
   writeFile(destPath, JSON.stringify(recipe, null, 2));
 
-  // Write permissions suggestion alongside for user review.
-  const permsPath = `${destPath}.permissions.json`;
+  // Permissions sidecar (`<name>.permissions.json`) was decorative — never read by toolRegistry.
+  // Removed in alpha.36 per recipe-dogfood-2026-05-01/PLAN-MASTER-V2.md A-PR4.
+  // Canonical permissions location: ~/.claude/settings.json.
   const permissionsJson = JSON.stringify(
     { permissions: compiled.suggestedPermissions },
     null,
     2,
   );
-  writeFile(permsPath, permissionsJson);
 
   return {
     compiled,
