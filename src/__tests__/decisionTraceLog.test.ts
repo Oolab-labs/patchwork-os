@@ -132,4 +132,39 @@ describe("DecisionTraceLog", () => {
     expect(log.size()).toBe(3);
     expect(log.query({}).map((r) => r.ref)).toEqual(["#4", "#3", "#2"]);
   });
+
+  it("Bug 4: rotateDisk() drops a single oversized line rather than writing past the byte cap", () => {
+    // Same shape as runLog Bug 4 — the while-loop halves `lines` until under
+    // cap, but exits when `lines.length === 1`. A single forged row (e.g. a
+    // pre-existing decision trace with embedded blob) exceeding the cap was
+    // written back unchanged.
+    const file = path.join(dir, "decision_traces.jsonl");
+    const fs = require("node:fs") as typeof import("node:fs");
+
+    // Decision traces themselves cap problem/solution at 500 chars, but
+    // pre-existing lines on disk aren't re-validated. Forge an arbitrarily
+    // large line that satisfies the JSON shape.
+    const oversized = JSON.stringify({
+      seq: 1,
+      createdAt: 1,
+      ref: "#huge",
+      problem: "p",
+      solution: "s",
+      workspace: "/ws",
+      // 2 MB junk in tags, just to blow the cap.
+      tags: ["x".repeat(2 * 1024 * 1024)],
+    });
+    fs.writeFileSync(file, `${oversized}\n`);
+    expect(fs.statSync(file).size).toBeGreaterThan(1024 * 1024);
+
+    const log = new DecisionTraceLog({ dir });
+    // Trigger rotation by appending a fresh trace.
+    log.record({ ...base(), ref: "#after-drop" });
+
+    const sizeAfter = fs.statSync(file).size;
+    expect(sizeAfter).toBeLessThan(1024 * 1024);
+    const text = fs.readFileSync(file, "utf8");
+    expect(text).not.toContain('"ref":"#huge"');
+    expect(text).toContain('"ref":"#after-drop"');
+  });
 });
