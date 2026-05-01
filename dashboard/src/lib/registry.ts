@@ -60,6 +60,30 @@ export function parseInstallSource(install: string): ParsedInstallSource | null 
   };
 }
 
+/**
+ * Defense-in-depth validator for marketplace install POST sites.
+ *
+ * Throws a user-facing Error when the install string isn't shaped like a
+ * `github:owner/repo[/path]@ref` URL — covers tampered registry indexes,
+ * MITM-flipped responses, and accidental opaque-passthrough at call sites.
+ * The bridge also validates server-side; this is the dashboard layer's
+ * "block the obvious attack before we forward" safety net.
+ */
+export function assertValidInstallSource(install: string): ParsedInstallSource {
+  if (typeof install !== "string" || install.trim().length === 0) {
+    throw new Error(
+      "Invalid install source: expected non-empty string in `github:owner/repo[/path]@ref` form",
+    );
+  }
+  const parsed = parseInstallSource(install);
+  if (!parsed || !parsed.owner || !parsed.repo) {
+    throw new Error(
+      "Invalid install source: must match `github:owner/repo[/path]@ref` (refusing to forward to bridge)",
+    );
+  }
+  return parsed;
+}
+
 export function rawUrlFor(src: ParsedInstallSource, file: string): string {
   const parts = [src.owner, src.repo, src.ref, src.path, file].filter(Boolean);
   return `${RAW_BASE}/${parts.join("/")}`;
