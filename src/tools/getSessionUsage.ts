@@ -18,6 +18,7 @@ export function createGetSessionUsageTool(transport: McpTransport) {
         properties: {
           callCount: { type: "integer" },
           errorCount: { type: "integer" },
+          approvalRejectionCount: { type: "integer" },
           schemaTokenEstimate: { type: ["integer", "null"] },
           cacheWarmed: { type: "boolean" },
           largestResults: {
@@ -36,6 +37,7 @@ export function createGetSessionUsageTool(transport: McpTransport) {
         required: [
           "callCount",
           "errorCount",
+          "approvalRejectionCount",
           "schemaTokenEstimate",
           "cacheWarmed",
           "largestResults",
@@ -49,6 +51,7 @@ export function createGetSessionUsageTool(transport: McpTransport) {
       return successStructured({
         callCount: stats.callCount,
         errorCount: stats.errorCount,
+        approvalRejectionCount: stats.approvalRejectionCount,
         schemaTokenEstimate:
           schemaCacheSize !== null ? Math.round(schemaCacheSize / 4) : null,
         cacheWarmed: schemaCacheSize !== null,
