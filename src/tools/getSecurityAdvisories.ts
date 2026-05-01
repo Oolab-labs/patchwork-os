@@ -71,7 +71,15 @@ function parseNpmAuditJson(raw: string, packageManager: string): AuditResult {
       typeof viaEntry === "object" && viaEntry.url ? viaEntry.url : undefined;
     let fix: string | undefined;
     if (typeof vuln.fixAvailable === "object" && vuln.fixAvailable) {
-      fix = `upgrade to ${vuln.fixAvailable.name}@${vuln.fixAvailable.version}`;
+      // npm reports a transitive fix on the dependent: e.g. uuid (a child
+      // of node-cron) gets `fixAvailable.name = "node-cron"`. The literal
+      // "upgrade to X@Y" message is then misleading because the affected
+      // package and the upgrade target differ. Surface that explicitly.
+      if (vuln.fixAvailable.name !== pkg) {
+        fix = `upgrade ${vuln.fixAvailable.name}@${vuln.fixAvailable.version} (parent of ${pkg})`;
+      } else {
+        fix = `upgrade to ${vuln.fixAvailable.name}@${vuln.fixAvailable.version}`;
+      }
     } else if (vuln.fixAvailable === true) {
       fix = `run ${packageManager} audit fix`;
     }

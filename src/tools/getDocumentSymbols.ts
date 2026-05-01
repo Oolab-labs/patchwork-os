@@ -40,6 +40,28 @@ export function createGetDocumentSymbolsTool(
             type: "string",
             description: "Workspace or absolute path to the file",
           },
+          kind: {
+            description:
+              "Filter to one or more symbol kinds (e.g. ['Class','Function','Method','Interface']). Case-insensitive. Cuts variable noise on large bundled files.",
+            oneOf: [
+              { type: "string" },
+              { type: "array", items: { type: "string" } },
+            ],
+          },
+          maxDepth: {
+            type: "integer",
+            minimum: 0,
+            maximum: 10,
+            description:
+              "Max nesting depth to include (0=top-level only, 1=top + immediate children, …). Default: no depth filter. LSP returns a flattened list keyed by 'parent' name; depth is computed by walking the parent chain.",
+          },
+          topN: {
+            type: "integer",
+            minimum: 1,
+            maximum: 5000,
+            description:
+              "Cap returned symbols. Default 500. Combined with kind/maxDepth filters which apply first.",
+          },
         },
         required: ["filePath"],
         additionalProperties: false as const,
@@ -75,6 +97,28 @@ export function createGetDocumentSymbolsTool(
       const rawPath = requireString(args, "filePath");
       const filePath = resolveFilePath(rawPath, workspace);
 
+      const kindArg = args.kind;
+      const kindFilter: Set<string> | null = (() => {
+        if (typeof kindArg === "string")
+          return new Set([kindArg.toLowerCase()]);
+        if (Array.isArray(kindArg)) {
+          return new Set(
+            kindArg
+              .filter((k): k is string => typeof k === "string")
+              .map((k) => k.toLowerCase()),
+          );
+        }
+        return null;
+      })();
+      const maxDepth =
+        typeof args.maxDepth === "number" && Number.isFinite(args.maxDepth)
+          ? Math.max(0, Math.floor(args.maxDepth))
+          : null;
+      const topN =
+        typeof args.topN === "number" && Number.isFinite(args.topN)
+          ? Math.max(1, Math.floor(args.topN))
+          : 500;
+
       // Extension path: full LSP document symbols
       if (extensionClient?.isConnected()) {
         try {
@@ -84,19 +128,55 @@ export function createGetDocumentSymbolsTool(
           );
           if (result !== null && typeof result === "object") {
             const r = result as Record<string, unknown>;
-            // Cap symbols array at 500 to avoid bloating context on large bundled files.
-            const DOCUMENT_SYMBOLS_MAX = 500;
-            if (
-              Array.isArray(r.symbols) &&
-              r.symbols.length > DOCUMENT_SYMBOLS_MAX
-            ) {
-              const full = r.symbols;
+            if (Array.isArray(r.symbols)) {
+              type Sym = {
+                name?: string;
+                kind?: string;
+                parent?: string | null;
+              };
+              const all = r.symbols as Sym[];
+              const totalCount = all.length;
+
+              // Build parent-depth map by walking the parent chain. LSP
+              // returns a flattened list with `parent: <name|null>`; depth
+              // is the chain length to a null parent.
+              const byName = new Map<string, Sym>();
+              for (const s of all) {
+                if (typeof s.name === "string") byName.set(s.name, s);
+              }
+              const depthOf = (s: Sym): number => {
+                let d = 0;
+                let cur: Sym | undefined = s;
+                while (cur && typeof cur.parent === "string") {
+                  d += 1;
+                  if (d > 32) break; // cycle guard
+                  cur = byName.get(cur.parent);
+                }
+                return d;
+              };
+
+              const filtered = all.filter((s) => {
+                if (
+                  kindFilter &&
+                  typeof s.kind === "string" &&
+                  !kindFilter.has(s.kind.toLowerCase())
+                ) {
+                  return false;
+                }
+                if (maxDepth !== null && depthOf(s) > maxDepth) return false;
+                return true;
+              });
+
+              const truncated = filtered.length > topN;
+              const symbols = truncated ? filtered.slice(0, topN) : filtered;
+
               return successStructured({
                 ...r,
-                symbols: full.slice(0, DOCUMENT_SYMBOLS_MAX),
+                symbols,
                 source: "lsp",
-                truncated: true,
-                totalCount: full.length,
+                ...(truncated || filtered.length !== totalCount
+                  ? { truncated: true, totalCount }
+                  : {}),
               });
             }
             return successStructured({ ...r, source: "lsp" });
