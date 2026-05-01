@@ -485,4 +485,122 @@ describe("RecipeRunLog.record", () => {
     const text = fs.readFileSync(file, "utf8");
     expect(text).toContain('"taskId":"fresh"');
   });
+
+  it("Bug 3: rotateDisk() updates lastFileSize so syncFromDisk() re-reads after rotation", () => {
+    // After rotation, the file shrinks. `lastFileSize` was left at the
+    // pre-rotation size; the very next `syncFromDisk()` saw `size <=
+    // lastFileSize` and returned early. New rows appended after rotation
+    // were silently invisible to query() until the file regrew.
+    const file = path.join(tmp, "runs.jsonl");
+    const fs = require("node:fs") as typeof import("node:fs");
+    const longRun = JSON.stringify({
+      seq: 0,
+      taskId: "x".repeat(2000),
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+    });
+    const seedLines: string[] = [];
+    for (let i = 0; i < 600; i++) seedLines.push(longRun);
+    fs.writeFileSync(file, `${seedLines.join("\n")}\n`);
+
+    const log = new RecipeRunLog({ dir: tmp });
+    // Trigger rotation by appending a fresh row past the byte cap.
+    log.appendDirect({
+      taskId: "post-rotation-task",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 0,
+      startedAt: 0,
+      doneAt: 1,
+      durationMs: 1,
+    });
+
+    // Inspect the private lastFileSize after rotation. If the bug is live
+    // it would still equal the pre-rotation size (>1 MB). After the fix,
+    // it must be the post-rotation size (well under the cap). Note: an
+    // append happens after rotation inside the same `append()` call, so
+    // the file on disk is slightly larger than `lastFileSize` recorded by
+    // rotateDisk. The key invariant is that the recorded size is the
+    // post-rotation snapshot, not the >1 MB pre-rotation value.
+    const lastFileSize = (log as unknown as { lastFileSize: number })
+      .lastFileSize;
+    expect(lastFileSize).toBeLessThan(1024 * 1024);
+    expect(lastFileSize).toBeGreaterThan(0);
+
+    // External writer (e.g. another process) appends a new row directly
+    // to the file. syncFromDisk() (via query()) should pick it up.
+    const extra = {
+      seq: 99_999,
+      taskId: "external-writer",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 10,
+      doneAt: 11,
+      durationMs: 1,
+    };
+    fs.appendFileSync(file, `${JSON.stringify(extra)}\n`);
+    const refreshed = log.query({ limit: 500 });
+    const found = refreshed.find((r) => r.taskId === "external-writer");
+    expect(found).toBeDefined();
+    expect(found!.seq).toBe(99_999);
+  });
+
+  it("Bug 4: rotateDisk() drops a single line that exceeds the byte cap rather than writing oversized", () => {
+    // The while-loop halves `lines` until under cap, but exits when
+    // `lines.length === 1`. If that single line itself exceeds the cap,
+    // the file is written anyway — defeating the cap. registrySnapshot
+    // is unbounded user JSON, a realistic offender.
+    const file = path.join(tmp, "runs.jsonl");
+    const fs = require("node:fs") as typeof import("node:fs");
+
+    // Forge a single >1 MB line (legal JSON, just enormous).
+    const oversized = JSON.stringify({
+      seq: 1,
+      taskId: "huge",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 1,
+      doneAt: 2,
+      durationMs: 1,
+      // 2 MB of payload — far over the 1 MB rotation cap.
+      stepResults: [
+        {
+          id: "blow-up",
+          status: "ok",
+          durationMs: 1,
+          registrySnapshot: { junk: "x".repeat(2 * 1024 * 1024) },
+        },
+      ],
+    });
+    fs.writeFileSync(file, `${oversized}\n`);
+    expect(fs.statSync(file).size).toBeGreaterThan(1024 * 1024);
+
+    const log = new RecipeRunLog({ dir: tmp });
+    // Trigger rotation by appending any new row.
+    log.appendDirect({
+      taskId: "after-drop",
+      recipeName: "r",
+      trigger: "recipe",
+      status: "done",
+      createdAt: 5,
+      startedAt: 5,
+      doneAt: 6,
+      durationMs: 1,
+    });
+
+    // Post-rotation file must NOT contain the oversized row, and MUST be
+    // honestly under the cap (plus the small fresh appended row).
+    const sizeAfter = fs.statSync(file).size;
+    expect(sizeAfter).toBeLessThan(1024 * 1024);
+    const text = fs.readFileSync(file, "utf8");
+    expect(text).not.toContain('"taskId":"huge"');
+    expect(text).toContain('"taskId":"after-drop"');
+  });
 });
