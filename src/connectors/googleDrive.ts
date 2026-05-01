@@ -293,12 +293,17 @@ export async function fetchDocName(
   }
 }
 
-const pendingStates = new Set<string>();
+import { createOAuthStateStore } from "./oauthStateStore.js";
+
+const pendingStates = createOAuthStateStore();
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");
-  pendingStates.add(state);
-  setTimeout(() => pendingStates.delete(state), 10 * 60 * 1000);
+  if (!pendingStates.add(state)) {
+    throw new Error(
+      "OAuth state store full — too many concurrent authorize requests",
+    );
+  }
   return state;
 }
 
@@ -330,14 +335,13 @@ export async function handleDriveCallback(
       body: JSON.stringify({ ok: false, error }),
     };
   }
-  if (!code || !state || !pendingStates.has(state)) {
+  if (!code || !state || !pendingStates.consume(state)) {
     return {
       status: 400,
       contentType: "application/json",
       body: JSON.stringify({ ok: false, error: "Invalid OAuth state" }),
     };
   }
-  pendingStates.delete(state);
   try {
     const oauthTokens = await exchangeCode(code);
     const tokens: DriveTokens = {

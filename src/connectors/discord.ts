@@ -153,20 +153,23 @@ export function isConnected(): boolean {
 // approach (Set + setTimeout) rather than slack's on-disk file because we
 // don't need cross-process resumption for an OAuth round-trip.
 
-const pendingStates = new Set<string>();
+import { createOAuthStateStore } from "./oauthStateStore.js";
+
 const STATE_TTL_MS = 5 * 60 * 1000;
+const pendingStates = createOAuthStateStore({ ttlMs: STATE_TTL_MS });
 
 function generateState(): string {
   const state = crypto.randomBytes(32).toString("hex");
-  pendingStates.add(state);
-  setTimeout(() => pendingStates.delete(state), STATE_TTL_MS);
+  if (!pendingStates.add(state)) {
+    throw new Error(
+      "OAuth state store full — too many concurrent authorize requests",
+    );
+  }
   return state;
 }
 
 function consumeState(state: string): boolean {
-  if (!pendingStates.has(state)) return false;
-  pendingStates.delete(state);
-  return true;
+  return pendingStates.consume(state);
 }
 
 // ── Connector class ──────────────────────────────────────────────────────────
