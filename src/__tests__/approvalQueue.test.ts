@@ -321,4 +321,39 @@ describe("ApprovalQueue dedup (inflight key)", () => {
     });
     expect(r2.callId).not.toBe(r1.callId);
   });
+
+  it("clear() resolves deduped pending promises AND empties inflight map", async () => {
+    // Bug 2: clear() walked entries.values() and resolved each entry.resolve,
+    // but never iterated entry.pendingPromises[] (deduped joiners) and never
+    // cleared this.inflight. Deduped callers' promises hung forever after
+    // shutdown / resetApprovalQueueForTests.
+    const q = new ApprovalQueue();
+    const r1 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    const r2 = q.request({
+      toolName: "gitPush",
+      params: { remote: "origin", branch: "main" },
+      tier: "high",
+      sessionId: "s1",
+    });
+    // r2 dedup-joined r1 — same callId, separate promise.
+    expect(r2.callId).toBe(r1.callId);
+
+    q.clear();
+
+    // Both the primary and the deduped joiner must wake.
+    await expect(r1.promise).resolves.toBe("expired");
+    await expect(r2.promise).resolves.toBe("expired");
+
+    // inflight map must be drained — leftover entries leak memory and
+    // prevent the next identical request from creating a fresh entry.
+    // Reach into the private field via index access (acceptable in tests).
+    const inflight = (q as unknown as { inflight: Map<string, string> })
+      .inflight;
+    expect(inflight.size).toBe(0);
+  });
 });

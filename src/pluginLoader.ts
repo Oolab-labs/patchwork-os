@@ -26,8 +26,12 @@ import { TOOL_CATEGORIES } from "./tools/index.js";
  * `toolNamePrefix: "git_"` could register `git_status` and silently shadow
  * the built-in. `TOOL_CATEGORIES` keys are the canonical source of truth
  * (every built-in tool is categorized for the dashboard).
+ *
+ * Exported so `PluginWatcher` can seed its hot-reload collision check with
+ * the same set of built-in names — without this, hot-reload only blocks
+ * collisions across sibling plugins, leaving built-ins shadowable.
  */
-function getBuiltInToolNames(): string[] {
+export function getBuiltInToolNames(): string[] {
   return Object.keys(TOOL_CATEGORIES);
 }
 

@@ -224,8 +224,16 @@ export class ApprovalQueue {
     for (const entry of this.entries.values()) {
       clearTimeout(entry.timer);
       entry.resolve("expired");
+      // Wake up any duplicate callers who joined this entry via dedup —
+      // their promises would otherwise hang forever after shutdown /
+      // resetApprovalQueueForTests.
+      for (const r of entry.pendingPromises) r("expired");
     }
     this.entries.clear();
+    // Drain dedup map. Stale entries are self-healing on the next request,
+    // but leaving them around leaks memory across shutdown cycles and is
+    // the wrong invariant for `clear()`.
+    this.inflight.clear();
   }
 
   private resolveEntry(callId: string, decision: ApprovalDecision): boolean {

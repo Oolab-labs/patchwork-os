@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { Config } from "./config.js";
 import type { Logger } from "./logger.js";
 import {
+  getBuiltInToolNames,
   type LoadedPlugin,
   type LoadedPluginTool,
   loadOnePluginFull,
@@ -103,8 +104,13 @@ export class PluginWatcher {
       `[plugin-watch] Reloading plugin "${old.manifest.name}" ...`,
     );
 
-    // Collision names = all names from OTHER plugins
-    const otherNames = new Set<string>();
+    // Collision names = built-in tool names + all names from OTHER plugins.
+    // Seeding with built-ins matches the initial-load defense in
+    // `loadPluginsFull`; without it a plugin edited mid-flight to declare
+    // e.g. `toolNamePrefix: "git"` and register `gitPush` would slip past
+    // collision detection during hot-reload and `transport.replaceTool`
+    // would silently shadow the built-in.
+    const otherNames = new Set<string>(getBuiltInToolNames());
     for (const [s, p] of this.loadedPlugins) {
       if (s !== spec) {
         for (const t of p.tools) otherNames.add(t.schema.name);

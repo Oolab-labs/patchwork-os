@@ -417,7 +417,29 @@ export class RecipeRunLog {
         lines = lines.slice(-Math.max(1, Math.floor(lines.length / 2)));
         joined = lines.join("\n");
       }
-      writeFileSync(this.file, `${joined}\n`, { mode: 0o600 });
+      // If we're down to a single line that still exceeds the cap, drop it
+      // entirely. Without this guard the while-loop exits at length===1 and
+      // we'd write an oversized row back, defeating rotation. A realistic
+      // offender is `RunStepResult.registrySnapshot` which is unbounded
+      // user JSON.
+      if (lines.length === 1 && joined.length + 1 > MAX_PERSIST_BYTES) {
+        this.opts.logger?.warn?.(
+          `[runlog] rotate dropped 1 oversized row (${joined.length} bytes > ${MAX_PERSIST_BYTES} cap)`,
+        );
+        lines = [];
+        joined = "";
+      }
+      writeFileSync(this.file, joined.length > 0 ? `${joined}\n` : "", {
+        mode: 0o600,
+      });
+      // Refresh `lastFileSize` so the next syncFromDisk() doesn't see
+      // `size <= lastFileSize` (stale pre-rotation value) and silently
+      // skip freshly-appended rows.
+      try {
+        this.lastFileSize = statSync(this.file).size;
+      } catch {
+        this.lastFileSize = 0;
+      }
     } catch (err) {
       this.opts.logger?.warn?.(
         `[runlog] rotate failed: ${err instanceof Error ? err.message : String(err)}`,
