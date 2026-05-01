@@ -2,9 +2,11 @@ package com.patchwork.bridge
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
@@ -24,8 +26,29 @@ class BridgeService {
 
     companion object {
         private val LOG = Logger.getInstance(BridgeService::class.java)
-        const val PLUGIN_VERSION = "1.0.0"
+
+        // Wire-protocol version. Matches vscode-extension/src/constants.ts and
+        // the bridge's BRIDGE_PROTOCOL_VERSION. Bump only on breaking-handshake
+        // changes — see ADR-0001.
         const val EXTENSION_PROTOCOL_VERSION = "1.1.0"
+
+        /**
+         * Plugin package version as seen by the JetBrains Marketplace.
+         *
+         * Read at runtime from the installed plugin descriptor so it stays in
+         * lock-step with `intellij-plugin/gradle.properties`. Hardcoding here
+         * (the previous behavior) drifted: 1.0.1 shipped to the Marketplace
+         * while this constant still said "1.0.0", and the bridge's
+         * `extension/hello` digests + logs reflected the stale value.
+         *
+         * Falls back to "0.0.0-dev" if the plugin descriptor isn't available
+         * (e.g. running unit tests outside the IntelliJ runtime).
+         */
+        @JvmStatic
+        val PLUGIN_VERSION: String by lazy {
+            val pluginId = PluginId.getId("com.patchwork.bridge")
+            PluginManagerCore.getPlugin(pluginId)?.version ?: "0.0.0-dev"
+        }
 
         // Auth header name — confirmed from vscode-extension/src/connection.ts line 320
         private const val AUTH_HEADER = "x-claude-ide-extension"
