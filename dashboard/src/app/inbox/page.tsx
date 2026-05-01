@@ -1,5 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
 import { apiPath } from "@/lib/api";
 
 type FilterCategory = "All" | "Morning Briefs" | "Recipe Outputs" | "Agent Reports";
@@ -87,87 +90,112 @@ function stripMarkdown(text: string): string {
 
 // ------------------------------------------------------------------ markdown renderer
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function renderInline(text: string): string {
-  return escapeHtml(text).replace(
-    /\*\*(.+?)\*\*/g,
-    '<strong style="color:var(--fg-0)">$1</strong>',
-  );
-}
-
-function renderMarkdown(text: string): string {
-  let safe = text
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
-    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, "")
-    .replace(/(href|src)\s*=\s*["']?\s*data:[^"'\s>]*["']?/gi, '$1="#"')
-    .replace(/href\s*=\s*["']?\s*javascript:[^"'\s>]*["']?/gi, 'href="#"');
-
-  const lines = safe.split("\n");
-  const html: string[] = [];
-  let i = 0;
-  let firstH1 = true;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (/^---+\s*$/.test(line)) {
-      html.push('<hr style="border:none;border-top:1px solid var(--line-2);margin:20px 0" />');
-      i++;
-      continue;
-    }
-
-    const h3 = line.match(/^###\s+(.*)/);
-    if (h3) {
-      html.push(`<h3 style="font-size:12px;font-weight:700;margin:16px 0 4px;color:var(--ink-3);letter-spacing:0.06em;text-transform:uppercase">${escapeHtml(h3[1])}</h3>`);
-      i++;
-      continue;
-    }
-    const h2 = line.match(/^##\s+(.*)/);
-    if (h2) {
-      html.push(`<h2 style="font-size:15px;font-weight:600;margin:24px 0 8px;color:var(--ink-0);padding-bottom:6px;border-bottom:1px solid var(--line-2)">${escapeHtml(h2[1])}</h2>`);
-      i++;
-      continue;
-    }
-    const h1 = line.match(/^#\s+(.*)/);
-    if (h1) {
-      const marginTop = firstH1 ? "0" : "32px";
-      firstH1 = false;
-      html.push(`<h1 style="font-size:21px;font-weight:700;margin:${marginTop} 0 4px;color:var(--ink-0)">${escapeHtml(h1[1])}</h1>`);
-      i++;
-      continue;
-    }
-
-    if (/^[-*]\s+/.test(line)) {
-      html.push('<ul style="margin:4px 0 12px 0;padding-left:16px;list-style:disc">');
-      while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
-        const item = lines[i].replace(/^[-*]\s+/, "");
-        html.push(`<li style="font-size:13.5px;line-height:1.65;margin-bottom:4px;color:var(--ink-1)">${renderInline(item)}</li>`);
-        i++;
-      }
-      html.push("</ul>");
-      continue;
-    }
-
-    if (line.trim() === "") {
-      html.push('<div style="height:6px"></div>');
-      i++;
-      continue;
-    }
-
-    html.push(`<p style="font-size:14px;line-height:1.75;margin:0 0 10px;color:var(--ink-1)">${renderInline(line)}</p>`);
-    i++;
-  }
-
-  return html.join("");
-}
+/**
+ * Inbox markdown renderer.
+ *
+ * Source: local agent-output files at `~/.patchwork/inbox/*.md`. The
+ * dashboard's API route reads them server-side and the path-traversal
+ * guard there is the trust boundary against external content. We do
+ * NOT trust the markdown to be free of HTML — agents or recipes can
+ * write whatever they want — so we render through `react-markdown` +
+ * `rehype-sanitize` (default safelist) instead of the prior hand-rolled
+ * regex stripper. The default rehype-sanitize schema drops `<script>`,
+ * `<iframe>`, `on*` attributes, `javascript:`/`data:` URLs, etc.
+ *
+ * Per-element styles preserved as CSS overrides via `components` so the
+ * existing dashboard look/feel is retained without inline `style="…"`
+ * attributes embedded in HTML strings (which sanitize-allows-style would
+ * otherwise need to permit).
+ */
+const markdownComponents = {
+  h1: ({ children }: { children?: React.ReactNode }) => (
+    <h1
+      style={{
+        fontSize: 21,
+        fontWeight: 700,
+        margin: "0 0 4px",
+        color: "var(--ink-0)",
+      }}
+    >
+      {children}
+    </h1>
+  ),
+  h2: ({ children }: { children?: React.ReactNode }) => (
+    <h2
+      style={{
+        fontSize: 15,
+        fontWeight: 600,
+        margin: "24px 0 8px",
+        color: "var(--ink-0)",
+        paddingBottom: 6,
+        borderBottom: "1px solid var(--line-2)",
+      }}
+    >
+      {children}
+    </h2>
+  ),
+  h3: ({ children }: { children?: React.ReactNode }) => (
+    <h3
+      style={{
+        fontSize: 12,
+        fontWeight: 700,
+        margin: "16px 0 4px",
+        color: "var(--ink-3)",
+        letterSpacing: "0.06em",
+        textTransform: "uppercase",
+      }}
+    >
+      {children}
+    </h3>
+  ),
+  p: ({ children }: { children?: React.ReactNode }) => (
+    <p
+      style={{
+        fontSize: 14,
+        lineHeight: 1.75,
+        margin: "0 0 10px",
+        color: "var(--ink-1)",
+      }}
+    >
+      {children}
+    </p>
+  ),
+  ul: ({ children }: { children?: React.ReactNode }) => (
+    <ul
+      style={{
+        margin: "4px 0 12px 0",
+        paddingLeft: 16,
+        listStyle: "disc",
+      }}
+    >
+      {children}
+    </ul>
+  ),
+  li: ({ children }: { children?: React.ReactNode }) => (
+    <li
+      style={{
+        fontSize: 13.5,
+        lineHeight: 1.65,
+        marginBottom: 4,
+        color: "var(--ink-1)",
+      }}
+    >
+      {children}
+    </li>
+  ),
+  hr: () => (
+    <hr
+      style={{
+        border: "none",
+        borderTop: "1px solid var(--line-2)",
+        margin: "20px 0",
+      }}
+    />
+  ),
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong style={{ color: "var(--fg-0)" }}>{children}</strong>
+  ),
+};
 
 // ------------------------------------------------------------------ relative time (live)
 
@@ -662,9 +690,15 @@ export default function InboxPage() {
                   <div
                     ref={detailRef}
                     style={{ fontSize: 14, lineHeight: 1.7, color: "var(--ink-1)" }}
-                    // eslint-disable-next-line react/no-danger
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(selected.content) }}
-                  />
+                  >
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeSanitize]}
+                      components={markdownComponents}
+                    >
+                      {selected.content}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 10, color: "var(--ink-3)" }}>
