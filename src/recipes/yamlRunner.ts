@@ -32,6 +32,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
@@ -56,6 +57,23 @@ import {
   registerPluginTools,
 } from "./toolRegistry.js";
 import "./tools/index.js";
+
+/**
+ * Bundled-templates directory used as a third allowed root for nested-recipe
+ * lookups (`recipe:` references with explicit paths). Resolved once at module
+ * load — `__dirname` equivalent points at `dist/recipes/` in the npm tarball
+ * (or `src/recipes/` in dev) so the relative `../../templates/recipes` lifts
+ * out of the source tree to the package root regardless of build layout.
+ *
+ * See dogfood A-PR2 / R2 M-5 — the third jail root is captured here, not at
+ * call time, so a runtime CWD change cannot relocate it.
+ */
+const BUNDLED_TEMPLATES_DIR: string = (() => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // dist/recipes/yamlRunner.js → ../../templates/recipes
+  // src/recipes/yamlRunner.ts → ../../templates/recipes
+  return path.resolve(here, "..", "..", "templates", "recipes");
+})();
 
 export interface YamlStep {
   tool?: string;
@@ -1272,6 +1290,32 @@ export function buildChainedDeps(
       buildAgentExecutorDeps(stepDeps, runnerDeps, claudeCodeFnOverride),
     );
 
+  // ---------------------------------------------------------------------
+  // BEGIN A-PR2 EDIT BLOCK — `loadNestedRecipe` jail (dogfood F-04).
+  //
+  // Path-shaped recipe references (`recipe: ./inner.yaml`, `recipe: /abs.yaml`)
+  // are restricted to three allowed roots:
+  //   1. parent recipe's directory (`path.dirname(parentSourcePath)`)
+  //   2. user recipes dir (`~/.patchwork/recipes/`)
+  //   3. bundled templates dir (`BUNDLED_TEMPLATES_DIR`, captured at boot)
+  //
+  // Resolved candidates that escape all three (e.g. `/etc/passwd.yaml`) are
+  // rejected with `null` — same shape as a not-found lookup so the chained
+  // runner reports its existing "nested_recipe_not_found" error rather than
+  // surfacing a security-implementation detail to the recipe author.
+  //
+  // Coordination note (A-PR1 may also touch this file): the helper
+  // `pathIsWithin` below is local to this module — A-PR1 is changing
+  // unrelated `vars` validation paths and should not collide here. If a merge
+  // conflict surfaces, keep BOTH the jail AND the A-PR1 vars validation.
+  // ---------------------------------------------------------------------
+  const pathIsWithin = (candidate: string, base: string): boolean => {
+    const resolvedCandidate = path.resolve(candidate);
+    const resolvedBase = path.resolve(base);
+    if (resolvedCandidate === resolvedBase) return true;
+    return resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
+  };
+
   const loadNestedRecipe = async (
     name: string,
     parentSourcePath?: string,
@@ -1280,6 +1324,9 @@ export function buildChainedDeps(
     sourcePath?: string;
   } | null> => {
     const lookupName = normalizeNestedRecipeLookupName(name);
+
+    const { homedir: nestedHomedir } = await import("node:os");
+    const userRecipesDir = path.join(nestedHomedir(), ".patchwork", "recipes");
 
     if (parentSourcePath) {
       const parentDir = path.dirname(parentSourcePath);
@@ -1296,15 +1343,26 @@ export function buildChainedDeps(
         const candidates = /\.ya?ml$/i.test(resolvedBase)
           ? [resolvedBase]
           : [`${resolvedBase}.yaml`, `${resolvedBase}.yml`, resolvedBase];
+
+        // Jail: every candidate must live inside one of the three allowed
+        // roots (parent dir, user recipes, bundled templates). Reject silently
+        // — null mirrors the existing not-found path so error messages stay
+        // generic and don't leak the jail boundaries.
+        const allowedRoots = [parentDir, userRecipesDir, BUNDLED_TEMPLATES_DIR];
         for (const candidate of candidates) {
+          const inJail = allowedRoots.some((root) =>
+            pathIsWithin(candidate, root),
+          );
+          if (!inJail) continue;
           const loaded = tryLoadRecipeFile(candidate);
           if (loaded) return loaded;
         }
       }
     }
+    // END A-PR2 EDIT BLOCK
 
-    const { homedir } = await import("node:os");
-    const recipesDir = path.join(homedir(), ".patchwork", "recipes");
+    // Reuses `userRecipesDir` already resolved above for the jail check.
+    const recipesDir = userRecipesDir;
 
     // Check for manifest-based package directory first.
     // Supports both plain names ("morning-brief") and scoped names ("@acme/morning-brief").
