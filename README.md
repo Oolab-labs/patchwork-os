@@ -310,6 +310,7 @@ patchwork patchwork-init
 | [documents/plugin-authoring.md](documents/plugin-authoring.md) | Plugin manifest schema, entrypoint API, distribution |
 | [documents/live-toolsmithing.md](documents/live-toolsmithing.md) | Write tools while the AI is using them — hot-reload narrative + worked example |
 | [documents/triggers.md](documents/triggers.md) | Anything Can Trigger Your AI — iPhone Shortcuts, Stream Deck, Home Assistant, curl, GitHub Actions |
+| [documents/speculative-refactoring.md](documents/speculative-refactoring.md) | Stage multi-file edits, review the diff, commit or discard — honest about commit-phase semantics |
 | [documents/architecture.md](documents/architecture.md) | One-page architecture diagram + how to read it |
 | [documents/comparison.md](documents/comparison.md) | Patchwork vs MCP server / Zapier / hosted assistants / agent frameworks — honest tradeoffs |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
