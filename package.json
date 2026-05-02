@@ -110,6 +110,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
     "@opentelemetry/sdk-node": "^0.213.0",
     "@opentelemetry/semantic-conventions": "^1.40.0",
+    "age-encryption": "^0.3.0",
     "ajv": "^8.18.0",
     "ipaddr.js": "^2.3.0",
     "minimatch": "^10.0.0",

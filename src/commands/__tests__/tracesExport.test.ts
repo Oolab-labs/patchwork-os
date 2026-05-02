@@ -2,6 +2,7 @@ import {
   createReadStream,
   existsSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -9,6 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { Readable } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runTracesExport, TRACES_EXPORT_VERSION } from "../tracesExport.js";
@@ -242,5 +244,140 @@ describe("runTracesExport", () => {
         result.outputPath,
       ),
     ).toBe(true);
+  });
+
+  describe("encryption (--encrypt)", () => {
+    // The age format starts with "age-encryption.org/v1\n". Decrypt
+    // round-trip uses the same library the encrypt path uses, so the
+    // bundle is portable to anyone with `age -d -p`.
+
+    it("encrypts the bundle with a passphrase and round-trips via age-encryption", async () => {
+      writeFileSync(
+        path.join(patchworkDir, "runs.jsonl"),
+        `${JSON.stringify({ seq: 1, recipeName: "demo" })}\n${JSON.stringify({ seq: 2 })}\n`,
+      );
+      writeFileSync(
+        path.join(patchworkDir, "decision_traces.jsonl"),
+        `${JSON.stringify({ id: "t1", decision: "approve" })}\n`,
+      );
+
+      const result = await runTracesExport({
+        patchworkDir,
+        activityDir,
+        output: path.join(tmpRoot, "encrypted.jsonl.gz.age"),
+        encrypt: { passphrase: "correct horse battery staple" },
+      });
+
+      expect(existsSync(result.outputPath)).toBe(true);
+
+      // Header should be the age v1 magic. Read first 22 bytes —
+      // "age-encryption.org/v1\n" is 22 chars.
+      const head = readFileSync(result.outputPath)
+        .slice(0, 22)
+        .toString("utf8");
+      expect(head).toBe("age-encryption.org/v1\n");
+
+      // Round-trip: decrypt → gunzip → parse manifest + envelopes.
+      const ciphertext = readFileSync(result.outputPath);
+      const { Decrypter } = await import("age-encryption");
+      const dec = new Decrypter();
+      dec.addPassphrase("correct horse battery staple");
+      const gzippedBytes = await dec.decrypt(
+        new Uint8Array(
+          ciphertext.buffer,
+          ciphertext.byteOffset,
+          ciphertext.byteLength,
+        ),
+      );
+      // Gunzip the inner bundle.
+      const lines: string[] = [];
+      const gz = Readable.from(Buffer.from(gzippedBytes)).pipe(createGunzip());
+      const rl = createInterface({ input: gz, crlfDelay: Infinity });
+      for await (const line of rl) {
+        if (line.trim().length > 0) lines.push(line);
+      }
+      expect(lines.length).toBeGreaterThan(0);
+      const firstLine = lines[0];
+      if (firstLine === undefined) throw new Error("empty bundle");
+      const manifest = JSON.parse(firstLine);
+      expect(manifest.type).toBe("manifest");
+      expect(manifest.totalCount).toBe(3);
+      const rows = lines.slice(1).map((l) => JSON.parse(l));
+      expect(rows).toHaveLength(3);
+    });
+
+    it("default encrypted filename uses .jsonl.gz.age extension", async () => {
+      writeFileSync(
+        path.join(patchworkDir, "runs.jsonl"),
+        `${JSON.stringify({ seq: 1 })}\n`,
+      );
+      const result = await runTracesExport({
+        patchworkDir,
+        activityDir,
+        encrypt: { passphrase: "test-passphrase" },
+      });
+      expect(/\.jsonl\.gz\.age$/.test(result.outputPath)).toBe(true);
+      // Should be in the patchworkDir.
+      expect(result.outputPath.startsWith(patchworkDir)).toBe(true);
+    });
+
+    it("encrypted bundle does not contain plaintext content of source rows", async () => {
+      // Sanity check that we're actually encrypting — a string that
+      // appears in the source must NOT appear verbatim in the output.
+      const marker = "QUITE-DISTINCTIVE-STRING-XYZZY-9000";
+      writeFileSync(
+        path.join(patchworkDir, "runs.jsonl"),
+        `${JSON.stringify({ seq: 1, marker })}\n`,
+      );
+      const result = await runTracesExport({
+        patchworkDir,
+        activityDir,
+        output: path.join(tmpRoot, "marked.jsonl.gz.age"),
+        encrypt: { passphrase: "p" },
+      });
+      const raw = readFileSync(result.outputPath);
+      expect(raw.includes(Buffer.from(marker))).toBe(false);
+    });
+
+    it("encrypted bundle is written with 0o600 perms", async () => {
+      writeFileSync(
+        path.join(patchworkDir, "runs.jsonl"),
+        `${JSON.stringify({ seq: 1 })}\n`,
+      );
+      const result = await runTracesExport({
+        patchworkDir,
+        activityDir,
+        output: path.join(tmpRoot, "perm.jsonl.gz.age"),
+        encrypt: { passphrase: "p" },
+      });
+      const mode = statSync(result.outputPath).mode & 0o777;
+      expect(mode).toBe(0o600);
+    });
+
+    it("wrong passphrase fails to decrypt", async () => {
+      writeFileSync(
+        path.join(patchworkDir, "runs.jsonl"),
+        `${JSON.stringify({ seq: 1 })}\n`,
+      );
+      const result = await runTracesExport({
+        patchworkDir,
+        activityDir,
+        output: path.join(tmpRoot, "wrong.jsonl.gz.age"),
+        encrypt: { passphrase: "right" },
+      });
+      const ciphertext = readFileSync(result.outputPath);
+      const { Decrypter } = await import("age-encryption");
+      const dec = new Decrypter();
+      dec.addPassphrase("wrong");
+      await expect(
+        dec.decrypt(
+          new Uint8Array(
+            ciphertext.buffer,
+            ciphertext.byteOffset,
+            ciphertext.byteLength,
+          ),
+        ),
+      ).rejects.toThrow();
+    });
   });
 });

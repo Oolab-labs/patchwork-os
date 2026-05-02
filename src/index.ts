@@ -1196,6 +1196,7 @@ if (process.argv[2] === "traces" && process.argv[3] === "export") {
       let output: string | undefined;
       let patchworkDir: string | undefined;
       let activityDir: string | undefined;
+      let encrypt = false;
       for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === "--output" || a === "-o") {
@@ -1207,11 +1208,19 @@ if (process.argv[2] === "traces" && process.argv[3] === "export") {
         } else if (a === "--activity-dir") {
           activityDir = args[i + 1];
           i++;
+        } else if (a === "--encrypt") {
+          encrypt = true;
         } else if (a === "--help" || a === "-h") {
           process.stdout.write(
-            "patchwork traces export [--output <path>] [--patchwork-dir <dir>] [--activity-dir <dir>]\n\n" +
+            "patchwork traces export [--output <path>] [--patchwork-dir <dir>] [--activity-dir <dir>] [--encrypt]\n\n" +
               "Bundles ~/.patchwork/{runs,decision_traces,commit_issue_links}.jsonl\n" +
               "and ~/.claude/ide/activity-*.jsonl into a single gzipped JSONL file.\n\n" +
+              "With --encrypt, the bundle is encrypted using the age format\n" +
+              "(https://age-encryption.org/v1) with a passphrase. Decrypt with:\n" +
+              "  age -d -o traces.jsonl.gz traces-export-*.jsonl.gz.age\n\n" +
+              "The passphrase is read from PATCHWORK_TRACES_PASSPHRASE if set,\n" +
+              "otherwise from a no-echo TTY prompt. Non-TTY without the env var\n" +
+              "exits with an error rather than silently using an empty passphrase.\n\n" +
               "Output is a manifest line followed by one envelope per row:\n" +
               '  {"type":"manifest", ...}\n' +
               '  {"source":"runs", "entry":{...}}\n' +
@@ -1222,11 +1231,39 @@ if (process.argv[2] === "traces" && process.argv[3] === "export") {
           process.exit(0);
         }
       }
+
+      // Resolve passphrase if --encrypt was passed.
+      let encryptPassphrase: string | undefined;
+      if (encrypt) {
+        const envPass = process.env.PATCHWORK_TRACES_PASSPHRASE;
+        if (envPass && envPass.length > 0) {
+          encryptPassphrase = envPass;
+        } else if (process.stdin.isTTY) {
+          // No-echo TTY prompt with confirmation.
+          const { readPassphraseFromTty } = await import(
+            "./commands/readPassphrase.js"
+          );
+          encryptPassphrase = await readPassphraseFromTty(
+            "Passphrase for traces bundle: ",
+            "Confirm passphrase: ",
+          );
+        } else {
+          process.stderr.write(
+            "Error: --encrypt requires a passphrase. Set PATCHWORK_TRACES_PASSPHRASE\n" +
+              "or run interactively from a TTY so the prompt can read with no echo.\n",
+          );
+          process.exit(1);
+        }
+      }
+
       const { runTracesExport } = await import("./commands/tracesExport.js");
       const result = await runTracesExport({
         ...(output !== undefined && { output }),
         ...(patchworkDir !== undefined && { patchworkDir }),
         ...(activityDir !== undefined && { activityDir }),
+        ...(encryptPassphrase !== undefined && {
+          encrypt: { passphrase: encryptPassphrase },
+        }),
       });
       process.stdout.write(`  ✓ Wrote ${result.outputPath}\n`);
       process.stdout.write(
