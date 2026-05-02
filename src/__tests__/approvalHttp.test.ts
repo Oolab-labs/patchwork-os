@@ -546,6 +546,83 @@ describe("routeApprovalRequest", () => {
       // callId is the queue-path-specific extra
       expect(typeof events[0].callId).toBe("string");
     });
+
+    it("propagates personalSignals onto queued PendingApproval when ActivityLog is wired", async () => {
+      // Pre-populate the activity log so the prior_approvals heuristic
+      // fires (≥ 3 past approvals on the same tool). Then drive the
+      // queue path and confirm queue.list() includes the signal.
+      const { ActivityLog } = await import("../activityLog.js");
+      const activityLog = new ActivityLog();
+      for (let i = 0; i < 4; i++) {
+        activityLog.recordEvent("approval_decision", {
+          toolName: "Bash",
+          decision: "allow",
+        });
+      }
+
+      const queue = new ApprovalQueue();
+      const promise = routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: {
+            toolName: "Bash",
+            params: { command: "ls" },
+            sessionId: "s-personal",
+          },
+        },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+          activityLog,
+        },
+      );
+
+      await new Promise((r) => setTimeout(r, 10));
+      const items = queue.list();
+      expect(items).toHaveLength(1);
+      expect(items[0]?.personalSignals).toBeDefined();
+      const priorApprovals = items[0]?.personalSignals?.find(
+        (s) => s.kind === "prior_approvals",
+      );
+      expect(priorApprovals).toBeDefined();
+      expect(priorApprovals?.count).toBe(4);
+
+      // Resolve so the test doesn't hang.
+      const callId = items[0]?.callId;
+      if (callId) queue.approve(callId);
+      await promise;
+    });
+
+    it("does not include personalSignals when no ActivityLog is wired", async () => {
+      // The integration is opt-in by deps. Tests that don't wire an
+      // ActivityLog must still see the queue without a personalSignals
+      // field — confirms the integration is non-breaking.
+      const queue = new ApprovalQueue();
+      const promise = routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: { toolName: "Bash", params: {} },
+        },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+        },
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      const items = queue.list();
+      expect(items).toHaveLength(1);
+      expect(items[0]?.personalSignals).toBeUndefined();
+
+      const callId = items[0]?.callId;
+      if (callId) queue.approve(callId);
+      await promise;
+    });
   });
 
   it("unknown route → 404", async () => {

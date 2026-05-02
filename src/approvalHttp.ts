@@ -63,6 +63,14 @@ export interface ApprovalHttpDeps {
   pushServiceToken?: string;
   /** Public base URL of this bridge (e.g. https://mybridge.example.com). Embedded in push payload as callback base. */
   pushServiceBaseUrl?: string;
+  /**
+   * Optional ActivityLog used to compute passive risk personalization
+   * signals (`src/approvalSignals.ts`). When omitted, personalSignals are
+   * not computed and the queue entry simply has `personalSignals: undefined` —
+   * the rest of the approval flow is unaffected. Tests that care only about
+   * the policy-engine path can leave this off.
+   */
+  activityLog?: import("./activityLog.js").ActivityLog;
 }
 
 export interface HttpRequest {
@@ -635,9 +643,27 @@ async function handleApprovalRequest(
     };
   }
 
+  // Personal signals — passive risk personalization. Only computed when
+  // an ActivityLog is wired up; tests / minimal harnesses leave it
+  // undefined. See src/approvalSignals.ts for the catalog.
+  const personalSignals = deps.activityLog
+    ? (await import("./approvalSignals.js")).computePersonalSignals({
+        toolName,
+        activityLog: deps.activityLog,
+      })
+    : undefined;
+
   const now = Date.now();
   const { callId, approvalToken, promise } = deps.queue.request(
-    { toolName, params, tier, summary, sessionId, riskSignals },
+    {
+      toolName,
+      params,
+      tier,
+      summary,
+      sessionId,
+      riskSignals,
+      ...(personalSignals && personalSignals.length > 0 && { personalSignals }),
+    },
     { withToken: !!deps.pushServiceUrl },
   );
   recordApprovalPrompted();

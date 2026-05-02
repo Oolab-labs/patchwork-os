@@ -33,6 +33,15 @@ export interface PendingApproval {
   sessionId?: string;
   summary?: string;
   riskSignals?: RiskSignal[];
+  /**
+   * Passive risk personalization signals (`src/approvalSignals.ts`).
+   * Distinct from `riskSignals`: those describe call CONTENT (rm -rf,
+   * non-HTTPS URL); these describe the user's RELATIONSHIP to the tool
+   * (prior approvals, prior rejections, first-time use). Both should
+   * reach the dashboard approval modal. Omitted when no signals fire
+   * to keep the lifecycle/wire payload small.
+   */
+  personalSignals?: import("./approvalSignals.js").PersonalSignal[];
   /** 256-bit hex token for phone-path approve/reject. Only present when push is configured. */
   approvalToken?: string;
 }
@@ -211,6 +220,7 @@ export class ApprovalQueue {
       sessionId: e.sessionId,
       summary: e.summary,
       riskSignals: e.riskSignals,
+      personalSignals: e.personalSignals,
       // approvalToken intentionally omitted from list — never expose to untrusted callers
     }));
   }
