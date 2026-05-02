@@ -10,6 +10,7 @@ import {
   loadCcPermissions,
   loadCcPermissionsAttributed,
 } from "./ccPermissions.js";
+import { captureForRunlog } from "./recipes/captureForRunlog.js";
 import { classifyTool } from "./riskTier.js";
 
 // Tools CC allows in plan mode (read-only — no filesystem or network writes).
@@ -517,14 +518,31 @@ async function handleApprovalRequest(
   const sessionId =
     typeof body.sessionId === "string" ? body.sessionId : undefined;
 
-  // riskSignals are computed lazily — most short-circuit branches skip the
-  // cost by never calling computeRiskSignals. The queue-awaiting branch
-  // passes the already-computed signals via the optional arg.
+  if (!toolName) {
+    return { status: 400, body: { error: "toolName required" } };
+  }
+
+  // Capture the inputs the policy saw on EVERY decision path, not just the
+  // queue-awaiting path. A future "decision replay debugger" needs to be able
+  // to fold a new policy over historical inputs — that requires `params`,
+  // `tier`, and `riskSignals` on every approval_decision row, not just rows
+  // that hit a human dashboard.
+  //
+  // Cost: classifyTool is a table lookup; computeRiskSignals is regex + one
+  // path.resolve. Both cheap. captureForRunlog redacts known secret keys and
+  // caps the JSON envelope at 8 KB so a giant `params.command` won't bloat
+  // the lifecycle log.
+  //
+  // Older rows (pre-this-PR) lack these fields. Readers must treat them as
+  // optional. There is no backfill — the inputs simply weren't captured.
+  const tier = classifyTool(toolName);
+  const riskSignals = computeRiskSignals(toolName, params, deps.workspace);
+  const capturedParams = captureForRunlog(params);
+
   const emit = (
     decision: string,
     reason: string,
     extras?: {
-      riskSignals?: RiskSignal[];
       callId?: string;
     },
   ) =>
@@ -535,17 +553,12 @@ async function handleApprovalRequest(
       reason,
       permissionMode,
       sessionId,
+      tier,
+      ...(capturedParams !== undefined && { params: capturedParams }),
+      ...(riskSignals.length > 0 && { riskSignals }),
       ...(summary !== undefined && { summary }),
-      ...(extras?.riskSignals &&
-        extras.riskSignals.length > 0 && {
-          riskSignals: extras.riskSignals,
-        }),
       ...(extras?.callId && { callId: extras.callId }),
     });
-
-  if (!toolName) {
-    return { status: 400, body: { error: "toolName required" } };
-  }
 
   // CC settings.json precedence
   const rules = (deps.ccLoader ?? loadCcPermissions)(deps.workspace, {
@@ -604,8 +617,9 @@ async function handleApprovalRequest(
     };
   }
 
-  // Fall through to dashboard approval
-  const tier = classifyTool(toolName);
+  // Fall through to dashboard approval. tier + riskSignals were already
+  // computed at the top of this function so emit() carries them on every
+  // decision path — see the comment block above the emit definition.
 
   // Respect approvalGate setting — "off" bypasses, "high" only queues high-tier tools
   const gate = deps.approvalGate ?? "off";
@@ -621,7 +635,6 @@ async function handleApprovalRequest(
     };
   }
 
-  const riskSignals = computeRiskSignals(toolName, params, deps.workspace);
   const now = Date.now();
   const { callId, approvalToken, promise } = deps.queue.request(
     { toolName, params, tier, summary, sessionId, riskSignals },
@@ -660,10 +673,7 @@ async function handleApprovalRequest(
   if (outcome !== "expired") {
     recordApprovalCompleted();
   }
-  emit(outcome === "approved" ? "allow" : "deny", outcome, {
-    riskSignals,
-    callId,
-  });
+  emit(outcome === "approved" ? "allow" : "deny", outcome, { callId });
   return {
     status: 200,
     body: {
