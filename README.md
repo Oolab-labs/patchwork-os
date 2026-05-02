@@ -1,6 +1,10 @@
-# Claude IDE Bridge & Patchwork OS
+# Patchwork OS
 
-**One npm package. Two products.** Pick the layer you need.
+### Your personal AI runtime, local-first.
+
+> Patchwork OS is a local-first personal AI runtime: pluggable model providers, hot-reloadable tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all running on your machine, all under your policy.
+
+The same codebase ships **two ways to use it.** Pick the layer you need.
 
 | | What you get | Install | Best for |
 |---|---|---|---|
