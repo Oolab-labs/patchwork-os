@@ -640,7 +640,6 @@ export interface RecipeSummary {
   stepCount: number;
   path: string;
   installedAt: number;
-  hasPermissions: boolean;
   source: "user" | "project" | "unknown";
   enabled: boolean;
   vars?: Array<{
@@ -704,14 +703,11 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         }>;
       };
       const stat = statSync(fullPath);
-      const permsPath = `${fullPath}.permissions.json`;
-      let hasPermissions = false;
-      try {
-        statSync(permsPath);
-        hasPermissions = true;
-      } catch {
-        // no permissions sidecar
-      }
+      // Legacy `<name>.permissions.json` sidecar was decorative — never read by
+      // toolRegistry. Removed in alpha.36; canonical perm location is
+      // ~/.claude/settings.json. See recipe-dogfood-2026-05-01/PLAN-MASTER-V2.md A-PR4.
+      // TODO(C-PR4): drop the never-shipped POST /recipes/:name/permissions route
+      // (DP-7 follow-up).
       const resolvedRecipesDir = path.resolve(recipesDir);
       let source: RecipeSummary["source"];
       if (
@@ -751,7 +747,6 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         stepCount: Array.isArray(parsed.steps) ? parsed.steps.length : 0,
         path: fullPath,
         installedAt: stat.mtimeMs,
-        hasPermissions,
         source,
         // Top-level legacy recipes don't have install dirs to put a marker
         // in, so the `enabled` field still comes from the legacy config list.
@@ -828,7 +823,6 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         stepCount: Array.isArray(parsed.steps) ? parsed.steps.length : 0,
         path: entrypointPath,
         installedAt: stat.mtimeMs,
-        hasPermissions: false,
         source: "user",
         // Disabled if EITHER the install marker is set OR the legacy config
         // names this recipe — defence-in-depth so a stale config entry can't

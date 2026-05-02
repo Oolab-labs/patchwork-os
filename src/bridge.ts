@@ -30,6 +30,7 @@ import { PluginWatcher } from "./pluginWatcher.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
 import { RecipeOrchestration } from "./recipeOrchestration.js";
+import { warnAboutLegacyPermissionsSidecars } from "./recipes/migrationWarnings.js";
 import { RecipeOrchestrator } from "./recipes/RecipeOrchestrator.js";
 import { classifyTool } from "./riskTier.js";
 import { RecipeRunLog } from "./runLog.js";
@@ -990,6 +991,9 @@ export class Bridge {
         });
         // Patchwork: wire recipe server fns + build cron scheduler.
         const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+        // One-shot scan for legacy `<name>.permissions.json` sidecars (alpha.36+
+        // no longer generates them). Skipped under NODE_ENV=test.
+        warnAboutLegacyPermissionsSidecars(recipesDir);
         this.recipeOrchestration = new RecipeOrchestration({
           server: this.server,
           getOrchestrator: () => this.orchestrator,

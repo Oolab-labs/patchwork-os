@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -35,7 +41,7 @@ const SIMPLE = {
 };
 
 describe("installRecipeFromFile", () => {
-  it("creates recipe + permissions file in recipesDir", () => {
+  it("creates recipe in recipesDir; returns suggested permissions JSON without writing sidecar", () => {
     const src = writeRecipe("source", SIMPLE);
     const recipesDir = path.join(dir, "recipes");
     const result = installRecipeFromFile(src, { recipesDir });
@@ -43,11 +49,12 @@ describe("installRecipeFromFile", () => {
     expect(result.installedPath.endsWith("sentry-autofix.json")).toBe(true);
     const written = JSON.parse(readFileSync(result.installedPath, "utf-8"));
     expect(written.name).toBe("sentry-autofix");
-    const perms = JSON.parse(
-      readFileSync(`${result.installedPath}.permissions.json`, "utf-8"),
-    );
+    // alpha.36+ — sidecar `<name>.permissions.json` is no longer written.
+    expect(existsSync(`${result.installedPath}.permissions.json`)).toBe(false);
+    // permissionsJson is still returned for callers who want to render it
+    // (e.g. CLI install confirmation).
+    const perms = JSON.parse(result.permissionsJson);
     expect(perms.permissions.ask).toContain("Edit(/src/**)");
-    // step-level risk "medium" sends all step tools to ask bucket
     expect(perms.permissions.ask).toContain("Read");
   });
 

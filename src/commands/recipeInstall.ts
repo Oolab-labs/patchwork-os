@@ -143,6 +143,17 @@ export function parseInstallSource(source: string): InstallSource {
   );
 }
 
+// ---------------------------------------------------------------------
+// BEGIN A-PR2 EDIT BLOCK — `parseGithubShorthand` strict validation
+// (dogfood R2 M-2). Owner/repo segments are validated against GitHub's own
+// rules (alphanumeric or hyphen/dot/underscore, max 39 chars, must start
+// alphanumeric) so injection attempts via shorthand (`gh:foo@bar:baz/repo`,
+// `gh:owner/<repo>?evil=1`) are rejected before reaching the URL builder.
+// Refs reject userinfo (`@`) and port markers (`:`) — these would otherwise
+// land inside the constructed `https://github.com/.../tree/<ref>/...` URL.
+// ---------------------------------------------------------------------
+const GITHUB_OWNER_REPO_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9-._]{0,38})$/;
+
 function parseGithubShorthand(shorthand: string): GitHubInstallSource {
   // Extract trailing @<ref> if present. The ref is opaque to us — git accepts
   // branches, tags, and commit SHAs in the same slot, and the GitHub API
@@ -155,6 +166,13 @@ function parseGithubShorthand(shorthand: string): GitHubInstallSource {
     if (!ref) {
       throw new Error(
         `Invalid github shorthand: empty ref after "@" in "${shorthand}@"`,
+      );
+    }
+    // Reject embedded URL syntax that would corrupt the constructed
+    // https://github.com/<owner>/<repo>/tree/<ref> URL (R2 M-2).
+    if (/[@:?#\s]/.test(ref) || ref.includes("..")) {
+      throw new Error(
+        `Invalid github shorthand: ref "${ref}" contains disallowed characters`,
       );
     }
   }
@@ -170,6 +188,26 @@ function parseGithubShorthand(shorthand: string): GitHubInstallSource {
   if (!owner || !repo) {
     throw new Error(`Invalid github shorthand: "${shorthand}"`);
   }
+  if (!GITHUB_OWNER_REPO_RE.test(owner)) {
+    throw new Error(
+      `Invalid github shorthand: owner "${owner}" is not a valid GitHub username`,
+    );
+  }
+  if (!GITHUB_OWNER_REPO_RE.test(repo)) {
+    throw new Error(
+      `Invalid github shorthand: repo "${repo}" is not a valid GitHub repository name`,
+    );
+  }
+  // Subdir segments: each must be a safe path component (no traversal, no
+  // control chars). Reuses `isSafeBasename` for consistency with the post-fetch
+  // file boundary check.
+  for (const seg of subdirParts) {
+    if (!isSafeBasename(seg)) {
+      throw new Error(
+        `Invalid github shorthand: subdir segment "${seg}" is unsafe`,
+      );
+    }
+  }
   return {
     type: "github",
     owner,
@@ -178,6 +216,7 @@ function parseGithubShorthand(shorthand: string): GitHubInstallSource {
     ...(ref ? { ref } : {}),
   };
 }
+// END A-PR2 EDIT BLOCK
 
 // ============================================================================
 // Install name determination
@@ -210,7 +249,51 @@ export function determineInstallName(
 // GitHub file fetching via API
 // ============================================================================
 
-async function httpsGet(url: string): Promise<Buffer> {
+// ---------------------------------------------------------------------
+// BEGIN A-PR2 EDIT BLOCK — `httpsGet` redirect chain hardening
+// (dogfood R2 I-2). Redirect targets must (1) be one of GitHub's known hosts
+// and (2) clear the SSRF guard. Hop count capped at 5 to bound the chain.
+// Origin is also validated up-front: this helper is reached only after
+// `parseGithubShorthand` / GitHub URL parsing, so all callers should already
+// be pointed at github.com / api.github.com / raw.githubusercontent.com.
+// ---------------------------------------------------------------------
+const GITHUB_REDIRECT_HOSTS = new Set<string>([
+  "github.com",
+  "www.github.com",
+  "api.github.com",
+  "raw.githubusercontent.com",
+  "codeload.github.com",
+  "objects.githubusercontent.com",
+  "media.githubusercontent.com",
+]);
+const HTTPS_GET_MAX_REDIRECTS = 5;
+
+function isAllowedGithubHost(hostname: string): boolean {
+  return GITHUB_REDIRECT_HOSTS.has(hostname.toLowerCase());
+}
+
+async function httpsGet(url: string, hops = 0): Promise<Buffer> {
+  // Lazy-load the SSRF guard so test harnesses that mock https.get don't have
+  // to also stub DNS — the guard fast-paths public hostnames anyway.
+  const { isPrivateHost } = await import("../ssrfGuard.js");
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid URL: ${url}`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`Refusing non-https URL: ${url}`);
+  }
+  if (!isAllowedGithubHost(parsed.hostname)) {
+    throw new Error(
+      `Refusing redirect to non-GitHub host "${parsed.hostname}"`,
+    );
+  }
+  if (isPrivateHost(parsed.hostname)) {
+    throw new Error(`Refusing redirect to private host "${parsed.hostname}"`);
+  }
+
   return new Promise((resolve, reject) => {
     const req = https.get(
       url,
@@ -221,14 +304,41 @@ async function httpsGet(url: string): Promise<Buffer> {
         },
       },
       (res) => {
-        // Follow redirects
+        // Follow redirects — bounded chain, allowlisted host, SSRF-guarded.
         if (
           res.statusCode &&
           res.statusCode >= 300 &&
           res.statusCode < 400 &&
           res.headers.location
         ) {
-          httpsGet(res.headers.location).then(resolve).catch(reject);
+          if (hops >= HTTPS_GET_MAX_REDIRECTS) {
+            reject(
+              new Error(`Too many redirects (>${HTTPS_GET_MAX_REDIRECTS})`),
+            );
+            return;
+          }
+          // Resolve relative redirects against the current URL so a relative
+          // `Location: /foo` doesn't get treated as an empty hostname.
+          let nextUrl: URL;
+          try {
+            nextUrl = new URL(res.headers.location, url);
+          } catch {
+            reject(
+              new Error(`Invalid redirect location: "${res.headers.location}"`),
+            );
+            return;
+          }
+          if (nextUrl.protocol !== "https:") {
+            reject(
+              new Error(
+                `Refusing redirect to non-https protocol: "${nextUrl.protocol}"`,
+              ),
+            );
+            return;
+          }
+          httpsGet(nextUrl.toString(), hops + 1)
+            .then(resolve)
+            .catch(reject);
           return;
         }
 
@@ -247,6 +357,7 @@ async function httpsGet(url: string): Promise<Buffer> {
     req.end();
   });
 }
+// END A-PR2 EDIT BLOCK
 
 interface GitHubContentItem {
   name: string;

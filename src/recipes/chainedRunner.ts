@@ -24,6 +24,7 @@ import {
 } from "./nestedRecipeStep.js";
 import type { OutputRegistry } from "./outputRegistry.js";
 import { createOutputRegistry } from "./outputRegistry.js";
+import { resolveRecipePath } from "./resolveRecipePath.js";
 import type { ErrorPolicy } from "./schema.js";
 import type { TemplateContext, TemplateError } from "./templateEngine.js";
 import { compileTemplate } from "./templateEngine.js";
@@ -207,6 +208,25 @@ export function resolveStepTemplates(
     } else {
       resolved[key] = value;
     }
+  }
+
+  // R2 C-1 / F-02 defense-in-depth: every chained-runner template substitution
+  // site must re-validate `path` fields on file.* tools after rendering. The
+  // per-tool jail in `tools/file.ts` is the primary check; this layer
+  // catches paths that survived the chained substitution (e.g. via JSON
+  // round-trip) and ensures `err.code === "recipe_path_jail_escape"` is
+  // raised before the resolved step reaches executeTool dispatch.
+  const toolId = typeof step.tool === "string" ? step.tool : undefined;
+  if (
+    (toolId === "file.read" ||
+      toolId === "file.write" ||
+      toolId === "file.append") &&
+    typeof resolved.path === "string"
+  ) {
+    // Throws RecipePathJailError — propagates as a step error so the
+    // chained runner's error-policy machinery can handle it (and tests can
+    // assert on err.code without needing to inspect step results).
+    resolveRecipePath(resolved.path, { write: toolId !== "file.read" });
   }
 
   // Resolve agent prompt if present
