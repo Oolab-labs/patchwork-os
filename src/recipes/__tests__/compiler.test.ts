@@ -171,7 +171,7 @@ describe("compileRecipe", () => {
         ...BASE,
         trigger: { type: "cron", schedule: "0 9 * * *" },
       }),
-    ).toThrow(/scheduler wiring/);
+    ).toThrow(/RecipeScheduler/);
     expect(() =>
       compileRecipe({ ...BASE, trigger: { type: "manual" } }),
     ).toThrow(/patchwork run/);

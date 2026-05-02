@@ -166,15 +166,15 @@ function mapTrigger(
       break;
     case "webhook":
       throw new RecipeCompileError(
-        `recipe '${recipeName}': webhook trigger requires the /hooks/* HTTP endpoint, not yet wired. Skip until Phase-2 HTTP patch.`,
+        `recipe '${recipeName}': webhook triggers fire via POST /hooks/* (server.webhookFn) and bypass the automation interpreter — installer.ts skips compileRecipeFull for them. Reaching this branch means a non-bypass caller invoked compileTrigger directly; check the call site.`,
       );
     case "cron":
       throw new RecipeCompileError(
-        `recipe '${recipeName}': cron trigger requires the scheduler wiring, not yet landed. Use ~/.claude/scheduled-tasks/ templates as a workaround.`,
+        `recipe '${recipeName}': cron triggers fire via RecipeScheduler and bypass the automation interpreter — installer.ts skips compileRecipeFull for them. Reaching this branch means a non-bypass caller invoked compileTrigger directly; check the call site.`,
       );
     case "manual":
       throw new RecipeCompileError(
-        `recipe '${recipeName}': manual trigger runs via the 'patchwork run <name>' CLI subcommand, not the automation interpreter.`,
+        `recipe '${recipeName}': manual triggers run via 'patchwork run <name>' and bypass the automation interpreter — installer.ts skips compileRecipeFull for them. Reaching this branch means a non-bypass caller invoked compileTrigger directly; check the call site.`,
       );
   }
   throw new RecipeCompileError(`recipe '${recipeName}': unknown trigger type`);
