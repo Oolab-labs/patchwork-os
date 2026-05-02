@@ -337,6 +337,52 @@ export class ActivityLog {
     return matches.slice(-limit);
   }
 
+  /**
+   * Cross-session query for approval-decision lifecycle rows. Used by the
+   * passive risk personalization signals (`src/approvalSignals.ts`) to
+   * answer questions like "how many times has the user approved this tool
+   * before?" without paying the cost of `queryTimeline`'s combined-sort.
+   *
+   * Filters honored:
+   *   - `toolName` — match `metadata.toolName` exactly
+   *   - `decision` — match `metadata.decision` ("allow" | "deny")
+   *   - `last`     — return at most this many most-recent matches (cap 1000)
+   *
+   * Returns rows ordered oldest → newest (the natural append order of the
+   * lifecycle log) so callers can compute counts or "last decision" cheaply.
+   */
+  queryApprovalDecisions(opts?: {
+    toolName?: string;
+    decision?: string;
+    last?: number;
+  }): LifecycleEntry[] {
+    const matches: LifecycleEntry[] = [];
+    for (const e of this.lifecycleEntries) {
+      if (e.event !== "approval_decision") continue;
+      if (opts?.toolName && e.metadata?.toolName !== opts.toolName) continue;
+      if (opts?.decision && e.metadata?.decision !== opts.decision) continue;
+      matches.push(e);
+    }
+    const last = Math.min(opts?.last ?? 1000, 1000);
+    return matches.slice(-last);
+  }
+
+  /**
+   * Cross-session query for tool entries by namespace prefix (e.g. "gmail"
+   * matches "gmail.fetch_unread", "gmail.send"). Used by personalization
+   * heuristic 3 ("first use of this connector") to detect whether the
+   * connector has been used before. Cap at 1000 most-recent matches.
+   */
+  queryByNamespace(namespace: string, last = 1000): ActivityEntry[] {
+    const prefix = `${namespace}.`;
+    const matches: ActivityEntry[] = [];
+    for (const e of this.entries) {
+      if (e.tool && e.tool.startsWith(prefix)) matches.push(e);
+    }
+    const cap = Math.min(last, 1000);
+    return matches.slice(-cap);
+  }
+
   queryTimeline(opts?: { last?: number }): TimelineEntry[] {
     const tools: TimelineEntry[] = this.entries.map((e) => ({
       kind: "tool" as const,
