@@ -326,6 +326,228 @@ describe("routeApprovalRequest", () => {
     });
   });
 
+  describe("approval-input capture (decision-replay enabler)", () => {
+    // The lifecycle row records what the policy SAW, not just what it
+    // DECIDED. A future replay debugger needs (toolName, params, tier,
+    // riskSignals) on every approval_decision row to fold a new policy
+    // over historical inputs. Tests below pin that contract on every
+    // short-circuit branch and through the queue.
+
+    async function recordOne(
+      body: Record<string, unknown>,
+      ccLoader = emptyRules(),
+      extraDeps: Record<string, unknown> = {},
+    ): Promise<Record<string, unknown>> {
+      const events: Array<Record<string, unknown>> = [];
+      const queue = new ApprovalQueue();
+      await routeApprovalRequest(
+        { method: "POST", path: "/approvals", body },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader,
+          onDecision: (_, meta) => events.push(meta),
+          ...extraDeps,
+        },
+      );
+      expect(events).toHaveLength(1);
+      return events[0];
+    }
+
+    it("captures params, tier, riskSignals on cc_allow_rule path", async () => {
+      const meta = await recordOne(
+        {
+          toolName: "Bash",
+          params: { command: "rm -rf /tmp/foo" },
+          sessionId: "s1",
+        },
+        allowRules("Bash"),
+      );
+      expect(meta).toMatchObject({
+        decision: "allow",
+        reason: "cc_allow_rule",
+        toolName: "Bash",
+        sessionId: "s1",
+        tier: "high",
+        params: { command: "rm -rf /tmp/foo" },
+        riskSignals: expect.arrayContaining([
+          expect.objectContaining({ kind: "destructive_flag" }),
+        ]),
+      });
+    });
+
+    it("captures params + tier on cc_deny_rule path", async () => {
+      const meta = await recordOne(
+        { toolName: "gitPush", params: { remote: "origin" } },
+        denyRules("gitPush"),
+      );
+      expect(meta).toMatchObject({
+        decision: "deny",
+        reason: "cc_deny_rule",
+        tier: "high",
+        params: { remote: "origin" },
+      });
+    });
+
+    it("captures params + tier on dontAsk_mode path", async () => {
+      const meta = await recordOne({
+        toolName: "gitPush",
+        params: { remote: "origin" },
+        permissionMode: "dontAsk",
+      });
+      expect(meta).toMatchObject({
+        reason: "dontAsk_mode",
+        tier: "high",
+        params: { remote: "origin" },
+      });
+    });
+
+    it("captures params + tier on auto_mode path", async () => {
+      const meta = await recordOne({
+        toolName: "Read",
+        params: { file_path: "/tmp/x.txt" },
+        permissionMode: "auto",
+      });
+      expect(meta).toMatchObject({
+        reason: "auto_mode",
+        tier: "medium",
+        params: { file_path: "/tmp/x.txt" },
+      });
+    });
+
+    it("captures params + tier on plan_mode_read path", async () => {
+      const meta = await recordOne({
+        toolName: "Read",
+        params: { file_path: "/tmp/x.txt" },
+        permissionMode: "plan",
+      });
+      expect(meta).toMatchObject({
+        reason: "plan_mode_read",
+        tier: "medium",
+        params: { file_path: "/tmp/x.txt" },
+      });
+    });
+
+    it("captures params + tier on plan_mode_write path", async () => {
+      const meta = await recordOne({
+        toolName: "Bash",
+        params: { command: "touch x" },
+        permissionMode: "plan",
+      });
+      expect(meta).toMatchObject({
+        reason: "plan_mode_write",
+        tier: "high",
+        params: { command: "touch x" },
+      });
+    });
+
+    it("captures params + tier on gate_off path", async () => {
+      const meta = await recordOne(
+        { toolName: "Bash", params: { command: "ls" } },
+        emptyRules(),
+        { approvalGate: "off" },
+      );
+      expect(meta).toMatchObject({
+        reason: "gate_off",
+        tier: "high",
+        params: { command: "ls" },
+      });
+    });
+
+    it("captures params + tier on gate_below_threshold path", async () => {
+      const meta = await recordOne(
+        { toolName: "Read", params: { file_path: "/tmp/x" } },
+        emptyRules(),
+        { approvalGate: "high" },
+      );
+      expect(meta).toMatchObject({
+        reason: "gate_below_threshold",
+        tier: "medium",
+        params: { file_path: "/tmp/x" },
+      });
+    });
+
+    it("redacts sensitive keys in captured params (auth/token/password)", async () => {
+      const meta = await recordOne(
+        {
+          toolName: "sendHttpRequest",
+          params: {
+            url: "https://example.com/api",
+            headers: {
+              Authorization: "Bearer sk-live-secret-xyz",
+              "X-Api-Key": "hunter2",
+            },
+            body: { password: "p@ssw0rd", username: "alice" },
+          },
+        },
+        allowRules("sendHttpRequest"),
+      );
+      expect(meta.params).toEqual({
+        url: "https://example.com/api",
+        headers: {
+          Authorization: "[REDACTED]",
+          "X-Api-Key": "[REDACTED]",
+        },
+        body: { password: "[REDACTED]", username: "alice" },
+      });
+    });
+
+    it("omits params field entirely when caller sent no params", async () => {
+      // captureForRunlog of {} returns {}; we still include it so a replay
+      // can distinguish "policy saw empty params" from "row predates capture"
+      const meta = await recordOne(
+        { toolName: "gitPush" },
+        denyRules("gitPush"),
+      );
+      expect(meta.params).toEqual({});
+      expect(meta.tier).toBe("high");
+    });
+
+    it("includes params + tier + riskSignals on the queue (human-approval) path", async () => {
+      // Drive the queue path: no CC rule + interactive permissionMode + gate
+      // catches the tool. Auto-resolve so the test doesn't hang.
+      const events: Array<Record<string, unknown>> = [];
+      const queue = new ApprovalQueue();
+      const promise = routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: {
+            toolName: "Bash",
+            params: { command: "sudo rm -rf /tmp/foo" },
+            sessionId: "s2",
+          },
+        },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+          onDecision: (_, meta) => events.push(meta),
+        },
+      );
+      // Resolve the queued request out-of-band so the route returns.
+      await new Promise((r) => setTimeout(r, 10));
+      const items = queue.list();
+      expect(items).toHaveLength(1);
+      queue.approve(items[0].callId);
+      await promise;
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        decision: "allow",
+        reason: "approved",
+        tier: "high",
+        params: { command: "sudo rm -rf /tmp/foo" },
+        riskSignals: expect.arrayContaining([
+          expect.objectContaining({ kind: "destructive_flag" }),
+        ]),
+      });
+      // callId is the queue-path-specific extra
+      expect(typeof events[0].callId).toBe("string");
+    });
+  });
+
   it("unknown route → 404", async () => {
     const res = await routeApprovalRequest(
       { method: "GET", path: "/what" },
