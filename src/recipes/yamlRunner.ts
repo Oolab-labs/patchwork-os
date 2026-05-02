@@ -32,6 +32,7 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { captureFixture } from "../connectors/fixtureRecorder.js";
 import { findYamlRecipePath } from "../recipesHttp.js";
@@ -45,6 +46,7 @@ import {
   defaultDeprecationWarn,
   normalizeRecipeForRuntime,
 } from "./legacyRecipeCompat.js";
+import { resolveRecipePath } from "./resolveRecipePath.js";
 import type { ErrorPolicy } from "./schema.js";
 
 // Import tool registry and trigger tool self-registration
@@ -56,6 +58,23 @@ import {
   registerPluginTools,
 } from "./toolRegistry.js";
 import "./tools/index.js";
+
+/**
+ * Bundled-templates directory used as a third allowed root for nested-recipe
+ * lookups (`recipe:` references with explicit paths). Resolved once at module
+ * load — `__dirname` equivalent points at `dist/recipes/` in the npm tarball
+ * (or `src/recipes/` in dev) so the relative `../../templates/recipes` lifts
+ * out of the source tree to the package root regardless of build layout.
+ *
+ * See dogfood A-PR2 / R2 M-5 — the third jail root is captured here, not at
+ * call time, so a runtime CWD change cannot relocate it.
+ */
+const BUNDLED_TEMPLATES_DIR: string = (() => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // dist/recipes/yamlRunner.js → ../../templates/recipes
+  // src/recipes/yamlRunner.ts → ../../templates/recipes
+  return path.resolve(here, "..", "..", "templates", "recipes");
+})();
 
 export interface YamlStep {
   tool?: string;
@@ -260,6 +279,13 @@ export type StepResult = {
   tool?: string;
   status: "ok" | "skipped" | "error";
   error?: string;
+  /**
+   * Structured error code propagated from a thrown step error. Currently
+   * populated for `recipe_path_jail_escape` (G-security A-PR1) so tests
+   * and the dashboard can branch on err.code rather than message text
+   * (R2 M-4). Other codes may follow.
+   */
+  errorCode?: string;
   durationMs: number;
 };
 
@@ -537,12 +563,14 @@ export async function runYamlRecipe(
     let result: string | null = null;
     let stepError: string | undefined;
     let thrownError: string | undefined;
+    let thrownErrorCode: string | undefined;
     for (let attempt = 0; attempt <= retryCount; attempt++) {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, retryDelayMs));
       }
       stepError = undefined;
       thrownError = undefined;
+      thrownErrorCode = undefined;
       try {
         result = await executeStep(step, ctx, stepDeps);
         // Detect tool-level errors reported as JSON {ok: false, error: ...}
@@ -574,6 +602,11 @@ export async function runYamlRecipe(
         }
       } catch (err) {
         thrownError = err instanceof Error ? err.message : String(err);
+        // Preserve structured error codes (e.g. recipe_path_jail_escape)
+        // so callers and tests can branch on `err.code` per R2 M-4
+        // without scraping the message string.
+        const code = (err as { code?: unknown })?.code;
+        if (typeof code === "string") thrownErrorCode = code;
         result = null;
       }
       if (!stepError && !thrownError) break;
@@ -592,6 +625,7 @@ export async function runYamlRecipe(
         tool: step.tool,
         status: "error",
         error: thrownError,
+        ...(thrownErrorCode ? { errorCode: thrownErrorCode } : {}),
         durationMs: Date.now() - stepStart,
       });
       if (!failOpen) {
@@ -639,7 +673,17 @@ export async function runYamlRecipe(
         }
       }
       if (step.tool === "file.write" || step.tool === "file.append") {
-        outputs.push(render(step.path as string, ctx));
+        // R2 C-1 / F-02: re-validate the rendered path against the jail so a
+        // template substitution that survived earlier checks (e.g. via a
+        // chained sub-recipe deps override) cannot smuggle an out-of-jail
+        // path into the run log / dashboard outputs list.
+        const renderedPath = render(step.path as string, ctx);
+        outputs.push(
+          resolveRecipePath(renderedPath, {
+            workspace: stepDeps.workdir,
+            write: true,
+          }),
+        );
       }
     }
   }
@@ -854,11 +898,6 @@ function deepRender(value: unknown, ctx: RunContext): unknown {
   return value;
 }
 
-function expandHome(p: string): string {
-  if (p.startsWith("~/")) return path.join(os.homedir(), p.slice(2));
-  return p;
-}
-
 function parseSinceToGitArg(since: string): string {
   const m = /^(\d+)(h|d)$/i.exec(since.trim());
   if (!m) return since;
@@ -972,26 +1011,35 @@ export function defaultGitStaleBranches(
 /** Resolve all RunnerDeps to concrete StepDeps with production defaults filled in. */
 function resolveStepDeps(deps: RunnerDeps): StepDeps {
   const workdir = deps.workdir ?? process.cwd();
+  // Defense-in-depth: even if a file.* tool somehow forgets to call
+  // resolveRecipePath in its execute(), the default StepDeps file ops will
+  // jail the path before touching the filesystem (G-security F-01 / R2 C-1
+  // chained-runner third-substitution-site coverage).
   return {
     readFile:
-      deps.readFile ?? ((p: string) => readFileSync(expandHome(p), "utf-8")),
+      deps.readFile ??
+      ((p: string) =>
+        readFileSync(resolveRecipePath(p, { workspace: workdir }), "utf-8")),
     writeFile:
       deps.writeFile ??
       ((p: string, content: string) => {
-        const abs = expandHome(p);
+        const abs = resolveRecipePath(p, { workspace: workdir, write: true });
         mkdirSync(path.dirname(abs), { recursive: true });
         writeFileSync(abs, content);
       }),
     appendFile:
       deps.appendFile ??
       ((p: string, content: string) => {
-        const abs = expandHome(p);
+        const abs = resolveRecipePath(p, { workspace: workdir, write: true });
         mkdirSync(path.dirname(abs), { recursive: true });
         appendFileSync(abs, content);
       }),
     mkdir:
       deps.mkdir ??
-      ((p: string) => mkdirSync(expandHome(p), { recursive: true })),
+      ((p: string) =>
+        mkdirSync(resolveRecipePath(p, { workspace: workdir, write: true }), {
+          recursive: true,
+        })),
     workdir,
     gitLogSince: deps.gitLogSince ?? defaultGitLogSince,
     gitStaleBranches: deps.gitStaleBranches ?? defaultGitStaleBranches,
@@ -1253,6 +1301,28 @@ export function buildChainedDeps(
     tool: string,
     params: Record<string, unknown>,
   ): Promise<unknown> => {
+    // R2 C-1 third-substitution-site coverage: the chained runner has its
+    // own template-resolution path (`chainedRunner.ts:194-205`). By the
+    // time we reach this dispatch point the params have been rendered
+    // *and* JSON-parsed, so a `path` field that survived the chained
+    // substitution may have just been promoted from inside-jail to
+    // outside-jail. Re-jail any `path` field on file.* tools here so that
+    // chained sub-recipes can't bypass the per-tool jail in `tools/file.ts`
+    // by injecting `..` segments via outer-recipe vars.
+    if (
+      (tool === "file.read" ||
+        tool === "file.write" ||
+        tool === "file.append") &&
+      typeof params.path === "string"
+    ) {
+      params = {
+        ...params,
+        path: resolveRecipePath(params.path, {
+          workspace: stepDeps.workdir,
+          write: tool !== "file.read",
+        }),
+      };
+    }
     // Construct a YamlStep-compatible object so we can reuse executeStep.
     const step: YamlStep = { tool, ...params };
     // executeStep uses a RunContext for {{}} rendering — by the time executeTool
@@ -1272,6 +1342,32 @@ export function buildChainedDeps(
       buildAgentExecutorDeps(stepDeps, runnerDeps, claudeCodeFnOverride),
     );
 
+  // ---------------------------------------------------------------------
+  // BEGIN A-PR2 EDIT BLOCK — `loadNestedRecipe` jail (dogfood F-04).
+  //
+  // Path-shaped recipe references (`recipe: ./inner.yaml`, `recipe: /abs.yaml`)
+  // are restricted to three allowed roots:
+  //   1. parent recipe's directory (`path.dirname(parentSourcePath)`)
+  //   2. user recipes dir (`~/.patchwork/recipes/`)
+  //   3. bundled templates dir (`BUNDLED_TEMPLATES_DIR`, captured at boot)
+  //
+  // Resolved candidates that escape all three (e.g. `/etc/passwd.yaml`) are
+  // rejected with `null` — same shape as a not-found lookup so the chained
+  // runner reports its existing "nested_recipe_not_found" error rather than
+  // surfacing a security-implementation detail to the recipe author.
+  //
+  // Coordination note (A-PR1 may also touch this file): the helper
+  // `pathIsWithin` below is local to this module — A-PR1 is changing
+  // unrelated `vars` validation paths and should not collide here. If a merge
+  // conflict surfaces, keep BOTH the jail AND the A-PR1 vars validation.
+  // ---------------------------------------------------------------------
+  const pathIsWithin = (candidate: string, base: string): boolean => {
+    const resolvedCandidate = path.resolve(candidate);
+    const resolvedBase = path.resolve(base);
+    if (resolvedCandidate === resolvedBase) return true;
+    return resolvedCandidate.startsWith(`${resolvedBase}${path.sep}`);
+  };
+
   const loadNestedRecipe = async (
     name: string,
     parentSourcePath?: string,
@@ -1280,6 +1376,9 @@ export function buildChainedDeps(
     sourcePath?: string;
   } | null> => {
     const lookupName = normalizeNestedRecipeLookupName(name);
+
+    const { homedir: nestedHomedir } = await import("node:os");
+    const userRecipesDir = path.join(nestedHomedir(), ".patchwork", "recipes");
 
     if (parentSourcePath) {
       const parentDir = path.dirname(parentSourcePath);
@@ -1296,15 +1395,26 @@ export function buildChainedDeps(
         const candidates = /\.ya?ml$/i.test(resolvedBase)
           ? [resolvedBase]
           : [`${resolvedBase}.yaml`, `${resolvedBase}.yml`, resolvedBase];
+
+        // Jail: every candidate must live inside one of the three allowed
+        // roots (parent dir, user recipes, bundled templates). Reject silently
+        // — null mirrors the existing not-found path so error messages stay
+        // generic and don't leak the jail boundaries.
+        const allowedRoots = [parentDir, userRecipesDir, BUNDLED_TEMPLATES_DIR];
         for (const candidate of candidates) {
+          const inJail = allowedRoots.some((root) =>
+            pathIsWithin(candidate, root),
+          );
+          if (!inJail) continue;
           const loaded = tryLoadRecipeFile(candidate);
           if (loaded) return loaded;
         }
       }
     }
+    // END A-PR2 EDIT BLOCK
 
-    const { homedir } = await import("node:os");
-    const recipesDir = path.join(homedir(), ".patchwork", "recipes");
+    // Reuses `userRecipesDir` already resolved above for the jail check.
+    const recipesDir = userRecipesDir;
 
     // Check for manifest-based package directory first.
     // Supports both plain names ("morning-brief") and scoped names ("@acme/morning-brief").

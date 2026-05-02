@@ -21,6 +21,13 @@ process.env.CLAUDE_CONFIG_DIR = testConfigDir;
 process.env.PATCHWORK_TOKEN_STORAGE_BACKEND = "file";
 process.env.PATCHWORK_HOME = testConfigDir;
 
+// G-security A-PR1 path jail: production defaults reject `/tmp` (R2 C-2).
+// Tests, however, depend on `os.tmpdir()` for hermetic temp dirs, so opt
+// every worker into the tmp-jail at setup time. The opt-in is per-process
+// env var — tests that explicitly want to assert "default OFF" pass
+// `allowTmp: false` to `resolveRecipePath` directly.
+process.env.CLAUDE_IDE_BRIDGE_RECIPE_TMP_JAIL = "1";
+
 // Clean up the temp dir when the worker exits.
 process.on("exit", () => {
   try {
