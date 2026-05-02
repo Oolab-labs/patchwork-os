@@ -770,6 +770,20 @@ export interface RecipeDryRunPlanStep {
   isConnector?: boolean;
   /** True if the tool id is known to the registry (false → unresolved at plan time). */
   resolved?: boolean;
+  /**
+   * Nested-recipe reference for `step.type === "recipe"` (chained recipes
+   * with `recipe:` or `chain:` field). Bare name (e.g. `branch-health`) or
+   * relative/absolute path. F-07 fix: this is now part of the plan-step
+   * shape so write-detection can recurse into nested recipes.
+   */
+  recipe?: string;
+  /**
+   * F-07 fix: when this step is a nested recipe and its writes were
+   * detected via recursion, this is the count of write-tagged tool steps
+   * inside the nested recipe (transitively). 0 if the recurse depth was
+   * hit before any writes were found, undefined for non-recipe steps.
+   */
+  nestedWriteCount?: number;
 }
 
 export interface RecipeDryRunPlan {
@@ -830,11 +844,200 @@ function summarizePlanSteps(
   for (const step of steps) {
     if (step.isConnector && step.namespace) connectors.add(step.namespace);
     if (step.isWrite) hasWrite = true;
+    // F-07 fix: nested-recipe writes detected via recursion count too.
+    if (step.nestedWriteCount && step.nestedWriteCount > 0) hasWrite = true;
   }
   return {
     connectorNamespaces: [...connectors].sort(),
     hasWriteSteps: hasWrite,
   };
+}
+
+/**
+ * F-07 fix: hard cap on nested-recipe recursion depth used by the dry-plan
+ * write detector. The chained recipe schema's `maxDepth` (default 3) is the
+ * runtime cap; the dry-plan applies `min(recipe.maxDepth ?? 3, MAX_DEPTH)`
+ * so a malicious or buggy recipe can't make the planner walk an unbounded
+ * tree. Per PLAN-MASTER-V2.md (R2-H1), 5 is the hard cap.
+ */
+const F07_MAX_NESTED_DEPTH = 5;
+
+/**
+ * F-07 fix: resolve a nested-recipe reference (bare name or path-shape)
+ * to an absolute file path the dry-plan can load synchronously. Mirrors
+ * the resolution logic in `yamlRunner.ts`'s async `loadNestedRecipe` but
+ * keeps to the synchronous subset (no symlink walks, no async I/O) since
+ * the dry-plan is itself synchronous after the chained-runner import.
+ *
+ * Returns null if the candidate cannot be resolved within the allowed
+ * roots — the recursion treats null as "unknown writes" (omits the
+ * `nestedWriteCount` field) so a missing reference does not falsely mark
+ * the parent as `hasWriteSteps:false` when it might write.
+ *
+ * Allowed roots:
+ *   - parent recipe's directory (for relative `recipe: ./inner.yaml`)
+ *   - `~/.patchwork/recipes/` (for bare `recipe: branch-health`)
+ *
+ * The bundled-templates dir is intentionally NOT searched here — bundled
+ * templates are vendor-controlled, the dry-plan recursion is for user
+ * recipes that may legitimately reference user-installed sub-recipes.
+ */
+function resolveNestedRecipeForDryPlan(
+  ref: string,
+  parentRecipePath: string,
+): string | null {
+  if (typeof ref !== "string" || ref.length === 0) return null;
+  if (ref.includes("\x00")) return null;
+
+  // node:path / node:os / node:fs are imported at the top of this file
+  // (see resolve, dirname, join above). statSync is not currently in scope
+  // so we re-pull from the already-imported namespace via the bare module
+  // — TS resolves this through the same package that `import os from "node:os"`
+  // uses. No dynamic require: this stays synchronous and ESM-friendly.
+  const parentDir = dirname(parentRecipePath);
+  const userRecipesDir = join(os.homedir(), ".patchwork", "recipes");
+
+  const pathLike =
+    /^([./]|\.\.[/\\]|[A-Za-z]:[/\\])/.test(ref) ||
+    /[\\/]/.test(ref) ||
+    /\.ya?ml$/i.test(ref);
+
+  const candidates: string[] = [];
+  if (pathLike) {
+    const base = /^([./]|[A-Za-z]:[/\\])/.test(ref)
+      ? resolve(parentDir, ref)
+      : resolve(ref);
+    // resolve() already absolutized; if it was already absolute we re-resolve.
+    const absolute = resolve(base);
+    if (/\.ya?ml$/i.test(absolute)) {
+      candidates.push(absolute);
+    } else {
+      candidates.push(`${absolute}.yaml`, `${absolute}.yml`, absolute);
+    }
+  } else {
+    candidates.push(
+      join(userRecipesDir, `${ref}.yaml`),
+      join(userRecipesDir, `${ref}.yml`),
+    );
+  }
+
+  const allowedRoots = [parentDir, userRecipesDir];
+  const isInside = (file: string, root: string): boolean => {
+    const rf = resolve(file);
+    const rr = resolve(root);
+    return rf === rr || rf.startsWith(`${rr}/`) || rf.startsWith(`${rr}\\`);
+  };
+
+  for (const candidate of candidates) {
+    const inJail = allowedRoots.some((root) => isInside(candidate, root));
+    if (!inJail) continue;
+    try {
+      if (existsSync(candidate)) {
+        const st = statSync(candidate);
+        if (st.isFile()) return candidate;
+      }
+    } catch {
+      /* not found; try next */
+    }
+  }
+  return null;
+}
+
+/**
+ * F-07 fix: recursively resolve nested-recipe steps in a chained dry-plan
+ * to detect writes. Mutates `steps` in place to set `nestedWriteCount` for
+ * any `type === "recipe"` step whose nested recipe could be loaded.
+ *
+ * Visited set prevents cycles (A → B → A) from looping; cycles count as
+ * 0 writes for the cycle edge so the parent's existing writes still
+ * dominate. Depth cap is `min(recipe.maxDepth ?? 3, F07_MAX_NESTED_DEPTH)`.
+ */
+async function detectNestedRecipeWritesInPlan(
+  steps: RecipeDryRunPlanStep[],
+  parentRecipePath: string,
+  recipeMaxDepth: number,
+  visited: Set<string> = new Set(),
+  depth = 0,
+): Promise<void> {
+  const cap = Math.min(recipeMaxDepth, F07_MAX_NESTED_DEPTH);
+  if (depth >= cap) return;
+
+  for (const step of steps) {
+    if (step.type !== "recipe" || !step.recipe) continue;
+
+    const nestedPath = resolveNestedRecipeForDryPlan(
+      step.recipe,
+      parentRecipePath,
+    );
+    if (!nestedPath) continue;
+    if (visited.has(nestedPath)) {
+      // Cycle — count as 0 writes for this edge to break the loop.
+      step.nestedWriteCount = 0;
+      continue;
+    }
+
+    let nestedRecipe: YamlRecipe;
+    try {
+      nestedRecipe = loadYamlRecipe(nestedPath);
+    } catch {
+      // Unparseable / unreadable nested recipe → treat as unknown writes
+      // (omit nestedWriteCount). Don't fail the whole dry-plan over a
+      // single broken sub-recipe.
+      continue;
+    }
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(nestedPath);
+
+    // Build dry-run steps for the nested recipe and recurse.
+    const nestedTriggerType = (
+      nestedRecipe.trigger as unknown as Record<string, unknown> | undefined
+    )?.type;
+    let nestedSteps: RecipeDryRunPlanStep[];
+    let nestedMaxDepth = recipeMaxDepth;
+    if (nestedTriggerType === "chained") {
+      const { generateExecutionPlan } = await import(
+        "../recipes/chainedRunner.js"
+      );
+      const plan = generateExecutionPlan(
+        nestedRecipe as unknown as import("../recipes/chainedRunner.js").ChainedRecipe,
+      );
+      nestedMaxDepth = plan.maxDepth;
+      nestedSteps = plan.steps.map((s) => {
+        const base: RecipeDryRunPlanStep = { id: s.id, type: s.type };
+        if (s.tool !== undefined) base.tool = s.tool;
+        if (s.into !== undefined) base.into = s.into;
+        if (s.recipe !== undefined) base.recipe = s.recipe;
+        if (s.optional !== undefined) base.optional = s.optional;
+        if (s.dependencies) base.dependencies = s.dependencies;
+        if (s.condition !== undefined) base.condition = s.condition;
+        if (s.risk !== undefined) base.risk = s.risk;
+        return enrichStepFromRegistry(base);
+      });
+    } else {
+      nestedSteps = buildSimpleRecipeDryRunSteps(nestedRecipe, {}).map(
+        enrichStepFromRegistry,
+      );
+    }
+
+    // Recurse before counting so deeper nested writes propagate up.
+    await detectNestedRecipeWritesInPlan(
+      nestedSteps,
+      nestedPath,
+      nestedMaxDepth,
+      nextVisited,
+      depth + 1,
+    );
+
+    let count = 0;
+    for (const ns of nestedSteps) {
+      if (ns.isWrite) count += 1;
+      if (ns.nestedWriteCount && ns.nestedWriteCount > 0) {
+        count += ns.nestedWriteCount;
+      }
+    }
+    step.nestedWriteCount = count;
+  }
 }
 
 export async function runRecipeDryPlan(
@@ -878,11 +1081,17 @@ export async function runRecipeDryPlan(
       if (step.dependencies) base.dependencies = step.dependencies;
       if (step.condition !== undefined) base.condition = step.condition;
       if (step.risk !== undefined) base.risk = step.risk;
-      const raw = step as unknown as { tool?: unknown; into?: unknown };
-      if (typeof raw.tool === "string") base.tool = raw.tool;
-      if (typeof raw.into === "string") base.into = raw.into;
+      // F-07 fix: read tool/into/recipe directly from the now-typed plan
+      // step instead of casting through `unknown`.
+      if (step.tool !== undefined) base.tool = step.tool;
+      if (step.into !== undefined) base.into = step.into;
+      if (step.recipe !== undefined) base.recipe = step.recipe;
       return enrichStepFromRegistry(base);
     });
+    // F-07 fix: recurse into nested-recipe steps to detect writes the
+    // top-level enrichment cannot see. Without this, any chained recipe
+    // whose only writes live in a sub-recipe reports `hasWriteSteps:false`.
+    await detectNestedRecipeWritesInPlan(steps, recipePath, plan.maxDepth);
     return {
       schemaVersion: DRY_RUN_PLAN_SCHEMA_VERSION,
       generatedAt,
