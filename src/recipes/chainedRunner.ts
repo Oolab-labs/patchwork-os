@@ -1016,6 +1016,16 @@ export function generateExecutionPlan(recipe: ChainedRecipe): {
     condition?: string;
     risk: "low" | "medium" | "high";
     optional?: boolean;
+    /**
+     * F-07 fix: emit the underlying step shape so the dry-plan's
+     * write-detection can recurse into nested recipes and the registry
+     * lookup in `enrichStepFromRegistry` can resolve the tool. Previously
+     * `commands/recipe.ts` had to type-cheat with `as unknown as { tool?:
+     * unknown; into?: unknown }` to read these — that cast is gone now.
+     */
+    tool?: string;
+    into?: string;
+    recipe?: string;
   }>;
   parallelGroups: string[][];
   maxDepth: number;
@@ -1046,14 +1056,25 @@ export function generateExecutionPlan(recipe: ChainedRecipe): {
   }
 
   return {
-    steps: expandedSteps.map((s) => ({
-      id: s.id ?? "",
-      type: nestedRecipeRef(s) ? "recipe" : s.agent ? "agent" : "tool",
-      dependencies: s.awaits ?? [],
-      condition: s.when,
-      risk: s.risk ?? "low",
-      optional: s.optional,
-    })),
+    steps: expandedSteps.map((s) => {
+      const nestedRef = nestedRecipeRef(s);
+      const stepType: "tool" | "agent" | "recipe" = nestedRef
+        ? "recipe"
+        : s.agent
+          ? "agent"
+          : "tool";
+      return {
+        id: s.id ?? "",
+        type: stepType,
+        dependencies: s.awaits ?? [],
+        condition: s.when,
+        risk: s.risk ?? "low",
+        optional: s.optional,
+        ...(typeof s.tool === "string" && { tool: s.tool }),
+        ...(typeof s.into === "string" && { into: s.into }),
+        ...(nestedRef !== undefined && { recipe: nestedRef }),
+      };
+    }),
     parallelGroups: levels,
     maxDepth: recipe.maxDepth ?? 3,
   };
