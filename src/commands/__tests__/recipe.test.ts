@@ -1576,19 +1576,22 @@ steps:
       expect(plan.mode).toBe("dry-run");
       expect(plan.triggerType).toBe("chained");
       expect(plan.maxDepth).toBe(2);
-      expect(plan.steps).toEqual([
+      // F-07 fix: plan steps now also carry the underlying step shape
+      // (`tool`, `recipe`, `into`) plus enrichment metadata so the
+      // dry-plan can recurse into nested recipes for write detection.
+      // Use `toMatchObject` to assert structure without pinning the
+      // post-enrichment field set.
+      expect(plan.steps).toMatchObject([
         {
           id: "gather_signals",
           type: "tool",
-          optional: undefined,
+          tool: "inbox.fetch_threads",
           dependencies: [],
-          condition: undefined,
           risk: "low",
         },
         {
           id: "triage_summary",
           type: "agent",
-          optional: undefined,
           dependencies: ["gather_signals"],
           condition: "{{gather_signals.length > 0}}",
           risk: "low",
@@ -1596,17 +1599,17 @@ steps:
         {
           id: "enrich_context",
           type: "tool",
+          tool: "notes.lookup_recent_context",
           optional: true,
           dependencies: ["triage_summary"],
-          condition: undefined,
           risk: "medium",
         },
         {
           id: "followup_plan",
           type: "recipe",
-          optional: undefined,
+          recipe: "chained-followup-child",
+          into: "followup_packet",
           dependencies: ["triage_summary", "enrich_context"],
-          condition: undefined,
           risk: "medium",
         },
       ]);
@@ -1616,6 +1619,236 @@ steps:
         ["enrich_context"],
         ["followup_plan"],
       ]);
+    });
+
+    // F-07 fix tests. Pre-fix: any chained recipe whose only writes lived
+    // in a sub-recipe reported `hasWriteSteps: false` because
+    // enrichStepFromRegistry bailed on `step.type === "recipe"` and
+    // generateExecutionPlan never emitted the underlying tool/recipe shape.
+    // These tests pin the corrected behavior across simple, chained, and
+    // nested-chained shapes plus the cycle-safety invariant.
+    describe("F-07 — hasWriteSteps recurses into nested recipes", () => {
+      it("T6: chained recipe with a top-level write step → hasWriteSteps:true", async () => {
+        const recipePath = join(tmpDir, "f07-t6-direct-write.yaml");
+        writeFileSync(
+          recipePath,
+          `name: f07-t6-direct-write
+description: top-level write
+trigger:
+  type: chained
+steps:
+  - id: w1
+    tool: file.write
+    params:
+      path: ~/.patchwork/inbox/x.md
+      content: hello
+`,
+        );
+        const plan = await runRecipeDryPlan(recipePath);
+        expect(plan.hasWriteSteps).toBe(true);
+        const w1 = plan.steps.find((s) => s.id === "w1");
+        expect(w1?.tool).toBe("file.write");
+      });
+
+      it("T7: chained recipe with no writes anywhere → hasWriteSteps:false", async () => {
+        const recipePath = join(tmpDir, "f07-t7-noop.yaml");
+        writeFileSync(
+          recipePath,
+          `name: f07-t7-noop
+description: read-only
+trigger:
+  type: chained
+steps:
+  - id: r1
+    tool: file.read
+    params:
+      path: /tmp/x.txt
+`,
+        );
+        const plan = await runRecipeDryPlan(recipePath);
+        expect(plan.hasWriteSteps).toBe(false);
+      });
+
+      it("T14: outer chained recipe calls inner recipe with file.write → hasWriteSteps:true", async () => {
+        const innerPath = join(tmpDir, "f07-t14-inner-writes.yaml");
+        writeFileSync(
+          innerPath,
+          `name: f07-t14-inner-writes
+trigger:
+  type: chained
+steps:
+  - id: inner_w
+    tool: file.write
+    params:
+      path: ~/.patchwork/inbox/inner.md
+      content: from-inner
+`,
+        );
+        const outerPath = join(tmpDir, "f07-t14-outer.yaml");
+        writeFileSync(
+          outerPath,
+          `name: f07-t14-outer
+description: outer with write-only inner
+trigger:
+  type: chained
+steps:
+  - id: call_inner
+    chain: ./f07-t14-inner-writes.yaml
+`,
+        );
+        const plan = await runRecipeDryPlan(outerPath);
+        expect(plan.hasWriteSteps).toBe(true);
+        const callInner = plan.steps.find((s) => s.id === "call_inner");
+        expect(callInner?.type).toBe("recipe");
+        expect(callInner?.recipe).toBe("./f07-t14-inner-writes.yaml");
+        expect(callInner?.nestedWriteCount).toBeGreaterThan(0);
+      });
+
+      it("T15: outer chained recipe calls read-only inner → hasWriteSteps:false", async () => {
+        const innerPath = join(tmpDir, "f07-t15-inner-readonly.yaml");
+        writeFileSync(
+          innerPath,
+          `name: f07-t15-inner-readonly
+trigger:
+  type: chained
+steps:
+  - id: inner_r
+    tool: file.read
+    params:
+      path: /tmp/x.txt
+`,
+        );
+        const outerPath = join(tmpDir, "f07-t15-outer.yaml");
+        writeFileSync(
+          outerPath,
+          `name: f07-t15-outer
+trigger:
+  type: chained
+steps:
+  - id: call_readonly
+    chain: ./f07-t15-inner-readonly.yaml
+`,
+        );
+        const plan = await runRecipeDryPlan(outerPath);
+        expect(plan.hasWriteSteps).toBe(false);
+        const callReadonly = plan.steps.find((s) => s.id === "call_readonly");
+        expect(callReadonly?.nestedWriteCount).toBe(0);
+      });
+
+      it("transitive: outer → middle → leaf-write propagates hasWriteSteps:true", async () => {
+        const leafPath = join(tmpDir, "f07-leaf-write.yaml");
+        writeFileSync(
+          leafPath,
+          `name: f07-leaf-write
+trigger:
+  type: chained
+steps:
+  - id: leaf_w
+    tool: file.write
+    params:
+      path: ~/.patchwork/inbox/leaf.md
+      content: leaf
+`,
+        );
+        const midPath = join(tmpDir, "f07-mid.yaml");
+        writeFileSync(
+          midPath,
+          `name: f07-mid
+trigger:
+  type: chained
+steps:
+  - id: mid_call
+    chain: ./f07-leaf-write.yaml
+`,
+        );
+        const outerPath = join(tmpDir, "f07-outer-mid.yaml");
+        writeFileSync(
+          outerPath,
+          `name: f07-outer-mid
+trigger:
+  type: chained
+steps:
+  - id: outer_call
+    chain: ./f07-mid.yaml
+`,
+        );
+        const plan = await runRecipeDryPlan(outerPath);
+        expect(plan.hasWriteSteps).toBe(true);
+      });
+
+      it("cycle: A → B → A does not infinite-loop and reports the parent's own writes accurately", async () => {
+        const aPath = join(tmpDir, "f07-cycle-a.yaml");
+        const bPath = join(tmpDir, "f07-cycle-b.yaml");
+        writeFileSync(
+          aPath,
+          `name: f07-cycle-a
+trigger:
+  type: chained
+steps:
+  - id: a_call
+    chain: ./f07-cycle-b.yaml
+  - id: a_write
+    tool: file.write
+    params:
+      path: ~/.patchwork/inbox/a.md
+      content: a
+`,
+        );
+        writeFileSync(
+          bPath,
+          `name: f07-cycle-b
+trigger:
+  type: chained
+steps:
+  - id: b_call
+    chain: ./f07-cycle-a.yaml
+`,
+        );
+        const plan = await runRecipeDryPlan(aPath);
+        // Parent has its own write step; cycle does not corrupt detection.
+        expect(plan.hasWriteSteps).toBe(true);
+      });
+
+      it("missing nested recipe → does not throw; nestedWriteCount omitted", async () => {
+        const outerPath = join(tmpDir, "f07-missing-inner.yaml");
+        writeFileSync(
+          outerPath,
+          `name: f07-missing-inner
+trigger:
+  type: chained
+steps:
+  - id: phantom
+    chain: ./does-not-exist.yaml
+`,
+        );
+        // Should not throw — missing sub-recipe is treated as unknown writes.
+        const plan = await runRecipeDryPlan(outerPath);
+        const phantom = plan.steps.find((s) => s.id === "phantom");
+        expect(phantom?.type).toBe("recipe");
+        expect(phantom?.nestedWriteCount).toBeUndefined();
+      });
+
+      it("emits tool field on chained plan steps (registry enrichment now reaches them)", async () => {
+        const recipePath = join(tmpDir, "f07-tool-field.yaml");
+        writeFileSync(
+          recipePath,
+          `name: f07-tool-field
+trigger:
+  type: chained
+steps:
+  - id: read_step
+    tool: file.read
+    params:
+      path: /tmp/x
+`,
+        );
+        const plan = await runRecipeDryPlan(recipePath);
+        const readStep = plan.steps.find((s) => s.id === "read_step");
+        // Pre-fix: tool field was reachable only via `as unknown as { tool?: unknown }`
+        // and required type-cheating. Now it's emitted as a typed plan-step field.
+        expect(readStep?.tool).toBe("file.read");
+        expect(readStep?.resolved).toBe(true);
+      });
     });
   });
 
