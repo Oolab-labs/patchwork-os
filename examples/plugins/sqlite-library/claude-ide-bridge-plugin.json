@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "name": "patchwork-examples/sqlite-library",
+  "version": "0.1.0",
+  "description": "Live Toolsmithing example: query a personal SQLite library catalog at ~/library.sqlite3",
+  "entrypoint": "./index.mjs",
+  "toolNamePrefix": "lib",
+  "permissions": ["filesystem"]
+}
