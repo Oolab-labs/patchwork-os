@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork-examples/sqlite-library",
+  "version": "0.1.0",
+  "description": "Live Toolsmithing example: query a personal SQLite library catalog",
+  "type": "module",
+  "main": "./index.mjs",
+  "private": true,
+  "keywords": [
+    "claude-ide-bridge-plugin",
+    "patchwork-os",
+    "example"
+  ],
+  "peerDependencies": {
+    "better-sqlite3": "^11.0.0"
+  }
+}

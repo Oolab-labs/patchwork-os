@@ -210,7 +210,9 @@ patchwork gen-plugin-stub ./my-plugin --name "org/name" --prefix "myPrefix"
 claude-ide-bridge --plugin ./my-plugin
 ```
 
-Plugins register MCP tools in-process. Publish to npm with keyword `claude-ide-bridge-plugin`.
+Plugins register MCP tools in-process. With `--plugin-watch`, the bridge reloads them on save — Claude can write a tool *during* a session and use it on the next turn. See [documents/live-toolsmithing.md](documents/live-toolsmithing.md) for the worked walkthrough and [examples/plugins/sqlite-library/](examples/plugins/sqlite-library/) for a runnable example.
+
+Publish to npm with keyword `claude-ide-bridge-plugin` for distribution.
 
 Full reference: [documents/plugin-authoring.md](documents/plugin-authoring.md)
 
@@ -286,6 +288,7 @@ patchwork patchwork-init
 | [documents/roadmap.md](documents/roadmap.md) | Development direction |
 | [documents/data-reference.md](documents/data-reference.md) | Data flows, state management, protocol details |
 | [documents/plugin-authoring.md](documents/plugin-authoring.md) | Plugin manifest schema, entrypoint API, distribution |
+| [documents/live-toolsmithing.md](documents/live-toolsmithing.md) | Write tools while the AI is using them — hot-reload narrative + worked example |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 | [docs/remote-access.md](docs/remote-access.md) | VPS deployment guide |
 
