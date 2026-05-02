@@ -4,6 +4,22 @@
 
 > Patchwork OS is a local-first personal AI runtime: pluggable model providers, hot-reloadable tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all running on your machine, all under your policy.
 
+You decide which model. You decide which actions need a human nod. You own the credentials, the logs, and the deployment. Nothing phones home.
+
+**Five primitives, one runtime:**
+
+- **Tools** — 170+ built-in (LSP, git, terminal, debugger, files) plus any plugin you write. Plugins hot-reload — Claude can author a tool mid-session and call it on the next turn. See [Live Toolsmithing](documents/live-toolsmithing.md).
+- **Recipes** — YAML automations triggered by cron, file save, git commit, test run, or webhook. Anything that can POST a JSON payload can fire a recipe.
+- **Delegation Policy** — three risk tiers, four-source precedence (managed → project-local → project → user). Auto-approve safe, require approval for risky, block dangerous.
+- **Trace memory** — every approval, every recipe run, every enrichment is durable JSONL. Past decisions are surfaced into future sessions automatically. Bundle and back up with [`patchwork traces export`](src/commands/tracesExport.ts).
+- **OAuth** — turn your runtime into a private personal API. PKCE S256, dynamic client registration, deployable on a VPS in minutes.
+
+> **Why not [an MCP server / Zapier / a hosted assistant / a local agent framework]?** See [the comparison page](documents/comparison.md) for the honest tradeoff against each.
+>
+> **What does this look like in one diagram?** See the [architecture overview](documents/architecture.md).
+
+---
+
 The same codebase ships **two ways to use it.** Pick the layer you need.
 
 | | What you get | Install | Best for |
@@ -293,6 +309,8 @@ patchwork patchwork-init
 | [documents/data-reference.md](documents/data-reference.md) | Data flows, state management, protocol details |
 | [documents/plugin-authoring.md](documents/plugin-authoring.md) | Plugin manifest schema, entrypoint API, distribution |
 | [documents/live-toolsmithing.md](documents/live-toolsmithing.md) | Write tools while the AI is using them — hot-reload narrative + worked example |
+| [documents/architecture.md](documents/architecture.md) | One-page architecture diagram + how to read it |
+| [documents/comparison.md](documents/comparison.md) | Patchwork vs MCP server / Zapier / hosted assistants / agent frameworks — honest tradeoffs |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 | [docs/remote-access.md](docs/remote-access.md) | VPS deployment guide |
 
