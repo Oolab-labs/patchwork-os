@@ -172,6 +172,7 @@ const KNOWN_SUBCOMMANDS = [
   "status",
   "shim",
   "recipe",
+  "traces",
   "dashboard",
   "launchd",
 ] as const;
@@ -1183,6 +1184,69 @@ if (process.argv[2] === "recipe" && process.argv[3] === "install") {
 }
 
 // Patchwork: `patchwork recipe schema [outputDir]` — write generated recipe schemas to disk.
+// Patchwork: `patchwork traces export [--output <path>]` — bundle the four
+// local trace logs into a single .jsonl.gz so a user can move machines,
+// take a compliance snapshot, or share traces with another tool. See
+// docs/strategic/2026-05-02/memory-ecosystem-report.md items 1, 3, 12 for
+// the durability rationale this PR addresses.
+if (process.argv[2] === "traces" && process.argv[3] === "export") {
+  (async () => {
+    try {
+      const args = process.argv.slice(4);
+      let output: string | undefined;
+      let patchworkDir: string | undefined;
+      let activityDir: string | undefined;
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === "--output" || a === "-o") {
+          output = args[i + 1];
+          i++;
+        } else if (a === "--patchwork-dir") {
+          patchworkDir = args[i + 1];
+          i++;
+        } else if (a === "--activity-dir") {
+          activityDir = args[i + 1];
+          i++;
+        } else if (a === "--help" || a === "-h") {
+          process.stdout.write(
+            "patchwork traces export [--output <path>] [--patchwork-dir <dir>] [--activity-dir <dir>]\n\n" +
+              "Bundles ~/.patchwork/{runs,decision_traces,commit_issue_links}.jsonl\n" +
+              "and ~/.claude/ide/activity-*.jsonl into a single gzipped JSONL file.\n\n" +
+              "Output is a manifest line followed by one envelope per row:\n" +
+              '  {"type":"manifest", ...}\n' +
+              '  {"source":"runs", "entry":{...}}\n' +
+              "  ...\n\n" +
+              "Filter one source with:\n" +
+              "  gunzip -c traces-export-*.jsonl.gz | jq 'select(.source==\"decision_traces\") | .entry'\n",
+          );
+          process.exit(0);
+        }
+      }
+      const { runTracesExport } = await import("./commands/tracesExport.js");
+      const result = await runTracesExport({
+        ...(output !== undefined && { output }),
+        ...(patchworkDir !== undefined && { patchworkDir }),
+        ...(activityDir !== undefined && { activityDir }),
+      });
+      process.stdout.write(`  ✓ Wrote ${result.outputPath}\n`);
+      process.stdout.write(
+        `    ${result.totalCount} rows from ${result.files.length} file${result.files.length === 1 ? "" : "s"} (${result.totalBytes} bytes read)\n`,
+      );
+      for (const f of result.files) {
+        process.stdout.write(
+          `    - ${f.source}: ${f.count} rows  (${f.path})\n`,
+        );
+      }
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 if (process.argv[2] === "recipe" && process.argv[3] === "schema") {
   const outputDir = process.argv[4] ?? path.join(process.cwd(), "schemas");
   (async () => {
