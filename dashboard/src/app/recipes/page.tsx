@@ -4,6 +4,49 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
+import { useBridgeFetch } from "@/hooks/useBridgeFetch";
+
+interface BridgeStatusForRecipes {
+  patchwork?: { port?: number };
+  port?: number;
+}
+
+/** Build the full URL a webhook recipe accepts POSTs at. The bridge
+ * exposes webhooks under /hooks/<path>. We always default to localhost —
+ * for remote bridges users adjust the host themselves; the strategic plan
+ * §4 emphasizes "anything that can send HTTP," not deployment topology. */
+function buildWebhookUrl(port: number | undefined, path: string): string {
+  const p = port ?? 3101;
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `http://localhost:${p}/hooks${cleanPath}`;
+}
+
+function buildCurlExample(port: number | undefined, path: string): string {
+  const url = buildWebhookUrl(port, path);
+  return `curl -X POST ${url} \\\n  -H 'Content-Type: application/json' \\\n  -d '{"hello":"world"}'`;
+}
+
+function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="btn sm ghost"
+      style={{ fontSize: 11, padding: "2px 8px" }}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          // clipboard API blocked (insecure origin etc.) — silently no-op
+        }
+      }}
+    >
+      {copied ? "Copied" : label}
+    </button>
+  );
+}
 
 // Tool prefix → connector name mapping
 const TOOL_PREFIX_MAP: Record<string, string> = {
@@ -273,6 +316,11 @@ function RunModal({
 }
 
 export default function RecipesPage() {
+  const { data: bridgeStatus } = useBridgeFetch<BridgeStatusForRecipes>(
+    "/api/bridge/status",
+    { intervalMs: 10000 },
+  );
+  const bridgePort = bridgeStatus?.patchwork?.port ?? bridgeStatus?.port;
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [runMap, setRunMap] = useState<Map<string, RunRecord>>(new Map());
   const [err, setErr] = useState<string>();
@@ -762,10 +810,72 @@ export default function RecipesPage() {
                               </span>
                             </div>
                             {r.webhookPath && (
-                              <div>
-                                <span className="muted">Webhook path</span>
-                                <br />
-                                <code>{r.webhookPath}</code>
+                              <div style={{ gridColumn: "1 / -1" }}>
+                                <span className="muted">Webhook URL</span>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: 8,
+                                    alignItems: "center",
+                                    marginTop: 4,
+                                  }}
+                                >
+                                  <code
+                                    style={{
+                                      fontSize: 12,
+                                      flex: 1,
+                                      overflowX: "auto",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {buildWebhookUrl(bridgePort, r.webhookPath)}
+                                  </code>
+                                  <CopyButton
+                                    text={buildWebhookUrl(bridgePort, r.webhookPath)}
+                                    label="Copy URL"
+                                  />
+                                </div>
+                                <div
+                                  style={{
+                                    marginTop: 8,
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "flex-start",
+                                    gap: 8,
+                                  }}
+                                >
+                                  <span className="muted">Example request</span>
+                                  <CopyButton
+                                    text={buildCurlExample(bridgePort, r.webhookPath)}
+                                    label="Copy curl"
+                                  />
+                                </div>
+                                <pre
+                                  style={{
+                                    fontSize: 11,
+                                    background: "var(--bg-1)",
+                                    border: "1px solid var(--border-subtle)",
+                                    borderRadius: "var(--r-2)",
+                                    padding: "8px 10px",
+                                    margin: "4px 0 0",
+                                    overflowX: "auto",
+                                    whiteSpace: "pre",
+                                  }}
+                                >
+                                  {buildCurlExample(bridgePort, r.webhookPath)}
+                                </pre>
+                                <p
+                                  style={{
+                                    marginTop: 6,
+                                    fontSize: 11,
+                                    color: "var(--fg-2)",
+                                    lineHeight: 1.4,
+                                  }}
+                                >
+                                  Anything that can send HTTP can trigger this:
+                                  iPhone Shortcut, Stream Deck, Home Assistant,
+                                  NFC tag, cron job, or another service.
+                                </p>
                               </div>
                             )}
                             {r.lint && (r.lint.errorCount > 0 || r.lint.warningCount > 0) && (

@@ -65,6 +65,7 @@ const MOCK_RECIPES = [
     name: "incident-war-room",
     description: "Ops incident response pipeline — chains to incident-notify and post-incident-report",
     trigger: "webhook",
+    webhookPath: "/incident-war-room",
     enabled: true,
     lastRun: ago(2 * 24 * 60 * 60 * 1000),
     source: "github:patchworkos/recipes/recipes/incident-war-room",
