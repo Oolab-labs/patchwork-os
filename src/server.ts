@@ -720,6 +720,8 @@ export class Server extends EventEmitter<ServerEvents> {
       if (parsedUrl.pathname === "/traces/export" && req.method === "GET") {
         void (async () => {
           try {
+            const passphrase =
+              parsedUrl.searchParams?.get("passphrase") ?? null;
             const { runTracesExportToStream } = await import(
               "./commands/tracesExport.js"
             );
@@ -727,13 +729,42 @@ export class Server extends EventEmitter<ServerEvents> {
               .toISOString()
               .replace(/:/g, "-")
               .replace(/\..+$/, "");
-            const filename = `traces-export-${stamp}.jsonl.gz`;
-            res.writeHead(200, {
-              "Content-Type": "application/gzip",
-              "Content-Disposition": `attachment; filename="${filename}"`,
-              "Cache-Control": "no-store",
-            });
-            await runTracesExportToStream(res);
+
+            if (passphrase) {
+              // Encrypted export — buffer the gzip, then AES-256-GCM encrypt.
+              const { encryptTraceBundle } = await import(
+                "./traceEncryption.js"
+              );
+              const chunks: Buffer[] = [];
+              const { Writable } = await import("node:stream");
+              const collector = new Writable({
+                write(chunk: Buffer, _enc, cb) {
+                  chunks.push(
+                    Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk),
+                  );
+                  cb();
+                },
+              });
+              await runTracesExportToStream(collector);
+              const plain = Buffer.concat(chunks);
+              const encrypted = encryptTraceBundle(plain, passphrase);
+              const filename = `traces-export-${stamp}.enc`;
+              res.writeHead(200, {
+                "Content-Type": "application/octet-stream",
+                "Content-Disposition": `attachment; filename="${filename}"`,
+                "Cache-Control": "no-store",
+                "Content-Length": String(encrypted.length),
+              });
+              res.end(encrypted);
+            } else {
+              const filename = `traces-export-${stamp}.jsonl.gz`;
+              res.writeHead(200, {
+                "Content-Type": "application/gzip",
+                "Content-Disposition": `attachment; filename="${filename}"`,
+                "Cache-Control": "no-store",
+              });
+              await runTracesExportToStream(res);
+            }
           } catch (err) {
             if (!res.headersSent) {
               res.writeHead(500, { "Content-Type": "application/json" });
