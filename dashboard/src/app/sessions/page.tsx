@@ -57,6 +57,10 @@ export default function SessionsPage() {
 
       {error && <div className="alert-err">Unreachable: {error}</div>}
 
+      {loading && sessions.length === 0 && (
+        <p style={{ color: "var(--fg-2)" }}>Loading…</p>
+      )}
+
       {!loading && sessions.length === 0 && !error ? (
         <div className="empty-state">
           <h3>No active sessions</h3>
