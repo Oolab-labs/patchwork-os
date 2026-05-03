@@ -1,0 +1,15 @@
+{
+  "_persona": "personal-assistant",
+  "_summary": "Friendly default for non-developer use cases — life automation, inbox triage, journal prompts, household ops. Gate high-risk only, push to phone so you can approve while away from your machine.",
+  "_targets": "people who want their AI to act on email, calendar, smart home, and notes without watching the dashboard.",
+  "_usage": "Copy fields into ~/.patchwork/config.json (or merge with `jq`). Restart the bridge.",
+
+  "approvalGate": "high",
+  "enableTimeOfDayAnomaly": true,
+
+  "dashboard": {
+    "port": 3000,
+    "requireApproval": ["high"],
+    "pushNotifications": true
+  }
+}

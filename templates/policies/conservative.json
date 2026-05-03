@@ -1,0 +1,14 @@
+{
+  "_persona": "conservative",
+  "_summary": "Gate every tool call. Notify on phone. Maximum oversight. Best for first-time users, sensitive personal data, or while learning what your AI actually does.",
+  "_usage": "Copy fields into ~/.patchwork/config.json (or merge with `jq`). Restart the bridge and Claude Code.",
+
+  "approvalGate": "all",
+  "enableTimeOfDayAnomaly": true,
+
+  "dashboard": {
+    "port": 3000,
+    "requireApproval": ["low", "medium", "high"],
+    "pushNotifications": true
+  }
+}

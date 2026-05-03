@@ -145,6 +145,8 @@ The package ships these in `templates/recipes/`. Recipes that need API keys are 
 
 **Connectors available** (all writes governed by your delegation policy): Slack, GitHub, Linear, Gmail, Google Calendar, Google Drive, Sentry, Notion, Confluence, Datadog, HubSpot, Intercom, Stripe, Zendesk, Jira, PagerDuty, Discord, Asana, GitLab.
 
+**Delegation policy presets** ([`templates/policies/`](templates/policies/)): five persona starters — conservative, developer, headless-CI, regulated-industry, personal-assistant. Copy one into `~/.patchwork/config.json` and restart.
+
 ### Automation hooks
 
 Event-driven hooks trigger Claude tasks automatically. Activate with `--automation --automation-policy <path.json> --claude-driver subprocess`.

@@ -1,0 +1,24 @@
+{
+  "_persona": "headless-ci",
+  "_summary": "No human in the loop. Approval gate off. Disable recipes that touch external systems with side effects. For build agents, scheduled jobs, and CI runners that must not block waiting for a phone tap.",
+  "_warning": "Off-mode means *every* tool call passes. Use only when (a) the underlying recipes are auditable and (b) the runner has narrowly-scoped credentials. Pair with managedSettingsPath if running on shared infra.",
+  "_usage": "Copy fields into ~/.patchwork/config.json (or merge with `jq`). Restart the bridge.",
+
+  "approvalGate": "off",
+  "enableTimeOfDayAnomaly": false,
+
+  "dashboard": {
+    "port": 3000,
+    "requireApproval": [],
+    "pushNotifications": false
+  },
+
+  "recipes": {
+    "disabled": [
+      "send-email",
+      "send-slack",
+      "github-create-pr",
+      "linear-create-issue"
+    ]
+  }
+}
