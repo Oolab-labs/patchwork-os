@@ -1045,6 +1045,34 @@ export class Server extends EventEmitter<ServerEvents> {
         res.end(JSON.stringify(result));
         return;
       }
+      // Decision replay — Phase 3 §2. Re-evaluates historical approval
+      // decisions against the current CC policy. Read-only; no side effects.
+      if (
+        parsedUrl.pathname === "/approval-insights/replay" &&
+        req.method === "GET"
+      ) {
+        if (!this.activityLog) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "activity log not wired" }));
+          return;
+        }
+        const sinceDaysParam = parsedUrl.searchParams?.get("sinceDays");
+        const sinceDays =
+          sinceDaysParam !== null && sinceDaysParam !== undefined
+            ? Number.parseInt(sinceDaysParam, 10)
+            : 7;
+        const sinceMs = Number.isFinite(sinceDays)
+          ? Date.now() - sinceDays * 24 * 60 * 60 * 1000
+          : 0;
+        const { computeDecisionReplay } = await import("./decisionReplay.js");
+        const result = computeDecisionReplay(this.activityLog, {
+          workspace: process.cwd(),
+          sinceMs,
+        });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+        return;
+      }
       // Reversible-refactoring surface — list active staged transactions
       // (Phase 1 §3 dashboard ask). Read-only metadata for the dashboard
       // /transactions page; no file contents leave the bridge.

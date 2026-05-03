@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 
 interface ToolInsight {
@@ -90,15 +91,20 @@ export default function InsightsPage() {
             modal, now shown in aggregate. Read-only.
           </div>
         </div>
-        {data && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span className="pill muted">{data.totalDecisions} decisions</span>
-            <span className="pill ok">{data.trustedToolCount} trusted</span>
-            {data.rejectedToolCount > 0 && (
-              <span className="pill err">{data.rejectedToolCount} rejected</span>
-            )}
-          </div>
-        )}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {data && (
+            <>
+              <span className="pill muted">{data.totalDecisions} decisions</span>
+              <span className="pill ok">{data.trustedToolCount} trusted</span>
+              {data.rejectedToolCount > 0 && (
+                <span className="pill err">{data.rejectedToolCount} rejected</span>
+              )}
+            </>
+          )}
+          <Link href="/insights/replay" className="btn sm">
+            Replay →
+          </Link>
+        </div>
       </div>
 
       {loading && tools.length === 0 && (
