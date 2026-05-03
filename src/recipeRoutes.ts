@@ -278,11 +278,13 @@ export interface RecipeRouteDeps {
     | ((
         variantName: string,
         targetName: string,
-      ) => {
+        options?: { force?: boolean },
+      ) => Promise<{
         ok: boolean;
         path?: string;
         error?: string;
-      })
+        targetExists?: boolean;
+      }>)
     | null;
   lintRecipeContentFn:
     | ((content: string) => {
@@ -986,15 +988,15 @@ export function tryHandleRecipeRoute(
   if (promoteMatch && req.method === "POST") {
     const variantName = decodeURIComponent(promoteMatch[1] ?? "");
     void (async () => {
-      const parsedBody = await readJsonBody<{ targetName?: string }>(
-        req,
-        RECIPE_ROUTE_BODY_CAPS.content,
-      );
+      const parsedBody = await readJsonBody<{
+        targetName?: string;
+        force?: boolean;
+      }>(req, RECIPE_ROUTE_BODY_CAPS.content);
       if (!parsedBody.ok) {
         respondInvalidJson(res);
         return;
       }
-      const { targetName } = parsedBody.value ?? {};
+      const { targetName, force } = parsedBody.value ?? {};
       if (typeof targetName !== "string" || !targetName.trim()) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "targetName required" }));
@@ -1005,12 +1007,20 @@ export function tryHandleRecipeRoute(
         res.end(JSON.stringify({ ok: false, error: "Promote unavailable" }));
         return;
       }
-      const result = deps.promoteRecipeVariantFn(variantName, targetName);
+      const result = await deps.promoteRecipeVariantFn(
+        variantName,
+        targetName,
+        {
+          force: force === true,
+        },
+      );
       const httpStatus = result.ok
         ? 200
-        : result.error?.includes("not found")
-          ? 404
-          : 400;
+        : result.targetExists
+          ? 409
+          : result.error?.includes("not found")
+            ? 404
+            : 400;
       res.writeHead(httpStatus, { "Content-Type": "application/json" });
       res.end(JSON.stringify(result));
     })();
