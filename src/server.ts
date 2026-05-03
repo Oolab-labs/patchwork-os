@@ -117,6 +117,16 @@ export class Server extends EventEmitter<ServerEvents> {
   public tasksFn: (() => { tasks: Record<string, unknown>[] }) | null = null;
   /** Set by bridge to cancel a running/pending task by id. Returns true if found. */
   public cancelTaskFn: ((id: string) => boolean) | null = null;
+  /** Patchwork: set by bridge to generate a recipe YAML draft from a natural-language prompt. */
+  public generateRecipeFn:
+    | ((prompt: string) => Promise<{
+        ok: boolean;
+        yaml?: string;
+        warnings?: string[];
+        error?: string;
+        unavailable?: boolean;
+      }>)
+    | null = null;
   /** Patchwork: set by bridge to list installed recipes for the dashboard. */
   public recipesFn: (() => Record<string, unknown>) | null = null;
   /** Patchwork: set by bridge to load raw recipe source content by name. */
@@ -1009,6 +1019,7 @@ export class Server extends EventEmitter<ServerEvents> {
       // ── Recipe / runs / templates routes (extracted to src/recipeRoutes.ts) ─
       if (
         tryHandleRecipeRoute(req, res, parsedUrl, {
+          generateRecipeFn: this.generateRecipeFn,
           recipesFn: this.recipesFn,
           loadRecipeContentFn: this.loadRecipeContentFn,
           saveRecipeContentFn: this.saveRecipeContentFn,

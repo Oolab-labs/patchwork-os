@@ -123,6 +123,8 @@ export function validateRecipeVars(vars: unknown): VarsValidationError | null {
 export const RECIPE_ROUTE_BODY_CAPS = {
   /** /recipes/install — `{ source: string }` body. */
   install: 4 * 1024,
+  /** /recipes/generate — NL prompt. */
+  generate: 4 * 1024,
   /** /recipes/:name/run + /recipes/run — vars envelope. */
   run: 32 * 1024,
   /** /recipes (POST), PUT/PATCH /recipes/:name, /recipes/lint — yaml content. */
@@ -234,6 +236,15 @@ function respondInvalidJson(res: ServerResponse): void {
 // END A-PR2 EDIT BLOCK
 
 export interface RecipeRouteDeps {
+  generateRecipeFn:
+    | ((prompt: string) => Promise<{
+        ok: boolean;
+        yaml?: string;
+        warnings?: string[];
+        error?: string;
+        unavailable?: boolean;
+      }>)
+    | null;
   recipesFn: (() => Record<string, unknown>) | null;
   loadRecipeContentFn:
     | ((name: string) => { content: string; path: string } | null)
@@ -559,6 +570,62 @@ export function tryHandleRecipeRoute(
           msg.includes("not found") || msg.includes("ENOENT") ? 404 : 500;
         res.writeHead(status, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: msg }));
+      }
+    })();
+    return true;
+  }
+
+  if (parsedUrl.pathname === "/recipes/generate" && req.method === "POST") {
+    void (async () => {
+      const parsedBody = await readJsonBody<{ prompt?: unknown }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.generate,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.generate);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
+      const prompt = (parsedBody.value as { prompt?: unknown } | undefined)
+        ?.prompt;
+      if (typeof prompt !== "string" || !prompt.trim()) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: "prompt must be a non-empty string",
+          }),
+        );
+        return;
+      }
+      if (!deps.generateRecipeFn) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error:
+              "Recipe generation unavailable — requires --claude-driver subprocess",
+            unavailable: true,
+          }),
+        );
+        return;
+      }
+      try {
+        const result = await deps.generateRecipeFn(prompt.trim());
+        const status = result.ok ? 200 : result.unavailable ? 503 : 422;
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
       }
     })();
     return true;
