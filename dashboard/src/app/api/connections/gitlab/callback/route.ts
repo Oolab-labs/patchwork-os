@@ -12,10 +12,17 @@ export async function GET(req: Request): Promise<Response> {
     if (v !== null) qs.set(key, v);
   }
 
-  const res = await bridgeFetch(`/connections/gitlab/callback?${qs.toString()}`);
-  const body = await res.text();
-  return new Response(body, {
-    status: res.status,
-    headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
-  });
+  try {
+    const res = await bridgeFetch(`/connections/gitlab/callback?${qs.toString()}`);
+    const body = await res.text();
+    return new Response(body, {
+      status: res.status,
+      headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
+    });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    );
+  }
 }

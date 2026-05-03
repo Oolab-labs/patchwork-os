@@ -23,13 +23,20 @@ export async function GET(
       { status: 200, headers: { "content-type": "application/json" } },
     );
   }
-  const name = encodeURIComponent(ctx.params.name);
-  const res = await bridgeFetch(`/recipes/${name}`);
-  const text = await res.text();
-  return new Response(text, {
-    status: res.status,
-    headers: { "content-type": "application/json" },
-  });
+  try {
+    const name = encodeURIComponent(ctx.params.name);
+    const res = await bridgeFetch(`/recipes/${name}`);
+    const text = await res.text();
+    return new Response(text, {
+      status: res.status,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    );
+  }
 }
 
 export async function PUT(
@@ -44,18 +51,25 @@ export async function PUT(
     });
   }
   if (isDemoModeServer()) return demoOk();
-  const name = encodeURIComponent(ctx.params.name);
-  const body = await req.text();
-  const res = await bridgeFetch(`/recipes/${name}`, {
-    method: "PUT",
-    headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
-    body,
-  });
-  const text = await res.text();
-  return new Response(text, {
-    status: res.status,
-    headers: { "content-type": "application/json" },
-  });
+  try {
+    const name = encodeURIComponent(ctx.params.name);
+    const body = await req.text();
+    const res = await bridgeFetch(`/recipes/${name}`, {
+      method: "PUT",
+      headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
+      body,
+    });
+    const text = await res.text();
+    return new Response(text, {
+      status: res.status,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    );
+  }
 }
 
 export async function PATCH(
@@ -70,16 +84,23 @@ export async function PATCH(
     });
   }
   if (isDemoModeServer()) return demoOk();
-  const name = encodeURIComponent(ctx.params.name);
-  const body = await req.text();
-  const res = await bridgeFetch(`/recipes/${name}`, {
-    method: "PATCH",
-    headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
-    body,
-  });
-  const text = await res.text();
-  return new Response(text, {
-    status: res.status,
-    headers: { "content-type": "application/json" },
-  });
+  try {
+    const name = encodeURIComponent(ctx.params.name);
+    const body = await req.text();
+    const res = await bridgeFetch(`/recipes/${name}`, {
+      method: "PATCH",
+      headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
+      body,
+    });
+    const text = await res.text();
+    return new Response(text, {
+      status: res.status,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    );
+  }
 }
