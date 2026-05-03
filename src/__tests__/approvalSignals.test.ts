@@ -247,6 +247,64 @@ describe("computePersonalSignals", () => {
       ).toBeDefined();
     });
 
+    it("heuristic 5 — surfaces stale_tool_use when last call ≥ 7 days ago", () => {
+      const log = new ActivityLog();
+      const tenDaysAgo = new Date(
+        Date.now() - 10 * 24 * 60 * 60 * 1_000,
+      ).toISOString();
+      // Inject directly via record() then mutate the timestamp on the
+      // most recent entry — record() always stamps Date.now().
+      log.record("Bash", 5, "success");
+      const last = log.queryLastToolCall("Bash");
+      if (last) (last as { timestamp: string }).timestamp = tenDaysAgo;
+
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      const sig = signals.find((s) => s.kind === "stale_tool_use");
+      expect(sig).toBeDefined();
+      expect(sig?.severity).toBe("low");
+      expect(sig?.source).toBe("activity_history");
+      expect(sig?.count).toBe(10);
+    });
+
+    it("heuristic 5 — does not surface when last call is within the threshold", () => {
+      const log = new ActivityLog();
+      log.record("Bash", 5, "success"); // recorded just now
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      expect(signals.find((s) => s.kind === "stale_tool_use")).toBeUndefined();
+    });
+
+    it("heuristic 5 — escalates to medium severity past 30 days", () => {
+      const log = new ActivityLog();
+      const fortyDaysAgo = new Date(
+        Date.now() - 40 * 24 * 60 * 60 * 1_000,
+      ).toISOString();
+      log.record("Bash", 5, "success");
+      const last = log.queryLastToolCall("Bash");
+      if (last) (last as { timestamp: string }).timestamp = fortyDaysAgo;
+
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      const sig = signals.find((s) => s.kind === "stale_tool_use");
+      expect(sig?.severity).toBe("medium");
+    });
+
+    it("heuristic 5 — silent when there is no prior call (first-use is heuristic 3's job)", () => {
+      const log = new ActivityLog();
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      expect(signals.find((s) => s.kind === "stale_tool_use")).toBeUndefined();
+    });
+
     it("is idempotent — calling twice with the same inputs returns the same signals", () => {
       const log = logWithApprovals([
         { toolName: "Bash", decision: "allow" },
