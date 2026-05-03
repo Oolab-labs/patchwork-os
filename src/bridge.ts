@@ -1253,6 +1253,12 @@ export class Bridge {
       this.config.approvalWebhookUrl ?? undefined;
     this.server.onApprovalDecision = (event, meta) =>
       this.activityLog.recordEvent(event, meta);
+    // Wire activityLog into approvalHttp so passive risk personalization
+    // signals (src/approvalSignals.ts) actually compute against the
+    // user's history. Without this, the personalSignals catalog is
+    // defined but inert — every approval queue entry has
+    // personalSignals: undefined.
+    this.server.activityLog = this.activityLog;
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
       const anySession = [...this.sessions.values()][0];
