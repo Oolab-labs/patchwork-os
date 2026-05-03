@@ -33,6 +33,14 @@ export interface Config {
   toolRateLimit: number;
   /** Patchwork: gate tool dispatch on human approval via dashboard. "high" = only high-risk tools (default-safe); "all" = every tool; "off" = disabled. */
   approvalGate: "off" | "high" | "all";
+  /**
+   * Patchwork: opt-in switch for the time-of-day anomaly heuristic
+   * (h10 in src/approvalSignals.ts). Off by default — catalog flags it
+   * as medium-FP for power users with irregular schedules. Enable via
+   * --enable-time-of-day-anomaly (CLI) or `personalSignals.timeOfDayAnomaly: true`
+   * in ~/.patchwork/config.json.
+   */
+  enableTimeOfDayAnomaly: boolean;
   /** Patchwork: admin-controlled managed settings file (highest rule precedence, cannot be overridden). */
   managedSettingsPath: string | null;
   /** Patchwork: outbound webhook URL for approval queue notifications (from dashboard.webhookUrl in patchwork config). */
@@ -451,6 +459,9 @@ export function parseConfig(argv: string[]): Config {
   let approvalGate: "off" | "high" | "all" =
     (fileConfig as { approvalGate?: "off" | "high" | "all" }).approvalGate ??
     "off";
+  let enableTimeOfDayAnomaly: boolean =
+    (fileConfig as { enableTimeOfDayAnomaly?: boolean })
+      .enableTimeOfDayAnomaly ?? false;
   let managedSettingsPath: string | null = null;
   // Read approvalWebhookUrl, approvalGate, driver, and apiKeys from patchwork config
   // (non-fatal; CLI flags and bridge config file take precedence over patchwork config)
@@ -645,6 +656,11 @@ export function parseConfig(argv: string[]): Config {
           );
         }
         approvalGate = val;
+        break;
+      }
+      case "--enable-time-of-day-anomaly": {
+        // Boolean flag — opt-in for personalSignals h10. No value arg.
+        enableTimeOfDayAnomaly = true;
         break;
       }
       case "--managed-settings": {
@@ -997,6 +1013,7 @@ Environment Variables:
     automationEnabled,
     automationPolicyPath,
     approvalGate,
+    enableTimeOfDayAnomaly,
     managedSettingsPath,
     approvalWebhookUrl,
     toolRateLimit,

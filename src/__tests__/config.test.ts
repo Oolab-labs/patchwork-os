@@ -279,6 +279,16 @@ describe("parseConfig flags", () => {
   it("throws when flag value starts with --", () => {
     expect(() => cfg("--workspace", "--other")).toThrow(/Missing value/);
   });
+
+  it("enableTimeOfDayAnomaly defaults to false", () => {
+    const config = cfg();
+    expect(config.enableTimeOfDayAnomaly).toBe(false);
+  });
+
+  it("--enable-time-of-day-anomaly flips it on (boolean flag, no arg)", () => {
+    const config = cfg("--enable-time-of-day-anomaly");
+    expect(config.enableTimeOfDayAnomaly).toBe(true);
+  });
 });
 
 describe("ideNameFromEditor", () => {

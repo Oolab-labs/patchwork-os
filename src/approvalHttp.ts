@@ -81,6 +81,14 @@ export interface ApprovalHttpDeps {
    * Wired by bridge.ts when a recipe orchestrator is active.
    */
   recipeRunLog?: import("./approvalSignals.js").RecipeRunQuerier;
+  /**
+   * Opt-in switch for personalSignals heuristic 10 (time-of-day
+   * anomaly). When true and `activityLog` is wired, h10 fires on calls
+   * outside the user's usual hours for that tool. Default false —
+   * catalog flags h10 as medium-FP for power users with irregular
+   * schedules.
+   */
+  enableTimeOfDayAnomaly?: boolean;
 }
 
 export interface HttpRequest {
@@ -679,6 +687,7 @@ async function handleApprovalRequest(
         currentWorkspace: deps.workspace,
         currentParams: params,
         recipeRunLog: deps.recipeRunLog,
+        enableTimeOfDayAnomaly: deps.enableTimeOfDayAnomaly,
       })
     : undefined;
 
