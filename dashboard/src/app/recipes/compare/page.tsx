@@ -234,7 +234,11 @@ function CompareInner() {
   // Determine which is the "base" name (no -vN suffix) for the promote target.
   const baseName = nameA.replace(/-v\d+$/, "");
 
-  async function promote(variantName: string, setPromoting: (v: boolean) => void) {
+  async function promote(
+    variantName: string,
+    setPromoting: (v: boolean) => void,
+    force = false,
+  ) {
     setPromoting(true);
     setPromoteResult(null);
     try {
@@ -243,12 +247,27 @@ function CompareInner() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ targetName: baseName }),
+          body: JSON.stringify({ targetName: baseName, force }),
         },
       );
-      const body = (await res.json()) as { ok?: boolean; error?: string };
+      const body = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        targetExists?: boolean;
+      };
       if (body.ok) {
         setPromoteResult(`✓ ${variantName} promoted to ${baseName}`);
+      } else if (body.targetExists) {
+        // Ask the user to confirm before overwriting the canonical recipe.
+        const confirmed = window.confirm(
+          `"${baseName}" already exists. Overwrite it with "${variantName}"?\n\nThe existing recipe will be replaced.`,
+        );
+        if (confirmed) {
+          setPromoting(false);
+          await promote(variantName, setPromoting, true);
+          return;
+        }
+        setPromoteResult(null);
       } else {
         setPromoteResult(`Error: ${body.error ?? "promote failed"}`);
       }

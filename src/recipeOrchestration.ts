@@ -4,8 +4,9 @@
  */
 
 import { readFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { homedir } from "node:os";
+import { basename, extname, join } from "node:path";
+
 import { parse as parseYaml } from "yaml";
 import { recordRecipeRun } from "./activationMetrics.js";
 import type { ClaudeOrchestrator } from "./claudeOrchestrator.js";
@@ -97,7 +98,7 @@ export class RecipeOrchestration {
     const { server } = this.deps;
 
     server.recipesFn = () => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
       return listInstalledRecipes(recipesDir) as unknown as Record<
         string,
         unknown
@@ -105,38 +106,39 @@ export class RecipeOrchestration {
     };
 
     server.loadRecipeContentFn = (name: string) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
       return loadRecipeContent(recipesDir, name);
     };
 
     server.saveRecipeContentFn = (name: string, content: string) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
       return saveRecipeContent(recipesDir, name, content);
     };
 
     server.deleteRecipeContentFn = (name: string) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
       return deleteRecipeContent(recipesDir, name);
     };
 
     server.duplicateRecipeFn = (name: string) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
       return duplicateRecipe(recipesDir, name);
     };
 
-    server.promoteRecipeVariantFn = (
+    server.promoteRecipeVariantFn = async (
       variantName: string,
       targetName: string,
+      options?: { force?: boolean },
     ) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
-      return promoteRecipeVariant(recipesDir, variantName, targetName);
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
+      return promoteRecipeVariant(recipesDir, variantName, targetName, options);
     };
 
     server.lintRecipeContentFn = (content: string) =>
       lintRecipeContent(content);
 
     server.setRecipeTrustFn = (name: string, level: string) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
       return setTrustLevel(
         recipesDir,
         name,
@@ -146,7 +148,7 @@ export class RecipeOrchestration {
 
     // biome-ignore lint/suspicious/noExplicitAny: matches Server type
     server.saveRecipeFn = (draft: any) => {
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
       return saveRecipe(recipesDir, draft);
     };
 
@@ -224,7 +226,7 @@ export class RecipeOrchestration {
 
       try {
         const { findYamlRecipePath } = await import("./recipesHttp.js");
-        const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+        const recipesDir = join(homedir(), ".patchwork", "recipes");
         const recipePath = findYamlRecipePath(recipesDir, recipeName);
         if (!recipePath) {
           return { ok: false, error: "recipe_file_missing" };
@@ -300,7 +302,7 @@ export class RecipeOrchestration {
       const orchestrator = this.deps.getOrchestrator();
       if (!orchestrator)
         return { ok: false, error: "orchestrator_unavailable" };
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
       const match = findWebhookRecipe(recipesDir, hookPath);
       if (!match) {
         return { ok: false, error: "not_found" };
@@ -335,7 +337,7 @@ export class RecipeOrchestration {
       }
       const loaded = loadRecipePrompt(
         recipesDir,
-        path.basename(match.filePath, path.extname(match.filePath)),
+        basename(match.filePath, extname(match.filePath)),
       );
       if (!loaded) {
         return { ok: false, error: "recipe_file_missing" };
@@ -368,7 +370,7 @@ export class RecipeOrchestration {
       const orchestrator = this.deps.getOrchestrator();
       if (!orchestrator)
         return { ok: false, error: "orchestrator_unavailable" };
-      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      const recipesDir = join(homedir(), ".patchwork", "recipes");
 
       // Try JSON recipe first (legacy path: enqueue prompt as a task).
       const loaded = loadRecipePrompt(recipesDir, name);

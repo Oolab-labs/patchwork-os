@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -7,8 +8,8 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { homedir } from "node:os";
+import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { loadConfig } from "./patchworkConfig.js";
 import { validateRecipeDefinition } from "./recipes/validation.js";
@@ -164,7 +165,7 @@ export function setRecipeEnabled(
   } = {},
 ): { ok: boolean; error?: string } {
   const recipesDir =
-    options.recipesDir ?? path.join(os.homedir(), ".patchwork", "recipes");
+    options.recipesDir ?? path.join(homedir(), ".patchwork", "recipes");
 
   try {
     const installDir = findInstallDirByRecipeName(recipesDir, name);
@@ -196,7 +197,6 @@ export function setRecipeEnabled(
     else {
       // Dynamic import to avoid coupling at module-load time and to keep
       // tests able to swap the saver via options.saveConfigFn.
-      // biome-ignore lint/suspicious/noExplicitAny: dynamic require shape
       const mod = require("./patchworkConfig.js");
       mod.savePatchworkConfig(next);
     }
@@ -667,11 +667,18 @@ export function duplicateRecipe(
  * `targetName` (e.g. "morning-brief"). Both must pass the recipe name
  * validation regex. Returns `{ ok, path }` on success.
  */
-export function promoteRecipeVariant(
+export async function promoteRecipeVariant(
   recipesDir: string,
   variantName: string,
   targetName: string,
-): { ok: boolean; path?: string; error?: string } {
+  options?: { force?: boolean },
+): Promise<{
+  ok: boolean;
+  path?: string;
+  error?: string;
+  /** Set when target already exists and `force` was not passed. */
+  targetExists?: boolean;
+}> {
   const safeVariant = variantName.toLowerCase();
   const safeTarget = targetName.toLowerCase();
   const nameRe = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -685,6 +692,49 @@ export function promoteRecipeVariant(
   const source = loadRecipeContent(recipesDir, safeVariant);
   if (!source) {
     return { ok: false, error: "Variant recipe not found" };
+  }
+
+  // Guard against silent overwrites: if the target already exists the caller
+  // must pass force:true. We also capture the prior content hash for audit.
+  const existing = loadRecipeContent(recipesDir, safeTarget);
+  if (existing && !options?.force) {
+    return {
+      ok: false,
+      targetExists: true,
+      error: `Recipe "${safeTarget}" already exists. Pass force:true to overwrite.`,
+    };
+  }
+
+  // Write audit log entry before the overwrite so the replaced content is
+  // traceable even if the variant file is deleted in the next step.
+  if (existing) {
+    try {
+      const priorHash = createHash("sha256")
+        .update(existing.content)
+        .digest("hex");
+      const auditPath = existing.path.replace(
+        /\.ya?ml$/,
+        ".promote-audit.json",
+      );
+      writeFileSync(
+        auditPath,
+        JSON.stringify(
+          {
+            ts: new Date().toISOString(),
+            action: "promote_overwrite",
+            variantName: safeVariant,
+            targetName: safeTarget,
+            priorContentHash: priorHash,
+            priorContentPath: existing.path,
+          },
+          null,
+          2,
+        ),
+        "utf-8",
+      );
+    } catch {
+      // Audit log failure must not block the promote — log and continue.
+    }
   }
 
   const newContent = source.content.replace(

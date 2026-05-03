@@ -158,11 +158,13 @@ export class Server extends EventEmitter<ServerEvents> {
     | ((
         variantName: string,
         targetName: string,
-      ) => {
+        options?: { force?: boolean },
+      ) => Promise<{
         ok: boolean;
         path?: string;
         error?: string;
-      })
+        targetExists?: boolean;
+      }>)
     | null = null;
   /** Patchwork: set by bridge to duplicate a recipe as a variant. */
   public duplicateRecipeFn:
