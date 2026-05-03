@@ -631,6 +631,72 @@ export function lintRecipeContent(content: string): {
   return { ok: errors.length === 0, errors, warnings };
 }
 
+// ---------------------------------------------------------------------------
+// Recipe trust levels
+// ---------------------------------------------------------------------------
+
+export const TRUST_LEVELS = [
+  "draft",
+  "manual_run",
+  "ask_every_time",
+  "ask_novel",
+  "mostly_trusted",
+  "fully_trusted",
+] as const;
+
+export type TrustLevel = (typeof TRUST_LEVELS)[number];
+
+const TRUST_LEVELS_FILE = "trust_levels.json";
+
+function trustLevelsPath(recipesDir: string): string {
+  return path.join(recipesDir, TRUST_LEVELS_FILE);
+}
+
+function loadTrustLevels(recipesDir: string): Record<string, TrustLevel> {
+  const p = trustLevelsPath(recipesDir);
+  try {
+    const raw = readFileSync(p, "utf-8");
+    return JSON.parse(raw) as Record<string, TrustLevel>;
+  } catch {
+    return {};
+  }
+}
+
+function saveTrustLevels(
+  recipesDir: string,
+  levels: Record<string, TrustLevel>,
+): void {
+  const p = trustLevelsPath(recipesDir);
+  mkdirSync(recipesDir, { recursive: true });
+  writeFileSync(p, JSON.stringify(levels, null, 2), "utf-8");
+}
+
+export function getTrustLevel(recipesDir: string, name: string): TrustLevel {
+  const levels = loadTrustLevels(recipesDir);
+  return levels[name] ?? "draft";
+}
+
+export function setTrustLevel(
+  recipesDir: string,
+  name: string,
+  level: TrustLevel,
+): { ok: boolean; error?: string } {
+  if (!TRUST_LEVELS.includes(level)) {
+    return { ok: false, error: `Invalid trust level: ${level}` };
+  }
+  try {
+    const levels = loadTrustLevels(recipesDir);
+    levels[name] = level;
+    saveTrustLevels(recipesDir, levels);
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export interface RecipeSummary {
   name: string;
   description?: string;
@@ -642,6 +708,7 @@ export interface RecipeSummary {
   installedAt: number;
   source: "user" | "project" | "unknown";
   enabled: boolean;
+  trustLevel?: TrustLevel;
   vars?: Array<{
     name: string;
     description?: string;
@@ -681,6 +748,7 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
   const disabledSet = new Set<string>(
     (cfg as { recipes?: { disabled?: string[] } }).recipes?.disabled ?? [],
   );
+  const trustLevels = loadTrustLevels(recipesDir);
 
   const recipes: RecipeSummary[] = [];
   for (const f of entries) {
@@ -751,6 +819,7 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         // Top-level legacy recipes don't have install dirs to put a marker
         // in, so the `enabled` field still comes from the legacy config list.
         enabled: !disabledSet.has(parsedName),
+        trustLevel: (trustLevels[parsedName] ?? "draft") as TrustLevel,
         ...(Array.isArray(parsed.vars) && parsed.vars.length > 0
           ? { vars: parsed.vars }
           : {}),
@@ -830,6 +899,7 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         // the dashboard can't accidentally enable one disabled by an admin
         // through the legacy file.
         enabled: installEnabled && !disabledSet.has(parsedName),
+        trustLevel: (trustLevels[parsedName] ?? "draft") as TrustLevel,
         ...(Array.isArray(parsed.vars) && parsed.vars.length > 0
           ? { vars: parsed.vars }
           : {}),

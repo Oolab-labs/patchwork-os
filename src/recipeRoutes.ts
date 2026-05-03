@@ -236,6 +236,9 @@ function respondInvalidJson(res: ServerResponse): void {
 // END A-PR2 EDIT BLOCK
 
 export interface RecipeRouteDeps {
+  setRecipeTrustFn:
+    | ((name: string, level: string) => { ok: boolean; error?: string })
+    | null;
   generateRecipeFn:
     | ((prompt: string) => Promise<{
         ok: boolean;
@@ -671,6 +674,51 @@ export function tryHandleRecipeRoute(
       } catch {
         respondInvalidJson(res);
       }
+    })();
+    return true;
+  }
+
+  // PATCH /recipes/:name/trust — update trust level for a recipe.
+  const recipeTrustMatch =
+    req.method === "PATCH"
+      ? /^\/recipes\/([^/]+)\/trust$/.exec(parsedUrl.pathname)
+      : null;
+  if (recipeTrustMatch?.[1]) {
+    const name = decodeURIComponent(recipeTrustMatch[1]);
+    void (async () => {
+      const parsedBody = await readJsonBody<{ level?: unknown }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.install,
+      );
+      if (!parsedBody.ok) {
+        if (parsedBody.code === "too_large") {
+          respond413(res, RECIPE_ROUTE_BODY_CAPS.install);
+        } else {
+          respondInvalidJson(res);
+        }
+        return;
+      }
+      const level = (parsedBody.value as { level?: unknown } | undefined)
+        ?.level;
+      if (typeof level !== "string" || !level) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({ ok: false, error: "level (string) required" }),
+        );
+        return;
+      }
+      if (!deps.setRecipeTrustFn) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({ ok: false, error: "Trust management unavailable" }),
+        );
+        return;
+      }
+      const result = deps.setRecipeTrustFn(name, level);
+      res.writeHead(result.ok ? 200 : 400, {
+        "Content-Type": "application/json",
+      });
+      res.end(JSON.stringify(result));
     })();
     return true;
   }
