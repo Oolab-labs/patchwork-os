@@ -557,7 +557,7 @@ describe("computePersonalSignals", () => {
     });
 
     it("does not surface when no prior rows carry workspace metadata", () => {
-      // Older rows (pre-this-PR) — no workspace field. h9 must treat as
+      // Older rows (pre-h9) — no workspace field. h9 must treat as
       // "no baseline" rather than firing on every call.
       const log = new ActivityLog();
       log.recordEvent("approval_decision", {
@@ -601,6 +601,84 @@ describe("computePersonalSignals", () => {
       expect(
         signals.find((s) => s.kind === "workspace_mismatch"),
       ).toBeUndefined();
+    });
+  });
+
+  describe("heuristic 10 — time-of-day anomaly", () => {
+    /**
+     * Seed `count` activity entries for `toolName`, each timestamped at
+     * the given hour (today). Heuristic uses local-tz Date.getHours(),
+     * so we build timestamps that we know land in that hour locally.
+     */
+    function logAtHour(toolName: string, count: number, hour: number) {
+      const log = new ActivityLog();
+      const today = new Date();
+      today.setHours(hour, 0, 0, 0);
+      for (let i = 0; i < count; i++) {
+        log.record(toolName, 5, "success");
+        const e = (
+          log as unknown as { entries: Array<{ timestamp: string }> }
+        ).entries.at(-1);
+        // Spread timestamps across that hour (1-min apart) so they all
+        // land in the same hour bucket.
+        if (e) {
+          e.timestamp = new Date(
+            today.getTime() + i * 60 * 1_000,
+          ).toISOString();
+        }
+      }
+      return log;
+    }
+
+    it("does not surface when opt-in is off (default)", () => {
+      const log = logAtHour("Bash", 15, 14); // 15 calls at 2pm
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        // enableTimeOfDayAnomaly omitted → off
+      });
+      expect(
+        signals.find((s) => s.kind === "time_of_day_anomaly"),
+      ).toBeUndefined();
+    });
+
+    it("does not surface below the 10-call baseline", () => {
+      const log = logAtHour("Bash", 5, 14); // only 5 calls
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        enableTimeOfDayAnomaly: true,
+      });
+      expect(
+        signals.find((s) => s.kind === "time_of_day_anomaly"),
+      ).toBeUndefined();
+    });
+
+    it("does not surface when current hour has prior calls", () => {
+      const log = logAtHour("Bash", 12, new Date().getHours());
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        enableTimeOfDayAnomaly: true,
+      });
+      expect(
+        signals.find((s) => s.kind === "time_of_day_anomaly"),
+      ).toBeUndefined();
+    });
+
+    it("surfaces low-severity when current hour has zero prior calls", () => {
+      const otherHour = (new Date().getHours() + 12) % 24;
+      const log = logAtHour("Bash", 12, otherHour);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        enableTimeOfDayAnomaly: true,
+      });
+      const sig = signals.find((s) => s.kind === "time_of_day_anomaly");
+      expect(sig).toBeDefined();
+      expect(sig?.severity).toBe("low");
+      expect(sig?.count).toBe(12);
+      expect(sig?.label).toMatch(/outside your usual hours/);
     });
   });
 
