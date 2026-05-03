@@ -80,6 +80,54 @@ interface DetailResponse {
   nearby: NearbyEntry[];
 }
 
+interface BridgeStatus {
+  patchwork?: {
+    approvalGate?: string;
+  };
+}
+
+type GateMode = "off" | "high" | "all";
+type Tier = "low" | "medium" | "high";
+
+/**
+ * Explain *why* a given call hit the delegation policy. Pure derivation from
+ * (active mode, tool tier) — the same logic that approvalHttp uses to decide
+ * whether to gate. Surfacing this on the detail page is the "show your work"
+ * UX from strategic plan §2.
+ */
+function explainMatch(
+  mode: GateMode,
+  tier: Tier | undefined,
+): { matched: boolean; rule: string; mode: GateMode } {
+  if (mode === "off") {
+    return {
+      matched: false,
+      mode,
+      rule: "Policy is off — calls are not gated. This entry exists from a previous setting or an explicit ask.",
+    };
+  }
+  if (mode === "all") {
+    return {
+      matched: true,
+      mode,
+      rule: "Policy is all — every tool call requires approval, regardless of risk tier.",
+    };
+  }
+  // mode === "high"
+  if (tier === "high") {
+    return {
+      matched: true,
+      mode,
+      rule: "Policy is high and this tool is tier high — high-risk calls require approval.",
+    };
+  }
+  return {
+    matched: false,
+    mode,
+    rule: `Policy is high but this tool is tier ${tier ?? "unknown"} — would normally pass through. Gated for another reason (recipe step trust, signal escalation, or manual ask).`,
+  };
+}
+
 export default function ApprovalDetailPage() {
   const params = useParams<{ callId: string }>();
   const router = useRouter();
@@ -89,6 +137,10 @@ export default function ApprovalDetailPage() {
   const { data, error, loading, status } = useBridgeFetch<DetailResponse>(
     `/api/bridge/approvals/${callId}`,
     { intervalMs: 2000 },
+  );
+  const { data: bridgeStatus } = useBridgeFetch<BridgeStatus>(
+    "/api/bridge/status",
+    { intervalMs: 5000 },
   );
 
   async function decide(choice: "approve" | "reject") {
@@ -110,6 +162,15 @@ export default function ApprovalDetailPage() {
   const pending = data?.pending ?? null;
   const decision = data?.decision ?? null;
   const meta = decision?.metadata ?? {};
+
+  const rawGate = bridgeStatus?.patchwork?.approvalGate;
+  const gateMode: GateMode =
+    rawGate === "high" || rawGate === "all" ? rawGate : "off";
+  const effectiveTier = (pending?.tier ?? undefined) as Tier | undefined;
+  const showPolicyCard = Boolean(pending || decision);
+  const match = showPolicyCard
+    ? explainMatch(gateMode, effectiveTier)
+    : null;
 
   // Header state — prefer pending, then decision, then fall back.
   const toolName = pending?.toolName ?? meta.toolName ?? "Unknown";
@@ -162,6 +223,39 @@ export default function ApprovalDetailPage() {
           <p>
             This approval isn&apos;t pending and hasn&apos;t been decided yet.
             It may have expired, or the ID is wrong.
+          </p>
+        </div>
+      )}
+
+      {match && (
+        <div className="card" style={{ marginTop: "var(--s-4)" }}>
+          <div className="card-head">
+            <h2>Delegation policy</h2>
+            <span
+              className={`pill ${match.mode === "off" ? "muted" : match.mode === "all" ? "err" : "warn"}`}
+              title="Active delegation policy mode"
+            >
+              mode: {match.mode}
+            </span>
+          </div>
+          <Row label="Active mode" value={match.mode} mono />
+          {effectiveTier && (
+            <Row label="Risk tier" value={effectiveTier} mono />
+          )}
+          <Row
+            label="Matched rule"
+            value={match.matched ? "yes" : "no"}
+            mono
+          />
+          <p
+            style={{
+              fontSize: 13,
+              color: "var(--fg-1)",
+              marginTop: 10,
+              lineHeight: 1.5,
+            }}
+          >
+            {match.rule}
           </p>
         </div>
       )}
