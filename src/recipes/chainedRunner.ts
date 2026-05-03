@@ -109,6 +109,11 @@ export interface RunOptions {
    * dogfood where replay runs were indistinguishable from fresh ones.
    */
   taskIdPrefix?: string;
+  /**
+   * seq of the parent run that caused this recipe to fire. Stored in the
+   * run log entry so the dashboard can render the causal chain.
+   */
+  parentSeq?: number;
 }
 
 export interface StepExecutionContext {
@@ -658,6 +663,9 @@ export async function runChainedRecipe(
         trigger: triggerKind,
         createdAt: runStartedAt,
         startedAt: runStartedAt,
+        ...(options.parentSeq !== undefined && {
+          parentSeq: options.parentSeq,
+        }),
       });
     } catch {
       // Non-fatal — run-log failures must never break recipe execution.

@@ -33,6 +33,25 @@ describe("RecipeRunLog.parseTrigger", () => {
       recipeName: "foo:bar",
     });
   });
+
+  it("extracts parentSeq from :p<N> suffix", () => {
+    expect(RecipeRunLog.parseTrigger("recipe:review:p7")).toEqual({
+      trigger: "recipe",
+      recipeName: "review",
+      parentSeq: 7,
+    });
+    // Colon-containing name + parentSeq suffix
+    expect(RecipeRunLog.parseTrigger("recipe:foo:bar:p42")).toEqual({
+      trigger: "recipe",
+      recipeName: "foo:bar",
+      parentSeq: 42,
+    });
+    // No suffix — no parentSeq
+    expect(RecipeRunLog.parseTrigger("recipe:review")).toEqual({
+      trigger: "recipe",
+      recipeName: "review",
+    });
+  });
 });
 
 describe("RecipeRunLog.record", () => {
@@ -360,6 +379,58 @@ describe("RecipeRunLog.record", () => {
     const running = log.query({ status: "running" });
     expect(running).toHaveLength(1);
     expect(running[0]!.seq).toBe(seq);
+  });
+
+  it("startRun stores parentSeq and getChildSeqs returns matching seqs", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const parentSeq = log.startRun({
+      taskId: "chained:parent:1",
+      recipeName: "parent",
+      trigger: "recipe",
+      createdAt: 1_000,
+    });
+    const childSeq1 = log.startRun({
+      taskId: "chained:child-a:2",
+      recipeName: "child-a",
+      trigger: "recipe",
+      createdAt: 2_000,
+      parentSeq,
+    });
+    const childSeq2 = log.startRun({
+      taskId: "chained:child-b:3",
+      recipeName: "child-b",
+      trigger: "recipe",
+      createdAt: 3_000,
+      parentSeq,
+    });
+    log.startRun({
+      taskId: "chained:unrelated:4",
+      recipeName: "unrelated",
+      trigger: "recipe",
+      createdAt: 4_000,
+    });
+
+    expect(log.getBySeq(childSeq1)?.parentSeq).toBe(parentSeq);
+    expect(log.getBySeq(childSeq2)?.parentSeq).toBe(parentSeq);
+    const children = log.getChildSeqs(parentSeq);
+    expect(children).toHaveLength(2);
+    expect(children).toContain(childSeq1);
+    expect(children).toContain(childSeq2);
+    expect(log.getChildSeqs(99)).toEqual([]);
+  });
+
+  it("record() stores parentSeq from :p<N> triggerSource suffix", () => {
+    const log = new RecipeRunLog({ dir: tmp });
+    const rec = log.record({
+      id: "child-task",
+      triggerSource: "recipe:child-recipe:p5",
+      status: "done",
+      createdAt: 1_000,
+      doneAt: 2_000,
+    });
+    expect(rec).not.toBeNull();
+    expect(rec!.recipeName).toBe("child-recipe");
+    expect(rec!.parentSeq).toBe(5);
   });
 
   it("completeRun with non-existent seq is a no-op (does not throw)", () => {
