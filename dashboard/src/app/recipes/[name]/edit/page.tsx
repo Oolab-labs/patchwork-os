@@ -270,6 +270,12 @@ export default function RecipeEditPage({
           <div className="page-head-sub">Edit recipe YAML and save or run.</div>
         </div>
         <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
+          <Link
+            href={`/recipes/${encodeURIComponent(name)}/plan`}
+            className="btn"
+          >
+            Dry-run plan
+          </Link>
           <button
             type="button"
             className="btn"
