@@ -237,6 +237,26 @@ export class Server extends EventEmitter<ServerEvents> {
         error?: string;
       }>)
     | null = null;
+  /**
+   * Patchwork: ring buffer of recent webhook payloads, keyed by path
+   * (e.g. "/incident-war-room"). The last MAX_WEBHOOK_PAYLOADS entries are
+   * retained per path so the dashboard can show what the recipe most
+   * recently received — answers "did the trigger fire? what did it send?"
+   * without forcing the user to dig through bridge logs. In-memory only;
+   * cleared on restart.
+   */
+  public webhookPayloads = new Map<
+    string,
+    Array<{
+      receivedAt: number;
+      payload: unknown;
+      ok: boolean;
+      error?: string;
+      taskId?: string;
+      recipeName?: string;
+    }>
+  >();
+  static readonly MAX_WEBHOOK_PAYLOADS = 5;
   /** Set by bridge to handle MCP Streamable HTTP sessions (POST/GET/DELETE /mcp) */
   public httpMcpHandler:
     | ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>)
@@ -864,10 +884,40 @@ export class Server extends EventEmitter<ServerEvents> {
               : result.error === "not_found"
                 ? 404
                 : 400;
+            // Record in ring buffer so the dashboard can show "last
+            // payload" per recipe. Skip not_found so unknown paths don't
+            // pollute the buffer with garbage / scanner traffic.
+            if (result.error !== "not_found") {
+              const existing = this.webhookPayloads.get(hookPath) ?? [];
+              existing.unshift({
+                receivedAt: Date.now(),
+                payload,
+                ok: result.ok,
+                error: result.error,
+                taskId: result.taskId,
+                recipeName: result.name,
+              });
+              if (existing.length > Server.MAX_WEBHOOK_PAYLOADS) {
+                existing.length = Server.MAX_WEBHOOK_PAYLOADS;
+              }
+              this.webhookPayloads.set(hookPath, existing);
+            }
             res.writeHead(status, { "Content-Type": "application/json" });
             res.end(JSON.stringify(result));
           })();
         });
+        return;
+      }
+      if (
+        parsedUrl.pathname?.startsWith("/webhook-payloads/") &&
+        req.method === "GET"
+      ) {
+        const hookPath = parsedUrl.pathname.substring(
+          "/webhook-payloads".length,
+        );
+        const entries = this.webhookPayloads.get(hookPath) ?? [];
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ path: hookPath, entries }));
         return;
       }
 

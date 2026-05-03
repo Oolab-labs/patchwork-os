@@ -656,6 +656,43 @@ export function mockBridgeResponse(pathname: string, method = "GET"): Response |
   if (path === "/status")                  return json(MOCK_STATUS);
   if (path === "/health")                  return json(MOCK_HEALTH);
   if (path === "/approvals" && method === "GET") return json(MOCK_APPROVALS);
+  if (path.startsWith("/webhook-payloads/") && method === "GET") {
+    const hookPath = path.substring("/webhook-payloads".length);
+    if (hookPath === "/incident-war-room") {
+      return json({
+        path: hookPath,
+        entries: [
+          {
+            receivedAt: ago(7 * 60 * 1000),
+            payload: {
+              alert_id: "PD-93812",
+              service: "checkout-api",
+              severity: "critical",
+              summary: "p99 latency over 2s for 5min",
+            },
+            ok: true,
+            taskId: "task-incident-7",
+            recipeName: "incident-war-room",
+          },
+          {
+            receivedAt: ago(2 * 60 * 60 * 1000),
+            payload: { test: true, sentAt: new Date(ago(2 * 60 * 60 * 1000)).toISOString() },
+            ok: true,
+            taskId: "task-incident-6",
+            recipeName: "incident-war-room",
+          },
+          {
+            receivedAt: ago(8 * 60 * 60 * 1000),
+            payload: "raw text body — non-JSON sender",
+            ok: false,
+            error: "step 2 failed: linear.create_issue rate-limited",
+            recipeName: "incident-war-room",
+          },
+        ],
+      });
+    }
+    return json({ path: hookPath, entries: [] });
+  }
   // Detail fixture: synthesize a pending response from MOCK_APPROVALS so the
   // detail page renders cards (matched-rule, risk signals, params, nearby) in
   // demo mode. Without this, every detail URL hits the empty fallthrough and
