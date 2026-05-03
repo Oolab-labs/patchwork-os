@@ -508,4 +508,81 @@ describe("computePersonalSignals", () => {
       ).toBeUndefined();
     });
   });
+
+  describe("heuristic 12 — cooldown breach", () => {
+    function logWithBurst(toolName: string, count: number, gapMs = 1_000) {
+      const log = new ActivityLog();
+      let t = Date.now() - count * gapMs;
+      for (let i = 0; i < count; i++) {
+        log.record(toolName, 5, "success");
+        const e = (
+          log as unknown as { entries: Array<{ timestamp: string }> }
+        ).entries.at(-1);
+        if (e) e.timestamp = new Date(t).toISOString();
+        t += gapMs;
+      }
+      return log;
+    }
+
+    it("does not surface below 3 calls in window", () => {
+      const log = logWithBurst("Bash", 2);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      expect(signals.find((s) => s.kind === "cooldown_breach")).toBeUndefined();
+    });
+
+    it("surfaces with medium severity at 3 calls in window", () => {
+      const log = logWithBurst("Bash", 3);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      const sig = signals.find((s) => s.kind === "cooldown_breach");
+      expect(sig).toBeDefined();
+      expect(sig?.severity).toBe("medium");
+      expect(sig?.count).toBe(3);
+      expect(sig?.label).toMatch(/runaway loop/);
+    });
+
+    it("escalates to high severity at 6+ calls", () => {
+      const log = logWithBurst("Bash", 7);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      const sig = signals.find((s) => s.kind === "cooldown_breach");
+      expect(sig?.severity).toBe("high");
+      expect(sig?.count).toBe(7);
+    });
+
+    it("ignores calls older than the 5-minute window", () => {
+      const log = new ActivityLog();
+      // Three old calls (10 min ago) — outside window
+      const oldTime = Date.now() - 10 * 60 * 1_000;
+      for (let i = 0; i < 3; i++) {
+        log.record("Bash", 5, "success");
+        const e = (
+          log as unknown as { entries: Array<{ timestamp: string }> }
+        ).entries.at(-1);
+        if (e) e.timestamp = new Date(oldTime + i * 1_000).toISOString();
+      }
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      expect(signals.find((s) => s.kind === "cooldown_breach")).toBeUndefined();
+    });
+
+    it("only counts calls to the same tool", () => {
+      const log = new ActivityLog();
+      for (let i = 0; i < 3; i++) log.record("Read", 5, "success");
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      expect(signals.find((s) => s.kind === "cooldown_breach")).toBeUndefined();
+    });
+  });
 });

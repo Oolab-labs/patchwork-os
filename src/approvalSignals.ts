@@ -20,6 +20,7 @@
  *   7. "Risk tier escalation" — current tier exceeds the user's typical
  *      approved tier across recent decisions
  *   8. "Often runs alongside X" — co-occurrence pairing in recent activity
+ *  12. "Cooldown breach" — same tool fired N+ times in a short window
  *
  * The signals are **transparent**: every signal has a `source` enum so a
  * future "why is this signal here?" UI can link back to the rows that
@@ -44,7 +45,8 @@ export interface PersonalSignal {
     | "first_tool_use"
     | "stale_tool_use"
     | "tier_escalation"
-    | "cooccurrence_pattern";
+    | "cooccurrence_pattern"
+    | "cooldown_breach";
   /** Human-facing label suitable for an approval modal line. */
   label: string;
   /** Severity controls visual weight. low = informational, high = warning. */
@@ -93,6 +95,19 @@ const TIER_RANK: Record<RiskTier, number> = { low: 0, medium: 1, high: 2 };
 const COOCCURRENCE_WINDOW_MS = 15 * 60 * 1_000;
 /** Minimum co-occurrence count before the chip surfaces. < 3 is noise. */
 const COOCCURRENCE_MIN_COUNT = 3;
+
+/**
+ * Cooldown-breach window — five minutes is short enough that "fired N
+ * times" is a behavioral pattern (a runaway loop, a panicked retry, a
+ * stuck recipe) rather than ordinary use. ApprovalQueue.inflightKey
+ * already deduplicates concurrent identical requests; this surfaces the
+ * cumulative pattern that inflight dedup hides.
+ */
+const COOLDOWN_WINDOW_MS = 5 * 60 * 1_000;
+/** Min repeat count inside the window before the chip surfaces. */
+const COOLDOWN_BREACH_MIN = 3;
+/** Severity bumps to high once the burst is unmistakable. */
+const COOLDOWN_BREACH_HIGH = 6;
 
 /**
  * Compute the personal-signal set for an incoming approval request.
@@ -264,7 +279,32 @@ export function computePersonalSignals(input: {
     });
   }
 
+  // Heuristic 12: "Cooldown breach."
+  // Same tool fired N+ times within a short window — pattern of a runaway
+  // loop, panicked retry, or stuck recipe. Distinct from heuristic 1
+  // (long-tail history): h1 says "you usually approve this", h12 says
+  // "you're approving this RIGHT NOW more than usual." Approvals modal
+  // should show both when both fire.
+  const recentCalls = activityLog.query({ tool: toolName, last: 50 });
+  const cutoff = Date.now() - COOLDOWN_WINDOW_MS;
+  const burstCount = recentCalls.filter(
+    (e) => Date.parse(e.timestamp) >= cutoff,
+  ).length;
+  if (burstCount >= COOLDOWN_BREACH_MIN) {
+    signals.push({
+      kind: "cooldown_breach",
+      label: cooldownBreachLabel(burstCount),
+      severity: burstCount >= COOLDOWN_BREACH_HIGH ? "high" : "medium",
+      source: "activity_history",
+      count: burstCount,
+    });
+  }
+
   return signals;
+}
+
+function cooldownBreachLabel(count: number): string {
+  return `Called ${count} times in the last 5 minutes — possible runaway loop or panicked retry.`;
 }
 
 function tierEscalationLabel(baseline: RiskTier, current: RiskTier): string {
