@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { evaluateRules, loadCcPermissions } from "../ccPermissions.js";
+import {
+  evaluateRules,
+  explainRules,
+  loadCcPermissions,
+} from "../ccPermissions.js";
 
 describe("evaluateRules", () => {
   it("deny wins over ask and allow", () => {
@@ -153,5 +157,45 @@ describe("loadCcPermissions", () => {
       exists: () => false,
     });
     expect(rules.allow).toEqual([]);
+  });
+});
+
+describe("explainRules", () => {
+  const rules = {
+    deny: [{ pattern: "Bash(rm *)", source: "project" as const }],
+    ask: [{ pattern: "Bash(*)", source: "user" as const }],
+    allow: [{ pattern: "Read", source: "project-local" as const }],
+  };
+
+  it("returns deny explanation when deny rule matches", () => {
+    const result = explainRules("Bash", "rm /tmp/foo", rules);
+    expect(result).toEqual({
+      matchedRule: "Bash(rm *)",
+      tier: "deny",
+      source: "project",
+    });
+  });
+
+  it("falls through to ask when deny doesn't match", () => {
+    const result = explainRules("Bash", "ls", rules);
+    expect(result).toEqual({
+      matchedRule: "Bash(*)",
+      tier: "ask",
+      source: "user",
+    });
+  });
+
+  it("returns allow explanation for plain tool match", () => {
+    const result = explainRules("Read", undefined, rules);
+    expect(result).toEqual({
+      matchedRule: "Read",
+      tier: "allow",
+      source: "project-local",
+    });
+  });
+
+  it("returns null when no rule matches", () => {
+    const result = explainRules("Write", undefined, rules);
+    expect(result).toBeNull();
   });
 });

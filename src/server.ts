@@ -1073,6 +1073,30 @@ export class Server extends EventEmitter<ServerEvents> {
         res.end(JSON.stringify(result));
         return;
       }
+      // Rule explanation — returns which CC permission rule matched a tool call
+      // and why approval was required. Phase 1 §2 Delegation Policy UX.
+      if (
+        parsedUrl.pathname === "/approval-insights/explain" &&
+        req.method === "GET"
+      ) {
+        const tool = parsedUrl.searchParams?.get("tool") ?? "";
+        const specifier = parsedUrl.searchParams?.get("specifier") ?? undefined;
+        if (!tool) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "tool param required" }));
+          return;
+        }
+        const { loadCcPermissionsAttributed, explainRules } = await import(
+          "./ccPermissions.js"
+        );
+        const rules = loadCcPermissionsAttributed(process.cwd());
+        const explanation = explainRules(tool, specifier || undefined, rules);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({ tool, specifier: specifier ?? null, explanation }),
+        );
+        return;
+      }
       // Reversible-refactoring surface — list active staged transactions
       // (Phase 1 §3 dashboard ask). Read-only metadata for the dashboard
       // /transactions page; no file contents leave the bridge.
