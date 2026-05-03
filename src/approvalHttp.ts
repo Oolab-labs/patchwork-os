@@ -74,6 +74,13 @@ export interface ApprovalHttpDeps {
    * the policy-engine path can leave this off.
    */
   activityLog?: import("./activityLog.js").ActivityLog;
+  /**
+   * Optional recipe-run log used by the "recipe-step trust" heuristic
+   * (h6 in `src/approvalSignals.ts`). When omitted, h6 is silently
+   * skipped — the other 11 heuristics still compute over `activityLog`.
+   * Wired by bridge.ts when a recipe orchestrator is active.
+   */
+  recipeRunLog?: import("./approvalSignals.js").RecipeRunQuerier;
 }
 
 export interface HttpRequest {
@@ -671,6 +678,7 @@ async function handleApprovalRequest(
         currentTier: tier,
         currentWorkspace: deps.workspace,
         currentParams: params,
+        recipeRunLog: deps.recipeRunLog,
       })
     : undefined;
 

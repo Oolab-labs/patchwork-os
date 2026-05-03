@@ -210,6 +210,14 @@ export class Server extends EventEmitter<ServerEvents> {
    */
   public activityLog: import("./activityLog.js").ActivityLog | undefined =
     undefined;
+  /**
+   * Patchwork: recipe-run log handle, used by approvalHttp for the
+   * "recipe-step trust" heuristic (h6 in src/approvalSignals.ts). When
+   * unset, h6 is silently skipped; the other personalSignals heuristics
+   * still compute as long as `activityLog` is wired.
+   */
+  public recipeRunLog: import("./runLog.js").RecipeRunLog | undefined =
+    undefined;
   /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
   public webhookFn:
     | ((
@@ -1205,6 +1213,15 @@ export class Server extends EventEmitter<ServerEvents> {
                 pushServiceToken: this.pushServiceToken,
                 pushServiceBaseUrl: this.pushServiceBaseUrl,
                 activityLog: this.activityLog,
+                // RecipeRunLog satisfies RecipeRunQuerier structurally
+                // — the cast bridges TS contravariance: RecipeRunQuerier's
+                // narrow query interface (`status?: string`) is deliberately
+                // loose so tests can mock it; RecipeRunLog's stricter
+                // RunStatus union is a strict subset and fails the param
+                // contravariance check despite being safe at runtime.
+                recipeRunLog: this.recipeRunLog as unknown as
+                  | import("./approvalSignals.js").RecipeRunQuerier
+                  | undefined,
               },
             );
             res.writeHead(result.status, {
