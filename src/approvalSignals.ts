@@ -22,6 +22,8 @@
  *   8. "Often runs alongside X" — co-occurrence pairing in recent activity
  *   9. "Workspace mismatch" — call from a workspace that has never
  *      approved this tool before
+ *  10. "Time-of-day anomaly" — call hour outside the user's usual window
+ *      for this tool (opt-in: gate via `enableTimeOfDayAnomaly`)
  *  12. "Cooldown breach" — same tool fired N+ times in a short window
  *
  * The signals are **transparent**: every signal has a `source` enum so a
@@ -49,7 +51,8 @@ export interface PersonalSignal {
     | "tier_escalation"
     | "cooccurrence_pattern"
     | "cooldown_breach"
-    | "workspace_mismatch";
+    | "workspace_mismatch"
+    | "time_of_day_anomaly";
   /** Human-facing label suitable for an approval modal line. */
   label: string;
   /** Severity controls visual weight. low = informational, high = warning. */
@@ -113,6 +116,15 @@ const COOLDOWN_BREACH_MIN = 3;
 const COOLDOWN_BREACH_HIGH = 6;
 
 /**
+ * Minimum prior calls (any hour) before the time-of-day histogram is
+ * trustworthy. Below this we don't claim to know the user's pattern —
+ * any single hour could legitimately be the first time the tool runs.
+ */
+const TIME_OF_DAY_BASELINE_MIN = 10;
+/** Most recent calls considered when building the per-hour histogram. */
+const TIME_OF_DAY_LOOKBACK = 200;
+
+/**
  * Compute the personal-signal set for an incoming approval request.
  *
  * Pure function over the activity log; no I/O of its own. Tested in
@@ -137,8 +149,21 @@ export function computePersonalSignals(input: {
    * no baseline).
    */
   currentWorkspace?: string;
+  /**
+   * Opt-in switch for heuristic 10 (time-of-day anomaly). The catalog
+   * flags this as medium-FP — noisy for power users with irregular
+   * schedules — so the default is off. Bridge wires it on when the
+   * user enables the corresponding setting.
+   */
+  enableTimeOfDayAnomaly?: boolean;
 }): PersonalSignal[] {
-  const { toolName, activityLog, currentTier, currentWorkspace } = input;
+  const {
+    toolName,
+    activityLog,
+    currentTier,
+    currentWorkspace,
+    enableTimeOfDayAnomaly,
+  } = input;
   if (!toolName) return [];
 
   const signals: PersonalSignal[] = [];
@@ -324,6 +349,38 @@ export function computePersonalSignals(input: {
     }
   }
 
+  // Heuristic 10: "Time-of-day anomaly."
+  // Build a 24-bucket hour-of-day histogram for past calls of this tool.
+  // If the current hour has zero prior calls AND total prior calls is
+  // past the baseline, surface as informational (low severity). Catalog
+  // flags this as medium-FP so it stays opt-in and never escalates to
+  // medium/high — purely a "huh, that's unusual" chip.
+  if (enableTimeOfDayAnomaly) {
+    const recent = activityLog.query({
+      tool: toolName,
+      last: TIME_OF_DAY_LOOKBACK,
+    });
+    if (recent.length >= TIME_OF_DAY_BASELINE_MIN) {
+      const hourCounts = new Array<number>(24).fill(0);
+      for (const e of recent) {
+        const hr = new Date(e.timestamp).getHours();
+        if (Number.isFinite(hr) && hr >= 0 && hr < 24) {
+          hourCounts[hr] = (hourCounts[hr] ?? 0) + 1;
+        }
+      }
+      const currentHour = new Date().getHours();
+      if ((hourCounts[currentHour] ?? 0) === 0) {
+        signals.push({
+          kind: "time_of_day_anomaly",
+          label: timeOfDayLabel(currentHour, recent.length),
+          severity: "low",
+          source: "activity_history",
+          count: recent.length,
+        });
+      }
+    }
+  }
+
   // Heuristic 12: "Cooldown breach."
   // Same tool fired N+ times within a short window — pattern of a runaway
   // loop, panicked retry, or stuck recipe. Distinct from heuristic 1
@@ -353,6 +410,11 @@ function workspaceMismatchLabel(otherCount: number): string {
     return "Approved in a different workspace before — first time you've allowed it here.";
   }
   return `Approved in ${otherCount} other workspaces before — first time you've allowed it here.`;
+}
+
+function timeOfDayLabel(hour: number, baselineCount: number): string {
+  const hh = hour.toString().padStart(2, "0");
+  return `First call at ${hh}:00 — outside your usual hours for this tool (across ${baselineCount} prior calls).`;
 }
 
 function cooldownBreachLabel(count: number): string {
