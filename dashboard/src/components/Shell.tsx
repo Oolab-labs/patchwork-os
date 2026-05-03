@@ -74,6 +74,7 @@ const NAV_SECTIONS: { title?: string; items: NavItem[] }[] = [
       { href: "/tasks",                label: "Tasks",        icon: "tasks" },
       { href: "/runs",                 label: "Runs",         icon: "play" },
       { href: "/transactions",         label: "Transactions", icon: "diff" },
+      { href: "/suggestions",          label: "Suggestions",  icon: "lightbulb" },
     ],
   },
   {

@@ -656,6 +656,46 @@ export function mockBridgeResponse(pathname: string, method = "GET"): Response |
   if (path === "/status")                  return json(MOCK_STATUS);
   if (path === "/health")                  return json(MOCK_HEALTH);
   if (path === "/approvals" && method === "GET") return json(MOCK_APPROVALS);
+  if (path.startsWith("/suggestions") && method === "GET") {
+    return json({
+      generatedAt: new Date().toISOString(),
+      suggestions: [
+        {
+          kind: "co_occurring_pair",
+          label:
+            "You called git.log_since and git.stale_branches together 17 times in the last 7 days. Create a recipe?",
+          details: { pair: ["git.log_since", "git.stale_branches"], count: 17 },
+        },
+        {
+          kind: "co_occurring_pair",
+          label:
+            "You called gmail.fetch_unread and slack.post_message together 6 times in the last 7 days. Create a recipe?",
+          details: { pair: ["gmail.fetch_unread", "slack.post_message"], count: 6 },
+        },
+        {
+          kind: "recipe_trust_graduation",
+          label:
+            "branch-health has succeeded 23 times in a row — consider auto-approving.",
+          details: { recipeName: "branch-health", runs: 23 },
+        },
+        {
+          kind: "installed_but_unused",
+          label:
+            "12 installed tools haven't been called in 7 days: jira.search_issues, asana.list_projects, gitlab.list_mrs, datadog.list_monitors, pagerduty.list_incidents, … (+7 more)",
+          details: {
+            unusedCount: 12,
+            examples: [
+              "jira.search_issues",
+              "asana.list_projects",
+              "gitlab.list_mrs",
+              "datadog.list_monitors",
+              "pagerduty.list_incidents",
+            ],
+          },
+        },
+      ],
+    });
+  }
   if (path === "/transactions" && method === "GET") {
     return json({
       transactions: [

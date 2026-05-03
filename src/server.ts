@@ -920,6 +920,46 @@ export class Server extends EventEmitter<ServerEvents> {
         res.end(JSON.stringify({ path: hookPath, entries }));
         return;
       }
+      // Activity-based automation suggestions (Phase 3 §4). Read-only
+      // pattern-mining over the running bridge's activity log + recipe
+      // run history. Same logic the `patchwork suggest` CLI calls — this
+      // exposes it to the dashboard so suggestions live where users look.
+      if (parsedUrl.pathname === "/suggestions" && req.method === "GET") {
+        if (!this.activityLog) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error:
+                "activity log not wired — bridge probably not in a configuration that records activity",
+            }),
+          );
+          return;
+        }
+        const sinceDaysParam = parsedUrl.searchParams?.get("sinceDays");
+        const sinceDays =
+          sinceDaysParam !== null && sinceDaysParam !== undefined
+            ? Number.parseInt(sinceDaysParam, 10)
+            : undefined;
+        const { computeAutomationSuggestions } = await import(
+          "./automationSuggestions.js"
+        );
+        const opts: Parameters<typeof computeAutomationSuggestions>[0] = {
+          activityLog: this.activityLog,
+        };
+        if (this.recipeRunLog) opts.recipeRunLog = this.recipeRunLog;
+        if (sinceDays !== undefined && Number.isFinite(sinceDays)) {
+          opts.activitySinceMs = sinceDays * 24 * 60 * 60 * 1000;
+        }
+        const suggestions = computeAutomationSuggestions(opts);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            suggestions,
+            generatedAt: new Date().toISOString(),
+          }),
+        );
+        return;
+      }
       // Reversible-refactoring surface — list active staged transactions
       // (Phase 1 §3 dashboard ask). Read-only metadata for the dashboard
       // /transactions page; no file contents leave the bridge.
