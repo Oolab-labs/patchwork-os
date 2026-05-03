@@ -1,0 +1,14 @@
+{
+  "_persona": "developer",
+  "_summary": "Gate high-risk tool calls only. No phone push (dashboard is enough — you're already at your machine). Time-of-day anomaly on. Sensible default for solo engineers running Patchwork on their workstation.",
+  "_usage": "Copy fields into ~/.patchwork/config.json (or merge with `jq`). Restart the bridge and Claude Code.",
+
+  "approvalGate": "high",
+  "enableTimeOfDayAnomaly": true,
+
+  "dashboard": {
+    "port": 3000,
+    "requireApproval": ["high"],
+    "pushNotifications": false
+  }
+}
