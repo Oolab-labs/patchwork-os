@@ -2,7 +2,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { registerPreToolUseHook } from "../preToolUseHook.js";
+import {
+  isPreToolUseHookRegistered,
+  registerPreToolUseHook,
+} from "../preToolUseHook.js";
 
 let dir: string;
 let settingsPath: string;
@@ -97,5 +100,44 @@ describe("registerPreToolUseHook", () => {
     });
     expect(r.action).toBe("error");
     expect(r.error).toBeDefined();
+  });
+});
+
+describe("isPreToolUseHookRegistered", () => {
+  it("returns false when settings file does not exist", () => {
+    expect(isPreToolUseHookRegistered(settingsPath)).toBe(false);
+  });
+
+  it("returns false when settings has no PreToolUse hooks", () => {
+    writeFileSync(settingsPath, JSON.stringify({ hooks: {} }));
+    expect(isPreToolUseHookRegistered(settingsPath)).toBe(false);
+  });
+
+  it("returns true after registerPreToolUseHook runs successfully", () => {
+    registerPreToolUseHook(settingsPath, { hookScriptPath: hookScript });
+    expect(isPreToolUseHookRegistered(settingsPath)).toBe(true);
+  });
+
+  it("returns false when an unrelated PreToolUse hook is registered", () => {
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "*",
+              hooks: [{ type: "command", command: "/some/other/hook.sh" }],
+            },
+          ],
+        },
+      }),
+    );
+    expect(isPreToolUseHookRegistered(settingsPath)).toBe(false);
+  });
+
+  it("does not throw on malformed settings.json", () => {
+    writeFileSync(settingsPath, "{not json");
+    expect(() => isPreToolUseHookRegistered(settingsPath)).not.toThrow();
+    expect(isPreToolUseHookRegistered(settingsPath)).toBe(false);
   });
 });
