@@ -1,0 +1,18 @@
+{
+  "_persona": "regulated-industry",
+  "_summary": "Maximum oversight + audit posture. Gate everything, push to phone, time-of-day anomaly on, point at a managed settings file that your compliance team controls (highest precedence — users cannot override).",
+  "_targets": "medicine, law, journalism, finance, gov, security work — anywhere you need a paper trail for every AI-initiated action.",
+  "_usage": "Copy fields into ~/.patchwork/config.json. Have your compliance team produce the managed settings file at /etc/patchwork/managed-settings.json (or anywhere admin-writable, user-readable). Restart the bridge and Claude Code.",
+  "_audit_note": "Decision traces are persisted under ~/.patchwork/traces/ — exportable via `patchwork traces export --encrypt`.",
+
+  "approvalGate": "all",
+  "enableTimeOfDayAnomaly": true,
+
+  "dashboard": {
+    "port": 3000,
+    "requireApproval": ["low", "medium", "high"],
+    "pushNotifications": true
+  },
+
+  "managedSettingsPath": "/etc/patchwork/managed-settings.json"
+}
