@@ -390,10 +390,10 @@ export async function addComment(
   body: string,
   signal?: AbortSignal,
 ): Promise<{ id: string; body: string; url?: string }> {
-  if (!issueId || !issueId.trim()) {
+  if (!issueId?.trim()) {
     throw new Error("addComment requires non-empty issueId");
   }
-  if (!body || !body.trim()) {
+  if (!body?.trim()) {
     throw new Error("addComment requires non-empty body");
   }
   const id = extractIssueId(issueId);

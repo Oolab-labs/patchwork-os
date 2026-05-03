@@ -1089,7 +1089,7 @@ export function tryHandleRecipeRoute(
         return;
       }
       try {
-        const source = (parsedBody.value ?? {}).source;
+        const source = parsedBody.value?.source;
         if (!source || typeof source !== "string") {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: "Missing source field" }));
@@ -1142,7 +1142,7 @@ export function tryHandleRecipeRoute(
             "raw.githubusercontent.com",
           ]);
           const envAllowed = (
-            process.env["CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS"] ?? ""
+            process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS ?? ""
           )
             .split(",")
             .map((h) => h.trim().toLowerCase())

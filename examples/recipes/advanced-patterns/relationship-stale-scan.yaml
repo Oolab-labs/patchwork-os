@@ -1,0 +1,88 @@
+# Companion recipe: nightly stale-contact scan
+version: 1.0.0
+name: relationship-stale-scan
+description: >
+  Nightly scan of your relationships folder. Flag contacts who haven't appeared in
+  signals for >30 days if they're marked "maintain" frequency. Draft re-engagement
+  messages for approval.
+trigger:
+  type: cron
+  at: 0 21 * * 1   # Monday evenings
+context:
+  - type: env
+    keys:
+      - RELATIONSHIPS_ROOT
+      - VOICE_SAMPLES   # ~/.patchwork/voice-samples.md — tone matching
+steps:
+  - id: scan_contacts
+    tool: file.list
+    risk: low
+    path: "{{RELATIONSHIPS_ROOT}}"
+    pattern: "*/state.md"
+    into: contact_files
+
+  - id: find_stale
+    risk: low
+    parallel:
+      each: "{{contact_files}}"
+      as: contact_file
+      steps:
+        - id: "check_{{contact_file.name}}"
+          agent:
+            prompt: |
+              Contact state file:
+              {{contact_file.content}}
+
+              Is this contact marked as "maintain" or "nurture" frequency?
+              When was the last dated interaction entry?
+              If last interaction was >30 days ago AND they're marked maintain/nurture,
+              return JSON: {"stale": true, "name": "...", "days_since": N, "last_context": "..."}
+              Otherwise: {"stale": false}
+            format: json
+            into: "staleness_{{contact_file.name}}"
+
+  - id: draft_reengagements
+    risk: low
+    awaits:
+      - find_stale
+    agent:
+      prompt: |
+        Stale contacts (>30 days, maintain frequency):
+        {{find_stale.results | filter(stale == true)}}
+
+        Voice samples for tone matching:
+        {{file_read(VOICE_SAMPLES)}}
+
+        For each stale contact, draft a short re-engagement message.
+        Rules:
+        - Reference something real from their last_context (not generic "just checking in")
+        - Match the tone of the voice samples
+        - 2–4 sentences max
+        - No "I hope this finds you well"
+
+        Return a list of drafts for approval.
+      into: drafts
+
+  - id: present_drafts
+    tool: dashboard.render
+    risk: low
+    title: "{{find_stale.results | filter(stale == true) | length}} stale contacts"
+    content: "{{drafts}}"
+    approvals: true
+    approval_items:
+      each: "{{drafts}}"
+      label: "Send this?"
+    into: approved_drafts
+
+  - id: send_approved
+    tool: gmail.send
+    risk: medium
+    each: "{{approved_drafts}}"
+    as: draft
+    to: "{{draft.email}}"
+    subject: "{{draft.subject}}"
+    body: "{{draft.body}}"
+
+on_error:
+  notify: true
+  retry: 0

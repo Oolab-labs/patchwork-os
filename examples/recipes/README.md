@@ -33,3 +33,10 @@ patchwork recipe install ./morning-inbox-triage.yaml
 patchwork recipe run morning-inbox-triage   # dry-run, immediate
 patchwork recipe enable morning-inbox-triage  # activates cron
 ```
+
+## Subdirectories
+
+| Directory | What's there |
+|---|---|
+| [`starter-pack/`](starter-pack/) | 20 personal-productivity recipes (morning brief, calendar defense, relationship care, etc.) |
+| [`advanced-patterns/`](advanced-patterns/) | Multi-agent spawn, voice memo routing, mixed-model pipelines, writer feedback loop, relationship memory, small-business brain |

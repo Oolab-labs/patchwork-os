@@ -1,0 +1,94 @@
+# vision-tier — routes each step to the right model based on cost/capability tradeoffs.
+# Uses the `model:` field per step to target different providers.
+# Economics: GPT-4o-mini for classification (fast+cheap), Claude for drafting (quality),
+#            local Ollama for bulk summarization.
+# requires: file-mcp, notify-mcp
+# requires: claude-driver with multi-provider support (--claude-driver subprocess | api)
+version: 1.0.0
+name: mixed-provider-pipeline
+description: >
+  Process a batch of documents through a cost-optimized pipeline:
+  classify with a cheap/fast model, summarize with a local model,
+  draft final output with a high-quality model.
+  Template for any workflow where not every step needs your best model.
+trigger:
+  type: manual
+  inputs:
+    - name: input_glob
+      type: string
+      required: true
+      description: Glob pattern for input files, e.g. ~/downloads/reports/*.pdf
+    - name: output_path
+      type: string
+      default: ~/processed/{{YYYY-MM-DD}}-batch-output.md
+context:
+  - type: env
+    keys:
+      - USER_NAME
+steps:
+  # Step 1: Fast/cheap classification — GPT-4o-mini or similar small model
+  - id: classify_documents
+    risk: low
+    model: openai/gpt-4o-mini   # swap to anthropic/claude-haiku-4-5 or google/gemini-flash
+    agent:
+      prompt: |
+        For each file matching {{input_glob}}, classify it into one of:
+        financial, legal, technical, personal, marketing, other.
+        Also assign: priority (high/medium/low) and estimated reading time in minutes.
+        Return a JSON array: [{"file": "...", "category": "...", "priority": "...", "read_minutes": N}, ...]
+      format: json
+      into: classifications
+
+  # Step 2: Bulk summarization — local Ollama (free, private, good enough for summaries)
+  - id: summarize_documents
+    risk: low
+    model: ollama/llama3.2      # falls back to anthropic/claude-haiku-4-5 if Ollama unavailable
+    model_fallback: anthropic/claude-haiku-4-5-20251001
+    awaits:
+      - classify_documents
+    agent:
+      prompt: |
+        For each non-low-priority file from {{input_glob}}, provide a 3-bullet summary.
+        Metadata from classification step: {{classifications}}
+        Dense, no filler. Skip files with priority=low.
+        Return JSON: [{"file": "...", "summary": ["...", "...", "..."]}, ...]
+      format: json
+      into: summaries
+
+  # Step 3: High-quality synthesis — Claude Sonnet for nuanced drafting
+  - id: synthesize
+    risk: low
+    model: anthropic/claude-sonnet-4-6
+    awaits:
+      - summarize_documents
+    agent:
+      prompt: |
+        You are synthesizing a batch of documents for {{USER_NAME}}.
+
+        Document summaries and metadata:
+        {{summaries}}
+
+        Write a structured briefing:
+        1. **Requires action** — high-priority items with a suggested next step each
+        2. **Worth reading** — medium-priority items in 1 line each
+        3. **Filed** — low-priority items listed (not summarized)
+        4. **Patterns** — anything interesting across the batch (optional, skip if nothing notable)
+
+        Tight. No padding.
+      into: briefing
+
+  - id: write_output
+    tool: file.write
+    risk: low
+    path: "{{output_path}}"
+    content: "{{briefing}}"
+
+  - id: notify
+    tool: notify.push
+    risk: low
+    title: "Batch processed"
+    body: "Briefing at {{output_path}}"
+
+on_error:
+  notify: true
+  retry: 0
