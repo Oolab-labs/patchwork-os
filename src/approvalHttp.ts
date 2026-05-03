@@ -5,6 +5,7 @@ import {
   recordApprovalPrompted,
 } from "./activationMetrics.js";
 import type { ApprovalQueue, RiskSignal } from "./approvalQueue.js";
+import { computePersonalSignals } from "./approvalSignals.js";
 import {
   evaluateRules,
   loadCcPermissions,
@@ -646,8 +647,18 @@ async function handleApprovalRequest(
   // Personal signals — passive risk personalization. Only computed when
   // an ActivityLog is wired up; tests / minimal harnesses leave it
   // undefined. See src/approvalSignals.ts for the catalog.
+  //
+  // Eagerly imported at the top of this file (was lazy via dynamic
+  // import in #137). The lazy form raced under full-suite CPU
+  // contention: the dynamic import could resolve after the
+  // approvalHttp.test.ts "propagates personalSignals onto queued
+  // PendingApproval" test's 10ms wait, leaving queue.list() empty when
+  // the assertion fired. The lazy-cost benefit (~150 LOC of dead code
+  // for users without an ActivityLog) was negligible — the module is
+  // already imported by the activity log path on first approval — so
+  // the eager import is the right tradeoff.
   const personalSignals = deps.activityLog
-    ? (await import("./approvalSignals.js")).computePersonalSignals({
+    ? computePersonalSignals({
         toolName,
         activityLog: deps.activityLog,
       })
