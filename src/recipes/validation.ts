@@ -108,7 +108,7 @@ export function validateRecipeDefinition(recipe: unknown): LintResult {
         }
       }
 
-      validateTemplateReferences(r, issues);
+      validateTemplateReferences(r, issues, collectParallelEachKeys(recipe));
     }
   }
 
@@ -218,6 +218,22 @@ function flattenValidationStep(step: unknown): unknown[] {
     return parallelSteps;
   }
 
+  // parallel: { each: ..., as: ..., steps: [...] } — map-reduce syntax
+  if (
+    record.parallel &&
+    typeof record.parallel === "object" &&
+    !Array.isArray(record.parallel)
+  ) {
+    const mapReduce = record.parallel as Record<string, unknown>;
+    if (Array.isArray(mapReduce.steps)) {
+      const parallelSteps: unknown[] = [];
+      for (const nestedStep of mapReduce.steps) {
+        parallelSteps.push(...flattenValidationStep(nestedStep));
+      }
+      return parallelSteps;
+    }
+  }
+
   if (Array.isArray(record.branch)) {
     const branchSteps: unknown[] = [];
     for (const branchStep of record.branch) {
@@ -304,6 +320,8 @@ function registerRecipeContextKeys(
 
   if (trigger?.type === "on_file_save" || trigger?.type === "file_watch") {
     availableKeys.add("file");
+    availableKeys.add("file_ext");
+    availableKeys.add("file_basename");
   }
 
   if (trigger?.type === "on_test_run") {
@@ -361,19 +379,55 @@ function toSchemaLintIssue(error: ErrorObject): LintIssue {
   };
 }
 
+function collectParallelEachKeys(recipe: unknown): Set<string> {
+  const keys = new Set<string>();
+  if (!recipe || typeof recipe !== "object" || Array.isArray(recipe))
+    return keys;
+  const steps = (recipe as Record<string, unknown>).steps;
+  if (!Array.isArray(steps)) return keys;
+  for (const step of steps) {
+    if (!step || typeof step !== "object" || Array.isArray(step)) continue;
+    const s = step as Record<string, unknown>;
+    if (
+      s.parallel &&
+      typeof s.parallel === "object" &&
+      !Array.isArray(s.parallel)
+    ) {
+      const par = s.parallel as Record<string, unknown>;
+      if (typeof par.as === "string") keys.add(par.as);
+      if (typeof s.id === "string") {
+        keys.add(s.id);
+        keys.add(`${s.id}.results`);
+      }
+    }
+    // Step-level each: "{{items}}" as: item — loop variable
+    if (typeof s.as === "string") keys.add(s.as);
+  }
+  return keys;
+}
+
 function validateTemplateReferences(
   recipe: Record<string, unknown>,
   issues: LintIssue[],
+  extraParallelKeys?: Set<string>,
 ): void {
   const builtinKeys = new Set<string>([
     "date",
     "time",
+    "YYYY",
     "YYYY-MM",
     "YYYY-MM-DD",
     "ISO_NOW",
+    "HH", // time component in datetime format strings
+    "MM", // time component in datetime format strings
+    "SS", // time component in datetime format strings
+    "this", // Handlebars loop current-item reference
   ]);
   const availableKeys = new Set<string>(builtinKeys);
   registerRecipeContextKeys(recipe, availableKeys);
+  if (extraParallelKeys) {
+    for (const k of extraParallelKeys) availableKeys.add(k);
+  }
   const triggerType =
     recipe.trigger && typeof recipe.trigger === "object"
       ? (recipe.trigger as Record<string, unknown>).type
@@ -503,9 +557,17 @@ function extractTemplateExpressions(template: string): string[] {
   const expressions: string[] = [];
   for (const match of matches) {
     const expression = match[1]?.trim();
-    if (expression) {
-      expressions.push(expression);
-    }
+    if (!expression) continue;
+    // Skip Handlebars block helpers: {{#if}}, {{/each}}, {{else}}, etc.
+    if (
+      expression.startsWith("#") ||
+      expression.startsWith("/") ||
+      expression === "else"
+    )
+      continue;
+    // Skip function-call expressions like file_read(PATH) — runtime-evaluated.
+    if (expression.includes("(")) continue;
+    expressions.push(expression);
   }
   return expressions;
 }
@@ -513,11 +575,14 @@ function extractTemplateExpressions(template: string): string[] {
 function extractTemplateDottedPaths(
   expression: string,
 ): Array<{ root: string; full: string }> {
+  // Strip Jinja-style filters (e.g. "| slug") — identifiers after | are filter
+  // names, not variable references, so should not be resolved against context.
+  const stripped = expression.replace(/\|[^|]*/g, "");
   const reserved = new Set(["true", "false", "null"]);
   const paths: Array<{ root: string; full: string }> = [];
   const seen = new Set<string>();
 
-  for (const match of expression.matchAll(
+  for (const match of stripped.matchAll(
     /\$?[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*/g,
   )) {
     const fullPath = match[0];

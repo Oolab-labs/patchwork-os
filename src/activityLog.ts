@@ -394,7 +394,7 @@ export class ActivityLog {
     const prefix = `${namespace}.`;
     const matches: ActivityEntry[] = [];
     for (const e of this.entries) {
-      if (e.tool && e.tool.startsWith(prefix)) matches.push(e);
+      if (e.tool?.startsWith(prefix)) matches.push(e);
     }
     const cap = Math.min(last, 1000);
     return matches.slice(-cap);

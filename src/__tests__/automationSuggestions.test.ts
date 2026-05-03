@@ -22,7 +22,6 @@ function recordAt(
   // alternative would be a public seam ("recordWithTimestamp") that
   // production code shouldn't have.
   log.record(tool, 50, status);
-  // biome-ignore lint/suspicious/noExplicitAny: test seam into private array
   const entries = (log as any).entries as Array<{ timestamp: string }>;
   const last = entries[entries.length - 1];
   if (last) last.timestamp = timestamp;

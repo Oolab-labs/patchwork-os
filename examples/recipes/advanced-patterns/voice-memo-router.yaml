@@ -1,0 +1,117 @@
+# vision-tier — watches a folder for voice memo drops, transcribes, then routes.
+# Works today if whisper-mcp or transcription-mcp is registered.
+# Folder watch triggers on new .m4a/.mp3/.wav files.
+# requires: file-mcp, transcription-mcp (whisper), notify-mcp
+version: 1.0.0
+name: voice-memo-router
+description: >
+  Watch a folder for dropped voice memos. Transcribe each one, extract intent,
+  and route the content to the right project file, person thread, or inbox.
+  No voice memo disappears into the void again.
+trigger:
+  type: file_watch
+  path: "{{VOICE_MEMO_INBOX}}"
+  pattern: "*.{m4a,mp3,wav,ogg}"
+  event: created
+context:
+  - type: env
+    keys:
+      - VOICE_MEMO_INBOX
+      - PROJECTS_ROOT       # ~/projects/ — one subfolder per project
+      - PEOPLE_ROOT         # ~/relationships/ — one subfolder per person
+      - NOTES_INBOX         # ~/notes/inbox.md — catch-all for unrouted thoughts
+steps:
+  - id: transcribe
+    tool: transcription.transcribe
+    risk: low
+    path: "{{file}}"
+    language: auto
+    into: transcript
+
+  - id: classify
+    risk: low
+    agent:
+      prompt: |
+        Voice memo transcript:
+        """
+        {{transcript.text}}
+        """
+
+        Classify this memo into exactly one of:
+          - project: content belongs in a specific project (extract project name)
+          - person: content is about or for a specific person (extract name)
+          - idea: free-floating thought, no clear project/person
+          - task: an action item (extract the task)
+          - decision: a decision being recorded
+
+        Then extract:
+          - A clean title (5 words max)
+          - A 2-3 sentence summary
+          - Any action items (list, or empty)
+
+        Return JSON only:
+        {
+          "type": "project|person|idea|task|decision",
+          "name": "project or person name if type is project/person, else null",
+          "title": "...",
+          "summary": "...",
+          "actions": ["..."]
+        }
+      into: classification
+      format: json
+
+  - id: find_target_file
+    risk: low
+    agent:
+      prompt: |
+        Classification: {{classification}}
+        Projects root: {{PROJECTS_ROOT}}
+        People root: {{PEOPLE_ROOT}}
+        Notes inbox: {{NOTES_INBOX}}
+
+        Determine the target file path to append this memo to.
+        Rules:
+          - type=project → {{PROJECTS_ROOT}}/{{classification.name}}/notes.md (create if absent)
+          - type=person  → {{PEOPLE_ROOT}}/{{classification.name}}/log.md (create if absent)
+          - type=task    → {{NOTES_INBOX}} with ## Tasks section
+          - type=idea / type=decision → {{NOTES_INBOX}}
+
+        Return JSON only: { "target": "<absolute path>" }
+      into: routing
+      format: json
+
+  - id: append_entry
+    tool: file.append
+    risk: low
+    path: "{{routing.target}}"
+    content: |
+      ## {{YYYY-MM-DD HH:MM}} — {{classification.title}}
+
+      > *Voice memo — {{transcript.duration_s}}s*
+
+      {{classification.summary}}
+
+      {{#if classification.actions.length}}
+      **Actions:**
+      {{#each classification.actions}}
+      - [ ] {{this}}
+      {{/each}}
+      {{/if}}
+
+      ---
+
+  - id: archive_audio
+    tool: file.move
+    risk: low
+    from: "{{file}}"
+    to: "{{VOICE_MEMO_INBOX}}/processed/{{YYYY-MM-DD}}-{{classification.title.slug}}.{{file_ext}}"
+
+  - id: notify
+    tool: notify.push
+    risk: low
+    title: "Memo filed: {{classification.title}}"
+    body: "→ {{routing.target}}"
+
+on_error:
+  notify: true
+  retry: 1

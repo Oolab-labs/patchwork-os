@@ -58,7 +58,6 @@ export function isSafeBasename(name: unknown): boolean {
   if (typeof name !== "string" || name.length === 0) return false;
   if (name === "." || name === "..") return false;
   if (name.includes("/") || name.includes("\\")) return false;
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: explicit control-char check
   if (/[\x00-\x1F\x7F]/.test(name)) return false;
   return true;
 }

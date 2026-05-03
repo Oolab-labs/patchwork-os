@@ -1,0 +1,97 @@
+# vision-tier — demonstrates the runClaudeTask parent→child spawn pattern.
+# Works today if --claude-driver subprocess is active.
+# Each topic gets its own Claude subprocess; parent merges results.
+# requires: file-mcp (read/write), claude-driver (subprocess or api)
+version: 1.0.0
+name: multi-agent-research
+description: >
+  Research a question by spawning one Claude subagent per sub-topic in parallel,
+  then having a parent agent synthesize the results into a single document.
+  Demonstrates the runClaudeTask parent→child topology with onTaskSuccess wiring.
+trigger:
+  type: manual
+  inputs:
+    - name: question
+      type: string
+      required: true
+      description: The research question to investigate
+    - name: subtopics
+      type: array
+      items: string
+      description: Specific angles to cover. Leave empty to let the planner decide.
+    - name: output_path
+      type: string
+      default: ~/research/{{YYYY-MM-DD}}-{{question.slug}}.md
+context:
+  - type: env
+    keys:
+      - USER_NAME
+steps:
+  - id: plan
+    risk: low
+    agent:
+      prompt: |
+        Question: {{question}}
+        Caller-provided subtopics: {{subtopics}}
+
+        If subtopics is empty, decompose the question into 3–5 parallel research threads.
+        Each thread should be independently answerable — no thread should depend on another.
+
+        Return JSON only:
+        {
+          "threads": [
+            { "id": "t1", "subtopic": "...", "prompt": "Research prompt for a Claude subagent..." },
+            ...
+          ]
+        }
+      into: plan
+      format: json
+
+  - id: spawn_agents
+    risk: low
+    parallel:
+      each: "{{plan.threads}}"
+      as: thread
+      steps:
+        - id: "agent_{{thread.id}}"
+          tool: claude.runTask
+          prompt: "{{thread.prompt}}"
+          into: "result_{{thread.id}}"
+
+  - id: synthesize
+    risk: low
+    awaits:
+      - spawn_agents
+    agent:
+      prompt: |
+        You are synthesizing parallel research into a single coherent document.
+
+        Question: {{question}}
+
+        Sub-agent results:
+        {{spawn_agents.results}}
+
+        Write a structured research document:
+        - Start with a 3-sentence executive summary
+        - One section per subtopic (keep each tight — drop redundancy across threads)
+        - End with a "Tensions & open questions" section for anything the agents disagreed on
+        - 1000 words max unless the complexity genuinely demands more
+
+        No preamble. No "As an AI..." hedging.
+      into: synthesis
+
+  - id: write
+    tool: file.write
+    risk: low
+    path: "{{output_path}}"
+    content: "{{synthesis}}"
+
+  - id: notify
+    tool: notify.push
+    risk: low
+    title: "Research complete: {{question}}"
+    body: "Saved to {{output_path}}"
+
+on_error:
+  notify: true
+  retry: 0

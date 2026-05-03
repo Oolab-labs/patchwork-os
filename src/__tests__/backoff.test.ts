@@ -54,11 +54,10 @@ async function triggerTimeouts(n: number): Promise<void> {
     await vi.advanceTimersByTimeAsync(10_001); // past REQUEST_TIMEOUT
     await req;
     // The connector's failure-recording catch lives later in the same promise
-    // chain than our `.catch(() => null)`. Flush a couple of microtask turns
-    // so circuit-breaker state has settled before the test asserts on it —
-    // otherwise CI sporadically reads stale state under load.
-    await Promise.resolve();
-    await Promise.resolve();
+    // chain than our `.catch(() => null)`. Flush enough microtask turns for
+    // circuit-breaker state to settle — Node 22 schedules internal catch
+    // continuations later than Node 20, so we need more flushes.
+    for (let f = 0; f < 8; f++) await Promise.resolve();
   }
 }
 

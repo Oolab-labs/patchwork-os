@@ -878,11 +878,6 @@ export function listInstalledRecipes(recipesDir: string): ListRecipesResult {
         }>;
       };
       const stat = statSync(fullPath);
-      // Legacy `<name>.permissions.json` sidecar was decorative — never read by
-      // toolRegistry. Removed in alpha.36; canonical perm location is
-      // ~/.claude/settings.json. See recipe-dogfood-2026-05-01/PLAN-MASTER-V2.md A-PR4.
-      // TODO(C-PR4): drop the never-shipped POST /recipes/:name/permissions route
-      // (DP-7 follow-up).
       const resolvedRecipesDir = path.resolve(recipesDir);
       let source: RecipeSummary["source"];
       if (

@@ -1,0 +1,68 @@
+# Companion recipe: pre-decision brief
+version: 1.0.0
+name: business-decision-brief
+description: >
+  Before making a business decision, surface relevant prior lessons, similar past
+  decisions, and pattern warnings from your trace history. Builds institutional
+  memory even for a solo operator.
+trigger:
+  type: manual
+  inputs:
+    - name: decision
+      type: string
+      required: true
+    - name: context
+      type: string
+      description: Optional extra context about the situation
+context:
+  - type: env
+    keys:
+      - BUSINESS_ROOT
+steps:
+  - id: search_lessons
+    risk: low
+    parallel:
+      - tool: file.grep
+        path: "{{BUSINESS_ROOT}}/lessons.jsonl"
+        pattern: "{{decision | keywords}}"
+        limit: 10
+        into: relevant_lessons
+      - tool: file.list
+        path: "{{BUSINESS_ROOT}}/decisions/"
+        pattern: "*.md"
+        limit: 20
+        into: past_decisions
+
+  - id: compose_brief
+    risk: low
+    awaits:
+      - search_lessons
+    agent:
+      prompt: |
+        Decision to make: {{decision}}
+        Context: {{context}}
+
+        Relevant lessons from your trace log:
+        {{relevant_lessons}}
+
+        Past decisions (file list — read the most relevant 3):
+        {{past_decisions}}
+
+        Write a pre-decision brief:
+        1. **Pattern warning** — have you been here before? What happened?
+        2. **Relevant lessons** — what has this business learned about situations like this?
+        3. **Blind spots to check** — what does a solo operator typically miss here?
+        4. **Suggested framing** — one way to think about this decision that the trace history suggests works for you
+
+        Tight. Honest. No filler.
+      into: brief
+
+  - id: present
+    tool: notify.push
+    risk: low
+    title: "Decision brief: {{decision}}"
+    body: "{{brief}}"
+
+on_error:
+  notify: true
+  retry: 0

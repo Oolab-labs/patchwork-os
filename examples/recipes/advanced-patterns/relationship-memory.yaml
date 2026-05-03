@@ -1,0 +1,60 @@
+# vision-tier — builds per-person relationship state from emails and meeting notes.
+# Two recipes: one that runs on incoming signals, one nightly cron for stale contacts.
+# requires: gmail-mcp, calendar-mcp, file-mcp, notify-mcp
+version: 1.0.0
+name: relationship-memory
+description: >
+  When you email someone or finish a meeting, extract what you learned and merge it
+  into ~/relationships/{name}/state.md. Before important meetings, surface a
+  pre-meeting brief from that file. Nightly cron flags contacts who've gone quiet.
+trigger:
+  type: webhook
+  path: /relationship-signal
+  description: >
+    POST with body { "type": "email|meeting", "counterparty": "Name", "content": "..." }
+    from your email client or calendar app.
+context:
+  - type: env
+    keys:
+      - RELATIONSHIPS_ROOT   # ~/relationships/ — one subfolder per person
+steps:
+  - id: load_existing_state
+    tool: file.read
+    risk: low
+    path: "{{RELATIONSHIPS_ROOT}}/{{payload.counterparty | slug}}/state.md"
+    into: existing_state
+    optional: true
+    on_missing: ""
+
+  - id: extract_signals
+    risk: low
+    agent:
+      prompt: |
+        You are updating a relationship log. New signal:
+        Type: {{payload.type}}
+        From/with: {{payload.counterparty}}
+        Content:
+        {{payload.content}}
+
+        Existing state (may be empty for a new contact):
+        {{existing_state}}
+
+        Extract and merge:
+        1. **What I learned** — new facts about this person (interests, family, projects, constraints)
+        2. **Relationship dynamics** — what does this signal tell me about where we stand?
+        3. **Open commitments** — anything I said I'd do, or they said they'd do
+        4. **Context for next time** — one line: what to bring up or avoid next time
+
+        Write the updated state.md content. Keep the file tight — max 400 words.
+        Append a dated entry at the bottom for this interaction (don't rewrite old entries).
+      into: updated_state
+
+  - id: write_state
+    tool: file.write
+    risk: low
+    path: "{{RELATIONSHIPS_ROOT}}/{{payload.counterparty | slug}}/state.md"
+    content: "{{updated_state}}"
+
+on_error:
+  notify: true
+  retry: 1

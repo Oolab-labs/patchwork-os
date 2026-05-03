@@ -1,0 +1,82 @@
+# Companion recipe: quarterly business review
+version: 1.0.0
+name: business-quarterly-review
+description: >
+  Quarterly cron. Read all business files, synthesize wins/losses/patterns,
+  regenerate the state-of-the-union document. Asks "what hypotheses about
+  your business are you currently not testing?"
+trigger:
+  type: cron
+  at: 0 9 1 1,4,7,10 *   # First day of each quarter
+context:
+  - type: env
+    keys:
+      - BUSINESS_ROOT
+      - QUARTER             # current quarter number, e.g. 2 (set by the scheduler or env)
+      - PREV_QUARTER_MONTH  # first month of the previous quarter, e.g. 2025-01 (set by scheduler)
+steps:
+  - id: gather_quarter
+    risk: low
+    parallel:
+      - tool: file.read
+        path: "{{BUSINESS_ROOT}}/finance/{{PREV_QUARTER_MONTH}}.md"
+        into: finance_data
+        optional: true
+      - tool: file.grep
+        path: "{{BUSINESS_ROOT}}/lessons.jsonl"
+        since: "-90d"
+        into: quarter_lessons
+      - tool: file.list
+        path: "{{BUSINESS_ROOT}}/decisions/"
+        since: "-90d"
+        into: quarter_decisions
+
+  - id: synthesize
+    risk: low
+    awaits:
+      - gather_quarter
+    agent:
+      prompt: |
+        It's the start of a new quarter. Synthesize the last 90 days:
+
+        Finance data: {{finance_data}}
+        Lessons logged this quarter: {{quarter_lessons}}
+        Decisions made this quarter: {{quarter_decisions}}
+
+        Write a quarterly business review:
+
+        ## What happened
+        - Revenue/expense patterns (from finance data)
+        - Top 3 wins (with why they worked)
+        - Top 3 losses or mistakes (with the lesson)
+
+        ## Patterns
+        - What is this business getting better at?
+        - What keeps showing up as a friction point?
+
+        ## Hypotheses you're not testing
+        Look at the lessons and decisions. What assumptions are you making
+        that you haven't checked in >90 days? Name 2–3 specific things
+        you're taking for granted that might not be true anymore.
+
+        ## Bets for next quarter
+        3 focused areas of attention. Keep it to 3.
+
+        No padding. This is a private document — be honest.
+      into: review
+
+  - id: write_review
+    tool: file.write
+    risk: low
+    path: "{{BUSINESS_ROOT}}/reviews/{{YYYY}}-Q{{QUARTER}}.md"
+    content: "{{review}}"
+
+  - id: notify
+    tool: notify.push
+    risk: low
+    title: "Q{{QUARTER}} review ready"
+    body: "{{BUSINESS_ROOT}}/reviews/{{YYYY}}-Q{{QUARTER}}.md"
+
+on_error:
+  notify: true
+  retry: 0
