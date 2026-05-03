@@ -563,6 +563,11 @@ async function handleApprovalRequest(
       permissionMode,
       sessionId,
       tier,
+      // Workspace path captured so heuristic 9 (workspace mismatch) can
+      // tell "this tool was approved in workspace A; the call coming in
+      // from workspace B is novel here." Older rows lack this field —
+      // h9 treats absent workspace as "no baseline", same as new tools.
+      workspace: deps.workspace,
       ...(capturedParams !== undefined && { params: capturedParams }),
       ...(riskSignals.length > 0 && { riskSignals }),
       ...(summary !== undefined && { summary }),
@@ -662,6 +667,7 @@ async function handleApprovalRequest(
         toolName,
         activityLog: deps.activityLog,
         currentTier: tier,
+        currentWorkspace: deps.workspace,
       })
     : undefined;
 
