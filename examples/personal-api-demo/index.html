@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Patchwork Personal API — Demo</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --bg2: #181b24;
+      --bg3: #1e2230;
+      --border: rgba(255,255,255,0.08);
+      --fg: #e8eaf0;
+      --fg2: #8b90a0;
+      --fg3: #555b6e;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --accent: #6366f1;
+      --accent-soft: rgba(99,102,241,0.12);
+      --r: 8px;
+      --mono: 'JetBrains Mono', 'Fira Mono', ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100dvh;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .logo { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+    .logo span { color: var(--accent); }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--fg3); flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .status-dot.ok { background: var(--ok); }
+    .status-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg2); }
+
+    main { max-width: 760px; margin: 0 auto; padding: 32px 24px; }
+    section { margin-bottom: 32px; }
+    h2 { font-size: 13px; font-weight: 600; color: var(--fg2); text-transform: uppercase;
+         letter-spacing: 0.06em; margin-bottom: 12px; }
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 20px;
+    }
+    .card + .card { margin-top: 12px; }
+    label { display: block; font-size: 12px; color: var(--fg2); margin-bottom: 6px; }
+    input, select {
+      width: 100%;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--fg);
+      font-size: 13px;
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    button {
+      background: var(--accent);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 18px;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--fg2);
+    }
+    button.ghost:hover { border-color: var(--fg3); color: var(--fg); opacity: 1; }
+    button.danger { background: var(--err); }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .pill.ok { background: rgba(34,197,94,0.12); color: var(--ok); border: 1px solid rgba(34,197,94,0.2); }
+    .pill.warn { background: rgba(245,158,11,0.12); color: var(--warn); border: 1px solid rgba(245,158,11,0.2); }
+    .pill.err { background: rgba(239,68,68,0.12); color: var(--err); border: 1px solid rgba(239,68,68,0.2); }
+    .pill.muted { background: rgba(255,255,255,0.04); color: var(--fg2); border: 1px solid var(--border); }
+
+    .recipe-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .recipe-row:last-child { border-bottom: none; }
+    .recipe-name { flex: 1; font-size: 13px; font-family: var(--mono); }
+    .recipe-trigger { font-size: 11px; color: var(--fg3); }
+
+    .approval-row {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .approval-row:last-child { border-bottom: none; }
+    .approval-tool { font-size: 13px; font-family: var(--mono); margin-bottom: 4px; }
+    .approval-meta { font-size: 11px; color: var(--fg2); display: flex; gap: 8px; align-items: center; }
+    .approval-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+    .run-output {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--fg2);
+      padding: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 10px;
+    }
+    .row { display: flex; gap: 10px; align-items: flex-end; }
+    .row > * { flex: 1; }
+    .row > button { flex: 0; white-space: nowrap; }
+    .alert {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .alert.err { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); color: #fca5a5; }
+    .alert.ok { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); color: #86efac; }
+    code { font-family: var(--mono); font-size: 12px; }
+    .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .hidden { display: none; }
+    #setup-view p { color: var(--fg2); margin-bottom: 16px; line-height: 1.7; }
+    #setup-view code { background: var(--bg3); padding: 2px 6px; border-radius: 4px; }
+    .setup-step { display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-start; }
+    .setup-step-body { flex: 1; }
+    .setup-step-body label { margin-top: 0; }
+    .token-row { display: flex; align-items: center; gap: 8px; }
+    .token-display {
+      flex: 1;
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: var(--ok);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+    .empty { color: var(--fg3); font-size: 13px; text-align: center; padding: 24px 0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Patchwork <span>Personal API</span> — Demo</div>
+  <div class="status-row">
+    <div class="status-dot" id="conn-dot"></div>
+    <span id="conn-label">Not connected</span>
+    <button type="button" class="ghost" id="logout-btn" style="display:none;font-size:11px;padding:4px 10px;">Sign out</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── Setup / Auth ── -->
+  <div id="setup-view">
+    <section>
+      <h2>Connect to your bridge</h2>
+      <div class="card">
+        <p>
+          This demo shows how to build a private app against your own Patchwork OS bridge running in
+          <strong>OAuth mode</strong> (<code>--issuer-url</code>). It authenticates with PKCE, then
+          calls the bridge API to list recipes, run one, and respond to approval prompts — all from a
+          plain web page.
+        </p>
+
+        <div class="setup-step">
+          <div class="step-num">1</div>
+          <div class="setup-step-body">
+            <label>Bridge URL (must be HTTPS on a remote host, or http://localhost for local testing)</label>
+            <input id="bridge-url" type="url" placeholder="https://bridge.example.com" value="http://localhost:3100" />
+          </div>
+        </div>
+
+        <div class="setup-step">
+          <div class="step-num">2</div>
+          <div class="setup-step-body">
+            <p style="margin:0 0 4px;font-size:12px;color:var(--fg2);">
+              Start your bridge with OAuth mode enabled:
+            </p>
+            <div class="run-output" style="max-height:60px;margin-top:0;">claude-ide-bridge --full --issuer-url https://bridge.example.com --cors-origin &lt;this-page-origin&gt;</div>
+          </div>
+        </div>
+
+        <div class="setup-step">
+          <div class="step-num">3</div>
+          <div class="setup-step-body">
+            <label style="margin-bottom:10px;">Sign in with OAuth PKCE</label>
+            <button type="button" id="auth-btn">Connect &amp; Sign in →</button>
+            <div id="auth-error" class="alert err hidden"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ── Authenticated app ── -->
+  <div id="app-view" class="hidden">
+
+    <section id="token-section">
+      <h2>Session</h2>
+      <div class="card">
+        <div class="token-row">
+          <div class="token-display" id="token-display">—</div>
+          <button type="button" class="ghost" id="copy-token-btn" style="flex-shrink:0;font-size:12px;padding:6px 12px;">Copy token</button>
+        </div>
+        <p style="margin-top:8px;font-size:11px;color:var(--fg3);">
+          Bearer token issued by the bridge OAuth server. Valid 24 h. Use it in
+          <code>Authorization: Bearer &lt;token&gt;</code> headers to call any bridge API endpoint.
+        </p>
+      </div>
+    </section>
+
+    <hr class="divider" />
+
+    <section>
+      <h2>Installed recipes</h2>
+      <div class="card">
+        <div id="recipes-loading" style="color:var(--fg2);font-size:13px;">Loading…</div>
+        <div id="recipes-list" class="hidden"></div>
+        <div id="recipes-error" class="alert err hidden"></div>
+      </div>
+    </section>
+
+    <hr class="divider" />
+
+    <section>
+      <h2>Run a recipe</h2>
+      <div class="card">
+        <div class="row">
+          <div>
+            <label for="run-recipe-name">Recipe name (from list above)</label>
+            <input id="run-recipe-name" type="text" placeholder="e.g. morning-brief" />
+          </div>
+          <button type="button" id="run-btn">Run →</button>
+        </div>
+        <div id="run-result" class="hidden"></div>
+      </div>
+    </section>
+
+    <hr class="divider" />
+
+    <section>
+      <h2>Pending approvals</h2>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <span style="font-size:12px;color:var(--fg2);">Waiting for your approval before tools execute</span>
+          <button type="button" class="ghost" id="refresh-approvals-btn" style="font-size:11px;padding:4px 12px;">Refresh</button>
+        </div>
+        <div id="approvals-loading" style="color:var(--fg2);font-size:13px;display:none;">Loading…</div>
+        <div id="approvals-list"></div>
+        <div id="approvals-error" class="alert err hidden"></div>
+      </div>
+    </section>
+
+    <hr class="divider" />
+
+    <section>
+      <h2>Raw API explorer</h2>
+      <div class="card">
+        <p style="font-size:12px;color:var(--fg2);margin-bottom:12px;">
+          Send any authenticated request to the bridge API. The Bearer token is injected automatically.
+        </p>
+        <div class="row" style="margin-bottom:10px;">
+          <div>
+            <label for="api-method">Method</label>
+            <select id="api-method" style="width:90px;">
+              <option>GET</option>
+              <option>POST</option>
+              <option>PATCH</option>
+              <option>DELETE</option>
+            </select>
+          </div>
+          <div style="flex:4;">
+            <label for="api-path">Path (relative to bridge URL)</label>
+            <input id="api-path" type="text" placeholder="/recipes" value="/recipes" />
+          </div>
+          <button type="button" id="api-send-btn">Send</button>
+        </div>
+        <div>
+          <label for="api-body">Body (JSON, optional for POST/PATCH)</label>
+          <input id="api-body" type="text" placeholder='{"key":"value"}' />
+        </div>
+        <div id="api-result" class="run-output hidden"></div>
+      </div>
+    </section>
+
+  </div><!-- /app-view -->
+
+</main>
+
+<script type="module">
+// ── Crypto helpers ────────────────────────────────────────────────────────────
+
+async function sha256(plain) {
+  const enc = new TextEncoder().encode(plain);
+  const digest = await crypto.subtle.digest('SHA-256', enc);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function randomBase64Url(len = 48) {
+  const arr = new Uint8Array(len);
+  crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode(...arr))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+const S = {
+  bridgeUrl: () => document.getElementById('bridge-url').value.replace(/\/$/, ''),
+  token: null,
+  clientId: null,
+};
+
+function saveSession(token, bridgeUrl, clientId) {
+  sessionStorage.setItem('pwa_token', token);
+  sessionStorage.setItem('pwa_bridge', bridgeUrl);
+  if (clientId) sessionStorage.setItem('pwa_client_id', clientId);
+  S.token = token;
+  S.clientId = clientId;
+}
+
+function loadSession() {
+  S.token = sessionStorage.getItem('pwa_token');
+  S.clientId = sessionStorage.getItem('pwa_client_id');
+  const savedBridge = sessionStorage.getItem('pwa_bridge');
+  if (savedBridge) document.getElementById('bridge-url').value = savedBridge;
+  return !!S.token;
+}
+
+function clearSession() {
+  sessionStorage.removeItem('pwa_token');
+  sessionStorage.removeItem('pwa_bridge');
+  sessionStorage.removeItem('pwa_client_id');
+  sessionStorage.removeItem('pkce_verifier');
+  sessionStorage.removeItem('pkce_state');
+  S.token = null;
+  S.clientId = null;
+}
+
+// ── API fetch ─────────────────────────────────────────────────────────────────
+
+async function apiFetch(path, opts = {}) {
+  const url = S.bridgeUrl() + path;
+  const headers = {
+    'Authorization': `Bearer ${S.token}`,
+    ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+    ...(opts.headers ?? {}),
+  };
+  const res = await fetch(url, { ...opts, headers });
+  return res;
+}
+
+// ── OAuth PKCE flow ───────────────────────────────────────────────────────────
+
+async function startOAuthFlow() {
+  const bridgeUrl = S.bridgeUrl();
+  if (!bridgeUrl) { showAuthError('Enter the bridge URL first.'); return; }
+
+  // 1. Dynamic client registration (RFC 7591)
+  let clientId;
+  try {
+    const regRes = await fetch(`${bridgeUrl}/oauth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        redirect_uris: [window.location.href.split('?')[0]],
+        client_name: 'Patchwork Personal API Demo',
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+        token_endpoint_auth_method: 'none',
+      }),
+    });
+    if (!regRes.ok) {
+      const t = await regRes.text();
+      throw new Error(`Registration failed (${regRes.status}): ${t}`);
+    }
+    const reg = await regRes.json();
+    clientId = reg.client_id;
+    if (!clientId) throw new Error('No client_id in registration response');
+  } catch (e) {
+    showAuthError(`Could not reach bridge at ${bridgeUrl}. Check the URL and that --issuer-url is set.\n\n${e.message}`);
+    return;
+  }
+
+  // 2. Generate PKCE verifier + challenge
+  const verifier = randomBase64Url(48);
+  const challenge = await sha256(verifier);
+  const state = randomBase64Url(16);
+
+  sessionStorage.setItem('pkce_verifier', verifier);
+  sessionStorage.setItem('pkce_state', state);
+  sessionStorage.setItem('pwa_client_id', clientId);
+  sessionStorage.setItem('pwa_bridge', bridgeUrl);
+
+  // 3. Redirect to bridge authorization endpoint
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: window.location.href.split('?')[0],
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state,
+    scope: 'mcp',
+  });
+  window.location.href = `${bridgeUrl}/oauth/authorize?${params}`;
+}
+
+async function handleCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  const error = params.get('error');
+
+  if (error) {
+    showAuthError(`Authorization denied: ${params.get('error_description') ?? error}`);
+    return false;
+  }
+  if (!code) return false;
+
+  const savedState = sessionStorage.getItem('pkce_state');
+  if (state !== savedState) {
+    showAuthError('State mismatch — possible CSRF. Please try again.');
+    return false;
+  }
+
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  const clientId = sessionStorage.getItem('pwa_client_id');
+  const bridgeUrl = sessionStorage.getItem('pwa_bridge') ?? S.bridgeUrl();
+
+  // Exchange code for token
+  try {
+    const tokenRes = await fetch(`${bridgeUrl}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: window.location.href.split('?')[0],
+        client_id: clientId,
+        code_verifier: verifier,
+      }),
+    });
+    if (!tokenRes.ok) {
+      const t = await tokenRes.text();
+      throw new Error(`Token exchange failed (${tokenRes.status}): ${t}`);
+    }
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) throw new Error('No access_token in response');
+
+    document.getElementById('bridge-url').value = bridgeUrl;
+    saveSession(tokenData.access_token, bridgeUrl, clientId);
+
+    // Clean callback params from URL without reload
+    window.history.replaceState({}, '', window.location.pathname);
+    return true;
+  } catch (e) {
+    showAuthError(e.message);
+    return false;
+  }
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+function setConnected(yes) {
+  document.getElementById('conn-dot').className = `status-dot${yes ? ' ok' : ''}`;
+  document.getElementById('conn-label').textContent = yes
+    ? `Connected — ${S.bridgeUrl()}`
+    : 'Not connected';
+  document.getElementById('logout-btn').style.display = yes ? '' : 'none';
+  document.getElementById('setup-view').classList.toggle('hidden', yes);
+  document.getElementById('app-view').classList.toggle('hidden', !yes);
+}
+
+function showToken() {
+  const display = document.getElementById('token-display');
+  const tok = S.token ?? '';
+  display.textContent = tok.length > 40 ? `${tok.slice(0, 20)}…${tok.slice(-8)}` : tok;
+}
+
+// ── Recipes ───────────────────────────────────────────────────────────────────
+
+async function loadRecipes() {
+  const loading = document.getElementById('recipes-loading');
+  const list = document.getElementById('recipes-list');
+  const err = document.getElementById('recipes-error');
+  loading.style.display = '';
+  list.classList.add('hidden');
+  err.classList.add('hidden');
+
+  try {
+    const res = await apiFetch('/recipes');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const recipes = Array.isArray(data) ? data : (data.recipes ?? []);
+
+    loading.style.display = 'none';
+    if (recipes.length === 0) {
+      list.innerHTML = '<div class="empty">No recipes installed yet. Install one from the dashboard marketplace.</div>';
+    } else {
+      list.innerHTML = recipes.map(r => {
+        const trigger = r.triggerType ?? r.trigger?.type ?? '—';
+        const webhookPath = r.webhookPath ? `<code style="font-size:10px;color:var(--fg3)">${r.webhookPath}</code>` : '';
+        return `<div class="recipe-row">
+          <span class="recipe-name">${r.name}</span>
+          <span class="pill muted" style="font-size:10px;">${trigger}</span>
+          ${webhookPath}
+          <button class="ghost" style="font-size:11px;padding:4px 10px;" onclick="document.getElementById('run-recipe-name').value='${r.name}';document.getElementById('run-recipe-name').scrollIntoView()">Use</button>
+        </div>`;
+      }).join('');
+    }
+    list.classList.remove('hidden');
+  } catch(e) {
+    loading.style.display = 'none';
+    err.textContent = `Failed to load recipes: ${e.message}`;
+    err.classList.remove('hidden');
+  }
+}
+
+// ── Run recipe ────────────────────────────────────────────────────────────────
+
+async function runRecipe() {
+  const name = document.getElementById('run-recipe-name').value.trim();
+  const result = document.getElementById('run-result');
+  if (!name) return;
+
+  result.className = 'run-output';
+  result.textContent = 'Starting run…';
+  result.classList.remove('hidden');
+
+  try {
+    const res = await apiFetch(`/recipes/${encodeURIComponent(name)}/run`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      result.textContent = `✓ Run started\n\n${JSON.stringify(data, null, 2)}`;
+    } else {
+      result.textContent = `✗ Error ${res.status}\n\n${JSON.stringify(data, null, 2)}`;
+    }
+  } catch(e) {
+    result.textContent = `✗ ${e.message}`;
+  }
+}
+
+// ── Approvals ────────────────────────────────────────────────────────────────
+
+async function loadApprovals() {
+  const list = document.getElementById('approvals-list');
+  const loading = document.getElementById('approvals-loading');
+  const err = document.getElementById('approvals-error');
+  loading.style.display = '';
+  err.classList.add('hidden');
+
+  try {
+    const res = await apiFetch('/approvals/pending');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const pending = Array.isArray(data) ? data : (data.pending ?? data.approvals ?? []);
+
+    loading.style.display = 'none';
+    if (pending.length === 0) {
+      list.innerHTML = '<div class="empty">No pending approvals.</div>';
+    } else {
+      list.innerHTML = pending.map(a => {
+        const id = a.callId ?? a.id ?? '';
+        const tool = a.toolName ?? a.tool ?? '?';
+        const input = a.input ? JSON.stringify(a.input).slice(0, 120) : '';
+        return `<div class="approval-row">
+          <div class="approval-tool">${tool}</div>
+          <div class="approval-meta">
+            <span class="pill warn" style="font-size:10px;">pending</span>
+            ${input ? `<code style="font-size:10px;color:var(--fg3)">${input}</code>` : ''}
+          </div>
+          <div class="approval-actions">
+            <button style="background:var(--ok);font-size:12px;padding:5px 14px;" onclick="respondApproval('${id}','allow')">Allow</button>
+            <button style="background:var(--err);font-size:12px;padding:5px 14px;" onclick="respondApproval('${id}','deny')">Deny</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    loading.style.display = 'none';
+    err.textContent = `Failed to load approvals: ${e.message}`;
+    err.classList.remove('hidden');
+  }
+}
+
+window.respondApproval = async (callId, decision) => {
+  try {
+    const res = await apiFetch(`/approvals/${encodeURIComponent(callId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ decision }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await loadApprovals();
+  } catch(e) {
+    document.getElementById('approvals-error').textContent = `Failed: ${e.message}`;
+    document.getElementById('approvals-error').classList.remove('hidden');
+  }
+};
+
+// ── Raw API explorer ──────────────────────────────────────────────────────────
+
+async function sendApiRequest() {
+  const method = document.getElementById('api-method').value;
+  const path = document.getElementById('api-path').value.trim();
+  const bodyText = document.getElementById('api-body').value.trim();
+  const result = document.getElementById('api-result');
+
+  result.textContent = 'Loading…';
+  result.classList.remove('hidden');
+
+  try {
+    const opts = { method };
+    if (bodyText && (method === 'POST' || method === 'PATCH')) {
+      opts.body = bodyText;
+    }
+    const res = await apiFetch(path, opts);
+    const ct = res.headers.get('content-type') ?? '';
+    let body;
+    if (ct.includes('json')) {
+      const json = await res.json();
+      body = JSON.stringify(json, null, 2);
+    } else {
+      body = await res.text();
+    }
+    result.textContent = `HTTP ${res.status}\n\n${body}`;
+  } catch(e) {
+    result.textContent = `Error: ${e.message}`;
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+async function boot() {
+  // Check for OAuth callback
+  const hasCode = new URLSearchParams(window.location.search).has('code');
+  const hasError = new URLSearchParams(window.location.search).has('error');
+
+  if (hasCode || hasError) {
+    const ok = await handleCallback();
+    if (!ok) {
+      setConnected(false);
+      return;
+    }
+  } else if (!loadSession()) {
+    setConnected(false);
+    return;
+  }
+
+  setConnected(true);
+  showToken();
+  await Promise.all([loadRecipes(), loadApprovals()]);
+}
+
+// ── Event listeners ───────────────────────────────────────────────────────────
+
+document.getElementById('auth-btn').addEventListener('click', startOAuthFlow);
+document.getElementById('logout-btn').addEventListener('click', () => {
+  clearSession();
+  setConnected(false);
+  window.history.replaceState({}, '', window.location.pathname);
+});
+document.getElementById('copy-token-btn').addEventListener('click', () => {
+  if (S.token) navigator.clipboard.writeText(S.token).catch(() => {});
+});
+document.getElementById('run-btn').addEventListener('click', runRecipe);
+document.getElementById('run-recipe-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') runRecipe();
+});
+document.getElementById('refresh-approvals-btn').addEventListener('click', loadApprovals);
+document.getElementById('api-send-btn').addEventListener('click', sendApiRequest);
+document.getElementById('api-path').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendApiRequest();
+});
+
+boot();
+</script>
+</body>
+</html>

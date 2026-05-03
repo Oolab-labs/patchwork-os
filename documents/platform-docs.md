@@ -886,3 +886,57 @@ Honest capability gaps as of the current release:
 - **Programmatic tool calling / code sandboxes** — Tool results are returned raw to the model. Processing results in isolated sandboxes before returning them (to reduce token usage on complex workflows) is not yet implemented.
 - **Form-mode elicitation** — Tools that need missing parameters return `isError: true` with instructions to re-invoke with the required fields. URL-mode (OAuth redirects) is supported; interactive form prompts inside the MCP flow are not.
 - **Full deferred tool loading** — `searchTools` returns tool metadata without full schemas, partially reducing context load. The 85%-token-reduction pattern (load full schemas only on demand at call time) is not yet implemented; all registered tool schemas are sent to the model at session start.
+
+---
+
+## Personal AI API
+
+Run your bridge as an OAuth-protected API that any web app, mobile shortcut, or custom tool can call.
+
+### Activation
+
+```bash
+claude-ide-bridge --full \
+  --issuer-url https://bridge.example.com \
+  --cors-origin https://your-app-origin.com \
+  --fixed-token <strong-random-token>
+```
+
+Once `--issuer-url` is set the bridge activates its full OAuth 2.0 server:
+
+| Endpoint | RFC | Purpose |
+|---|---|---|
+| `/.well-known/oauth-authorization-server` | RFC 8414 | Metadata discovery |
+| `/.well-known/oauth-protected-resource` | RFC 9396 | Resource server metadata |
+| `/oauth/register` | RFC 7591 | Dynamic client registration |
+| `/oauth/authorize` | RFC 6749 | Authorization code grant (PKCE S256 mandatory) |
+| `/oauth/token` | RFC 6749 | Token exchange |
+| `/oauth/revoke` | RFC 7009 | Token revocation |
+
+Bearer tokens issued via the OAuth flow are accepted on all API endpoints alongside the static bridge token.
+
+### Reference app
+
+`examples/personal-api-demo/index.html` is a self-contained single-page app that demonstrates the complete OAuth flow:
+
+1. **Dynamic registration** — registers itself with the bridge, no manual client setup
+2. **PKCE authorization** — redirects to `/oauth/authorize`, user enters bridge token
+3. **Token exchange** — exchanges code for bearer token
+4. **Authenticated API calls** — lists recipes, triggers a run, responds to approvals
+
+Run it locally:
+
+```bash
+cd examples/personal-api-demo
+npx serve .
+```
+
+Open the served URL, enter your bridge URL, and click **Connect & Sign in**.
+
+### Security checklist
+
+- Always use HTTPS for remote deployments (`--issuer-url` must be `https://` in production)
+- Set `--cors-origin` to your exact app origin (not `*`)
+- Use `--fixed-token` with a strong random value (`openssl rand -hex 32`) so the bridge token doesn't rotate on restart
+- Bearer tokens expire after 24 hours — clients must re-authorize
+- The bridge token entered on the authorization page is the single credential that gates all OAuth flows
