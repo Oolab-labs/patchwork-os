@@ -1,0 +1,47 @@
+{
+  "_comment": "Developer policy — streamlined for solo developer workflows.",
+  "_description": "Auto-approve read ops, safe build commands, and common git read ops. Ask before git push, file deletes, and network writes. Block destructive shell ops.",
+  "permissions": {
+    "allow": [
+      "Read",
+      "WebSearch",
+      "WebFetch(*)",
+      "Bash(npm run *)",
+      "Bash(npm test*)",
+      "Bash(npm install*)",
+      "Bash(npx *)",
+      "Bash(git status)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git pull *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(echo *)",
+      "Edit",
+      "Write"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git push --force *)",
+      "Bash(rm *)",
+      "Bash(docker *)",
+      "Bash(kubectl *)",
+      "Bash(curl * -X POST *)",
+      "Bash(curl * -X PUT *)",
+      "Bash(curl * -X DELETE *)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(sudo rm *)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | bash*)",
+      "Bash(chmod 777 *)"
+    ]
+  }
+}

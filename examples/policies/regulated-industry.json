@@ -1,0 +1,26 @@
+{
+  "_comment": "Regulated-industry policy — for medicine, law, finance, journalism, government.",
+  "_description": "Read-only by default. All writes, network requests, and shell commands require explicit approval. No data leaves the local machine without a human decision. Maintains full audit trail by ensuring every action passes through the approval gate.",
+  "permissions": {
+    "allow": ["Read", "WebSearch"],
+    "ask": [
+      "Edit",
+      "Write",
+      "Bash(*)",
+      "WebFetch(*)",
+      "mcp__patchwork__runRecipe(*)",
+      "mcp__patchwork__gitCommit(*)",
+      "mcp__patchwork__gitPush(*)",
+      "mcp__patchwork__githubCreatePR(*)"
+    ],
+    "deny": [
+      "Bash(rm *)",
+      "Bash(sudo *)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | bash*)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(rsync *)"
+    ]
+  }
+}
