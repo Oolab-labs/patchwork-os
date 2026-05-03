@@ -27,6 +27,7 @@ import { loadConfig as loadPatchworkConfig } from "./patchworkConfig.js";
 import type { LoadedPluginTool } from "./pluginLoader.js";
 import { loadPlugins, loadPluginsFull } from "./pluginLoader.js";
 import { PluginWatcher } from "./pluginWatcher.js";
+import { isPreToolUseHookRegistered } from "./preToolUseHook.js";
 import type { ProbeResults } from "./probe.js";
 import { probeAll } from "./probe.js";
 import { RecipeOrchestration } from "./recipeOrchestration.js";
@@ -300,6 +301,26 @@ export class Bridge {
         this.logger.info(
           `[patchwork] approval gate active: ${this.server.approvalGate} tier(s) require dashboard approval`,
         );
+        // The approval gate only sees traffic if Claude Code's PreToolUse
+        // hook is registered to POST into /approvals. If it isn't, every
+        // CC tool call bypasses the bridge entirely — the queue stays
+        // empty, no `approval_decision` rows accumulate, and the entire
+        // personalSignals catalog has no input data. Silent foot-gun
+        // that wasted hours of investigation; surface it loudly.
+        try {
+          const ccSettingsPath = path.join(
+            process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude"),
+            "settings.json",
+          );
+          if (!isPreToolUseHookRegistered(ccSettingsPath)) {
+            this.logger.warn?.(
+              `[patchwork] WARNING: approval gate is on but no PreToolUse hook found in ${ccSettingsPath}. ` +
+                `Claude Code will bypass the approval queue. Run 'patchwork-init' to register the hook.`,
+            );
+          }
+        } catch {
+          // Best-effort warning — never block startup on a hook check failure.
+        }
         transport.setApprovalGate(async ({ toolName, params, sessionId }) => {
           const tier = classifyTool(toolName);
           if (this.server.approvalGate === "off") return "bypass";

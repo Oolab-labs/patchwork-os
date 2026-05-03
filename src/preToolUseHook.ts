@@ -76,6 +76,34 @@ export function registerPreToolUseHook(
   }
 }
 
+/**
+ * Read-only check: is the Patchwork PreToolUse hook present in the
+ * given Claude Code settings.json? Used by bridge startup to warn the
+ * user when they've enabled the approval gate but never ran
+ * `patchwork-init` to wire up the hook — a silent foot-gun that leaves
+ * the entire personalSignals layer with no input data because Claude
+ * Code never POSTs approval requests to the bridge.
+ *
+ * Missing file → not registered. Unparseable file → not registered
+ * (we don't want to throw out of a startup banner check).
+ */
+export function isPreToolUseHookRegistered(ccSettingsPath: string): boolean {
+  try {
+    if (!existsSync(ccSettingsPath)) return false;
+    const ccSettings = JSON.parse(readFileSync(ccSettingsPath, "utf-8")) as {
+      hooks?: Record<string, HookEntry[]>;
+    };
+    const entries = (ccSettings.hooks?.[HOOK_EVENT] ?? []).map(normalize);
+    return entries.some((entry) =>
+      (entry.hooks ?? []).some(
+        (h) => typeof h.command === "string" && h.command.includes(HOOK_MARKER),
+      ),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function normalize(e: HookEntry): NestedHook {
   if (e && Array.isArray((e as NestedHook).hooks)) {
     return {
