@@ -267,6 +267,10 @@ function DecisionsContent() {
         </div>
       )}
 
+      {loading && traces.length === 0 && (
+        <p style={{ color: "var(--fg-2)" }}>Loading…</p>
+      )}
+
       {error && (
         <div className="alert-err">
           {error.startsWith("/traces")
