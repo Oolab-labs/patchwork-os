@@ -7,6 +7,7 @@ import {
   type PatchworkConfig,
   saveConfig,
 } from "../patchworkConfig.js";
+import { registerPreToolUseHook } from "../preToolUseHook.js";
 
 interface InitOptions {
   force: boolean;
@@ -35,7 +36,9 @@ What it does:
   1. Create ~/.patchwork/{config.json,recipes,inbox,journal}
   2. Copy 5 local-only recipe templates to ~/.patchwork/recipes/
   3. Detect Ollama at localhost:11434 → set provider to ollama-local
-  4. Print next steps
+  4. Register the Patchwork PreToolUse hook in ~/.claude/settings.json
+     so Claude Code routes tool calls through the approval gate
+  5. Print next steps
 `);
 }
 
@@ -72,6 +75,14 @@ interface InitResult {
   recipesSkipped: number;
   ollamaDetected: boolean;
   configAction: "created" | "merged" | "overwritten";
+  /**
+   * State of the Claude Code PreToolUse hook after init ran.
+   * - "added": registered fresh
+   * - "already-wired": prior `patchwork-init` already left it in place
+   * - "error": registration failed (e.g. unwritable settings file) — printed
+   *   as a warning but does not fail init
+   */
+  preToolUseHook: "added" | "already-wired" | "error";
 }
 
 export async function runPatchworkInit(
@@ -167,6 +178,31 @@ export async function runPatchworkInit(
   }
   log(`  ✓ config ${configAction}: ${configPath}\n`);
 
+  // Register the Patchwork PreToolUse hook in Claude Code's settings.json
+  // so CC actually routes tool calls through the bridge's approval queue.
+  // Without this, `--approval-gate` is silently inert and the entire
+  // personalSignals catalog has no input data — exactly the foot-gun
+  // PR #150 added a startup warning for. Now `patchwork-init` fixes it
+  // at the source rather than just warning about it later.
+  const ccSettingsDir = process.env.CLAUDE_CONFIG_DIR ?? join(home, ".claude");
+  mkdirSync(ccSettingsDir, { recursive: true });
+  const ccSettingsPath = join(ccSettingsDir, "settings.json");
+  const hookResult = registerPreToolUseHook(ccSettingsPath);
+  let preToolUseHook: InitResult["preToolUseHook"];
+  if (hookResult.action === "added") {
+    log(`  ✓ Claude Code PreToolUse hook registered: ${ccSettingsPath}\n`);
+    preToolUseHook = "added";
+  } else if (hookResult.action === "already-wired") {
+    log(`  ✓ Claude Code PreToolUse hook already registered\n`);
+    preToolUseHook = "already-wired";
+  } else {
+    log(
+      `  ! Could not register Claude Code PreToolUse hook: ${hookResult.error ?? "unknown"}\n` +
+        `    Approval gate will not see traffic until you add the hook manually.\n`,
+    );
+    preToolUseHook = "error";
+  }
+
   log(`\nNext:
   1. patchwork-os recipe run ambient-journal   # try a local recipe
   2. patchwork-os                              # launch terminal dashboard
@@ -179,5 +215,6 @@ export async function runPatchworkInit(
     recipesSkipped,
     ollamaDetected,
     configAction,
+    preToolUseHook,
   };
 }
