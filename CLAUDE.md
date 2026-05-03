@@ -21,7 +21,7 @@ Comply with all docs in `/documents/`. Consult before changes:
 - `install-extension` — Install companion VS Code extension
 - `gen-claude-md` — Generate starter CLAUDE.md for current workspace
 - `print-token [--port N]` — Print auth token from active lock file
-- `gen-plugin-stub <dir> --name <org/name> --prefix <prefix>` — Scaffold new plugin
+- `gen-plugin-stub <dir> --name <org/name> --prefix <prefix> [--ts]` — Scaffold new plugin (add `--ts` for TypeScript variant)
 - `quick-task <preset>` — Launch a context-aware Claude task from a preset (fixErrors, refactorFile, addTests, explainCode, optimizePerf, runTests, resumeLastCancelled). Same dispatch path as the sidebar. Requires `--claude-driver subprocess`.
 - `start-task "<description>"` — Enqueue a free-form Claude task; Claude gathers its own workspace context.
 - `continue-handoff` — Resume from the stored handoff note (skips auto-snapshots).
@@ -136,7 +136,7 @@ All LSP tools available in both slim and full mode (full is the default since v2
 
 Plugins register additional MCP tools without forking bridge. Run in-process alongside built-in tools.
 
-- **Scaffold**: `claude-ide-bridge gen-plugin-stub <dir> --name "org/name" --prefix "myPrefix"`
+- **Scaffold**: `claude-ide-bridge gen-plugin-stub <dir> --name "org/name" --prefix "myPrefix"` (add `--ts` for TypeScript variant — adds tsconfig + build/dev scripts; compiled artifact lands at `index.mjs` so the manifest entrypoint stays the same)
 - **Load**: `--plugin <path-or-npm-package>` (repeatable). `--plugin-watch` enables hot reload.
 - **Manifest**: `claude-ide-bridge-plugin.json` with `schemaVersion: 1`. Tool names must start with `toolNamePrefix` (2-20 chars, `/^[a-zA-Z][a-zA-Z0-9_]{1,19}$/`).
 - **Entrypoint**: exports `register(ctx)` where `ctx` provides `workspace`, `workspaceFolders`, `config`, `logger`.
