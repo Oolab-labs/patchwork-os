@@ -167,7 +167,10 @@ export default function ApprovalDetailPage() {
   const gateMode: GateMode =
     rawGate === "high" || rawGate === "all" ? rawGate : "off";
   const effectiveTier = (pending?.tier ?? undefined) as Tier | undefined;
-  const showPolicyCard = Boolean(pending || decision);
+  // Render the policy card whenever bridge status is known. Even on
+  // "Unknown callId" the user benefits from seeing their active mode —
+  // it answers "is anything being gated right now at all?"
+  const showPolicyCard = bridgeStatus !== null && bridgeStatus !== undefined;
   const match = showPolicyCard
     ? explainMatch(gateMode, effectiveTier)
     : null;

@@ -339,11 +339,24 @@ const MOCK_STATUS = {
   ok: true,
   port: 3100,
   workspace: "~/projects/patchwork-os",
-  approvalGate: "medium",
   uptimeMs: Date.now() - SESSION_START,
   activeSessions: 1,
   extensionConnected: true,
+  extension: true,
   slim: false,
+  // Nested under `patchwork` so dashboard components see the same shape
+  // they get from the real bridge `/status` response.
+  patchwork: {
+    workspace: "~/projects/patchwork-os",
+    port: 3100,
+    approvalGate: "high" as const,
+    enableTimeOfDayAnomaly: true,
+    fullMode: true,
+    driver: "subprocess",
+    model: "claude",
+    automationEnabled: false,
+    webhookUrl: null,
+  },
 };
 
 const MOCK_HEALTH = {
@@ -642,6 +655,40 @@ export function mockBridgeResponse(pathname: string, method = "GET"): Response |
   if (path === "/status")                  return json(MOCK_STATUS);
   if (path === "/health")                  return json(MOCK_HEALTH);
   if (path === "/approvals" && method === "GET") return json(MOCK_APPROVALS);
+  // Detail fixture: synthesize a pending response from MOCK_APPROVALS so the
+  // detail page renders cards (matched-rule, risk signals, params, nearby) in
+  // demo mode. Without this, every detail URL hits the empty fallthrough and
+  // shows "Unknown callId" — confusing for someone exploring the demo.
+  {
+    const m = path.match(/^\/approvals\/([^/]+)$/);
+    if (m && method === "GET") {
+      const id = decodeURIComponent(m[1]);
+      const a = MOCK_APPROVALS.find((x) => x.callId === id);
+      if (a) {
+        return json({
+          pending: {
+            ...a,
+            params:
+              id === "demo-1"
+                ? { repo: "Oolab-labs/patchwork-os", title: "feat/demo-mode dashboard" }
+                : id === "demo-2"
+                  ? { channel: "#engineering", text: "Sprint review prep at 3pm" }
+                  : { team: "Engineering", title: "Fix bridge status inconsistency", priority: "High" },
+            riskSignals:
+              id === "demo-3"
+                ? [
+                    { kind: "external_write", label: "external write", severity: "high" as const },
+                    { kind: "first_use", label: "first time used today", severity: "medium" as const },
+                  ]
+                : [],
+          },
+          decision: null,
+          nearby: [],
+        });
+      }
+      return json({ pending: null, decision: null, nearby: [] }, 404);
+    }
+  }
   if (path === "/recipes" && method === "GET")   return json({ recipes: MOCK_RECIPES });
   if (path === "/tasks" && method === "GET")     return json(MOCK_TASKS);
   if (path === "/activity")               return json(MOCK_ACTIVITY);
