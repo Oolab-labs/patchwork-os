@@ -1564,6 +1564,98 @@ if (process.argv[2] === "traces" && process.argv[3] === "export") {
   })();
 }
 
+// Patchwork: `patchwork traces import <bundle>` — restore an export bundle
+// into the local patchwork dirs. Closes the half-shipped backup loop.
+if (process.argv[2] === "traces" && process.argv[3] === "import") {
+  (async () => {
+    try {
+      const args = process.argv.slice(4);
+      let input: string | undefined;
+      let patchworkDir: string | undefined;
+      let activityDir: string | undefined;
+      let mode: "append" | "overwrite" = "append";
+      let dryRun = false;
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === "--patchwork-dir") {
+          patchworkDir = args[i + 1];
+          i++;
+        } else if (a === "--activity-dir") {
+          activityDir = args[i + 1];
+          i++;
+        } else if (a === "--mode") {
+          const m = args[i + 1];
+          if (m !== "append" && m !== "overwrite") {
+            process.stderr.write(
+              `Error: --mode must be "append" or "overwrite" (got: ${m})\n`,
+            );
+            process.exit(1);
+          }
+          mode = m;
+          i++;
+        } else if (a === "--dry-run") {
+          dryRun = true;
+        } else if (a === "--help" || a === "-h") {
+          process.stdout.write(
+            "patchwork traces import <bundle.jsonl.gz> [--mode append|overwrite] [--dry-run]\n" +
+              "                              [--patchwork-dir <dir>] [--activity-dir <dir>]\n\n" +
+              "Restore a bundle written by `patchwork traces export` into the local\n" +
+              "patchwork dirs (~/.patchwork/ and ~/.claude/ide/ by default).\n\n" +
+              "Modes:\n" +
+              "  append     (default) Append rows to existing files. Re-importing the\n" +
+              "             same bundle produces duplicates — bundle dedup is a follow-up.\n" +
+              "  overwrite  Truncate target files before writing. Use for fresh-machine\n" +
+              "             restore; never use when there's local data you want to keep.\n\n" +
+              "Encrypted (.age) bundles must be decrypted out-of-band first:\n" +
+              "  age -d bundle.jsonl.gz.age > bundle.jsonl.gz\n",
+          );
+          process.exit(0);
+        } else if (
+          a !== undefined &&
+          !a.startsWith("--") &&
+          input === undefined
+        ) {
+          input = a;
+        }
+      }
+      if (!input) {
+        process.stderr.write(
+          "Usage: patchwork traces import <bundle.jsonl.gz> [--mode append|overwrite] [--dry-run]\n",
+        );
+        process.exit(1);
+      }
+      const { runTracesImport } = await import("./commands/tracesImport.js");
+      const result = await runTracesImport({
+        input,
+        ...(patchworkDir !== undefined && { patchworkDir }),
+        ...(activityDir !== undefined && { activityDir }),
+        mode,
+        dryRun,
+      });
+      const verb = result.dryRun
+        ? "Would restore"
+        : result.mode === "overwrite"
+          ? "Restored (overwrite)"
+          : "Restored (append)";
+      process.stdout.write(
+        `  ${result.dryRun ? "•" : "✓"} ${verb} ${result.totalCount} rows from ${result.inputPath}\n`,
+      );
+      process.stdout.write(`    Bundle exportedAt: ${result.exportedAt}\n`);
+      for (const f of result.files) {
+        process.stdout.write(
+          `    - ${f.source}: ${f.count} rows  →  ${f.targetPath}\n`,
+        );
+      }
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
 if (process.argv[2] === "recipe" && process.argv[3] === "schema") {
   const outputDir = process.argv[4] ?? path.join(process.cwd(), "schemas");
   (async () => {
