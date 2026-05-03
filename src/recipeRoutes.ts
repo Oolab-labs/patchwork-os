@@ -266,6 +266,14 @@ export interface RecipeRouteDeps {
   deleteRecipeContentFn:
     | ((name: string) => { ok: boolean; path?: string; error?: string })
     | null;
+  duplicateRecipeFn:
+    | ((name: string) => {
+        ok: boolean;
+        variantName?: string;
+        path?: string;
+        error?: string;
+      })
+    | null;
   lintRecipeContentFn:
     | ((content: string) => {
         ok: boolean;
@@ -932,6 +940,28 @@ export function tryHandleRecipeRoute(
     const result = deps.deleteRecipeContentFn(name);
     const status = result.ok
       ? 200
+      : result.error === "Recipe not found"
+        ? 404
+        : 400;
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(result));
+    return true;
+  }
+
+  // POST /recipes/:name/duplicate — copy recipe as next available variant name
+  const duplicateMatch = /^\/recipes\/([^/]+)\/duplicate$/.exec(
+    parsedUrl.pathname,
+  );
+  if (duplicateMatch && req.method === "POST") {
+    const name = decodeURIComponent(duplicateMatch[1] ?? "");
+    if (!deps.duplicateRecipeFn) {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "Duplicate unavailable" }));
+      return true;
+    }
+    const result = deps.duplicateRecipeFn(name);
+    const status = result.ok
+      ? 201
       : result.error === "Recipe not found"
         ? 404
         : 400;

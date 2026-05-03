@@ -17,6 +17,7 @@ import type {
 import { RecipeScheduler } from "./recipes/scheduler.js";
 import {
   deleteRecipeContent,
+  duplicateRecipe,
   findWebhookRecipe,
   findYamlRecipePath,
   lintRecipeContent,
@@ -115,6 +116,11 @@ export class RecipeOrchestration {
     server.deleteRecipeContentFn = (name: string) => {
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
       return deleteRecipeContent(recipesDir, name);
+    };
+
+    server.duplicateRecipeFn = (name: string) => {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      return duplicateRecipe(recipesDir, name);
     };
 
     server.lintRecipeContentFn = (content: string) =>
