@@ -44,6 +44,10 @@ interface RunDetail {
   errorMessage?: string;
   stepResults?: StepResult[];
   assertionFailures?: AssertionFailure[];
+  /** seq of the run that triggered this one (trigger === "recipe"). */
+  parentSeq?: number;
+  /** seqs of runs triggered by this run. */
+  childSeqs?: number[];
 }
 
 interface PlanStep {
@@ -439,6 +443,141 @@ function PlanView({ plan }: { plan: DryRunPlan }) {
           groupIndex={stepGroupMap.get(step.id)}
         />
       ))}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ causal chain card
+
+interface RunSummary {
+  seq: number;
+  recipeName: string;
+  status: RunDetail["status"];
+  durationMs: number;
+}
+
+function statusPillClass(status: RunDetail["status"]): string {
+  if (status === "done") return "ok";
+  if (status === "running") return "running";
+  if (status === "error") return "err";
+  return "warn";
+}
+
+function CausalChainCard({ run }: { run: RunDetail }) {
+  const [parent, setParent] = useState<RunSummary | null>(null);
+  const [children, setChildren] = useState<RunSummary[]>([]);
+
+  useEffect(() => {
+    if (run.parentSeq) {
+      fetch(apiPath(`/api/bridge/runs/${run.parentSeq}`))
+        .then((r) => r.ok ? r.json() : null)
+        .then((d: { run?: RunSummary } | null) => {
+          if (d?.run) setParent(d.run);
+        })
+        .catch(() => {});
+    }
+    if (run.childSeqs && run.childSeqs.length > 0) {
+      Promise.all(
+        run.childSeqs.map((seq) =>
+          fetch(apiPath(`/api/bridge/runs/${seq}`))
+            .then((r) => r.ok ? r.json() : null)
+            .then((d: { run?: RunSummary } | null) => d?.run ?? null)
+            .catch(() => null),
+        ),
+      ).then((results) => {
+        setChildren(results.filter((r): r is RunSummary => r !== null));
+      });
+    }
+  }, [run.parentSeq, run.childSeqs]);
+
+  const hasParent = !!run.parentSeq;
+  const hasChildren = (run.childSeqs ?? []).length > 0;
+  if (!hasParent && !hasChildren) return null;
+
+  return (
+    <div className="card" style={{ marginBottom: 20, padding: 0, overflow: "hidden" }}>
+      <div
+        style={{
+          padding: "10px 16px",
+          borderBottom: "1px solid var(--border-subtle)",
+          fontSize: 12,
+          fontWeight: 600,
+          color: "var(--ink-2)",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        Causal chain
+      </div>
+      <div style={{ padding: "8px 0" }}>
+        {hasParent && (
+          <Link
+            href={`/runs/${run.parentSeq}`}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "6px 16px",
+              textDecoration: "none",
+              color: "inherit",
+            }}
+          >
+            <span style={{ fontSize: 11, color: "var(--ink-3)", minWidth: 56 }}>triggered by</span>
+            <span className="pill muted" style={{ fontSize: 11 }}>#{run.parentSeq}</span>
+            <span style={{ fontSize: 13 }}>
+              {parent ? parent.recipeName : <span style={{ color: "var(--ink-3)" }}>…</span>}
+            </span>
+            {parent && (
+              <>
+                <span className={`pill ${statusPillClass(parent.status)}`} style={{ fontSize: 10 }}>
+                  {parent.status}
+                </span>
+                <span className="mono muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+                  {fmtDur(parent.durationMs)}
+                </span>
+              </>
+            )}
+          </Link>
+        )}
+        {hasParent && hasChildren && (
+          <div style={{ margin: "2px 16px", borderTop: "1px solid var(--border-subtle)" }} />
+        )}
+        {(run.childSeqs ?? []).map((childSeq, i) => {
+          const child = children.find((c) => c.seq === childSeq);
+          return (
+            <Link
+              key={childSeq}
+              href={`/runs/${childSeq}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "6px 16px",
+                textDecoration: "none",
+                color: "inherit",
+                borderTop: i > 0 ? "1px solid var(--border-subtle)" : undefined,
+              }}
+            >
+              <span style={{ fontSize: 11, color: "var(--ink-3)", minWidth: 56 }}>triggered</span>
+              <span className="pill muted" style={{ fontSize: 11 }}>#{childSeq}</span>
+              <span style={{ fontSize: 13 }}>
+                {child ? child.recipeName : <span style={{ color: "var(--ink-3)" }}>…</span>}
+              </span>
+              {child && (
+                <>
+                  <span className={`pill ${statusPillClass(child.status)}`} style={{ fontSize: 10 }}>
+                    {child.status}
+                  </span>
+                  <span className="mono muted" style={{ fontSize: 11, marginLeft: "auto" }}>
+                    {fmtDur(child.durationMs)}
+                  </span>
+                </>
+              )}
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -856,6 +995,7 @@ export default function RunDetailPage() {
           {/* ── steps tab ── */}
           {tab === "steps" && (
             <>
+              <CausalChainCard run={run} />
               {run.assertionFailures && run.assertionFailures.length > 0 && (
                 <AssertionFailuresPanel failures={run.assertionFailures} />
               )}

@@ -255,6 +255,7 @@ const MOCK_RUNS = [
     durationMs: 15_800,
     model: "claude-opus-4-7",
     outputTail: "Incident summarised. Triggered incident-notify (seq 2).",
+    childSeqs: [2],
   },
   {
     seq: 2,
@@ -268,6 +269,8 @@ const MOCK_RUNS = [
     durationMs: 7_200,
     model: "claude-opus-4-7",
     outputTail: "Posted to #incidents. Paged @on-call. Triggered post-incident-report (seq 3).",
+    parentSeq: 1,
+    childSeqs: [3],
   },
   {
     seq: 3,
@@ -281,6 +284,7 @@ const MOCK_RUNS = [
     durationMs: 11_200,
     model: "claude-opus-4-7",
     outputTail: "Post-incident report appended to Notion page 'Incident Log — April 2026'.",
+    parentSeq: 2,
   },
   {
     seq: 4,
