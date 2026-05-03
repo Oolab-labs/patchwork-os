@@ -596,6 +596,41 @@ describe("routeApprovalRequest", () => {
       await promise;
     });
 
+    it("includes personalSignals: [] when ActivityLog is wired but no signals fired", async () => {
+      // Regression test for the dogfood finding: prior code conditionally
+      // omitted the field when the array was empty, making it impossible
+      // to tell "wire is broken" from "wire works, no history yet."
+      // Empty array = wire live; missing key = wire not configured.
+      const queue = new ApprovalQueue();
+      const { ActivityLog } = await import("../activityLog.js");
+      const activityLog = new ActivityLog();
+      const promise = routeApprovalRequest(
+        {
+          method: "POST",
+          path: "/approvals",
+          body: { toolName: "totally-unknown-tool", params: {} },
+        },
+        {
+          queue,
+          workspace: "/tmp",
+          ccLoader: emptyRules(),
+          approvalGate: "all",
+          activityLog,
+        },
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      const items = queue.list();
+      expect(items).toHaveLength(1);
+      // Field present, even though there's no history to fire any signals
+      // (top-level tool with no namespace, no prior approvals, etc.)
+      expect(items[0]?.personalSignals).toBeDefined();
+      expect(Array.isArray(items[0]?.personalSignals)).toBe(true);
+
+      const callId = items[0]?.callId;
+      if (callId) queue.approve(callId);
+      await promise;
+    });
+
     it("does not include personalSignals when no ActivityLog is wired", async () => {
       // The integration is opt-in by deps. Tests that don't wire an
       // ActivityLog must still see the queue without a personalSignals

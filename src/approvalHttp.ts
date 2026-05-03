@@ -67,7 +67,9 @@ export interface ApprovalHttpDeps {
   /**
    * Optional ActivityLog used to compute passive risk personalization
    * signals (`src/approvalSignals.ts`). When omitted, personalSignals are
-   * not computed and the queue entry simply has `personalSignals: undefined` —
+   * not computed and the queue entry has the `personalSignals` field
+   * absent entirely (distinguishable from `personalSignals: []` which means
+   * "wire is live, just no history yet") —
    * the rest of the approval flow is unaffected. Tests that care only about
    * the policy-engine path can leave this off.
    */
@@ -681,7 +683,15 @@ async function handleApprovalRequest(
       summary,
       sessionId,
       riskSignals,
-      ...(personalSignals && personalSignals.length > 0 && { personalSignals }),
+      // Always include personalSignals when activityLog is wired, even
+      // if the array is empty. The presence of the key is the signal
+      // that the wire is live; conditionally omitting it made it
+      // impossible to distinguish "wire broken" from "no signals fired"
+      // during dogfooding (verified end-to-end on 2026-05-03 — first
+      // three test runs looked broken when they were just empty).
+      // When activityLog isn't wired (no signals computed at all), the
+      // field stays absent — that case still means "not configured."
+      ...(personalSignals !== undefined && { personalSignals }),
     },
     { withToken: !!deps.pushServiceUrl },
   );
