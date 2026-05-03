@@ -11,9 +11,9 @@
  *   37      16   GCM authentication tag
  *   53      N    Ciphertext (the original .jsonl.gz bytes)
  *
- * Key derivation: scrypt(passphrase, salt, N=32768, r=8, p=1, keyLen=32).
- * The parameters match Node's `crypto.scryptSync` defaults and are safe for
- * interactive use on a modern laptop (~100ms). They are stored implicitly
+ * Key derivation: scrypt(passphrase, salt, N=16384, r=8, p=1, keyLen=32).
+ * N=2^14 matches Node's `crypto.scryptSync` default and is safe for
+ * interactive use on a modern laptop (~50ms, 16MB RAM). They are stored implicitly
  * (fixed); changing them is a version bump.
  *
  * Security properties:
@@ -42,7 +42,7 @@ const IV_LEN = 12;
 const TAG_LEN = 16;
 const HEADER_LEN = TRACE_ENCRYPT_MAGIC.length + 1 + SALT_LEN + IV_LEN + TAG_LEN; // 53
 
-const SCRYPT_N = 16384; // 2^14 — safe within Node's default 32MB maxmem (needs 16MB)
+const SCRYPT_N = 16384; // 2^14 — Node scryptSync default; needs 128*N*r = 16MB RAM
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 const KEY_LEN = 32;
