@@ -129,6 +129,37 @@ export function loadCcPermissionsAttributed(
   return merged;
 }
 
+export type RuleTier = "deny" | "ask" | "allow";
+
+export interface RuleExplanation {
+  /** The matched rule pattern, e.g. "Bash(npm run *)" or "Read". */
+  matchedRule: string;
+  /** Which rule list the match came from. */
+  tier: RuleTier;
+  /** Which settings file the rule was loaded from. */
+  source: RuleSource;
+}
+
+/**
+ * Like evaluateRules but returns the first matching rule + its tier/source
+ * instead of just the decision string. Returns null when no rule matched
+ * ("none" decision).
+ */
+export function explainRules(
+  toolName: string,
+  specifier: string | undefined,
+  rules: AttributedPermissionRules,
+): RuleExplanation | null {
+  for (const tier of ["deny", "ask", "allow"] as RuleTier[]) {
+    for (const { pattern, source } of rules[tier]) {
+      if (matchRule(toolName, specifier, pattern)) {
+        return { matchedRule: pattern, tier, source };
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Classify a tool call against CC rules using deny → ask → allow precedence.
  *
