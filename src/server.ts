@@ -920,6 +920,41 @@ export class Server extends EventEmitter<ServerEvents> {
         res.end(JSON.stringify({ path: hookPath, entries }));
         return;
       }
+      // Reversible-refactoring surface — list active staged transactions
+      // (Phase 1 §3 dashboard ask). Read-only metadata for the dashboard
+      // /transactions page; no file contents leave the bridge.
+      if (parsedUrl.pathname === "/transactions" && req.method === "GET") {
+        const { listActiveTransactions } = await import(
+          "./tools/transaction.js"
+        );
+        const transactions = listActiveTransactions();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ transactions }));
+        return;
+      }
+      // Discard-only — we deliberately do NOT expose commit via HTTP because
+      // the commit handler needs per-workspace context wired through
+      // createTransactionTools(). Rollback is pure-memory and workspace-
+      // agnostic, safe to expose. Commit from the agent side via MCP.
+      if (
+        parsedUrl.pathname?.match(/^\/transactions\/[^/]+\/rollback$/) &&
+        req.method === "POST"
+      ) {
+        const id = parsedUrl.pathname.split("/")[2] ?? "";
+        const { rollbackTransactionById } = await import(
+          "./tools/transaction.js"
+        );
+        const ok = id !== "" && rollbackTransactionById(id);
+        res.writeHead(ok ? 200 : 404, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify(
+            ok
+              ? { ok: true, transactionId: id }
+              : { ok: false, error: "transaction not found" },
+          ),
+        );
+        return;
+      }
 
       // ── Connector routes (extracted to src/connectorRoutes.ts) ──────────
       if (tryHandleConnectorRoute(req, res, parsedUrl)) {

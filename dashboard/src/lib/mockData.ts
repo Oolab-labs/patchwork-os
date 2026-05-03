@@ -656,6 +656,53 @@ export function mockBridgeResponse(pathname: string, method = "GET"): Response |
   if (path === "/status")                  return json(MOCK_STATUS);
   if (path === "/health")                  return json(MOCK_HEALTH);
   if (path === "/approvals" && method === "GET") return json(MOCK_APPROVALS);
+  if (path === "/transactions" && method === "GET") {
+    return json({
+      transactions: [
+        {
+          id: "tx-7c9f3a",
+          createdAt: ago(8 * 60 * 1000),
+          expiresAt: ago(-22 * 60 * 1000),
+          edits: [
+            {
+              filePath: "/Users/dev/proj/src/auth/refresh.ts",
+              sizeBefore: 4287,
+              sizeAfter: 4612,
+              lineDelta: 14,
+            },
+            {
+              filePath: "/Users/dev/proj/src/auth/__tests__/refresh.test.ts",
+              sizeBefore: 1820,
+              sizeAfter: 2156,
+              lineDelta: 18,
+            },
+            {
+              filePath: "/Users/dev/proj/src/auth/types.ts",
+              sizeBefore: 612,
+              sizeAfter: 595,
+              lineDelta: -2,
+            },
+          ],
+        },
+        {
+          id: "tx-2b41d8",
+          createdAt: ago(45 * 60 * 1000),
+          expiresAt: ago(-15 * 60 * 1000),
+          edits: [
+            {
+              filePath: "/Users/dev/proj/src/legacy/migrate.ts",
+              sizeBefore: 9821,
+              sizeAfter: 9405,
+              lineDelta: -22,
+            },
+          ],
+        },
+      ],
+    });
+  }
+  if (path.match(/^\/transactions\/[^/]+\/rollback$/) && method === "POST") {
+    return json({ ok: true, demo: true });
+  }
   if (path.startsWith("/webhook-payloads/") && method === "GET") {
     const hookPath = path.substring("/webhook-payloads".length);
     if (hookPath === "/incident-war-room") {
