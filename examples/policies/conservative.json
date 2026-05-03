@@ -1,0 +1,28 @@
+{
+  "_comment": "Conservative policy — safe for first-time users and shared machines.",
+  "_description": "Ask before almost everything. Only read-only filesystem ops and documentation lookups auto-approve. No shell, no git push, no network writes.",
+  "permissions": {
+    "allow": [
+      "Read",
+      "WebSearch",
+      "WebFetch(https://docs.*)",
+      "WebFetch(https://*.readthedocs.io/*)",
+      "WebFetch(https://developer.mozilla.org/*)"
+    ],
+    "ask": [
+      "Edit",
+      "Write",
+      "Bash(*)",
+      "WebFetch(*)",
+      "mcp__patchwork__runRecipe(*)"
+    ],
+    "deny": [
+      "Bash(rm *)",
+      "Bash(rm -rf *)",
+      "Bash(sudo *)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | bash*)",
+      "mcp__patchwork__gitPush(*)"
+    ]
+  }
+}
