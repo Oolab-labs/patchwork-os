@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 
 interface CoOccurringPairDetails {
@@ -57,6 +58,45 @@ const KIND_META: Record<
       "Recipes that have succeeded enough times that you might want to auto-approve them.",
   },
 };
+
+function GraduateButton({ recipeName }: { recipeName: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">(
+    "idle",
+  );
+  async function graduate() {
+    setState("loading");
+    try {
+      const res = await fetch(
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(recipeName)}/trust`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: "mostly_trusted" }),
+        },
+      );
+      setState(res.ok ? "done" : "error");
+    } catch {
+      setState("error");
+    }
+  }
+  if (state === "done") {
+    return (
+      <span style={{ color: "var(--ok, #22c55e)", fontSize: 13 }}>
+        ✓ Graduated to mostly trusted
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="btn sm"
+      disabled={state === "loading"}
+      onClick={() => void graduate()}
+    >
+      {state === "loading" ? "Graduating…" : state === "error" ? "Retry" : "Graduate trust"}
+    </button>
+  );
+}
 
 function isCoOccurringPair(
   d: AutomationSuggestion["details"],
@@ -178,14 +218,9 @@ export default function SuggestionsPage() {
           items={byKind.recipe_trust_graduation}
           renderAction={(s) => {
             if (!isTrustDetails(s.details)) return null;
+            const { recipeName } = s.details;
             return (
-              <Link
-                href={`/recipes`}
-                className="btn sm ghost"
-                style={{ textDecoration: "none" }}
-              >
-                Open {s.details.recipeName} →
-              </Link>
+              <GraduateButton recipeName={recipeName} />
             );
           }}
         />
