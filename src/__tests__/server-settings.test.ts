@@ -231,4 +231,56 @@ describe("POST /settings — driver persistence to bridge config file", () => {
       error: expect.stringContaining("driver"),
     });
   });
+
+  it("POST /settings { enableTimeOfDayAnomaly: true } live-mutates Server", async () => {
+    expect(server!.enableTimeOfDayAnomaly).toBe(false);
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ enableTimeOfDayAnomaly: true }),
+    );
+    expect(status).toBe(200);
+    expect(server!.enableTimeOfDayAnomaly).toBe(true);
+  });
+
+  it("POST /settings { enableTimeOfDayAnomaly: false } turns it back off", async () => {
+    server!.enableTimeOfDayAnomaly = true;
+    const { status } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ enableTimeOfDayAnomaly: false }),
+    );
+    expect(status).toBe(200);
+    expect(server!.enableTimeOfDayAnomaly).toBe(false);
+  });
+
+  it("rejects non-boolean enableTimeOfDayAnomaly with 400", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/settings",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+      },
+      JSON.stringify({ enableTimeOfDayAnomaly: "yes" }),
+    );
+    expect(status).toBe(400);
+    expect(JSON.parse(body)).toMatchObject({
+      error: expect.stringContaining("enableTimeOfDayAnomaly"),
+    });
+  });
 });

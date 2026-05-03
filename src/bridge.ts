@@ -1328,6 +1328,7 @@ export class Bridge {
         patchwork: {
           workspace: this.config.workspace,
           approvalGate: this.server.approvalGate,
+          enableTimeOfDayAnomaly: this.server.enableTimeOfDayAnomaly,
           fullMode: this.config.fullMode,
           driver: this.config.driver,
           model: loadPatchworkConfig().model,
