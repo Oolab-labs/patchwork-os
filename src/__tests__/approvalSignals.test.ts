@@ -682,6 +682,121 @@ describe("computePersonalSignals", () => {
     });
   });
 
+  describe("heuristic 11 — param novelty", () => {
+    function logWithCommands(commands: string[]) {
+      const log = new ActivityLog();
+      for (const cmd of commands) {
+        log.recordEvent("approval_decision", {
+          toolName: "runCommand",
+          decision: "allow",
+          params: { command: cmd },
+        });
+      }
+      return log;
+    }
+
+    it("does not surface for tools without a known primary param", () => {
+      const log = new ActivityLog();
+      // Seed plenty of approvals — but tool isn't in PARAM_NOVELTY_PRIMARY_KEYS
+      for (let i = 0; i < 10; i++) {
+        log.recordEvent("approval_decision", {
+          toolName: "myTool",
+          decision: "allow",
+          params: { foo: `value-${i}` },
+        });
+      }
+      const signals = computePersonalSignals({
+        toolName: "myTool",
+        activityLog: log,
+        currentParams: { foo: "totally-new-value" },
+      });
+      expect(signals.find((s) => s.kind === "param_novelty")).toBeUndefined();
+    });
+
+    it("does not surface below the 5-prefix baseline", () => {
+      const log = logWithCommands(["git status", "git log"]);
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: log,
+        currentParams: { command: "rm -rf /" },
+      });
+      expect(signals.find((s) => s.kind === "param_novelty")).toBeUndefined();
+    });
+
+    it("surfaces when current prefix is novel and baseline met", () => {
+      const log = logWithCommands([
+        "git status",
+        "git log",
+        "git diff",
+        "ls -la",
+        "cat README.md",
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: log,
+        currentParams: { command: "rm -rf /" },
+      });
+      const sig = signals.find((s) => s.kind === "param_novelty");
+      expect(sig).toBeDefined();
+      expect(sig?.severity).toBe("medium");
+      expect(sig?.label).toMatch(/Novel command prefix/);
+      expect(sig?.count).toBe(5);
+    });
+
+    it("does not surface when first 24 chars match a prior call", () => {
+      // Prefix length is 24 chars verbatim — choose seeds and a current
+      // command that share their first 24 chars exactly. "npm install
+      // some-package-name" and "npm install some-package-name --save"
+      // both begin with "npm install some-package" (24 chars).
+      const log = logWithCommands([
+        "npm install some-package-name",
+        "git status",
+        "git log",
+        "git diff",
+        "ls -la",
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: log,
+        currentParams: { command: "npm install some-package-name --save" },
+      });
+      expect(signals.find((s) => s.kind === "param_novelty")).toBeUndefined();
+    });
+
+    it("ignores prior decisions whose params lack the primary key", () => {
+      const log = new ActivityLog();
+      for (let i = 0; i < 5; i++) {
+        log.recordEvent("approval_decision", {
+          toolName: "runCommand",
+          decision: "allow",
+          params: { foo: "bar" }, // no `command` field
+        });
+      }
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: log,
+        currentParams: { command: "git status" },
+      });
+      // No baseline established → no signal
+      expect(signals.find((s) => s.kind === "param_novelty")).toBeUndefined();
+    });
+
+    it("is silent when currentParams omitted", () => {
+      const log = logWithCommands([
+        "git status",
+        "git log",
+        "git diff",
+        "ls -la",
+        "cat README.md",
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: log,
+      });
+      expect(signals.find((s) => s.kind === "param_novelty")).toBeUndefined();
+    });
+  });
+
   describe("heuristic 12 — cooldown breach", () => {
     function logWithBurst(toolName: string, count: number, gapMs = 1_000) {
       const log = new ActivityLog();

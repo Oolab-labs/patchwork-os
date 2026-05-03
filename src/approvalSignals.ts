@@ -24,6 +24,8 @@
  *      approved this tool before
  *  10. "Time-of-day anomaly" — call hour outside the user's usual window
  *      for this tool (opt-in: gate via `enableTimeOfDayAnomaly`)
+ *  11. "Param novelty" — primary param (command/url/pattern) prefix never
+ *      seen on prior approvals of this tool
  *  12. "Cooldown breach" — same tool fired N+ times in a short window
  *
  * The signals are **transparent**: every signal has a `source` enum so a
@@ -52,7 +54,8 @@ export interface PersonalSignal {
     | "cooccurrence_pattern"
     | "cooldown_breach"
     | "workspace_mismatch"
-    | "time_of_day_anomaly";
+    | "time_of_day_anomaly"
+    | "param_novelty";
   /** Human-facing label suitable for an approval modal line. */
   label: string;
   /** Severity controls visual weight. low = informational, high = warning. */
@@ -125,6 +128,30 @@ const TIME_OF_DAY_BASELINE_MIN = 10;
 const TIME_OF_DAY_LOOKBACK = 200;
 
 /**
+ * Tools whose calls have a single high-signal "primary param" that's
+ * worth tracking for novelty. Map value = the param key. Other tools
+ * skip h11 entirely — generic approval-modal fields like "specifier"
+ * are too noisy to compare across calls.
+ */
+const PARAM_NOVELTY_PRIMARY_KEYS: Record<string, string> = {
+  runCommand: "command",
+  Bash: "command",
+  sendHttpRequest: "url",
+  WebFetch: "url",
+  searchAndReplace: "pattern",
+};
+
+/**
+ * Number of leading characters used as the prefix key for novelty
+ * comparison. Long enough to distinguish `git push` from `git pull` but
+ * short enough that param tail variation (file paths, sha args) doesn't
+ * make every call look novel.
+ */
+const PARAM_NOVELTY_PREFIX_LEN = 24;
+/** Minimum prior calls before the novelty signal is trustworthy. */
+const PARAM_NOVELTY_BASELINE_MIN = 5;
+
+/**
  * Compute the personal-signal set for an incoming approval request.
  *
  * Pure function over the activity log; no I/O of its own. Tested in
@@ -156,6 +183,14 @@ export function computePersonalSignals(input: {
    * user enables the corresponding setting.
    */
   enableTimeOfDayAnomaly?: boolean;
+  /**
+   * Params of the *current* call, used by heuristic 11 (param novelty).
+   * Optional — when omitted, h11 is skipped. The bridge passes the same
+   * (un-redacted) params used elsewhere in the approval flow; the
+   * heuristic extracts only the primary key (command / url / pattern)
+   * and never logs or returns the value.
+   */
+  currentParams?: Record<string, unknown>;
 }): PersonalSignal[] {
   const {
     toolName,
@@ -163,6 +198,7 @@ export function computePersonalSignals(input: {
     currentTier,
     currentWorkspace,
     enableTimeOfDayAnomaly,
+    currentParams,
   } = input;
   if (!toolName) return [];
 
@@ -381,6 +417,46 @@ export function computePersonalSignals(input: {
     }
   }
 
+  // Heuristic 11: "Param novelty."
+  // For tools with a clear primary string param (runCommand → command,
+  // sendHttpRequest → url, etc.), build a Set of past param prefixes
+  // from approval_decision metadata. If the current call's prefix isn't
+  // in that set AND we have enough baseline, surface as informational.
+  // Compares only the leading PARAM_NOVELTY_PREFIX_LEN chars so the
+  // tail (file paths, sha args, query params) doesn't make every call
+  // look novel.
+  const primaryKey = PARAM_NOVELTY_PRIMARY_KEYS[toolName];
+  if (primaryKey && currentParams) {
+    const currentRaw = currentParams[primaryKey];
+    if (typeof currentRaw === "string" && currentRaw.length > 0) {
+      const currentPrefix = paramPrefix(currentRaw);
+      const priorDecisions = activityLog.queryApprovalDecisions({
+        toolName,
+      });
+      const seenPrefixes = new Set<string>();
+      for (const e of priorDecisions) {
+        const params = e.metadata?.params;
+        if (typeof params !== "object" || params === null) continue;
+        const v = (params as Record<string, unknown>)[primaryKey];
+        if (typeof v === "string" && v.length > 0) {
+          seenPrefixes.add(paramPrefix(v));
+        }
+      }
+      if (
+        seenPrefixes.size >= PARAM_NOVELTY_BASELINE_MIN &&
+        !seenPrefixes.has(currentPrefix)
+      ) {
+        signals.push({
+          kind: "param_novelty",
+          label: paramNoveltyLabel(primaryKey, seenPrefixes.size),
+          severity: "medium",
+          source: "approval_history",
+          count: seenPrefixes.size,
+        });
+      }
+    }
+  }
+
   // Heuristic 12: "Cooldown breach."
   // Same tool fired N+ times within a short window — pattern of a runaway
   // loop, panicked retry, or stuck recipe. Distinct from heuristic 1
@@ -410,6 +486,15 @@ function workspaceMismatchLabel(otherCount: number): string {
     return "Approved in a different workspace before — first time you've allowed it here.";
   }
   return `Approved in ${otherCount} other workspaces before — first time you've allowed it here.`;
+}
+
+function paramPrefix(s: string): string {
+  // Trim leading whitespace so " git push" and "git push" hash the same.
+  return s.trimStart().slice(0, PARAM_NOVELTY_PREFIX_LEN);
+}
+
+function paramNoveltyLabel(paramKey: string, baselineSize: number): string {
+  return `Novel ${paramKey} prefix — across ${baselineSize} prior approvals you've never run this exact shape.`;
 }
 
 function timeOfDayLabel(hour: number, baselineCount: number): string {
