@@ -4,7 +4,28 @@
  * Sources data from `https://raw.githubusercontent.com/patchworkos/recipes/main/`.
  */
 
-export interface RegistryRecipe {
+export type RiskLevel = "low" | "medium" | "high";
+export type ApprovalBehavior = "always_ask" | "ask_on_novel" | "auto_approve";
+
+export interface TrustMetadata {
+  /** Overall risk level derived from the recipe's step risk annotations. */
+  risk_level?: RiskLevel;
+  /** Whether the recipe makes outbound network requests. */
+  network_access?: boolean;
+  /** Whether the recipe reads or writes local files. */
+  file_access?: boolean;
+  /**
+   * How the recipe behaves with the bridge's approval gate:
+   *   "always_ask"   — every run requires manual approval
+   *   "ask_on_novel" — prompts when a new tool / specifier is seen
+   *   "auto_approve" — designed to run fully unattended once trusted
+   */
+  approval_behavior?: ApprovalBehavior;
+  /** npm package name or GitHub handle of the recipe maintainer. */
+  maintainer?: string;
+}
+
+export interface RegistryRecipe extends TrustMetadata {
   name: string;
   version: string;
   description: string;

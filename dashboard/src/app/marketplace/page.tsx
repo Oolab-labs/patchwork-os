@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { apiPath } from "@/lib/api";
-import { assertValidInstallSource, type RegistryData, type RegistryRecipe, shortName } from "@/lib/registry";
+import { assertValidInstallSource, type RegistryData, type RegistryRecipe, shortName, type RiskLevel, type ApprovalBehavior } from "@/lib/registry";
 
 // ------------------------------------------------------------------ fallback data (shown when bridge offline)
 
@@ -20,6 +20,11 @@ const FALLBACK_REGISTRY: RegistryData = {
       connectors: ["gmail", "linear", "slack", "calendar"],
       install: "github:patchworkos/recipes/recipes/morning-brief",
       downloads: 0,
+      risk_level: "low",
+      network_access: true,
+      file_access: false,
+      approval_behavior: "ask_on_novel",
+      maintainer: "@patchworkos",
     },
     {
       name: "@patchworkos/incident-war-room",
@@ -30,6 +35,11 @@ const FALLBACK_REGISTRY: RegistryData = {
       connectors: ["linear", "slack", "notion"],
       install: "github:patchworkos/recipes/recipes/incident-war-room",
       downloads: 0,
+      risk_level: "medium",
+      network_access: true,
+      file_access: false,
+      approval_behavior: "always_ask",
+      maintainer: "@patchworkos",
     },
     {
       name: "@patchworkos/sprint-review-prep",
@@ -40,6 +50,11 @@ const FALLBACK_REGISTRY: RegistryData = {
       connectors: ["linear", "slack"],
       install: "github:patchworkos/recipes/recipes/sprint-review-prep",
       downloads: 0,
+      risk_level: "low",
+      network_access: true,
+      file_access: false,
+      approval_behavior: "ask_on_novel",
+      maintainer: "@patchworkos",
     },
     {
       name: "@patchworkos/customer-escalation",
@@ -50,6 +65,11 @@ const FALLBACK_REGISTRY: RegistryData = {
       connectors: ["zendesk", "linear", "slack"],
       install: "github:patchworkos/recipes/recipes/customer-escalation",
       downloads: 0,
+      risk_level: "medium",
+      network_access: true,
+      file_access: false,
+      approval_behavior: "always_ask",
+      maintainer: "@patchworkos",
     },
     {
       name: "@patchworkos/deal-won-celebration",
@@ -60,6 +80,11 @@ const FALLBACK_REGISTRY: RegistryData = {
       connectors: ["hubspot", "slack", "notion"],
       install: "github:patchworkos/recipes/recipes/deal-won-celebration",
       downloads: 0,
+      risk_level: "low",
+      network_access: true,
+      file_access: false,
+      approval_behavior: "ask_on_novel",
+      maintainer: "@patchworkos",
     },
   ],
 };
@@ -93,6 +118,20 @@ const CATEGORY_TAG_MAP: Record<string, string[]> = {
   Engineering: ["engineering", "sprint"],
   Customer: ["support", "escalation", "zendesk", "intercom"],
   Sales: ["sales", "hubspot", "crm"],
+};
+
+// ------------------------------------------------------------------ trust metadata
+
+const RISK_PILL_CLASS: Record<RiskLevel, string> = {
+  low: "ok",
+  medium: "warn",
+  high: "err",
+};
+
+const APPROVAL_LABEL: Record<ApprovalBehavior, string> = {
+  always_ask: "Always asks",
+  ask_on_novel: "Asks on new",
+  auto_approve: "Auto",
 };
 
 // ------------------------------------------------------------------ helpers
@@ -234,6 +273,40 @@ function RecipeCard({
       >
         {recipe.description}
       </p>
+
+      {/* trust metadata badges */}
+      {(recipe.risk_level || recipe.approval_behavior || recipe.network_access || recipe.file_access) && (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: "var(--s-2)" }}>
+          {recipe.risk_level && (
+            <span
+              className={`pill ${RISK_PILL_CLASS[recipe.risk_level]}`}
+              style={{ fontSize: 9 }}
+              title={`Risk level: ${recipe.risk_level}`}
+            >
+              {recipe.risk_level} risk
+            </span>
+          )}
+          {recipe.approval_behavior && (
+            <span
+              className="pill muted"
+              style={{ fontSize: 9 }}
+              title={`Approval: ${recipe.approval_behavior}`}
+            >
+              {APPROVAL_LABEL[recipe.approval_behavior]}
+            </span>
+          )}
+          {recipe.network_access && (
+            <span className="pill muted" style={{ fontSize: 9 }} title="Makes outbound network requests">
+              network
+            </span>
+          )}
+          {recipe.file_access && (
+            <span className="pill muted" style={{ fontSize: 9 }} title="Reads or writes local files">
+              file I/O
+            </span>
+          )}
+        </div>
+      )}
 
       {/* bottom: connectors + install */}
       <div

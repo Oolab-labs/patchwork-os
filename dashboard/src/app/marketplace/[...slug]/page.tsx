@@ -7,8 +7,10 @@ import {
   fetchRegistry,
   githubBlobUrlFor,
   parseInstallSource,
+  type ApprovalBehavior,
   type RecipeManifest,
   type RegistryRecipe,
+  type RiskLevel,
   shortName,
   summarizeRisk,
 } from "@/lib/registry";
@@ -85,6 +87,8 @@ export default async function RecipeDetailPage({ params }: PageProps) {
 
       <Steps yaml={yaml} />
 
+      <TrustMetadataCard recipe={recipe} />
+
       <YamlPreview yaml={yaml} src={src} mainFile={manifest?.recipes?.main} />
 
       <TrustNote />
@@ -111,10 +115,10 @@ function Header({
           {recipe.name}
           <span style={{ margin: "0 8px", color: "var(--ink-3)" }}>·</span>
           <span>v{recipe.version}</span>
-          {manifest?.author && (
+          {(manifest?.author ?? recipe.maintainer) && (
             <>
               <span style={{ margin: "0 8px", color: "var(--ink-3)" }}>·</span>
-              <span>by {manifest.author}</span>
+              <span>by {manifest?.author ?? recipe.maintainer}</span>
             </>
           )}
           {manifest?.license && (
@@ -279,6 +283,59 @@ function YamlPreview({
       >
         {yaml}
       </pre>
+    </div>
+  );
+}
+
+const RISK_PILL_CLASS: Record<RiskLevel, string> = { low: "ok", medium: "warn", high: "err" };
+const APPROVAL_LABEL: Record<ApprovalBehavior, string> = {
+  always_ask: "Always asks for approval",
+  ask_on_novel: "Asks on new tools / specifiers",
+  auto_approve: "Designed to run unattended once trusted",
+};
+
+function TrustMetadataCard({ recipe }: { recipe: RegistryRecipe }) {
+  const { risk_level, network_access, file_access, approval_behavior, maintainer } = recipe;
+  const hasAny = risk_level || network_access != null || file_access != null || approval_behavior || maintainer;
+  if (!hasAny) return null;
+
+  const rows: Array<{ label: string; value: React.ReactNode }> = [];
+  if (risk_level) {
+    rows.push({
+      label: "Risk level",
+      value: (
+        <span className={`pill ${RISK_PILL_CLASS[risk_level]}`} style={{ fontSize: 11 }}>
+          {risk_level}
+        </span>
+      ),
+    });
+  }
+  if (approval_behavior) {
+    rows.push({ label: "Approval", value: APPROVAL_LABEL[approval_behavior] });
+  }
+  if (network_access != null) {
+    rows.push({ label: "Network access", value: network_access ? "Yes — makes outbound HTTP requests" : "No" });
+  }
+  if (file_access != null) {
+    rows.push({ label: "File access", value: file_access ? "Yes — reads or writes local files" : "No" });
+  }
+  if (maintainer) {
+    rows.push({ label: "Maintainer", value: maintainer });
+  }
+
+  return (
+    <div className="glass-card" style={{ padding: "var(--s-5)" }}>
+      <h3 style={{ fontSize: 13, marginTop: 0, marginBottom: "var(--s-3)" }}>Trust &amp; permissions</h3>
+      <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+        <tbody>
+          {rows.map(({ label, value }) => (
+            <tr key={label} style={{ borderBottom: "1px solid var(--line-1)" }}>
+              <td style={{ padding: "7px 8px", color: "var(--ink-2)", width: 160, verticalAlign: "middle" }}>{label}</td>
+              <td style={{ padding: "7px 8px", color: "var(--ink-1)", verticalAlign: "middle" }}>{value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
