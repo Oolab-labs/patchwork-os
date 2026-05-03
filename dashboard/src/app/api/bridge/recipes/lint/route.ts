@@ -19,17 +19,24 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 200, headers: { "content-type": "application/json" } },
     );
   }
-  const body = await req.text();
-  const res = await bridgeFetch("/recipes/lint", {
-    method: "POST",
-    headers: {
-      "content-type": req.headers.get("content-type") ?? "application/json",
-    },
-    body,
-  });
-  const text = await res.text();
-  return new Response(text, {
-    status: res.status,
-    headers: { "content-type": "application/json" },
-  });
+  try {
+    const body = await req.text();
+    const res = await bridgeFetch("/recipes/lint", {
+      method: "POST",
+      headers: {
+        "content-type": req.headers.get("content-type") ?? "application/json",
+      },
+      body,
+    });
+    const text = await res.text();
+    return new Response(text, {
+      status: res.status,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : "fetch failed" }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    );
+  }
 }
