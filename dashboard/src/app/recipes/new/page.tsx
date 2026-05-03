@@ -1,5 +1,5 @@
 "use client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
 
@@ -211,13 +211,20 @@ const NAME_RE = /^[a-z0-9][a-z0-9_\- ]{0,63}$/i;
 
 export default function NewRecipePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const seedVars: RecipeVar[] = (searchParams.get("vars") ?? "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .map((name) => ({ name, description: "", required: false, default: "" }));
 
   const initialForm: FormState = {
     name: "",
     description: "",
     trigger: { type: "manual", path: "", cron: "" },
     steps: [{ id: "step-1", agent: true, prompt: "" }],
-    vars: [],
+    vars: seedVars,
   };
 
   const [form, setForm] = useState<FormState>(initialForm);
