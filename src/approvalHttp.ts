@@ -661,6 +661,7 @@ async function handleApprovalRequest(
     ? computePersonalSignals({
         toolName,
         activityLog: deps.activityLog,
+        currentTier: tier,
       })
     : undefined;
 
