@@ -37,7 +37,7 @@ What it does:
   2. Copy 5 local-only recipe templates to ~/.patchwork/recipes/
   3. Detect Ollama at localhost:11434 → set provider to ollama-local
   4. Register the Patchwork PreToolUse hook in ~/.claude/settings.json
-     so Claude Code routes tool calls through the approval gate
+     so Claude Code routes tool calls through your delegation policy
   5. Print next steps
 `);
 }
@@ -198,14 +198,14 @@ export async function runPatchworkInit(
   } else {
     log(
       `  ! Could not register Claude Code PreToolUse hook: ${hookResult.error ?? "unknown"}\n` +
-        `    Approval gate will not see traffic until you add the hook manually.\n`,
+        `    Delegation policy will not see traffic until you add the hook manually.\n`,
     );
     preToolUseHook = "error";
   }
 
   // CC reads hooks at session start, so the registration we just did
   // (or confirmed) only takes effect for *future* sessions. Without
-  // this prompt, users follow the docs, run init, and the approval gate
+  // this prompt, users follow the docs, run init, and the delegation policy
   // still appears inert — the trap that wasted hours of investigation
   // during dogfood verification on 2026-05-03.
   const restartLine =

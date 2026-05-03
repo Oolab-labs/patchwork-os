@@ -833,7 +833,7 @@ Options:
   --help                    Show this help
 
 Patchwork:
-  --approval-gate <level>   Gate tool calls via oversight dashboard: "off" | "high" | "all" (default: "off")
+  --approval-gate <level>   Delegation policy: gate tool calls via oversight dashboard: "off" | "high" | "all" (default: "off")
   --managed-settings <path> Admin-controlled settings file (highest rule precedence, cannot be overridden by users)
 
 Automation:

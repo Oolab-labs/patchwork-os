@@ -143,7 +143,7 @@ The package ships these in `templates/recipes/`. Recipes that need API keys are 
 | `inbox-triage` | manual | Triage Gmail unread → suggest archive/reply | Gmail |
 | `sentry-to-linear` | manual | Sentry issue → Linear ticket (one-shot) | Sentry, Linear |
 
-**Connectors available** (all approval-gated for writes): Slack, GitHub, Linear, Gmail, Google Calendar, Google Drive, Sentry, Notion, Confluence, Datadog, HubSpot, Intercom, Stripe, Zendesk, Jira, PagerDuty, Discord, Asana, GitLab.
+**Connectors available** (all writes governed by your delegation policy): Slack, GitHub, Linear, Gmail, Google Calendar, Google Drive, Sentry, Notion, Confluence, Datadog, HubSpot, Intercom, Stripe, Zendesk, Jira, PagerDuty, Discord, Asana, GitLab.
 
 ### Automation hooks
 
