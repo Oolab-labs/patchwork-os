@@ -24,6 +24,7 @@ import {
   listInstalledRecipes,
   loadRecipeContent,
   loadRecipePrompt,
+  promoteRecipeVariant,
   renderWebhookPrompt,
   saveRecipe,
   saveRecipeContent,
@@ -121,6 +122,14 @@ export class RecipeOrchestration {
     server.duplicateRecipeFn = (name: string) => {
       const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
       return duplicateRecipe(recipesDir, name);
+    };
+
+    server.promoteRecipeVariantFn = (
+      variantName: string,
+      targetName: string,
+    ) => {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      return promoteRecipeVariant(recipesDir, variantName, targetName);
     };
 
     server.lintRecipeContentFn = (content: string) =>
