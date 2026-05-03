@@ -1,0 +1,6 @@
+{
+  "name": "patchwork-examples-hello-world",
+  "version": "0.1.0",
+  "description": "Minimal Live Toolsmithing starter plugin",
+  "type": "module"
+}
