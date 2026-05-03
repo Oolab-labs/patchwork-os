@@ -974,6 +974,26 @@ export class Server extends EventEmitter<ServerEvents> {
         );
         return;
       }
+      // Approval insights — aggregate approval-decision history for Phase 3 §3
+      // passive risk personalization. Read-only; no state changes.
+      if (parsedUrl.pathname === "/approval-insights" && req.method === "GET") {
+        if (!this.activityLog) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "activity log not wired",
+            }),
+          );
+          return;
+        }
+        const { computeApprovalInsights } = await import(
+          "./approvalInsights.js"
+        );
+        const result = computeApprovalInsights(this.activityLog);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+        return;
+      }
       // Reversible-refactoring surface — list active staged transactions
       // (Phase 1 §3 dashboard ask). Read-only metadata for the dashboard
       // /transactions page; no file contents leave the bridge.
