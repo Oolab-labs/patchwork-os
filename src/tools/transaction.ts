@@ -33,6 +33,52 @@ function getTransaction(id: string): Transaction | undefined {
   return transactions.get(id);
 }
 
+/** Snapshot for dashboard / list endpoints. Only metadata — never the full
+ * file content (could be large + sensitive). The `sizeBefore` / `sizeAfter`
+ * UTF-8 byte counts are enough to render a meaningful row. */
+export interface TransactionSnapshot {
+  id: string;
+  createdAt: number;
+  expiresAt: number;
+  edits: Array<{
+    filePath: string;
+    sizeBefore: number;
+    sizeAfter: number;
+    lineDelta: number;
+  }>;
+}
+
+export function listActiveTransactions(): TransactionSnapshot[] {
+  _cleanupExpiredTransactions();
+  const out: TransactionSnapshot[] = [];
+  for (const tx of transactions.values()) {
+    out.push({
+      id: tx.id,
+      createdAt: tx.createdAt,
+      expiresAt: tx.createdAt + TRANSACTION_TTL_MS,
+      edits: tx.edits.map((e) => ({
+        filePath: e.filePath,
+        sizeBefore: Buffer.byteLength(e.originalContent, "utf-8"),
+        sizeAfter: Buffer.byteLength(e.newContent, "utf-8"),
+        lineDelta:
+          e.newContent.split("\n").length -
+          e.originalContent.split("\n").length,
+      })),
+    });
+  }
+  // newest first
+  return out.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** Used by HTTP commit/rollback endpoints (server.ts). Returns whether the
+ * transaction existed. The actual write/discard happens via the same code
+ * paths the MCP handlers use — keeping behavior identical. */
+export function rollbackTransactionById(id: string): boolean {
+  if (!transactions.has(id)) return false;
+  transactions.delete(id);
+  return true;
+}
+
 /**
  * Roll back and remove all transactions whose `createdAt` is older than
  * `TRANSACTION_TTL_MS`. Exported for testing.
