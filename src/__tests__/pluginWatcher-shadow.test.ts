@@ -124,11 +124,11 @@ function makePlugin(
 
 describe("PluginWatcher hot-reload — built-in tool shadowing", () => {
   let tmpDir: string;
-  let fsWatchSpy: MockInstance;
+  let _fsWatchSpy: MockInstance;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "plugin-shadow-test-"));
-    fsWatchSpy = vi.spyOn(fs, "watch").mockReturnValue({
+    _fsWatchSpy = vi.spyOn(fs, "watch").mockReturnValue({
       close: vi.fn(),
     } as unknown as fs.FSWatcher);
     vi.mocked(loadOnePluginFull).mockReset();

@@ -130,7 +130,7 @@ let buffer = Buffer.alloc(0);
 let upgraded = false;
 let responseBytes = 0;
 let pendingText = "";
-const initialized = false;
+const _initialized = false;
 
 const socket = createConnection({ host: "127.0.0.1", port }, () => {
   socket.write(httpUpgrade);

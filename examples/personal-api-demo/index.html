@@ -164,7 +164,7 @@
       font-weight: 700;
       flex-shrink: 0;
     }
-    .hidden { display: none !important; }
+    .hidden { display: none; }
     #setup-view p { color: var(--fg2); margin-bottom: 16px; line-height: 1.7; }
     #setup-view code { background: var(--bg3); padding: 2px 6px; border-radius: 4px; }
     .setup-step { display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-start; }
@@ -195,7 +195,7 @@
   <div class="status-row">
     <div class="status-dot" id="conn-dot"></div>
     <span id="conn-label">Not connected</span>
-    <button class="ghost" id="logout-btn" style="display:none;font-size:11px;padding:4px 10px;">Sign out</button>
+    <button type="button" class="ghost" id="logout-btn" style="display:none;font-size:11px;padding:4px 10px;">Sign out</button>
   </div>
 </header>
 
@@ -235,7 +235,7 @@
           <div class="step-num">3</div>
           <div class="setup-step-body">
             <label style="margin-bottom:10px;">Sign in with OAuth PKCE</label>
-            <button id="auth-btn">Connect &amp; Sign in →</button>
+            <button type="button" id="auth-btn">Connect &amp; Sign in →</button>
             <div id="auth-error" class="alert err hidden"></div>
           </div>
         </div>
@@ -251,7 +251,7 @@
       <div class="card">
         <div class="token-row">
           <div class="token-display" id="token-display">—</div>
-          <button class="ghost" id="copy-token-btn" style="flex-shrink:0;font-size:12px;padding:6px 12px;">Copy token</button>
+          <button type="button" class="ghost" id="copy-token-btn" style="flex-shrink:0;font-size:12px;padding:6px 12px;">Copy token</button>
         </div>
         <p style="margin-top:8px;font-size:11px;color:var(--fg3);">
           Bearer token issued by the bridge OAuth server. Valid 24 h. Use it in
@@ -281,7 +281,7 @@
             <label for="run-recipe-name">Recipe name (from list above)</label>
             <input id="run-recipe-name" type="text" placeholder="e.g. morning-brief" />
           </div>
-          <button id="run-btn">Run →</button>
+          <button type="button" id="run-btn">Run →</button>
         </div>
         <div id="run-result" class="hidden"></div>
       </div>
@@ -294,7 +294,7 @@
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <span style="font-size:12px;color:var(--fg2);">Waiting for your approval before tools execute</span>
-          <button class="ghost" id="refresh-approvals-btn" style="font-size:11px;padding:4px 12px;">Refresh</button>
+          <button type="button" class="ghost" id="refresh-approvals-btn" style="font-size:11px;padding:4px 12px;">Refresh</button>
         </div>
         <div id="approvals-loading" style="color:var(--fg2);font-size:13px;display:none;">Loading…</div>
         <div id="approvals-list"></div>
@@ -324,7 +324,7 @@
             <label for="api-path">Path (relative to bridge URL)</label>
             <input id="api-path" type="text" placeholder="/recipes" value="/recipes" />
           </div>
-          <button id="api-send-btn">Send</button>
+          <button type="button" id="api-send-btn">Send</button>
         </div>
         <div>
           <label for="api-body">Body (JSON, optional for POST/PATCH)</label>
@@ -520,7 +520,7 @@ function showAuthError(msg) {
 }
 
 function setConnected(yes) {
-  document.getElementById('conn-dot').className = 'status-dot' + (yes ? ' ok' : '');
+  document.getElementById('conn-dot').className = `status-dot${yes ? ' ok' : ''}`;
   document.getElementById('conn-label').textContent = yes
     ? `Connected — ${S.bridgeUrl()}`
     : 'Not connected';
@@ -532,7 +532,7 @@ function setConnected(yes) {
 function showToken() {
   const display = document.getElementById('token-display');
   const tok = S.token ?? '';
-  display.textContent = tok.length > 40 ? tok.slice(0, 20) + '…' + tok.slice(-8) : tok;
+  display.textContent = tok.length > 40 ? `${tok.slice(0, 20)}…${tok.slice(-8)}` : tok;
 }
 
 // ── Recipes ───────────────────────────────────────────────────────────────────
@@ -644,7 +644,7 @@ async function loadApprovals() {
   }
 }
 
-window.respondApproval = async function(callId, decision) {
+window.respondApproval = async (callId, decision) => {
   try {
     const res = await apiFetch(`/approvals/${encodeURIComponent(callId)}`, {
       method: 'POST',
