@@ -19,6 +19,8 @@
  *      from the catalog is satisfied by the first_connector_use kind above)
  *   7. "Risk tier escalation" — current tier exceeds the user's typical
  *      approved tier across recent decisions
+ *   6. "Mirrors a recipe step you trust" — primary param matches a step
+ *      from a successful past recipe run
  *   8. "Often runs alongside X" — co-occurrence pairing in recent activity
  *   9. "Workspace mismatch" — call from a workspace that has never
  *      approved this tool before
@@ -55,13 +57,18 @@ export interface PersonalSignal {
     | "cooldown_breach"
     | "workspace_mismatch"
     | "time_of_day_anomaly"
-    | "param_novelty";
+    | "param_novelty"
+    | "recipe_step_trust";
   /** Human-facing label suitable for an approval modal line. */
   label: string;
   /** Severity controls visual weight. low = informational, high = warning. */
   severity: "low" | "medium" | "high";
   /** Source identifier so the UI can link the signal back to its evidence. */
-  source: "approval_history" | "activity_history" | "tool_registry";
+  source:
+    | "approval_history"
+    | "activity_history"
+    | "tool_registry"
+    | "recipe_run_log";
   /** Optional numeric backing the label, surfaced in tooltips / counts. */
   count?: number;
 }
@@ -152,6 +159,37 @@ const PARAM_NOVELTY_PREFIX_LEN = 24;
 const PARAM_NOVELTY_BASELINE_MIN = 5;
 
 /**
+ * How many recent successful recipe runs we scan for matching step
+ * results in heuristic 6. 200 is enough to catch any "you run this
+ * recipe daily" pattern without unbounded scan cost.
+ */
+const RECIPE_STEP_TRUST_LOOKBACK = 200;
+/**
+ * Minimum number of matching successful runs before we surface the
+ * "trusted recipe step" signal. ≥ 2 means "this isn't a one-off."
+ */
+const RECIPE_STEP_TRUST_MIN = 2;
+
+/**
+ * Minimal querier surface for h6. Accepting the narrow interface (rather
+ * than the full `RecipeRunLog` class) lets tests inject canned runs
+ * without instantiating the disk-backed log, and keeps the dependency
+ * graph small.
+ */
+export interface RecipeRunQuerier {
+  query(q: { status?: string; limit?: number }): Array<{
+    recipeName: string;
+    status: string;
+    stepResults?: Array<{
+      id: string;
+      tool?: string;
+      status: "ok" | "skipped" | "error";
+      resolvedParams?: unknown;
+    }>;
+  }>;
+}
+
+/**
  * Compute the personal-signal set for an incoming approval request.
  *
  * Pure function over the activity log; no I/O of its own. Tested in
@@ -191,6 +229,13 @@ export function computePersonalSignals(input: {
    * and never logs or returns the value.
    */
   currentParams?: Record<string, unknown>;
+  /**
+   * Optional recipe-run querier for heuristic 6 (recipe-step trust). When
+   * present, h6 scans recent successful runs for a step that matches
+   * this tool + the current call's primary param prefix and surfaces
+   * the recipe name. Skipped when omitted.
+   */
+  recipeRunLog?: RecipeRunQuerier;
 }): PersonalSignal[] {
   const {
     toolName,
@@ -199,6 +244,7 @@ export function computePersonalSignals(input: {
     currentWorkspace,
     enableTimeOfDayAnomaly,
     currentParams,
+    recipeRunLog,
   } = input;
   if (!toolName) return [];
 
@@ -457,6 +503,67 @@ export function computePersonalSignals(input: {
     }
   }
 
+  // Heuristic 6: "Mirrors a recipe step you trust."
+  // Scan recent SUCCESSFUL recipe runs for a step whose tool matches
+  // and whose resolvedParams primary key shares the same 24-char prefix
+  // as the current call. If we find ≥ RECIPE_STEP_TRUST_MIN such runs,
+  // surface the recipe name and the count. Reuses h11's primary-key
+  // map so "this tool needs a primary param to compare" is one decision.
+  // Trust signal — low severity (informational reassurance, not warning).
+  const recipePrimaryKey = PARAM_NOVELTY_PRIMARY_KEYS[toolName];
+  if (recipeRunLog && recipePrimaryKey && currentParams) {
+    const currentRaw = currentParams[recipePrimaryKey];
+    if (typeof currentRaw === "string" && currentRaw.length > 0) {
+      const currentPrefix = paramPrefix(currentRaw);
+      const recentRuns = recipeRunLog.query({
+        status: "done",
+        limit: RECIPE_STEP_TRUST_LOOKBACK,
+      });
+      const matchingRecipes = new Map<string, number>();
+      for (const run of recentRuns) {
+        if (!run.stepResults) continue;
+        for (const step of run.stepResults) {
+          if (step.tool !== toolName || step.status !== "ok") continue;
+          const sp = step.resolvedParams;
+          if (typeof sp !== "object" || sp === null) continue;
+          const v = (sp as Record<string, unknown>)[recipePrimaryKey];
+          if (
+            typeof v === "string" &&
+            v.length > 0 &&
+            paramPrefix(v) === currentPrefix
+          ) {
+            matchingRecipes.set(
+              run.recipeName,
+              (matchingRecipes.get(run.recipeName) ?? 0) + 1,
+            );
+            // One match per run is enough — same step run repeatedly in
+            // a single recipe execution doesn't add weight.
+            break;
+          }
+        }
+      }
+      let totalMatches = 0;
+      let topRecipe: string | null = null;
+      let topCount = 0;
+      for (const [name, count] of matchingRecipes) {
+        totalMatches += count;
+        if (count > topCount) {
+          topCount = count;
+          topRecipe = name;
+        }
+      }
+      if (totalMatches >= RECIPE_STEP_TRUST_MIN && topRecipe) {
+        signals.push({
+          kind: "recipe_step_trust",
+          label: recipeStepTrustLabel(topRecipe, totalMatches),
+          severity: "low",
+          source: "recipe_run_log",
+          count: totalMatches,
+        });
+      }
+    }
+  }
+
   // Heuristic 12: "Cooldown breach."
   // Same tool fired N+ times within a short window — pattern of a runaway
   // loop, panicked retry, or stuck recipe. Distinct from heuristic 1
@@ -491,6 +598,13 @@ function workspaceMismatchLabel(otherCount: number): string {
 function paramPrefix(s: string): string {
   // Trim leading whitespace so " git push" and "git push" hash the same.
   return s.trimStart().slice(0, PARAM_NOVELTY_PREFIX_LEN);
+}
+
+function recipeStepTrustLabel(
+  recipeName: string,
+  totalMatches: number,
+): string {
+  return `Matches a step in your ${recipeName} recipe (${totalMatches} successful runs).`;
 }
 
 function paramNoveltyLabel(paramKey: string, baselineSize: number): string {

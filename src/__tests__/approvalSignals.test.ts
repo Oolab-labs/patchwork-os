@@ -682,6 +682,246 @@ describe("computePersonalSignals", () => {
     });
   });
 
+  describe("heuristic 6 — recipe-step trust", () => {
+    type FakeRun = {
+      recipeName: string;
+      status: string;
+      stepResults?: Array<{
+        id: string;
+        tool?: string;
+        status: "ok" | "skipped" | "error";
+        resolvedParams?: unknown;
+      }>;
+    };
+
+    function fakeRunLog(runs: FakeRun[]) {
+      return {
+        query(_q: { status?: string; limit?: number }): FakeRun[] {
+          // Tests call with status "done" — return all runs and let the
+          // heuristic filter on its own. Simpler than reproducing
+          // RecipeRunLog.query's filter logic here.
+          return runs.filter((r) => r.status === "done");
+        },
+      };
+    }
+
+    it("surfaces low signal when current call matches a step in a recent successful run", () => {
+      const runLog = fakeRunLog([
+        {
+          recipeName: "morning-brief",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "ok",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+        {
+          recipeName: "morning-brief",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "ok",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: new ActivityLog(),
+        currentParams: { command: "git fetch origin patchwork-main --prune" },
+        recipeRunLog: runLog,
+      });
+      const sig = signals.find((s) => s.kind === "recipe_step_trust");
+      expect(sig).toBeDefined();
+      expect(sig?.severity).toBe("low");
+      expect(sig?.source).toBe("recipe_run_log");
+      expect(sig?.label).toMatch(/morning-brief/);
+      expect(sig?.count).toBe(2);
+    });
+
+    it("does not surface below the 2-run minimum", () => {
+      const runLog = fakeRunLog([
+        {
+          recipeName: "morning-brief",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "ok",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: new ActivityLog(),
+        currentParams: { command: "git fetch origin patchwork-main" },
+        recipeRunLog: runLog,
+      });
+      expect(
+        signals.find((s) => s.kind === "recipe_step_trust"),
+      ).toBeUndefined();
+    });
+
+    it("does not surface when step status was error", () => {
+      const runLog = fakeRunLog([
+        {
+          recipeName: "morning-brief",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "error",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+        {
+          recipeName: "morning-brief",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "error",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: new ActivityLog(),
+        currentParams: { command: "git fetch origin patchwork-main" },
+        recipeRunLog: runLog,
+      });
+      expect(
+        signals.find((s) => s.kind === "recipe_step_trust"),
+      ).toBeUndefined();
+    });
+
+    it("does not surface when prefix differs", () => {
+      const runLog = fakeRunLog([
+        {
+          recipeName: "morning-brief",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "ok",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+        {
+          recipeName: "morning-brief",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "ok",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: new ActivityLog(),
+        currentParams: { command: "rm -rf /tmp/everything" },
+        recipeRunLog: runLog,
+      });
+      expect(
+        signals.find((s) => s.kind === "recipe_step_trust"),
+      ).toBeUndefined();
+    });
+
+    it("picks the recipe with the most matches when multiple recipes match", () => {
+      const runLog = fakeRunLog([
+        {
+          recipeName: "morning-brief",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "ok",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+        {
+          recipeName: "weekly-sync",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "ok",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+        {
+          recipeName: "weekly-sync",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "ok",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+        {
+          recipeName: "weekly-sync",
+          status: "done",
+          stepResults: [
+            {
+              id: "fetch",
+              tool: "runCommand",
+              status: "ok",
+              resolvedParams: { command: "git fetch origin patchwork-main" },
+            },
+          ],
+        },
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: new ActivityLog(),
+        currentParams: { command: "git fetch origin patchwork-main" },
+        recipeRunLog: runLog,
+      });
+      const sig = signals.find((s) => s.kind === "recipe_step_trust");
+      expect(sig?.label).toMatch(/weekly-sync/);
+      expect(sig?.count).toBe(4); // 1 morning-brief + 3 weekly-sync
+    });
+
+    it("is silent when recipeRunLog omitted", () => {
+      const signals = computePersonalSignals({
+        toolName: "runCommand",
+        activityLog: new ActivityLog(),
+        currentParams: { command: "git fetch origin patchwork-main" },
+      });
+      expect(
+        signals.find((s) => s.kind === "recipe_step_trust"),
+      ).toBeUndefined();
+    });
+  });
+
   describe("heuristic 11 — param novelty", () => {
     function logWithCommands(commands: string[]) {
       const log = new ActivityLog();
