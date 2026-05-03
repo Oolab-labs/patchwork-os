@@ -720,13 +720,34 @@ export class Server extends EventEmitter<ServerEvents> {
       if (parsedUrl.pathname === "/traces/export" && req.method === "GET") {
         void (async () => {
           try {
+            // Accept passphrase only via header — never query string (prevents
+            // proxy access-log exposure and browser-history leakage).
+            if (parsedUrl.searchParams?.get("passphrase")) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error:
+                    "passphrase must be sent in the X-Trace-Passphrase header, not the URL",
+                }),
+              );
+              return;
+            }
             const passphraseRaw =
-              parsedUrl.searchParams?.get("passphrase") ?? null;
+              (req.headers["x-trace-passphrase"] as string | undefined) ?? null;
             if (passphraseRaw !== null && passphraseRaw.length > 4096) {
               res.writeHead(400, { "Content-Type": "application/json" });
               res.end(
                 JSON.stringify({
                   error: "passphrase too long (max 4096 chars)",
+                }),
+              );
+              return;
+            }
+            if (passphraseRaw !== null && passphraseRaw.length < 12) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: "passphrase too short (min 12 chars)",
                 }),
               );
               return;
