@@ -17,6 +17,8 @@
  *   3. "First use of this connector" — connector namespace ∩ activity log
  *   5. "Last called T days ago" — gap since most recent call (heuristic 4
  *      from the catalog is satisfied by the first_connector_use kind above)
+ *   7. "Risk tier escalation" — current tier exceeds the user's typical
+ *      approved tier across recent decisions
  *
  * The signals are **transparent**: every signal has a `source` enum so a
  * future "why is this signal here?" UI can link back to the rows that
@@ -31,6 +33,7 @@
 
 import type { ActivityLog } from "./activityLog.js";
 import { isConnectorNamespace } from "./recipes/toolRegistry.js";
+import type { RiskTier } from "./riskTier.js";
 
 export interface PersonalSignal {
   kind:
@@ -38,7 +41,8 @@ export interface PersonalSignal {
     | "prior_rejection"
     | "first_connector_use"
     | "first_tool_use"
-    | "stale_tool_use";
+    | "stale_tool_use"
+    | "tier_escalation";
   /** Human-facing label suitable for an approval modal line. */
   label: string;
   /** Severity controls visual weight. low = informational, high = warning. */
@@ -69,6 +73,16 @@ const STALE_TOOL_MS = STALE_TOOL_DAYS * 24 * 60 * 60 * 1_000;
 const STALE_TOOL_HIGH_DAYS = 30;
 
 /**
+ * Minimum prior-allow decisions needed to establish a "typical tier"
+ * baseline for heuristic 7. Below this we don't claim to know the user's
+ * pattern — first few approvals could be anything. 5 is small but enough
+ * to make a single outlier not dominate.
+ */
+const TIER_BASELINE_MIN_SAMPLES = 5;
+
+const TIER_RANK: Record<RiskTier, number> = { low: 0, medium: 1, high: 2 };
+
+/**
  * Compute the personal-signal set for an incoming approval request.
  *
  * Pure function over the activity log; no I/O of its own. Tested in
@@ -79,8 +93,14 @@ const STALE_TOOL_HIGH_DAYS = 30;
 export function computePersonalSignals(input: {
   toolName: string;
   activityLog: ActivityLog;
+  /**
+   * Risk tier of the *current* call, used by heuristic 7. Optional —
+   * pre-#126 callers and the test fixtures that omit it simply skip
+   * tier-escalation evaluation.
+   */
+  currentTier?: RiskTier;
 }): PersonalSignal[] {
-  const { toolName, activityLog } = input;
+  const { toolName, activityLog, currentTier } = input;
   if (!toolName) return [];
 
   const signals: PersonalSignal[] = [];
@@ -164,7 +184,51 @@ export function computePersonalSignals(input: {
     }
   }
 
+  // Heuristic 7: "Risk tier escalation."
+  // Compare the incoming call's tier against the user's typical approved
+  // tier across recent allow-decisions. If the user usually approves low
+  // and this is medium/high — or usually medium and this is high — surface.
+  // Cross-tool: the question is "is this user's threshold being exceeded",
+  // not "is this tool a step up from this tool's history". The latter is
+  // covered by heuristic 1 (prior approvals on the same tool).
+  if (currentTier) {
+    const recentAllows = activityLog
+      .queryApprovalDecisions({ decision: "allow", last: 50 })
+      .filter(
+        (e): e is typeof e & { metadata: { tier: RiskTier } } =>
+          e.metadata?.tier === "low" ||
+          e.metadata?.tier === "medium" ||
+          e.metadata?.tier === "high",
+      );
+    if (recentAllows.length >= TIER_BASELINE_MIN_SAMPLES) {
+      // p50 over rank space — sort ranks, pick the middle. Equivalent to
+      // median; cheaper than a full distribution and stable on small N.
+      const ranks = recentAllows
+        .map((e) => TIER_RANK[e.metadata.tier])
+        .sort((a, b) => a - b);
+      const baselineRank = ranks[Math.floor(ranks.length / 2)] ?? 0;
+      const currentRank = TIER_RANK[currentTier];
+      if (currentRank > baselineRank) {
+        const baselineTier = (Object.keys(TIER_RANK) as RiskTier[]).find(
+          (t) => TIER_RANK[t] === baselineRank,
+        );
+        const jump = currentRank - baselineRank;
+        signals.push({
+          kind: "tier_escalation",
+          label: tierEscalationLabel(baselineTier ?? "low", currentTier),
+          // jump of 1 (low→med, med→high) = medium; jump of 2 (low→high) = high
+          severity: jump >= 2 ? "high" : "medium",
+          source: "approval_history",
+        });
+      }
+    }
+  }
+
   return signals;
+}
+
+function tierEscalationLabel(baseline: RiskTier, current: RiskTier): string {
+  return `You usually approve ${baseline}-tier calls — this one is ${current}.`;
 }
 
 function priorApprovalsLabel(count: number): string {
