@@ -1,0 +1,26 @@
+name: capture-thought
+description: |
+  Append a thought to your daily journal from anywhere that can POST HTTP.
+
+  Suggested triggers:
+    - iOS Shortcut (Hey Siri, "capture thought") — see docs/triggers
+    - Stream Deck button
+    - NFC tag near your desk
+    - curl from another script
+
+  Example request:
+    curl -X POST http://localhost:3101/hooks/capture-thought \
+      -H 'Content-Type: application/json' \
+      -d '{"text":"the auth refresh path needs a circuit breaker"}'
+
+trigger:
+  type: webhook
+  path: /capture-thought
+
+steps:
+  - tool: file.append
+    path: ~/.patchwork/journal/{{date}}.md
+    content: "- {{time}}  {{payload.text}}\n"
+
+output:
+  path: ~/.patchwork/journal/{{date}}.md

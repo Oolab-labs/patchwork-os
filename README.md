@@ -147,6 +147,8 @@ The package ships these in `templates/recipes/`. Recipes that need API keys are 
 
 **Delegation policy presets** ([`templates/policies/`](templates/policies/)): five persona starters — conservative, developer, headless-CI, regulated-industry, personal-assistant. Copy one into `~/.patchwork/config.json` and restart.
 
+**Webhook recipe starters** ([`templates/recipes/webhook/`](templates/recipes/webhook/)): five webhook-triggered recipes — capture-thought, morning-brief (on-demand), meeting-prep, incident-intake, customer-escalation. Anything that can POST HTTP can drive these — iPhone Shortcut, Stream Deck, Home Assistant, NFC tag, monitoring tool.
+
 ### Automation hooks
 
 Event-driven hooks trigger Claude tasks automatically. Activate with `--automation --automation-policy <path.json> --claude-driver subprocess`.
