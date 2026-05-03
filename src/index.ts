@@ -695,17 +695,23 @@ Options:
 if (process.argv[2] === "gen-plugin-stub") {
   const argv = process.argv.slice(3);
 
-  // Parse args: gen-plugin-stub <dir> [--name <name>] [--prefix <prefix>]
+  // Parse args: gen-plugin-stub <dir> [--name <name>] [--prefix <prefix>] [--ts]
   const dirArg = argv.find((a) => !a.startsWith("--"));
   if (!dirArg) {
     process.stderr.write(
-      "Usage: claude-ide-bridge gen-plugin-stub <output-dir> [--name <org/plugin-name>] [--prefix <toolPrefix>]\n",
+      "Usage: claude-ide-bridge gen-plugin-stub <output-dir> [--name <org/plugin-name>] [--prefix <toolPrefix>] [--ts]\n",
     );
     process.exit(1);
   }
 
   const nameIdx = argv.indexOf("--name");
   const prefixIdx = argv.indexOf("--prefix");
+  // --ts emits a TypeScript variant (src/index.ts + tsconfig.json + build
+  // scripts) alongside a compiled-output manifest pointing at index.mjs.
+  // Plugin authors get type-checked tools without changing the hot-reload
+  // contract — `npm run dev` watches src/, emits index.mjs, bridge picks
+  // up the rebuilt artifact via --plugin-watch.
+  const useTypeScript = argv.includes("--ts");
   const pluginName: string =
     nameIdx !== -1 && argv[nameIdx + 1]
       ? (argv[nameIdx + 1] as string)
@@ -758,8 +764,8 @@ if (process.argv[2] === "gen-plugin-stub") {
     "utf-8",
   );
 
-  // index.mjs entrypoint
-  const entrypoint = `/**
+  // ── shared tool body — same logic, different surface syntax ──
+  const jsEntrypoint = `/**
  * ${pluginName} — Claude IDE Bridge plugin
  *
  * Each tool must have a name starting with "${toolPrefix}".
@@ -767,7 +773,7 @@ if (process.argv[2] === "gen-plugin-stub") {
  * ctx.config (commandTimeout, maxResultSize), and ctx.logger.
  */
 
-/** @param {import('claude-ide-bridge/plugin').PluginContext} ctx */
+/** @param {import('patchwork-os/plugin').PluginContext} ctx */
 export function register(ctx) {
   ctx.logger.info(${JSON.stringify(`${pluginName} loaded`)}, { workspace: ctx.workspace });
 
@@ -795,38 +801,241 @@ export function register(ctx) {
   };
 }
 `;
-  writeFileSync(path.join(outDir, "index.mjs"), entrypoint, "utf-8");
 
-  // package.json (optional, for npm publishing)
-  const pkg = {
+  const tsEntrypoint = `/**
+ * ${pluginName} — Claude IDE Bridge plugin
+ *
+ * Each tool must have a name starting with "${toolPrefix}".
+ * The \`ctx\` object provides: ctx.workspace, ctx.workspaceFolders,
+ * ctx.config (commandTimeout, maxResultSize), and ctx.logger.
+ */
+import type { PluginContext } from "patchwork-os/plugin";
+
+interface HelloArgs {
+  name: string;
+}
+
+export function register(ctx: PluginContext) {
+  ctx.logger.info(${JSON.stringify(`${pluginName} loaded`)}, { workspace: ctx.workspace });
+
+  return {
+    tools: [
+      {
+        schema: {
+          name: ${JSON.stringify(`${toolPrefix}Hello`)},
+          description: "Example tool — returns a greeting",
+          inputSchema: {
+            type: "object" as const,
+            required: ["name"] as const,
+            additionalProperties: false as const,
+            properties: {
+              name: { type: "string" as const, description: "Name to greet" },
+            },
+          },
+          annotations: { readOnlyHint: true },
+        },
+        handler: async (args: HelloArgs) => ({
+          content: [
+            {
+              type: "text" as const,
+              text: \`Hello from ${pluginName}, \${args.name}!\`,
+            },
+          ],
+        }),
+      },
+    ],
+  };
+}
+`;
+
+  // Write entrypoint — TS goes under src/, JS at root.
+  if (useTypeScript) {
+    mkdirSync(path.join(outDir, "src"), { recursive: true });
+    writeFileSync(path.join(outDir, "src", "index.ts"), tsEntrypoint, "utf-8");
+  } else {
+    writeFileSync(path.join(outDir, "index.mjs"), jsEntrypoint, "utf-8");
+  }
+
+  // tsconfig.json — TS variant only. Emits a single ESM file at index.mjs
+  // so the plugin manifest's entrypoint stays the same shape as the JS
+  // scaffold and --plugin-watch reload semantics don't change.
+  if (useTypeScript) {
+    const tsconfig = {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ES2022",
+        moduleResolution: "Bundler",
+        outDir: ".",
+        rootDir: "src",
+        declaration: false,
+        strict: true,
+        esModuleInterop: true,
+        skipLibCheck: true,
+        resolveJsonModule: true,
+        // Emit .mjs so the plugin loader (which expects ESM) picks it up
+        // without relying on package.json "type": "module" alone.
+        // tsc doesn't emit .mjs natively, so package.json's "build" script
+        // does a rename pass — see below.
+      },
+      include: ["src/**/*"],
+      exclude: ["node_modules"],
+    };
+    writeFileSync(
+      path.join(outDir, "tsconfig.json"),
+      `${JSON.stringify(tsconfig, null, 2)}\n`,
+      "utf-8",
+    );
+  }
+
+  // package.json — TS variant adds build + dev (watch) scripts.
+  const pkgBase = {
     name: pluginName.replace(/^@[^/]+\//, "").replace(/\//g, "-"),
     version: "0.1.0",
     description: "A Claude IDE Bridge plugin",
     type: "module",
     main: "index.mjs",
-    keywords: ["claude-ide-bridge", "claude-ide-bridge-plugin"],
-    peerDependencies: { "claude-ide-bridge": ">=2.1.24" },
+    keywords: ["patchwork-os", "claude-ide-bridge-plugin"],
+    peerDependencies: { "patchwork-os": ">=0.2.0-alpha.0" },
   };
+  const pkg = useTypeScript
+    ? {
+        ...pkgBase,
+        scripts: {
+          // tsc emits index.js — rename to index.mjs so the loader treats
+          // it as ESM regardless of the consumer's package.json.
+          build: "tsc && mv index.js index.mjs",
+          dev: "tsc --watch",
+          clean: "rm -f index.mjs",
+        },
+        devDependencies: {
+          typescript: "^5.4.0",
+          "patchwork-os": ">=0.2.0-alpha.0",
+        },
+      }
+    : pkgBase;
   writeFileSync(
     path.join(outDir, "package.json"),
     `${JSON.stringify(pkg, null, 2)}\n`,
     "utf-8",
   );
 
-  // .gitignore
-  writeFileSync(path.join(outDir, ".gitignore"), "node_modules\n", "utf-8");
+  // README.md — included in both variants. Spells out the hot-reload
+  // contract so plugin authors don't have to read the platform docs to
+  // get started.
+  const readmeBody = useTypeScript
+    ? `# ${pluginName}
 
-  process.stderr.write(`✓ Plugin stub created at ${outDir}\n`);
+A [Claude IDE Bridge](https://github.com/Oolab-labs/patchwork-os) plugin (TypeScript).
+
+## Quick start
+
+\`\`\`sh
+npm install
+npm run dev      # in one terminal — watches src/, emits index.mjs
+
+# In another terminal:
+claude-ide-bridge --plugin . --plugin-watch
+\`\`\`
+
+Edit \`src/index.ts\`. \`tsc --watch\` rebuilds, the bridge hot-reloads, your tool is callable from the live Claude session on the next turn.
+
+## Build for distribution
+
+\`\`\`sh
+npm run build    # emits index.mjs
+npm publish      # publish to npm (optional)
+\`\`\`
+
+When published with the \`claude-ide-bridge-plugin\` keyword, users can install with:
+
+\`\`\`sh
+claude-ide-bridge --plugin ${pluginName.replace(/^@[^/]+\//, "")}
+\`\`\`
+
+## Tool naming
+
+Every tool exposed by this plugin **must** have a \`name\` starting with \`${toolPrefix}\`. The bridge enforces this at load time (\`/^[a-zA-Z][a-zA-Z0-9_]{1,19}$/\`).
+
+## Plugin context
+
+The \`ctx\` argument to \`register()\` provides:
+
+- \`ctx.workspace\` — workspace root path
+- \`ctx.workspaceFolders\` — array of workspace folders
+- \`ctx.config\` — \`{ commandTimeout, maxResultSize }\`
+- \`ctx.logger\` — \`info\` / \`warn\` / \`error\` logging that respects bridge log level
+
+## Live toolsmithing
+
+The whole point of plugins is that you can author tools *while Claude is using the bridge*. Edit \`src/index.ts\`, save, the watcher rebuilds, the bridge reloads — Claude's next turn sees the new tool.
+
+See [documents/live-toolsmithing.md](https://github.com/Oolab-labs/patchwork-os/blob/main/documents/live-toolsmithing.md) for the full narrative.
+`
+    : `# ${pluginName}
+
+A [Claude IDE Bridge](https://github.com/Oolab-labs/patchwork-os) plugin.
+
+## Quick start
+
+\`\`\`sh
+claude-ide-bridge --plugin . --plugin-watch
+\`\`\`
+
+Edit \`index.mjs\`. The bridge hot-reloads on save — your tool is callable from the live Claude session on the next turn. No build step needed for the JS variant.
+
+## Tool naming
+
+Every tool exposed by this plugin **must** have a \`name\` starting with \`${toolPrefix}\`. The bridge enforces this at load time (\`/^[a-zA-Z][a-zA-Z0-9_]{1,19}$/\`).
+
+## Plugin context
+
+The \`ctx\` argument to \`register()\` provides:
+
+- \`ctx.workspace\` — workspace root path
+- \`ctx.workspaceFolders\` — array of workspace folders
+- \`ctx.config\` — \`{ commandTimeout, maxResultSize }\`
+- \`ctx.logger\` — \`info\` / \`warn\` / \`error\` logging that respects bridge log level
+
+## Want types?
+
+Re-scaffold with \`claude-ide-bridge gen-plugin-stub <dir> --ts\` for a TypeScript variant with \`tsc --watch\` build pipeline.
+
+## Live toolsmithing
+
+Edit, save, hot-reload — Claude's next turn sees the new tool. See [documents/live-toolsmithing.md](https://github.com/Oolab-labs/patchwork-os/blob/main/documents/live-toolsmithing.md) for the full narrative.
+`;
+  writeFileSync(path.join(outDir, "README.md"), readmeBody, "utf-8");
+
+  // .gitignore
+  const gitignore = useTypeScript
+    ? "node_modules\nindex.mjs\nindex.js\n*.tsbuildinfo\n"
+    : "node_modules\n";
+  writeFileSync(path.join(outDir, ".gitignore"), gitignore, "utf-8");
+
+  process.stderr.write(
+    `✓ Plugin stub created at ${outDir} (${useTypeScript ? "TypeScript" : "JavaScript"})\n`,
+  );
   process.stderr.write("\nNext steps:\n");
-  process.stderr.write(
-    `  1. Edit ${path.join(outDir, "index.mjs")} to implement your tools\n`,
-  );
-  process.stderr.write(
-    `  2. Run the bridge with: claude-ide-bridge --plugin ${outDir}\n`,
-  );
-  process.stderr.write(
-    `  3. Or add to your config: { "plugins": ["${outDir}"] }\n`,
-  );
+  if (useTypeScript) {
+    process.stderr.write(`  1. cd ${outDir} && npm install\n`);
+    process.stderr.write(
+      `  2. Edit ${path.join(outDir, "src", "index.ts")} to implement your tools\n`,
+    );
+    process.stderr.write(`  3. npm run dev  (in one terminal)\n`);
+    process.stderr.write(
+      `  4. claude-ide-bridge --plugin ${outDir} --plugin-watch  (in another)\n`,
+    );
+  } else {
+    process.stderr.write(
+      `  1. Edit ${path.join(outDir, "index.mjs")} to implement your tools\n`,
+    );
+    process.stderr.write(
+      `  2. Run the bridge with: claude-ide-bridge --plugin ${outDir} --plugin-watch\n`,
+    );
+    process.stderr.write(
+      `  3. Or add to your config: { "plugins": ["${outDir}"] }\n`,
+    );
+  }
   process.exit(0);
 }
 
