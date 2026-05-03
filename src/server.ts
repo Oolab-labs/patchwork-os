@@ -153,6 +153,17 @@ export class Server extends EventEmitter<ServerEvents> {
   public deleteRecipeContentFn:
     | ((name: string) => { ok: boolean; path?: string; error?: string })
     | null = null;
+  /** Patchwork: set by bridge to promote a variant recipe to the canonical name. */
+  public promoteRecipeVariantFn:
+    | ((
+        variantName: string,
+        targetName: string,
+      ) => {
+        ok: boolean;
+        path?: string;
+        error?: string;
+      })
+    | null = null;
   /** Patchwork: set by bridge to duplicate a recipe as a variant. */
   public duplicateRecipeFn:
     | ((name: string) => {
@@ -1090,6 +1101,7 @@ export class Server extends EventEmitter<ServerEvents> {
           saveRecipeContentFn: this.saveRecipeContentFn,
           deleteRecipeContentFn: this.deleteRecipeContentFn,
           duplicateRecipeFn: this.duplicateRecipeFn,
+          promoteRecipeVariantFn: this.promoteRecipeVariantFn,
           lintRecipeContentFn: this.lintRecipeContentFn,
           saveRecipeFn: this.saveRecipeFn,
           setRecipeEnabledFn: this.setRecipeEnabledFn,

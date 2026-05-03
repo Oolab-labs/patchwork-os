@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { ConnectorHealthPanel } from "@/components/ConnectorHealthPanel";
@@ -462,6 +463,7 @@ export default function RecipesPage() {
     { intervalMs: 10000 },
   );
   const bridgePort = bridgeStatus?.patchwork?.port ?? bridgeStatus?.port;
+  const router = useRouter();
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [runMap, setRunMap] = useState<Map<string, RunRecord>>(new Map());
   const [err, setErr] = useState<string>();
@@ -593,7 +595,13 @@ export default function RecipesPage() {
         setErr(body.error ?? `duplicate failed: ${res.status}`);
         return;
       }
-      void load();
+      if (body.variantName) {
+        router.push(
+          `/recipes/compare?a=${encodeURIComponent(name)}&b=${encodeURIComponent(body.variantName)}`,
+        );
+      } else {
+        void load();
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
