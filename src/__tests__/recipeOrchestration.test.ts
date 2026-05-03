@@ -4,9 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // These imports will fail until src/recipeOrchestration.ts exists.
-// biome-ignore lint/suspicious/noExplicitAny: test scaffolding
 let RecipeOrchestration: any;
-// biome-ignore lint/suspicious/noExplicitAny: test scaffolding
 let RecipeOrchestrationModule: any;
 
 beforeEach(async () => {
@@ -88,7 +86,6 @@ describe("RecipeOrchestration", () => {
     });
     ro.wireServerFns();
 
-    // biome-ignore lint/suspicious/noExplicitAny: test assertion
     const result = (server.recipesFn as any)();
     expect(result).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "a" })]),
@@ -110,7 +107,6 @@ describe("RecipeOrchestration", () => {
     });
     ro.wireServerFns();
 
-    // biome-ignore lint/suspicious/noExplicitAny: test assertion
     const result = await (server.runRecipeFn as any)("foo");
     expect(result).toMatchObject({ ok: false });
   });
@@ -132,7 +128,6 @@ describe("RecipeOrchestration", () => {
     });
     ro.wireServerFns();
 
-    // biome-ignore lint/suspicious/noExplicitAny: test assertion
     const result = await (server.runRecipeFn as any)("foo");
     expect(result).toMatchObject({ ok: true, taskId: "tid" });
   });
@@ -161,7 +156,6 @@ describe("RecipeOrchestration", () => {
     });
     ro.wireServerFns();
 
-    // biome-ignore lint/suspicious/noExplicitAny: test assertion
     await (server.runRecipeFn as any)("foo");
     expect(fireStub).toHaveBeenCalledWith(
       expect.objectContaining({ filePath: "/r/foo.yaml" }),
@@ -180,7 +174,6 @@ describe("RecipeOrchestration", () => {
     });
     ro.wireServerFns();
 
-    // biome-ignore lint/suspicious/noExplicitAny: test assertion
     const result = (server.runsFn as any)({});
     expect(result).toEqual([]);
   });

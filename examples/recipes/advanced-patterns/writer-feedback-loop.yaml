@@ -1,0 +1,138 @@
+# vision-tier — multi-lens critique system for writers.
+# Spawns parallel subagents with distinct critical personas.
+# The approval trace log accumulates over time — which lens you act on teaches
+# the system which feedback style helps you most per project type.
+# requires: file-mcp, notify-mcp, claude-driver (subprocess or api)
+version: 1.0.0
+name: writer-feedback-loop
+description: >
+  When you save a draft, spawn three parallel critic subagents — hostile reader,
+  structural mentor, and naive first-timer — then merge into a single actionable
+  feedback report. Each feedback decision is traced so the system learns which
+  lens you actually act on.
+trigger:
+  type: file_watch
+  path: "{{DRAFTS_FOLDER}}"
+  pattern: "*.{md,txt,docx}"
+  event: saved
+  cooldownMs: 30000    # 30s — don't fire on every keystroke
+context:
+  - type: env
+    keys:
+      - DRAFTS_FOLDER
+      - TRACES_PATH      # ~/writing/traces.jsonl — accumulates feedback decisions
+      - VOICE_SAMPLES    # ~/.patchwork/voice-samples.md — optional tone reference
+steps:
+  - id: read_draft
+    tool: file.read
+    risk: low
+    path: "{{file}}"
+    into: draft
+
+  - id: check_prior_feedback
+    tool: file.grep
+    risk: low
+    path: "{{TRACES_PATH}}"
+    pattern: "{{file}}"
+    limit: 5
+    into: prior_traces
+    optional: true
+
+  - id: parallel_critics
+    risk: low
+    parallel:
+      - id: hostile_reader
+        agent:
+          prompt: |
+            You are a hostile, impatient reader. You quit at the first sign of
+            confusion, padding, or cliché. Read this draft and report:
+              - The exact sentence where you almost stopped reading
+              - The 2 biggest clarity failures
+              - One phrase so overused you groaned
+            Be specific. Quote the draft. No encouragement.
+
+            Draft:
+            {{draft.content}}
+          into: hostile_notes
+
+      - id: structural_mentor
+        agent:
+          prompt: |
+            You are a structural editor. Ignore sentence-level prose. Focus only on:
+              - Does the opening earn the reader's time in the first paragraph?
+              - Is the arc clear? What is the thing the reader is meant to feel/know/do by the end?
+              - Where does the piece lose momentum or go sideways?
+              - One structural surgery that would have the highest impact
+
+            Draft:
+            {{draft.content}}
+          into: structure_notes
+
+      - id: naive_reader
+        agent:
+          prompt: |
+            You are reading this cold — no context, no generosity, no insider knowledge.
+            Report:
+              - What you thought this piece was about after the first paragraph (was you right?)
+              - The one thing that confused you most
+              - What question you still have at the end that wasn't answered
+
+            Draft:
+            {{draft.content}}
+          into: naive_notes
+
+  - id: synthesize_feedback
+    risk: low
+    awaits:
+      - parallel_critics
+    agent:
+      prompt: |
+        Three critics reviewed this draft. Synthesize into one actionable feedback report.
+
+        Hostile reader notes: {{hostile_notes}}
+        Structural mentor notes: {{structure_notes}}
+        Naive reader notes: {{naive_notes}}
+
+        Prior feedback this writer acted on (learn from this):
+        {{prior_traces}}
+
+        Format:
+        ## Top 3 actions (ranked by impact)
+        1. [action] — [which critic flagged this and why it matters]
+        2. ...
+        3. ...
+
+        ## Consensus issues (flagged by 2+ critics)
+        [list]
+
+        ## Worth considering but lower priority
+        [list]
+
+        ## What's working
+        [1–2 sentences — real, not filler]
+
+        Be specific. Quote the draft where possible. The writer will approve/skip
+        each action — make it easy to decide.
+      into: feedback_report
+
+  - id: present_for_approval
+    tool: dashboard.render
+    risk: low
+    title: "Feedback: {{file | basename}}"
+    content: "{{feedback_report}}"
+    approvals: true
+    approval_items:
+      each: "{{feedback_report.actions}}"
+      label: "Act on this?"
+    into: approval_results
+
+  - id: log_decisions
+    tool: file.append
+    risk: low
+    path: "{{TRACES_PATH}}"
+    content: |
+      {"ts":"{{ISO_NOW}}","file":"{{file}}","decisions":{{approval_results}}}
+
+on_error:
+  notify: true
+  retry: 0

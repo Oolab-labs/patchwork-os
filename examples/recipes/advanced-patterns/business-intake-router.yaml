@@ -1,0 +1,98 @@
+# vision-tier — small business operating brain for solo operators.
+# Three interlocking recipes: intake router, decision brief, quarterly review.
+# The trace log (lessons.jsonl) is the system's growing intuition about your business.
+# requires: file-mcp, gmail-mcp, notify-mcp, scheduler-mcp, transcription-mcp (optional)
+version: 1.0.0
+name: business-intake-router
+description: >
+  Catch all inbound business signals (emails, voice memos, dropped docs) and route
+  each to the right file. The raw material for everything else in this pack.
+trigger:
+  type: webhook
+  path: /business-intake
+  description: >
+    POST with body { "type": "email|voice|doc|note", "content": "...", "source": "..." }
+context:
+  - type: env
+    keys:
+      - BUSINESS_ROOT    # ~/business/
+steps:
+  - id: classify
+    risk: low
+    agent:
+      prompt: |
+        Business intake signal:
+        Type: {{payload.type}}
+        Source: {{payload.source}}
+        Content:
+        {{payload.content}}
+
+        Classify into one of:
+          - lead: potential new client or opportunity
+          - client: existing client communication
+          - vendor: supplier, tool, or contractor
+          - finance: revenue, expense, invoice, tax
+          - lesson: a mistake, win, or pattern worth remembering
+          - decision: a choice being made or documented
+          - admin: logistics, scheduling, compliance
+
+        Extract:
+          - A 5-word title
+          - A 2-sentence summary
+          - Any dollar amounts mentioned
+          - Any deadlines or dates
+          - If type=lesson: a one-line "what I'd do differently" statement
+
+        Return JSON:
+        {
+          "category": "...",
+          "title": "...",
+          "summary": "...",
+          "amounts": [],
+          "dates": [],
+          "lesson_takeaway": null
+        }
+      into: classification
+      format: json
+
+  - id: route_and_append
+    risk: low
+    agent:
+      prompt: |
+        Classification: {{classification}}
+        Business root: {{BUSINESS_ROOT}}
+
+        Determine the target file:
+          - lead     → {{BUSINESS_ROOT}}/leads/pipeline.md
+          - client   → {{BUSINESS_ROOT}}/clients/{{classification.source | slug}}/log.md
+          - vendor   → {{BUSINESS_ROOT}}/vendors/{{classification.source | slug}}/log.md
+          - finance  → {{BUSINESS_ROOT}}/finance/{{YYYY-MM}}.md
+          - lesson   → {{BUSINESS_ROOT}}/lessons.jsonl (JSON lines)
+          - decision → {{BUSINESS_ROOT}}/decisions/{{YYYY-MM-DD}}-{{classification.title | slug}}.md
+          - admin    → {{BUSINESS_ROOT}}/admin/{{YYYY-MM}}.md
+
+        Return JSON: { "target": "<path>", "format": "markdown|jsonl" }
+      into: routing
+      format: json
+
+  - id: append_entry
+    tool: file.append
+    risk: low
+    path: "{{routing.target}}"
+    content: |
+      {{#if routing.format == 'jsonl'}}
+      {"ts":"{{ISO_NOW}}","title":"{{classification.title}}","summary":"{{classification.summary}}","takeaway":"{{classification.lesson_takeaway}}","source":"{{payload.source}}"}
+      {{else}}
+      ## {{YYYY-MM-DD}} — {{classification.title}}
+
+      {{classification.summary}}
+
+      {{#if classification.amounts.length}}Amounts: {{classification.amounts | join(', ')}}{{/if}}
+      {{#if classification.dates.length}}Dates: {{classification.dates | join(', ')}}{{/if}}
+
+      ---
+      {{/if}}
+
+on_error:
+  notify: true
+  retry: 1
