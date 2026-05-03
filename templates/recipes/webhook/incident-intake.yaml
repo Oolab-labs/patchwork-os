@@ -1,0 +1,46 @@
+name: incident-intake
+description: |
+  Convert any external incident signal into a Linear issue + Slack alert.
+  Designed as the catch-all webhook your monitoring stack POSTs to so on-call
+  has one place to look.
+
+  Suggested triggers:
+    - PagerDuty webhook
+    - Sentry alert webhook
+    - Datadog monitor
+    - GitHub Actions failure
+    - external uptime checker
+
+  Payload conventions (all optional except `title`):
+    title       short summary, becomes the Linear issue title
+    severity    "critical" | "high" | "medium" | "low" (default: "high")
+    source      "pagerduty" | "sentry" | "datadog" | ...
+    url         deep link back to the source incident page
+    body        extra detail (markdown ok)
+
+  Example request:
+    curl -X POST http://localhost:3101/hooks/incident-intake \
+      -H 'Content-Type: application/json' \
+      -d '{"title":"checkout p99 over 2s","severity":"high","source":"datadog","url":"https://app.datadoghq.com/monitor/123"}'
+
+trigger:
+  type: webhook
+  path: /incident-intake
+
+steps:
+  - tool: linear.create_issue
+    title: "[{{payload.severity}}] {{payload.title}}"
+    description: |
+      Source: {{payload.source}}
+      Link: {{payload.url}}
+
+      {{payload.body}}
+    priority: 1
+    into: issue
+  - tool: slack.post_message
+    channel: "#incidents"
+    text: |
+      :rotating_light: New incident: *{{payload.title}}*
+      Severity: {{payload.severity}}
+      Source: {{payload.source}} — {{payload.url}}
+      Linear: {{issue.url}}

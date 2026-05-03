@@ -1,0 +1,49 @@
+name: customer-escalation
+description: |
+  When a customer support tool flags a high-priority ticket, enrich it with
+  HubSpot CRM data and ping the right Slack channel with full context. The
+  human still decides how to respond — this just shaves the lookup time.
+
+  Suggested triggers:
+    - Intercom webhook (conversation.tagged-priority)
+    - Zendesk webhook (ticket priority changed)
+    - HelpScout / Front custom rule
+    - manual paste from CSAT dashboards via curl
+
+  Payload conventions:
+    customer_email   the contact email (required — used for HubSpot lookup)
+    ticket_url       deep link back to the support tool
+    summary          short description of what they said
+
+  Example request:
+    curl -X POST http://localhost:3101/hooks/customer-escalation \
+      -H 'Content-Type: application/json' \
+      -d '{"customer_email":"jane@bigco.com","ticket_url":"https://app.intercom.com/conversations/9876","summary":"Says checkout has been broken for 3 days"}'
+
+trigger:
+  type: webhook
+  path: /customer-escalation
+
+steps:
+  - tool: hubspot.find_contact
+    email: "{{payload.customer_email}}"
+    into: contact
+  - tool: hubspot.list_recent_deals
+    contact_id: "{{contact.id}}"
+    max: 3
+    into: deals
+  - agent:
+      prompt: |
+        Compose a Slack alert for the customer-success team. Keep it under
+        12 lines. Include: customer name + company, tier (from contact.tier
+        if present), recent deal context, what they said, and the ticket
+        link. End with a single suggested first move.
+
+        Contact: {{contact}}
+        Deals:   {{deals}}
+        Summary: {{payload.summary}}
+        Ticket:  {{payload.ticket_url}}
+      into: alert
+  - tool: slack.post_message
+    channel: "#customer-success"
+    text: "{{alert}}"

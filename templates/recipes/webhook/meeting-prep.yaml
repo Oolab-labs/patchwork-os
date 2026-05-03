@@ -1,0 +1,48 @@
+name: meeting-prep
+description: |
+  Two minutes before any meeting starts, post a brief on the attendees and
+  recent context (recent email threads, related Linear issues, last meeting
+  notes). Drops the brief into ~/.patchwork/inbox/ and pings you on Slack.
+
+  Suggested triggers:
+    - Calendar webhook ("notify before event") — most reliable
+    - Apple Watch / iOS Shortcut tied to a calendar reminder
+    - Home Assistant routine fired by Apple Calendar event start
+
+  Example request (with attendees + topic in payload):
+    curl -X POST http://localhost:3101/hooks/meeting-prep \
+      -H 'Content-Type: application/json' \
+      -d '{"attendees":["alex@example.com","sam@example.com"],"topic":"Q3 planning"}'
+
+trigger:
+  type: webhook
+  path: /meeting-prep
+
+steps:
+  - tool: gmail.search_threads
+    query: "from:({{payload.attendees}}) newer_than:7d"
+    max: 10
+    into: recent_threads
+  - tool: linear.search_issues
+    query: "{{payload.topic}}"
+    max: 5
+    into: related_issues
+  - agent:
+      prompt: |
+        You are about to walk into a meeting. Produce a 10-line briefing.
+
+        Topic: {{payload.topic}}
+        Attendees: {{payload.attendees}}
+        Recent email threads with attendees: {{recent_threads}}
+        Related Linear issues: {{related_issues}}
+
+        Output sections: Context, Open questions, Suggested first move.
+      into: brief
+  - tool: file.write
+    path: ~/.patchwork/inbox/meeting-{{date}}-{{time}}.md
+    content: |
+      # Meeting prep — {{payload.topic}}
+      {{brief}}
+
+output:
+  path: ~/.patchwork/inbox/meeting-{{date}}-{{time}}.md
