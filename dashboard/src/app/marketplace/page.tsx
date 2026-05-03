@@ -3,7 +3,15 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Skeleton, SkeletonText } from "@/components/Skeleton";
 import { apiPath } from "@/lib/api";
-import { assertValidInstallSource, type RegistryData, type RegistryRecipe, shortName, type RiskLevel, type ApprovalBehavior } from "@/lib/registry";
+import {
+  assertValidInstallSource,
+  type ApprovalBehavior,
+  type RegistryBundle,
+  type RegistryData,
+  type RegistryRecipe,
+  type RiskLevel,
+  shortName,
+} from "@/lib/registry";
 
 // ------------------------------------------------------------------ fallback data (shown when bridge offline)
 
@@ -89,6 +97,45 @@ const FALLBACK_REGISTRY: RegistryData = {
   ],
 };
 
+const FALLBACK_BUNDLES: RegistryBundle[] = [
+  {
+    name: "@patchworkos/gmail-vip-support",
+    version: "1.0.0",
+    description:
+      "Full VIP support pipeline: Gmail connector + triage recipe + escalation recipe + conservative approval policy. One install configures everything.",
+    tags: ["support", "gmail", "productivity"],
+    connectors: ["gmail", "linear", "slack"],
+    install: "github:patchworkos/bundles/bundles/gmail-vip-support",
+    downloads: 0,
+    has_plugin: false,
+    recipe_count: 2,
+    has_policy: true,
+    risk_level: "medium",
+    network_access: true,
+    file_access: false,
+    approval_behavior: "always_ask",
+    maintainer: "@patchworkos",
+  },
+  {
+    name: "@patchworkos/dev-workflow",
+    version: "1.0.0",
+    description:
+      "Developer automation bundle: PR reviewer plugin + sprint-prep recipe + test-failure recipe + developer approval policy.",
+    tags: ["engineering", "github", "developer"],
+    connectors: ["github", "linear", "slack"],
+    install: "github:patchworkos/bundles/bundles/dev-workflow",
+    downloads: 0,
+    has_plugin: true,
+    recipe_count: 3,
+    has_policy: true,
+    risk_level: "medium",
+    network_access: true,
+    file_access: true,
+    approval_behavior: "ask_on_novel",
+    maintainer: "@patchworkos",
+  },
+];
+
 // ------------------------------------------------------------------ constants
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -109,6 +156,9 @@ const PROVIDER_COLORS: Record<string, string> = {
   sentry: "#362D59",
   pagerduty: "#06AC38",
 };
+
+const TYPE_FILTERS = ["All", "Recipes", "Bundles"] as const;
+type TypeFilter = (typeof TYPE_FILTERS)[number];
 
 const CATEGORIES = ["All", "Productivity", "Incident Ops", "Engineering", "Customer", "Sales"];
 
@@ -151,6 +201,17 @@ function recipeMatchesCategory(recipe: RegistryRecipe, category: string): boolea
   if (category === "All") return true;
   const allowed = CATEGORY_TAG_MAP[category] ?? [];
   return recipe.tags.some((t) => allowed.includes(t.toLowerCase()));
+}
+
+function bundleMatchesSearch(bundle: RegistryBundle, search: string): boolean {
+  if (!search.trim()) return true;
+  const q = search.toLowerCase();
+  return (
+    bundle.name.toLowerCase().includes(q) ||
+    bundle.description.toLowerCase().includes(q) ||
+    bundle.tags.some((t) => t.toLowerCase().includes(q)) ||
+    bundle.connectors.some((c) => c.toLowerCase().includes(q))
+  );
 }
 
 // ------------------------------------------------------------------ toast
@@ -402,15 +463,92 @@ function RecipeCard({
   );
 }
 
+// ------------------------------------------------------------------ bundle card
+
+function BundleCard({ bundle }: { bundle: RegistryBundle }) {
+  const displayTags = bundle.tags.slice(0, 2);
+
+  return (
+    <div className="template-card glass-card">
+      {/* top: name + tags */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: "var(--s-2)" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--fg-0)", wordBreak: "break-word", lineHeight: 1.4 }}>
+            {shortName(bundle.name)}
+          </span>
+          <span style={{ fontSize: 10, color: "var(--fg-3)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            Bundle
+          </span>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end", flexShrink: 0 }}>
+          {displayTags.map((tag) => (
+            <span key={tag} className="tag-pill">{tag}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* description */}
+      <p style={{ fontSize: 12, color: "var(--fg-2)", lineHeight: 1.55, flex: 1, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", margin: 0 }}>
+        {bundle.description}
+      </p>
+
+      {/* what's included */}
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: "var(--s-2)" }}>
+        {bundle.recipe_count != null && (
+          <span className="pill muted" style={{ fontSize: 9 }}>
+            {bundle.recipe_count} recipe{bundle.recipe_count !== 1 ? "s" : ""}
+          </span>
+        )}
+        {bundle.has_plugin && (
+          <span className="pill muted" style={{ fontSize: 9 }}>plugin</span>
+        )}
+        {bundle.has_policy && (
+          <span className="pill muted" style={{ fontSize: 9 }}>policy</span>
+        )}
+        {bundle.risk_level && (
+          <span className={`pill ${RISK_PILL_CLASS[bundle.risk_level]}`} style={{ fontSize: 9 }}>
+            {bundle.risk_level} risk
+          </span>
+        )}
+        {bundle.approval_behavior && (
+          <span className="pill muted" style={{ fontSize: 9 }}>
+            {APPROVAL_LABEL[bundle.approval_behavior]}
+          </span>
+        )}
+      </div>
+
+      {/* bottom: connectors */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "var(--s-3)", gap: "var(--s-2)" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {bundle.connectors.map((c) => (
+            <span key={c} className="connector-dot" title={c} style={{ background: connectorColor(c) }} aria-label={c}>
+              {connectorInitials(c)}
+            </span>
+          ))}
+        </div>
+        <a
+          href={`/marketplace/bundle/${encodeURIComponent(bundle.name)}`}
+          className="btn sm"
+          style={{ textDecoration: "none", flexShrink: 0 }}
+        >
+          View bundle
+        </a>
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ page
 
 export default function MarketplacePage() {
   const [registry, setRegistry] = useState<RegistryRecipe[] | null>(null);
+  const [bundles, setBundles] = useState<RegistryBundle[]>(FALLBACK_BUNDLES);
   const [installedNames, setInstalledNames] = useState<Set<string>>(new Set());
   const [bridgeOnline, setBridgeOnline] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("All");
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -466,6 +604,22 @@ export default function MarketplacePage() {
       }
 
       setRegistry(recipes ?? FALLBACK_REGISTRY.recipes);
+
+      // Bundles: parse from registry if present (registry v2+), else use fallback
+      if (!recipes) return;
+      try {
+        const res = await fetch(
+          "https://raw.githubusercontent.com/patchworkos/recipes/main/index.json",
+        );
+        if (res.ok) {
+          const data = (await res.json()) as RegistryData;
+          if (data.bundles && data.bundles.length > 0) {
+            setBundles(data.bundles);
+          }
+        }
+      } catch {
+        // keep fallback bundles
+      }
     }
 
     load().catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
@@ -512,6 +666,12 @@ export default function MarketplacePage() {
       r.connectors.some((c) => c.toLowerCase().includes(q))
     );
   });
+
+  const filteredBundles = bundles.filter((b) => bundleMatchesSearch(b, search));
+
+  const showRecipes = typeFilter === "All" || typeFilter === "Recipes";
+  const showBundles = typeFilter === "All" || typeFilter === "Bundles";
+  const totalVisible = (showRecipes ? filtered.length : 0) + (showBundles ? filteredBundles.length : 0);
 
   return (
     <section>
@@ -565,7 +725,7 @@ export default function MarketplacePage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {registry && (
             <span className="pill muted">
-              {filtered.length} recipe{filtered.length !== 1 ? "s" : ""}
+              {totalVisible} item{totalVisible !== 1 ? "s" : ""}
             </span>
           )}
           <a
@@ -576,7 +736,7 @@ export default function MarketplacePage() {
             style={{ textDecoration: "none", fontSize: 12 }}
             aria-label="Submit a recipe to the marketplace"
           >
-            Submit a recipe →
+            Submit →
           </a>
         </div>
       </div>
@@ -590,17 +750,43 @@ export default function MarketplacePage() {
           marginBottom: "var(--s-6)",
         }}
       >
+        {/* type filter */}
+        <div style={{ display: "flex", gap: "var(--s-2)" }}>
+          {TYPE_FILTERS.map((tf) => (
+            <button
+              key={tf}
+              type="button"
+              onClick={() => setTypeFilter(tf)}
+              style={{
+                padding: "3px 12px",
+                borderRadius: "var(--r-full)",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+                border: "1px solid",
+                transition: "all 0.15s",
+                borderColor: typeFilter === tf ? "var(--accent)" : "var(--border-default)",
+                background: typeFilter === tf ? "var(--accent-soft)" : "transparent",
+                color: typeFilter === tf ? "var(--accent-strong)" : "var(--fg-2)",
+              }}
+              aria-pressed={typeFilter === tf}
+            >
+              {tf}
+            </button>
+          ))}
+        </div>
+
         <input
           type="search"
           className="input"
-          placeholder="Search recipes (name, tags, connectors)…"
+          placeholder="Search by name, tags, connectors…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ maxWidth: 360 }}
-          aria-label="Search marketplace recipes"
+          aria-label="Search marketplace"
         />
 
-        <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
+        {showRecipes && <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
           {CATEGORIES.map((cat) => (
             <button
               key={cat}
@@ -623,7 +809,7 @@ export default function MarketplacePage() {
               {cat}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
 
       {loadErr && (
@@ -650,23 +836,50 @@ export default function MarketplacePage() {
             </div>
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : totalVisible === 0 ? (
         <div className="empty-state">
-          <h3>No recipes found</h3>
+          <h3>No results found</h3>
           <p>Try a different search term or category.</p>
         </div>
       ) : (
-        <div className="marketplace-grid">
-          {filtered.map((recipe) => (
-            <RecipeCard
-              key={recipe.name}
-              recipe={recipe}
-              installed={installedNames.has(recipe.name)}
-              bridgeOnline={bridgeOnline}
-              onInstall={handleInstall}
-            />
-          ))}
-        </div>
+        <>
+          {showRecipes && filtered.length > 0 && (
+            <>
+              {typeFilter === "All" && (
+                <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: 0 }}>
+                  Recipes
+                </h2>
+              )}
+              <div className="marketplace-grid">
+                {filtered.map((recipe) => (
+                  <RecipeCard
+                    key={recipe.name}
+                    recipe={recipe}
+                    installed={installedNames.has(recipe.name)}
+                    bridgeOnline={bridgeOnline}
+                    onInstall={handleInstall}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {showBundles && filteredBundles.length > 0 && (
+            <>
+              <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-2)", marginBottom: "var(--s-3)", marginTop: showRecipes && filtered.length > 0 ? "var(--s-8)" : 0 }}>
+                Bundles
+                <span style={{ marginLeft: 8, fontWeight: 400, fontSize: 11, color: "var(--fg-3)" }}>
+                  Plugin + recipes + policy in one install
+                </span>
+              </h2>
+              <div className="marketplace-grid">
+                {filteredBundles.map((bundle) => (
+                  <BundleCard key={bundle.name} bundle={bundle} />
+                ))}
+              </div>
+            </>
+          )}
+        </>
       )}
     </section>
   );

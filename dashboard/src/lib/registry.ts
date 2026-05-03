@@ -35,10 +35,78 @@ export interface RegistryRecipe extends TrustMetadata {
   downloads: number;
 }
 
+/**
+ * A capability bundle packages a plugin + recipes + policy template +
+ * connector requirements into a single installable unit.
+ *
+ * Structure on disk / in the registry:
+ *
+ *   my-bundle/
+ *     patchwork-bundle.json   ← this manifest
+ *     recipes/                ← one or more recipe YAML files
+ *     policy-template.json    ← delegation policy fragment (optional)
+ *     plugin/                 ← npm package or local plugin dir (optional)
+ *     README.md
+ *
+ * The install field uses the same `github:owner/repo/path@ref` shape
+ * as RegistryRecipe so the same parseInstallSource helper works.
+ */
+export interface BundleManifest {
+  /** Scoped package name, e.g. "@patchworkos/gmail-vip-support". */
+  name: string;
+  version: string;
+  description: string;
+  /** Short human label shown in the marketplace tile. */
+  display_name?: string;
+  author?: string;
+  license?: string;
+  homepage?: string;
+  tags: string[];
+  /** Connector namespaces required by the bundle (e.g. "gmail", "linear"). */
+  connectors: string[];
+  /** Recipe YAML files included in the bundle (relative paths). */
+  recipes: string[];
+  /**
+   * npm package name of the companion plugin, if the bundle ships one.
+   * When present the install flow prompts the user to `npm install -g`
+   * the plugin before activating recipes.
+   */
+  plugin?: string;
+  /**
+   * Relative path to the policy-template.json fragment inside the bundle.
+   * Applied with user confirmation during install — never silently.
+   */
+  policy_template?: string;
+  /**
+   * Environment variable names the bundle requires (connector credentials,
+   * API keys, etc.). Shown as a checklist before install.
+   */
+  required_env?: string[];
+} & TrustMetadata;
+
+export interface RegistryBundle extends TrustMetadata {
+  name: string;
+  version: string;
+  description: string;
+  tags: string[];
+  connectors: string[];
+  /** Same `github:owner/repo/path@ref` shape as RegistryRecipe. */
+  install: string;
+  downloads: number;
+  /** Whether the bundle ships a companion plugin. */
+  has_plugin?: boolean;
+  /** Number of recipes included in the bundle. */
+  recipe_count?: number;
+  /** Whether the bundle includes a policy template fragment. */
+  has_policy?: boolean;
+}
+
 export interface RegistryData {
   version: string;
   updated_at: string;
   recipes: RegistryRecipe[];
+  /** Capability bundles (plugin + recipes + policy template). Added in registry v2. */
+  bundles?: RegistryBundle[];
 }
 
 export interface RecipeManifest {
@@ -178,6 +246,21 @@ export function summarizeRisk(yaml: string): {
   const high = (yaml.match(/^\s*risk:\s*high\b/gm) ?? []).length;
   const steps = (yaml.match(/^\s*-\s*id:\s+\S/gm) ?? []).length;
   return { low, medium, high, steps };
+}
+
+export async function fetchBundleManifest(
+  src: ParsedInstallSource,
+  opts: FetchOpts = {},
+): Promise<BundleManifest | null> {
+  try {
+    const res = await fetch(rawUrlFor(src, "patchwork-bundle.json"), {
+      next: { revalidate: opts.revalidate ?? 300 },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as BundleManifest;
+  } catch {
+    return null;
+  }
 }
 
 /** Strip the `@scope/` prefix for display. */
