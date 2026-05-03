@@ -1284,6 +1284,11 @@ export class Bridge {
     // undefined when no orchestrator is configured; that's fine — h6
     // silently skips and the other 11 heuristics still compute.
     this.server.recipeRunLog = this.recipeRunLog ?? undefined;
+    // Opt-in switch for personalSignals h10 (time-of-day anomaly).
+    // Default false; user enables via --enable-time-of-day-anomaly or
+    // ~/.patchwork/config.json's enableTimeOfDayAnomaly field.
+    this.server.enableTimeOfDayAnomaly =
+      this.config.enableTimeOfDayAnomaly ?? false;
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
       const anySession = [...this.sessions.values()][0];
