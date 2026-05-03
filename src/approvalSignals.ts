@@ -19,6 +19,7 @@
  *      from the catalog is satisfied by the first_connector_use kind above)
  *   7. "Risk tier escalation" — current tier exceeds the user's typical
  *      approved tier across recent decisions
+ *   8. "Often runs alongside X" — co-occurrence pairing in recent activity
  *
  * The signals are **transparent**: every signal has a `source` enum so a
  * future "why is this signal here?" UI can link back to the rows that
@@ -42,7 +43,8 @@ export interface PersonalSignal {
     | "first_connector_use"
     | "first_tool_use"
     | "stale_tool_use"
-    | "tier_escalation";
+    | "tier_escalation"
+    | "cooccurrence_pattern";
   /** Human-facing label suitable for an approval modal line. */
   label: string;
   /** Severity controls visual weight. low = informational, high = warning. */
@@ -81,6 +83,16 @@ const STALE_TOOL_HIGH_DAYS = 30;
 const TIER_BASELINE_MIN_SAMPLES = 5;
 
 const TIER_RANK: Record<RiskTier, number> = { low: 0, medium: 1, high: 2 };
+
+/**
+ * Window for co-occurrence detection — 15 minutes lines up with the
+ * catalog's heuristic 8 description and is wide enough to capture an
+ * "I'm in the middle of doing X" workflow without crossing session
+ * boundaries.
+ */
+const COOCCURRENCE_WINDOW_MS = 15 * 60 * 1_000;
+/** Minimum co-occurrence count before the chip surfaces. < 3 is noise. */
+const COOCCURRENCE_MIN_COUNT = 3;
 
 /**
  * Compute the personal-signal set for an incoming approval request.
@@ -222,6 +234,34 @@ export function computePersonalSignals(input: {
         });
       }
     }
+  }
+
+  // Heuristic 8: "Often runs alongside X."
+  // Informational chip — when the user calls this tool it tends to run
+  // near another tool (within 15min). Surfaces the strongest partner.
+  // Distinct from heuristic 1 (history of THIS tool); this signal is
+  // about the workflow shape: "you're probably mid-deploy" / "this is
+  // your morning-brief sequence". Severity always low — this is context,
+  // not warning. Catalog flags this as medium-FP, so we underclaim.
+  const pairs = activityLog.coOccurrence(COOCCURRENCE_WINDOW_MS);
+  let bestPartner: { name: string; count: number } | null = null;
+  for (const { pair, count } of pairs) {
+    if (count < COOCCURRENCE_MIN_COUNT) continue;
+    const [a, b] = pair.split("|");
+    const partner = a === toolName ? b : b === toolName ? a : null;
+    if (!partner) continue;
+    // pairs is sorted by count desc, so the first match is the strongest.
+    bestPartner = { name: partner, count };
+    break;
+  }
+  if (bestPartner) {
+    signals.push({
+      kind: "cooccurrence_pattern",
+      label: `Often runs alongside ${bestPartner.name} (${bestPartner.count} co-occurrences in your recent activity).`,
+      severity: "low",
+      source: "activity_history",
+      count: bestPartner.count,
+    });
   }
 
   return signals;
