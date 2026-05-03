@@ -1,0 +1,45 @@
+{
+  "_comment": "Headless CI policy — designed for fully unattended pipeline execution.",
+  "_description": "Auto-approve everything needed to build, test, and deploy. Block operations that would pause for human input or mutate outside the workspace scope. Copy to project .claude/settings.json in CI environments.",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "WebSearch",
+      "WebFetch(*)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(pip *)",
+      "Bash(pip3 *)",
+      "Bash(git *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(cat *)",
+      "Bash(echo *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(rm *)",
+      "Bash(chmod *)",
+      "Bash(curl *)",
+      "Bash(docker build *)",
+      "Bash(docker push *)",
+      "Bash(docker run *)",
+      "mcp__patchwork__runRecipe(*)",
+      "mcp__patchwork__gitPush(*)",
+      "mcp__patchwork__githubCreatePR(*)"
+    ],
+    "ask": [],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(su *)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | bash*)"
+    ]
+  }
+}

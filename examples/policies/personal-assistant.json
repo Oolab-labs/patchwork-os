@@ -1,0 +1,38 @@
+{
+  "_comment": "Personal-assistant policy — for life-automation, home, and personal productivity.",
+  "_description": "Generous read + write access for personal workflows. Approve recipe runs and web requests automatically. Ask before sending email, making purchases, or modifying calendar events. Block system-level commands.",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "WebSearch",
+      "WebFetch(*)",
+      "mcp__patchwork__runRecipe(*)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(cat *)",
+      "Bash(echo *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)"
+    ],
+    "ask": [
+      "mcp__patchwork__sendEmail(*)",
+      "mcp__patchwork__calendarCreate(*)",
+      "mcp__patchwork__calendarUpdate(*)",
+      "mcp__patchwork__calendarDelete(*)",
+      "Bash(curl * -X POST *)",
+      "Bash(curl * -X PUT *)",
+      "Bash(curl * -X DELETE *)",
+      "Bash(rm *)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(su *)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | bash*)",
+      "Bash(rm -rf *)"
+    ]
+  }
+}
