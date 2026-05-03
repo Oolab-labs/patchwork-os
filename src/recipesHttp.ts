@@ -597,6 +597,64 @@ export function deleteRecipeContent(
 }
 
 /**
+ * Duplicate a recipe as a variant. Copies the source YAML, rewrites the
+ * `name:` field to `<original>-v<N>` (first available suffix), and writes
+ * the copy to disk. Returns the new variant name and path on success.
+ *
+ * The variant name follows the same validation rules as recipe names.
+ * Suffixes v2..v9 are tried before returning an error.
+ */
+export function duplicateRecipe(
+  recipesDir: string,
+  sourceName: string,
+): {
+  ok: boolean;
+  variantName?: string;
+  path?: string;
+  error?: string;
+} {
+  const safeName = sourceName.toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(safeName)) {
+    return { ok: false, error: "Invalid recipe name" };
+  }
+  const source = loadRecipeContent(recipesDir, safeName);
+  if (!source) {
+    return { ok: false, error: "Recipe not found" };
+  }
+
+  // Determine next available variant name: strip any existing -vN suffix,
+  // then try -v2 through -v9.
+  const base = safeName.replace(/-v\d+$/, "");
+  let variantName: string | null = null;
+  for (let n = 2; n <= 9; n++) {
+    const candidate = `${base}-v${n}`;
+    if (!findYamlRecipePath(recipesDir, candidate)) {
+      variantName = candidate;
+      break;
+    }
+  }
+  if (!variantName) {
+    return {
+      ok: false,
+      error: "Too many variants already exist (v2–v9 taken)",
+    };
+  }
+
+  // Rewrite the name: field in the YAML. Simple line-by-line replacement
+  // is safe here: the name field is always a scalar on its own line.
+  const newContent = source.content.replace(
+    /^name:\s*.+$/m,
+    `name: ${variantName}`,
+  );
+
+  const saveResult = saveRecipeContent(recipesDir, variantName, newContent);
+  if (!saveResult.ok) {
+    return { ok: false, error: saveResult.error };
+  }
+  return { ok: true, variantName, path: saveResult.path };
+}
+
+/**
  * Lints raw YAML/JSON recipe content without writing to disk. Used by the
  * dashboard edit UI to surface validateRecipeDefinition warnings live, in
  * addition to the warnings returned by saveRecipeContent on save.

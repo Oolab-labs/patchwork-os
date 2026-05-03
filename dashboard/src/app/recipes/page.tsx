@@ -578,6 +578,27 @@ export default function RecipesPage() {
     setModalRunning(false);
   }
 
+  async function handleDuplicate(name: string) {
+    try {
+      const res = await fetch(
+        apiPath(`/api/bridge/recipes/${encodeURIComponent(name)}/duplicate`),
+        { method: "POST" },
+      );
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        variantName?: string;
+        error?: string;
+      };
+      if (!res.ok || !body.ok) {
+        setErr(body.error ?? `duplicate failed: ${res.status}`);
+        return;
+      }
+      void load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function handleDelete(name: string) {
     if (
       typeof window !== "undefined" &&
@@ -930,6 +951,15 @@ export default function RecipesPage() {
                               Test
                             </button>
                           )}
+                          <button
+                            type="button"
+                            className="btn sm ghost"
+                            style={{ fontSize: 11, padding: "2px 8px" }}
+                            title="Duplicate recipe as variant"
+                            onClick={() => void handleDuplicate(r.name)}
+                          >
+                            Fork
+                          </button>
                           <button
                             type="button"
                             className="btn sm ghost"
