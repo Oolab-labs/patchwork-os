@@ -1,6 +1,7 @@
 "use client";
 import { Fragment, useMemo, useState } from "react";
 import { relTime } from "@/components/time";
+import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
 import { arr, isRecord, shape, type ShapeCheck } from "@/lib/validate";
 
@@ -281,9 +282,19 @@ export default function TracesPage() {
             Approval history, recipe runs, and enrichment links.
           </div>
         </div>
-        <span className="pill muted">
-          {traces.length} trace{traces.length !== 1 ? "s" : ""}
-        </span>
+        <div style={{ display: "flex", gap: "var(--s-3)", alignItems: "center" }}>
+          <span className="pill muted">
+            {traces.length} trace{traces.length !== 1 ? "s" : ""}
+          </span>
+          <a
+            href={apiPath("/api/bridge/traces/export")}
+            download
+            className="btn sm"
+            style={{ textDecoration: "none" }}
+          >
+            Export
+          </a>
+        </div>
       </div>
 
       {/* filter bar */}
