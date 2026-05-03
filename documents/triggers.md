@@ -34,7 +34,7 @@ What happens:
 
 1. The bridge looks up `~/.patchwork/recipes/*.yaml` for a recipe whose trigger declares `path: /hooks/<your-path-here>`.
 2. If found, the recipe runs with `payload` (the parsed JSON body) bound into the template context.
-3. Approval gates fire on any write/external step — the recipe doesn't bypass policy because a webhook fired it.
+3. Your delegation policy fires on any write/external step — the recipe doesn't bypass policy because a webhook fired it.
 
 Returns:
 
@@ -64,12 +64,11 @@ Or read it from the lock file: `~/.claude/ide/<port>.lock`'s `authToken` field.
 Save this as `~/.patchwork/recipes/capture-thought.yaml`:
 
 ```yaml
-apiVersion: patchwork.sh/v1
 name: capture-thought
 description: Append a payload to ~/.patchwork/inbox/thoughts.md with timestamp
 trigger:
   type: webhook
-  path: /hooks/thought
+  path: /thought
 steps:
   - tool: file.append
     path: ~/.patchwork/inbox/thoughts.md
@@ -78,6 +77,8 @@ steps:
       {{payload.text}}
       ---
 ```
+
+> **Note on the path field.** The recipe declares `path: /thought` but you POST to `/hooks/thought`. The bridge serves `/hooks/<path>` on its HTTP listener and looks up recipes whose `trigger.path` matches the suffix — don't include `/hooks/` in `trigger.path` or it will never fire. Five ready-to-copy webhook recipes (capture-thought, morning-brief, meeting-prep, incident-intake, customer-escalation) ship in [`templates/recipes/webhook/`](../templates/recipes/webhook/).
 
 Confirm it's installed:
 
@@ -302,9 +303,10 @@ Fires only on `patchwork run <recipe-name>`. Useful for one-shots and debug reci
 
 Webhooks don't bypass anything. Specifically:
 
-- **Approval gates still fire.** A webhook recipe that writes to disk or calls a connector still goes through `--approval-gate` if active. Risk-tier escalation works the same way.
+- **Delegation policy still fires.** A webhook recipe that writes to disk or calls a connector still goes through `--approval-gate` (the CLI flag is preserved for back-compat; the user-facing concept is the delegation policy — see [`templates/policies/`](../templates/policies/) for persona presets). Risk-tier escalation works the same way.
 - **Trace memory still records.** Every webhook-triggered run lands in `~/.patchwork/runs.jsonl` with the full lifecycle. `patchwork traces export` includes it.
 - **The dashboard shows in-flight runs.** Open `http://localhost:3100/runs` to watch a webhook-fired recipe execute step by step.
+- **The dashboard surfaces the URL + curl + last payload per recipe.** Expand any webhook recipe row at `/recipes` to copy the full URL, copy a runnable `curl` example, and inspect the last 5 payloads received (most recent on top, with ok/err status, timestamps, and pretty-printed JSON bodies). The Test button fires a sample POST so you can confirm the wiring before configuring an external trigger.
 - **Replay works.** Webhook-fired runs can be mocked-replayed via `POST /runs/:seq/replay` like any other run.
 
 ---
