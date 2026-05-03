@@ -954,6 +954,7 @@ export class Server extends EventEmitter<ServerEvents> {
             ) as {
               webhookUrl?: string;
               approvalGate?: string;
+              enableTimeOfDayAnomaly?: boolean;
               driver?: string;
               model?: string;
               localEndpoint?: string;
@@ -1000,6 +1001,23 @@ export class Server extends EventEmitter<ServerEvents> {
             if (gateRaw !== undefined) {
               cfg.approvalGate = gateRaw as "off" | "high" | "all";
               this.approvalGate = gateRaw as "off" | "high" | "all";
+            }
+            // h10 toggle: must be boolean if present. Persists to
+            // ~/.patchwork/config.json AND live-mutates the Server
+            // field so the next /approvals POST honors it without
+            // needing a bridge restart.
+            if (body.enableTimeOfDayAnomaly !== undefined) {
+              if (typeof body.enableTimeOfDayAnomaly !== "boolean") {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(
+                  JSON.stringify({
+                    error: "enableTimeOfDayAnomaly must be a boolean",
+                  }),
+                );
+                return;
+              }
+              cfg.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
+              this.enableTimeOfDayAnomaly = body.enableTimeOfDayAnomaly;
             }
             const driverRaw = body.driver;
             if (driverRaw !== undefined) {
