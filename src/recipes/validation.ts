@@ -290,6 +290,18 @@ function registerRecipeContextKeys(
     availableKeys.add("branch");
   }
 
+  // Webhook triggers: the seed context the bridge passes to the runner
+  // (recipeOrchestration.ts:290-296) sets these four keys. `payload` is the
+  // raw JSON body (or stringified non-JSON), accessible via dotted paths
+  // (e.g. `{{payload.text}}`) — the renderer JSON-parses string
+  // intermediates on the fly (yamlRunner.ts:870-878).
+  if (trigger?.type === "webhook") {
+    availableKeys.add("payload");
+    availableKeys.add("webhook_payload");
+    availableKeys.add("hook_path");
+    availableKeys.add("webhook_path");
+  }
+
   if (trigger?.type === "on_file_save" || trigger?.type === "file_watch") {
     availableKeys.add("file");
   }

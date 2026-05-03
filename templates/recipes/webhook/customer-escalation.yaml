@@ -43,7 +43,7 @@ steps:
         Deals:   {{deals}}
         Summary: {{payload.summary}}
         Ticket:  {{payload.ticket_url}}
-      output: alert
+      into: alert
   - tool: slack.post_message
     channel: "#customer-success"
     text: "{{alert}}"

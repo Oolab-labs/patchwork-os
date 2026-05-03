@@ -37,7 +37,7 @@ steps:
         Related Linear issues: {{related_issues}}
 
         Output sections: Context, Open questions, Suggested first move.
-      output: brief
+      into: brief
   - tool: file.write
     path: ~/.patchwork/inbox/meeting-{{date}}-{{time}}.md
     content: |

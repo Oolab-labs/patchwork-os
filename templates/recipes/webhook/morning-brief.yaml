@@ -46,7 +46,7 @@ steps:
         GitHub issues (mine): {{issues}}
         Linear (mine):        {{linear_issues}}
         Calendar (next 24h):  {{calendar}}
-      output: brief
+      into: brief
   - tool: file.write
     path: ~/.patchwork/inbox/morning-brief-{{date}}.md
     content: |
