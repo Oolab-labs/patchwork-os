@@ -7,16 +7,24 @@ Claude IDE Bridge supports third-party plugins that register additional MCP tool
 ## Quick Start
 
 ```bash
-# Scaffold a new plugin
+# Scaffold a new plugin (JavaScript)
 claude-ide-bridge gen-plugin-stub ./my-plugin \
   --name "my-org/my-plugin" \
   --prefix "myPlugin"
+
+# Or scaffold the TypeScript variant — adds tsconfig.json + build/dev scripts
+claude-ide-bridge gen-plugin-stub ./my-plugin \
+  --name "my-org/my-plugin" \
+  --prefix "myPlugin" \
+  --ts
 
 # Run the bridge with your plugin loaded
 claude-ide-bridge --plugin ./my-plugin --full
 ```
 
-The stub creates three files: `claude-ide-bridge-plugin.json`, `index.mjs`, and `package.json`.
+The JS stub creates: `claude-ide-bridge-plugin.json`, `index.mjs`, `package.json`, `README.md`, `.gitignore`.
+
+The TS stub adds: `src/index.ts`, `tsconfig.json`, plus `build` / `dev` / `clean` npm scripts. The compiled artifact lands at `index.mjs` (same path the manifest points at), so hot-reload semantics don't change. Run `npm run dev` in one terminal, `claude-ide-bridge --plugin . --plugin-watch` in another — `tsc --watch` rebuilds, the bridge reloads, your tool is callable on the next turn.
 
 ---
 
