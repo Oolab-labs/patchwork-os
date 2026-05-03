@@ -20,6 +20,8 @@
  *   7. "Risk tier escalation" — current tier exceeds the user's typical
  *      approved tier across recent decisions
  *   8. "Often runs alongside X" — co-occurrence pairing in recent activity
+ *   9. "Workspace mismatch" — call from a workspace that has never
+ *      approved this tool before
  *  12. "Cooldown breach" — same tool fired N+ times in a short window
  *
  * The signals are **transparent**: every signal has a `source` enum so a
@@ -46,7 +48,8 @@ export interface PersonalSignal {
     | "stale_tool_use"
     | "tier_escalation"
     | "cooccurrence_pattern"
-    | "cooldown_breach";
+    | "cooldown_breach"
+    | "workspace_mismatch";
   /** Human-facing label suitable for an approval modal line. */
   label: string;
   /** Severity controls visual weight. low = informational, high = warning. */
@@ -126,8 +129,16 @@ export function computePersonalSignals(input: {
    * tier-escalation evaluation.
    */
   currentTier?: RiskTier;
+  /**
+   * Absolute workspace path of the *current* call, used by heuristic 9
+   * (workspace mismatch). Optional — when omitted, h9 is skipped.
+   * Approval-decision rows persisted before workspace was captured on
+   * the lifecycle metadata also degrade gracefully (treated as having
+   * no baseline).
+   */
+  currentWorkspace?: string;
 }): PersonalSignal[] {
-  const { toolName, activityLog, currentTier } = input;
+  const { toolName, activityLog, currentTier, currentWorkspace } = input;
   if (!toolName) return [];
 
   const signals: PersonalSignal[] = [];
@@ -279,6 +290,40 @@ export function computePersonalSignals(input: {
     });
   }
 
+  // Heuristic 9: "Workspace mismatch."
+  // Surfaces when this tool has been approved (allow OR deny — any
+  // human decision counts as a "this workspace has seen this tool"
+  // signal) in other workspaces but not in the one the call is coming
+  // from. Catches "I just opened a new project and the agent wants to
+  // run the same risky tool — fresh workspace, no consent record."
+  // Skipped when currentWorkspace is missing (test fixtures, callers
+  // without a workspace context).
+  if (currentWorkspace) {
+    const allDecisions = activityLog.queryApprovalDecisions({ toolName });
+    const seenWorkspaces = new Set<string>();
+    let priorWithWorkspace = 0;
+    for (const e of allDecisions) {
+      const ws = e.metadata?.workspace;
+      if (typeof ws === "string" && ws.length > 0) {
+        seenWorkspaces.add(ws);
+        priorWithWorkspace++;
+      }
+    }
+    // Need ≥ 1 prior decision *with workspace metadata* to claim a
+    // baseline. Older rows lacking the field can't tell us anything.
+    if (priorWithWorkspace > 0 && !seenWorkspaces.has(currentWorkspace)) {
+      signals.push({
+        kind: "workspace_mismatch",
+        label: workspaceMismatchLabel(seenWorkspaces.size),
+        // Catalog says "FP low" — workspace is a strong intent boundary.
+        // But it's still informational rather than a hard warning.
+        severity: "medium",
+        source: "approval_history",
+        count: seenWorkspaces.size,
+      });
+    }
+  }
+
   // Heuristic 12: "Cooldown breach."
   // Same tool fired N+ times within a short window — pattern of a runaway
   // loop, panicked retry, or stuck recipe. Distinct from heuristic 1
@@ -301,6 +346,13 @@ export function computePersonalSignals(input: {
   }
 
   return signals;
+}
+
+function workspaceMismatchLabel(otherCount: number): string {
+  if (otherCount === 1) {
+    return "Approved in a different workspace before — first time you've allowed it here.";
+  }
+  return `Approved in ${otherCount} other workspaces before — first time you've allowed it here.`;
 }
 
 function cooldownBreachLabel(count: number): string {

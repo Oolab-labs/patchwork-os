@@ -509,6 +509,101 @@ describe("computePersonalSignals", () => {
     });
   });
 
+  describe("heuristic 9 — workspace mismatch", () => {
+    function logWithWorkspaceApprovals(
+      rows: Array<{ toolName: string; workspace: string }>,
+    ) {
+      const log = new ActivityLog();
+      for (const r of rows) {
+        log.recordEvent("approval_decision", {
+          toolName: r.toolName,
+          decision: "allow",
+          workspace: r.workspace,
+        });
+      }
+      return log;
+    }
+
+    it("surfaces when this workspace has no prior approval but others do", () => {
+      const log = logWithWorkspaceApprovals([
+        { toolName: "Bash", workspace: "/repo/alpha" },
+        { toolName: "Bash", workspace: "/repo/alpha" },
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentWorkspace: "/repo/beta",
+      });
+      const sig = signals.find((s) => s.kind === "workspace_mismatch");
+      expect(sig).toBeDefined();
+      expect(sig?.severity).toBe("medium");
+      expect(sig?.count).toBe(1); // 1 other unique workspace
+      expect(sig?.label).toMatch(/different workspace/);
+    });
+
+    it("does not surface when current workspace has prior approval", () => {
+      const log = logWithWorkspaceApprovals([
+        { toolName: "Bash", workspace: "/repo/alpha" },
+        { toolName: "Bash", workspace: "/repo/beta" },
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentWorkspace: "/repo/beta",
+      });
+      expect(
+        signals.find((s) => s.kind === "workspace_mismatch"),
+      ).toBeUndefined();
+    });
+
+    it("does not surface when no prior rows carry workspace metadata", () => {
+      // Older rows (pre-this-PR) — no workspace field. h9 must treat as
+      // "no baseline" rather than firing on every call.
+      const log = new ActivityLog();
+      log.recordEvent("approval_decision", {
+        toolName: "Bash",
+        decision: "allow",
+      });
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentWorkspace: "/repo/beta",
+      });
+      expect(
+        signals.find((s) => s.kind === "workspace_mismatch"),
+      ).toBeUndefined();
+    });
+
+    it("counts unique workspaces, not raw rows", () => {
+      const log = logWithWorkspaceApprovals([
+        { toolName: "Bash", workspace: "/repo/alpha" },
+        { toolName: "Bash", workspace: "/repo/alpha" },
+        { toolName: "Bash", workspace: "/repo/alpha" },
+        { toolName: "Bash", workspace: "/repo/gamma" },
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentWorkspace: "/repo/beta",
+      });
+      const sig = signals.find((s) => s.kind === "workspace_mismatch");
+      expect(sig?.count).toBe(2); // alpha + gamma
+    });
+
+    it("is silent when currentWorkspace omitted", () => {
+      const log = logWithWorkspaceApprovals([
+        { toolName: "Bash", workspace: "/repo/alpha" },
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      expect(
+        signals.find((s) => s.kind === "workspace_mismatch"),
+      ).toBeUndefined();
+    });
+  });
+
   describe("heuristic 12 — cooldown breach", () => {
     function logWithBurst(toolName: string, count: number, gapMs = 1_000) {
       const log = new ActivityLog();
