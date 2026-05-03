@@ -1575,6 +1575,7 @@ if (process.argv[2] === "traces" && process.argv[3] === "import") {
       let activityDir: string | undefined;
       let mode: "append" | "overwrite" = "append";
       let dryRun = false;
+      let passphrase: string | undefined;
       for (let i = 0; i < args.length; i++) {
         const a = args[i];
         if (a === "--patchwork-dir") {
@@ -1593,21 +1594,25 @@ if (process.argv[2] === "traces" && process.argv[3] === "import") {
           }
           mode = m;
           i++;
+        } else if (a === "--passphrase") {
+          passphrase = args[i + 1];
+          i++;
         } else if (a === "--dry-run") {
           dryRun = true;
         } else if (a === "--help" || a === "-h") {
           process.stdout.write(
-            "patchwork traces import <bundle.jsonl.gz> [--mode append|overwrite] [--dry-run]\n" +
-              "                              [--patchwork-dir <dir>] [--activity-dir <dir>]\n\n" +
+            "patchwork traces import <bundle> [--mode append|overwrite] [--dry-run]\n" +
+              "                        [--passphrase <phrase>]\n" +
+              "                        [--patchwork-dir <dir>] [--activity-dir <dir>]\n\n" +
               "Restore a bundle written by `patchwork traces export` into the local\n" +
               "patchwork dirs (~/.patchwork/ and ~/.claude/ide/ by default).\n\n" +
+              "Formats:\n" +
+              "  .jsonl.gz   Plain gzip bundle — no passphrase required.\n" +
+              "  .enc        AES-256-GCM encrypted bundle — pass --passphrase.\n\n" +
               "Modes:\n" +
-              "  append     (default) Append rows to existing files. Re-importing the\n" +
-              "             same bundle produces duplicates — bundle dedup is a follow-up.\n" +
+              "  append     (default) Append rows to existing files.\n" +
               "  overwrite  Truncate target files before writing. Use for fresh-machine\n" +
-              "             restore; never use when there's local data you want to keep.\n\n" +
-              "Encrypted (.age) bundles must be decrypted out-of-band first:\n" +
-              "  age -d bundle.jsonl.gz.age > bundle.jsonl.gz\n",
+              "             restore; never use when there's local data you want to keep.\n",
           );
           process.exit(0);
         } else if (
@@ -1620,10 +1625,35 @@ if (process.argv[2] === "traces" && process.argv[3] === "import") {
       }
       if (!input) {
         process.stderr.write(
-          "Usage: patchwork traces import <bundle.jsonl.gz> [--mode append|overwrite] [--dry-run]\n",
+          "Usage: patchwork traces import <bundle> [--passphrase <phrase>] [--mode append|overwrite] [--dry-run]\n",
         );
         process.exit(1);
       }
+
+      // Auto-detect encrypted bundle and decrypt before import.
+      if (passphrase !== undefined || input.endsWith(".enc")) {
+        const { readFileSync } = await import("node:fs");
+        const { isEncryptedTraceBundle, decryptTraceBundle } = await import(
+          "./traceEncryption.js"
+        );
+        const raw = readFileSync(input);
+        if (isEncryptedTraceBundle(raw)) {
+          if (!passphrase) {
+            process.stderr.write(
+              "Error: bundle is encrypted — provide --passphrase <phrase>\n",
+            );
+            process.exit(1);
+          }
+          const plain = decryptTraceBundle(raw, passphrase);
+          const { tmpdir } = await import("node:os");
+          const { writeFileSync } = await import("node:fs");
+          const tmp = `${tmpdir()}/patchwork-import-${Date.now()}.jsonl.gz`;
+          writeFileSync(tmp, plain, { mode: 0o600 });
+          input = tmp;
+          process.stderr.write("Decryption succeeded.\n");
+        }
+      }
+
       const { runTracesImport } = await import("./commands/tracesImport.js");
       const result = await runTracesImport({
         input,

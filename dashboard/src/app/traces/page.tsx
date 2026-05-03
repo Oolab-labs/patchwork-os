@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { relTime } from "@/components/time";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -205,6 +205,95 @@ const SINCE_OPTIONS: { k: SinceFilter; label: string; ms: number | null }[] = [
   { k: "all", label: "All time", ms: null },
 ];
 
+function ExportButton() {
+  const [open, setOpen] = useState(false);
+  const [passphrase, setPassphrase] = useState("");
+  const linkRef = useRef<HTMLAnchorElement>(null);
+
+  function buildUrl() {
+    const base = apiPath("/api/bridge/traces/export");
+    return passphrase.trim()
+      ? `${base}?passphrase=${encodeURIComponent(passphrase.trim())}`
+      : base;
+  }
+
+  function handleDownload() {
+    const a = linkRef.current;
+    if (!a) return;
+    a.href = buildUrl();
+    a.download = passphrase.trim()
+      ? `traces-export.enc`
+      : `traces-export.jsonl.gz`;
+    a.click();
+    setOpen(false);
+    setPassphrase("");
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      {/* Hidden anchor used for programmatic download */}
+      {/* biome-ignore lint/a11y/useValidAnchor: programmatic download anchor */}
+      <a ref={linkRef} style={{ display: "none" }} aria-hidden="true" />
+      <button type="button" className="btn sm" onClick={() => setOpen((v) => !v)}>
+        Export
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "calc(100% + 6px)",
+            background: "var(--bg-2)",
+            border: "1px solid var(--border-default)",
+            borderRadius: 8,
+            padding: "var(--s-4)",
+            minWidth: 280,
+            zIndex: 10,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+          }}
+        >
+          <p style={{ margin: "0 0 var(--s-3)", fontSize: 12, color: "var(--fg-2)" }}>
+            Optional: encrypt with a passphrase (AES-256-GCM). Leave blank for a
+            plain <code>.jsonl.gz</code>.
+          </p>
+          <input
+            type="password"
+            placeholder="Passphrase (optional)"
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleDownload(); }}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              marginBottom: "var(--s-3)",
+              padding: "6px 10px",
+              background: "var(--bg-3)",
+              border: "1px solid var(--border-default)",
+              borderRadius: 6,
+              color: "var(--fg-1)",
+              fontSize: 13,
+            }}
+            autoFocus
+          />
+          <div style={{ display: "flex", gap: "var(--s-3)", justifyContent: "flex-end" }}>
+            <button type="button" className="btn sm" onClick={() => { setOpen(false); setPassphrase(""); }}>
+              Cancel
+            </button>
+            <button type="button" className="btn sm primary" onClick={handleDownload}>
+              {passphrase.trim() ? "Download encrypted" : "Download"}
+            </button>
+          </div>
+          {passphrase.trim() && (
+            <p style={{ margin: "var(--s-3) 0 0", fontSize: 11, color: "var(--fg-3)" }}>
+              Import: <code>patchwork traces import bundle.enc --passphrase …</code>
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TracesPage() {
   const [filter, setFilter] = useState<TraceType | "all">("all");
   const [keyQuery, setKeyQuery] = useState("");
@@ -286,14 +375,7 @@ export default function TracesPage() {
           <span className="pill muted">
             {traces.length} trace{traces.length !== 1 ? "s" : ""}
           </span>
-          <a
-            href={apiPath("/api/bridge/traces/export")}
-            download
-            className="btn sm"
-            style={{ textDecoration: "none" }}
-          >
-            Export
-          </a>
+          <ExportButton />
         </div>
       </div>
 
