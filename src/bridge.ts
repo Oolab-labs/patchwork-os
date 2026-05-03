@@ -1280,6 +1280,10 @@ export class Bridge {
     // defined but inert — every approval queue entry has
     // personalSignals: undefined.
     this.server.activityLog = this.activityLog;
+    // Same wire pattern for h6 (recipe-step trust). recipeRunLog may be
+    // undefined when no orchestrator is configured; that's fine — h6
+    // silently skips and the other 11 heuristics still compute.
+    this.server.recipeRunLog = this.recipeRunLog ?? undefined;
     this.server.readyFn = () => {
       // Count tools from the first active session (all sessions share the same tool set)
       const anySession = [...this.sessions.values()][0];
