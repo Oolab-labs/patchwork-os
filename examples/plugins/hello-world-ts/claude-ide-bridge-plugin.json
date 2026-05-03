@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "name": "patchwork-examples/hello-world-ts",
+  "version": "0.1.0",
+  "description": "Minimal Live Toolsmithing starter — TypeScript variant",
+  "entrypoint": "./index.mjs",
+  "toolNamePrefix": "hw"
+}

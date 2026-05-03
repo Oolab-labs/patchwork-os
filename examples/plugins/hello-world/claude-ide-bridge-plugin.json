@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "name": "patchwork-examples/hello-world",
+  "version": "0.1.0",
+  "description": "Minimal Live Toolsmithing starter — one tool, no dependencies",
+  "entrypoint": "./index.mjs",
+  "toolNamePrefix": "hw"
+}
