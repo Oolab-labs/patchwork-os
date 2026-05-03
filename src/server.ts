@@ -218,6 +218,13 @@ export class Server extends EventEmitter<ServerEvents> {
    */
   public recipeRunLog: import("./runLog.js").RecipeRunLog | undefined =
     undefined;
+  /**
+   * Patchwork: opt-in switch for personalSignals heuristic 10
+   * (time-of-day anomaly). Off by default — see config.ts. Threaded into
+   * routeApprovalRequest deps so the personalSignals computation honors
+   * the user's preference.
+   */
+  public enableTimeOfDayAnomaly = false;
   /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
   public webhookFn:
     | ((
@@ -1222,6 +1229,7 @@ export class Server extends EventEmitter<ServerEvents> {
                 recipeRunLog: this.recipeRunLog as unknown as
                   | import("./approvalSignals.js").RecipeRunQuerier
                   | undefined,
+                enableTimeOfDayAnomaly: this.enableTimeOfDayAnomaly,
               },
             );
             res.writeHead(result.status, {
