@@ -12,6 +12,7 @@ interface StatusResponse {
     port?: number;
     workspace?: string;
     approvalGate?: string;
+    enableTimeOfDayAnomaly?: boolean;
     fullMode?: boolean;
     driver?: string;
     model?: string;
@@ -79,6 +80,16 @@ export default function SettingsPage() {
   } | null>(null);
   const gateInitialized = useRef(false);
 
+  // Time-of-day anomaly toggle (personalSignals h10) — opt-in.
+  // Mirrors --enable-time-of-day-anomaly CLI flag (PR #155).
+  const [todayAnomaly, setTodayAnomaly] = useState(false);
+  const [todayAnomalySaving, setTodayAnomalySaving] = useState(false);
+  const [todayAnomalySaveMsg, setTodayAnomalySaveMsg] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+  const todayAnomalyInitialized = useRef(false);
+
   // AI driver state
   const [driverValue, setDriverValue] = useState("none");
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -121,6 +132,10 @@ export default function SettingsPage() {
           setGateValue(gv);
           setGatePending(gv);
           gateInitialized.current = true;
+        }
+        if (!todayAnomalyInitialized.current) {
+          setTodayAnomaly(Boolean(data.patchwork?.enableTimeOfDayAnomaly));
+          todayAnomalyInitialized.current = true;
         }
         if (!driverInitialized.current) {
           const d = data.patchwork?.driver ?? "none";
@@ -169,6 +184,38 @@ export default function SettingsPage() {
       });
     } finally {
       setGateSaving(false);
+    }
+  }
+
+  async function saveTimeOfDayAnomaly(value: boolean) {
+    setTodayAnomalySaving(true);
+    setTodayAnomalySaveMsg(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/settings"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enableTimeOfDayAnomaly: value }),
+      });
+      if (res.ok) {
+        setTodayAnomaly(value);
+        setTodayAnomalySaveMsg({
+          ok: true,
+          text: value ? "Enabled." : "Disabled.",
+        });
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setTodayAnomalySaveMsg({
+          ok: false,
+          text: body.error ?? `Error ${res.status}`,
+        });
+      }
+    } catch (e) {
+      setTodayAnomalySaveMsg({
+        ok: false,
+        text: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setTodayAnomalySaving(false);
     }
   }
 
@@ -721,6 +768,59 @@ export default function SettingsPage() {
                   }}
                 >
                   {gateSaveMsg.text}
+                </p>
+              )}
+            </div>
+
+            <div
+              style={{
+                padding: "16px 0 8px",
+                borderBottom: "1px solid var(--border-subtle)",
+              }}
+            >
+              <label
+                htmlFor="time-of-day-anomaly"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: todayAnomalySaving ? "default" : "pointer",
+                }}
+              >
+                <input
+                  id="time-of-day-anomaly"
+                  type="checkbox"
+                  checked={todayAnomaly}
+                  disabled={todayAnomalySaving}
+                  onChange={(e) => saveTimeOfDayAnomaly(e.target.checked)}
+                />
+                Time-of-day anomaly signal
+              </label>
+              <p
+                style={{
+                  fontSize: 12,
+                  color: "var(--muted)",
+                  marginTop: 4,
+                  marginLeft: 24,
+                }}
+              >
+                Surfaces a chip on approvals when a tool runs outside your
+                usual hours. Off by default — flagged as medium false-positive
+                for users with irregular schedules. Takes effect on the next
+                approval; no restart needed.
+              </p>
+              {todayAnomalySaveMsg && (
+                <p
+                  style={{
+                    fontSize: 12,
+                    marginTop: 6,
+                    marginLeft: 24,
+                    color: todayAnomalySaveMsg.ok ? "var(--ok)" : "var(--err)",
+                  }}
+                >
+                  {todayAnomalySaveMsg.text}
                 </p>
               )}
             </div>

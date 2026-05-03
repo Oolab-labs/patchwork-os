@@ -23,6 +23,13 @@ export interface PatchworkConfig {
   recipesDir?: string;
   /** Approval gate level — mirrors CLI --approval-gate. Persisted so dashboard changes survive restart. */
   approvalGate?: "off" | "high" | "all";
+  /**
+   * Opt-in toggle for personalSignals heuristic 10 (time-of-day anomaly).
+   * Mirrors CLI --enable-time-of-day-anomaly. Persisted so dashboard
+   * changes survive restart. Default false — h10 is off until the user
+   * explicitly enables it.
+   */
+  enableTimeOfDayAnomaly?: boolean;
   /** Absolute path to a managed settings file (admin-controlled, highest rule precedence). */
   managedSettingsPath?: string;
   recipes?: {
