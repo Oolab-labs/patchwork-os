@@ -8,7 +8,14 @@ export async function GET(
   { params }: { params: Promise<{ filename: string }> },
 ) {
   const { filename } = await params;
-  const res = await bridgeFetch(`/inbox/${encodeURIComponent(filename)}`);
-  const data = await res.json();
-  return NextResponse.json(data, { status: res.status });
+  try {
+    const res = await bridgeFetch(`/inbox/${encodeURIComponent(filename)}`);
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "fetch failed" },
+      { status: 502 },
+    );
+  }
 }
