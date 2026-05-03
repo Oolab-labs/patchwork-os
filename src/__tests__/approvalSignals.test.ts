@@ -419,4 +419,93 @@ describe("computePersonalSignals", () => {
       expect(signals.find((s) => s.kind === "tier_escalation")).toBeUndefined();
     });
   });
+
+  describe("heuristic 8 — co-occurrence pattern", () => {
+    function logWithCoOccurrence(
+      pairs: Array<[string, string]>,
+      gapMs = 1_000,
+    ): ActivityLog {
+      const log = new ActivityLog();
+      let t = Date.now() - 60_000;
+      for (const [a, b] of pairs) {
+        log.record(a, 5, "success");
+        const ea = (
+          log as unknown as { entries: Array<{ timestamp: string }> }
+        ).entries.at(-1);
+        if (ea) ea.timestamp = new Date(t).toISOString();
+        t += gapMs;
+        log.record(b, 5, "success");
+        const eb = (
+          log as unknown as { entries: Array<{ timestamp: string }> }
+        ).entries.at(-1);
+        if (eb) eb.timestamp = new Date(t).toISOString();
+        t += gapMs;
+      }
+      return log;
+    }
+
+    it("does not surface below the 3-occurrence floor", () => {
+      // Single pair → count = 1 (one ordered entry pair within window).
+      const log = logWithCoOccurrence([["Bash", "Read"]]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      expect(
+        signals.find((s) => s.kind === "cooccurrence_pattern"),
+      ).toBeUndefined();
+    });
+
+    it("surfaces the partner once the count crosses the floor", () => {
+      // 2 emissions produce 4 ordered entry pairs within the window —
+      // well past the 3-count floor.
+      const log = logWithCoOccurrence([
+        ["Bash", "Read"],
+        ["Bash", "Read"],
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      const sig = signals.find((s) => s.kind === "cooccurrence_pattern");
+      expect(sig).toBeDefined();
+      expect(sig?.severity).toBe("low");
+      expect(sig?.label).toMatch(/Read/);
+      expect(sig?.count).toBeGreaterThanOrEqual(3);
+    });
+
+    it("picks the strongest partner, not just any partner", () => {
+      const log = logWithCoOccurrence([
+        ["Bash", "Read"],
+        ["Bash", "Read"],
+        ["Bash", "Read"],
+        ["Bash", "Edit"],
+        ["Bash", "Edit"],
+        ["Bash", "Edit"],
+        ["Bash", "Edit"],
+        ["Bash", "Edit"],
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      const sig = signals.find((s) => s.kind === "cooccurrence_pattern");
+      expect(sig?.label).toMatch(/Edit/);
+    });
+
+    it("does not surface when this tool is not part of any pair", () => {
+      const log = logWithCoOccurrence([
+        ["Read", "Edit"],
+        ["Read", "Edit"],
+        ["Read", "Edit"],
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      expect(
+        signals.find((s) => s.kind === "cooccurrence_pattern"),
+      ).toBeUndefined();
+    });
+  });
 });
