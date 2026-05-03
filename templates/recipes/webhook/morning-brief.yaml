@@ -1,0 +1,57 @@
+name: morning-brief-webhook
+description: |
+  On-demand morning brief — fires the moment you POST. Pair this with an
+  iOS Shortcut on your home screen ("Brief me") so you get the digest
+  whenever you're ready, not on a fixed cron schedule.
+
+  For the scheduled (cron) version, see ../morning-brief.yaml.
+
+  Suggested triggers:
+    - iOS Shortcut on first phone unlock
+    - Apple Watch complication tap
+    - Home Assistant motion sensor at the kitchen counter
+    - Stream Deck "morning routine" macro
+
+  Example request:
+    curl -X POST http://localhost:3101/hooks/morning-brief
+
+trigger:
+  type: webhook
+  path: /morning-brief
+
+steps:
+  - tool: gmail.fetch_unread
+    since: 24h
+    max: 30
+    into: messages
+  - tool: github.list_issues
+    assignee: "@me"
+    max: 10
+    into: issues
+  - tool: linear.list_issues
+    assignee: "@me"
+    state: "started,unstarted"
+    max: 15
+    into: linear_issues
+  - tool: calendar.list_events
+    days_ahead: 1
+    max: 10
+    into: calendar
+  - agent:
+      prompt: |
+        Write a 12-line morning brief from this data, in plain English,
+        prioritising what needs attention today.
+
+        Email (unread, 24h):  {{messages}}
+        GitHub issues (mine): {{issues}}
+        Linear (mine):        {{linear_issues}}
+        Calendar (next 24h):  {{calendar}}
+      output: brief
+  - tool: file.write
+    path: ~/.patchwork/inbox/morning-brief-{{date}}.md
+    content: |
+      # Morning brief — {{date}}
+      {{brief}}
+
+output:
+  path: ~/.patchwork/inbox/morning-brief-{{date}}.md
