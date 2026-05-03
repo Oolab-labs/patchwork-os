@@ -57,7 +57,7 @@ npm run clean && npm run build
 | `/decisions` | Decision log |
 | `/traces`, `/metrics`, `/analytics` | OpenTelemetry + Prometheus surfaces |
 | `/connections` | Connector OAuth + token management |
-| `/settings` | Driver / model / API key / approval gate |
+| `/settings` | Driver / model / API key / delegation policy |
 
 ## Design reference
 

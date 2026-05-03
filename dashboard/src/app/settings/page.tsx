@@ -69,7 +69,7 @@ export default function SettingsPage() {
   } | null>(null);
   const webhookInitialized = useRef(false);
 
-  // Approval gate state
+  // Delegation policy state
   const [gateValue, setGateValue] = useState<"off" | "high" | "all">("off");
   const [gatePending, setGatePending] = useState<"off" | "high" | "all">("off");
   const [gateSaving, setGateSaving] = useState(false);
@@ -639,7 +639,7 @@ export default function SettingsPage() {
               <h2>Integrations</h2>
             </div>
 
-            {/* Approval gate control */}
+            {/* Delegation policy control */}
             <div
               style={{
                 padding: "16px 0 8px",
@@ -647,7 +647,7 @@ export default function SettingsPage() {
               }}
             >
               <label
-                htmlFor="approval-gate"
+                htmlFor="delegation-policy"
                 style={{
                   display: "block",
                   fontSize: 13,
@@ -656,7 +656,7 @@ export default function SettingsPage() {
                   fontWeight: 500,
                 }}
               >
-                Approval gate
+                Delegation policy
               </label>
               <p
                 style={{
@@ -666,12 +666,13 @@ export default function SettingsPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Hold high-risk or all tool calls for dashboard review before
-                execution. Takes effect for new sessions immediately.
+                Define what AI may do without asking, what needs approval, and
+                what is forbidden. Hold high-risk or all tool calls for review
+                before execution. Takes effect for new sessions immediately.
               </p>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <select
-                  id="approval-gate"
+                  id="delegation-policy"
                   value={gatePending}
                   disabled={gateSaving}
                   onChange={(e) => {
