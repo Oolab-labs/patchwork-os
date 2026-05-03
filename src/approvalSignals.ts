@@ -15,6 +15,8 @@
  *   1. "You approved similar actions N times" — past allow on same tool
  *   2. "You rejected this tool before" — past deny on same tool
  *   3. "First use of this connector" — connector namespace ∩ activity log
+ *   5. "Last called T days ago" — gap since most recent call (heuristic 4
+ *      from the catalog is satisfied by the first_connector_use kind above)
  *
  * The signals are **transparent**: every signal has a `source` enum so a
  * future "why is this signal here?" UI can link back to the rows that
@@ -35,7 +37,8 @@ export interface PersonalSignal {
     | "prior_approvals"
     | "prior_rejection"
     | "first_connector_use"
-    | "first_tool_use";
+    | "first_tool_use"
+    | "stale_tool_use";
   /** Human-facing label suitable for an approval modal line. */
   label: string;
   /** Severity controls visual weight. low = informational, high = warning. */
@@ -53,6 +56,17 @@ export interface PersonalSignal {
  * is "you have a pattern here."
  */
 const PRIOR_APPROVALS_THRESHOLD = 3;
+
+/**
+ * Minimum gap before "you haven't used this in a while" surfaces. Under a
+ * week the user almost certainly remembers; past a week, the call may
+ * deserve a second look. Tunable, not load-bearing — change freely if
+ * dashboard feedback says it's noisy or too quiet.
+ */
+const STALE_TOOL_DAYS = 7;
+const STALE_TOOL_MS = STALE_TOOL_DAYS * 24 * 60 * 60 * 1_000;
+/** Bumped severity threshold — past a month away is "have you forgotten what this does" territory. */
+const STALE_TOOL_HIGH_DAYS = 30;
 
 /**
  * Compute the personal-signal set for an incoming approval request.
@@ -128,6 +142,28 @@ export function computePersonalSignals(input: {
     }
   }
 
+  // Heuristic 5: "Last called T days ago."
+  // Surfaces a low/medium signal when the user hasn't called this exact
+  // tool in a while. The message gives the user a beat to reconsider —
+  // memory of *why* a call was approved fades faster than the data does.
+  // No signal at all when there's no prior call (heuristic 3 handles
+  // first-use); no signal when the gap is under STALE_TOOL_DAYS.
+  const lastCall = activityLog.queryLastToolCall(toolName);
+  if (lastCall) {
+    const lastMs = Date.parse(lastCall.timestamp);
+    const gapMs = Number.isFinite(lastMs) ? Date.now() - lastMs : 0;
+    if (gapMs >= STALE_TOOL_MS) {
+      const days = Math.floor(gapMs / (24 * 60 * 60 * 1_000));
+      signals.push({
+        kind: "stale_tool_use",
+        label: staleToolLabel(days),
+        severity: days >= STALE_TOOL_HIGH_DAYS ? "medium" : "low",
+        source: "activity_history",
+        count: days,
+      });
+    }
+  }
+
   return signals;
 }
 
@@ -139,6 +175,15 @@ function priorApprovalsLabel(count: number): string {
     return `You've approved this tool ${count} times before.`;
   }
   return `You've approved this tool ${count} times before.`;
+}
+
+function staleToolLabel(days: number): string {
+  if (days >= 365) return `Last called over a year ago (${days} days).`;
+  if (days >= 30) {
+    const months = Math.floor(days / 30);
+    return `Last called ${months === 1 ? "a month" : `${months} months`} ago — context may have changed since.`;
+  }
+  return `Last called ${days} days ago.`;
 }
 
 function priorRejectionLabel(count: number): string {

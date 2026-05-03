@@ -368,6 +368,23 @@ export class ActivityLog {
   }
 
   /**
+   * Return the most recent tool entry matching `toolName` exactly, or
+   * `null` if none. Used by personalization heuristic 5 ("last called T
+   * days ago") to compute the gap between now and the most recent prior
+   * call without scanning the whole buffer downstream.
+   *
+   * Walks the entries ring backwards (newest first) so the common case —
+   * a tool called recently — returns after one comparison.
+   */
+  queryLastToolCall(toolName: string): ActivityEntry | null {
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      const e = this.entries[i];
+      if (e?.tool === toolName) return e;
+    }
+    return null;
+  }
+
+  /**
    * Cross-session query for tool entries by namespace prefix (e.g. "gmail"
    * matches "gmail.fetch_unread", "gmail.send"). Used by personalization
    * heuristic 3 ("first use of this connector") to detect whether the
