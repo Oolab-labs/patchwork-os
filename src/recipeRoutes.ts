@@ -768,6 +768,36 @@ export function tryHandleRecipeRoute(
     return true;
   }
 
+  // GET /recipes/:name/plan — dry-run plan for a recipe by name. Returns the
+  // same RecipeDryRunPlan shape as GET /runs/:seq/plan but without needing a
+  // past run seq — useful for pre-flight review before a first run.
+  const recipePlanMatch =
+    req.method === "GET"
+      ? /^\/recipes\/([^/]+)\/plan$/.exec(parsedUrl.pathname)
+      : null;
+  if (recipePlanMatch?.[1]) {
+    const name = decodeURIComponent(recipePlanMatch[1]);
+    void (async () => {
+      try {
+        if (!deps.runPlanFn) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "plan_unavailable" }));
+          return;
+        }
+        const plan = await deps.runPlanFn(name);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ plan }));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const status =
+          msg.includes("not found") || msg.includes("ENOENT") ? 404 : 500;
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: msg }));
+      }
+    })();
+    return true;
+  }
+
   const recipeContentMatch = /^\/recipes\/([^/]+)$/.exec(parsedUrl.pathname);
   if (recipeContentMatch && req.method === "GET") {
     const name = decodeURIComponent(recipeContentMatch[1] ?? "");
