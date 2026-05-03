@@ -164,10 +164,13 @@ export class RecipeOrchestration {
 
     server.runDetailFn = (seq: number) => {
       if (!this.deps.recipeRunLog) return null;
-      return this.deps.recipeRunLog.getBySeq(seq) as unknown as Record<
-        string,
-        unknown
-      > | null;
+      const run = this.deps.recipeRunLog.getBySeq(seq);
+      if (!run) return null;
+      const childSeqs = this.deps.recipeRunLog.getChildSeqs(seq);
+      return {
+        ...(run as unknown as Record<string, unknown>),
+        ...(childSeqs.length > 0 && { childSeqs }),
+      };
     };
 
     server.runPlanFn = async (recipeName: string) => {

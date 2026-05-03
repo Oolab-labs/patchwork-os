@@ -79,6 +79,8 @@ export interface RecipeRun {
   durationMs: number;
   /** Per-step execution results — present when run via yamlRunner or chainedRunner. */
   stepResults?: RunStepResult[];
+  /** seq of the parent run that triggered this one, if trigger === "recipe". */
+  parentSeq?: number;
   /** Assertion failures from the recipe's expect block — present when assertions fail. */
   assertionFailures?: Array<{
     assertion: string;
@@ -157,11 +159,17 @@ export class RecipeRunLog {
    */
   static parseTrigger(
     triggerSource: string | undefined,
-  ): { trigger: RunTrigger; recipeName: string } | null {
+  ): { trigger: RunTrigger; recipeName: string; parentSeq?: number } | null {
     if (!triggerSource) return null;
-    const m = /^(cron|webhook|recipe):(.+)$/.exec(triggerSource);
+    // Format: "<kind>:<name>" or "<kind>:<name>:p<parentSeq>"
+    // parentSeq suffix ":p<N>" is always at the end and uses a numeric-only value.
+    const m = /^(cron|webhook|recipe):(.+?)(?::p(\d+))?$/.exec(triggerSource);
     if (!m?.[1] || !m[2]) return null;
-    return { trigger: m[1] as RunTrigger, recipeName: m[2] };
+    return {
+      trigger: m[1] as RunTrigger,
+      recipeName: m[2],
+      ...(m[3] !== undefined && { parentSeq: parseInt(m[3], 10) }),
+    };
   }
 
   record(task: {
@@ -207,6 +215,7 @@ export class RecipeRunLog {
         errorMessage: task.errorMessage,
       }),
       durationMs,
+      ...(parsed.parentSeq !== undefined && { parentSeq: parsed.parentSeq }),
     };
     this.runs.push(run);
     if (this.runs.length > this.memoryCap) {
@@ -251,6 +260,12 @@ export class RecipeRunLog {
     const inMem = this.runs.find((r) => r.seq === seq);
     if (inMem) return inMem;
     return this.readFromDiskBySeq(seq);
+  }
+
+  /** Return seqs of all in-memory runs whose parentSeq matches this seq. */
+  getChildSeqs(parentSeq: number): number[] {
+    this.syncFromDisk();
+    return this.runs.filter((r) => r.parentSeq === parentSeq).map((r) => r.seq);
   }
 
   private readFromDiskBySeq(seq: number): RecipeRun | null {
@@ -303,6 +318,7 @@ export class RecipeRunLog {
     createdAt: number;
     startedAt?: number;
     model?: string;
+    parentSeq?: number;
   }): number {
     const seq = ++this.seq;
     const run: RecipeRun = {
@@ -319,6 +335,7 @@ export class RecipeRunLog {
       doneAt: opts.createdAt,
       durationMs: 0,
       stepResults: [],
+      ...(opts.parentSeq !== undefined && { parentSeq: opts.parentSeq }),
     };
     this.runs.push(run);
     if (this.runs.length > this.memoryCap) this.runs.shift();
