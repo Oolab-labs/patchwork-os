@@ -36,7 +36,7 @@ let server: Server | null = null;
 let port = 0;
 const originalFetch = globalThis.fetch;
 const originalAllowedHosts =
-  process.env["CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS"];
+  process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS;
 
 function makeRequest(
   options: http.RequestOptions,
@@ -80,15 +80,14 @@ function makeRequest(
 
 beforeAll(() => {
   // Don't let host-environment env var leak into tests.
-  delete process.env["CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS"];
+  delete process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS;
 });
 
 afterAll(() => {
   if (originalAllowedHosts !== undefined) {
-    process.env["CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS"] =
-      originalAllowedHosts;
+    process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS = originalAllowedHosts;
   } else {
-    delete process.env["CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS"];
+    delete process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS;
   }
 });
 
@@ -102,7 +101,7 @@ afterEach(async () => {
   server = null;
   port = 0;
   globalThis.fetch = originalFetch;
-  delete process.env["CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS"];
+  delete process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS;
 });
 
 /** Build a Response-shape that streams `body` through the fetch reader path. */
@@ -199,7 +198,7 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
 
   it("install-redirect-allowlist: opt-in host, redirect to internal IP → SSRF blocked", async () => {
     // Allowlist a public host; the SSRF guard is what catches the loopback.
-    process.env["CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS"] = "127.0.0.1";
+    process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS = "127.0.0.1";
     const { status, body } = await makeRequest(
       {
         method: "POST",
@@ -238,7 +237,7 @@ describe("Server /recipes/install — A-PR2 (dogfood F-05 / H-routes Bug 2)", ()
     }
     // With env var: passes the allowlist gate; SSRF guard then resolves DNS,
     // and the upstream stub returns the YAML.
-    process.env["CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS"] = "example.org";
+    process.env.CLAUDE_IDE_BRIDGE_INSTALL_ALLOWED_HOSTS = "example.org";
     globalThis.fetch = vi
       .fn()
       .mockResolvedValueOnce(
