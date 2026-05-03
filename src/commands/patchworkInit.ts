@@ -203,7 +203,17 @@ export async function runPatchworkInit(
     preToolUseHook = "error";
   }
 
-  log(`\nNext:
+  // CC reads hooks at session start, so the registration we just did
+  // (or confirmed) only takes effect for *future* sessions. Without
+  // this prompt, users follow the docs, run init, and the approval gate
+  // still appears inert — the trap that wasted hours of investigation
+  // during dogfood verification on 2026-05-03.
+  const restartLine =
+    preToolUseHook === "added"
+      ? `\n  ⚠  Restart Claude Code so the new PreToolUse hook takes effect.\n     (CC reads hooks at session start — existing sessions won't see the change.)\n`
+      : "";
+
+  log(`${restartLine}\nNext:
   1. patchwork-os recipe run ambient-journal   # try a local recipe
   2. patchwork-os                              # launch terminal dashboard
   3. Connect Gmail (coming in W2) — see docs/adr/0008-connector-scope-decision.md\n`);

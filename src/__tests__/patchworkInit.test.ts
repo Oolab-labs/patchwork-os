@@ -123,6 +123,42 @@ describe("patchwork-init", () => {
     expect(second.preToolUseHook).toBe("already-wired");
   });
 
+  it("prompts to restart Claude Code on first hook registration", async () => {
+    // Capture stdout so we can assert the restart-CC nudge appears
+    // exactly when the hook was newly added (not on already-wired runs).
+    const writes: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+      writes.push(chunk.toString());
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      await runPatchworkInit([], { home: fakeHome });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+    const out = writes.join("");
+    expect(out).toMatch(/Restart Claude Code/);
+    expect(out).toMatch(/PreToolUse hook takes effect/);
+  });
+
+  it("does not prompt to restart on a re-run when hook already wired", async () => {
+    await runPatchworkInit([], { home: fakeHome, quiet: true });
+    const writes: string[] = [];
+    const origWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+      writes.push(chunk.toString());
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      await runPatchworkInit([], { home: fakeHome });
+    } finally {
+      process.stdout.write = origWrite;
+    }
+    const out = writes.join("");
+    expect(out).not.toMatch(/Restart Claude Code/);
+  });
+
   it("preserves unrelated PreToolUse hooks already in settings.json", async () => {
     const { mkdirSync } = await import("node:fs");
     const ccDir = join(fakeHome, ".claude");
