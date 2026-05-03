@@ -383,6 +383,25 @@ export class ActivityLog {
     return matches.slice(-cap);
   }
 
+  /**
+   * Return all activity entries within a time window. Used by the
+   * automation-suggestions module (`src/automationSuggestions.ts`) to feed
+   * `computeCoOccurrence` and similar pattern-mining over a fresh slice of
+   * the activity ring without pulling the whole buffer.
+   *
+   * `sinceMs` is an absolute epoch ms — entries with `timestamp >= sinceMs`
+   * are returned. Set to `0` for "all".
+   */
+  queryAll(opts?: { sinceMs?: number; last?: number }): ActivityEntry[] {
+    const since = opts?.sinceMs ?? 0;
+    const last = Math.min(opts?.last ?? 5000, 5000);
+    const filtered =
+      since > 0
+        ? this.entries.filter((e) => Date.parse(e.timestamp) >= since)
+        : this.entries;
+    return filtered.slice(-last);
+  }
+
   queryTimeline(opts?: { last?: number }): TimelineEntry[] {
     const tools: TimelineEntry[] = this.entries.map((e) => ({
       kind: "tool" as const,

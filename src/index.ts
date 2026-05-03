@@ -173,6 +173,7 @@ const KNOWN_SUBCOMMANDS = [
   "shim",
   "recipe",
   "traces",
+  "suggest",
   "dashboard",
   "launchd",
 ] as const;
@@ -1173,6 +1174,113 @@ if (process.argv[2] === "recipe" && process.argv[3] === "install") {
         const result = await runRecipeInstall(source);
         printInstallResult(result);
       }
+      process.exit(0);
+    } catch (err) {
+      process.stderr.write(
+        `Error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
+  })();
+}
+
+// Patchwork: `patchwork suggest [--since <date>]` — pattern-mine the
+// activity log + run history for "you've been doing X by hand; want to
+// make a recipe?" hints. See documents/strategic/2026-05-02/memory-
+// ecosystem-report.md §6 for the catalog this implements.
+//
+// Three suggestion kinds: co-occurring tool pairs (worth a recipe), tools
+// installed but unused (worth reviewing or pruning), and recipes that
+// always succeed (worth trust-graduating). Read-only — does not change
+// any policy or registry state.
+if (process.argv[2] === "suggest") {
+  (async () => {
+    try {
+      const args = process.argv.slice(3);
+      let sinceDays: number | undefined;
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === "--since-days") {
+          const next = args[i + 1];
+          if (next) sinceDays = Number.parseInt(next, 10);
+          i++;
+        } else if (a === "--help" || a === "-h") {
+          process.stdout.write(
+            "patchwork suggest [--since-days <N>]\n\n" +
+              "Pattern-mine the activity log + recipe runs for automation hints:\n" +
+              "  - Co-occurring tool pairs that don't yet appear in any recipe\n" +
+              "  - Installed tools that haven't been called recently\n" +
+              "  - Recipes that have succeeded ≥ 10 times in a row (trust-graduation candidates)\n\n" +
+              "Default lookback window is 7 days. --since-days overrides.\n\n" +
+              "Read-only — does not modify policy, registry, or run history.\n",
+          );
+          process.exit(0);
+        }
+      }
+
+      const { ActivityLog } = await import("./activityLog.js");
+      const { RecipeRunLog } = await import("./runLog.js");
+      const { computeAutomationSuggestions } = await import(
+        "./automationSuggestions.js"
+      );
+      // Side-effect import — populates the tool registry that
+      // computeAutomationSuggestions consults for installed-tool inventory.
+      await import("./recipes/tools/index.js");
+
+      // Wire up the bridge's standard log paths. The CLI reads from
+      // disk; it doesn't need a running bridge.
+      const patchworkDir = path.join(os.homedir(), ".patchwork");
+      const activityLog = new ActivityLog();
+      // Find the most recent activity log file (any port). For the
+      // suggest CLI we union all of them.
+      const claudeIdeDir = path.join(os.homedir(), ".claude", "ide");
+      try {
+        const entries = await import("node:fs").then((m) =>
+          m.readdirSync(claudeIdeDir),
+        );
+        for (const name of entries) {
+          if (/^activity(-\d+)?\.jsonl$/i.test(name)) {
+            activityLog.setPersistPath(path.join(claudeIdeDir, name));
+            break; // setPersistPath loads on call; first existing wins
+          }
+        }
+      } catch {
+        // No activity dir / files — proceed with an empty log; the
+        // suggestions just return fewer / no items.
+      }
+
+      const recipeRunLog = new RecipeRunLog({ dir: patchworkDir });
+
+      const opts: Parameters<typeof computeAutomationSuggestions>[0] = {
+        activityLog,
+        recipeRunLog,
+      };
+      if (sinceDays !== undefined && Number.isFinite(sinceDays)) {
+        opts.activitySinceMs = sinceDays * 24 * 60 * 60 * 1000;
+      }
+      const suggestions = computeAutomationSuggestions(opts);
+
+      if (suggestions.length === 0) {
+        process.stdout.write(
+          "No automation suggestions yet. Patchwork mines patterns from the activity log\n" +
+            "and recipe run history; come back after a few days of use.\n",
+        );
+        process.exit(0);
+      }
+
+      process.stdout.write(
+        `${suggestions.length} suggestion${suggestions.length === 1 ? "" : "s"}:\n\n`,
+      );
+      for (const s of suggestions) {
+        const icon =
+          s.kind === "co_occurring_pair"
+            ? "→"
+            : s.kind === "installed_but_unused"
+              ? "·"
+              : "★";
+        process.stdout.write(`  ${icon} ${s.label}\n`);
+      }
+      process.stdout.write("\nRead-only output. Nothing changed.\n");
       process.exit(0);
     } catch (err) {
       process.stderr.write(
