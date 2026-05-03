@@ -12,6 +12,18 @@ interface RiskSignal {
   severity: "low" | "medium" | "high";
 }
 
+interface PersonalSignal {
+  kind: string;
+  label: string;
+  severity: "low" | "medium" | "high";
+  source:
+    | "approval_history"
+    | "activity_history"
+    | "tool_registry"
+    | "recipe_run_log";
+  count?: number;
+}
+
 interface PendingRecord {
   callId: string;
   toolName: string;
@@ -22,6 +34,7 @@ interface PendingRecord {
   sessionId?: string;
   expiresAt?: number;
   riskSignals?: RiskSignal[];
+  personalSignals?: PersonalSignal[];
 }
 
 interface DecisionRecord {
@@ -234,6 +247,32 @@ export default function ApprovalDetailPage() {
                 key={`${s.kind}-${s.label}`}
                 className={`pill ${s.severity === "high" ? "err" : s.severity === "medium" ? "warn" : "muted"}`}
                 title={s.kind}
+              >
+                {s.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pending?.personalSignals && pending.personalSignals.length > 0 && (
+        <div className="card" style={{ marginTop: "var(--s-4)" }}>
+          <div className="card-head">
+            <h2>Your history with this call</h2>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              marginTop: 6,
+            }}
+          >
+            {pending.personalSignals.map((s) => (
+              <span
+                key={`personal-${s.kind}-${s.label}`}
+                className={`pill ${s.severity === "high" ? "err" : s.severity === "medium" ? "warn" : "muted"}`}
+                title={`${s.kind} (from ${s.source})`}
               >
                 {s.label}
               </span>

@@ -11,6 +11,31 @@ interface RiskSignal {
   severity: "low" | "medium" | "high";
 }
 
+/**
+ * personalSignals = the user's RELATIONSHIP to this call (history,
+ * novelty, workflow patterns). Distinct from riskSignals which describe
+ * the call's CONTENT (destructive flags, etc.). Both render as chip
+ * rows under the summary, but personal signals get their own visual
+ * group so the user can tell "the policy thinks this is dangerous"
+ * (riskSignals) from "you've done this before / this is unusual for
+ * you" (personalSignals).
+ *
+ * Catalog defined in src/approvalSignals.ts (12 heuristics) — kind is
+ * loosely typed here so the dashboard doesn't have to recompile every
+ * time a new heuristic ships.
+ */
+interface PersonalSignal {
+  kind: string;
+  label: string;
+  severity: "low" | "medium" | "high";
+  source:
+    | "approval_history"
+    | "activity_history"
+    | "tool_registry"
+    | "recipe_run_log";
+  count?: number;
+}
+
 interface Pending {
   callId: string;
   toolName: string;
@@ -21,6 +46,7 @@ interface Pending {
   sessionId?: string;
   expiresAt?: number;
   riskSignals?: RiskSignal[];
+  personalSignals?: PersonalSignal[];
 }
 
 type RuleSource = "managed" | "project-local" | "project" | "user";
@@ -298,6 +324,29 @@ function ApprovalCard({
               key={`${s.kind}-${s.label}`}
               className={`pill ${s.severity === "high" ? "err" : s.severity === "medium" ? "warn" : "muted"}`}
               title={s.kind}
+            >
+              {s.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {p.personalSignals && p.personalSignals.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            marginTop: 6,
+          }}
+        >
+          {p.personalSignals.map((s) => (
+            <span
+              key={`personal-${s.kind}-${s.label}`}
+              className={`pill ${s.severity === "high" ? "err" : s.severity === "medium" ? "warn" : "muted"}`}
+              // Title shows kind + source so a future "why this signal?"
+              // popover has somewhere to start; for now it's hover text.
+              title={`${s.kind} (from ${s.source})`}
             >
               {s.label}
             </span>
