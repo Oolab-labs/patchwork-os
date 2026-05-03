@@ -235,6 +235,15 @@ export default function NewRecipePage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<{
+    yaml?: string;
+    warnings?: string[];
+    error?: string;
+  } | null>(null);
+
   const setName = useCallback((v: string) => {
     setForm((f) => ({ ...f, name: v }));
     if (v && !NAME_RE.test(v)) {
@@ -386,6 +395,108 @@ export default function NewRecipePage() {
     [form, safeName],
   );
 
+  async function handleGenerate() {
+    if (!aiPrompt.trim()) return;
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const res = await fetch(apiPath("/api/bridge/recipes/generate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        yaml?: string;
+        warnings?: string[];
+        error?: string;
+        unavailable?: boolean;
+      };
+      if (data.unavailable) {
+        setAiResult({
+          error:
+            "AI generation is not available — start the bridge with --claude-driver subprocess.",
+        });
+      } else if (data.ok && data.yaml) {
+        setAiResult({ yaml: data.yaml, warnings: data.warnings });
+      } else if (data.yaml) {
+        setAiResult({
+          yaml: data.yaml,
+          warnings: data.warnings,
+          error: "Generated YAML has validation errors — review warnings below.",
+        });
+      } else {
+        setAiResult({ error: data.error ?? "Generation failed." });
+      }
+    } catch (err) {
+      setAiResult({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function applyAiYaml(yaml: string) {
+    // Best-effort parse into form fields. On failure, keep the YAML visible
+    // so the user can copy it manually.
+    try {
+      const lines = yaml.split("\n");
+      const nameMatch = lines.find((l) => /^name:\s/.test(l));
+      const descMatch = lines.find((l) => /^description:\s/.test(l));
+      const triggerTypeMatch = lines.find((l) => /^\s+type:\s/.test(l));
+      const triggerAtMatch = lines.find((l) => /^\s+at:\s/.test(l));
+      const triggerPathMatch = lines.find((l) => /^\s+path:\s/.test(l));
+
+      const parsedName = nameMatch
+        ? (nameMatch.replace(/^name:\s*/, "").trim().replace(/^"|"$/g, "") ?? "")
+        : "";
+      const parsedDesc = descMatch
+        ? (descMatch
+            .replace(/^description:\s*/, "")
+            .trim()
+            .replace(/^"|"$/g, "") ?? "")
+        : "";
+      const parsedTriggerType = triggerTypeMatch
+        ? (triggerTypeMatch.replace(/^\s+type:\s*/, "").trim() as
+            | "manual"
+            | "webhook"
+            | "schedule"
+            | "cron")
+        : "manual";
+      const normalizedType: "manual" | "webhook" | "schedule" =
+        parsedTriggerType === "cron" ? "schedule" : parsedTriggerType === "webhook" ? "webhook" : "manual";
+      const parsedCron = triggerAtMatch
+        ? triggerAtMatch
+            .replace(/^\s+at:\s*/, "")
+            .trim()
+            .replace(/^"|"$/g, "")
+        : "";
+      const parsedPath = triggerPathMatch
+        ? triggerPathMatch
+            .replace(/^\s+path:\s*/, "")
+            .trim()
+            .replace(/^"|"$/g, "")
+            .replace(/^\/hooks\//, "")
+        : "";
+
+      setForm((f) => ({
+        ...f,
+        name: parsedName || f.name,
+        description: parsedDesc || f.description,
+        trigger: {
+          type: normalizedType,
+          cron: parsedCron,
+          path: parsedPath,
+        },
+      }));
+      setAiOpen(false);
+      setAiResult(null);
+    } catch {
+      // If parsing fails, leave everything as-is — user can see the YAML
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitError(null);
@@ -438,6 +549,215 @@ export default function NewRecipePage() {
             Start with structured fields, save a YAML recipe draft, then continue in the source editor.
           </div>
         </div>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid var(--border-default)",
+          borderRadius: "var(--r-2)",
+          marginBottom: "var(--s-4)",
+          overflow: "hidden",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setAiOpen((v) => !v)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--s-2)",
+            width: "100%",
+            background: "var(--bg-2)",
+            border: "none",
+            borderBottom: aiOpen ? "1px solid var(--border-default)" : "none",
+            color: "var(--fg-1)",
+            cursor: "pointer",
+            fontSize: 13,
+            fontWeight: 500,
+            padding: "var(--s-3) var(--s-4)",
+            textAlign: "left",
+          }}
+        >
+          <span style={{ fontSize: 16 }}>{aiOpen ? "▾" : "▸"}</span>
+          Generate with AI
+          <span
+            style={{
+              background: "var(--accent)",
+              borderRadius: 4,
+              color: "#fff",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.05em",
+              padding: "1px 5px",
+            }}
+          >
+            NEW
+          </span>
+        </button>
+
+        {aiOpen && (
+          <div
+            style={{
+              background: "var(--bg-1)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--s-3)",
+              padding: "var(--s-4)",
+            }}
+          >
+            <p
+              style={{
+                color: "var(--fg-2)",
+                fontSize: 13,
+                margin: 0,
+              }}
+            >
+              Describe what you want in plain language and Claude will draft a
+              recipe YAML for you.
+            </p>
+            <textarea
+              rows={3}
+              placeholder="e.g. every morning, summarize my GitHub notifications and email me a digest"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              disabled={aiLoading}
+              style={{
+                background: "var(--bg-2)",
+                border: "1px solid var(--border-default)",
+                borderRadius: "var(--r-2)",
+                color: "var(--fg-0)",
+                fontSize: 13,
+                fontFamily: "var(--font-sans)",
+                outline: "none",
+                padding: "var(--s-2) var(--s-3)",
+                resize: "vertical",
+                width: "100%",
+              }}
+            />
+            <div style={{ display: "flex", gap: "var(--s-2)" }}>
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={aiLoading || !aiPrompt.trim()}
+                style={{
+                  background: "var(--accent)",
+                  border: "none",
+                  borderRadius: "var(--r-2)",
+                  color: "#fff",
+                  cursor:
+                    aiLoading || !aiPrompt.trim() ? "not-allowed" : "pointer",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  opacity: aiLoading || !aiPrompt.trim() ? 0.6 : 1,
+                  padding: "var(--s-2) var(--s-4)",
+                }}
+              >
+                {aiLoading ? "Generating…" : "Generate"}
+              </button>
+            </div>
+
+            {aiResult?.error && (
+              <p
+                style={{
+                  background: "var(--err-bg, #2a1a1a)",
+                  border: "1px solid var(--err)",
+                  borderRadius: "var(--r-2)",
+                  color: "var(--err)",
+                  fontSize: 12,
+                  margin: 0,
+                  padding: "var(--s-2) var(--s-3)",
+                }}
+              >
+                {aiResult.error}
+              </p>
+            )}
+
+            {aiResult?.warnings && aiResult.warnings.length > 0 && (
+              <details style={{ fontSize: 12 }}>
+                <summary
+                  style={{
+                    color: "var(--warn, #e6a817)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {aiResult.warnings.length} warning
+                  {aiResult.warnings.length !== 1 ? "s" : ""}
+                </summary>
+                <ul
+                  style={{
+                    color: "var(--fg-2)",
+                    marginTop: "var(--s-1)",
+                    paddingLeft: "var(--s-4)",
+                  }}
+                >
+                  {aiResult.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+
+            {aiResult?.yaml && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}
+              >
+                <pre
+                  style={{
+                    background: "var(--bg-2)",
+                    border: "1px solid var(--border-default)",
+                    borderRadius: "var(--r-2)",
+                    color: "var(--fg-0)",
+                    fontSize: 12,
+                    fontFamily: "var(--font-mono)",
+                    margin: 0,
+                    maxHeight: 300,
+                    overflow: "auto",
+                    padding: "var(--s-3)",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {aiResult.yaml}
+                </pre>
+                <div style={{ display: "flex", gap: "var(--s-2)" }}>
+                  <button
+                    type="button"
+                    onClick={() => applyAiYaml(aiResult.yaml!)}
+                    style={{
+                      background: "var(--accent)",
+                      border: "none",
+                      borderRadius: "var(--r-2)",
+                      color: "#fff",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: 500,
+                      padding: "var(--s-2) var(--s-4)",
+                    }}
+                  >
+                    Use this
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAiResult(null);
+                      setAiOpen(false);
+                    }}
+                    style={{
+                      background: "var(--bg-2)",
+                      border: "1px solid var(--border-default)",
+                      borderRadius: "var(--r-2)",
+                      color: "var(--fg-1)",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      padding: "var(--s-2) var(--s-4)",
+                    }}
+                  >
+                    Discard
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <form

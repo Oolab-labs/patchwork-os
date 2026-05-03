@@ -263,6 +263,8 @@ export class RecipeOrchestration {
       }
     };
 
+    this.wireGenerateFn();
+
     server.webhookFn = async (hookPath: string, payload: unknown) => {
       if (!this.deps.getOrchestrator()) {
         return {
@@ -393,6 +395,59 @@ export class RecipeOrchestration {
   }
 
   // -------------------------------------------------------------------------
+  // AI recipe generation
+  // -------------------------------------------------------------------------
+
+  private wireGenerateFn(): void {
+    const { server } = this.deps;
+
+    server.generateRecipeFn = async (userPrompt: string) => {
+      const orch = this.deps.getOrchestrator();
+      if (!orch) {
+        return { ok: false, error: "driver_unavailable", unavailable: true };
+      }
+
+      let task: Awaited<ReturnType<typeof orch.runAndWait>>;
+      try {
+        task = await orch.runAndWait({
+          prompt: `${RECIPE_GENERATION_SYSTEM_PROMPT}\n\nUser request: ${userPrompt}`,
+          triggerSource: "recipe_generate",
+          timeoutMs: 60_000,
+        });
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+
+      if (task.status !== "done" || !task.output) {
+        return {
+          ok: false,
+          error: task.errorMessage ?? `Task ended with status: ${task.status}`,
+        };
+      }
+
+      const rawYaml = extractYamlBlock(task.output);
+      if (!rawYaml) {
+        return { ok: false, error: "no_yaml_in_output" };
+      }
+
+      const lint = lintRecipeContent(rawYaml);
+      if (!lint.ok) {
+        return {
+          ok: false,
+          yaml: rawYaml,
+          warnings: [...lint.errors, ...lint.warnings],
+          error: "invalid_yaml_generated",
+        };
+      }
+
+      return { ok: true, yaml: rawYaml, warnings: lint.warnings };
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // YAML recipe dispatch
   // -------------------------------------------------------------------------
 
@@ -478,6 +533,101 @@ export class RecipeOrchestration {
       });
     return fireResult;
   }
+}
+
+const RECIPE_GENERATION_SYSTEM_PROMPT = `You are a Patchwork recipe generator. Your ONLY output must be a valid Patchwork recipe in YAML format, fenced in a \`\`\`yaml block. Output nothing else — no explanation, no preamble, no trailing text.
+
+SCHEMA:
+  apiVersion: patchwork.sh/v1
+  name: <slug: lowercase, hyphens, max 64 chars>
+  description: <one-line description>   # optional
+  trigger:
+    type: manual | cron | webhook
+    at: "<cron expression>"             # only when type=cron
+    path: "/hooks/<slug>"               # only when type=webhook
+  vars:                                 # optional
+    - name: VAR_NAME
+      description: hint for caller
+      required: true | false
+      default: "value"
+  steps:
+    - id: step-1
+      agent:
+        prompt: |
+          <what Claude should do in this step>
+        into: step_1_output
+
+RULES:
+1. Trigger inference: "every morning/daily/weekly/at Nhm" → cron; "webhook" → webhook; otherwise → manual.
+2. Steps: decompose into 1–4 agent steps. Each prompt should be self-contained; reference prior step outputs as {{step_id_output}}.
+3. Name: derive a slug from the description (e.g. "daily github digest" → "daily-github-digest").
+4. Vars: declare caller-supplied values (email, repo, channel) as vars with required: true.
+5. Step prompts are plain natural-language — do NOT invent tool names.
+
+EXAMPLES:
+User: every morning, summarize my GitHub notifications and email me a digest
+\`\`\`yaml
+apiVersion: patchwork.sh/v1
+name: morning-github-digest
+description: Daily summary of GitHub notifications delivered by email
+trigger:
+  type: cron
+  at: "0 8 * * 1-5"
+vars:
+  - name: EMAIL
+    description: Email address to send the digest to
+    required: true
+steps:
+  - id: fetch-notifications
+    agent:
+      prompt: |
+        Fetch my unread GitHub notifications from the last 24 hours.
+        Summarize them grouped by repository: PR reviews, issues, mentions.
+        One line per item.
+      into: notifications_summary
+  - id: send-digest
+    agent:
+      prompt: |
+        Send an email to {{EMAIL}} with subject "Morning GitHub Digest".
+        Body: {{notifications_summary}}
+      into: send_result
+\`\`\`
+
+User: when a new Sentry issue arrives, create a Linear ticket and post to Slack
+\`\`\`yaml
+apiVersion: patchwork.sh/v1
+name: sentry-to-linear-slack
+description: Triage new Sentry issues to Linear and Slack
+trigger:
+  type: webhook
+  path: "/hooks/sentry-issues"
+vars:
+  - name: SLACK_CHANNEL
+    description: Slack channel to notify
+    required: false
+    default: "#incidents"
+steps:
+  - id: create-linear-ticket
+    agent:
+      prompt: |
+        A new Sentry issue arrived. Payload: {{payload}}
+        Create a Linear ticket in the Bug triage team with priority High.
+        Title: the Sentry issue title. Include the Sentry URL in the description.
+      into: linear_ticket
+  - id: notify-slack
+    agent:
+      prompt: |
+        Post to {{SLACK_CHANNEL}}: "New Sentry issue triaged → {{linear_ticket}}"
+      into: slack_result
+\`\`\``;
+
+function extractYamlBlock(text: string): string | null {
+  const fenced = /```(?:yaml)?\n([\s\S]*?)```/.exec(text);
+  if (fenced?.[1]) return fenced[1].trim();
+  const trimmed = text.trim();
+  if (/^(?:apiVersion:|name:|#\s*yaml-language-server)/.test(trimmed))
+    return trimmed;
+  return null;
 }
 
 /**
