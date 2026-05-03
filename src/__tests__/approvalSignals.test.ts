@@ -316,4 +316,107 @@ describe("computePersonalSignals", () => {
       expect(b).toEqual(a);
     });
   });
+
+  describe("heuristic 7 — risk tier escalation", () => {
+    function logWithTieredAllows(tiers: Array<"low" | "medium" | "high">) {
+      const log = new ActivityLog();
+      for (const tier of tiers) {
+        log.recordEvent("approval_decision", {
+          toolName: "anyTool",
+          decision: "allow",
+          tier,
+        });
+      }
+      return log;
+    }
+
+    it("does not surface below the 5-sample baseline", () => {
+      const log = logWithTieredAllows(["low", "low", "low"]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentTier: "high",
+      });
+      expect(signals.find((s) => s.kind === "tier_escalation")).toBeUndefined();
+    });
+
+    it("does not surface when current tier matches the baseline", () => {
+      const log = logWithTieredAllows(["low", "low", "low", "low", "low"]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentTier: "low",
+      });
+      expect(signals.find((s) => s.kind === "tier_escalation")).toBeUndefined();
+    });
+
+    it("surfaces with medium severity on a 1-tier jump (low baseline → medium)", () => {
+      const log = logWithTieredAllows(["low", "low", "low", "low", "low"]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentTier: "medium",
+      });
+      const sig = signals.find((s) => s.kind === "tier_escalation");
+      expect(sig).toBeDefined();
+      expect(sig?.severity).toBe("medium");
+      expect(sig?.label).toMatch(/usually approve low/);
+      expect(sig?.label).toMatch(/medium/);
+    });
+
+    it("surfaces with high severity on a 2-tier jump (low baseline → high)", () => {
+      const log = logWithTieredAllows(["low", "low", "low", "low", "low"]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentTier: "high",
+      });
+      const sig = signals.find((s) => s.kind === "tier_escalation");
+      expect(sig?.severity).toBe("high");
+    });
+
+    it("uses the median, not the max, of recent tiers", () => {
+      const log = logWithTieredAllows([
+        "low",
+        "low",
+        "low",
+        "low",
+        "low",
+        "high",
+      ]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentTier: "medium",
+      });
+      const sig = signals.find((s) => s.kind === "tier_escalation");
+      expect(sig).toBeDefined(); // baseline=low (median), current=medium → escalation
+    });
+
+    it("ignores rejections when computing baseline", () => {
+      const log = new ActivityLog();
+      for (let i = 0; i < 5; i++) {
+        log.recordEvent("approval_decision", {
+          toolName: "x",
+          decision: "deny",
+          tier: "low",
+        });
+      }
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+        currentTier: "high",
+      });
+      expect(signals.find((s) => s.kind === "tier_escalation")).toBeUndefined();
+    });
+
+    it("is silent when currentTier is omitted", () => {
+      const log = logWithTieredAllows(["low", "low", "low", "low", "low"]);
+      const signals = computePersonalSignals({
+        toolName: "Bash",
+        activityLog: log,
+      });
+      expect(signals.find((s) => s.kind === "tier_escalation")).toBeUndefined();
+    });
+  });
 });
