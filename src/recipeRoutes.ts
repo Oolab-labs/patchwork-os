@@ -274,6 +274,16 @@ export interface RecipeRouteDeps {
         error?: string;
       })
     | null;
+  promoteRecipeVariantFn:
+    | ((
+        variantName: string,
+        targetName: string,
+      ) => {
+        ok: boolean;
+        path?: string;
+        error?: string;
+      })
+    | null;
   lintRecipeContentFn:
     | ((content: string) => {
         ok: boolean;
@@ -967,6 +977,43 @@ export function tryHandleRecipeRoute(
         : 400;
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify(result));
+    return true;
+  }
+
+  // POST /recipes/:name/promote — promote variant to canonical name.
+  // Body: { targetName: string }
+  const promoteMatch = /^\/recipes\/([^/]+)\/promote$/.exec(parsedUrl.pathname);
+  if (promoteMatch && req.method === "POST") {
+    const variantName = decodeURIComponent(promoteMatch[1] ?? "");
+    void (async () => {
+      const parsedBody = await readJsonBody<{ targetName?: string }>(
+        req,
+        RECIPE_ROUTE_BODY_CAPS.content,
+      );
+      if (!parsedBody.ok) {
+        respondInvalidJson(res);
+        return;
+      }
+      const { targetName } = parsedBody.value ?? {};
+      if (typeof targetName !== "string" || !targetName.trim()) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "targetName required" }));
+        return;
+      }
+      if (!deps.promoteRecipeVariantFn) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Promote unavailable" }));
+        return;
+      }
+      const result = deps.promoteRecipeVariantFn(variantName, targetName);
+      const httpStatus = result.ok
+        ? 200
+        : result.error?.includes("not found")
+          ? 404
+          : 400;
+      res.writeHead(httpStatus, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result));
+    })();
     return true;
   }
 

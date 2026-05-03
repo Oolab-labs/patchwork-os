@@ -655,6 +655,55 @@ export function duplicateRecipe(
 }
 
 /**
+ * Promote a variant recipe to become the canonical name.
+ *
+ * Steps:
+ *   1. Load the variant's YAML.
+ *   2. Rewrite its `name:` field to `targetName`.
+ *   3. Save under `targetName` (overwrites any existing file at that name).
+ *   4. Delete the variant file so only one copy exists.
+ *
+ * The caller supplies `variantName` (e.g. "morning-brief-v2") and
+ * `targetName` (e.g. "morning-brief"). Both must pass the recipe name
+ * validation regex. Returns `{ ok, path }` on success.
+ */
+export function promoteRecipeVariant(
+  recipesDir: string,
+  variantName: string,
+  targetName: string,
+): { ok: boolean; path?: string; error?: string } {
+  const safeVariant = variantName.toLowerCase();
+  const safeTarget = targetName.toLowerCase();
+  const nameRe = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+  if (!nameRe.test(safeVariant) || !nameRe.test(safeTarget)) {
+    return { ok: false, error: "Invalid recipe name" };
+  }
+  if (safeVariant === safeTarget) {
+    return { ok: false, error: "Variant and target names must differ" };
+  }
+
+  const source = loadRecipeContent(recipesDir, safeVariant);
+  if (!source) {
+    return { ok: false, error: "Variant recipe not found" };
+  }
+
+  const newContent = source.content.replace(
+    /^name:\s*.+$/m,
+    `name: ${safeTarget}`,
+  );
+
+  const saveResult = saveRecipeContent(recipesDir, safeTarget, newContent);
+  if (!saveResult.ok) {
+    return { ok: false, error: saveResult.error };
+  }
+
+  // Delete the variant file — best-effort; don't fail the promote if cleanup fails.
+  deleteRecipeContent(recipesDir, safeVariant);
+
+  return { ok: true, path: saveResult.path };
+}
+
+/**
  * Lints raw YAML/JSON recipe content without writing to disk. Used by the
  * dashboard edit UI to surface validateRecipeDefinition warnings live, in
  * addition to the warnings returned by saveRecipeContent on save.
