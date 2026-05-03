@@ -668,6 +668,7 @@ async function handleApprovalRequest(
         activityLog: deps.activityLog,
         currentTier: tier,
         currentWorkspace: deps.workspace,
+        currentParams: params,
       })
     : undefined;
 
