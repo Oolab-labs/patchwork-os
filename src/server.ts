@@ -203,6 +203,13 @@ export class Server extends EventEmitter<ServerEvents> {
   public onApprovalDecision:
     | ((event: string, meta: Record<string, unknown>) => void)
     | undefined = undefined;
+  /**
+   * Patchwork: activity log handle, used by approvalHttp to compute
+   * passive risk personalization signals (`src/approvalSignals.ts`).
+   * When unset, personalSignals are simply omitted from queue entries.
+   */
+  public activityLog: import("./activityLog.js").ActivityLog | undefined =
+    undefined;
   /** Patchwork: set by bridge to match + fire webhook-triggered recipes. */
   public webhookFn:
     | ((
@@ -1197,6 +1204,7 @@ export class Server extends EventEmitter<ServerEvents> {
                 pushServiceUrl: this.pushServiceUrl,
                 pushServiceToken: this.pushServiceToken,
                 pushServiceBaseUrl: this.pushServiceBaseUrl,
+                activityLog: this.activityLog,
               },
             );
             res.writeHead(result.status, {
