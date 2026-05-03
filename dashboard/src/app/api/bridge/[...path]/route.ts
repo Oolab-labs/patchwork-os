@@ -126,13 +126,28 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
     req.method === "GET" || req.method === "HEAD"
       ? undefined
       : await req.text();
+  const forwardHeaders: Record<string, string> = {
+    "content-type": req.headers.get("content-type") ?? "",
+  };
+  const tracePassphrase = req.headers.get("x-trace-passphrase");
+  if (tracePassphrase) forwardHeaders["x-trace-passphrase"] = tracePassphrase;
   const res = await bridgeFetch(target, {
     method: req.method,
-    headers: { "content-type": req.headers.get("content-type") ?? "" },
+    headers: forwardHeaders,
     body,
   });
-  const text = await res.text();
   const upstreamCt = res.headers.get("content-type") ?? "";
+  // Binary downloads (encrypted export, gzip) — stream bytes through directly.
+  if (
+    upstreamCt.includes("application/octet-stream") ||
+    upstreamCt.includes("application/gzip")
+  ) {
+    const cd = res.headers.get("content-disposition");
+    const responseHeaders: Record<string, string> = { "content-type": upstreamCt };
+    if (cd) responseHeaders["content-disposition"] = cd;
+    return new Response(res.body, { status: res.status, headers: responseHeaders });
+  }
+  const text = await res.text();
   const ct =
     upstreamCt.includes("application/json") || upstreamCt === ""
       ? "application/json"

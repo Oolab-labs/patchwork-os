@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { relTime } from "@/components/time";
 import { apiPath } from "@/lib/api";
 import { useBridgeFetch } from "@/hooks/useBridgeFetch";
@@ -208,32 +208,44 @@ const SINCE_OPTIONS: { k: SinceFilter; label: string; ms: number | null }[] = [
 function ExportButton() {
   const [open, setOpen] = useState(false);
   const [passphrase, setPassphrase] = useState("");
-  const linkRef = useRef<HTMLAnchorElement>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function buildUrl() {
-    const base = apiPath("/api/bridge/traces/export");
-    return passphrase.trim()
-      ? `${base}?passphrase=${encodeURIComponent(passphrase.trim())}`
-      : base;
-  }
-
-  function handleDownload() {
-    const a = linkRef.current;
-    if (!a) return;
-    a.href = buildUrl();
-    a.download = passphrase.trim()
-      ? `traces-export.enc`
-      : `traces-export.jsonl.gz`;
-    a.click();
-    setOpen(false);
-    setPassphrase("");
+  async function handleDownload() {
+    const phrase = passphrase.trim();
+    if (phrase && phrase.length < 12) {
+      setError("Passphrase must be at least 12 characters.");
+      return;
+    }
+    setError(null);
+    setDownloading(true);
+    try {
+      const headers: Record<string, string> = {};
+      if (phrase) headers["x-trace-passphrase"] = phrase;
+      const res = await fetch(apiPath("/api/bridge/traces/export"), { headers });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError((body as { error?: string }).error ?? `Export failed (${res.status})`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = phrase ? "traces-export.enc" : "traces-export.jsonl.gz";
+      a.click();
+      URL.revokeObjectURL(url);
+      setOpen(false);
+      setPassphrase("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setDownloading(false);
+    }
   }
 
   return (
     <div style={{ position: "relative" }}>
-      {/* Hidden anchor used for programmatic download */}
-      {/* biome-ignore lint/a11y/useValidAnchor: programmatic download anchor */}
-      <a ref={linkRef} style={{ display: "none" }} aria-hidden="true" />
       <button type="button" className="btn sm" onClick={() => setOpen((v) => !v)}>
         Export
       </button>
@@ -275,12 +287,17 @@ function ExportButton() {
             }}
             autoFocus
           />
+          {error && (
+            <p style={{ margin: "0 0 var(--s-3)", fontSize: 12, color: "var(--red)" }}>
+              {error}
+            </p>
+          )}
           <div style={{ display: "flex", gap: "var(--s-3)", justifyContent: "flex-end" }}>
-            <button type="button" className="btn sm" onClick={() => { setOpen(false); setPassphrase(""); }}>
+            <button type="button" className="btn sm" onClick={() => { setOpen(false); setPassphrase(""); setError(null); }}>
               Cancel
             </button>
-            <button type="button" className="btn sm primary" onClick={handleDownload}>
-              {passphrase.trim() ? "Download encrypted" : "Download"}
+            <button type="button" className="btn sm primary" onClick={handleDownload} disabled={downloading}>
+              {downloading ? "Downloading…" : passphrase.trim() ? "Download encrypted" : "Download"}
             </button>
           </div>
           {passphrase.trim() && (
