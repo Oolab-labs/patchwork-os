@@ -26,6 +26,111 @@ function buildCurlExample(port: number | undefined, path: string): string {
   return `curl -X POST ${url} \\\n  -H 'Content-Type: application/json' \\\n  -d '{"hello":"world"}'`;
 }
 
+interface WebhookPayloadEntry {
+  receivedAt: number;
+  payload: unknown;
+  ok: boolean;
+  error?: string;
+  taskId?: string;
+  recipeName?: string;
+}
+interface WebhookPayloadsResponse {
+  path: string;
+  entries: WebhookPayloadEntry[];
+}
+
+function WebhookPayloadsCard({ webhookPath }: { webhookPath: string }) {
+  const { data, error, loading } = useBridgeFetch<WebhookPayloadsResponse>(
+    `/api/bridge/webhook-payloads${webhookPath}`,
+    { intervalMs: 5000 },
+  );
+  const entries = data?.entries ?? [];
+  return (
+    <div style={{ gridColumn: "1 / -1", marginTop: 8 }}>
+      <span className="muted">Last payloads</span>
+      {loading && entries.length === 0 && (
+        <p style={{ fontSize: 11, color: "var(--fg-2)", margin: "4px 0 0" }}>
+          Loading…
+        </p>
+      )}
+      {error && (
+        <p style={{ fontSize: 11, color: "var(--err)", margin: "4px 0 0" }}>
+          {error}
+        </p>
+      )}
+      {!loading && !error && entries.length === 0 && (
+        <p style={{ fontSize: 11, color: "var(--fg-2)", margin: "4px 0 0" }}>
+          No payloads received yet. Send a test or fire from your trigger
+          source — recent bodies will appear here.
+        </p>
+      )}
+      {entries.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            marginTop: 4,
+          }}
+        >
+          {entries.map((e) => (
+            <details
+              key={`${e.receivedAt}-${e.taskId ?? "anon"}`}
+              style={{
+                background: "var(--bg-1)",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--r-2)",
+              }}
+            >
+              <summary
+                style={{
+                  fontSize: 11,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  className={`pill ${e.ok ? "ok" : "err"}`}
+                  style={{ fontSize: 10 }}
+                >
+                  {e.ok ? "ok" : "err"}
+                </span>
+                <span className="muted">{relTime(e.receivedAt)}</span>
+                {e.taskId && (
+                  <code style={{ fontSize: 11 }}>
+                    task {e.taskId.slice(0, 8)}
+                  </code>
+                )}
+                {e.error && (
+                  <span style={{ color: "var(--err)" }}>{e.error}</span>
+                )}
+              </summary>
+              <pre
+                style={{
+                  fontSize: 11,
+                  margin: 0,
+                  padding: "0 10px 8px",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  overflowX: "auto",
+                }}
+              >
+                {typeof e.payload === "string"
+                  ? e.payload
+                  : JSON.stringify(e.payload, null, 2)}
+              </pre>
+            </details>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -876,6 +981,7 @@ export default function RecipesPage() {
                                   iPhone Shortcut, Stream Deck, Home Assistant,
                                   NFC tag, cron job, or another service.
                                 </p>
+                                <WebhookPayloadsCard webhookPath={r.webhookPath} />
                               </div>
                             )}
                             {r.lint && (r.lint.errorCount > 0 || r.lint.warningCount > 0) && (
