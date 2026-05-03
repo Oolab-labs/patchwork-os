@@ -291,3 +291,98 @@ export async function runTracesExport(
     totalBytes: files.reduce((sum, f) => sum + f.bytes, 0),
   };
 }
+
+/**
+ * Stream-variant of `runTracesExport` — writes gzip-compressed JSONL
+ * directly into a caller-supplied `Writable` (e.g. an HTTP response).
+ * No temp file is created; the manifest/rows are emitted in one pass.
+ *
+ * The caller is responsible for setting `Content-Type`,
+ * `Content-Encoding`, and `Content-Disposition` headers BEFORE calling
+ * this function because Node's HTTP response is not writable after headers
+ * have been flushed.
+ *
+ * Returns row/byte accounting but omits `outputPath` (no disk file).
+ */
+export async function runTracesExportToStream(
+  writable: import("node:stream").Writable,
+  opts: Omit<TracesExportOptions, "output"> = {},
+): Promise<Omit<TracesExportResult, "outputPath">> {
+  const exportedAt = new Date().toISOString();
+  const patchworkDir = opts.patchworkDir ?? defaultPatchworkDir();
+  const activityDir = opts.activityDir ?? defaultActivityDir();
+
+  const files: Array<{
+    source: TraceSource;
+    path: string;
+    relativePath: string;
+    rows: unknown[];
+    bytes: number;
+    activityFile?: string;
+  }> = [];
+
+  for (const { source, filename } of SINGLE_FILE_SOURCES) {
+    const p = path.join(patchworkDir, filename);
+    if (!existsSync(p)) continue;
+    const { rows, bytes } = await readJsonlRows(p);
+    files.push({ source, path: p, relativePath: filename, rows, bytes });
+  }
+  for (const p of discoverActivityFiles(activityDir)) {
+    const { rows, bytes } = await readJsonlRows(p);
+    files.push({
+      source: "activity",
+      path: p,
+      relativePath: path.relative(activityDir, p),
+      rows,
+      bytes,
+      activityFile: path.basename(p),
+    });
+  }
+
+  const totalCount = files.reduce((s, f) => s + f.rows.length, 0);
+  const sources = [
+    ...new Set(files.map((f) => f.source)),
+  ].sort() as TraceSource[];
+  const manifest: ManifestEnvelope = {
+    type: "manifest",
+    version: TRACES_EXPORT_VERSION,
+    exportedAt,
+    sources,
+    files: files.map((f) => ({
+      source: f.source,
+      relativePath: f.relativePath,
+      count: f.rows.length,
+      bytes: f.bytes,
+    })),
+    totalCount,
+  };
+
+  const gzip = createGzip();
+  const drainPromise = pipeline(gzip, writable);
+
+  const writeChunk = (line: string): void => {
+    gzip.write(`${line}\n`);
+  };
+  writeChunk(JSON.stringify(manifest));
+  for (const f of files) {
+    for (const entry of f.rows) {
+      const env: RowEnvelope = { source: f.source, entry };
+      if (f.activityFile) env.file = f.activityFile;
+      writeChunk(JSON.stringify(env));
+    }
+  }
+  gzip.end();
+  await drainPromise;
+
+  return {
+    exportedAt,
+    files: files.map((f) => ({
+      source: f.source,
+      path: f.path,
+      count: f.rows.length,
+      bytes: f.bytes,
+    })),
+    totalCount,
+    totalBytes: files.reduce((sum, f) => sum + f.bytes, 0),
+  };
+}

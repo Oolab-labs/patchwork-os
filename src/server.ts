@@ -697,6 +697,37 @@ export class Server extends EventEmitter<ServerEvents> {
         }
         return;
       }
+      if (parsedUrl.pathname === "/traces/export" && req.method === "GET") {
+        void (async () => {
+          try {
+            const { runTracesExportToStream } = await import(
+              "./commands/tracesExport.js"
+            );
+            const stamp = new Date()
+              .toISOString()
+              .replace(/:/g, "-")
+              .replace(/\..+$/, "");
+            const filename = `traces-export-${stamp}.jsonl.gz`;
+            res.writeHead(200, {
+              "Content-Type": "application/gzip",
+              "Content-Disposition": `attachment; filename="${filename}"`,
+              "Cache-Control": "no-store",
+            });
+            await runTracesExportToStream(res);
+          } catch (err) {
+            if (!res.headersSent) {
+              res.writeHead(500, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: err instanceof Error ? err.message : String(err),
+                }),
+              );
+            }
+          }
+        })();
+        return;
+      }
+
       if (parsedUrl.pathname === "/analytics" && req.method === "GET") {
         try {
           const wh = parsedUrl.searchParams.get("windowHours");
