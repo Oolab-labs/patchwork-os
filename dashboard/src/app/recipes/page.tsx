@@ -205,6 +205,41 @@ interface RecipeVar {
   default?: string;
 }
 
+type TrustLevel =
+  | "draft"
+  | "manual_run"
+  | "ask_every_time"
+  | "ask_novel"
+  | "mostly_trusted"
+  | "fully_trusted";
+
+const TRUST_LEVEL_LABELS: Record<TrustLevel, string> = {
+  draft: "Draft",
+  manual_run: "Manual run",
+  ask_every_time: "Ask every time",
+  ask_novel: "Ask on novel cases",
+  mostly_trusted: "Mostly trusted",
+  fully_trusted: "Fully trusted",
+};
+
+const TRUST_LEVEL_COLORS: Record<TrustLevel, string> = {
+  draft: "var(--fg-3)",
+  manual_run: "var(--fg-2)",
+  ask_every_time: "var(--warn, #e6a817)",
+  ask_novel: "var(--warn, #e6a817)",
+  mostly_trusted: "var(--ok, #22c55e)",
+  fully_trusted: "var(--ok, #22c55e)",
+};
+
+const TRUST_LEVELS: TrustLevel[] = [
+  "draft",
+  "manual_run",
+  "ask_every_time",
+  "ask_novel",
+  "mostly_trusted",
+  "fully_trusted",
+];
+
 interface Recipe {
   id?: string;
   name: string;
@@ -217,6 +252,7 @@ interface Recipe {
   stepCount?: number;
   path?: string;
   enabled?: boolean;
+  trustLevel?: TrustLevel;
   vars?: RecipeVar[];
   lastRun?: number;
   lint?: {
@@ -765,6 +801,23 @@ export default function RecipesPage() {
                               ⚠ {r.lint.warningCount}
                             </span>
                           )}
+                          {r.trustLevel && r.trustLevel !== "draft" && (
+                            <span
+                              style={{
+                                background: `color-mix(in srgb, ${TRUST_LEVEL_COLORS[r.trustLevel]} 12%, transparent)`,
+                                border: `1px solid ${TRUST_LEVEL_COLORS[r.trustLevel]}`,
+                                borderRadius: 4,
+                                color: TRUST_LEVEL_COLORS[r.trustLevel],
+                                fontSize: 10,
+                                fontWeight: 600,
+                                padding: "1px 5px",
+                                whiteSpace: "nowrap",
+                              }}
+                              title={`Trust level: ${TRUST_LEVEL_LABELS[r.trustLevel]}`}
+                            >
+                              {TRUST_LEVEL_LABELS[r.trustLevel]}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="mono muted">{r.stepCount ?? "—"}</td>
@@ -836,6 +889,36 @@ export default function RecipesPage() {
                           >
                             {r.enabled === false ? "Enable" : "Disable"}
                           </button>
+                          <select
+                            value={r.trustLevel ?? "draft"}
+                            title="Trust level"
+                            style={{
+                              background: "var(--bg-2)",
+                              border: "1px solid var(--border-default)",
+                              borderRadius: "var(--r-1)",
+                              color: "var(--fg-1)",
+                              cursor: "pointer",
+                              fontSize: 11,
+                              padding: "2px 4px",
+                            }}
+                            onChange={async (e) => {
+                              await fetch(
+                                apiPath(`/api/bridge/recipes/${encodeURIComponent(r.name)}/trust`),
+                                {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ level: e.target.value }),
+                                },
+                              );
+                              void load();
+                            }}
+                          >
+                            {TRUST_LEVELS.map((lvl) => (
+                              <option key={lvl} value={lvl}>
+                                {TRUST_LEVEL_LABELS[lvl]}
+                              </option>
+                            ))}
+                          </select>
                           {r.webhookPath && (
                             <button
                               type="button"

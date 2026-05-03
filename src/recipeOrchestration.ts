@@ -27,6 +27,7 @@ import {
   saveRecipe,
   saveRecipeContent,
   setRecipeEnabled,
+  setTrustLevel,
 } from "./recipesHttp.js";
 import type { RecipeRunLog } from "./runLog.js";
 import type { Server } from "./server.js";
@@ -118,6 +119,15 @@ export class RecipeOrchestration {
 
     server.lintRecipeContentFn = (content: string) =>
       lintRecipeContent(content);
+
+    server.setRecipeTrustFn = (name: string, level: string) => {
+      const recipesDir = path.join(os.homedir(), ".patchwork", "recipes");
+      return setTrustLevel(
+        recipesDir,
+        name,
+        level as import("./recipesHttp.js").TrustLevel,
+      );
+    };
 
     // biome-ignore lint/suspicious/noExplicitAny: matches Server type
     server.saveRecipeFn = (draft: any) => {
