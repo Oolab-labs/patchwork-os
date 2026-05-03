@@ -720,8 +720,18 @@ export class Server extends EventEmitter<ServerEvents> {
       if (parsedUrl.pathname === "/traces/export" && req.method === "GET") {
         void (async () => {
           try {
-            const passphrase =
+            const passphraseRaw =
               parsedUrl.searchParams?.get("passphrase") ?? null;
+            if (passphraseRaw !== null && passphraseRaw.length > 4096) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: "passphrase too long (max 4096 chars)",
+                }),
+              );
+              return;
+            }
+            const passphrase = passphraseRaw;
             const { runTracesExportToStream } = await import(
               "./commands/tracesExport.js"
             );
