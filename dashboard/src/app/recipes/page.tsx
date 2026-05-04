@@ -1031,8 +1031,6 @@ export default function RecipesPage() {
                                 permissions; configure tool gating in
                                 {" "}
                                 <code>~/.claude/settings.json</code>.
-                                {/* TODO(C-PR4): drop never-shipped POST /recipes/:name/permissions
-                                    route (DP-7 follow-up from PLAN-MASTER-V2 A-PR4). */}
                               </span>
                             </div>
                             {r.webhookPath && (
