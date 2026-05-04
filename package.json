@@ -1,6 +1,6 @@
 {
   "name": "patchwork-os",
-  "version": "0.2.0-alpha.35",
+  "version": "0.2.0-alpha.36",
   "description": "Your personal AI runtime, local-first. Patchwork OS gives any AI model a consistent set of tools, YAML recipes, a delegation policy with approval queue, and a durable trace memory — all on your machine, all under your policy.",
   "type": "module",
   "main": "dist/index.js",
