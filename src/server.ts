@@ -4,6 +4,7 @@ import { WebSocket, WebSocketServer as WsServer } from "ws";
 import type { ActivityListener } from "./activityTypes.js";
 import { handleApprovalsStream, routeApprovalRequest } from "./approvalHttp.js";
 import { getApprovalQueue } from "./approvalQueue.js";
+import type { AttributedPermissionRules } from "./ccPermissions.js";
 import { saveBridgeConfigDriver } from "./config.js";
 import {
   tryHandleConnectorRoute,
@@ -99,6 +100,11 @@ export class Server extends EventEmitter<ServerEvents> {
   private oauthServer: OAuthServer | null = null;
   private oauthIssuerUrl: string | null = null;
   private sseSubscriberCount = 0;
+  /** Cache for CC permission rules (30s TTL) to avoid filesystem walks on each dashboard poll */
+  private _explainRulesCache: {
+    at: number;
+    rules: AttributedPermissionRules;
+  } | null = null;
   private static readonly MAX_SSE_SUBSCRIBERS = 20;
 
   /** Set by bridge to provide health data */
@@ -1153,8 +1159,23 @@ export class Server extends EventEmitter<ServerEvents> {
         const { loadCcPermissionsAttributed, explainRules } = await import(
           "./ccPermissions.js"
         );
-        const rules = loadCcPermissionsAttributed(process.cwd());
-        const explanation = explainRules(tool, specifier || undefined, rules);
+        // Cache rules for 30 s — loadCcPermissionsAttributed walks the
+        // filesystem and this endpoint can be polled by the dashboard.
+        const now = Date.now();
+        if (
+          !this._explainRulesCache ||
+          now - this._explainRulesCache.at > 30_000
+        ) {
+          this._explainRulesCache = {
+            at: now,
+            rules: loadCcPermissionsAttributed(process.cwd()),
+          };
+        }
+        const explanation = explainRules(
+          tool,
+          specifier || undefined,
+          this._explainRulesCache.rules,
+        );
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({ tool, specifier: specifier ?? null, explanation }),
