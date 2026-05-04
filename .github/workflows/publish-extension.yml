@@ -2,7 +2,12 @@ name: Publish Extension
 
 on:
   push:
-    tags: ['v*']
+    # Extension publishes are gated on `ext-v*` tags (the dispatch path below
+    # creates them). Listening on the bridge's `v*` tags would publish the
+    # extension on every Patchwork OS release, regardless of whether an
+    # extension change shipped — causing duplicate marketplace publishes /
+    # accidental releases.
+    tags: ['ext-v*']
   workflow_dispatch:
     inputs:
       bump:
