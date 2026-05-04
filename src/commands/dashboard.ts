@@ -11,6 +11,7 @@
  *   a <n>       approve inbox item (move to ~/.patchwork/approved/)
  */
 
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -249,7 +250,6 @@ function approveItem(item: InboxItem, patchworkDir: string): string {
 
 function openInEditor(item: InboxItem): void {
   const editor = process.env.EDITOR ?? process.env.VISUAL ?? "vi";
-  const { spawnSync } = require("node:child_process");
   spawnSync(editor, [item.fullPath], { stdio: "inherit" });
 }
 
