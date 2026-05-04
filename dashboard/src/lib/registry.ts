@@ -51,7 +51,7 @@ export interface RegistryRecipe extends TrustMetadata {
  * The install field uses the same `github:owner/repo/path@ref` shape
  * as RegistryRecipe so the same parseInstallSource helper works.
  */
-export interface BundleManifest {
+export interface BundleManifest extends TrustMetadata {
   /** Scoped package name, e.g. "@patchworkos/gmail-vip-support". */
   name: string;
   version: string;
@@ -82,7 +82,7 @@ export interface BundleManifest {
    * API keys, etc.). Shown as a checklist before install.
    */
   required_env?: string[];
-} & TrustMetadata;
+}
 
 export interface RegistryBundle extends TrustMetadata {
   name: string;
@@ -192,7 +192,7 @@ export async function fetchRegistry(opts: FetchOpts = {}): Promise<RegistryData 
   try {
     const res = await fetch(REGISTRY_INDEX_URL, {
       next: { revalidate: opts.revalidate ?? 300 },
-    });
+    } as RequestInit);
     if (!res.ok) return null;
     return (await res.json()) as RegistryData;
   } catch {
@@ -207,7 +207,7 @@ export async function fetchManifest(
   try {
     const res = await fetch(rawUrlFor(src, "recipe.json"), {
       next: { revalidate: opts.revalidate ?? 300 },
-    });
+    } as RequestInit);
     if (!res.ok) return null;
     return (await res.json()) as RecipeManifest;
   } catch {
@@ -223,7 +223,7 @@ export async function fetchRecipeYaml(
   try {
     const res = await fetch(rawUrlFor(src, mainFile), {
       next: { revalidate: opts.revalidate ?? 300 },
-    });
+    } as RequestInit);
     if (!res.ok) return null;
     return await res.text();
   } catch {
@@ -255,7 +255,7 @@ export async function fetchBundleManifest(
   try {
     const res = await fetch(rawUrlFor(src, "patchwork-bundle.json"), {
       next: { revalidate: opts.revalidate ?? 300 },
-    });
+    } as RequestInit);
     if (!res.ok) return null;
     return (await res.json()) as BundleManifest;
   } catch {
