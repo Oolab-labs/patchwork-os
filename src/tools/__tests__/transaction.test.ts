@@ -181,7 +181,7 @@ describe("transaction TTL", () => {
         newContent: "x",
       });
       expect(isError(result)).toBe(true);
-      expect(result.content[0].text).toContain("expired");
+      expect(result.content[0]!.text).toContain("expired");
     } finally {
       Date.now = realNow;
     }
@@ -199,7 +199,7 @@ describe("transaction TTL", () => {
     try {
       const result = await commitTransaction.handler({ transactionId });
       expect(isError(result)).toBe(true);
-      expect(result.content[0].text).toContain("expired");
+      expect(result.content[0]!.text).toContain("expired");
     } finally {
       Date.now = realNow;
     }
