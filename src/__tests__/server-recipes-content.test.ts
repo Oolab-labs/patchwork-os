@@ -256,3 +256,115 @@ describe("Server recipe content routes", () => {
     });
   });
 });
+
+describe("POST /recipes/:name/promote", () => {
+  it("returns 200 on successful promote", async () => {
+    server!.promoteRecipeVariantFn = async () => ({
+      ok: true,
+      path: "/tmp/morning-brief.yaml",
+    });
+
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/morning-brief-v2/promote",
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+      },
+      JSON.stringify({ targetName: "morning-brief" }),
+    );
+
+    expect(status).toBe(200);
+    expect(JSON.parse(body).ok).toBe(true);
+  });
+
+  it("returns 409 when targetExists and force not set", async () => {
+    server!.promoteRecipeVariantFn = async () => ({
+      ok: false,
+      targetExists: true,
+      error:
+        'Recipe "morning-brief" already exists. Pass force:true to overwrite.',
+    });
+
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/morning-brief-v2/promote",
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+      },
+      JSON.stringify({ targetName: "morning-brief" }),
+    );
+
+    expect(status).toBe(409);
+    const parsed = JSON.parse(body);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.targetExists).toBe(true);
+  });
+
+  it("passes force: true to promoteRecipeVariantFn", async () => {
+    const calls: Array<{
+      variantName: string;
+      targetName: string;
+      force?: boolean;
+    }> = [];
+    server!.promoteRecipeVariantFn = async (v, t, opts) => {
+      calls.push({ variantName: v, targetName: t, force: opts?.force });
+      return { ok: true, path: "/tmp/out.yaml" };
+    };
+
+    await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/morning-brief-v2/promote",
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+      },
+      JSON.stringify({ targetName: "morning-brief", force: true }),
+    );
+
+    expect(calls[0]?.force).toBe(true);
+  });
+
+  it("returns 400 when targetName missing", async () => {
+    server!.promoteRecipeVariantFn = async () => ({ ok: true });
+
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/morning-brief-v2/promote",
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+      },
+      JSON.stringify({}),
+    );
+
+    expect(status).toBe(400);
+    expect(JSON.parse(body).error).toMatch(/targetName/i);
+  });
+
+  it("returns 503 when promoteRecipeVariantFn unset", async () => {
+    const { status, body } = await makeRequest(
+      {
+        method: "POST",
+        path: "/recipes/morning-brief-v2/promote",
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+      },
+      JSON.stringify({ targetName: "morning-brief" }),
+    );
+
+    expect(status).toBe(503);
+    expect(JSON.parse(body).error).toMatch(/unavailable/i);
+  });
+});
