@@ -26,7 +26,6 @@
     "src/__tests__/integration.test.ts",
     "src/__tests__/lazyTools.test.ts",
     "src/__tests__/mobileOversight.e2e.test.ts",
-    "src/__tests__/pluginLoader.test.ts",
     "src/__tests__/pluginWatcher-shadow.test.ts",
     "src/__tests__/pluginWatcher.test.ts",
     "src/__tests__/pong-starvation.test.ts",

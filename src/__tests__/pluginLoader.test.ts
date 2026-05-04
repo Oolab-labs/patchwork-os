@@ -20,6 +20,8 @@ import {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
+  // Tests only use a small subset of Config; cast through unknown so the
+  // helper doesn't have to track every required field as Config grows.
   return {
     workspace: process.cwd(),
     workspaceFolders: [process.cwd()],
@@ -37,8 +39,9 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     activeWorkspaceFolder: process.cwd(),
     gracePeriodMs: 30_000,
     autoTmux: false,
-    claudeDriver: "none",
+    driver: "none",
     claudeBinary: "claude",
+    antBinary: "ant",
     automationEnabled: false,
     automationPolicyPath: null,
     toolRateLimit: 60,
@@ -46,7 +49,7 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     plugins: [],
     pluginWatch: false,
     ...overrides,
-  };
+  } as unknown as Config;
 }
 
 interface LogCall {
@@ -54,7 +57,9 @@ interface LogCall {
   msg: string;
 }
 
-function makeLogger() {
+type TestLogger = import("../logger.js").Logger & { calls: LogCall[] };
+
+function makeLogger(): TestLogger {
   const calls: LogCall[] = [];
   return {
     calls,
@@ -64,7 +69,7 @@ function makeLogger() {
     debug: (msg: string) => calls.push({ level: "debug", msg }),
     event: () => {},
     child: () => makeLogger(),
-  } as unknown as import("../logger.js").Logger;
+  } as unknown as TestLogger;
 }
 
 function makeManifest(
