@@ -905,14 +905,18 @@ export default function RecipesPage() {
                             }}
                             title={r.enabled === false ? "Enable recipe" : "Disable recipe"}
                             onClick={async () => {
-                              await fetch(
-                                apiPath(`/api/bridge/recipes/${encodeURIComponent(r.name)}`),
-                                {
-                                  method: "PATCH",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ enabled: r.enabled === false }),
-                                },
-                              );
+                              try {
+                                await fetch(
+                                  apiPath(`/api/bridge/recipes/${encodeURIComponent(r.name)}`),
+                                  {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ enabled: r.enabled === false }),
+                                  },
+                                );
+                              } catch (e) {
+                                setErr(e instanceof Error ? e.message : String(e));
+                              }
                               void load();
                             }}
                           >
@@ -931,14 +935,18 @@ export default function RecipesPage() {
                               padding: "2px 4px",
                             }}
                             onChange={async (e) => {
-                              await fetch(
-                                apiPath(`/api/bridge/recipes/${encodeURIComponent(r.name)}/trust`),
-                                {
-                                  method: "PATCH",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ level: e.target.value }),
-                                },
-                              );
+                              try {
+                                await fetch(
+                                  apiPath(`/api/bridge/recipes/${encodeURIComponent(r.name)}/trust`),
+                                  {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ level: e.target.value }),
+                                  },
+                                );
+                              } catch (e) {
+                                setErr(e instanceof Error ? e.message : String(e));
+                              }
                               void load();
                             }}
                           >
