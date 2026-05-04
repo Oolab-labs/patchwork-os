@@ -4,9 +4,7 @@
     "noEmit": true,
     "rootDir": "src"
   },
-  "include": [
-    "src/**/*"
-  ],
+  "include": ["src/**/*"],
   "exclude": [
     "src/__tests__/activityLog.test.ts",
     "src/__tests__/approvalHttp.test.ts",
