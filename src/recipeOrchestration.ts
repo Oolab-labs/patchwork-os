@@ -397,7 +397,15 @@ export class RecipeOrchestration {
       }
 
       // Fall through to YAML runner for .yaml/.yml recipes.
-      const ymlPath = findYamlRecipePath(recipesDir, name);
+      let ymlPath: string | null;
+      try {
+        ymlPath = findYamlRecipePath(recipesDir, name);
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
       if (!ymlPath) {
         return {
           ok: false,
