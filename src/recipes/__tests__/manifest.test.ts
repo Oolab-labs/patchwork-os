@@ -43,7 +43,7 @@ describe("parseManifest", () => {
     expect(result.recipes.children).toEqual(["followup-child.yaml"]);
     expect(result.tags).toEqual(["productivity", "morning"]);
     expect(result.connectors).toEqual(["gmail", "slack"]);
-    expect(result.variables?.SLACK_CHANNEL.description).toBe(
+    expect(result.variables?.SLACK_CHANNEL?.description).toBe(
       "Slack channel to post the brief",
     );
   });

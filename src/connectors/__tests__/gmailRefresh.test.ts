@@ -81,7 +81,9 @@ describe("getValidAccessToken — credential fallback", () => {
     const token = await getValidAccessToken();
     expect(token).toBe("at_refreshed");
 
-    const body = new URLSearchParams(mockFetch.mock.calls[0][1].body as string);
+    const body = new URLSearchParams(
+      mockFetch.mock.calls[0]![1]!.body as string,
+    );
     expect(body.get("client_id")).toBe("stored_cid");
     expect(body.get("client_secret")).toBe("stored_csecret");
     expect(body.get("refresh_token")).toBe("rt_test");
@@ -110,7 +112,9 @@ describe("getValidAccessToken — credential fallback", () => {
 
     await getValidAccessToken();
 
-    const body = new URLSearchParams(mockFetch.mock.calls[0][1].body as string);
+    const body = new URLSearchParams(
+      mockFetch.mock.calls[0]![1]!.body as string,
+    );
     expect(body.get("client_id")).toBe("env_cid");
   });
 });

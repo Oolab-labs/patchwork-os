@@ -45,7 +45,7 @@ describe("refactorPreview", () => {
       actionTitle: "Extract function",
     });
     expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content[0].text).code).toBe("extension_required");
+    expect(JSON.parse(result.content[0]!.text).code).toBe("extension_required");
   });
 
   it("returns preview data on success", async () => {
@@ -83,7 +83,7 @@ describe("refactorPreview", () => {
       actionTitle: "Extract function",
     });
     expect(result.isError).toBeUndefined();
-    const data = JSON.parse(result.content[0].text);
+    const data = JSON.parse(result.content[0]!.text);
     expect(data.title).toBe("Extract function");
     expect(data.totalFiles).toBe(1);
   });

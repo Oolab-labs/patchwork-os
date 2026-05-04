@@ -175,7 +175,7 @@ describe("handleZendeskConnect", () => {
       }),
     );
     const url = (global.fetch as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as string;
+      .calls[0]![0] as string;
     expect(url).toContain("acme.zendesk.com/api/v2/users/me");
     expect(url).not.toContain("acme.zendesk.com.zendesk.com");
   });

@@ -197,8 +197,8 @@ describe("searchAndReplace — glob normalisation", () => {
   it("bare glob '*.ts' is normalised to '**/*.ts' before passing to rg", async () => {
     const tool = createSearchAndReplaceTool(tmpDir);
     await tool.handler({ pattern: "hello", replacement: "hi", glob: "*.ts" });
-    const call = mockedExecSafe.mock.calls[0];
-    const rgArgs: string[] = call[1] as string[];
+    const call = mockedExecSafe.mock.calls[0]!;
+    const rgArgs: string[] = call[1]! as string[];
     const globIdx = rgArgs.indexOf("--glob");
     expect(globIdx).toBeGreaterThan(-1);
     expect(rgArgs[globIdx + 1]).toBe("**/*.ts");
@@ -211,8 +211,8 @@ describe("searchAndReplace — glob normalisation", () => {
       replacement: "hi",
       glob: "src/**/*.ts",
     });
-    const call = mockedExecSafe.mock.calls[0];
-    const rgArgs: string[] = call[1] as string[];
+    const call = mockedExecSafe.mock.calls[0]!;
+    const rgArgs: string[] = call[1]! as string[];
     const globIdx = rgArgs.indexOf("--glob");
     expect(rgArgs[globIdx + 1]).toBe("src/**/*.ts");
   });
@@ -224,8 +224,8 @@ describe("searchAndReplace — glob normalisation", () => {
       replacement: "hi",
       glob: "**/*.ts",
     });
-    const call = mockedExecSafe.mock.calls[0];
-    const rgArgs: string[] = call[1] as string[];
+    const call = mockedExecSafe.mock.calls[0]!;
+    const rgArgs: string[] = call[1]! as string[];
     const globIdx = rgArgs.indexOf("--glob");
     expect(rgArgs[globIdx + 1]).toBe("**/*.ts");
   });
@@ -235,8 +235,8 @@ describe("searchAndReplace — glob normalisation", () => {
     // The '**/' prefix must be inserted after the '!' to keep it a valid negation.
     const tool = createSearchAndReplaceTool(tmpDir);
     await tool.handler({ pattern: "hello", replacement: "hi", glob: "!*.ts" });
-    const call = mockedExecSafe.mock.calls[0];
-    const rgArgs: string[] = call[1] as string[];
+    const call = mockedExecSafe.mock.calls[0]!;
+    const rgArgs: string[] = call[1]! as string[];
     const globIdx = rgArgs.indexOf("--glob");
     expect(rgArgs[globIdx + 1]).toBe("!**/*.ts");
   });

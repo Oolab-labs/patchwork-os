@@ -90,7 +90,7 @@ describe("normalizeId (via queryDatabase)", () => {
     expect(result.results).toEqual([]);
 
     const url = (global.fetch as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as string;
+      .calls[0]![0] as string;
     expect(url).toContain("12345678-1234-1234-1234-123456789012");
   });
 });

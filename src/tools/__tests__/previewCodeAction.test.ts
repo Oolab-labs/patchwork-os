@@ -45,7 +45,7 @@ describe("previewCodeAction", () => {
       actionTitle: "Add missing import",
     });
     expect(result.isError).toBe(true);
-    expect(JSON.parse(result.content[0].text).code).toBe("extension_required");
+    expect(JSON.parse(result.content[0]!.text).code).toBe("extension_required");
   });
 
   it("returns preview data on success", async () => {
@@ -78,7 +78,7 @@ describe("previewCodeAction", () => {
       actionTitle: "Add missing import",
     });
     expect(result.isError).toBeUndefined();
-    const data = JSON.parse(result.content[0].text);
+    const data = JSON.parse(result.content[0]!.text);
     expect(data.title).toBe("Add missing import");
     expect(data.totalFiles).toBe(1);
     expect(data.totalEdits).toBe(1);

@@ -153,7 +153,7 @@ describe("refactorExtractFunction", () => {
       functionName: "x(){evil()};function legit",
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("valid identifier");
+    expect(result.content[0]!.text).toContain("valid identifier");
   });
 
   it("rejects functionName exceeding 64 characters", async () => {
@@ -170,7 +170,7 @@ describe("refactorExtractFunction", () => {
       functionName: "a".repeat(65),
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("valid identifier");
+    expect(result.content[0]!.text).toContain("valid identifier");
   });
 
   it("accepts valid camelCase identifier", async () => {

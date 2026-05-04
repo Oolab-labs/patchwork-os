@@ -193,7 +193,7 @@ describe("prompts/get", () => {
       messages: Array<{ content: { text: string } }>;
     };
     expect(result.messages.length).toBeGreaterThan(0);
-    const text = result.messages[0].content.text;
+    const text = result.messages[0]!.content.text;
     expect(text).toContain("getGitStatus");
     expect(text).toContain("getDiagnostics");
   });
@@ -211,7 +211,7 @@ describe("prompts/get", () => {
     const result = resp.result as {
       messages: Array<{ content: { text: string } }>;
     };
-    expect(result.messages[0].content.text).toContain("auth");
+    expect(result.messages[0]!.content.text).toContain("auth");
   });
 
   it("quick-review: returns review instructions", async () => {
@@ -251,7 +251,7 @@ describe("prompts/get", () => {
     const result = resp.result as {
       messages: Array<{ content: { text: string } }>;
     };
-    expect(result.messages[0].content.text).toContain("getGitLog");
+    expect(result.messages[0]!.content.text).toContain("getGitLog");
   });
 
   // ── Agent Teams & Scheduled Tasks prompts ────────────────────────────────
@@ -269,8 +269,8 @@ describe("prompts/get", () => {
     const result = resp.result as {
       messages: Array<{ content: { text: string } }>;
     };
-    expect(result.messages[0].content.text).toContain("getGitStatus");
-    expect(result.messages[0].content.text).toContain("listClaudeTasks");
+    expect(result.messages[0]!.content.text).toContain("getGitStatus");
+    expect(result.messages[0]!.content.text).toContain("listClaudeTasks");
   });
 
   it("health-check: returns comprehensive check instructions", async () => {
@@ -286,7 +286,7 @@ describe("prompts/get", () => {
     const result = resp.result as {
       messages: Array<{ content: { text: string } }>;
     };
-    const text = result.messages[0].content.text;
+    const text = result.messages[0]!.content.text;
     expect(text).toContain("runTests");
     expect(text).toContain("getSecurityAdvisories");
     expect(text).toContain("HEALTHY");
@@ -307,7 +307,7 @@ describe("prompts/get", () => {
       messages: Array<{ content: { text: string } }>;
     };
     expect(result.messages.length).toBeGreaterThan(0);
-    const text = result.messages[0].content.text;
+    const text = result.messages[0]!.content.text;
     expect(text).toContain("getProjectInfo");
     expect(text).toContain("documents/architecture.md");
     expect(text).toContain(".claude/rules/");
@@ -337,7 +337,7 @@ describe("prompts/get", () => {
       messages: Array<{ content: { text: string } }>;
     };
     expect(result.messages.length).toBeGreaterThan(0);
-    const text = result.messages[0].content.text;
+    const text = result.messages[0]!.content.text;
     expect(text).toContain("getHandoffNote");
     expect(text).toContain("getOpenEditors");
     expect(text).toContain("getDiagnostics");
@@ -362,7 +362,7 @@ describe("prompts/get", () => {
       description: string;
       messages: Array<{ content: { text: string } }>;
     };
-    const text = result.messages[0].content.text;
+    const text = result.messages[0]!.content.text;
     expect(text).toContain("fix all TypeScript errors");
     expect(result.description).toContain("fix all TypeScript errors");
   });

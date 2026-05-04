@@ -303,7 +303,7 @@ describe("runYamlRecipe — file.read", () => {
     });
     const result = await runYamlRecipe(recipe, noop());
     expect(result.errorMessage).toMatch(/could not read/);
-    expect(result.stepResults[0].status).toBe("error");
+    expect(result.stepResults[0]!.status).toBe("error");
   });
 });
 

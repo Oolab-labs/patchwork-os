@@ -63,14 +63,14 @@ describe("err constructor", () => {
 describe("toCallToolResult", () => {
   it("plain shape → success (no structuredContent)", () => {
     const result = toCallToolResult(ok({ n: 1 }));
-    expect(result.content[0].text).toBe(JSON.stringify({ n: 1 }));
+    expect(result.content[0]!.text).toBe(JSON.stringify({ n: 1 }));
     expect("structuredContent" in result).toBe(false);
     expect("isError" in result).toBe(false);
   });
 
   it("structured shape → successStructured (has structuredContent)", () => {
     const result = toCallToolResult(okS({ n: 2 }));
-    expect(result.content[0].text).toBe(JSON.stringify({ n: 2 }));
+    expect(result.content[0]!.text).toBe(JSON.stringify({ n: 2 }));
     expect(
       (result as { structuredContent?: unknown }).structuredContent,
     ).toEqual({ n: 2 });
@@ -97,7 +97,7 @@ describe("toCallToolResult", () => {
   it("error case → isError:true", () => {
     const result = toCallToolResult(err("timeout", "timed out"));
     expect((result as { isError?: boolean }).isError).toBe(true);
-    const parsed = JSON.parse(result.content[0].text) as Record<
+    const parsed = JSON.parse(result.content[0]!.text) as Record<
       string,
       unknown
     >;

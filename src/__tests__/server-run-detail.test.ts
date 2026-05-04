@@ -88,7 +88,7 @@ describe("GET /runs/:seq", () => {
     expect(parsed.run.seq).toBe(7);
     expect(parsed.run.recipeName).toBe("test-recipe");
     expect(parsed.run.stepResults).toHaveLength(2);
-    expect(parsed.run.stepResults[0].tool).toBe("jira.searchIssues");
+    expect(parsed.run.stepResults[0]!.tool).toBe("jira.searchIssues");
   });
 
   it("requires bearer auth", async () => {

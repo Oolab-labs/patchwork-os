@@ -190,7 +190,7 @@ describe("eslintLinter", () => {
     ];
     mockExecSafe.mockResolvedValue(ok(JSON.stringify(payload)));
     const result = await eslintLinter.run("/ws");
-    expect(result[0].code).toBeUndefined();
+    expect(result[0]!.code).toBeUndefined();
   });
 });
 

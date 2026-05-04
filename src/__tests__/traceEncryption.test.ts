@@ -44,7 +44,7 @@ describe("traceEncryption", () => {
 
   it("throws on tampered ciphertext", () => {
     const enc = encryptTraceBundle(PLAINTEXT, PASSPHRASE);
-    enc[enc.length - 1] ^= 0xff;
+    enc[enc.length - 1]! ^= 0xff;
     expect(() => decryptTraceBundle(enc, PASSPHRASE)).toThrow();
   });
 
