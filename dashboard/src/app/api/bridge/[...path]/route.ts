@@ -65,9 +65,17 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
         { status: 503 },
       );
     }
-    const upstream = await fetch(resolveBridgeUrl(lock, target), {
-      headers: { Authorization: `Bearer ${lock.authToken}` },
-    });
+    let upstream: Response;
+    try {
+      upstream = await fetch(resolveBridgeUrl(lock, target), {
+        headers: { Authorization: `Bearer ${lock.authToken}` },
+      });
+    } catch (err) {
+      return new Response(
+        JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+        { status: 502, headers: { "content-type": "application/json" } },
+      );
+    }
     // Wrap the upstream body so we can flush an initial heartbeat comment
     // immediately. Without this, the browser's EventSource.onopen never fires
     // until the first real event arrives (the bridge holds /stream idle).
@@ -131,11 +139,19 @@ async function proxy(req: NextRequest, segments: string[]): Promise<Response> {
   };
   const tracePassphrase = req.headers.get("x-trace-passphrase");
   if (tracePassphrase) forwardHeaders["x-trace-passphrase"] = tracePassphrase;
-  const res = await bridgeFetch(target, {
-    method: req.method,
-    headers: forwardHeaders,
-    body,
-  });
+  let res: Response;
+  try {
+    res = await bridgeFetch(target, {
+      method: req.method,
+      headers: forwardHeaders,
+      body,
+    });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+      { status: 502, headers: { "content-type": "application/json" } },
+    );
+  }
   const upstreamCt = res.headers.get("content-type") ?? "";
   // Binary downloads (encrypted export, gzip) — stream bytes through directly.
   if (
