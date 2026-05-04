@@ -91,6 +91,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "biome check .",
+    "lint:src": "biome check src",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
