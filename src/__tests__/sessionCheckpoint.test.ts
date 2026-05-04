@@ -9,7 +9,8 @@ import {
   SessionCheckpoint,
 } from "../sessionCheckpoint.js";
 
-const mockFs = vi.mocked(fs);
+// biome-ignore lint/suspicious/noExplicitAny: fs has read-only typed members; tests reassign vi.fn() impls
+const mockFs = vi.mocked(fs) as any;
 
 const sampleData: CheckpointData = {
   port: 12345,
@@ -169,7 +170,6 @@ describe("SessionCheckpoint.loadLatest", () => {
   });
 
   it("picks the newest file when multiple checkpoints exist", () => {
-    const _older = { ...sampleData, port: 1111, savedAt: Date.now() };
     const newer = { ...sampleData, port: 2222, savedAt: Date.now() };
     mockFs.readdirSync = vi.fn(
       () => ["checkpoint-1111.json", "checkpoint-2222.json"] as any,
