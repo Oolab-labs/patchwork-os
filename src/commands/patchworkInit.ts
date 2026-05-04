@@ -214,9 +214,9 @@ export async function runPatchworkInit(
       : "";
 
   log(`${restartLine}\nNext:
-  1. patchwork-os recipe run ambient-journal   # try a local recipe
-  2. patchwork-os                              # launch terminal dashboard
-  3. Connect Gmail (coming in W2) — see docs/adr/0008-connector-scope-decision.md\n`);
+  1. patchwork-os recipe run morning-brief     # AI digest: Gmail + calendar + tasks
+  2. patchwork-os                              # launch terminal dashboard → http://localhost:3100
+  3. patchwork-os recipe list                  # browse installed recipes\n`);
 
   return {
     configPath,

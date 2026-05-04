@@ -91,6 +91,26 @@ npx patchwork-os@alpha patchwork-init
 
 Sets up 5 local recipes, detects Ollama, and opens a terminal dashboard — under 90 seconds.
 
+### ☀️ Morning Brief — the hero workflow
+
+Get an AI digest of your Gmail, calendar, and tasks every morning — or on demand:
+
+```bash
+# First-time setup (connect Gmail + Google Calendar)
+patchwork-os patchwork-init
+patchwork-os connections connect gmail
+patchwork-os connections connect google-calendar
+
+# Run it now
+patchwork-os recipe run morning-brief
+```
+
+The brief lands in `~/.patchwork/inbox/` as a Markdown file. Open the dashboard (`http://localhost:3100`) to read it, approve any drafted replies, or let it auto-send at 08:00 via the built-in cron trigger.
+
+No connectors yet? Run with `--local` using Ollama — it summarises your clipboard and last-touched files instead.
+
+---
+
 ### What it adds on top of the bridge
 
 Patchwork OS is a local automation platform that watches your workspace for events, runs AI-powered recipes in response, and routes anything risky through an approval queue before it goes anywhere.

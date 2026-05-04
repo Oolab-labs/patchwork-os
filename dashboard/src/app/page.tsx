@@ -1148,6 +1148,47 @@ export default function HomePage() {
       </div>
 
       {/* ------------------------------------------------------------------ */}
+      {/* Morning Brief CTA                                                     */}
+      {/* ------------------------------------------------------------------ */}
+      <div
+        className="card"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--s-5)",
+          padding: "18px 24px",
+          marginBottom: "var(--s-4)",
+          background: "linear-gradient(135deg, rgba(var(--orange-rgb),0.06) 0%, var(--card-bg) 100%)",
+          borderColor: "rgba(var(--orange-rgb),0.18)",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>☀️</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--ink-0)" }}>Morning Brief</div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 2 }}>
+            AI digest of Gmail, calendar, and tasks — ready in your inbox each morning.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "var(--s-2)", flexShrink: 0, alignItems: "center" }}>
+          <Link
+            href="/recipes?name=morning-brief"
+            className="btn sm ghost"
+            style={{ textDecoration: "none", fontSize: 12 }}
+          >
+            Configure
+          </Link>
+          <Link
+            href="/recipes"
+            className="btn sm primary"
+            style={{ textDecoration: "none", fontSize: 12, background: "var(--orange)", border: "none" }}
+          >
+            Run now →
+          </Link>
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
       {/* 3-column bottom section                                               */}
       {/* ------------------------------------------------------------------ */}
       <div
