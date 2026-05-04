@@ -81,9 +81,11 @@ export class OrchestratorBridge {
     await this.probeAll();
 
     // Start health probe loop
-    this.healthTimer = setInterval(async () => {
+    this.healthTimer = setInterval(() => {
       this.registry.refresh();
-      await this.probeAll();
+      this.probeAll().catch((err) =>
+        this.logger.error("orchestrator health probe failed", { err }),
+      );
     }, this.config.healthIntervalMs);
     this.healthTimer.unref();
 
