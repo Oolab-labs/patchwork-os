@@ -11,7 +11,11 @@ import {
 import { homedir } from "node:os";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { loadConfig } from "./patchworkConfig.js";
+import {
+  loadConfig,
+  type PatchworkConfig,
+  saveConfig as savePatchworkConfig,
+} from "./patchworkConfig.js";
 import { validateRecipeDefinition } from "./recipes/validation.js";
 
 /**
@@ -194,12 +198,7 @@ export function setRecipeEnabled(
       },
     };
     if (options.saveConfigFn) options.saveConfigFn(next);
-    else {
-      // Dynamic import to avoid coupling at module-load time and to keep
-      // tests able to swap the saver via options.saveConfigFn.
-      const mod = require("./patchworkConfig.js");
-      mod.savePatchworkConfig(next);
-    }
+    else savePatchworkConfig(next as PatchworkConfig);
     return { ok: true };
   } catch (err) {
     return {
@@ -621,6 +620,18 @@ export function duplicateRecipe(
   if (!source) {
     return { ok: false, error: "Recipe not found" };
   }
+  if (!/\.ya?ml$/i.test(source.path)) {
+    return {
+      ok: false,
+      error: "Recipe variants are only supported for YAML recipes",
+    };
+  }
+  if (!/^name:\s*.+$/m.test(source.content)) {
+    return {
+      ok: false,
+      error: "Source recipe is missing a top-level 'name:' field",
+    };
+  }
 
   // Determine next available variant name: strip any existing -vN suffix,
   // then try -v2 through -v9.
@@ -692,6 +703,18 @@ export async function promoteRecipeVariant(
   const source = loadRecipeContent(recipesDir, safeVariant);
   if (!source) {
     return { ok: false, error: "Variant recipe not found" };
+  }
+  if (!/\.ya?ml$/i.test(source.path)) {
+    return {
+      ok: false,
+      error: "Recipe variants are only supported for YAML recipes",
+    };
+  }
+  if (!/^name:\s*.+$/m.test(source.content)) {
+    return {
+      ok: false,
+      error: "Variant recipe is missing a top-level 'name:' field",
+    };
   }
 
   // Guard against silent overwrites: if the target already exists the caller
