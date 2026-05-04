@@ -1007,22 +1007,32 @@ export function tryHandleRecipeRoute(
         res.end(JSON.stringify({ ok: false, error: "Promote unavailable" }));
         return;
       }
-      const result = await deps.promoteRecipeVariantFn(
-        variantName,
-        targetName,
-        {
-          force: force === true,
-        },
-      );
-      const httpStatus = result.ok
-        ? 200
-        : result.targetExists
-          ? 409
-          : result.error?.includes("not found")
-            ? 404
-            : 400;
-      res.writeHead(httpStatus, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(result));
+      try {
+        const result = await deps.promoteRecipeVariantFn(
+          variantName,
+          targetName,
+          {
+            force: force === true,
+          },
+        );
+        const httpStatus = result.ok
+          ? 200
+          : result.targetExists
+            ? 409
+            : result.error?.includes("not found")
+              ? 404
+              : 400;
+        res.writeHead(httpStatus, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
     })();
     return true;
   }

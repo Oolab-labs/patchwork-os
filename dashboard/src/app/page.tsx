@@ -1172,7 +1172,7 @@ export default function HomePage() {
         </div>
         <div style={{ display: "flex", gap: "var(--s-2)", flexShrink: 0, alignItems: "center" }}>
           <Link
-            href="/recipes?name=morning-brief"
+            href="/recipes/morning-brief/edit"
             className="btn sm ghost"
             style={{ textDecoration: "none", fontSize: 12 }}
           >
@@ -1183,7 +1183,7 @@ export default function HomePage() {
             className="btn sm primary"
             style={{ textDecoration: "none", fontSize: 12, background: "var(--orange)", border: "none" }}
           >
-            Run now →
+            Open recipes →
           </Link>
         </div>
       </div>
