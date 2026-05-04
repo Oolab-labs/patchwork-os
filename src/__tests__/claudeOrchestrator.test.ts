@@ -7,25 +7,25 @@ import {
   type MockInstance,
   vi,
 } from "vitest";
-import type { ClaudeTaskInput, IClaudeDriver } from "../claudeDriver.js";
 import { ClaudeOrchestrator } from "../claudeOrchestrator.js";
+import type { ProviderDriver, ProviderTaskInput } from "../drivers/types.js";
 
 // ── Mock driver helpers ───────────────────────────────────────────────────────
 
-function makeInstantDriver(exitCode = 0, output = "ok"): IClaudeDriver {
+function makeInstantDriver(exitCode = 0, output = "ok"): ProviderDriver {
   return {
     name: "instant",
-    async run(input: ClaudeTaskInput) {
+    async run(input: ProviderTaskInput) {
       input.onChunk?.(output);
       return { text: output, exitCode, durationMs: 1 };
     },
   };
 }
 
-function makeSlowDriver(delayMs: number, output = "slow"): IClaudeDriver {
+function makeSlowDriver(delayMs: number, output = "slow"): ProviderDriver {
   return {
     name: "slow",
-    async run(input: ClaudeTaskInput) {
+    async run(input: ProviderTaskInput) {
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(resolve, delayMs);
         input.signal.addEventListener("abort", () => {
@@ -42,15 +42,15 @@ function makeSlowDriver(delayMs: number, output = "slow"): IClaudeDriver {
 }
 
 function makeBlockingDriver(): {
-  driver: IClaudeDriver;
+  driver: ProviderDriver;
   resolve: (output?: string) => void;
   reject: (err: Error) => void;
 } {
   let res: (output?: string) => void;
   let rej: (err: Error) => void;
-  const driver: IClaudeDriver = {
+  const driver: ProviderDriver = {
     name: "blocking",
-    async run(input: ClaudeTaskInput) {
+    async run(input: ProviderTaskInput) {
       return new Promise<{
         text: string;
         exitCode: number;
@@ -127,9 +127,9 @@ describe("ClaudeOrchestrator", () => {
   it("max concurrent cap — 15 tasks, slow driver, ≤10 running simultaneously", async () => {
     let maxSeen = 0;
     let current = 0;
-    const driver: IClaudeDriver = {
+    const driver: ProviderDriver = {
       name: "counter",
-      async run(_input: ClaudeTaskInput) {
+      async run(_input: ProviderTaskInput) {
         current++;
         maxSeen = Math.max(maxSeen, current);
         await new Promise((r) => setTimeout(r, 5));
@@ -218,7 +218,7 @@ describe("ClaudeOrchestrator", () => {
   });
 
   it("runAndWait resolves with error status when driver throws", async () => {
-    const driver: IClaudeDriver = {
+    const driver: ProviderDriver = {
       name: "throws",
       async run() {
         throw new Error("driver exploded");
@@ -232,9 +232,9 @@ describe("ClaudeOrchestrator", () => {
 
   it("onChunk callback called for each chunk during _runTask", async () => {
     const chunks: string[] = [];
-    const driver: IClaudeDriver = {
+    const driver: ProviderDriver = {
       name: "multi-chunk",
-      async run(input: ClaudeTaskInput) {
+      async run(input: ProviderTaskInput) {
         input.onChunk?.("chunk1");
         input.onChunk?.("chunk2");
         input.onChunk?.("chunk3");
@@ -583,10 +583,10 @@ describe("ClaudeOrchestrator — persistence", () => {
 
 describe("ClaudeOrchestrator — v2.24.1 cancel reasons", () => {
   /** Driver that RETURNS (instead of throws) on abort, populating wasAborted + stderrTail. */
-  function makeAbortReturningDriver(stderrTail = "boom"): IClaudeDriver {
+  function makeAbortReturningDriver(stderrTail = "boom"): ProviderDriver {
     return {
       name: "abort-returning",
-      async run(input: ClaudeTaskInput) {
+      async run(input: ProviderTaskInput) {
         return new Promise((resolve) => {
           input.signal.addEventListener("abort", () => {
             resolve({
@@ -812,7 +812,7 @@ describe("ClaudeOrchestrator._drain does not loop forever when all tasks exceed 
     const hugePrompt = "x".repeat(BUDGET * 4 + 4); // ceil((BUDGET*4+4)/4) = BUDGET+1
 
     let releaseBlocker: (() => void) | undefined;
-    const driver: IClaudeDriver = {
+    const driver: ProviderDriver = {
       name: "blocker",
       run: () =>
         new Promise<{ text: string; exitCode: number; durationMs: number }>(
