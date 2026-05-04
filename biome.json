@@ -24,12 +24,16 @@
     "includes": [
       "**",
       "!**/dist",
+      "!**/build",
       "!**/node_modules",
       "!**/vscode-extension/out",
       "!**/coverage",
       "!**/docs",
       "!**/.claude/worktrees",
-      "!dashboard"
+      "!dashboard",
+      "!intellij-plugin/build",
+      "!patchwork 2.0",
+      "!diagnostics-dashboard.html"
     ]
   },
   "overrides": [
