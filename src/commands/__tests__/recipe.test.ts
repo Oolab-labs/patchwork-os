@@ -231,7 +231,7 @@ steps:
       const result = runLint(join(tmpDir, "nonexistent.yaml"));
       expect(result.valid).toBe(false);
       expect(result.errors).toBe(1);
-      expect(result.issues[0].message).toContain("not found");
+      expect(result.issues[0]!.message).toContain("not found");
     });
 
     it("returns error for invalid YAML", () => {
@@ -240,7 +240,7 @@ steps:
 
       const result = runLint(recipePath);
       expect(result.valid).toBe(false);
-      expect(result.issues[0].message).toContain("YAML");
+      expect(result.issues[0]!.message).toContain("YAML");
     });
 
     it("accepts template references to prior step outputs", () => {

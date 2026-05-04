@@ -292,9 +292,9 @@ describe("listEvents", () => {
     );
     const events = await listEvents();
     expect(events).toHaveLength(1);
-    expect(events[0].summary).toBe("Standup");
-    expect(events[0].allDay).toBe(false);
-    expect(events[0].attendees).toEqual(["Alice", "bob@example.com"]);
+    expect(events[0]!.summary).toBe("Standup");
+    expect(events[0]!.allDay).toBe(false);
+    expect(events[0]!.attendees).toEqual(["Alice", "bob@example.com"]!);
   });
 
   it("sets allDay true for date-only events", async () => {
@@ -311,7 +311,7 @@ describe("listEvents", () => {
       ]),
     );
     const events = await listEvents();
-    expect(events[0].allDay).toBe(true);
+    expect(events[0]!.allDay).toBe(true);
   });
 
   it("respects custom calendarId override", async () => {
@@ -350,8 +350,8 @@ describe("listEvents", () => {
     expect(events).toEqual([]);
 
     // Confirm refresh used stored credentials, not env vars
-    const refreshCall = mockFetch.mock.calls[0];
-    const body = new URLSearchParams(refreshCall[1].body as string);
+    const refreshCall = mockFetch.mock.calls[0]!;
+    const body = new URLSearchParams(refreshCall[1]!.body as string);
     expect(body.get("client_id")).toBe("stored_cid");
     expect(body.get("client_secret")).toBe("stored_csecret");
   });
